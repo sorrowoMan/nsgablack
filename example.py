@@ -127,6 +127,7 @@ class SimpleEvolutionaryOptimizer(BlackBoxOptimizer):
                     mutation = np.random.normal(0, mutation_strength * range_val)
                     new_population[i][j] += mutation
                     # 边界处理
+                    
                     new_population[i][j] = np.clip(new_population[i][j], low, high)
         
         return np.array(new_population)

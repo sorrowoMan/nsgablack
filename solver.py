@@ -6,12 +6,12 @@ from scipy.spatial.distance import cdist
 import json
 import os
 
-from .base import BlackBoxProblem
-from .diversity import DiversityAwareInitializerBlackBox
-from .elite import AdvancedEliteRetention
-from .visualization import SolverVisualizationMixin
+from base import BlackBoxProblem
+from diversity import DiversityAwareInitializerBlackBox
+from elite import AdvancedEliteRetention
+from visualization import SolverVisualizationMixin
 try:
-    from .numba_helpers import fast_is_dominated, NUMBA_AVAILABLE
+    from numba_helpers import fast_is_dominated, NUMBA_AVAILABLE
 except Exception:  # 安全回退：若 numba_helpers 不可用则退化为纯 numpy 实现
     fast_is_dominated = None
     NUMBA_AVAILABLE = False
@@ -48,6 +48,7 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         self.population = None
         self.objectives = None
         self.pareto_solutions = None
+        self.pareto_objectives = None
         self.generation = 0
         self.history = []
         self.running = False
@@ -391,8 +392,10 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
                 'individuals': self.population[valid_indices],
                 'objectives': self.objectives[valid_indices]
             }
+            self.pareto_objectives = self.objectives[valid_indices]
         else:
             self.pareto_solutions = {'individuals': np.array([]), 'objectives': np.array([])}
+            self.pareto_objectives = np.array([])
 
     def record_history(self):
         rank, _, _ = self.non_dominated_sorting()
@@ -571,16 +574,35 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         except Exception:
             pass
 
-    def animate(self, frame):
-        if not self.running or self.generation >= self.max_generations:
-            self.running = False
-            if self.enable_diversity_init and self.diversity_params.get('save_history', True):
-                self.diversity_initializer.save_history()
-            try:
-                self.save_history()
-            except Exception:
-                pass
-            return
+    def environmental_selection(self, combined_pop, combined_obj, combined_violations):
+        combined_rank = np.zeros(len(combined_pop), dtype=int)
+        feasible_mask = combined_violations <= 1e-10
+        combined_rank[~feasible_mask] = 1
+        if np.any(feasible_mask):
+            feasible_objs = combined_obj[feasible_mask]
+            dominated = self.is_dominated_vectorized(feasible_objs)
+            combined_rank[feasible_mask] = np.where(dominated, 1, 0)
+        combined_crowding = np.zeros(len(combined_pop))
+        for r in [0, 1]:
+            rank_mask = combined_rank == r
+            if np.any(rank_mask):
+                for obj_idx in range(self.num_objectives):
+                    sorted_idx = np.argsort(combined_obj[rank_mask, obj_idx])
+                    if len(sorted_idx) > 1:
+                        obj_range = combined_obj[rank_mask, obj_idx][sorted_idx[-1]] - combined_obj[rank_mask, obj_idx][sorted_idx[0]]
+                        if obj_range > 1e-10:
+                            combined_crowding[rank_mask][sorted_idx[1:-1]] += (
+                                combined_obj[rank_mask, obj_idx][sorted_idx[2:]] -
+                                combined_obj[rank_mask, obj_idx][sorted_idx[:-2]]
+                            ) / obj_range
+        sorted_indices = np.lexsort((-combined_crowding, combined_rank))
+        self.population = combined_pop[sorted_indices[:self.pop_size]]
+        self.objectives = combined_obj[sorted_indices[:self.pop_size]]
+        self.constraint_violations = combined_violations[sorted_indices[:self.pop_size]]
+        self.update_pareto_solutions()
+        self.record_history()
+
+    def evolve_one_generation(self):
         self.mutation_range = self.initial_mutation_range * (1 - self.generation / self.max_generations)
         parents = self.selection()
         offspring = self.crossover(parents)
@@ -630,39 +652,57 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         else:
             base_vio = np.asarray(self.constraint_violations, dtype=float)
         combined_violations = np.concatenate([base_vio, offspring_violations])
-        combined_rank = np.zeros(len(combined_pop), dtype=int)
-        feasible_mask = combined_violations <= 1e-10
-        combined_rank[~feasible_mask] = 1
-        if np.any(feasible_mask):
-            feasible_objs = combined_obj[feasible_mask]
-            dominated = self.is_dominated_vectorized(feasible_objs)
-            combined_rank[feasible_mask] = np.where(dominated, 1, 0)
-        combined_crowding = np.zeros(len(combined_pop))
-        for r in [0, 1]:
-            rank_mask = combined_rank == r
-            if np.any(rank_mask):
-                for obj_idx in range(self.num_objectives):
-                    sorted_idx = np.argsort(combined_obj[rank_mask, obj_idx])
-                    if len(sorted_idx) > 1:
-                        obj_range = combined_obj[rank_mask, obj_idx][sorted_idx[-1]] - combined_obj[rank_mask, obj_idx][sorted_idx[0]]
-                        if obj_range > 1e-10:
-                            combined_crowding[rank_mask][sorted_idx[1:-1]] += (
-                                combined_obj[rank_mask, obj_idx][sorted_idx[2:]] -
-                                combined_obj[rank_mask, obj_idx][sorted_idx[:-2]]
-                            ) / obj_range
-        sorted_indices = np.lexsort((-combined_crowding, combined_rank))
-        self.population = combined_pop[sorted_indices[:self.pop_size]]
-        self.objectives = combined_obj[sorted_indices[:self.pop_size]]
-        self.constraint_violations = combined_violations[sorted_indices[:self.pop_size]]
-        self.update_pareto_solutions()
-        self.record_history()
-        if self.plot_enabled and (self.generation - self.last_viz_update >= self.visualization_update_frequency):
-            self.update_plot_dynamic()
-            self.last_viz_update = self.generation
+        self.environmental_selection(combined_pop, combined_obj, combined_violations)
         self.generation += 1
-        self.update_info_text()
         self.update_convergence()
         if self.enable_progress_log and self.report_interval > 0 and (self.generation % self.report_interval == 0):
             self._log_progress()
+
+    def animate(self, frame):
+        if not self.running or self.generation >= self.max_generations:
+            self.running = False
+            if self.enable_diversity_init and self.diversity_params.get('save_history', True):
+                self.diversity_initializer.save_history()
+            try:
+                self.save_history()
+            except Exception:
+                pass
+            return
+        
+        self.evolve_one_generation()
+        
+        if self.plot_enabled and (self.generation - self.last_viz_update >= self.visualization_update_frequency):
+            self.update_plot_dynamic()
+            self.last_viz_update = self.generation
+        self.update_info_text()
         if self.generation >= self.max_generations:
             self.run_count += 1
+
+    def run(self):
+        """非 GUI 模式运行"""
+        self.running = True
+        self.start_time = time.time()
+        self.evaluation_count = 0
+        if self.population is None:
+            self.initialize_population()
+        self.update_pareto_solutions()
+        if not self.history:
+            self.record_history()
+        
+        while self.running and self.generation < self.max_generations:
+            self.evolve_one_generation()
+            
+        self.running = False
+        if self.enable_diversity_init and self.diversity_params.get('save_history', True):
+            self.diversity_initializer.save_history()
+        try:
+            self.save_history()
+        except Exception:
+            pass
+        self.run_count += 1
+        
+        return {
+            'pareto_solutions': self.pareto_solutions,
+            'pareto_objectives': self.pareto_objectives,
+            'generation': self.generation
+        }

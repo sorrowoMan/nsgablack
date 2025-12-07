@@ -16,6 +16,7 @@
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `nsgablack/base.py`                 | `BlackBoxProblem`基类，统一问题接口（`evaluate`, `get_num_objectives`）                                          |
 | `nsgablack/solver.py`               | `BlackBoxSolverNSGAII`：NSGA-II 求解器核心，包含选择/交叉/变异、非支配排序、历史记录与收敛判定                       |
+| `nsgablack/surrogate.py`            | `SurrogateAssistedNSGAII`：代理模型辅助的 NSGA-II，支持 GP/RBF/RF 模型，适合昂贵黑箱函数优化                           |
 | `nsgablack/vns.py`                  | `BlackBoxSolverVNS`：可配置多邻域与变尺度策略的 VNS 单/多目标（标量化）求解器                                        |
 | `nsgablack/visualization.py`        | `SolverVisualizationMixin`：Matplotlib UI 与绘图混入，提供交互控件（运行/停止/参数调整）                             |
 | `nsgablack/diversity.py`            | `DiversityAwareInitializerBlackBox`：多样性感知的候选解采样与种群初始化，支持历史解存取                              |
@@ -40,6 +41,12 @@
   - `BlackBoxSolverNSGAII`：完整实现多目标 NSGA-II，包括选择/交叉/变异、非支配排序、拥挤距离和精英保留，适合 Pareto 前沿搜索；
   - `BlackBoxSolverVNS`：轻量的 Variable Neighborhood Search（VNS）实现，支持多种邻域类型与尺度策略，适合快速单目标或标量化多目标局部搜索；
   - 两者都基于同一 `BlackBoxProblem` 抽象，便于在不同优化器之间切换和对比。
+- **代理模型辅助优化 (Surrogate-Assisted)**：
+
+  - `SurrogateAssistedNSGAII`：专为**昂贵黑箱函数**（如耗时仿真）设计；
+  - 支持 **Gaussian Process (GP)**、**RBF 网络** 和 **Random Forest (RF)** 三种代理模型；
+  - 采用“少量真实评估 + 大量代理评估”的策略，显著减少真实函数调用次数（通常可节省 80%-90% 的时间）；
+  - 支持单目标和多目标优化，自动管理模型训练与更新。
 - **Headless + GUI 双模式运行**：
 
   - `run_headless_single_objective` 提供完全无界面、可脚本化的单目标优化接口，适合服务器、云端和批量实验；
@@ -90,7 +97,7 @@
 - **完善的测试与示例**：
 
   - `tests/` 目录包含对 headless、VNS、ML 模型管理、并行批量运行等模块的单元测试，方便在修改后进行快速回归；
-  - 多个示例脚本（工程设计、投资组合、NN 超参数、降维示例、`demo_parallel_sphere.py` 等）覆盖从玩具问题到工程级问题的典型用法，适合作为你自己项目的模板。
+  - 多个示例脚本（工程设计、投资组合、NN 超参数、降维示例、`surrogate_example.py`、`demo_parallel_sphere.py` 等）覆盖从玩具问题到工程级问题的典型用法，适合作为你自己项目的模板。
 
 ---
 
@@ -182,6 +189,36 @@ print("evaluations:", result["evaluations"])
 from nsgablack.examples import optimize_with_vns
 
 solver, result = optimize_with_vns()
+```
+
+### 2.5 代理模型辅助优化（昂贵函数）
+
+对于计算成本高昂的问题（如每次评估需数秒或数分钟），可以使用 `SurrogateAssistedNSGAII` 或便捷函数 `run_surrogate_assisted`。
+
+```python
+from nsgablack.surrogate import run_surrogate_assisted
+from nsgablack.problems import SphereBlackBox
+import time
+
+# 模拟昂贵问题
+class ExpensiveSphere(SphereBlackBox):
+    def evaluate(self, x):
+        time.sleep(0.05)  # 模拟耗时
+        return super().evaluate(x)
+
+problem = ExpensiveSphere(dimension=5)
+
+# 运行代理模型辅助优化
+result = run_surrogate_assisted(
+    problem,
+    surrogate_type='gp',       # 'gp', 'rbf', 'rf'
+    real_eval_budget=200,      # 真实评估预算
+    initial_samples=30,        # 初始样本数
+    max_generations=50
+)
+
+print(f"最优解: {result['pareto_objectives'][0]}")
+print(f"真实评估次数: {result['real_eval_count']}")
 ```
 
 ---
@@ -464,6 +501,18 @@ full_x = reduced['expand_to_full'](res['x'])
         'history': list[(int,float)]
       }
       ```
+- `SurrogateAssistedNSGAII` (`nsgablack/surrogate.py`)
+
+  - 构造: `SurrogateAssistedNSGAII(problem, surrogate_type='gp')`
+  - 参数:
+    - `surrogate_type`: `'gp'` (高斯过程), `'rbf'` (径向基), `'rf'` (随机森林)。
+  - 重要属性:
+    - `real_eval_budget` (int): 真实评估次数预算 (默认 200)。
+    - `initial_samples` (int): 初始真实评估样本数 (默认 50)。
+    - `update_interval` (int): 代理模型更新频率 (默认 10 代)。
+    - `real_evals_per_gen` (int): 每代选择进行真实评估的个体数 (默认 5)。
+  - 便捷函数: `run_surrogate_assisted(problem, surrogate_type='gp', real_eval_budget=200, ...)`。
+
 - 收敛与评估 (`nsgablack/convergence.py`)
 
   - `log_and_maybe_evaluate_convergence(best_x, best_f, bounds, log_file=None, threshold=30, method='svm')`

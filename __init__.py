@@ -24,16 +24,12 @@ from .problems import (
     NeuralNetworkHyperparameterOptimization,
     EngineeringDesignOptimization,
     BusinessPortfolioOptimization,
-)
-from .convergence import (
-    _get_default_convergence_log_path,
-    _append_converged_solution,
-    _load_converged_solutions,
     evaluate_convergence_svm,
     evaluate_convergence_cluster,
     log_and_maybe_evaluate_convergence,
 )
 from .ml_models import ModelManager
+from .surrogate import SurrogateAssistedNSGAII, run_surrogate_assisted
 
 __all__ = [
     'BlackBoxProblem',
@@ -55,4 +51,6 @@ __all__ = [
     'evaluate_convergence_cluster',
     'log_and_maybe_evaluate_convergence',
     'ModelManager',
+    'SurrogateAssistedNSGAII',
+    'run_surrogate_assisted',
 ]
