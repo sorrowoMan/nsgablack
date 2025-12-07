@@ -1,0 +1,413 @@
+{
+  "problem": "Rosenbrock",
+  "generations": [
+    {
+      "generation": 0,
+      "avg_objectives": [
+        [
+          479.18132745604964
+        ]
+      ]
+    },
+    {
+      "generation": 0,
+      "avg_objectives": [
+        [
+          394.6661798714045
+        ]
+      ]
+    },
+    {
+      "generation": 1,
+      "avg_objectives": [
+        [
+          408.5762290487402
+        ]
+      ]
+    },
+    {
+      "generation": 2,
+      "avg_objectives": [
+        [
+          353.37485512399775
+        ]
+      ]
+    },
+    {
+      "generation": 3,
+      "avg_objectives": [
+        [
+          358.4256846285058
+        ]
+      ]
+    },
+    {
+      "generation": 4,
+      "avg_objectives": [
+        [
+          358.4256846285058
+        ]
+      ]
+    },
+    {
+      "generation": 5,
+      "avg_objectives": [
+        [
+          358.4256846285058
+        ]
+      ]
+    },
+    {
+      "generation": 6,
+      "avg_objectives": [
+        [
+          395.41916079901347
+        ]
+      ]
+    },
+    {
+      "generation": 7,
+      "avg_objectives": [
+        [
+          395.41916079901347
+        ]
+      ]
+    },
+    {
+      "generation": 8,
+      "avg_objectives": [
+        [
+          213.78939549783044
+        ]
+      ]
+    },
+    {
+      "generation": 9,
+      "avg_objectives": [
+        [
+          299.87990805117005
+        ]
+      ]
+    },
+    {
+      "generation": 10,
+      "avg_objectives": [
+        [
+          507.78228593933017
+        ]
+      ]
+    },
+    {
+      "generation": 11,
+      "avg_objectives": [
+        [
+          507.78228593933017
+        ]
+      ]
+    },
+    {
+      "generation": 12,
+      "avg_objectives": [
+        [
+          507.78228593933017
+        ]
+      ]
+    },
+    {
+      "generation": 13,
+      "avg_objectives": [
+        [
+          507.78228593933017
+        ]
+      ]
+    },
+    {
+      "generation": 14,
+      "avg_objectives": [
+        [
+          441.9482836966146
+        ]
+      ]
+    },
+    {
+      "generation": 15,
+      "avg_objectives": [
+        [
+          441.9482836966146
+        ]
+      ]
+    },
+    {
+      "generation": 16,
+      "avg_objectives": [
+        [
+          441.9482836966146
+        ]
+      ]
+    },
+    {
+      "generation": 17,
+      "avg_objectives": [
+        [
+          441.9482836966146
+        ]
+      ]
+    },
+    {
+      "generation": 18,
+      "avg_objectives": [
+        [
+          441.9482836966146
+        ]
+      ]
+    },
+    {
+      "generation": 19,
+      "avg_objectives": [
+        [
+          425.4424050940759
+        ]
+      ]
+    },
+    {
+      "generation": 20,
+      "avg_objectives": [
+        [
+          376.47941431144733
+        ]
+      ]
+    },
+    {
+      "generation": 21,
+      "avg_objectives": [
+        [
+          366.02935960239483
+        ]
+      ]
+    },
+    {
+      "generation": 22,
+      "avg_objectives": [
+        [
+          314.7225249655499
+        ]
+      ]
+    },
+    {
+      "generation": 23,
+      "avg_objectives": [
+        [
+          311.43736822029297
+        ]
+      ]
+    },
+    {
+      "generation": 24,
+      "avg_objectives": [
+        [
+          311.43736822029297
+        ]
+      ]
+    },
+    {
+      "generation": 25,
+      "avg_objectives": [
+        [
+          311.43736822029297
+        ]
+      ]
+    },
+    {
+      "generation": 26,
+      "avg_objectives": [
+        [
+          311.43736822029297
+        ]
+      ]
+    },
+    {
+      "generation": 27,
+      "avg_objectives": [
+        [
+          311.43736822029297
+        ]
+      ]
+    },
+    {
+      "generation": 28,
+      "avg_objectives": [
+        [
+          311.43736822029297
+        ]
+      ]
+    },
+    {
+      "generation": 29,
+      "avg_objectives": [
+        [
+          495.453834865982
+        ]
+      ]
+    },
+    {
+      "generation": 30,
+      "avg_objectives": [
+        [
+          495.453834865982
+        ]
+      ]
+    },
+    {
+      "generation": 31,
+      "avg_objectives": [
+        [
+          495.453834865982
+        ]
+      ]
+    },
+    {
+      "generation": 32,
+      "avg_objectives": [
+        [
+          455.0712368693329
+        ]
+      ]
+    },
+    {
+      "generation": 33,
+      "avg_objectives": [
+        [
+          448.59929922530046
+        ]
+      ]
+    },
+    {
+      "generation": 34,
+      "avg_objectives": [
+        [
+          438.8020389099496
+        ]
+      ]
+    },
+    {
+      "generation": 35,
+      "avg_objectives": [
+        [
+          557.3869223533653
+        ]
+      ]
+    },
+    {
+      "generation": 36,
+      "avg_objectives": [
+        [
+          655.0054839281178
+        ]
+      ]
+    },
+    {
+      "generation": 37,
+      "avg_objectives": [
+        [
+          537.8376574872399
+        ]
+      ]
+    },
+    {
+      "generation": 38,
+      "avg_objectives": [
+        [
+          520.3036554520856
+        ]
+      ]
+    },
+    {
+      "generation": 39,
+      "avg_objectives": [
+        [
+          515.8682969311278
+        ]
+      ]
+    },
+    {
+      "generation": 40,
+      "avg_objectives": [
+        [
+          478.4245638836346
+        ]
+      ]
+    },
+    {
+      "generation": 41,
+      "avg_objectives": [
+        [
+          478.4245638836346
+        ]
+      ]
+    },
+    {
+      "generation": 42,
+      "avg_objectives": [
+        [
+          478.4245638836346
+        ]
+      ]
+    },
+    {
+      "generation": 43,
+      "avg_objectives": [
+        [
+          542.8482922615045
+        ]
+      ]
+    },
+    {
+      "generation": 44,
+      "avg_objectives": [
+        [
+          530.6136986846083
+        ]
+      ]
+    },
+    {
+      "generation": 45,
+      "avg_objectives": [
+        [
+          530.6136986846083
+        ]
+      ]
+    },
+    {
+      "generation": 46,
+      "avg_objectives": [
+        [
+          530.6136986846083
+        ]
+      ]
+    },
+    {
+      "generation": 47,
+      "avg_objectives": [
+        [
+          530.6136986846083
+        ]
+      ]
+    },
+    {
+      "generation": 48,
+      "avg_objectives": [
+        [
+          562.3020595531352
+        ]
+      ]
+    },
+    {
+      "generation": 49,
+      "avg_objectives": [
+        [
+          562.3020595531352
+        ]
+      ]
+    }
+  ]
+}
