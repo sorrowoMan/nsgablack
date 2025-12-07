@@ -1,0 +1,93 @@
+{
+  "problem": "昂贵测试问题",
+  "generations": [
+    {
+      "generation": 0,
+      "avg_objectives": [
+        [
+          145.33983435999832
+        ]
+      ]
+    },
+    {
+      "generation": 0,
+      "avg_objectives": [
+        [
+          143.17003676929454
+        ]
+      ]
+    },
+    {
+      "generation": 1,
+      "avg_objectives": [
+        [
+          128.5548762912567
+        ]
+      ]
+    },
+    {
+      "generation": 2,
+      "avg_objectives": [
+        [
+          129.76096137808875
+        ]
+      ]
+    },
+    {
+      "generation": 3,
+      "avg_objectives": [
+        [
+          132.09921297060515
+        ]
+      ]
+    },
+    {
+      "generation": 4,
+      "avg_objectives": [
+        [
+          132.09921297060515
+        ]
+      ]
+    },
+    {
+      "generation": 5,
+      "avg_objectives": [
+        [
+          143.37751693701054
+        ]
+      ]
+    },
+    {
+      "generation": 6,
+      "avg_objectives": [
+        [
+          138.96600439855797
+        ]
+      ]
+    },
+    {
+      "generation": 7,
+      "avg_objectives": [
+        [
+          138.96600439855797
+        ]
+      ]
+    },
+    {
+      "generation": 8,
+      "avg_objectives": [
+        [
+          138.96600439855797
+        ]
+      ]
+    },
+    {
+      "generation": 9,
+      "avg_objectives": [
+        [
+          141.4249620719345
+        ]
+      ]
+    }
+  ]
+}
