@@ -40,7 +40,7 @@ class MyProblem(BlackBoxProblem):
 
 ### BlackBoxSolverNSGAII
 
-NSGA-II 多目标优化求解器。
+NSGA-II 多目标优化求解器，支持并行评估。
 
 ```python
 class BlackBoxSolverNSGAII:
@@ -48,6 +48,12 @@ class BlackBoxSolverNSGAII:
     def run(self, return_experiment: bool = False) -> Dict
     def initialize_population(self) -> None
     def animate(self, frame: Optional[int] = None) -> None
+
+    # 并行评估支持
+    def enable_parallel(self, backend: str = "thread", max_workers: int = None,
+                       auto_configure: bool = True, **kwargs) -> None
+    def disable_parallel(self) -> None
+    def get_parallel_stats(self) -> Dict
 ```
 
 **配置参数：**
@@ -59,6 +65,58 @@ class BlackBoxSolverNSGAII:
 - `enable_diversity_init`: 启用多样性初始化 (默认: False)
 - `enable_progress_log`: 启用进度日志 (默认: True)
 - `report_interval`: 日志报告间隔 (默认: 10)
+
+#### 并行评估配置
+
+**启用并行评估：**
+```python
+# 方法1：直接启用
+solver.enable_parallel(
+    backend="thread",      # 后端类型
+    max_workers=4,        # 工作线程/进程数
+    auto_configure=True   # 自动优化配置
+)
+
+# 方法2：使用求解器扩展
+from utils.solver_extensions import create_parallel_solver
+
+solver = create_parallel_solver(
+    BlackBoxSolverNSGAII,
+    problem=problem,
+    parallel_backend="thread",
+    max_workers=4,
+    pop_size=50,
+    max_generations=100
+)
+```
+
+**并行后端选择：**
+- `thread`: 线程池（推荐Windows使用）
+  - 优点：低内存开销，启动快
+  - 适用：I/O密集型、混合型任务
+  - 限制：Python GIL限制CPU并行
+
+- `process`: 进程池（推荐Linux/macOS使用）
+  - 优点：真正的CPU并行，绕过GIL
+  - 适用：CPU密集型任务
+  - 限制：高内存开销，启动慢
+
+- `joblib`: Joblib后端
+  - 优点：灵活的负载均衡，内存优化
+  - 适用：大规模评估，长时间运行
+  - 要求：需安装joblib包
+
+**高级配置：**
+```python
+solver.enable_parallel(
+    backend="thread",
+    max_workers=4,
+    chunk_size=10,             # 批次大小
+    enable_load_balancing=True,    # 负载均衡
+    timeout=30.0,              # 单个任务超时
+    retry_count=3              # 失败重试次数
+)
+```
 
 **返回值：**
 ```python
@@ -111,6 +169,45 @@ def create_standard_bias(problem: BlackBoxProblem, reward_weight: float = 0.05,
 - `stagnation_penalty(generation, last_improvement_gen, scale=0.01)`: 停滞惩罚
 
 ## 求解器
+
+### 单目标优化 (run_headless_single_objective)
+
+适用于任意单目标函数的快速优化，支持并行评估。
+
+```python
+def run_headless_single_objective(objective: Callable,
+                                 bounds: List[Tuple[float, float]],
+                                 *,
+                                 pop_size: int = 80,
+                                 max_generations: int = 150,
+                                 parallel_backend: str = "thread",
+                                 max_workers: int = None,
+                                 enable_parallel: bool = False,
+                                 **kwargs) -> Dict
+```
+
+**并行评估配置：**
+```python
+# 启用并行评估
+result = run_headless_single_objective(
+    objective=my_expensive_function,
+    bounds=[(0, 10), (-5, 5)],
+    enable_parallel=True,        # 启用并行
+    parallel_backend="thread",   # 后端类型
+    max_workers=4,              # 工作线程数
+    pop_size=100,
+    max_generations=200
+)
+
+# 获取性能统计
+print(f"总评估时间: {result['total_time']:.2f}s")
+print(f"平均评估时间: {result.get('avg_eval_time', 0)*1000:.2f}ms")
+```
+
+**参数说明：**
+- `parallel_backend`: 并行后端 ('thread', 'process', 'joblib')
+- `max_workers`: 工作线程/进程数（默认：CPU核心数）
+- `enable_parallel`: 是否启用并行评估
 
 ### 代理模型辅助优化
 
