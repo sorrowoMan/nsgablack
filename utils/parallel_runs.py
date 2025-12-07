@@ -16,9 +16,16 @@ from typing import Callable, Literal, Optional, Dict, Any, List, Tuple
 
 import numpy as np
 
-from .headless import run_headless_single_objective
-from .vns import BlackBoxSolverVNS
-from .base import BlackBoxProblem
+try:
+    # 当作为包导入时使用相对导入
+    from .headless import run_headless_single_objective
+    from ..solvers.vns import BlackBoxSolverVNS
+    from ..core.base import BlackBoxProblem
+except ImportError:
+    # 当作为脚本运行时使用绝对导入
+    from utils.headless import run_headless_single_objective
+    from solvers.vns import BlackBoxSolverVNS
+    from core.base import BlackBoxProblem
 
 Backend = Literal["thread", "process"]
 

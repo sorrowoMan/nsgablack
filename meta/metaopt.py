@@ -21,9 +21,16 @@ try:
 except Exception:
     _OPTUNA_AVAILABLE = False
 
-from .solver import BlackBoxSolverNSGAII
-from .problems import BusinessPortfolioOptimization
-from .headless import run_headless_single_objective
+try:
+    # 当作为包导入时使用相对导入
+    from ..core.solver import BlackBoxSolverNSGAII
+    from ..core.problems import BusinessPortfolioOptimization
+    from ..utils.headless import run_headless_single_objective
+except ImportError:
+    # 当作为脚本运行时使用绝对导入
+    from core.solver import BlackBoxSolverNSGAII
+    from core.problems import BusinessPortfolioOptimization
+    from utils.headless import run_headless_single_objective
 
 #cd "c:\Users\hp\Desktop\新建文件夹 (7)"
 #python run_metaopt_engineering_compare.py

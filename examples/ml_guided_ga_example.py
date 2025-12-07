@@ -16,19 +16,21 @@
 from __future__ import annotations
 
 import os
+import sys
 import joblib
 import argparse
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from typing import Tuple, Optional, Any, Dict
 
-from .problems import SphereBlackBox
-from .diversity import DiversityAwareInitializerBlackBox
-from .solver import BlackBoxSolverNSGAII
-from .exmaple import prepare_pca_reduced_problem
-from .ml_models import ModelManager
+from core.problems import SphereBlackBox
+from core.diversity import DiversityAwareInitializerBlackBox
+from solvers.nsga2 import BlackBoxSolverNSGAII
+from utils.reduced import prepare_pca_reduced_problem
+from ml.ml_models import ModelManager
 
 
 def sample_candidates(problem, n_candidates: int = 200, method: str = 'random', bounds=None) -> Tuple[np.ndarray, np.ndarray]:
@@ -324,7 +326,7 @@ def main(argv: Optional[list] = None) -> Dict[str, Any]:
                                           bounds=[problem.bounds[f'x{i}'] for i in range(problem.dimension)],
                                           n_components=3, initial_samples=400, sampling_method='lhs')
 
-    from .headless import CallableSingleObjectiveProblem
+    from utils.headless import CallableSingleObjectiveProblem
     prob_red = CallableSingleObjectiveProblem(reduced['reduced_objective'], reduced['reduced_bounds'], name='PCA_reduced_demo')
     solver = BlackBoxSolverNSGAII(prob_red)
     solver.pop_size = args.pop_size

@@ -1,7 +1,14 @@
 import numpy as np
-from .base import BlackBoxProblem
-from .solver import BlackBoxSolverNSGAII
-from .convergence import log_and_maybe_evaluate_convergence
+try:
+    # 当作为包导入时使用相对导入
+    from ..core.base import BlackBoxProblem
+    from ..solvers.nsga2 import BlackBoxSolverNSGAII
+    from ..core.convergence import log_and_maybe_evaluate_convergence
+except ImportError:
+    # 当作为脚本运行时使用绝对导入
+    from core.base import BlackBoxProblem
+    from solvers.nsga2 import BlackBoxSolverNSGAII
+    from core.convergence import log_and_maybe_evaluate_convergence
 
 
 class CallableSingleObjectiveProblem(BlackBoxProblem):
