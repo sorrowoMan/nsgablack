@@ -1,7 +1,12 @@
 import numpy as np
 import random
 
-from .base import BlackBoxProblem
+try:
+    # 当作为包导入时使用相对导入
+    from ..core.base import BlackBoxProblem
+except ImportError:
+    # 当作为脚本运行时使用绝对导入
+    from core.base import BlackBoxProblem
 
 
 class BlackBoxSolverVNS:
@@ -38,6 +43,9 @@ class BlackBoxSolverVNS:
         self.best_x = None
         self.best_f = None
         self.history = []
+        # bias 模块
+        self.bias_module = None
+        self.enable_bias = False
 
     def _random_within_bounds(self):
         x = np.zeros(self.dimension)
@@ -63,8 +71,14 @@ class BlackBoxSolverVNS:
 
     def _evaluate(self, x):
         val = self.problem.evaluate(x)
+        f = self._scalarize(val)
+
+        # 应用 bias 模块
+        if self.enable_bias and self.bias_module is not None:
+            f = self.bias_module.compute_bias(x, f, individual_id=self.evaluation_count)
+
         self.evaluation_count += 1
-        return self._scalarize(val)
+        return f
 
     def _neighborhood_scale(self, k):
         """根据 k 计算本轮扰动尺度。"""

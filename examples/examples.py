@@ -1,9 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from .solver import BlackBoxSolverNSGAII
-from .vns import BlackBoxSolverVNS
-from .problems import (
+from solvers.nsga2 import BlackBoxSolverNSGAII
+from solvers.vns import BlackBoxSolverVNS
+from core.problems import (
     NeuralNetworkHyperparameterOptimization,
     EngineeringDesignOptimization,
     BusinessPortfolioOptimization,
@@ -97,7 +100,7 @@ def analyze_results(solver, problem_name):
 
 def optimize_with_vns():
     """示例：使用简单 VNS 求解 Sphere 函数（单目标）"""
-    from .problems import SphereBlackBox
+    from nsgablack.core.problems import SphereBlackBox
 
     problem = SphereBlackBox(dimension=2)
     solver = BlackBoxSolverVNS(problem)

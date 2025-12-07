@@ -1,11 +1,20 @@
 import numpy as np
 from typing import Callable, List, Tuple, Dict, Any
 
-from .base import BlackBoxProblem
-from .solver import BlackBoxSolverNSGAII
-from .problems import BusinessPortfolioOptimization
-from .headless import run_headless_single_objective
-from .exmaple import PCAReducer
+try:
+    # 当作为包导入时使用相对导入
+    from ..core.base import BlackBoxProblem
+    from ..solvers.nsga2 import BlackBoxSolverNSGAII
+    from ..core.problems import BusinessPortfolioOptimization
+    from .headless import run_headless_single_objective
+    from .manifold_reduction import PCAReducer
+except ImportError:
+    # 当作为脚本运行时使用绝对导入
+    from core.base import BlackBoxProblem
+    from solvers.nsga2 import BlackBoxSolverNSGAII
+    from core.problems import BusinessPortfolioOptimization
+    from utils.headless import run_headless_single_objective
+    from utils.manifold_reduction import PCAReducer
 
 
 class ReducedMultiObjectiveProblem(BlackBoxProblem):
