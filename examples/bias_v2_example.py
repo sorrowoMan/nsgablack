@@ -11,11 +11,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.base import BlackBoxProblem
 from core.solver import BlackBoxSolverNSGAII
-from utils.bias_v2 import (
+from bias_v2 import (
     UniversalBiasManager, OptimizationContext,
     DiversityBias, ConvergenceBias, ConstraintBias, PreferenceBias
 )
-from utils.bias_library import (
+from bias_library import (
     BiasFactory, BiasComposer,
     quick_engineering_bias, quick_ml_bias, quick_financial_bias,
     create_bias_manager_from_template
@@ -608,7 +608,5 @@ def main():
         print(f"\n运行示例时出错: {e}")
         import traceback
         traceback.print_exc()
-
-
 if __name__ == "__main__":
     main()

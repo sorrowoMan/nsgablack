@@ -20,7 +20,7 @@ except ImportError:
     # 当作为脚本运行时使用绝对导入
     from utils.parallel_evaluator import ParallelEvaluator, SmartEvaluatorSelector
     from core.base import BlackBoxProblem
-    from utils.bias import BiasModule
+    from bias import BiasModule
 
 
 class ParallelEvaluationMixin:

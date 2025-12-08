@@ -132,41 +132,152 @@ solver.enable_parallel(
 }
 ```
 
-## 偏置模块
+## 偏置系统 v2.0
 
-### BiasModule
+### UniversalBiasManager
 
-可扩展的优化偏向模块，用于引导搜索方向。
+通用偏置管理器，协调算法偏置和业务偏置的双重引导。
 
 ```python
-class BiasModule:
+class UniversalBiasManager:
+    def __init__(self, algorithm_config: Dict = None, domain_config: Dict = None)
+    def compute_total_bias(self, x: np.ndarray, context: OptimizationContext) -> float
+    def adjust_weights(self, optimization_state: Dict[str, Any])
+    def set_bias_weights(self, algorithmic_weight: float, domain_weight: float)
+    def get_algorithmic_bias(self, name: str) -> Optional[AlgorithmicBias]
+    def get_domain_bias(self, name: str) -> Optional[DomainBias]
+    def save_config(self, filepath: str)
+    def load_config(self, filepath: str)
+```
+
+### OptimizationContext
+
+优化上下文信息，用于偏置计算。
+
+```python
+class OptimizationContext:
+    def __init__(self, generation: int, individual: np.ndarray,
+                 population: List[np.ndarray] = None,
+                 metrics: Dict[str, float] = None, history: List = None)
+```
+
+### 偏置管理器
+
+#### AlgorithmicBiasManager
+
+```python
+class AlgorithmicBiasManager:
     def __init__(self)
-    def add_reward(self, func: Callable, weight: float = 0.05, name: str = "")
-    def add_penalty(self, func: Callable, weight: float = 1.0, name: str = "")
-    def compute_bias(self, x: np.ndarray, f_original: float, individual_id: Optional[int] = None) -> float
-    def update_history(self, x: np.ndarray, f: float)
-    def clear(self)
+    def add_bias(self, bias: AlgorithmicBias)
+    def remove_bias(self, name: str)
+    def get_bias(self, name: str) -> Optional[AlgorithmicBias]
+    def compute_algorithmic_bias(self, x: np.ndarray, context: OptimizationContext) -> float
+    def enable_all(self)
+    def disable_all(self)
 ```
 
-### 便捷函数
+#### DomainBiasManager
 
 ```python
-def create_standard_bias(problem: BlackBoxProblem, reward_weight: float = 0.05,
-                        penalty_weight: float = 1.0) -> BiasModule
+class DomainBiasManager:
+    def __init__(self)
+    def add_bias(self, bias: DomainBias)
+    def remove_bias(self, name: str)
+    def get_bias(self, name: str) -> Optional[DomainBias]
+    def compute_domain_bias(self, x: np.ndarray, context: OptimizationContext) -> float
 ```
 
-创建包含约束罚函数和接近最优解奖励的标准偏置模块。
+### 算法偏置类
 
-**内置奖励函数：**
-- `proximity_reward(x, best_x, scale=1.0)`: 接近历史最优解的奖励
-- `improvement_reward(f_current, f_previous, scale=1.0)`: 目标改进速度奖励
-- `feasibility_depth_reward(constraint_values, scale=1.0)`: 深度可行性奖励
-- `diversity_reward(x, population, scale=1.0, k=5)`: 多样性贡献奖励
+#### DiversityBias
 
-**内置罚函数：**
-- `constraint_penalty(constraint_values, scale=1.0)`: 标准约束罚函数
-- `boundary_penalty(x, bounds, scale=1.0)`: 边界惩罚
-- `stagnation_penalty(generation, last_improvement_gen, scale=0.01)`: 停滞惩罚
+```python
+class DiversityBias(AlgorithmicBias):
+    def __init__(self, weight: float = 0.1, metric: str = 'euclidean')
+```
+促进种群多样性，避免早熟收敛。
+
+#### ConvergenceBias
+
+```python
+class ConvergenceBias(AlgorithmicBias):
+    def __init__(self, weight: float = 0.1, early_gen: int = 10, late_gen: int = 50)
+```
+根据迭代阶段调整收敛倾向。
+
+#### ExplorationBias
+
+```python
+class ExplorationBias(AlgorithmicBias):
+    def __init__(self, weight: float = 0.1, stagnation_threshold: int = 20)
+```
+检测停滞并增加探索倾向。
+
+#### PrecisionBias
+
+```python
+class PrecisionBias(AlgorithmicBias):
+    def __init__(self, weight: float = 0.1, precision_radius: float = 0.1)
+    def add_good_solution(self, x: np.ndarray)
+```
+在好解周围进行精细搜索。
+
+### 业务偏置类
+
+#### ConstraintBias
+
+```python
+class ConstraintBias(DomainBias):
+    def __init__(self, weight: float = 1.0)
+    def add_hard_constraint(self, constraint_func)
+    def add_soft_constraint(self, constraint_func)
+    def add_preferred_constraint(self, constraint_func)
+```
+处理各种类型的约束（硬约束、软约束、偏好约束）。
+
+#### PreferenceBias
+
+```python
+class PreferenceBias(DomainBias):
+    def __init__(self, weight: float = 0.5)
+    def set_preference(self, name: str, direction: str, weight: float = 1.0)
+```
+体现业务偏好和目标。
+
+#### ObjectiveBias
+
+```python
+class ObjectiveBias(DomainBias):
+    def __init__(self, weight: float = 1.0)
+    def set_target(self, name: str, target_value: float, direction: str = 'minimize')
+```
+引导向理想目标方向。
+
+### 模板系统
+
+#### create_bias_manager_from_template
+
+```python
+def create_bias_manager_from_template(template_name: str, customizations: Dict = None) -> UniversalBiasManager
+```
+
+**可用模板：**
+- `'basic_engineering'` - 基础工程设计
+- `'financial_optimization'` - 金融优化
+- `'machine_learning'` - 机器学习
+
+### 便捷创建函数
+
+```python
+def create_engineering_bias(constraints: List = None, preferences: List = None,
+                           safety_factors: Dict[str, float] = None) -> UniversalBiasManager
+
+def create_ml_bias(accuracy_weight: float = 5.0, time_limit: float = 3600,
+                   memory_limit: float = 8.0) -> UniversalBiasManager
+
+def create_financial_bias(max_risk: float = 0.15, max_sector_exposure: float = 0.3,
+                         target_return: float = 0.12) -> UniversalBiasManager
+```
 
 ## 求解器
 
@@ -337,7 +448,7 @@ best_value = result['pareto_solutions']['objectives'][0]
 ### 2. 约束优化
 
 ```python
-from utils.bias import create_standard_bias
+from utils.bias_v2 import UniversalBiasManager, ConstraintBias
 
 # 创建带约束的问题
 problem = ConstrainedProblem()
@@ -345,7 +456,14 @@ problem = ConstrainedProblem()
 # 启用约束处理
 solver = BlackBoxSolverNSGAII(problem)
 solver.enable_bias = True
-solver.bias_module = create_standard_bias(problem, penalty_weight=5.0)
+
+# 创建偏置管理器
+bias_manager = UniversalBiasManager()
+constraint_bias = ConstraintBias(weight=5.0)
+constraint_bias.add_hard_constraint(lambda x: max(0, problem.evaluate_constraints(x)))
+bias_manager.domain_manager.add_bias(constraint_bias)
+
+solver.bias_manager = bias_manager
 
 result = solver.run()
 ```

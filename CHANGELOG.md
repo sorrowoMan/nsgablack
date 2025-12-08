@@ -1,5 +1,52 @@
 # 更新日志
 
+所有重要的项目变更都会记录在此文件中。
+
+格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
+项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [2.1.0] - 2025-12-07
+
+### 🎉 重大变更 - 偏置系统重构
+
+#### 📦 模块化分离
+- **偏置库分离**: 成功将偏置库从单一大文件分离为专门的模块化架构
+- **双重架构**: 引入算法偏置(Algorithmic Bias)和业务偏置(Domain Bias)的分离设计
+- **解决导航问题**: 响应用户反馈"翻起来太麻烦"，现在相关功能集中管理
+
+#### 🆕 新增文件
+- `utils/bias_base.py` - 基础类定义 (BaseBias, AlgorithmicBias, DomainBias, OptimizationContext)
+- `utils/bias_library_algorithmic.py` - 算法偏置库 (641行)
+- `utils/bias_library_domain.py` - 业务偏置库 (892行)
+- `utils/bias_v2.py` - 重构的主要接口和管理器 (519行)
+
+#### 🚀 新功能
+- **算法偏置类型**: DiversityBias, ConvergenceBias, ExplorationBias, PrecisionBias, AdaptiveDiversityBias, MemoryGuidedBias等
+- **业务偏置类型**: ConstraintBias, PreferenceBias, ObjectiveBias, EngineeringDesignBias, FinancialBias, MLHyperparameterBias等
+- **模板系统**: 预定义配置模板 (basic_engineering, financial_optimization, machine_learning)
+- **便捷函数**: 快速创建特定领域偏置管理器
+- **动态权重调整**: 根据优化状态自动调整偏置权重
+- **配置管理**: 支持偏置配置的保存和加载
+
+#### ✅ 改进
+- **导航便利性**: 算法偏置和业务偏置分别管理，便于查找和修改
+- **模块化设计**: 每个模块职责单一，支持插件式扩展
+- **向后兼容**: 保持原有API接口，现有代码无需修改
+
+#### 📚 文档更新
+- 更新 README.md - 新偏置系统使用示例
+- 重写 API_REFERENCE.md - 偏置系统v2.0完整文档
+- 更新 QUICKSTART.md - 快速入门指南
+- 创建 `examples/bias_v2_simple_example.py` - 新系统使用示例
+- 创建 `test_bias_split.py` - 功能测试脚本
+- 创建 `BIAS_SPLIT_SUMMARY.md` - 完成总结文档
+
+#### 🧪 测试验证
+- 所有导入功能正常工作
+- 偏置计算功能验证通过
+- 创建并运行了完整的示例程序
+- 确认向后兼容性保持
+
 ## [v1.0.0] - 2024-12-07
 
 ### 🎉 主要更新

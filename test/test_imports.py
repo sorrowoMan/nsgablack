@@ -22,7 +22,7 @@ try:
     from core.diversity import DiversityAwareInitializerBlackBox
     from core.convergence import log_and_maybe_evaluate_convergence
     from utils.headless import run_headless_single_objective
-    from utils.bias import BiasModule
+    from bias import BiasModule
     print("[OK] Relative imports successful")
 except ImportError as e:
     print(f"[FAIL] Relative import failed: {e}")
@@ -43,7 +43,7 @@ sys.path.insert(0, current_dir)
 try:
     from core.base import BlackBoxProblem
     from core.solver import BlackBoxSolverNSGAII
-    from utils.bias import BiasModule
+    from bias import BiasModule
     from solvers.nsga2 import BlackBoxSolverNSGAII
     print("[OK] Examples directory import successful")
 except ImportError as e:

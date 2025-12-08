@@ -74,7 +74,7 @@ print("Testing example-style imports...")
 try:
     from core.base import BlackBoxProblem
     from core.solver import BlackBoxSolverNSGAII
-    from utils.bias import BiasModule
+    from bias import BiasModule
     from solvers.nsga2 import BlackBoxSolverNSGAII
     print("Example-style imports successful")
 except ImportError as e:
