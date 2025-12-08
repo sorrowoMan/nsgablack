@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.base import BlackBoxProblem
 from core.solver import BlackBoxSolverNSGAII
-from utils.bias import BiasModule, create_standard_bias
+from bias import BiasModule, create_standard_bias
 
 
 # ==================== 示例 1: 基础使用 ====================

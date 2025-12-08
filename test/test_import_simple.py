@@ -25,7 +25,7 @@ print("Imported BlackBoxProblem")
 from core.solver import BlackBoxSolverNSGAII
 print("Imported BlackBoxSolverNSGAII")
 
-from utils.bias import BiasModule
+from bias import BiasModule
 print("Imported BiasModule")
 
 from solvers.nsga2 import BlackBoxSolverNSGAII as NSGA2

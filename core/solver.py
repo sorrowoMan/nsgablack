@@ -24,7 +24,7 @@ except ImportError:
     from core.diversity import DiversityAwareInitializerBlackBox
     from core.elite import AdvancedEliteRetention
     from utils.visualization import SolverVisualizationMixin
-    from utils.bias import BiasModule
+    from bias import BiasModule
     try:
         from utils.numba_helpers import fast_is_dominated, NUMBA_AVAILABLE
     except Exception:

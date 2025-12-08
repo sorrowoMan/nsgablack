@@ -20,19 +20,20 @@ pip install numba joblib tqdm
 
 ```bash
 cd nsgablack
-python examples/bias_example.py
+python examples/bias_v2_example.py
 ```
 
 您应该看到类似这样的输出：
 
 ```
 ============================================================
-示例 1: 基础使用 - 标准 bias 配置
+偏置系统 v2.0 示例 - 双重架构演示
 ============================================================
-[进度] 第10代 | 拥挤度距离: 0.003532 | 最优解: [-0.210514,  0.095997]
+[OK] 创建偏置管理器成功
+[OK] 添加算法偏置: 多样性偏置 (weight=0.2)
+[OK] 添加业务偏置: 约束偏置 (weight=1.5)
+[OK] 计算偏置值: 0.0000
 ...
-最优解: [-0.33908839  1.30004826]
-最优值: [1.78478631]
 ```
 
 ## 第三步：创建您自己的优化问题
@@ -106,13 +107,23 @@ class ConstrainedProblem(BlackBoxProblem):
             1 - x[0]          # 约束2
         ])
 
-# 使用偏置模块处理约束
-from utils.bias import create_standard_bias
+# 使用偏置系统 v2.0 处理约束
+from utils.bias_v2 import UniversalBiasManager, ConstraintBias
 
 problem = ConstrainedProblem()
 solver = BlackBoxSolverNSGAII(problem)
 solver.enable_bias = True
-solver.bias_module = create_standard_bias(problem, penalty_weight=10.0)
+
+# 创建约束偏置
+bias_manager = UniversalBiasManager()
+constraint_bias = ConstraintBias(weight=10.0)
+
+# 添加约束函数
+constraint_bias.add_hard_constraint(lambda x: max(0, 3 - x[0] - x[1]))
+constraint_bias.add_hard_constraint(lambda x: max(0, 1 - x[0]))
+
+bias_manager.domain_manager.add_bias(constraint_bias)
+solver.bias_manager = bias_manager
 
 result = solver.run()
 ```
@@ -182,7 +193,7 @@ print(f"使用代理模型，仅用 {result['real_eval_count']} 次真实评估"
 ### 自定义偏置函数
 
 ```python
-from utils.bias import BiasModule
+from utils.bias_v2 import UniversalBiasManager, PreferenceBias, PrecisionBias
 
 class CustomProblem(BlackBoxProblem):
     def __init__(self):
@@ -193,19 +204,22 @@ class CustomProblem(BlackBoxProblem):
         return 100 * (x[1] - x[0]**2)**2 + (1 - x[0])**2
 
 problem = CustomProblem()
-bias = BiasModule()
 
-# 添加自定义奖励：奖励接近已知最优点的解
-def proximity_to_optimal(x):
-    optimal = np.array([1.0, 1.0])
-    distance = np.linalg.norm(x - optimal)
-    return np.exp(-distance)  # 距离越近，奖励越大
+# 创建偏置管理器
+bias_manager = UniversalBiasManager()
 
-bias.add_reward(proximity_to_optimal, weight=0.1, name="接近最优")
+# 添加算法偏置：精度偏置，在已知好解附近搜索
+precision_bias = PrecisionBias(weight=0.2, precision_radius=0.5)
+precision_bias.add_good_solution(np.array([1.0, 1.0]))  # 已知的最优解
+bias_manager.algorithmic_manager.add_bias(precision_bias)
 
+# 添加业务偏置：偏好偏置，引导向特定目标
+preference_bias = PreferenceBias(weight=1.0)
+preference_bias.set_preference('distance_to_optimal', 'minimize', weight=2.0)
+bias_manager.domain_manager.add_bias(preference_bias)
 solver = BlackBoxSolverNSGAII(problem)
 solver.enable_bias = True
-solver.bias_module = bias
+solver.bias_manager = bias_manager
 
 result = solver.run()
 ```
@@ -327,7 +341,13 @@ class PortfolioOptimization(BlackBoxProblem):
 3. **约束违反**
    ```python
    # 增加约束惩罚权重
-   solver.bias_module = create_standard_bias(problem, penalty_weight=10.0)
+   from utils.bias_v2 import UniversalBiasManager, ConstraintBias
+
+   bias_manager = UniversalBiasManager()
+   constraint_bias = ConstraintBias(weight=10.0)
+   # 添加问题的约束...
+   bias_manager.domain_manager.add_bias(constraint_bias)
+   solver.bias_manager = bias_manager
    ```
 
 ### 性能监控

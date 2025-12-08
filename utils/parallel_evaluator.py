@@ -22,7 +22,7 @@ try:
 except ImportError:
     # 当作为脚本运行时使用绝对导入
     from core.base import BlackBoxProblem
-    from utils.bias import BiasModule
+    from bias import BiasModule
 
 # 类型定义
 Backend = Literal["process", "thread", "ray", "joblib"]

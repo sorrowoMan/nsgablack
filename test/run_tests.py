@@ -18,7 +18,7 @@ try:
     from core.solver import BlackBoxSolverNSGAII
     from core.problems import SphereBlackBox
     from utils.visualization import SolverVisualizationMixin
-    from utils.bias import BiasModule
+    from bias import BiasModule
     from solvers.nsga2 import BlackBoxSolverNSGAII as SolverNSGAII
     print("[OK] All imports successful")
 except ImportError as e:
@@ -36,7 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath('__file__')))
 
 from core.base import BlackBoxProblem
 from core.solver import BlackBoxSolverNSGAII
-from utils.bias import BiasModule
+from bias import BiasModule
 from solvers.nsga2 import BlackBoxSolverNSGAII
 print("[OK] Example imports successful")
 """)

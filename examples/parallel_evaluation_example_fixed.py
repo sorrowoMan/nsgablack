@@ -25,7 +25,7 @@ from core.base import BlackBoxProblem
 from core.solver import BlackBoxSolverNSGAII
 from utils.parallel_evaluator import ParallelEvaluator, SmartEvaluatorSelector
 from utils.solver_extensions import integrate_parallel_evaluation, create_parallel_solver
-from utils.bias import create_standard_bias
+from bias import create_standard_bias
 
 # 延迟导入辅助函数
 def safe_imports():
