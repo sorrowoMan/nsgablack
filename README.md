@@ -24,6 +24,7 @@
   - [5. 🎲 蒙特卡洛优化](#5-🎲-蒙特卡洛优化)
   - [6. 🔍 变邻域搜索 (VNS)](#6-🔍-变邻域搜索-vns)
   - [7. 🧠 机器学习引导的优化](#7-🧠-机器学习引导的优化)
+- [8. 🔵 贝叶斯优化](#8-贝叶斯优化)
 - [📁 项目结构](#-项目结构)
 - [🛠️ 安装依赖](#️-安装依赖)
 - [📊 性能基准](#-性能基准)
@@ -49,6 +50,9 @@ python examples/bias_v2_simple_example.py
 
 # 🤖 代理模型辅助优化
 python examples/surrogate_example.py
+
+# 🔵 贝叶斯优化 (新增！)
+python examples/bayesian_optimization_example.py
 
 # 🎲 蒙特卡洛优化
 python examples/monte_carlo_example.py
@@ -109,7 +113,36 @@ print(f"约束值: {problem.evaluate_constraints(best_solution)}")
 
 ## ✨ 核心功能
 
-### 1. 🌐 并行种群评估 ⚡
+### 1. 🔵 贝叶斯优化 ⭐
+
+**专为昂贵黑箱函数设计的智能优化方法**，通过高斯过程模型和获取函数，实现样本高效的全局搜索。
+
+#### 🎯 核心优势
+
+- **超高样本效率**：仅需10-100次评估即可找到高质量解
+- **不确定性量化**：明确知道哪里需要更多探索
+- **理论保证**：有收敛性理论支持
+- **灵活使用**：独立优化、偏置引导、混合策略
+
+#### 💻 快速开始
+
+```python
+from solvers.bayesian_optimizer import BayesianOptimizer
+
+# 创建贝叶斯优化器
+bo = BayesianOptimizer(acquisition='ei', kernel='matern')
+
+# 运行优化
+result = bo.optimize(
+    objective_func=expensive_function,
+    bounds=[(-5, 5), (-5, 5)],
+    budget=50
+)
+
+print(f"最优值: {result['best_y']:.6f}")
+```
+
+### 2. 🌐 并行种群评估 ⚡
 
 **专为昂贵函数优化的高性能并行引擎**，支持多种并行后端，显著提升优化效率。
 
@@ -245,7 +278,7 @@ plt.show()
 
 ---
 
-### 3. 🤖 代理模型辅助优化
+### 3. 🎯 多目标优化 (NSGA-II)
 
 **大幅减少昂贵评估次数的智能优化策略**，用机器学习模型近似目标函数。
 
@@ -791,6 +824,8 @@ nsgablack/
 ├── 📂 solvers/                  # 专门求解器
 │   ├── nsga2.py                 # NSGA-II 实现
 │   ├── surrogate.py             # 代理模型辅助优化
+│   ├── bayesian_optimizer.py     # 贝叶斯优化器 ⭐
+│   ├── hybrid_bo.py              # 混合贝叶斯策略 ⭐
 │   ├── monte_carlo.py           # 蒙特卡洛方法
 │   ├── vns.py                   # 变邻域搜索
 │   └── parallel_optimizer.py    # 并行优化器
@@ -824,6 +859,7 @@ nsgablack/
 │   ├── bias_v2_simple_example.py     # 偏置系统 v2.0
 │   ├── parallel_evaluation_example.py  # 并行评估
 │   ├── surrogate_example.py            # 代理模型
+│   ├── bayesian_optimization_example.py  # 贝叶斯优化 ⭐
 │   ├── monte_carlo_example.py          # 蒙特卡洛
 │   ├── vns_example.py                  # 变邻域搜索
 │   └── ml_guided_example.py            # ML引导优化
