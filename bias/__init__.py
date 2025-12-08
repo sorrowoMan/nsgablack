@@ -53,11 +53,46 @@ from .bias_v2 import (
 
 # 导入偏置库（可选导入）
 try:
-    from .bias_library_algorithmic import ALGORITHMIC_BIAS_LIBRARY
-    from .bias_library_domain import DOMAIN_BIAS_LIBRARY
+    from .bias_library_algorithmic import (
+        ALGORITHMIC_BIAS_LIBRARY,
+        DiversityBias,
+        ConvergenceBias,
+        ExplorationBias,
+        PrecisionBias,
+        AdaptiveDiversityBias,
+        MemoryGuidedBias,
+        GradientApproximationBias,
+        AdaptiveConvergenceBias,
+        PopulationDensityBias,
+        PatternBasedBias,
+        TemperatureControlBias
+    )
+    from .bias_library_domain import (
+        DOMAIN_BIAS_LIBRARY,
+        ConstraintBias,
+        PreferenceBias,
+        ObjectiveBias,
+        EngineeringDesignBias,
+        FinancialBias,
+        MLHyperparameterBias,
+        SupplyChainBias,
+        SchedulingBias,
+        PortfolioBias,
+        EnergyOptimizationBias,
+        HealthcareBias,
+        RoboticsBias
+    )
     _HAS_BIAS_LIBRARIES = True
 except ImportError:
     _HAS_BIAS_LIBRARIES = False
+    # 如果导入失败，创建空的类以避免错误
+    DiversityBias = None
+    ConvergenceBias = None
+    ExplorationBias = None
+    PrecisionBias = None
+    ConstraintBias = None
+    PreferenceBias = None
+    ObjectiveBias = None
 
 # 版本信息
 __version__ = "2.0.0"
@@ -86,9 +121,76 @@ __all__ = [
     # "clear_all_caches",
 ]
 
+# 导入局部优化偏置
+try:
+    from .bias_local_optimization import (
+        GradientDescentBias, NewtonMethodBias, LineSearchBias,
+        TrustRegionBias, NelderMeadBias, QuasiNewtonBias,
+        create_gradient_descent_suite, create_newton_suite,
+        create_hybrid_local_suite, create_derivative_free_suite
+    )
+    _HAS_LOCAL_OPTIMIZATION = True
+    __all__.extend([
+        "GradientDescentBias", "NewtonMethodBias", "LineSearchBias",
+        "TrustRegionBias", "NelderMeadBias", "QuasiNewtonBias",
+        "create_gradient_descent_suite", "create_newton_suite",
+        "create_hybrid_local_suite", "create_derivative_free_suite"
+    ])
+except ImportError:
+    _HAS_LOCAL_OPTIMIZATION = False
+
+# 导入贝叶斯偏置
+try:
+    from .bias_bayesian import (
+        BayesianGuidanceBias,
+        BayesianExplorationBias,
+        BayesianConvergenceBias,
+        create_bayesian_guidance_bias,
+        create_bayesian_exploration_bias,
+        create_bayesian_convergence_bias,
+        create_bayesian_suite
+    )
+    _HAS_BAYESIAN_BIAS = True
+    __all__.extend([
+        "BayesianGuidanceBias",
+        "BayesianExplorationBias",
+        "BayesianConvergenceBias",
+        "create_bayesian_guidance_bias",
+        "create_bayesian_exploration_bias",
+        "create_bayesian_convergence_bias",
+        "create_bayesian_suite"
+    ])
+except ImportError:
+    _HAS_BAYESIAN_BIAS = False
+
 # 如果有偏置库，也导出
 if _HAS_BIAS_LIBRARIES:
     __all__.extend([
         "ALGORITHMIC_BIAS_LIBRARY",
-        "DOMAIN_BIAS_LIBRARY"
+        "DOMAIN_BIAS_LIBRARY",
+        # 算法偏置
+        "DiversityBias",
+        "ConvergenceBias",
+        "ExplorationBias",
+        "PrecisionBias",
+        "AdaptiveDiversityBias",
+        "MemoryGuidedBias",
+        "GradientApproximationBias",
+        "AdaptiveConvergenceBias",
+        "PopulationDensityBias",
+        "PatternBasedBias",
+        "TemperatureControlBias",
+        # 业务偏置
+        "ConstraintBias",
+        "PreferenceBias",
+        "ObjectiveBias",
+        "EngineeringDesignBias",
+        "FinancialBias",
+        "MLHyperparameterBias",
+        "SupplyChainBias",
+        "SchedulingBias",
+        "PortfolioBias",
+        "EnergyOptimizationBias",
+        "HealthcareBias",
+        "RoboticsBias"
     ])
