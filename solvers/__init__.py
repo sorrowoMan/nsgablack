@@ -8,6 +8,14 @@ from .monte_carlo import (
     optimize_with_surrogate_mc,
 )
 from .surrogate import SurrogateAssistedNSGAII, run_surrogate_assisted
+from .nsga2 import BlackBoxSolverNSGAII
+from .vns import BlackBoxSolverVNS
+from .moead import BlackBoxSolverMOEAD
+from .multi_agent import (
+    MultiAgentBlackBoxSolver,
+    AgentRole,
+    AgentPopulation
+)
 
 __all__ = [
     'StochasticProblem',
@@ -19,4 +27,10 @@ __all__ = [
     'optimize_with_surrogate_mc',
     'SurrogateAssistedNSGAII',
     'run_surrogate_assisted',
+    'BlackBoxSolverNSGAII',
+    'BlackBoxSolverVNS',
+    'BlackBoxSolverMOEAD',
+    'MultiAgentBlackBoxSolver',
+    'AgentRole',
+    'AgentPopulation',
 ]

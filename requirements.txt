@@ -1,0 +1,16 @@
+# Core dependencies
+numpy>=1.20.0
+scipy>=1.7.0
+scikit-learn>=1.0.0
+
+# Visualization
+matplotlib>=3.5.0
+
+# Parallel processing and model persistence
+joblib>=1.1.0
+
+# Bayesian optimization
+skopt>=0.9.0
+
+# Optional: Distributed computing (uncomment if needed)
+# ray>=1.10.0

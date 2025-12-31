@@ -18,7 +18,7 @@ import numpy as np
 try:
     # 当作为包导入时使用相对导入
     from ..core.base import BlackBoxProblem
-    from ..utils.bias import BiasModule
+    from ..bias import BiasModule
 except ImportError:
     # 当作为脚本运行时使用绝对导入
     from core.base import BlackBoxProblem

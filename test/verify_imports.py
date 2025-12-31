@@ -39,9 +39,9 @@ sys.path.insert(0, r'{os.path.dirname(os.path.abspath(__file__))}')
 # Test 1: Test basic imports
 test1_code = """
 try:
-    from core.solver import BlackBoxSolverNSGAII
-    from utils.visualization import SolverVisualizationMixin
-    from solvers.nsga2 import BlackBoxSolverNSGAII as SolverNSGA2
+    from .core.solver import BlackBoxSolverNSGAII
+    from .utils.visualization import SolverVisualizationMixin
+    from .solvers.nsga2 import BlackBoxSolverNSGAII as SolverNSGA2
     print("Basic imports successful")
 except ImportError as e:
     print(f"Import error: {{e}}")
@@ -72,10 +72,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # This should work for examples
 print("Testing example-style imports...")
 try:
-    from core.base import BlackBoxProblem
-    from core.solver import BlackBoxSolverNSGAII
+    from .core.base import BlackBoxProblem
+    from .core.solver import BlackBoxSolverNSGAII
     from bias import BiasModule
-    from solvers.nsga2 import BlackBoxSolverNSGAII
+    from .solvers.nsga2 import BlackBoxSolverNSGAII
     print("Example-style imports successful")
 except ImportError as e:
     print(f"Example import error: {{e}}")

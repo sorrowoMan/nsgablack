@@ -3,12 +3,18 @@ try:
     # 当作为包导入时使用相对导入
     from ..core.base import BlackBoxProblem
     from ..solvers.nsga2 import BlackBoxSolverNSGAII
-    from ..core.convergence import log_and_maybe_evaluate_convergence
+    try:
+        from ..core.convergence import log_and_maybe_evaluate_convergence
+    except ImportError:
+        log_and_maybe_evaluate_convergence = None
 except ImportError:
     # 当作为脚本运行时使用绝对导入
     from core.base import BlackBoxProblem
     from solvers.nsga2 import BlackBoxSolverNSGAII
-    from core.convergence import log_and_maybe_evaluate_convergence
+    try:
+        from core.convergence import log_and_maybe_evaluate_convergence
+    except ImportError:
+        log_and_maybe_evaluate_convergence = None
 
 
 class CallableSingleObjectiveProblem(BlackBoxProblem):

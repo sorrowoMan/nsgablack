@@ -17,7 +17,7 @@ from .convergence import (
     log_and_maybe_evaluate_convergence,
 )
 from .diversity import DiversityAwareInitializerBlackBox
-from .elite import AdvancedEliteRetention
+from .elite import AdvancedEliteRetention, IntelligentHistoryManager
 
 __all__ = [
     'BlackBoxProblem',
@@ -36,4 +36,5 @@ __all__ = [
     'log_and_maybe_evaluate_convergence',
     'DiversityAwareInitializerBlackBox',
     'AdvancedEliteRetention',
+    'IntelligentHistoryManager',
 ]

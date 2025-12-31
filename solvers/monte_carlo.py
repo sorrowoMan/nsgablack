@@ -18,7 +18,18 @@ try:
     from ..core.base import BlackBoxProblem
 except ImportError:
     # 当作为脚本运行时使用绝对导入
-    from core.base import BlackBoxProblem
+    try:
+        from nsgablack.core.base import BlackBoxProblem
+    except ImportError:
+        # 如果nsgablack不在sys.path，尝试直接从core导入
+        import sys
+        import os
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(current_dir)
+        core_dir = os.path.join(parent_dir, 'core')
+        if core_dir not in sys.path:
+            sys.path.insert(0, core_dir)
+        from base import BlackBoxProblem
 
 
 @dataclass

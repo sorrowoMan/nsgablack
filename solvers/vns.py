@@ -6,7 +6,16 @@ try:
     from ..core.base import BlackBoxProblem
 except ImportError:
     # 当作为脚本运行时使用绝对导入
-    from core.base import BlackBoxProblem
+    try:
+        from nsgablack.core.base import BlackBoxProblem
+    except ImportError:
+        # 直接从core目录导入
+        import sys
+        import os
+        core_path = os.path.join(os.path.dirname(__file__), '..', 'core')
+        if core_path not in sys.path:
+            sys.path.insert(0, core_path)
+        from base import BlackBoxProblem
 
 
 class BlackBoxSolverVNS:

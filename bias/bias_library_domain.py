@@ -5,7 +5,7 @@
 这个库提供了各个领域的专业偏置实现，体现了业务知识和行业最佳实践。
 """
 
-from .bias_base import DomainBias, BaseBias, OptimizationContext
+from .core.base import DomainBias, BiasBase, OptimizationContext
 import numpy as np
 from typing import Dict, Any, List, Callable
 from abc import ABC, abstractmethod

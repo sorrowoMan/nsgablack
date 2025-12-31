@@ -37,7 +37,7 @@ class EngineeringDesignProblem(BlackBoxProblem):
         super().__init__(
             name="CantileverBeam",
             dimension=3,
-            bounds={0: (0.5, 2.0), 1: (0.05, 0.3), 2: (0.05, 0.5)}  # 使用索引而不是名称
+            bounds={'x0': (0.5, 2.0), 'x1': (0.05, 0.3), 'x2': (0.05, 0.5)}  # 使用变量名称
         )
         # 材料属性
         self.E = 200e9  # 弹性模量 (Pa)
@@ -94,7 +94,7 @@ class PortfolioOptimizationProblem(BlackBoxProblem):
         super().__init__(
             name="Portfolio",
             dimension=5,
-            bounds={i: (0, 1) for i in range(5)}  # 使用索引
+            bounds={f'x{i}': (0, 1) for i in range(5)}  # 使用变量名称
         )
 
     def evaluate(self, x):
@@ -173,8 +173,8 @@ def demo_engineering_design():
 
         # 应用所有偏置
         total_bias = 0
-        for bias in bias_manager.biases:
-            total_bias += bias.apply(x, original_evaluate, context)
+        for bias_name, bias in bias_manager.biases.items():
+            total_bias += bias.compute(x, context)
 
         return base_value + total_bias
 
@@ -257,8 +257,8 @@ def demo_portfolio_optimization():
 
         # 应用偏置
         total_bias = 0
-        for bias in bias_manager.biases:
-            total_bias += bias.apply(x, original_evaluate, context)
+        for bias_name, bias in bias_manager.biases.items():
+            total_bias += bias.compute(x, context)
 
         return base_value + total_bias
 
@@ -332,8 +332,8 @@ def compare_with_without_bias():
         )
 
         total_bias = 0
-        for bias in bias_manager.biases:
-            total_bias += bias.apply(x, original_evaluate, context)
+        for bias_name, bias in bias_manager.biases.items():
+            total_bias += bias.compute(x, context)
 
         return base_value + total_bias
 
