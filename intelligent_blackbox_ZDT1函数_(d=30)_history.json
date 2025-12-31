@@ -1,0 +1,21 @@
+{
+  "full_history": [
+    {
+      "generation": 0,
+      "best_fitness": 0.39262502873718536,
+      "avg_fitness": 0.39262502873718536,
+      "diversity_metrics": {
+        "population_diversity": 0.41004090093912976,
+        "mutation_range": 0.8
+      }
+    }
+  ],
+  "feature_summary": {
+    "improvement_points": [],
+    "plateau_periods": [],
+    "diversity_trends": [],
+    "convergence_events": []
+  },
+  "elite_archive_count": 6,
+  "diversity_pool_count": 3
+}

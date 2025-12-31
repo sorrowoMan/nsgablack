@@ -182,7 +182,7 @@ def example_vns_with_bias():
     print("示例 5: VNS + Bias")
     print("=" * 60)
 
-    from solvers.vns import BlackBoxSolverVNS
+    from .solvers.vns import BlackBoxSolverVNS
 
     # 定义问题
     class RastriginProblem(BlackBoxProblem):

@@ -5,7 +5,7 @@
 这个库提供了可复用的算法偏置实现，可以在不同问题间共享使用。
 """
 
-from .bias_base import AlgorithmicBias, BaseBias, OptimizationContext
+from .core.base import AlgorithmicBias, BiasBase, OptimizationContext
 import numpy as np
 from typing import Dict, Any, List, Callable
 from abc import ABC, abstractmethod
@@ -116,7 +116,7 @@ class DiversityBias(AlgorithmicBias):
         self.metric = metric
 
     def compute(self, x: np.ndarray, context: OptimizationContext) -> float:
-        if not context.population:
+        if len(context.population) == 0:
             return 0.0
 
         # 计算与种群中其他个体的最小距离
@@ -228,7 +228,7 @@ class AdaptiveDiversityBias(AlgorithmicBias):
         self.diversity_history = []
 
     def compute(self, x: np.ndarray, context: OptimizationContext) -> float:
-        if not context.population:
+        if len(context.population) == 0:
             return 0.0
 
         # 计算当前多样性
@@ -443,7 +443,7 @@ class PopulationDensityBias(AlgorithmicBias):
         self.density_history = []
 
     def compute(self, x: np.ndarray, context: OptimizationContext) -> float:
-        if not context.population:
+        if len(context.population) == 0:
             return 0.0
 
         # 计算个体周围的密度

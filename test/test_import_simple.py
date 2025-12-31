@@ -19,16 +19,16 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Try importing like an example would
-from core.base import BlackBoxProblem
+from .core.base import BlackBoxProblem
 print("Imported BlackBoxProblem")
 
-from core.solver import BlackBoxSolverNSGAII
+from .core.solver import BlackBoxSolverNSGAII
 print("Imported BlackBoxSolverNSGAII")
 
 from bias import BiasModule
 print("Imported BiasModule")
 
-from solvers.nsga2 import BlackBoxSolverNSGAII as NSGA2
+from .solvers.nsga2 import BlackBoxSolverNSGAII as NSGA2
 print("Imported NSGA2 from solvers")
 
 print("All imports successful!")

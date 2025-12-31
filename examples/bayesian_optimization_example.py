@@ -22,7 +22,14 @@ from bias import (
     BayesianExplorationBias,
     OptimizationContext
 )
-from examples.simple_bias_minimal import SimpleNSGAII
+try:
+    from examples.simple_bias_minimal import SimpleNSGAII
+except ImportError:
+    # Fallback if running as script
+    import sys
+    import os
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    from simple_bias_minimal import SimpleNSGAII
 
 
 class ExpensiveFunction(BlackBoxProblem):
@@ -289,7 +296,14 @@ def compare_methods():
 
     # 方法2：BO偏置引导的NSGA-II（简化版）
     print("\n2. 标准NSGA-II...")
-    from examples.simple_bias_minimal import SimpleNSGAII
+    try:
+        from examples.simple_bias_minimal import SimpleNSGAII
+    except ImportError:
+        # Fallback if running as script
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+        from simple_bias_minimal import SimpleNSGAII
     solver_nsga = SimpleNSGAII(problem, pop_size=25, max_generations=30)
     nsga_result = solver_nsga.run()
 

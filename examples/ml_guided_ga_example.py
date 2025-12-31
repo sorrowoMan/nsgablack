@@ -326,7 +326,7 @@ def main(argv: Optional[list] = None) -> Dict[str, Any]:
                                           bounds=[problem.bounds[f'x{i}'] for i in range(problem.dimension)],
                                           n_components=3, initial_samples=400, sampling_method='lhs')
 
-    from utils.headless import CallableSingleObjectiveProblem
+    from .utils.headless import CallableSingleObjectiveProblem
     prob_red = CallableSingleObjectiveProblem(reduced['reduced_objective'], reduced['reduced_bounds'], name='PCA_reduced_demo')
     solver = BlackBoxSolverNSGAII(prob_red)
     solver.pop_size = args.pop_size

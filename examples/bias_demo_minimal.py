@@ -15,6 +15,7 @@ from bias import (
     AlgorithmicBiasManager,
     DiversityBias,
     ConvergenceBias,
+    GradientDescentBias,
     OptimizationContext
 )
 
@@ -264,7 +265,7 @@ def demo_gradient_descent_bias():
             adaptive_lr=True
         )
     )
-
+   
     # 包装评估函数
     original_evaluate = problem.evaluate
 
@@ -312,7 +313,7 @@ if __name__ == "__main__":
     # 运行演示
     result1 = demo_no_bias()
     result2, true_obj2 = demo_with_bias()
-    # result3, true_obj3 = demo_gradient_descent_bias()  # 暂时注释
+    result3, true_obj3 = demo_gradient_descent_bias()  # 暂时注释
 
     # 比较
     print("\n" + "=" * 60)
@@ -324,11 +325,11 @@ if __name__ == "__main__":
 
     error1 = np.linalg.norm(best1 - np.ones(2))
     error2 = np.linalg.norm(result2['pareto_solutions']['individuals'][0] - np.ones(2))
-    # error3 = np.linalg.norm(result3['pareto_solutions']['individuals'][0] - np.ones(2))
+    error3 = np.linalg.norm(result3['pareto_solutions']['individuals'][0] - np.ones(2))
 
     print(f"\n方法对比：")
     print(f"  无偏置:   误差 = {error1:.6f}")
     print(f"  多样性偏置: 误差 = {error2:.6f}")
-    # print(f"  梯度偏置:  误差 = {error3:.6f}")
+    print(f"  梯度偏置:  误差 = {error3:.6f}")
 
     print("\n* 演示完成！偏置系统成功运行。")

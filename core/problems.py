@@ -41,6 +41,86 @@ class ZDT1BlackBox(BlackBoxProblem):
         return 2
 
 
+class ZDT3BlackBox(BlackBoxProblem):
+    """ZDT3问题 - 具有断开的Pareto前沿"""
+    def __init__(self, dimension=30):
+        super().__init__(f"ZDT3函数 (d={dimension})", dimension)
+        self.bounds = {var: [0, 1] for var in self.variables}
+
+    def evaluate(self, x):
+        if hasattr(x, 'shape') and len(x.shape) > 1:
+            f1 = x[:, 0]
+            g = 1 + 9 * np.sum(x[:, 1:], axis=1) / (self.dimension - 1)
+            h = 1 - np.sqrt(f1 / g) - (f1 / g) * np.sin(10 * np.pi * f1)
+            f2 = g * h
+            return np.column_stack([f1, f2])
+        f1 = x[0]
+        g = 1 + 9 * np.sum(x[1:]) / (self.dimension - 1)
+        h = 1 - np.sqrt(f1 / g) - (f1 / g) * np.sin(10 * np.pi * f1)
+        f2 = g * h
+        return np.array([f1, f2])
+
+    def get_num_objectives(self):
+        return 2
+
+
+class DTLZ2BlackBox(BlackBoxProblem):
+    """DTLZ2问题 - 可扩展的多目标测试问题"""
+    def __init__(self, dimension=12, n_objectives=3):
+        super().__init__(f"DTLZ2函数 (d={dimension}, objectives={n_objectives})", dimension)
+        self.n_objectives = n_objectives
+        self.bounds = {var: [0, 1] for var in self.variables}
+
+    def evaluate(self, x):
+        if hasattr(x, 'shape') and len(x.shape) > 1:
+            # 批量处理
+            k = self.dimension - self.n_objectives + 1
+            g = np.sum((x[:, self.n_objectives-1:] - 0.5) ** 2, axis=1)
+
+            objectives = []
+            for i in range(self.n_objectives):
+                if i == self.n_objectives - 1:
+                    # 最后一个目标
+                    prod = np.ones(x.shape[0])
+                    for j in range(self.n_objectives - 1):
+                        prod *= np.cos(x[:, j] * np.pi / 2)
+                    obj = (1 + g) * (1 - prod)
+                else:
+                    prod = np.ones(x.shape[0])
+                    for j in range(self.n_objectives - 1 - i):
+                        prod *= np.cos(x[:, j] * np.pi / 2)
+                    if i > 0:
+                        prod *= np.sin(x[:, self.n_objectives - 2 - i] * np.pi / 2)
+                    obj = (1 + g) * prod
+                objectives.append(obj)
+            return np.column_stack(objectives)
+        else:
+            # 单个解
+            k = self.dimension - self.n_objectives + 1
+            g = np.sum((x[self.n_objectives-1:] - 0.5) ** 2)
+
+            objectives = []
+            for i in range(self.n_objectives):
+                if i == self.n_objectives - 1:
+                    # 最后一个目标
+                    prod = 1.0
+                    for j in range(self.n_objectives - 1):
+                        prod *= np.cos(x[j] * np.pi / 2)
+                    obj = (1 + g) * (1 - prod)
+                else:
+                    prod = 1.0
+                    for j in range(self.n_objectives - 1 - i):
+                        prod *= np.cos(x[j] * np.pi / 2)
+                    if i > 0:
+                        prod *= np.sin(x[self.n_objectives - 2 - i] * np.pi / 2)
+                    obj = (1 + g) * prod
+                objectives.append(obj)
+            return np.array(objectives)
+
+    def get_num_objectives(self):
+        return self.n_objectives
+
+
 class ExpensiveSimulationBlackBox(BlackBoxProblem):
     def __init__(self, dimension=5):
         super().__init__(f"昂贵仿真 (d={dimension})", dimension)

@@ -5,8 +5,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import time
 import numpy as np
-from core.base import BlackBoxProblem
-from utils.parallel_evaluator import ParallelEvaluator
+from .core.base import BlackBoxProblem
+from .utils.parallel_evaluator import ParallelEvaluator
 
 # 简单测试问题
 class SimpleProblem(BlackBoxProblem):

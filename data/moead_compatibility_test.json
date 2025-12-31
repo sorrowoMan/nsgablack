@@ -1,0 +1,27 @@
+{
+  "timestamp": "2025-12-09 23:35:44",
+  "test_status": "SUCCESS",
+  "using_project_modules": true,
+  "results": {
+    "zdt1_pareto_count": 8,
+    "zdt3_comparison": {
+      "moead": 5,
+      "nsga2": 50,
+      "time_moead": 0.08507370948791504,
+      "time_nsga2": 0.6085922718048096
+    },
+    "dtlz2_pareto_count": 20,
+    "decomposition_methods": {
+      "weighted_sum": {
+        "pareto_count": 5,
+        "generation": 20,
+        "evaluation_count": 630
+      },
+      "tchebycheff": {
+        "pareto_count": 6,
+        "generation": 20,
+        "evaluation_count": 630
+      }
+    }
+  }
+}

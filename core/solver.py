@@ -11,25 +11,75 @@ try:
     from .base import BlackBoxProblem
     from .diversity import DiversityAwareInitializerBlackBox
     from .elite import AdvancedEliteRetention
-    from ..utils.visualization import SolverVisualizationMixin
-    from ..utils.bias import BiasModule
+    # 可选导入
+    try:
+        from ..utils.visualization import SolverVisualizationMixin
+    except ImportError:
+        try:
+            # 从上级目录导入
+            import sys
+            import os
+            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from utils.visualization import SolverVisualizationMixin
+            # 移除添加的路径
+            sys.path.pop(0)
+        except ImportError:
+            class SolverVisualizationMixin:
+                def _init_visualization(self):
+                    pass
+    try:
+        from ..bias import BiasModule
+    except ImportError:
+        try:
+            import sys
+            import os
+            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from bias import BiasModule
+            sys.path.pop(0)
+        except ImportError:
+            BiasModule = None
     try:
         from ..utils.numba_helpers import fast_is_dominated, NUMBA_AVAILABLE
     except Exception:
         fast_is_dominated = None
         NUMBA_AVAILABLE = False
+    try:
+        from ..utils.experiment import ExperimentResult
+    except ImportError:
+        ExperimentResult = None
+    try:
+        from ..utils.representation import RepresentationPipeline
+    except ImportError:
+        RepresentationPipeline = None
 except ImportError:
     # 当作为脚本运行时使用绝对导入
-    from core.base import BlackBoxProblem
-    from core.diversity import DiversityAwareInitializerBlackBox
-    from core.elite import AdvancedEliteRetention
-    from utils.visualization import SolverVisualizationMixin
-    from bias import BiasModule
+    from base import BlackBoxProblem
+    from diversity import DiversityAwareInitializerBlackBox
+    from elite import AdvancedEliteRetention
+    # 可选导入
+    try:
+        from utils.visualization import SolverVisualizationMixin
+    except ImportError:
+        class SolverVisualizationMixin:
+            def _init_visualization(self):
+                pass
+    try:
+        from bias import BiasModule
+    except ImportError:
+        BiasModule = None
     try:
         from utils.numba_helpers import fast_is_dominated, NUMBA_AVAILABLE
     except Exception:
         fast_is_dominated = None
         NUMBA_AVAILABLE = False
+    try:
+        from utils.experiment import ExperimentResult
+    except ImportError:
+        ExperimentResult = None
+    try:
+        from utils.representation import RepresentationPipeline
+    except ImportError:
+        RepresentationPipeline = None
 
 
 class BlackBoxSolverNSGAII(SolverVisualizationMixin):
@@ -43,11 +93,17 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         self.dimension = problem.dimension
         # 约束相关：通过 problem.evaluate_constraints 统一计算违背度
         self.constraints = []  # 保留占位，兼容旧用法
+
+        # Memory management
+        self.memory_optimizer = None
+        self.enable_memory_optimization = True
+        self.temp_data = {}  # For temporary data that can be cleared
         self.constraint_violations = None
         self.var_bounds = problem.bounds
         # 偏向模块（奖函数+罚函数）
         self.bias_module: BiasModule = None
         self.enable_bias = False
+        self.representation_pipeline: RepresentationPipeline = None
         self.pop_size = 80
         self.max_generations = 150
         self.crossover_rate = 0.85
@@ -87,7 +143,8 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
             initial_retention_prob=self.elite_retention_prob,
             min_replace_ratio=0.05,
             max_replace_ratio=0.6,
-            replacement_weights=None
+            replacement_weights=None,
+            enable_intelligent_history=True  # 启用智能历史管理
         )
         self.history_file = f"blackbox_{problem.name.replace(' ', '_')}_history.json"
         self.diversity_initializer.set_history_file(self.history_file)
@@ -197,6 +254,12 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
             self.save_history()
         except Exception:
             pass
+        # 保存智能历史数据
+        try:
+            intelligent_history_file = f"intelligent_{self.history_file}"
+            self.elite_manager.save_intelligent_history(intelligent_history_file)
+        except Exception:
+            pass
 
     def reset(self, event):
         self.stop_algorithm(None)
@@ -294,9 +357,17 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
                 self.constraint_violations[i] = violation
         else:
             self.population = np.zeros((self.pop_size, self.dimension))
-            for i, var in enumerate(self.variables):
-                min_val, max_val = self.var_bounds[var]
-                self.population[:, i] = np.random.uniform(min_val, max_val, self.pop_size)
+            if self.representation_pipeline is not None and self.representation_pipeline.initializer is not None:
+                for i in range(self.pop_size):
+                    context = {
+                        'generation': self.generation,
+                        'bounds': self.var_bounds
+                    }
+                    self.population[i] = self.representation_pipeline.init(self.problem, context)
+            else:
+                for i, var in enumerate(self.variables):
+                    min_val, max_val = self.var_bounds[var]
+                    self.population[:, i] = np.random.uniform(min_val, max_val, self.pop_size)
             self.objectives, self.constraint_violations = self.evaluate_population(self.population)
 
     def is_dominated_vectorized(self, obj_matrix):
@@ -324,6 +395,42 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         return dominated
 
     def non_dominated_sorting(self):
+        """Optimized non-dominated sorting using O(MN²) algorithm"""
+        try:
+            # Import optimized fast non-dominated sort
+            from ..utils.fast_non_dominated_sort import fast_non_dominated_sort_optimized, FastNonDominatedSort
+
+            # Use optimized algorithm
+            fronts, rank = fast_non_dominated_sort_optimized(
+                self.objectives[:self.pop_size],
+                self.constraint_violations[:self.pop_size]
+            )
+
+            # Calculate crowding distance only for the first front (and possibly others if needed)
+            crowding_distance = np.zeros(self.pop_size)
+
+            # Calculate crowding distance for all fronts for better diversity
+            for front in fronts:
+                if len(front) > 1:
+                    front_distances = FastNonDominatedSort.calculate_crowding_distance(
+                        self.objectives[:self.pop_size], front
+                    )
+                    for i, idx in enumerate(front):
+                        if idx < self.pop_size:  # Ensure index is within bounds
+                            crowding_distance[idx] = front_distances[idx]
+
+            # Ensure we have the right number of ranks (handle edge cases)
+            if len(rank) < self.pop_size:
+                rank = np.pad(rank, (0, self.pop_size - len(rank)), 'constant', constant_values=len(fronts))
+
+            return rank[:self.pop_size], crowding_distance[:self.pop_size], fronts
+
+        except ImportError:
+            # Fallback to original implementation if optimized version is not available
+            return self._legacy_non_dominated_sorting()
+
+    def _legacy_non_dominated_sorting(self):
+        """Legacy non-dominated sorting implementation (O(N³) complexity)"""
         pop_size = self.population.shape[0]
         if self.constraint_violations is None:
             constraint_violations = np.zeros(pop_size, dtype=float)
@@ -335,7 +442,8 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         rank = np.zeros(pop_size, dtype=int)
         crowding_distance = np.zeros(pop_size)
         fronts = [[]]
-        # 可行解：经典非支配排序
+
+        # Feasible solutions: classic non-dominated sorting
         feasible_indices = np.where(feasible_mask)[0]
         if feasible_indices.size > 0:
             feasible_objs = self.objectives[feasible_indices]
@@ -344,7 +452,7 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
             fronts[0].extend(first_front_feasible.tolist())
             rank[first_front_feasible] = 0
 
-        # 不可行解：按违背度从小到大给 rank
+        # Infeasible solutions: rank by constraint violation
         infeasible_indices = np.where(infeasible_mask)[0]
         if infeasible_indices.size > 0:
             sorted_infeasible = infeasible_indices[np.argsort(constraint_violations[infeasible_indices])]
@@ -353,7 +461,7 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
                 rank[idx] = current_rank
                 current_rank += 1
 
-        # 拥挤距离只在可行解中计算
+        # Crowding distance calculation for feasible solutions only
         if feasible_indices.size > 0:
             for obj_idx in range(self.num_objectives):
                 sorted_idx = feasible_indices[np.argsort(self.objectives[feasible_indices, obj_idx])]
@@ -361,10 +469,14 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
                     crowding_distance[sorted_idx[0]] = np.inf
                     crowding_distance[sorted_idx[-1]] = np.inf
                     obj_range = self.objectives[sorted_idx[-1], obj_idx] - self.objectives[sorted_idx[0], obj_idx]
-                    if obj_range > 1e-10:
-                        crowding_distance[sorted_idx[1:-1]] += (
-                            self.objectives[sorted_idx[2:], obj_idx] - self.objectives[sorted_idx[:-2], obj_idx]
-                        ) / obj_range
+                    if obj_range > 1e-10 and len(sorted_idx) > 2:
+                        # Safe crowding distance calculation
+                        for i in range(1, len(sorted_idx) - 1):
+                            if i + 1 < len(sorted_idx) and i - 1 >= 0:
+                                crowding_distance[sorted_idx[i]] += (
+                                    self.objectives[sorted_idx[i + 1], obj_idx] -
+                                    self.objectives[sorted_idx[i - 1], obj_idx]
+                                ) / obj_range
         return rank, crowding_distance, fronts
 
     def selection(self):
@@ -402,13 +514,32 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
 
     def mutate(self, offspring):
         pop_size = offspring.shape[0]
-        mutation_mask = np.random.rand(pop_size) < self.mutation_rate
-        mutation = np.random.uniform(-self.mutation_range, self.mutation_range, (pop_size, self.dimension))
-        offspring[mutation_mask] += mutation[mutation_mask]
-        for j, var in enumerate(self.variables):
-            min_val, max_val = self.var_bounds[var]
-            offspring[:, j] = np.clip(offspring[:, j], min_val, max_val)
+        if self.representation_pipeline is not None and self.representation_pipeline.mutator is not None:
+            for i in range(pop_size):
+                context = {
+                    'generation': self.generation,
+                    'bounds': self.var_bounds
+                }
+                offspring[i] = self.representation_pipeline.mutate(offspring[i], context)
+        else:
+            mutation_mask = np.random.rand(pop_size) < self.mutation_rate
+            mutation = np.random.uniform(-self.mutation_range, self.mutation_range, (pop_size, self.dimension))
+            offspring[mutation_mask] += mutation[mutation_mask]
+            for j, var in enumerate(self.variables):
+                min_val, max_val = self.var_bounds[var]
+                offspring[:, j] = np.clip(offspring[:, j], min_val, max_val)
+            if self.representation_pipeline is not None and self.representation_pipeline.repair is not None:
+                for i in range(pop_size):
+                    context = {
+                        'generation': self.generation,
+                        'bounds': self.var_bounds
+                    }
+                    offspring[i] = self.representation_pipeline.repair.repair(offspring[i], context)
         return offspring
+
+    def set_representation_pipeline(self, pipeline):
+        """Attach a representation pipeline for encoding/repair/init/mutation."""
+        self.representation_pipeline = pipeline
 
     def update_pareto_solutions(self):
         if self.objectives is None:
@@ -482,8 +613,10 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
     def _compute_population_diversity(self):
         if self.population is None or len(self.population) < 2:
             return 1.0
-        lows = np.array([self.var_bounds[v][0] for v in self.variables])
-        highs = np.array([self.var_bounds[v][1] for v in self.variables])
+        # 使用 var_bounds 的键，而不是 self.variables，以确保匹配
+        var_keys = list(self.var_bounds.keys())
+        lows = np.array([self.var_bounds[v][0] for v in var_keys])
+        highs = np.array([self.var_bounds[v][1] for v in var_keys])
         span = np.maximum(highs - lows, 1e-12)
         norm_pop = (self.population - lows) / span
         sample_size = min(30, norm_pop.shape[0])
@@ -621,11 +754,14 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
                     sorted_idx = np.argsort(combined_obj[rank_mask, obj_idx])
                     if len(sorted_idx) > 1:
                         obj_range = combined_obj[rank_mask, obj_idx][sorted_idx[-1]] - combined_obj[rank_mask, obj_idx][sorted_idx[0]]
-                        if obj_range > 1e-10:
-                            combined_crowding[rank_mask][sorted_idx[1:-1]] += (
-                                combined_obj[rank_mask, obj_idx][sorted_idx[2:]] -
-                                combined_obj[rank_mask, obj_idx][sorted_idx[:-2]]
-                            ) / obj_range
+                        if obj_range > 1e-10 and len(sorted_idx) > 2:
+                            # Safe crowding distance calculation
+                            rank_indices = np.where(rank_mask)[0]
+                            for i in range(1, len(sorted_idx) - 1):
+                                original_idx = rank_indices[sorted_idx[i]]
+                                prev_obj = combined_obj[rank_mask, obj_idx][sorted_idx[i - 1]]
+                                next_obj = combined_obj[rank_mask, obj_idx][sorted_idx[i + 1]]
+                                combined_crowding[original_idx] += (next_obj - prev_obj) / obj_range
         sorted_indices = np.lexsort((-combined_crowding, combined_rank))
         self.population = combined_pop[sorted_indices[:self.pop_size]]
         self.objectives = combined_obj[sorted_indices[:self.pop_size]]
@@ -639,6 +775,13 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         offspring = self.crossover(parents)
         offspring = self.mutate(offspring)
         offspring_objectives, offspring_violations = self.evaluate_population(offspring)
+
+        # 更新智能历史管理器
+        diversity_metrics = {
+            'population_diversity': self._compute_population_diversity(),
+            'mutation_range': self.mutation_range
+        }
+
         if self.enable_elite_retention and self.pareto_solutions is not None and len(self.pareto_solutions['individuals']) > 0:
             if self.num_objectives == 1:
                 current_best = np.min(self.objectives)
@@ -648,6 +791,12 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
                 self.generation, current_best, self.objectives, self.population
             )
             self.elite_manager.update_history(current_best)
+
+            # 更新智能历史管理器的代际数据
+            self.elite_manager.update_history_with_generation_data(
+                self.generation, self.population, self.objectives, self.var_bounds, diversity_metrics
+            )
+
             if random.random() > elite_retention_prob:
                 elite_indices = np.where(self.non_dominated_sorting()[0] == 0)[0]
                 if len(elite_indices) > 0:
@@ -659,11 +808,27 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
                         replace_count = 0
                     if replace_count > 0:
                         replace_indices = np.random.choice(elite_indices, replace_count, replace=False)
-                        for idx in replace_indices:
-                            new_individual = np.zeros(self.dimension)
-                            for j, var in enumerate(self.variables):
-                                min_val, max_val = self.var_bounds[var]
-                                new_individual[j] = np.random.uniform(min_val, max_val)
+
+                        # 检查是否应该使用智能历史替换
+                        use_historical = self.elite_manager.should_use_historical_replacement(
+                            self.generation, current_best
+                        )
+
+                        for i, idx in enumerate(replace_indices):
+                            if use_historical and i < replace_count // 2:
+                                # 使用智能历史管理器生成替换候选解
+                                historical_candidates = self.elite_manager.get_historical_replacement_candidates(
+                                    self.var_bounds, 1
+                                )
+                                if len(historical_candidates) > 0:
+                                    new_individual = historical_candidates[0]
+                                else:
+                                    # 回退到随机生成
+                                    new_individual = self._generate_random_individual()
+                            else:
+                                # 传统随机生成
+                                new_individual = self._generate_random_individual()
+
                             self.population[idx] = new_individual
                             # 重新评估被替换个体
                             obj, vio = self._evaluate_individual(new_individual)
@@ -689,6 +854,16 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         if self.enable_progress_log and self.report_interval > 0 and (self.generation % self.report_interval == 0):
             self._log_progress()
 
+    def _generate_random_individual(self):
+        """生成随机个体"""
+        new_individual = np.zeros(self.dimension)
+        # 使用 var_bounds 的键，而不是 self.variables，以确保匹配
+        var_keys = list(self.var_bounds.keys())
+        for j, var in enumerate(var_keys):
+            min_val, max_val = self.var_bounds[var]
+            new_individual[j] = np.random.uniform(min_val, max_val)
+        return new_individual
+
     def animate(self, frame):
         if not self.running or self.generation >= self.max_generations:
             self.running = False
@@ -698,8 +873,14 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
                 self.save_history()
             except Exception:
                 pass
+            # 保存智能历史数据
+            try:
+                intelligent_history_file = f"intelligent_{self.history_file}"
+                self.elite_manager.save_intelligent_history(intelligent_history_file)
+            except Exception:
+                pass
             return
-        
+
         self.evolve_one_generation()
         
         if self.plot_enabled and (self.generation - self.last_viz_update >= self.visualization_update_frequency):
@@ -709,8 +890,22 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         if self.generation >= self.max_generations:
             self.run_count += 1
 
-    def run(self):
-        """非 GUI 模式运行"""
+    def run(self, return_experiment=False):
+        """非 GUI 模式运行
+
+        Args:
+            return_experiment: 如果为 True，返回 ExperimentResult 对象；否则返回字典
+        """
+        # Initialize memory optimization
+        if self.enable_memory_optimization and self.memory_optimizer is None:
+            try:
+                from ..utils.memory_manager import OptimizationMemoryOptimizer
+                self.memory_optimizer = OptimizationMemoryOptimizer(self)
+                print("Memory optimization enabled")
+            except ImportError:
+                print("Memory optimization module not available")
+                self.enable_memory_optimization = False
+
         self.running = True
         self.start_time = time.time()
         self.evaluation_count = 0
@@ -719,10 +914,17 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         self.update_pareto_solutions()
         if not self.history:
             self.record_history()
-        
+
         while self.running and self.generation < self.max_generations:
             self.evolve_one_generation()
-            
+
+            # Memory optimization every 10 generations
+            if self.enable_memory_optimization and self.memory_optimizer and self.generation % 10 == 0:
+                if self.generation % 50 == 0:  # Detailed optimization every 50 generations
+                    self.memory_optimizer.auto_optimize()
+                else:  # Light cleanup every 10 generations
+                    self.memory_optimizer.memory_manager.cleanup_memory()
+
         self.running = False
         if self.enable_diversity_init and self.diversity_params.get('save_history', True):
             self.diversity_initializer.save_history()
@@ -730,8 +932,40 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
             self.save_history()
         except Exception:
             pass
+        # 保存智能历史数据
+        try:
+            intelligent_history_file = f"intelligent_{self.history_file}"
+            self.elite_manager.save_intelligent_history(intelligent_history_file)
+        except Exception:
+            pass
+
+        # Final memory cleanup
+        if self.enable_memory_optimization and self.memory_optimizer:
+            self.memory_optimizer.optimize_history_storage()
+            self.memory_optimizer.clear_temporary_data()
         self.run_count += 1
-        
+
+        if return_experiment and ExperimentResult is not None:
+            result = ExperimentResult(
+                problem_name=getattr(self.problem, 'name', 'unknown'),
+                config={
+                    'pop_size': self.pop_size,
+                    'max_generations': self.max_generations,
+                    'crossover_rate': self.crossover_rate,
+                    'mutation_rate': self.mutation_rate
+                }
+            )
+            result.set_results(
+                self.pareto_solutions['individuals'] if self.pareto_solutions else None,
+                self.pareto_objectives,
+                self.generation,
+                self.evaluation_count,
+                time.time() - self.start_time,
+                self.history,
+                self.get_convergence_info()
+            )
+            return result
+
         return {
             'pareto_solutions': self.pareto_solutions,
             'pareto_objectives': self.pareto_objectives,

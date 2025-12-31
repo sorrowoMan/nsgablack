@@ -12,10 +12,29 @@
 
 import numpy as np
 from typing import Callable, List, Dict, Any, Optional, Tuple
-from .bayesian_optimizer import BayesianOptimizer
-from ..core.base import BlackBoxProblem
-from ..core.solver import BlackBoxSolverNSGAII
 import time
+
+try:
+    # 当作为包导入时使用相对导入
+    from .bayesian_optimizer import BayesianOptimizer
+    from ..core.base import BlackBoxProblem
+    from ..core.solver import BlackBoxSolverNSGAII
+except ImportError:
+    # 当作为脚本运行时使用绝对导入
+    try:
+        from solvers.bayesian_optimizer import BayesianOptimizer
+        from core.base import BlackBoxProblem
+        from core.solver import BlackBoxSolverNSGAII
+    except ImportError:
+        # 最后的尝试：从同目录导入
+        import sys
+        import os
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        if current_dir not in sys.path:
+            sys.path.insert(0, current_dir)
+        from bayesian_optimizer import BayesianOptimizer
+        from core.base import BlackBoxProblem
+        from core.solver import BlackBoxSolverNSGAII
 
 
 class HybridBO_NSGA:

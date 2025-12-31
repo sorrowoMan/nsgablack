@@ -27,7 +27,18 @@ try:
     from ..core.base import BlackBoxProblem
 except ImportError:
     # 当作为脚本运行时使用绝对导入
-    from core.base import BlackBoxProblem
+    try:
+        from nsgablack.core.base import BlackBoxProblem
+    except ImportError:
+        # 如果nsgablack不在sys.path，尝试直接从core导入
+        import sys
+        import os
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(current_dir)
+        core_dir = os.path.join(parent_dir, 'core')
+        if core_dir not in sys.path:
+            sys.path.insert(0, core_dir)
+        from base import BlackBoxProblem
 
 
 class EnsembleSurrogate:
@@ -85,7 +96,7 @@ try:
     from .nsga2 import BlackBoxSolverNSGAII
 except ImportError:
     # 当作为脚本运行时使用绝对导入
-    from solvers.nsga2 import BlackBoxSolverNSGAII
+    from nsga2 import BlackBoxSolverNSGAII
 
 class SurrogateAssistedNSGAII(BlackBoxSolverNSGAII):
     """代理模型辅助的 NSGA-II
@@ -173,6 +184,11 @@ class SurrogateAssistedNSGAII(BlackBoxSolverNSGAII):
 
     def _evaluate_real(self, x, individual_id=None):
         """真实评估"""
+        # 调试日志：显示主代理正在评估
+        import multiprocessing as mp
+        if self.real_eval_count % 50 == 0:  # 每50次评估显示一次
+            print(f"进程 {mp.current_process().pid}: [主代理评估] 正在进行第{self.real_eval_count + 1}次真实评估")
+
         obj = self.problem.evaluate(x)
 
         # 应用 bias 模块
@@ -335,7 +351,15 @@ class SurrogateAssistedNSGAII(BlackBoxSolverNSGAII):
 
     def initialize_population(self):
         """初始化种群（使用真实评估）"""
-        super().initialize_population()
+        # 生成种群但不评估（避免重复评估）
+        self.population = np.zeros((self.pop_size, self.dimension))
+        for i, var in enumerate(self.variables):
+            min_val, max_val = self.var_bounds[var]
+            self.population[:, i] = np.random.uniform(min_val, max_val, self.pop_size)
+
+        # 初始化目标值数组
+        self.objectives = np.zeros((self.pop_size, self.num_objectives))
+        self.constraint_violations = np.zeros(self.pop_size, dtype=float)
 
         # 初始种群全部真实评估
         n_init = min(self.initial_samples, len(self.population))
@@ -492,12 +516,20 @@ class SurrogateAssistedNSGAII(BlackBoxSolverNSGAII):
 
     def run(self, plot=False):
         """运行优化（重写以支持代理模型）"""
+        import multiprocessing as mp
+        print(f"进程 {mp.current_process().pid}: [Surrogate] 开始优化，代数上限: {self.max_generations}")
+
         self.running = True
+        print(f"进程 {mp.current_process().pid}: [Surrogate] 初始化种群...")
         self.initialize_population()
+        print(f"进程 {mp.current_process().pid}: [Surrogate] 种群初始化完成，更新Pareto解...")
         self.update_pareto_solutions()
 
+        print(f"进程 {mp.current_process().pid}: [Surrogate] 开始进化循环...")
         while self.running and self.generation < self.max_generations:
+            print(f"进程 {mp.current_process().pid}: [Surrogate] 第 {self.generation} 代开始，真实评估: {self.real_eval_count}/{self.real_eval_budget}")
             if self.real_eval_count >= self.real_eval_budget:
+                print(f"进程 {mp.current_process().pid}: [Surrogate] 达到评估预算上限，停止")
                 break
             self.evolve_one_generation()
             self.update_pareto_solutions()
