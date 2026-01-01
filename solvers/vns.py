@@ -84,7 +84,21 @@ class BlackBoxSolverVNS:
 
         # 应用 bias 模块
         if self.enable_bias and self.bias_module is not None:
-            f = self.bias_module.compute_bias(x, f, individual_id=self.evaluation_count)
+            try:
+                cons = self.problem.evaluate_constraints(x)
+                cons_arr = np.asarray(cons, dtype=float).flatten()
+                violation = float(np.sum(np.maximum(cons_arr, 0.0))) if cons_arr.size > 0 else 0.0
+            except Exception:
+                cons_arr = np.zeros(0, dtype=float)
+                violation = 0.0
+
+            context = {
+                "problem": self.problem,
+                "constraints": cons_arr.tolist() if cons_arr.size > 0 else [],
+                "constraint_violation": violation,
+                "individual_id": self.evaluation_count,
+            }
+            f = self.bias_module.compute_bias(x, f, individual_id=self.evaluation_count, context=context)
 
         self.evaluation_count += 1
         return f

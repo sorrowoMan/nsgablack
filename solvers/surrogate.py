@@ -191,15 +191,30 @@ class SurrogateAssistedNSGAII(BlackBoxSolverNSGAII):
 
         obj = self.problem.evaluate(x)
 
+        try:
+            cons = self.problem.evaluate_constraints(x)
+            cons_arr = np.asarray(cons, dtype=float).flatten()
+            violation = float(np.sum(np.maximum(cons_arr, 0.0))) if cons_arr.size > 0 else 0.0
+        except Exception:
+            cons_arr = np.zeros(0, dtype=float)
+            violation = 0.0
+
+        context = {
+            "problem": self.problem,
+            "constraints": cons_arr.tolist() if cons_arr.size > 0 else [],
+            "constraint_violation": violation,
+            "individual_id": individual_id,
+        }
+
         # 应用 bias 模块
         if self.enable_bias and self.bias_module is not None:
             obj_arr = np.atleast_1d(obj)
             if self.num_objectives == 1:
-                obj = self.bias_module.compute_bias(x, float(obj_arr[0]), individual_id)
+                obj = self.bias_module.compute_bias(x, float(obj_arr[0]), individual_id, context=context)
             else:
                 obj_biased = []
                 for i in range(len(obj_arr)):
-                    f_biased = self.bias_module.compute_bias(x, float(obj_arr[i]), individual_id)
+                    f_biased = self.bias_module.compute_bias(x, float(obj_arr[i]), individual_id, context=context)
                     obj_biased.append(f_biased)
                 obj = np.array(obj_biased)
 

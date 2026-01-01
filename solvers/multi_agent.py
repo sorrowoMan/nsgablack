@@ -20,7 +20,7 @@ import json
 import os
 from enum import Enum
 from dataclasses import dataclass
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Any
 from collections import Counter
 
 try:
@@ -120,6 +120,10 @@ class AgentPopulation:
     best_objectives: Optional[List[float]] = None
     best_constraints: Optional[List[float]] = None
     representation_pipeline: Optional['RepresentationPipeline'] = None
+    score: float = 0.0
+    last_best_objectives: Optional[List[float]] = None
+    feasible_rate: float = 0.0
+    avg_violation: float = 0.0
 
 
 class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
@@ -142,7 +146,7 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
         self.dimension = problem.dimension
         self.constraints = []
         self.constraint_violations = None
-        self.var_bounds = problem.bounds
+        self.var_bounds = self._normalize_bounds(problem.bounds)
 
         # 默认配置
         self.config = {
@@ -159,10 +163,39 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
             'communication_interval': 5,     # 种群间通信间隔
             'adaptation_interval': 20,       # 策略调整间隔
             'dynamic_ratios': True,          # 是否动态调整比例
+            'role_score_weights': {          # scoring weights for role adaptation
+                'improvement': 0.5,
+                'feasibility': 0.3,
+                'diversity': 0.2
+            },
+            'global_score_biases': [],
+            'role_score_biases': {},
+            'ratio_update_rate': 0.2,        # how fast ratios move toward target
+            'min_role_ratio': 0.05,
+            'max_role_ratio': 0.6,
             'use_bias_system': True,         # 是否使用偏置系统
             'region_partition': False,       # 是否启用区域分区（生产调度特有）
             'advisory_method': 'bayesian',   # 建议者使用的方法: 'bayesian', 'ml', 'ensemble'
             'advisory_update_interval': 5,   # 建议更新间隔
+            'advisor_injection_interval': 1,
+            'advisor_injection_k': 2,
+            'advisor_injection_jitter': 0.0,
+            'advisor_injection_roles': [AgentRole.EXPLORER, AgentRole.EXPLOITER],
+            'waiter_reassign_interval': 1,
+            'waiter_reassign_ratio': 0.2,
+            'waiter_reassign_targets': None,
+            'archive_enabled': True,
+            'archive_size': 200,
+            'archive_sizes': None,           # optional per-archive sizes
+            'archive_share_k': 3,
+            'archive_inject_jitter': 0.01,
+            'archive_seed_ratio': 0.5,
+            'region_update_interval': None,
+            'region_top_ratio': 0.2,
+            'region_expansion': 0.2,
+            'region_min_expansion': 0.05,
+            'region_role_factors': None,
+            'region_violation_weight': 1000.0,
             'representation_pipeline': None,
             'representation_pipelines': {}
         }
@@ -181,6 +214,12 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
             'diversity': [],
             'convergence_rate': [],
             'agent_contributions': {role: [] for role in AgentRole},
+            'agent_scores': {role: [] for role in AgentRole},
+            'archive_sizes': {
+                'feasible': [],
+                'boundary': [],
+                'diversity': []
+            },
             'generation': 0
         }
 
@@ -196,8 +235,61 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
             'adaptations': 0
         }
 
+        # global archives for information sharing
+        self.archives = {
+            'feasible': [],
+            'boundary': [],
+            'diversity': []
+        }
+        # backward compatible alias (feasible archive)
+        self.archive = self.archives['feasible']
+
         print(f"[MultiAgent] 初始化多智能体求解器")
         print(f"[MultiAgent] 种群配置: {[f'{role.value}: {len(pop.population)}' for role, pop in self.agent_populations.items()]}")
+
+    # ---- BaseSolver abstract method adapters ----
+    def _initialize(self) -> None:
+        """å…¼å®¹ BaseSolverï¼šç¡®ä¿å¤šæ™ºèƒ½ä½“å†…éƒ¨å·²åˆå§‹åŒ–ã€?"""
+        # BaseSolver __init__ 会先调用此方法，MultiAgent 的配置尚未就绪时先跳过
+        if not isinstance(self.config, dict) or 'total_population' not in self.config:
+            return
+        if not hasattr(self, 'agent_populations') or not self.agent_populations:
+            if not hasattr(self, 'agent_populations'):
+                self.agent_populations = {}
+            self._initialize_agents()
+        if self.config.get('use_bias_system') and hasattr(self.problem, 'bias_manager'):
+            self.problem.bias_manager.set_solver_instance(self)
+
+    def _evaluate_population(self, population: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """å…¼å®¹ BaseSolverï¼šå¯¹ç»™å®šç§ç¾¤è¿›è¡ŒåŸºç¡€è¯„ä¼°ã€?"""
+        objectives = []
+        constraint_violations = []
+        for individual in population:
+            val = self.problem.evaluate(individual)
+            obj = np.asarray(val, dtype=float).flatten()
+            try:
+                cons = self.problem.evaluate_constraints(individual)
+                cons_arr = np.asarray(cons, dtype=float).flatten()
+                violation = float(np.sum(np.maximum(cons_arr, 0.0))) if cons_arr.size > 0 else 0.0
+            except Exception:
+                violation = 0.0
+            objectives.append(obj)
+            constraint_violations.append(violation)
+        return np.asarray(objectives, dtype=float), np.asarray(constraint_violations, dtype=float)
+
+    def _evolve_generation(self) -> None:
+        """å…¼å®¹ BaseSolverï¼šæ‰§è¡Œä¸€æ¬¡å¤šæ™ºèƒ½ä½“æ¼”åŒ–ã€?"""
+        for pop in self.agent_populations.values():
+            self.evaluate_population(pop)
+        for pop in self.agent_populations.values():
+            self.evolve_population(pop)
+
+        gen = self.history.get('generation', 0)
+        if gen % self.config.get('communication_interval', 1) == 0:
+            self.communicate_between_agents()
+        if gen % self.config.get('adaptation_interval', 1) == 0:
+            self.adapt_agent_strategies(gen)
+        self.history['generation'] = gen + 1
 
     def _initialize_agents(self):
         """初始化智能体种群"""
@@ -286,12 +378,13 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
     def _initialize_agent_population(self, size: int, bias_profile: Dict, role: AgentRole, pipeline=None) -> List[np.ndarray]:
         """初始化智能体种群"""
         population = []
+        bounds = self._get_effective_bounds(bias_profile)
 
         for i in range(size):
             if pipeline is not None and getattr(pipeline, 'initializer', None) is not None:
                 context = {
                     'generation': 0,
-                    'bounds': self.var_bounds,
+                    'bounds': bounds,
                     'role': role.value
                 }
                 individual = pipeline.init(self.problem, context)
@@ -299,20 +392,42 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
                 if bias_profile['exploration_rate'] > 0.5:
                     # high exploration: uniform
                     individual = np.random.uniform(
-                        low=self.var_bounds[:, 0],
-                        high=self.var_bounds[:, 1],
+                        low=bounds[:, 0],
+                        high=bounds[:, 1],
                         size=self.dimension
                     )
                 else:
                     # low exploration: center-focused
-                    center = np.mean(self.var_bounds, axis=1)
-                    radius = np.max(self.var_bounds[:, 1] - self.var_bounds[:, 0]) * 0.2
+                    center = np.mean(bounds, axis=1)
+                    radius = np.max(bounds[:, 1] - bounds[:, 0]) * 0.2
                     individual = center + np.random.randn(self.dimension) * radius
-                    individual = np.clip(individual, self.var_bounds[:, 0], self.var_bounds[:, 1])
+                    individual = np.clip(individual, bounds[:, 0], bounds[:, 1])
 
             population.append(individual)
 
         return population
+
+    def _normalize_bounds(self, bounds) -> np.ndarray:
+        if isinstance(bounds, dict):
+            keys = self.variables if isinstance(self.variables, list) else list(bounds.keys())
+            return np.asarray([bounds[k] for k in keys], dtype=float)
+        return np.asarray(bounds, dtype=float)
+
+    def _get_effective_bounds(self, bias_profile: Optional[Dict]) -> np.ndarray:
+        bounds = self._normalize_bounds(self.var_bounds)
+        if isinstance(bias_profile, dict):
+            region_bounds = bias_profile.get('region_bounds')
+            if region_bounds is not None:
+                region_bounds = np.asarray(region_bounds, dtype=float)
+                if region_bounds.shape == bounds.shape:
+                    bounds = region_bounds.copy()
+        # ensure bounds stay inside global bounds
+        bounds[:, 0] = np.maximum(bounds[:, 0], self.var_bounds[:, 0])
+        bounds[:, 1] = np.minimum(bounds[:, 1], self.var_bounds[:, 1])
+        return bounds
+
+    def _clip_to_bounds(self, x: np.ndarray, bounds: np.ndarray) -> np.ndarray:
+        return np.clip(x, bounds[:, 0], bounds[:, 1])
 
     def evaluate_population(self, agent_pop: AgentPopulation):
         """评估种群（考虑角色偏置）"""
@@ -320,13 +435,45 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
         agent_pop.constraints = []
         agent_pop.fitness = []
 
+        bias_module = getattr(self, 'bias_module', None)
+        if bias_module is None:
+            bias_module = getattr(self.problem, 'bias_module', None)
+
         for individual in agent_pop.population:
             # 基础评估
-            objectives = self.problem.evaluate(individual)
-            constraints = self.problem.evaluate_constraints(individual) if hasattr(self.problem, 'evaluate_constraints') else []
+            val = self.problem.evaluate(individual)
+            objectives = np.asarray(val, dtype=float).flatten().tolist()
+            if hasattr(self.problem, 'evaluate_constraints'):
+                cons = self.problem.evaluate_constraints(individual)
+                constraints = np.asarray(cons, dtype=float).flatten().tolist()
+            else:
+                constraints = []
+
+            context = {
+                "problem": self.problem,
+                "constraints": constraints.copy(),
+                "constraint_violation": 0.0,
+            }
+
+            # 偏置模块（可选）：允许偏置提供约束信息
+            if bias_module is not None:
+                if len(objectives) == 1:
+                    objectives = [bias_module.compute_bias(individual, float(objectives[0]), context=context)]
+                else:
+                    objectives = [
+                        bias_module.compute_bias(individual, float(obj), context=context)
+                        for obj in objectives
+                    ]
+                if not constraints and context.get("constraints"):
+                    constraints = list(context["constraints"])
 
             # 计算约束违背度总和
-            total_violation = sum(abs(c) for c in constraints) if constraints else 0
+            if constraints:
+                total_violation = sum(abs(c) for c in constraints)
+            else:
+                total_violation = float(context.get("constraint_violation", 0.0))
+                if total_violation > 0:
+                    constraints = [total_violation]
 
             # 应用角色偏置
             biased_objectives = self._apply_role_bias(objectives, agent_pop.role)
@@ -350,6 +497,16 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
                 agent_pop.best_constraints = constraints.copy() if constraints else []
 
         self.stats['evaluations'] += len(agent_pop.population)
+
+        # update role stats for scoring
+        if agent_pop.constraints:
+            violations = [self._total_violation(c) for c in agent_pop.constraints]
+            feasible = sum(1 for v in violations if v == 0.0)
+            agent_pop.feasible_rate = feasible / max(1, len(violations))
+            agent_pop.avg_violation = float(np.mean(violations)) if violations else 0.0
+        else:
+            agent_pop.feasible_rate = 0.0
+            agent_pop.avg_violation = 0.0
 
     def _apply_role_bias(self, objectives: List[float], role: AgentRole) -> List[float]:
         """应用角色偏置到目标值"""
@@ -616,6 +773,7 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
             eta_c = 5.0  # 探索者：更分散
         else:
             eta_c = 20.0  # 开发者：更集中
+        bounds = self._get_effective_bounds(bias_profile)
 
         child1 = np.zeros_like(parent1)
         child2 = np.zeros_like(parent2)
@@ -643,9 +801,9 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
                 child1[i] = parent1[i]
                 child2[i] = parent2[i]
 
-        # 边界处理
-        child1 = np.clip(child1, self.var_bounds[:, 0], self.var_bounds[:, 1])
-        child2 = np.clip(child2, self.var_bounds[:, 0], self.var_bounds[:, 1])
+        # bounds handling
+        child1 = self._clip_to_bounds(child1, bounds)
+        child2 = self._clip_to_bounds(child2, bounds)
 
         return child1, child2
 
@@ -667,11 +825,12 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
             eta_m = 30.0  # 更小的变异
 
         mutated = individual.copy()
+        bounds = self._get_effective_bounds(bias_profile)
 
         for i in range(len(individual)):
             if np.random.rand() < mutation_prob:
-                delta_low = (individual[i] - self.var_bounds[i, 0]) / (self.var_bounds[i, 1] - self.var_bounds[i, 0])
-                delta_high = (self.var_bounds[i, 1] - individual[i]) / (self.var_bounds[i, 1] - self.var_bounds[i, 0])
+                delta_low = (individual[i] - bounds[i, 0]) / (bounds[i, 1] - bounds[i, 0])
+                delta_high = (bounds[i, 1] - individual[i]) / (bounds[i, 1] - bounds[i, 0])
 
                 u = np.random.rand()
                 delta_q = 0.0
@@ -681,10 +840,10 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
                 else:
                     delta_q = 1.0 - (2.0 * (1.0 - u) + 2.0 * (u - 0.5) * (1.0 - delta_high) ** (eta_m + 1.0)) ** (1.0 / (eta_m + 1.0))
 
-                mutated[i] = individual[i] + delta_q * (self.var_bounds[i, 1] - self.var_bounds[i, 0])
+                mutated[i] = individual[i] + delta_q * (bounds[i, 1] - bounds[i, 0])
 
         # 边界处理
-        mutated = np.clip(mutated, self.var_bounds[:, 0], self.var_bounds[:, 1])
+        mutated = self._clip_to_bounds(mutated, bounds)
 
         return mutated
 
@@ -740,7 +899,8 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
             child = parent1.copy()
 
         # 确保在边界内
-        child = np.clip(child, self.var_bounds[:, 0], self.var_bounds[:, 1])
+        bounds = self._get_effective_bounds(bias_profile)
+        child = self._clip_to_bounds(child, bounds)
         return child
 
     def _mutate_with_bias(self, individual: np.ndarray, bias_profile: Dict) -> np.ndarray:
@@ -750,13 +910,15 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
             mutation = np.random.randn(len(individual)) * mutation_strength
 
             # 限制变异幅度
-            max_mutation = (self.var_bounds[:, 1] - self.var_bounds[:, 0]) * 0.2
+            bounds = self._get_effective_bounds(bias_profile)
+            max_mutation = (bounds[:, 1] - bounds[:, 0]) * 0.2
             mutation = np.clip(mutation, -max_mutation, max_mutation)
 
             individual = individual + mutation
 
         # 确保在边界内
-        individual = np.clip(individual, self.var_bounds[:, 0], self.var_bounds[:, 1])
+        bounds = self._get_effective_bounds(bias_profile)
+        individual = self._clip_to_bounds(individual, bounds)
         return individual
 
     def _learn_from_other_agents(self, waiter_pop: AgentPopulation) -> np.ndarray:
@@ -776,7 +938,8 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
             # 随机生成
             child = self._initialize_agent_population(1, waiter_pop.bias_profile, waiter_pop.role)[0]
 
-        return np.clip(child, self.var_bounds[:, 0], self.var_bounds[:, 1])
+        bounds = self._get_effective_bounds(waiter_pop.bias_profile)
+        return self._clip_to_bounds(child, bounds)
 
     def _exploratory_evolution(self, coordinator_pop: AgentPopulation) -> np.ndarray:
         """协调者的探索性进化"""
@@ -805,7 +968,8 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
         else:
             child = self._initialize_agent_population(1, coordinator_pop.bias_profile, coordinator_pop.role)[0]
 
-        return np.clip(child, self.var_bounds[:, 0], self.var_bounds[:, 1])
+        bounds = self._get_effective_bounds(coordinator_pop.bias_profile)
+        return self._clip_to_bounds(child, bounds)
 
     def _generate_advisory_solution(self, advisor_pop: AgentPopulation) -> np.ndarray:
         """
@@ -879,7 +1043,8 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
         else:
             child = mean_solution + np.random.randn(len(mean_solution)) * std_solution * 0.5
 
-        return np.clip(child, self.var_bounds[:, 0], self.var_bounds[:, 1])
+        bounds = self._get_effective_bounds(advisor_pop.bias_profile)
+        return self._clip_to_bounds(child, bounds)
 
     def _generate_bayesian_advisory_solution(self, advisor_pop: AgentPopulation) -> np.ndarray:
         """基于贝叶斯优化的建议（需要gpy库）"""
@@ -941,7 +1106,8 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
             print(f"[Advisor] 贝叶斯建议出错: {e}，使用统计方法")
             return self._generate_statistical_advisory_solution(advisor_pop)
 
-        return np.clip(child, self.var_bounds[:, 0], self.var_bounds[:, 1])
+        bounds = self._get_effective_bounds(advisor_pop.bias_profile)
+        return self._clip_to_bounds(child, bounds)
 
     def _generate_ml_advisory_solution(self, advisor_pop: AgentPopulation) -> np.ndarray:
         """基于机器学习的建议（需要sklearn库）"""
@@ -995,7 +1161,8 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
             print(f"[Advisor] ML建议出错: {e}，使用统计方法")
             return self._generate_statistical_advisory_solution(advisor_pop)
 
-        return np.clip(child, self.var_bounds[:, 0], self.var_bounds[:, 1])
+        bounds = self._get_effective_bounds(advisor_pop.bias_profile)
+        return self._clip_to_bounds(child, bounds)
 
     def communicate_between_agents(self):
         """智能体间的信息交流"""
@@ -1028,7 +1195,21 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
                     # 用全局最优替换最差个体
                     if len(pop.population) > 0 and pop.fitness:
                         worst_idx = np.argmin(pop.fitness)
-                        pop.population[worst_idx] = global_best + np.random.randn(len(global_best)) * 0.01
+                        candidate = global_best + np.random.randn(len(global_best)) * 0.01
+                        bounds = self._get_effective_bounds(pop.bias_profile)
+                        pop.population[worst_idx] = self._clip_to_bounds(candidate, bounds)
+
+        # update archives and share candidates
+        self._update_archives()
+        if self.config.get('archive_enabled', True):
+            share_k = int(self.config.get('archive_share_k', 0))
+            if share_k > 0:
+                for role, pop in self.agent_populations.items():
+                    candidates = self._select_archive_candidates(role, share_k)
+                    self._inject_archive_candidates(pop, candidates)
+            sizes = {name: len(self.archives.get(name, [])) for name in self.archives}
+            for name, size in sizes.items():
+                self.history['archive_sizes'][name].append(size)
 
         self.stats['communications'] += 1
 
@@ -1037,17 +1218,9 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
         if not self.config['dynamic_ratios']:
             return
 
-        # 计算各角色的贡献度
-        contributions = {}
-        for role, pop in self.agent_populations.items():
-            if pop.best_objectives is not None:
-                total_violation = sum(abs(c) for c in (pop.best_constraints or []))
-                if total_violation == 0:
-                    contributions[role] = np.mean(pop.best_objectives)
-                else:
-                    contributions[role] = float('inf')
-            else:
-                contributions[role] = float('inf')
+        scores = self._compute_role_scores()
+        if scores:
+            self._update_role_ratios(scores)
 
         # 根据进化阶段调整策略
         progress = generation / self.config['max_generations']
@@ -1062,6 +1235,9 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
             # 后期：增加开发
             self._adjust_bias_parameters(explorer_boost=0.7, exploiter_boost=1.3)
 
+        if self.config.get('region_partition', False):
+            self._update_region_partition(generation)
+
         self.stats['adaptations'] += 1
 
     def _adjust_bias_parameters(self, explorer_boost: float, exploiter_boost: float):
@@ -1074,11 +1250,756 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
                 pop.bias_profile['selection_pressure'] *= exploiter_boost
                 pop.bias_profile['selection_pressure'] = np.clip(pop.bias_profile['selection_pressure'], 0.1, 1.0)
 
+    def _update_region_partition(self, generation: int) -> None:
+        """Update per-role region bounds based on current quality."""
+        interval = self.config.get('region_update_interval')
+        if interval is None:
+            interval = self.config.get('adaptation_interval', 1)
+        try:
+            interval = int(interval)
+        except (TypeError, ValueError):
+            interval = 1
+        if interval <= 0 or generation % interval != 0:
+            return
+
+        candidates = self._collect_region_candidates()
+        if not candidates:
+            return
+
+        top_ratio = float(self.config.get('region_top_ratio', 0.2))
+        top_k = max(5, int(len(candidates) * top_ratio))
+        top_k = min(top_k, len(candidates))
+        top_candidates = candidates[:top_k]
+        xs = np.asarray([c['x'] for c in top_candidates], dtype=float)
+        if xs.size == 0:
+            return
+
+        base_bounds = self._compute_region_bounds(xs, generation)
+        role_factors = self._get_region_role_factors()
+
+        for role, pop in self.agent_populations.items():
+            factor = role_factors.get(role, role_factors.get(role.value, 1.0))
+            bounds = self._scale_bounds(base_bounds, factor)
+            pop.bias_profile['region_bounds'] = bounds
+
+    def _collect_region_candidates(self) -> List[Dict[str, Any]]:
+        candidates = []
+        if self.archives.get('feasible'):
+            for item in self.archives['feasible']:
+                candidates.append({
+                    'x': item.get('x'),
+                    'objectives': item.get('objectives'),
+                    'violation': float(item.get('violation', 0.0)),
+                })
+        elif self.archives.get('boundary'):
+            for item in self.archives['boundary']:
+                candidates.append({
+                    'x': item.get('x'),
+                    'objectives': item.get('objectives'),
+                    'violation': float(item.get('violation', 0.0)),
+                })
+        else:
+            for pop in self.agent_populations.values():
+                for i, individual in enumerate(pop.population):
+                    if i >= len(pop.objectives):
+                        continue
+                    cons = pop.constraints[i] if pop.constraints else []
+                    candidates.append({
+                        'x': individual,
+                        'objectives': pop.objectives[i],
+                        'violation': self._total_violation(cons),
+                    })
+
+        if not candidates:
+            return []
+
+        feasible = [c for c in candidates if c['violation'] == 0.0]
+        ranked = feasible if feasible else candidates
+        penalty = float(self.config.get('region_violation_weight', 1000.0))
+        ranked = sorted(
+            ranked,
+            key=lambda c: float(np.mean(c['objectives'])) + penalty * float(c['violation'])
+        )
+        return ranked
+
+    def _compute_region_bounds(self, xs: np.ndarray, generation: int) -> np.ndarray:
+        xs = np.asarray(xs, dtype=float)
+        if xs.ndim == 1:
+            xs = xs.reshape(1, -1)
+
+        min_vals = np.min(xs, axis=0)
+        max_vals = np.max(xs, axis=0)
+        span = max_vals - min_vals
+
+        global_span = self.var_bounds[:, 1] - self.var_bounds[:, 0]
+        span = np.where(span > 0, span, global_span * 0.1)
+
+        progress = generation / max(1, int(self.config.get('max_generations', 1)))
+        base_expansion = float(self.config.get('region_expansion', 0.2))
+        min_expansion = float(self.config.get('region_min_expansion', 0.05))
+        expansion = min_expansion + (base_expansion - min_expansion) * (1.0 - progress)
+
+        low = min_vals - span * expansion
+        high = max_vals + span * expansion
+
+        bounds = np.stack([low, high], axis=1)
+        bounds[:, 0] = np.maximum(bounds[:, 0], self.var_bounds[:, 0])
+        bounds[:, 1] = np.minimum(bounds[:, 1], self.var_bounds[:, 1])
+        return bounds
+
+    def _scale_bounds(self, bounds: np.ndarray, factor: float) -> np.ndarray:
+        if factor is None:
+            return bounds
+        factor = max(0.1, float(factor))
+        centers = (bounds[:, 0] + bounds[:, 1]) * 0.5
+        half = (bounds[:, 1] - bounds[:, 0]) * 0.5 * factor
+        scaled = np.stack([centers - half, centers + half], axis=1)
+        scaled[:, 0] = np.maximum(scaled[:, 0], self.var_bounds[:, 0])
+        scaled[:, 1] = np.minimum(scaled[:, 1], self.var_bounds[:, 1])
+        return scaled
+
+    def _get_region_role_factors(self) -> Dict:
+        factors = self.config.get('region_role_factors')
+        if isinstance(factors, dict):
+            return factors
+        return {
+            AgentRole.EXPLORER: 1.4,
+            AgentRole.EXPLOITER: 0.8,
+            AgentRole.ADVISOR: 1.0,
+            AgentRole.COORDINATOR: 1.1,
+            AgentRole.WAITER: 1.2,
+        }
+
+    def _apply_advisor_injection(self, generation: int) -> None:
+        """Generate advisor candidates and inject into target roles."""
+        interval = int(self.config.get('advisor_injection_interval', 1))
+        if interval <= 0 or generation % interval != 0:
+            return
+
+        per_role = int(self.config.get('advisor_injection_k', 0))
+        if per_role <= 0:
+            return
+
+        advisor_pop = self.agent_populations.get(AgentRole.ADVISOR)
+        if advisor_pop is None or not advisor_pop.population:
+            return
+
+        targets = self._resolve_role_list(
+            self.config.get('advisor_injection_roles'),
+            default=[AgentRole.EXPLORER, AgentRole.EXPLOITER]
+        )
+        jitter = float(self.config.get('advisor_injection_jitter', 0.0))
+
+        for role in targets:
+            pop = self.agent_populations.get(role)
+            if pop is None or not pop.population:
+                continue
+            candidates = []
+            for _ in range(per_role):
+                cand = self._generate_advisory_solution(advisor_pop)
+                if jitter > 0:
+                    cand = cand + np.random.randn(len(cand)) * jitter
+                bounds = self._get_effective_bounds(pop.bias_profile)
+                cand = self._clip_to_bounds(cand, bounds)
+                candidates.append(cand)
+            self._inject_archive_candidates(pop, candidates)
+
+    def _reassign_waiter_pool(self, generation: int) -> None:
+        """Use waiter pool as a reserve to strengthen target roles."""
+        interval = int(self.config.get('waiter_reassign_interval', 1))
+        if interval <= 0 or generation % interval != 0:
+            return
+
+        waiter_pop = self.agent_populations.get(AgentRole.WAITER)
+        if waiter_pop is None or not waiter_pop.population:
+            return
+
+        ratio = float(self.config.get('waiter_reassign_ratio', 0.0))
+        if ratio <= 0:
+            return
+
+        min_ratio = float(self.config.get('min_role_ratio', 0.05))
+        total_pop = int(self.config.get('total_population', 0))
+        min_reserve = int(total_pop * min_ratio)
+        available = max(0, len(waiter_pop.population) - min_reserve)
+        if available <= 0:
+            return
+
+        move_count = min(available, max(1, int(len(waiter_pop.population) * ratio)))
+        targets = self._resolve_role_list(self.config.get('waiter_reassign_targets'))
+        if not targets:
+            targets = self._pick_top_roles()
+
+        if not targets:
+            return
+
+        base = move_count // len(targets)
+        remainder = move_count % len(targets)
+        for role in targets:
+            if role == AgentRole.WAITER:
+                continue
+            count = base + (1 if remainder > 0 else 0)
+            remainder = max(0, remainder - 1)
+            moved = self._take_waiter_individuals(waiter_pop, count)
+            self._append_individuals(self.agent_populations[role], moved)
+
+    def _pick_top_roles(self) -> List[AgentRole]:
+        roles = []
+        for role, pop in self.agent_populations.items():
+            if role == AgentRole.WAITER:
+                continue
+            roles.append((role, float(getattr(pop, 'score', 0.0))))
+        if not roles:
+            return []
+        roles.sort(key=lambda r: r[1], reverse=True)
+        return [role for role, _ in roles[:2]]
+
+    def _resolve_role_list(self, roles, default: Optional[List[AgentRole]] = None) -> List[AgentRole]:
+        if roles is None:
+            return default or []
+        resolved = []
+        for role in roles:
+            if isinstance(role, AgentRole):
+                resolved.append(role)
+            else:
+                try:
+                    resolved.append(AgentRole(role))
+                except Exception:
+                    continue
+        return resolved or (default or [])
+
+    def _take_waiter_individuals(self, waiter_pop: AgentPopulation, count: int) -> List[np.ndarray]:
+        if count <= 0 or not waiter_pop.population:
+            return []
+        count = min(count, len(waiter_pop.population))
+        if waiter_pop.fitness and len(waiter_pop.fitness) == len(waiter_pop.population):
+            best_idx = np.argsort(waiter_pop.fitness)[-count:].tolist()
+        else:
+            best_idx = random.sample(range(len(waiter_pop.population)), k=count)
+
+        individuals = [waiter_pop.population[i].copy() for i in best_idx]
+        for idx in sorted(best_idx, reverse=True):
+            del waiter_pop.population[idx]
+            if waiter_pop.objectives and idx < len(waiter_pop.objectives):
+                del waiter_pop.objectives[idx]
+            if waiter_pop.constraints and idx < len(waiter_pop.constraints):
+                del waiter_pop.constraints[idx]
+            if waiter_pop.fitness and idx < len(waiter_pop.fitness):
+                del waiter_pop.fitness[idx]
+
+        waiter_pop.best_individual = None
+        waiter_pop.best_objectives = None
+        waiter_pop.best_constraints = None
+        return individuals
+
+    def _append_individuals(self, pop: AgentPopulation, individuals: List[np.ndarray]) -> None:
+        if not individuals:
+            return
+        pop.population.extend(individuals)
+        pop.objectives = []
+        pop.constraints = []
+        pop.fitness = []
+        pop.best_individual = None
+        pop.best_objectives = None
+        pop.best_constraints = None
+
+    def _compute_role_scores(self) -> Dict[AgentRole, float]:
+        """score roles for ratio adaptation"""
+        improvements = {}
+        feasibilities = {}
+        diversities = {}
+
+        for role, pop in self.agent_populations.items():
+            if pop.best_objectives is not None:
+                current_mean = float(np.mean(pop.best_objectives))
+            else:
+                current_mean = float('inf')
+
+            if pop.last_best_objectives is None or pop.best_objectives is None:
+                improvement = 0.0
+            else:
+                prev_mean = float(np.mean(pop.last_best_objectives))
+                improvement = max(0.0, prev_mean - current_mean)
+
+            if pop.best_objectives is not None:
+                pop.last_best_objectives = pop.best_objectives.copy()
+
+            improvements[role] = improvement
+            feasibilities[role] = float(pop.feasible_rate)
+            diversities[role] = self._role_diversity(pop)
+
+        norm_improve = self._normalize_metric(improvements)
+        norm_feasible = self._normalize_metric(feasibilities)
+        norm_diverse = self._normalize_metric(diversities)
+
+        weights = self.config.get('role_score_weights', {})
+        w_improve = float(weights.get('improvement', 0.5))
+        w_feasible = float(weights.get('feasibility', 0.3))
+        w_diverse = float(weights.get('diversity', 0.2))
+
+        scores = {}
+        for role in self.agent_populations:
+            pop = self.agent_populations[role]
+            score = (
+                w_improve * norm_improve.get(role, 0.0) +
+                w_feasible * norm_feasible.get(role, 0.0) +
+                w_diverse * norm_diverse.get(role, 0.0)
+            )
+            score += self._score_with_biases(role, pop)
+            scores[role] = score
+            pop.score = score
+            self.history['agent_scores'][role].append(score)
+
+        return scores
+
+    def _get_score_biases(self, role: AgentRole, pop: AgentPopulation) -> List:
+        biases = []
+        global_biases = self.config.get('global_score_biases') or []
+        role_biases = self.config.get('role_score_biases') or {}
+
+        biases.extend(global_biases if isinstance(global_biases, list) else [global_biases])
+        if isinstance(role_biases, dict):
+            if role in role_biases:
+                biases.extend(role_biases.get(role) or [])
+            elif role.value in role_biases:
+                biases.extend(role_biases.get(role.value) or [])
+
+        profile_biases = pop.bias_profile.get('score_biases') if isinstance(pop.bias_profile, dict) else None
+        if profile_biases:
+            biases.extend(profile_biases if isinstance(profile_biases, list) else [profile_biases])
+
+        return [b for b in biases if b is not None]
+
+    def _score_with_biases(self, role: AgentRole, pop: AgentPopulation) -> float:
+        biases = self._get_score_biases(role, pop)
+        if not biases or pop.best_individual is None:
+            return 0.0
+
+        constraints = pop.best_constraints or []
+        violation = self._total_violation(constraints)
+        context = {
+            'role': role.value,
+            'population': pop.population,
+            'objectives': pop.objectives,
+            'constraints': pop.constraints,
+            'fitness': pop.fitness,
+            'best_objectives': pop.best_objectives,
+            'feasible_rate': pop.feasible_rate,
+            'avg_violation': pop.avg_violation,
+            'constraint_violation': violation,
+            'archives': self.archives,
+            'generation': self.history.get('generation', 0),
+            'problem': self.problem,
+        }
+
+        total = 0.0
+        for bias in biases:
+            result = self._call_score_bias(bias, pop.best_individual, constraints, context, pop)
+            total += self._extract_score_value(result)
+        return total
+
+    def _call_score_bias(self, bias, x, constraints, context, pop):
+        if hasattr(bias, 'compute_score'):
+            return bias.compute_score(x, constraints, context)
+        if hasattr(bias, 'score'):
+            return bias.score(x, constraints, context)
+        if callable(bias):
+            for args in (
+                (x, constraints, context),
+                (x, context),
+                (x, constraints),
+                (x,),
+                (context,),
+                (pop, context),
+                (pop,),
+            ):
+                try:
+                    return bias(*args)
+                except TypeError:
+                    continue
+        return 0.0
+
+    def _extract_score_value(self, result) -> float:
+        if isinstance(result, dict):
+            if 'score' in result:
+                return float(result.get('score', 0.0))
+            if 'reward' in result:
+                return float(result.get('reward', 0.0))
+            if 'penalty' in result:
+                return -float(result.get('penalty', 0.0))
+            if 'value' in result:
+                return float(result.get('value', 0.0))
+            return 0.0
+        if isinstance(result, (tuple, list)) and len(result) >= 1:
+            try:
+                return float(result[0])
+            except Exception:
+                return 0.0
+        try:
+            return float(result)
+        except Exception:
+            return 0.0
+
+    def _normalize_metric(self, values: Dict[AgentRole, float]) -> Dict[AgentRole, float]:
+        """min-max normalize per role"""
+        if not values:
+            return {}
+        vals = list(values.values())
+        v_min = min(vals)
+        v_max = max(vals)
+        if abs(v_max - v_min) < 1e-12:
+            return {role: 0.0 for role in values}
+        return {role: (val - v_min) / (v_max - v_min) for role, val in values.items()}
+
+    def _role_diversity(self, pop: AgentPopulation) -> float:
+        """role diversity vs global best"""
+        if self.global_best is None or not pop.population:
+            return 0.0
+        distances = [float(np.linalg.norm(ind - self.global_best)) for ind in pop.population]
+        return float(np.mean(distances)) if distances else 0.0
+
+    def _update_role_ratios(self, scores: Dict[AgentRole, float]) -> None:
+        """update role ratios and resize populations"""
+        total_score = sum(scores.values())
+        if total_score <= 0:
+            return
+
+        target = {role: score / total_score for role, score in scores.items()}
+        current = self.config.get('agent_ratios', {})
+        rate = float(self.config.get('ratio_update_rate', 0.2))
+        min_r = float(self.config.get('min_role_ratio', 0.05))
+        max_r = float(self.config.get('max_role_ratio', 0.6))
+
+        new_ratios = {}
+        for role, cur in current.items():
+            new_ratio = (1.0 - rate) * cur + rate * target.get(role, cur)
+            new_ratio = float(np.clip(new_ratio, min_r, max_r))
+            new_ratios[role] = new_ratio
+
+        # renormalize
+        total = sum(new_ratios.values())
+        if total > 0:
+            for role in new_ratios:
+                new_ratios[role] = new_ratios[role] / total
+
+        self.config['agent_ratios'] = new_ratios
+        self._apply_role_ratios(new_ratios)
+
+    def _apply_role_ratios(self, ratios: Dict[AgentRole, float]) -> None:
+        """resize populations based on ratios"""
+        total_pop = int(self.config.get('total_population', 0))
+        if total_pop <= 0:
+            return
+
+        desired = {role: int(total_pop * ratio) for role, ratio in ratios.items()}
+        diff = total_pop - sum(desired.values())
+        if diff != 0:
+            # distribute rounding diff
+            roles_sorted = sorted(ratios.items(), key=lambda item: item[1], reverse=(diff > 0))
+            for i in range(abs(diff)):
+                role = roles_sorted[i % len(roles_sorted)][0]
+                desired[role] += 1 if diff > 0 else -1
+
+        # remove excess
+        for role, pop in self.agent_populations.items():
+            if role not in desired:
+                continue
+            excess = len(pop.population) - desired[role]
+            if excess > 0:
+                self._remove_worst(pop, excess)
+
+        # add deficit
+        for role, pop in self.agent_populations.items():
+            if role not in desired:
+                continue
+            deficit = desired[role] - len(pop.population)
+            if deficit > 0:
+                # prefer borrowing from waiter pool
+                if role != AgentRole.WAITER:
+                    waiter_pop = self.agent_populations.get(AgentRole.WAITER)
+                    if waiter_pop is not None and waiter_pop.population:
+                        moved = self._take_waiter_individuals(waiter_pop, min(deficit, len(waiter_pop.population)))
+                        self._append_individuals(pop, moved)
+                        deficit = desired[role] - len(pop.population)
+                if deficit > 0:
+                    self._add_individuals(pop, deficit, role)
+
+    def _remove_worst(self, pop: AgentPopulation, count: int) -> None:
+        if count <= 0 or not pop.population:
+            return
+        if pop.fitness and len(pop.fitness) == len(pop.population):
+            worst_idx = np.argsort(pop.fitness)[:count].tolist()
+        else:
+            worst_idx = random.sample(range(len(pop.population)), k=min(count, len(pop.population)))
+        for idx in sorted(worst_idx, reverse=True):
+            del pop.population[idx]
+            if pop.objectives and idx < len(pop.objectives):
+                del pop.objectives[idx]
+            if pop.constraints and idx < len(pop.constraints):
+                del pop.constraints[idx]
+            if pop.fitness and idx < len(pop.fitness):
+                del pop.fitness[idx]
+        pop.best_individual = None
+        pop.best_objectives = None
+        pop.best_constraints = None
+
+    def _add_individuals(self, pop: AgentPopulation, count: int, role: AgentRole) -> None:
+        if count <= 0:
+            return
+        new_individuals = []
+        seed_ratio = float(self.config.get('archive_seed_ratio', 0.0))
+        seed_k = int(count * seed_ratio)
+        if seed_k > 0:
+            seeds = self._select_archive_candidates(role, seed_k)
+            new_individuals.extend(seeds)
+        remaining = count - len(new_individuals)
+        if remaining > 0:
+            pipeline = self._get_representation_pipeline(role)
+            new_individuals.extend(self._initialize_agent_population(remaining, pop.bias_profile, role, pipeline))
+
+        if new_individuals:
+            pop.population.extend(new_individuals)
+            pop.objectives = []
+            pop.constraints = []
+            pop.fitness = []
+            pop.best_individual = None
+            pop.best_objectives = None
+            pop.best_constraints = None
+
     def _dominates(self, obj1: List[float], obj2: List[float]) -> bool:
         """判断obj1是否支配obj2"""
         if obj2 is None:
             return True
         return all(o1 <= o2 for o1, o2 in zip(obj1, obj2)) and any(o1 < o2 for o1, o2 in zip(obj1, obj2))
+
+    def _total_violation(self, constraints: List[float]) -> float:
+        """sum of constraint violations"""
+        if not constraints:
+            return 0.0
+        try:
+            arr = np.asarray(constraints, dtype=float).flatten()
+            if arr.size == 0:
+                return 0.0
+            return float(np.sum(np.maximum(arr, 0.0)))
+        except Exception:
+            return float(sum(max(0.0, float(c)) for c in constraints))
+
+    def _update_archives(self) -> None:
+        """update multi-layer archives"""
+        if not self.config.get('archive_enabled', True):
+            return
+
+        candidates = []
+        gen = self.history.get('generation', 0)
+        for role, pop in self.agent_populations.items():
+            for i, individual in enumerate(pop.population):
+                if i >= len(pop.objectives):
+                    continue
+                obj = pop.objectives[i]
+                cons = pop.constraints[i] if pop.constraints else []
+                violation = self._total_violation(cons)
+                candidates.append({
+                    'x': individual.copy(),
+                    'objectives': obj,
+                    'constraints': cons,
+                    'violation': violation,
+                    'role': role,
+                    'generation': gen
+                })
+
+        if not candidates:
+            return
+
+        sizes = self._get_archive_sizes()
+        feasible = [c for c in candidates if c['violation'] == 0.0]
+        infeasible = [c for c in candidates if c['violation'] > 0.0]
+
+        self.archives['feasible'] = self._update_feasible_archive(
+            self.archives.get('feasible', []), feasible, sizes['feasible']
+        )
+        self.archives['boundary'] = self._update_boundary_archive(
+            self.archives.get('boundary', []), infeasible, sizes['boundary']
+        )
+
+        diversity_source = self.archives['feasible'] if self.archives['feasible'] else candidates
+        self.archives['diversity'] = self._update_diversity_archive(
+            self.archives.get('diversity', []), diversity_source, sizes['diversity']
+        )
+
+        # backward compatible alias (feasible archive)
+        self.archive = self.archives['feasible']
+
+    def _get_archive_sizes(self) -> Dict[str, int]:
+        sizes = self.config.get('archive_sizes')
+        if isinstance(sizes, dict):
+            return {
+                'feasible': int(sizes.get('feasible', 0) or 0),
+                'boundary': int(sizes.get('boundary', 0) or 0),
+                'diversity': int(sizes.get('diversity', 0) or 0),
+            }
+        base = int(self.config.get('archive_size', 200))
+        boundary = max(10, base // 2) if base > 0 else 0
+        return {
+            'feasible': base,
+            'boundary': boundary,
+            'diversity': base
+        }
+
+    def _update_feasible_archive(self, archive: List[Dict], candidates: List[Dict], max_size: int) -> List[Dict]:
+        if not candidates and not archive:
+            return []
+        updated = archive[:]
+        for cand in candidates:
+            dominated = False
+            to_remove = []
+            for idx, arc in enumerate(updated):
+                if self._dominates(arc['objectives'], cand['objectives']):
+                    dominated = True
+                    break
+                if self._dominates(cand['objectives'], arc['objectives']):
+                    to_remove.append(idx)
+            if dominated:
+                continue
+            for idx in reversed(to_remove):
+                del updated[idx]
+            updated.append(cand)
+
+        if max_size > 0 and len(updated) > max_size:
+            updated = self._prune_archive(updated, max_size)
+        return updated
+
+    def _update_boundary_archive(self, archive: List[Dict], candidates: List[Dict], max_size: int) -> List[Dict]:
+        if max_size <= 0:
+            return []
+        pool = archive[:] + candidates
+        if not pool:
+            return []
+        pool_sorted = sorted(
+            pool,
+            key=lambda a: (float(a.get('violation', 0.0)), float(np.mean(a['objectives'])))
+        )
+        return pool_sorted[:max_size]
+
+    def _update_diversity_archive(self, archive: List[Dict], candidates: List[Dict], max_size: int) -> List[Dict]:
+        if max_size <= 0:
+            return []
+        pool = archive[:] + candidates
+        if not pool:
+            return []
+        return self._prune_archive(pool, max_size)
+
+    def _prune_archive(self, archive: List[Dict], max_size: int) -> List[Dict]:
+        """keep diverse subset based on objective distance"""
+        if len(archive) <= max_size:
+            return archive
+        try:
+            objs = np.asarray([a['objectives'] for a in archive], dtype=float)
+            if objs.ndim == 1:
+                objs = objs.reshape(-1, 1)
+            distances = cdist(objs, objs)
+            np.fill_diagonal(distances, np.inf)
+            min_dist = distances.min(axis=1)
+            keep_idx = np.argsort(-min_dist)[:max_size]
+            return [archive[i] for i in keep_idx]
+        except Exception:
+            sorted_idx = sorted(range(len(archive)), key=lambda i: float(np.mean(archive[i]['objectives'])))
+            keep_idx = sorted_idx[:max_size]
+            return [archive[i] for i in keep_idx]
+
+    def _select_archive_candidates(self, role: AgentRole, k: int) -> List[np.ndarray]:
+        """select archive candidates per role"""
+        if k <= 0:
+            return []
+
+        if role == AgentRole.EXPLORER:
+            picked = self._select_from_archives(['diversity', 'feasible'], k, strategy='diverse')
+        elif role == AgentRole.EXPLOITER:
+            picked = self._select_from_archives(['feasible', 'boundary'], k, strategy='best')
+        elif role == AgentRole.WAITER:
+            picked = self._select_from_archives(['boundary', 'diversity'], k, strategy='best')
+        elif role == AgentRole.ADVISOR:
+            best_k = max(1, k // 2)
+            picked = self._select_from_archives(['feasible', 'boundary'], best_k, strategy='best')
+            picked += self._select_from_archives(['diversity'], k - best_k, strategy='diverse')
+        elif role == AgentRole.COORDINATOR:
+            best_k = max(1, k // 2)
+            picked = self._select_from_archives(['feasible'], best_k, strategy='best')
+            picked += self._select_from_archives(['boundary'], k - best_k, strategy='best')
+        else:
+            picked = self._select_from_archives(['feasible', 'diversity', 'boundary'], k, strategy='random')
+
+        jitter = float(self.config.get('archive_inject_jitter', 0.01))
+        role_pop = self.agent_populations.get(role)
+        bounds = self._get_effective_bounds(role_pop.bias_profile) if role_pop else self.var_bounds
+        out = []
+        for item in picked:
+            x = item['x'].copy()
+            if jitter > 0:
+                x = x + np.random.randn(len(x)) * jitter
+            x = self._clip_to_bounds(x, bounds)
+            out.append(x)
+        return out
+
+    def _select_from_archives(self, names: List[str], k: int, strategy: str = 'best') -> List[Dict]:
+        archive = self._get_first_archive(names)
+        if not archive:
+            return []
+        if strategy == 'diverse':
+            return self._pick_diverse_candidates(archive, k)
+        if strategy == 'random':
+            return self._pick_random_candidates(archive, k)
+        return self._pick_best_candidates(archive, k)
+
+    def _get_first_archive(self, names: List[str]) -> List[Dict]:
+        for name in names:
+            archive = self.archives.get(name, [])
+            if archive:
+                return archive
+        return []
+
+    def _pick_best_candidates(self, archive: List[Dict], k: int) -> List[Dict]:
+        if not archive:
+            return []
+        sorted_arc = sorted(
+            archive,
+            key=lambda a: (float(a.get('violation', 0.0)), float(np.mean(a['objectives'])))
+        )
+        return sorted_arc[:k]
+
+    def _pick_diverse_candidates(self, archive: List[Dict], k: int) -> List[Dict]:
+        if not archive:
+            return []
+        objs = np.asarray([a['objectives'] for a in archive], dtype=float)
+        if objs.ndim == 1:
+            objs = objs.reshape(-1, 1)
+        distances = cdist(objs, objs)
+        np.fill_diagonal(distances, np.inf)
+        min_dist = distances.min(axis=1)
+        keep_idx = np.argsort(-min_dist)[:k]
+        return [archive[i] for i in keep_idx]
+
+    def _pick_random_candidates(self, archive: List[Dict], k: int) -> List[Dict]:
+        if not archive:
+            return []
+        k = min(k, len(archive))
+        return random.sample(archive, k=k)
+
+    def _inject_archive_candidates(self, pop: AgentPopulation, candidates: List[np.ndarray]) -> None:
+        if not candidates or not pop.population:
+            return
+        replace_count = min(len(candidates), len(pop.population))
+        if pop.fitness and len(pop.fitness) == len(pop.population):
+            worst_idx = np.argsort(pop.fitness)[:replace_count].tolist()
+        else:
+            worst_idx = random.sample(range(len(pop.population)), k=replace_count)
+        for idx, candidate in zip(worst_idx, candidates):
+            pop.population[idx] = candidate
+        pop.objectives = []
+        pop.constraints = []
+        pop.fitness = []
+        pop.best_individual = None
+        pop.best_objectives = None
+        pop.best_constraints = None
 
     def calculate_diversity(self) -> float:
         """计算种群多样性"""
@@ -1152,6 +2073,10 @@ class MultiAgentBlackBoxSolver(BaseSolver, SolverVisualizationMixin):
                     if pop.best_objectives:
                         total_violation = sum(abs(c) for c in (pop.best_constraints or []))
                         print(f"  {role.value}: {pop.best_objectives} (违规: {total_violation:.2f})")
+
+            # advisor injection and waiter reassignment happen after logging
+            self._apply_advisor_injection(generation)
+            self._reassign_waiter_pool(generation)
 
         # 最终评估
         for role, pop in self.agent_populations.items():

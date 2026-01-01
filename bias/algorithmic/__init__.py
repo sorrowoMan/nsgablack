@@ -52,6 +52,24 @@ from .gradient_descent import (
     AdamGradientBias
 )
 
+from .pso import (
+    ParticleSwarmBias,
+    AdaptivePSOBias
+)
+
+from .cma_es import (
+    CMAESBias,
+    AdaptiveCMAESBias
+)
+
+from .tabu_search import (
+    TabuSearchBias
+)
+
+from .levy_flight import (
+    LevyFlightBias
+)
+
 __all__ = [
     # Diversity biases
     'DiversityBias',
@@ -91,5 +109,19 @@ __all__ = [
     'GradientDescentBias',
     'MomentumGradientDescentBias',
     'AdaptiveGradientDescentBias',
-    'AdamGradientBias'
+    'AdamGradientBias',
+
+    # PSO biases
+    'ParticleSwarmBias',
+    'AdaptivePSOBias',
+
+    # CMA-ES biases
+    'CMAESBias',
+    'AdaptiveCMAESBias',
+
+    # Tabu search bias
+    'TabuSearchBias',
+
+    # Levy flight bias
+    'LevyFlightBias'
 ]

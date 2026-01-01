@@ -117,3 +117,15 @@ test_*.py
 *.temp
 .DS_Store
 Thumbs.db
+# Project organization
+data/results/
+data/experiments/
+data/visualizations/
+*.history.json
+*.png
+!docs/**/*.png
+
+# IDE
+.idea/
+*.swp
+*.swo

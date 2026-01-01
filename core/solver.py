@@ -295,20 +295,31 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
             cons_arr = np.asarray(cons, dtype=float).flatten()
             violation = float(np.sum(np.maximum(cons_arr, 0.0))) if cons_arr.size > 0 else 0.0
         except Exception:
+            cons_arr = np.zeros(0, dtype=float)
             violation = 0.0
+
+        context = {
+            "problem": self.problem,
+            "constraints": cons_arr.tolist() if cons_arr.size > 0 else [],
+            "constraint_violation": violation,
+            "individual_id": individual_id,
+        }
 
         # 应用 bias 模块
         if self.enable_bias and self.bias_module is not None:
             if self.num_objectives == 1:
-                f_biased = self.bias_module.compute_bias(x, float(obj[0]), individual_id)
+                f_biased = self.bias_module.compute_bias(x, float(obj[0]), individual_id, context=context)
                 obj = np.array([f_biased])
             else:
                 # 多目标：对每个目标分别应用 bias
                 obj_biased = []
                 for i in range(len(obj)):
-                    f_biased = self.bias_module.compute_bias(x, float(obj[i]), individual_id)
+                    f_biased = self.bias_module.compute_bias(x, float(obj[i]), individual_id, context=context)
                     obj_biased.append(f_biased)
                 obj = np.array(obj_biased)
+
+        if cons_arr.size == 0 and "constraint_violation" in context:
+            violation = float(context["constraint_violation"])
 
         return obj, violation
 

@@ -146,20 +146,31 @@ class ParallelEvaluator:
                 cons_arr = np.asarray(cons, dtype=float).flatten()
                 violation = float(np.sum(np.maximum(cons_arr, 0.0))) if cons_arr.size > 0 else 0.0
             except Exception:
+                cons_arr = np.zeros(0, dtype=float)
                 violation = 0.0
+
+            context = {
+                "problem": problem,
+                "constraints": cons_arr.tolist() if cons_arr.size > 0 else [],
+                "constraint_violation": violation,
+                "individual_id": idx,
+            }
 
             # 应用偏置模块
             if enable_bias and bias_module is not None:
                 if num_objectives == 1:
-                    f_biased = bias_module.compute_bias(individual, float(obj[0]), idx)
+                    f_biased = bias_module.compute_bias(individual, float(obj[0]), idx, context=context)
                     obj = np.array([f_biased])
                 else:
                     # 多目标：对每个目标分别应用 bias
                     obj_biased = []
                     for i in range(len(obj)):
-                        f_biased = bias_module.compute_bias(individual, float(obj[i]), idx)
+                        f_biased = bias_module.compute_bias(individual, float(obj[i]), idx, context=context)
                         obj_biased.append(f_biased)
                     obj = np.array(obj_biased)
+
+            if cons_arr.size == 0 and "constraint_violation" in context:
+                violation = float(context["constraint_violation"])
 
             return idx, obj, violation, None
 

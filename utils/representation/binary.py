@@ -1,5 +1,6 @@
 """
 Binary representation helpers.
+
 """
 
 from __future__ import annotations

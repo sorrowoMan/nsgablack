@@ -48,7 +48,8 @@ class BiasModule:
         self.rewards.append({'func': func, 'weight': weight, 'name': name})
 
     def compute_bias(self, x: np.ndarray, f_original: float,
-                     individual_id: Optional[int] = None) -> float:
+                     individual_id: Optional[int] = None,
+                     context: Optional[Dict[str, Any]] = None) -> float:
         """计算偏向后的目标值
 
         参数：
@@ -60,11 +61,40 @@ class BiasModule:
             偏向后的目标值
         """
         bias = 0.0
+        if context is None:
+            context = {}
+
+        constraints_list = context.get("constraints")
+        if constraints_list is None or not isinstance(constraints_list, list):
+            constraints_list = []
+        context["constraints"] = constraints_list
+
+        def _call_bias_func(func: Callable):
+            try:
+                return func(x, constraints_list, context)
+            except TypeError:
+                try:
+                    return func(x, constraints_list)
+                except TypeError:
+                    return func(x)
+
+        def _extract_value(result: Any, value_kind: str) -> float:
+            if isinstance(result, dict):
+                if "constraint" in result:
+                    constraints_list.append(result["constraint"])
+                if "constraints" in result:
+                    constraints_list.extend(list(result["constraints"]))
+                key = value_kind if value_kind in result else "value"
+                return float(result.get(key, 0.0))
+            if isinstance(result, (tuple, list)) and len(result) >= 2:
+                constraints_list.append(result[1])
+                return float(result[0])
+            return float(result)
 
         # 罚函数：增加目标值（惩罚）
         for p in self.penalties:
             try:
-                penalty_value = p['func'](x)
+                penalty_value = _extract_value(_call_bias_func(p['func']), "penalty")
                 bias += p['weight'] * max(0, penalty_value)
             except Exception:
                 pass
@@ -72,7 +102,7 @@ class BiasModule:
         # 奖函数：减少目标值（奖励）
         for r in self.rewards:
             try:
-                reward_value = r['func'](x)
+                reward_value = _extract_value(_call_bias_func(r['func']), "reward")
                 bias -= r['weight'] * max(0, reward_value)
             except Exception:
                 pass
@@ -84,6 +114,18 @@ class BiasModule:
 
         if individual_id is not None:
             self.previous_f[individual_id] = f_original
+
+        # åº¦é‡çº¦æŸè¿èƒŒåº¦ï¼ˆåç½®ç»´æŠ¤ï¼‰
+        if constraints_list:
+            try:
+                total_violation = 0.0
+                for c in constraints_list:
+                    arr = np.asarray(c, dtype=float).flatten()
+                    if arr.size:
+                        total_violation += float(np.sum(np.maximum(arr, 0.0)))
+                context["constraint_violation"] = total_violation
+            except Exception:
+                context["constraint_violation"] = context.get("constraint_violation", 0.0)
 
         return f_original + bias
 
