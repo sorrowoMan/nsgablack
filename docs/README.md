@@ -19,6 +19,7 @@
 ### 架构文档
 - [模块结构](architecture/module_structure.md) - 完整的代码库结构
 - [正确的模块结构](architecture/correct_module_structure.md) - 模块组织规范
+- [Framework Overview](FRAMEWORK_OVERVIEW.md) - Full framework highlights
 - [NSGA-II 偏置架构](architecture/nsga2_bias_architecture.md) - NSGA-II 与偏置系统
 - [统一偏置架构](architecture/unified_bias_architecture.md) - 统一的偏置架构
 - [算法偏置模式](architecture/algorithm_bias_pattern.md) - 算法偏置设计模式

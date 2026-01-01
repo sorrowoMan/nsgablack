@@ -67,7 +67,13 @@ try:
         ConvergenceBias,            # 收敛性偏置
         AdaptiveConvergenceBias,    # 自适应收敛性偏置
         PrecisionBias,              # 精度偏置
-        SimulatedAnnealingBias      # 模拟退火偏置
+        SimulatedAnnealingBias,     # 模拟退火偏置
+        ParticleSwarmBias,          # PSO偏置
+        AdaptivePSOBias,            # 自适应PSO偏置
+        CMAESBias,                  # CMA-ES偏置
+        AdaptiveCMAESBias,          # 自适应CMA-ES偏置
+        TabuSearchBias,             # 禁忌搜索偏置
+        LevyFlightBias              # Levy飞行偏置
     )
 
     # 领域偏置导入
@@ -196,6 +202,12 @@ __all__ = [
     'AdaptiveConvergenceBias',
     'PrecisionBias',
     'SimulatedAnnealingBias',
+    'ParticleSwarmBias',
+    'AdaptivePSOBias',
+    'CMAESBias',
+    'AdaptiveCMAESBias',
+    'TabuSearchBias',
+    'LevyFlightBias',
 
     # Domain biases (if available)
     'ConstraintBias',

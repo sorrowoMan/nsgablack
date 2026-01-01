@@ -23,13 +23,13 @@ from bias import (
     OptimizationContext
 )
 try:
-    from examples.simple_bias_minimal import SimpleNSGAII
+    from examples.bias_demo_minimal import SimpleNSGAII
 except ImportError:
     # Fallback if running as script
     import sys
     import os
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-    from simple_bias_minimal import SimpleNSGAII
+    from bias_demo_minimal import SimpleNSGAII
 
 
 class ExpensiveFunction(BlackBoxProblem):
@@ -171,7 +171,7 @@ def demo_bayesian_as_bias():
             generation=getattr(solver, 'generation', 0),
             individual=x,
             population=getattr(solver, 'population', []),
-            individual_value=base_value
+            metrics={'objective': base_value}
         )
 
         # 应用偏置
