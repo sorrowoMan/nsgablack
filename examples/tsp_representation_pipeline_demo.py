@@ -1,7 +1,7 @@
 """
 TSP demo using the representation pipeline (random-keys encoding).
 """
-
+import time as time
 import os
 import sys
 import numpy as np
@@ -19,8 +19,6 @@ from utils.representation.permutation import (
     RandomKeyMutation,
     RandomKeyPermutationDecoder,
 )
-
-
 class TSPRandomKeysProblem(BlackBoxProblem):
     def __init__(self, cities: np.ndarray):
         self.cities = np.array(cities, dtype=float)
@@ -42,9 +40,7 @@ def main():
     rng = np.random.default_rng(42)
     n_cities = 12
     cities = rng.uniform(0.0, 100.0, size=(n_cities, 2))
-
     problem = TSPRandomKeysProblem(cities)
-
     pipeline = RepresentationPipeline(
         initializer=RandomKeyInitializer(0.0, 1.0),
         repair=ClipRepair(0.0, 1.0),
@@ -56,12 +52,10 @@ def main():
     solver.pop_size = 80
     solver.max_generations = 120
     solver.set_representation_pipeline(pipeline)
-
     result = solver.run()
     pareto = result.get("pareto_solutions") or {}
     objectives = pareto.get("objectives")
     individuals = pareto.get("individuals")
-
     if objectives is None or len(objectives) == 0:
         print("No solutions returned.")
         return
