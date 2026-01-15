@@ -99,10 +99,12 @@ venv.bak/
 .dmypy.json
 dmypy.json
 
-# Experiment history files
+# Experiment history files (keep in results/test_runs/)
 blackbox_*_history.json
+intelligent_blackbox_*_history.json
 data/blackbox_*_history.json
 *.history.json
+sa_bias_evaluation_report.json
 
 # Claude specific
 .claude/settings.local.json
@@ -132,6 +134,13 @@ data/visualizations/
 
 # Temporary files from Claude Code
 tmpclaude-*
+
+# Backup and temporary report files (keep in reports/)
+README.md.backup
+README_part*.md
+*_UPDATE_SUMMARY.md
+*_COMPLETION_REPORT.md
+*_CLEANUP_REPORT.md
 
 # Keep results directories but ignore generated files
 results/*/visualizations/*.png
