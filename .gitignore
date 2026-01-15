@@ -129,3 +129,13 @@ data/visualizations/
 .idea/
 *.swp
 *.swo
+
+# Temporary files from Claude Code
+tmpclaude-*
+
+# Keep results directories but ignore generated files
+results/*/visualizations/*.png
+results/*/visualizations/*.jpg
+!results/.gitkeep
+!results/comparison/.gitkeep
+!results/comparison/visualizations/.gitkeep

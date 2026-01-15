@@ -10,6 +10,7 @@ from .profiles import (
     create_adaptive_profile,
     BiasProfileFactory
 )
+from .surrogate_score import SurrogateScoreBias
 
 __all__ = [
     'BiasProfile',
@@ -18,4 +19,5 @@ __all__ = [
     'get_bias_profile',
     'create_adaptive_profile',
     'BiasProfileFactory',
+    'SurrogateScoreBias',
 ]

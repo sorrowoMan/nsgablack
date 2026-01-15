@@ -132,6 +132,13 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         self.enable_progress_log = True
         self.report_interval = 100
         self._maximize_report = False
+        self.enable_selection_trace = False
+        self.selection_trace_path = None
+        self.selection_trace_mode = "full"
+        self.selection_trace_limit = None
+        self.selection_trace_stride = 1
+        self.selection_trace_flush_interval = 1
+        self.selection_trace_buffer = []
         self.diversity_initializer = DiversityAwareInitializerBlackBox(
             problem,
             similarity_threshold=self.diversity_params['similarity_threshold'],
@@ -260,6 +267,189 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
             self.elite_manager.save_intelligent_history(intelligent_history_file)
         except Exception:
             pass
+        self._flush_selection_trace()
+
+    def enable_selection_tracing(self, path=None, mode="full", max_records=None, stride=1, flush_interval=1):
+        """Enable selection tracing and write per-generation decisions to a JSONL file."""
+        self.enable_selection_trace = True
+        self.selection_trace_mode = mode
+        self.selection_trace_limit = max_records
+        self.selection_trace_stride = max(1, int(stride))
+        self.selection_trace_flush_interval = max(1, int(flush_interval))
+        self.selection_trace_buffer = []
+        if path is None:
+            safe_name = getattr(self.problem, "name", "problem").replace(" ", "_")
+            trace_dir = os.path.join("reports", "selection_trace")
+            os.makedirs(trace_dir, exist_ok=True)
+            path = os.path.join(trace_dir, f"selection_trace_{safe_name}.jsonl")
+        else:
+            trace_dir = os.path.dirname(path)
+            if trace_dir:
+                os.makedirs(trace_dir, exist_ok=True)
+        self.selection_trace_path = path
+        try:
+            with open(self.selection_trace_path, "w", encoding="utf-8") as f:
+                f.write("")
+        except Exception:
+            pass
+
+    def disable_selection_tracing(self):
+        """Disable selection tracing."""
+        self._flush_selection_trace()
+        self.enable_selection_trace = False
+
+    def _should_trace_selection(self):
+        if not self.enable_selection_trace:
+            return False
+        stride = max(1, int(self.selection_trace_stride))
+        return (self.generation % stride) == 0
+
+    def _flush_selection_trace(self):
+        if not self.selection_trace_path or not self.selection_trace_buffer:
+            return
+        try:
+            with open(self.selection_trace_path, "a", encoding="utf-8") as f:
+                for record in self.selection_trace_buffer:
+                    f.write(json.dumps(record, ensure_ascii=False))
+                    f.write("\n")
+            self.selection_trace_buffer = []
+        except Exception:
+            pass
+
+    def _append_selection_trace(self, record):
+        if not self.selection_trace_path:
+            return
+        if self.selection_trace_flush_interval <= 1:
+            try:
+                with open(self.selection_trace_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(record, ensure_ascii=False))
+                    f.write("\n")
+            except Exception:
+                pass
+            return
+        self.selection_trace_buffer.append(record)
+        if len(self.selection_trace_buffer) >= self.selection_trace_flush_interval:
+            self._flush_selection_trace()
+
+    def _record_selection_trace(
+        self,
+        combined_obj,
+        combined_violations,
+        combined_rank,
+        combined_crowding,
+        sorted_indices
+    ):
+        if not self._should_trace_selection():
+            return
+
+        selected_indices = sorted_indices[:self.pop_size]
+        eliminated_indices = sorted_indices[self.pop_size:]
+        if selected_indices.size == 0:
+            return
+
+        cutoff_idx = int(selected_indices[-1])
+        cutoff_rank = int(combined_rank[cutoff_idx])
+        cutoff_crowding = float(combined_crowding[cutoff_idx])
+        parent_count = min(self.pop_size, len(combined_rank))
+
+        def _obj_list(idx):
+            return [float(v) for v in np.atleast_1d(combined_obj[idx]).tolist()]
+
+        def _entry(idx, reason):
+            return {
+                "index": int(idx),
+                "source": "parent" if idx < parent_count else "offspring",
+                "rank": int(combined_rank[idx]),
+                "crowding": float(combined_crowding[idx]),
+                "violation": float(combined_violations[idx]),
+                "feasible": bool(combined_violations[idx] <= 1e-10),
+                "objectives": _obj_list(idx),
+                "reason": reason
+            }
+
+        def _selected_reason(idx):
+            rank = int(combined_rank[idx])
+            crowd = float(combined_crowding[idx])
+            if rank < cutoff_rank:
+                return "better_rank"
+            if rank > cutoff_rank:
+                return "selected_by_order"
+            if crowd > cutoff_crowding:
+                return "higher_crowding"
+            if crowd < cutoff_crowding:
+                return "selected_by_order"
+            return "tie_break"
+
+        def _eliminated_reason(idx):
+            rank = int(combined_rank[idx])
+            crowd = float(combined_crowding[idx])
+            if rank > cutoff_rank:
+                return "worse_rank"
+            if rank < cutoff_rank:
+                return "eliminated_by_order"
+            if crowd < cutoff_crowding:
+                return "lower_crowding"
+            if crowd > cutoff_crowding:
+                return "eliminated_by_order"
+            return "tie_break"
+
+        def _limit_list(items):
+            if self.selection_trace_limit is None:
+                return items
+            limit = int(self.selection_trace_limit)
+            if limit <= 0:
+                return []
+            return items[:limit]
+        mode = self.selection_trace_mode
+        selected_entries = []
+        eliminated_entries = []
+        if mode != "stats":
+            selected_entries = [_entry(idx, _selected_reason(idx)) for idx in selected_indices]
+            eliminated_entries = [_entry(idx, _eliminated_reason(idx)) for idx in eliminated_indices]
+
+        def _rank_hist(indices):
+            if indices.size == 0:
+                return {}
+            ranks = combined_rank[indices]
+            unique, counts = np.unique(ranks, return_counts=True)
+            return {str(int(r)): int(c) for r, c in zip(unique, counts)}
+
+        def _summary(indices):
+            if indices.size == 0:
+                return {
+                    "feasible": 0,
+                    "mean_violation": 0.0,
+                    "rank_hist": {}
+                }
+            violations = combined_violations[indices]
+            feasible = int(np.sum(violations <= 1e-10))
+            mean_violation = float(np.mean(violations)) if violations.size > 0 else 0.0
+            return {
+                "feasible": feasible,
+                "mean_violation": mean_violation,
+                "rank_hist": _rank_hist(indices)
+            }
+
+        record = {
+            "generation": int(self.generation),
+            "population_size": int(self.pop_size),
+            "combined_size": int(len(combined_rank)),
+            "cutoff": {
+                "rank": cutoff_rank,
+                "crowding": cutoff_crowding
+            },
+            "selected_count": int(len(selected_indices)),
+            "eliminated_count": int(len(eliminated_indices))
+        }
+        if mode == "stats":
+            record["summary"] = {
+                "selected": _summary(selected_indices),
+                "eliminated": _summary(eliminated_indices)
+            }
+        else:
+            record["selected"] = _limit_list(selected_entries) if mode == "full" else _limit_list(selected_entries[:10])
+            record["eliminated"] = _limit_list(eliminated_entries) if mode == "full" else _limit_list(eliminated_entries[:10])
+        self._append_selection_trace(record)
 
     def reset(self, event):
         self.stop_algorithm(None)
@@ -774,6 +964,13 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
                                 next_obj = combined_obj[rank_mask, obj_idx][sorted_idx[i + 1]]
                                 combined_crowding[original_idx] += (next_obj - prev_obj) / obj_range
         sorted_indices = np.lexsort((-combined_crowding, combined_rank))
+        self._record_selection_trace(
+            combined_obj,
+            combined_violations,
+            combined_rank,
+            combined_crowding,
+            sorted_indices
+        )
         self.population = combined_pop[sorted_indices[:self.pop_size]]
         self.objectives = combined_obj[sorted_indices[:self.pop_size]]
         self.constraint_violations = combined_violations[sorted_indices[:self.pop_size]]
@@ -890,6 +1087,7 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
                 self.elite_manager.save_intelligent_history(intelligent_history_file)
             except Exception:
                 pass
+            self._flush_selection_trace()
             return
 
         self.evolve_one_generation()
@@ -912,9 +1110,11 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
             try:
                 from ..utils.memory_manager import OptimizationMemoryOptimizer
                 self.memory_optimizer = OptimizationMemoryOptimizer(self)
-                print("Memory optimization enabled")
+                if self.enable_progress_log:
+                    print("Memory optimization enabled")
             except ImportError:
-                print("Memory optimization module not available")
+                if self.enable_progress_log:
+                    print("Memory optimization module not available")
                 self.enable_memory_optimization = False
 
         self.running = True
@@ -949,6 +1149,7 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
             self.elite_manager.save_intelligent_history(intelligent_history_file)
         except Exception:
             pass
+        self._flush_selection_trace()
 
         # Final memory cleanup
         if self.enable_memory_optimization and self.memory_optimizer:

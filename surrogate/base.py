@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 from ..core.base import BlackBoxProblem
+from .utils import get_num_objectives, get_problem_dimension
 
 
 class BaseSurrogateModel(ABC):
@@ -25,8 +26,8 @@ class BaseSurrogateModel(ABC):
             **kwargs: 额外参数
         """
         self.problem = problem
-        self.dimension = problem.dimension
-        self.n_objectives = problem.n_objectives
+        self.dimension = get_problem_dimension(problem)
+        self.n_objectives = get_num_objectives(problem)
 
         # 训练数据
         self.X_train = []

@@ -12,6 +12,7 @@ from sklearn.metrics import (
     explained_variance_score
 )
 from ..core.base import BlackBoxProblem
+from .utils import get_problem_bounds, get_num_objectives
 
 
 class SurrogateEvaluator:
@@ -36,6 +37,7 @@ class SurrogateEvaluator:
         n_samples: int = 100
     ) -> Dict[str, float]:
         """
+
         评估代理模型的准确性
 
         Args:
@@ -47,12 +49,15 @@ class SurrogateEvaluator:
         Returns:
             评估指标
         """
+        lower_bounds, upper_bounds = get_problem_bounds(self.problem)
+        n_objectives = get_num_objectives(self.problem)
+
         # 如果没有测试数据，生成随机测试集
         if test_y is None:
             test_X = np.random.uniform(
-                self.problem.lower_bounds,
-                self.problem.upper_bounds,
-                (n_samples, self.problem.dimension)
+                lower_bounds,
+                upper_bounds,
+                (n_samples, len(lower_bounds))
             )
             test_y = np.array([self.problem.evaluate(x) for x in test_X])
 
@@ -62,7 +67,7 @@ class SurrogateEvaluator:
         # 计算指标
         metrics = {}
 
-        if self.problem.n_objectives == 1:
+        if n_objectives == 1:
             # 单目标
             metrics['mse'] = mean_squared_error(test_y, predictions)
             metrics['rmse'] = np.sqrt(metrics['mse'])
@@ -71,7 +76,7 @@ class SurrogateEvaluator:
             metrics['explained_variance'] = explained_variance_score(test_y, predictions)
         else:
             # 多目标：计算每个目标的指标
-            for i in range(self.problem.n_objectives):
+            for i in range(n_objectives):
                 prefix = f'obj_{i}_'
                 metrics[f'{prefix}mse'] = mean_squared_error(test_y[:, i], predictions[:, i])
                 metrics[f'{prefix}rmse'] = np.sqrt(metrics[f'{prefix}mse'])
@@ -88,6 +93,7 @@ class SurrogateEvaluator:
         time_budget: Optional[float] = None
     ) -> Dict[str, float]:
         """
+
         评估代理模型的效率
 
         Args:
@@ -98,13 +104,16 @@ class SurrogateEvaluator:
         Returns:
             效率指标
         """
+        lower_bounds, upper_bounds = get_problem_bounds(self.problem)
+        n_objectives = get_num_objectives(self.problem)
+
         import time
 
         # 生成随机测试点
         test_X = np.random.uniform(
-            self.problem.lower_bounds,
-            self.problem.upper_bounds,
-            (n_evaluations, self.problem.dimension)
+            lower_bounds,
+            upper_bounds,
+            (n_evaluations, len(lower_bounds))
         )
 
         # 评估代理模型速度
@@ -142,6 +151,7 @@ class SurrogateEvaluator:
         sample_step: int = 20
     ) -> Dict[str, Any]:
         """
+
         评估代理模型的收敛性
 
         Args:
@@ -153,6 +163,9 @@ class SurrogateEvaluator:
         Returns:
             收敛性分析结果
         """
+        lower_bounds, upper_bounds = get_problem_bounds(self.problem)
+        n_objectives = get_num_objectives(self.problem)
+
         # 生成训练数据
         train_X = []
         train_y = []
@@ -160,9 +173,9 @@ class SurrogateEvaluator:
         # 初始样本
         for _ in range(initial_samples):
             x = np.random.uniform(
-                self.problem.lower_bounds,
-                self.problem.upper_bounds,
-                self.problem.dimension
+                lower_bounds,
+                upper_bounds,
+                len(lower_bounds)
             )
             y = self.problem.evaluate(x)
             train_X.append(x)
@@ -179,9 +192,9 @@ class SurrogateEvaluator:
             # 添加新样本
             while len(train_X) < n_samples:
                 x = np.random.uniform(
-                    self.problem.lower_bounds,
-                    self.problem.upper_bounds,
-                    self.problem.dimension
+                    lower_bounds,
+                    upper_bounds,
+                    len(lower_bounds)
                 )
                 y = self.problem.evaluate(x)
                 train_X.append(x)
@@ -192,15 +205,15 @@ class SurrogateEvaluator:
 
             # 评估性能
             test_X = np.random.uniform(
-                self.problem.lower_bounds,
-                self.problem.upper_bounds,
-                (50, self.problem.dimension)
+                lower_bounds,
+                upper_bounds,
+                (50, len(lower_bounds))
             )
             test_y = np.array([self.problem.evaluate(x) for x in test_X])
             pred_y = surrogate.predict(test_X)
 
             # 计算指标
-            if self.problem.n_objectives == 1:
+            if n_objectives == 1:
                 error = mean_squared_error(test_y, pred_y)
                 r2 = r2_score(test_y, pred_y)
             else:
@@ -222,6 +235,7 @@ class SurrogateEvaluator:
         samples_per_iteration: int = 10
     ) -> Dict[str, Any]:
         """
+
         评估不同的采样策略
 
         Args:
@@ -233,6 +247,9 @@ class SurrogateEvaluator:
         Returns:
             策略比较结果
         """
+        lower_bounds, upper_bounds = get_problem_bounds(self.problem)
+        n_objectives = get_num_objectives(self.problem)
+
         from .strategies import SurrogateStrategyFactory
 
         results = {}
@@ -251,9 +268,9 @@ class SurrogateEvaluator:
             # 初始样本
             for _ in range(20):
                 x = np.random.uniform(
-                    self.problem.lower_bounds,
-                    self.problem.upper_bounds,
-                    self.problem.dimension
+                    lower_bounds,
+                    upper_bounds,
+                    len(lower_bounds)
                 )
                 y = self.problem.evaluate(x)
                 train_X.append(x)
@@ -268,9 +285,9 @@ class SurrogateEvaluator:
             for _ in range(n_iterations):
                 # 生成候选解
                 candidates = np.random.uniform(
-                    self.problem.lower_bounds,
-                    self.problem.upper_bounds,
-                    (100, self.problem.dimension)
+                    lower_bounds,
+                    upper_bounds,
+                    (100, len(lower_bounds))
                 )
 
                 # 选择样本
@@ -291,14 +308,14 @@ class SurrogateEvaluator:
 
                 # 评估当前模型
                 test_X = np.random.uniform(
-                    self.problem.lower_bounds,
-                    self.problem.upper_bounds,
-                    (30, self.problem.dimension)
+                    lower_bounds,
+                    upper_bounds,
+                    (30, len(lower_bounds))
                 )
                 test_y = np.array([self.problem.evaluate(x) for x in test_X])
                 pred_y = surrogate.predict(test_X)
 
-                if self.problem.n_objectives == 1:
+                if n_objectives == 1:
                     error = mean_squared_error(test_y, pred_y)
                 else:
                     error = mean_squared_error(test_y.flatten(), pred_y.flatten())

@@ -1,0 +1,64 @@
+{
+  "full_history": [
+    {
+      "generation": 0,
+      "best_fitness": 2.9581068810505635,
+      "avg_fitness": 2.9581068810505635,
+      "diversity_metrics": {
+        "population_diversity": 0.36609739578367956,
+        "mutation_range": 0.8
+      }
+    },
+    {
+      "generation": 1,
+      "best_fitness": 2.1393865551584392,
+      "avg_fitness": 2.5487467181045016,
+      "diversity_metrics": {
+        "population_diversity": 0.3589460792210324,
+        "mutation_range": 0.6000000000000001
+      }
+    },
+    {
+      "generation": 2,
+      "best_fitness": 1.2113989519624198,
+      "avg_fitness": 2.1029641293904744,
+      "diversity_metrics": {
+        "population_diversity": 0.3577566331198911,
+        "mutation_range": 0.4
+      }
+    },
+    {
+      "generation": 3,
+      "best_fitness": 0.652491762417533,
+      "avg_fitness": 1.740346037647239,
+      "diversity_metrics": {
+        "population_diversity": 0.35835177167604454,
+        "mutation_range": 0.2
+      }
+    }
+  ],
+  "feature_summary": {
+    "improvement_points": [
+      {
+        "generation": 1,
+        "improvement": 0.8187203258921243,
+        "fitness": 2.1393865551584392
+      },
+      {
+        "generation": 2,
+        "improvement": 0.9279876031960195,
+        "fitness": 1.2113989519624198
+      },
+      {
+        "generation": 3,
+        "improvement": 0.5589071895448867,
+        "fitness": 0.652491762417533
+      }
+    ],
+    "plateau_periods": [],
+    "diversity_trends": [],
+    "convergence_events": []
+  },
+  "elite_archive_count": 45,
+  "diversity_pool_count": 9
+}

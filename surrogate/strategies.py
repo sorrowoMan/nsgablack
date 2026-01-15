@@ -385,3 +385,6 @@ class SurrogateStrategyFactory:
             return MultiSurrogateStrategy(surrogate_models, **kwargs)
         else:
             raise ValueError(f"未知的策略类型: {strategy_type}")
+
+# Backward-compatible alias
+AdaptiveSurrogateStrategy = AdaptiveStrategy

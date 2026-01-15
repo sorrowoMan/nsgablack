@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 from ..core.base import BlackBoxProblem
 from .base import BaseSurrogateModel, CompositeSurrogateModel
+from .utils import get_num_objectives, get_problem_dimension
 from .features import FeatureExtractor, FeatureExtractorFactory
 from .strategies import SurrogateStrategy, SurrogateStrategyFactory
 from ..ml import ModelManager, DataProcessor
@@ -38,8 +39,8 @@ class SurrogateManager:
             **kwargs: 额外参数
         """
         self.problem = problem
-        self.dimension = problem.dimension
-        self.n_objectives = problem.n_objectives
+        self.dimension = get_problem_dimension(problem)
+        self.n_objectives = get_num_objectives(problem)
 
         # 初始化模型管理器
         self.model_manager = ModelManager(
@@ -55,6 +56,7 @@ class SurrogateManager:
             )
         else:
             self.feature_extractor = feature_extractor
+        self._feature_fitted = False
 
         # 创建数据处理器
         self.data_processor = DataProcessor()
@@ -80,8 +82,10 @@ class SurrogateManager:
             'auto_save': kwargs.get('auto_save', True),
             'save_interval': kwargs.get('save_interval', 50),
             'max_cache_size': kwargs.get('max_cache_size', 10000),
+            'scaler_method': kwargs.get('scaler_method', 'standard'),
             **kwargs
         }
+        self._scaler_method = self.config.get('scaler_method', 'standard')
 
         # 缓存
         self.evaluation_cache = {}
@@ -127,6 +131,34 @@ class SurrogateManager:
                 )
 
         return surrogate
+
+    def _prepare_features(self, X: np.ndarray, fit: bool = False) -> np.ndarray:
+        if self.feature_extractor is None:
+            return X
+        if fit and not self._feature_fitted and hasattr(self.feature_extractor, "fit"):
+            try:
+                self.feature_extractor.fit(X)
+                self._feature_fitted = True
+            except Exception:
+                self._feature_fitted = False
+        try:
+            return self.feature_extractor.extract(X)
+        except Exception:
+            return X
+
+    def _scale_features(self, X: np.ndarray, fit: bool = False) -> np.ndarray:
+        method = self._scaler_method
+        if fit:
+            try:
+                self.data_processor.fit_scaler(X, method=method)
+            except Exception:
+                return X
+        if method in self.data_processor.scalers:
+            try:
+                return self.data_processor.transform_scaler(X, method=method)
+            except Exception:
+                return X
+        return X
 
     def evaluate(self, x: np.ndarray, use_cache: bool = True) -> np.ndarray:
         """
@@ -185,10 +217,7 @@ class SurrogateManager:
             y: 目标值
         """
         # 特征提取
-        if self.feature_extractor:
-            X_features = self.feature_extractor.extract(X)
-        else:
-            X_features = X
+        X_features = self._prepare_features(X, fit=True)
 
         # 添加到代理模型
         self.surrogate_model.add_samples(X_features, y)
@@ -205,8 +234,7 @@ class SurrogateManager:
 
             # 数据预处理
             if len(self.surrogate_model.X_train) > 10:
-                self.data_processor.fit_scaler(X)
-                X = self.data_processor.transform_scaler(X)
+                X = self._scale_features(X, fit=True)
 
             # 训练模型
             self.surrogate_model.fit(X, y)
@@ -227,16 +255,10 @@ class SurrogateManager:
             预测值
         """
         # 特征提取
-        if self.feature_extractor:
-            X_features = self.feature_extractor.extract(X)
-        else:
-            X_features = X
+        X_features = self._prepare_features(X, fit=False)
+        if hasattr(self.surrogate_model, 'X_train') and len(self.surrogate_model.X_train) > 10:
+            X_features = self._scale_features(X_features, fit=False)
 
-        # 数据预处理
-        if hasattr(self.surrogate_model, 'X_train') and len(self.surrogate_model.X_train) > 0:
-            X_features = self.data_processor.transform_scaler(X_features)
-
-        # 预测
         return self.surrogate_model.predict(X_features)
 
     def get_uncertainty(self, X: np.ndarray) -> np.ndarray:
@@ -251,12 +273,9 @@ class SurrogateManager:
         """
         if hasattr(self.surrogate_model, 'predict_uncertainty'):
             # 特征提取
-            if self.feature_extractor:
-                X_features = self.feature_extractor.extract(X)
-            else:
-                X_features = X
+            X_features = self._prepare_features(X, fit=False)
+            X_features = self._scale_features(X_features, fit=False)
 
-            # 预测不确定性
             _, uncertainty = self.surrogate_model.predict_uncertainty(X_features)
             return uncertainty
         else:

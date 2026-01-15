@@ -8,6 +8,8 @@ mypy>=0.910
 # Documentation
 sphinx>=4.0.0
 sphinx-rtd-theme>=1.0.0
+myst-parser>=1.0.0
+sphinx-autodoc-typehints>=1.20.0
 
 # Additional dependencies for development
 jupyter>=1.0.0

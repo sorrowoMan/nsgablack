@@ -40,6 +40,7 @@ except ImportError:
 from .solvers.nsga2 import BlackBoxSolverNSGAII as SolverNSGA2
 from .solvers.monte_carlo import MonteCarloOptimizer, optimize_with_monte_carlo
 from .solvers.surrogate import SurrogateAssistedNSGAII, run_surrogate_assisted
+from .solvers.surrogate_interface import SurrogateUnifiedNSGAII
 
 # Utility imports
 from .utils.visualization import SolverVisualizationMixin
@@ -79,6 +80,7 @@ __all__ = [
     # Solvers and optimizers
     'MonteCarloOptimizer',
     'SurrogateAssistedNSGAII',
+    'SurrogateUnifiedNSGAII',
 
     # Utils
     'SolverVisualizationMixin',
