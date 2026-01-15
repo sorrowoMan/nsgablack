@@ -110,8 +110,9 @@ sa_bias_evaluation_report.json
 .claude/settings.local.json
 .claude/
 
-# Test files (keep in test directory)
+# Test files (keep in tests/ and test/ directories)
 test_*.py
+!tests/test_*.py
 !test/test_*.py
 
 # Temporary files

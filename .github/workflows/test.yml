@@ -46,7 +46,7 @@ jobs:
 
     - name: Run tests with coverage
       run: |
-        pytest test/ --cov=nsgablack --cov-report=xml --cov-report=html --cov-report=term-missing -v
+        pytest tests/ --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing -v --cov-fail-under=30
 
     - name: Upload coverage to Codecov
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
@@ -59,7 +59,7 @@ jobs:
 
     - name: Run performance benchmarks
       run: |
-        pytest test/test_performance.py --benchmark-only --benchmark-json=benchmark.json || true
+        pytest tests/test_performance.py --benchmark-only --benchmark-json=benchmark.json || echo "No performance tests yet"
 
     - name: Upload benchmark results
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
@@ -67,6 +67,7 @@ jobs:
       with:
         name: benchmark-results
         path: benchmark.json
+        if-no-files-found: ignore
 
   code-quality:
     name: Code Quality Checks
