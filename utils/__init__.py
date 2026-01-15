@@ -4,6 +4,14 @@ from .visualization import SolverVisualizationMixin
 from .experiment import ExperimentResult
 from .parallel_evaluator import ParallelEvaluator
 from .batch_evaluator import BatchEvaluator, create_batch_evaluator
+from .metrics import (
+    pareto_filter,
+    hypervolume_2d,
+    igd,
+    reference_front_zdt1,
+    reference_front_zdt3,
+    reference_front_dtlz2,
+)
 
 __all__ = [
     'CallableSingleObjectiveProblem',
@@ -16,4 +24,10 @@ __all__ = [
     'ParallelEvaluator',
     'BatchEvaluator',
     'create_batch_evaluator',
+    'pareto_filter',
+    'hypervolume_2d',
+    'igd',
+    'reference_front_zdt1',
+    'reference_front_zdt3',
+    'reference_front_dtlz2',
 ]

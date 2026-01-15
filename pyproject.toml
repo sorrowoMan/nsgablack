@@ -58,6 +58,8 @@ dev = [
     "mypy>=0.910",
     "sphinx>=4.0.0",
     "sphinx-rtd-theme>=1.0.0",
+    "myst-parser>=1.0.0",
+    "sphinx-autodoc-typehints>=1.20.0",
     "jupyter>=1.0.0",
     "notebook>=6.4.0",
 ]

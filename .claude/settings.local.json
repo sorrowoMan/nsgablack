@@ -12,7 +12,8 @@
       "Bash(git push:*)",
       "Bash(ping:*)",
       "Bash(git config:*)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

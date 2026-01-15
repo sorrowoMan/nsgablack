@@ -1,6 +1,6 @@
 # 工具索引
 
-生成时间: 2026-01-01 18:53:55
+生成时间: 2026-01-01 23:54:59
 
 ## core（核心）
 
@@ -35,7 +35,7 @@
   - 类: DistributionSpec (L36), StochasticProblem (L56), MonteCarloEvaluator (L91), MonteCarloOptimizer (L138), SurrogateMonteCarloOptimizer (L260)
   - 函数: optimize_with_monte_carlo (L429), optimize_with_surrogate_mc (L439)
 - solvers/multi_agent.py
-  - 类: AgentPopulation (L110), MultiAgentBlackBoxSolver (L129)
+  - 类: MultiAgentBlackBoxSolver (L120)
 - solvers/surrogate.py
   - 类: EnsembleSurrogate (L44), SurrogateAssistedNSGAII (L101)
   - 函数: run_surrogate_assisted (L564)
@@ -49,6 +49,24 @@
 - multi_agent/bias/profiles.py
   - 类: BiasProfile (L13), DynamicBiasProfile (L69), BiasLibrary (L167), BiasProfileFactory (L354)
   - 函数: get_bias_profile (L330), create_adaptive_profile (L335)
+- multi_agent/components/advisor.py
+  - 类: AdvisorMixin (L18)
+- multi_agent/components/archive.py
+  - 类: ArchiveMixin (L12)
+- multi_agent/components/communication.py
+  - 类: CommunicationMixin (L12)
+- multi_agent/components/evolution.py
+  - 类: EvolutionMixin (L13)
+- multi_agent/components/region.py
+  - 类: RegionMixin (L9)
+- multi_agent/components/role_logic.py
+  - 类: RoleLogicMixin (L11)
+- multi_agent/components/scoring.py
+  - 类: ScoringMixin (L11)
+- multi_agent/components/utils.py
+  - 类: UtilsMixin (L10)
+- multi_agent/core/population.py
+  - 类: AgentPopulation (L10)
 - multi_agent/core/role.py
   - 类: AgentRole (L13), RoleCharacteristics (L35), RoleRegistry (L54), RoleFactory (L210)
   - 函数: get_role_description (L257), suggest_role_config (L273)
@@ -68,6 +86,9 @@
 - utils/array_utils.py
   - 类: SafeArrayAccess (L184)
   - 函数: safe_array_index (L9), safe_slice_bounds (L62), safe_array_concat (L92), safe_array_reshape (L118), validate_array_bounds (L155), safe_get_element (L282), safe_get_row (L287), safe_get_2d_element (L294)
+- utils/batch_evaluator.py
+  - 类: BatchEvaluator (L23)
+  - 函数: create_batch_evaluator (L339)
 - utils/experiment.py
   - 类: ExperimentResult (L8), ExperimentTracker (L85)
 - utils/fast_non_dominated_sort.py
@@ -100,7 +121,7 @@
 - utils/representation/base.py
   - 类: EncodingPlugin (L11), RepairPlugin (L19), InitPlugin (L24), MutationPlugin (L29), RepresentationPipeline (L35)
 - utils/representation/binary.py
-  - 类: BinaryInitializer (L14), BitFlipMutation (L22), BinaryRepair (L33), BinaryCapacityRepair (L41)
+  - 类: BinaryInitializer (L15), BitFlipMutation (L23), BinaryRepair (L34), BinaryCapacityRepair (L42)
 - utils/representation/continuous.py
   - 类: UniformInitializer (L14), GaussianMutation (L23), ClipRepair (L36)
 - utils/representation/graph.py

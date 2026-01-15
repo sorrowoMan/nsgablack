@@ -1,6 +1,6 @@
 # 示例索引
 
-生成时间: 2026-01-01 18:53:55
+生成时间: 2026-01-01 23:54:59
 
 ## examples（示例脚本）
 
@@ -18,6 +18,11 @@
 - examples/bias_v2_simple_example.py - 偏置系统 v2.0 简单示例
 - examples/complete_graph_bias_demo.py - 完整的图偏置示例
 - examples/cross_domain_reusability_demo.py - 跨问题域可复用性演示
+- examples/demos/bias_system_demo.py - 智能偏置系统演示 - 简化版本
+- examples/demos/demo_tsp.py - TSP图偏置演示 - 直接运行版本
+- examples/demos/demo_using_my_classes.py - 使用您项目中已有偏置系统的完整演示
+- examples/demos/final_bias_demo.py - 最终偏置系统演示
+- examples/demos/real_bias_demo.py - 真正使用偏置系统的TSP演示
 - examples/examples.py
 - examples/expensive_function_parallel_example.py - 昂贵函数并行评估示例
 - examples/experiment_tracking_example.py - Example: Experiment tracking and result management.

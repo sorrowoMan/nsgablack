@@ -1,5 +1,8 @@
 {
     "cSpell.words": [
         "nsgablack"
+    ],
+    "python.analysis.extraPaths": [
+        "./core"
     ]
 }

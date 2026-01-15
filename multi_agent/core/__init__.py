@@ -9,6 +9,7 @@ from .role import (
     get_role_description,
     suggest_role_config
 )
+from .population import AgentPopulation
 
 __all__ = [
     'AgentRole',
@@ -16,4 +17,5 @@ __all__ = [
     'RoleCharacteristics',
     'get_role_description',
     'suggest_role_config',
+    'AgentPopulation',
 ]

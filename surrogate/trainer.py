@@ -5,6 +5,8 @@
 """
 
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+import json
+import os
 import numpy as np
 from abc import ABC, abstractmethod
 from ..core.base import BlackBoxProblem
@@ -12,6 +14,7 @@ from .base import BaseSurrogateModel
 from .manager import SurrogateManager
 from .features import FeatureExtractor
 from .strategies import SurrogateStrategy
+from .utils import get_num_objectives, get_problem_bounds
 
 
 class TrueEvaluator(ABC):
@@ -92,6 +95,9 @@ class SurrogateTrainer:
         """
         self.true_evaluator = true_evaluator
         self.problem = problem
+        self._bounds_low, self._bounds_high = get_problem_bounds(problem)
+        self._dimension = int(len(self._bounds_low))
+        self._n_objectives = get_num_objectives(problem)
         self.surrogate_manager = surrogate_manager or SurrogateManager(problem, **kwargs)
 
         # 训练配置
@@ -101,6 +107,8 @@ class SurrogateTrainer:
             'max_iterations': kwargs.get('max_iterations', 100),
             'convergence_threshold': kwargs.get('convergence_threshold', 1e-6),
             'evaluation_budget': kwargs.get('evaluation_budget', 1000),
+            'checkpoint_interval': kwargs.get('checkpoint_interval', 0),
+            'checkpoint_dir': kwargs.get('checkpoint_dir'),
             **kwargs
         }
 
@@ -180,9 +188,19 @@ class SurrogateTrainer:
             # 评估当前性能
             self._evaluate_iteration(iteration)
 
+            checkpoint_interval = int(self.config.get('checkpoint_interval', 0) or 0)
+            checkpoint_dir = self.config.get('checkpoint_dir')
+            if checkpoint_interval > 0 and checkpoint_dir:
+                if iteration % checkpoint_interval == 0:
+                    self.save_checkpoint(checkpoint_dir)
+
         # 4. 最终训练
         print("\n=== 最终模型训练 ===")
         self._final_training()
+
+        checkpoint_dir = self.config.get('checkpoint_dir')
+        if checkpoint_dir:
+            self.save_checkpoint(checkpoint_dir)
 
         total_time = time.time() - start_time
         self.stats['total_time'] = total_time
@@ -208,9 +226,9 @@ class SurrogateTrainer:
         for i in range(n_samples):
             # 生成随机解
             x = np.random.uniform(
-                self.problem.lower_bounds,
-                self.problem.upper_bounds,
-                self.problem.dimension
+                self._bounds_low,
+                self._bounds_high,
+                size=(self._dimension,)
             )
 
             # 真实评估
@@ -232,9 +250,9 @@ class SurrogateTrainer:
 
         if strategy == 'random':
             return np.random.uniform(
-                self.problem.lower_bounds,
-                self.problem.upper_bounds,
-                (n_candidates, self.problem.dimension)
+                self._bounds_low,
+                self._bounds_high,
+                size=(n_candidates, self._dimension)
             )
         elif strategy == 'mutation':
             # 基于现有解变异
@@ -256,7 +274,7 @@ class SurrogateTrainer:
         for _ in range(n_children):
             child = parent + np.random.normal(0, 0.1, parent.shape)
             # 确保在边界内
-            child = np.clip(child, self.problem.lower_bounds, self.problem.upper_bounds)
+            child = np.clip(child, self._bounds_low, self._bounds_high)
             children.append(child)
         return np.array(children)
 
@@ -267,7 +285,7 @@ class SurrogateTrainer:
             alpha = np.random.random()
             child = alpha * parent1 + (1 - alpha) * parent2
             # 确保在边界内
-            child = np.clip(child, self.problem.lower_bounds, self.problem.upper_bounds)
+            child = np.clip(child, self._bounds_low, self._bounds_high)
             children.append(child)
         return np.array(children)
 
@@ -285,7 +303,7 @@ class SurrogateTrainer:
         # 返回 (候选解, 预测值, 评分)
         candidates_with_scores = []
         for i, candidate in enumerate(candidates):
-            if self.problem.n_objectives > 1:
+            if self._n_objectives > 1:
                 # 多目标：使用帕累托等级或聚合函数
                 score = np.mean(predictions[i])
             else:
@@ -424,6 +442,72 @@ class SurrogateTrainer:
             'config': self.config
         }
 
+    def _json_safe(self, value):
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        if isinstance(value, dict):
+            return {str(k): self._json_safe(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [self._json_safe(v) for v in value]
+        return str(value)
+
+    def save_checkpoint(self, directory: str):
+        os.makedirs(directory, exist_ok=True)
+        model_path = os.path.join(directory, 'surrogate_model.pkl')
+        data_path = os.path.join(directory, 'training_data.npz')
+        state_path = os.path.join(directory, 'trainer_state.json')
+
+        X = np.asarray(self.training_data.get('X', []))
+        y = np.asarray(self.training_data.get('y', []))
+        errors = np.asarray(self.training_data.get('errors', []), dtype=float)
+        evaluations = np.asarray(self.training_data.get('evaluations', []), dtype=object)
+        surrogate_predictions = np.asarray(self.training_data.get('surrogate_predictions', []), dtype=object)
+        np.savez_compressed(
+            data_path,
+            X=X,
+            y=y,
+            errors=errors,
+            evaluations=evaluations,
+            surrogate_predictions=surrogate_predictions,
+        )
+
+        state = {
+            'config': self._json_safe(self.config),
+            'stats': self._json_safe(self.stats),
+            'meta': {
+                'dimension': self._dimension,
+                'n_objectives': self._n_objectives,
+                'n_samples': int(len(self.training_data.get('X', []))),
+            },
+        }
+        with open(state_path, 'w', encoding='utf-8') as f:
+            json.dump(state, f, ensure_ascii=True, indent=2)
+
+        self.surrogate_manager.save_model(model_path)
+
+    def load_checkpoint(self, directory: str):
+        model_path = os.path.join(directory, 'surrogate_model.pkl')
+        data_path = os.path.join(directory, 'training_data.npz')
+        state_path = os.path.join(directory, 'trainer_state.json')
+
+        if os.path.exists(state_path):
+            with open(state_path, 'r', encoding='utf-8') as f:
+                state = json.load(f)
+            if isinstance(state.get('config'), dict):
+                self.config.update(state['config'])
+            if isinstance(state.get('stats'), dict):
+                self.stats.update(state['stats'])
+
+        if os.path.exists(data_path):
+            data = np.load(data_path, allow_pickle=True)
+            self.training_data['X'] = list(data.get('X', []))
+            self.training_data['y'] = list(data.get('y', []))
+            self.training_data['errors'] = list(data.get('errors', []))
+            self.training_data['evaluations'] = list(data.get('evaluations', []))
+            self.training_data['surrogate_predictions'] = list(data.get('surrogate_predictions', []))
+
+        if os.path.exists(model_path):
+            self.surrogate_manager.load_model(model_path)
     def save_trainer(self, filepath: str):
         """保存训练器状态"""
         import pickle
@@ -463,9 +547,9 @@ def example_surrogate_training():
     # 定义问题
     class ExpensiveProblem(BlackBoxProblem):
         def __init__(self):
-            lower_bounds = np.full(10, -5.0)
-            upper_bounds = np.full(10, 5.0)
-            super().__init__(10, lower_bounds, upper_bounds, n_objectives=2)
+            super().__init__(name='ExpensiveProblem', dimension=10)
+            self.bounds = {f'x{i}': [-5.0, 5.0] for i in range(self.dimension)}
+
 
         def evaluate(self, x):
             # 模拟昂贵的评估
@@ -473,6 +557,9 @@ def example_surrogate_training():
             time.sleep(0.1)  # 模拟评估耗时
             x = np.array(x)
             return [np.sum(x**2), np.sum((x-2)**2)]
+        def get_num_objectives(self):
+            return 2
+
 
     # 创建真实评估器
     class MyTrueEvaluator(TrueEvaluator):

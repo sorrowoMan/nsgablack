@@ -13,10 +13,16 @@ from .manager import SurrogateManager
 from .features import FeatureExtractor
 from .strategies import (
     SurrogateStrategy,
-    AdaptiveSurrogateStrategy,
-    MultiSurrogateStrategy
+    AdaptiveStrategy,
+    MultiSurrogateStrategy,
+    RandomStrategy,
+    BayesianStrategy,
+    SurrogateStrategyFactory,
 )
 from .evaluators import SurrogateEvaluator
+from .trainer import SurrogateTrainer, TrueEvaluator, ProductionEvaluator
+
+AdaptiveSurrogateStrategy = AdaptiveStrategy
 
 __all__ = [
     'BaseSurrogateModel',
@@ -24,6 +30,13 @@ __all__ = [
     'FeatureExtractor',
     'SurrogateStrategy',
     'AdaptiveSurrogateStrategy',
+    'AdaptiveStrategy',
     'MultiSurrogateStrategy',
-    'SurrogateEvaluator'
+    'RandomStrategy',
+    'BayesianStrategy',
+    'SurrogateStrategyFactory',
+    'SurrogateEvaluator',
+    'SurrogateTrainer',
+    'TrueEvaluator',
+    'ProductionEvaluator',
 ]

@@ -1,13 +1,13 @@
 # 表征索引
 
-生成时间: 2026-01-01 18:53:55
+生成时间: 2026-01-01 23:54:59
 
 ## representation（表征/编码）
 
 - utils/representation/base.py
   - 类: EncodingPlugin (L11), RepairPlugin (L19), InitPlugin (L24), MutationPlugin (L29), RepresentationPipeline (L35)
 - utils/representation/binary.py
-  - 类: BinaryInitializer (L14), BitFlipMutation (L22), BinaryRepair (L33), BinaryCapacityRepair (L41)
+  - 类: BinaryInitializer (L15), BitFlipMutation (L23), BinaryRepair (L34), BinaryCapacityRepair (L42)
 - utils/representation/continuous.py
   - 类: UniformInitializer (L14), GaussianMutation (L23), ClipRepair (L36)
 - utils/representation/graph.py

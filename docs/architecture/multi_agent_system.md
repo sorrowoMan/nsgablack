@@ -27,7 +27,7 @@
 ## 系统概述
 
 多智能体优化系统是 `nsgablack` 的核心创新之一，它将传统的单一种群进化算法扩展为**多角色智能体协作优化**框架。通过不同角色的智能体分工协作，实现探索与开发的完美平衡。
-
+ 
 ### 核心思想
 
 ```
@@ -246,7 +246,33 @@
 
 ### 核心组件
 
+#### 0. 组件化模块（multi_agent/components）
+
+为保证可维护性与可扩展性，求解器的核心能力已拆分为可组合组件（mixin）：
+
+- `advisor.py`：建议生成、候选评分与注入
+- `archive.py`：可行/边界/多样性档案库维护
+- `communication.py`：多智能体信息交流与协作策略
+- `evolution.py`：NSGA-II 选择、交叉、变异与拥挤距离
+- `region.py`：区域划分与边界缩放
+- `role_logic.py`：角色行为、学习与切换
+- `scoring.py`：评分与自适应比例更新
+- `utils.py`：边界、支配与通用工具
+
+#### 0.5 新增角色规范（Enum 方式）
+
+当前角色体系基于 `AgentRole(Enum)`，新增角色需要改源码并按以下流程补齐：
+
+1. `multi_agent/core/role.py`：新增枚举值 + 默认特性 + 角色描述
+2. `solvers/multi_agent.py`：补充 `_get_bias_profile`（必要时加 `_apply_role_bias`）
+3. `multi_agent/strategies/role_bias_combinations.py`：若启用角色偏置组合则补充配置
+4. `multi_agent/bias/profiles.py`：若启用 `BiasLibrary` 则注册默认 profile
+5. `multi_agent/components/archive.py`：如需不同档案采样策略则补充
+6. 运行 `examples/validation_smoke_suite.py` 做回归检查
+
 #### 1. AgentPopulation（智能体种群）
+
+位置：`multi_agent/core/population.py`
 
 ```python
 @dataclass

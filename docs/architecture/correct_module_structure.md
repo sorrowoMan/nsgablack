@@ -8,12 +8,19 @@ nsgablack/
 ├── multi_agent/          ← 多智能体系统（所有相关内容）
 │   ├── __init__.py
 │   │
-│   ├── core/                    ← 核心组件
+│   ├── core/                    ← 核心数据结构
 │   │   ├── role.py              (角色定义：AgentRole枚举)
-│   │   ├── solver.py            (多智能体求解器)
-│   │   ├── agent.py             (智能体基类)
-│   │   ├── population.py        (种群管理)
-│   │   └── communication.py     (通信协议)
+│   │   └── population.py        (种群数据结构：AgentPopulation)
+│   │
+│   ├── components/              ← 组件化能力（可组合 mixin）
+│   │   ├── advisor.py           (建议生成与注入)
+│   │   ├── archive.py           (档案库管理)
+│   │   ├── communication.py     (多智能体通信与协作)
+│   │   ├── evolution.py         (进化与选择)
+│   │   ├── region.py            (区域划分与边界控制)
+│   │   ├── role_logic.py        (角色行为与切换)
+│   │   ├── scoring.py           (评分与自适应比例)
+│   │   └── utils.py             (通用工具与边界处理)
 │   │
 │   ├── strategies/              ← 策略和配置
 │   │   ├── role_bias_combinations.py  ← 角色偏置组合配置 ⭐
@@ -64,7 +71,8 @@ nsgablack/
 
 | 子目录 | 职责 | 内容 |
 |--------|------|------|
-| `core/` | 核心组件 | AgentRole, MultiAgentSolver, AgentPopulation |
+| `core/` | 核心数据结构 | AgentRole, AgentPopulation |
+| `components/` | 组件化能力 | Advisor/Archive/Evolution/Region/Scoring/Communication/RoleLogic/Utils |
 | `strategies/` | 策略配置 | **角色偏置组合** ⭐、搜索策略、建议策略 |
 | `examples/` | 示例代码 | 多智能体系统使用示例 |
 
@@ -95,11 +103,11 @@ nsgablack/
 
 | 文件 | 职责 | 内容 |
 |------|------|------|
-| `multi_agent.py` | 多智能体求解器 | **基于 NSGA-II 的多智能体求解器** |
+| `multi_agent.py` | 多智能体求解器编排层 | **流程编排 + 组件聚合（具体策略在 multi_agent/components）** |
 | `base_solver.py` | 求解器基类 | 所有求解器的基类 |
 | `nsga2.py` | NSGA-II 求解器 | 标准 NSGA-II 实现 |
 
-**关键**：`solvers/multi_agent.py` 应该只负责 NSGA-II 求解器的实现，**不应该**包含偏置配置
+**关键**：`solvers/multi_agent.py` 只负责**编排与接口聚合**，具体策略逻辑放在 `multi_agent/components/`，偏置与策略配置放在 `multi_agent/strategies/`
 
 ---
 

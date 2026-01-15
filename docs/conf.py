@@ -91,6 +91,7 @@ autodoc_default_options = {
 
 autodoc_typehints = 'description'
 autodoc_typehints_description_target = 'documented'
+autosummary_generate = True
 
 # -- Options for Napoleon (Google/NumPy style docstrings) -----------------
 napoleon_google_docstring = True
