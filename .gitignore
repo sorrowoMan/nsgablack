@@ -136,12 +136,19 @@ data/visualizations/
 # Temporary files from Claude Code
 tmpclaude-*
 
-# Backup and temporary report files (keep in reports/)
+# Backup and temporary report files
 README.md.backup
 README_part*.md
 *_UPDATE_SUMMARY.md
 *_COMPLETION_REPORT.md
 *_CLEANUP_REPORT.md
+
+# Temporary documentation directories
+docs/reports/
+reports/
+data/results/
+test/
+
 
 # Keep results directories but ignore generated files
 results/*/visualizations/*.png
