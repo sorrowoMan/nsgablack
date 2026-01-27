@@ -15,7 +15,7 @@
 
 1. **Fork 项目**
    ```bash
-   git clone https://github.com/your-username/nsgablack.git
+   git clone https://github.com/sorrowoMan/nsgablack.git
    cd nsgablack
    ```
 

@@ -500,9 +500,9 @@ result = solver.run()
 
 ## 📚 相关资源
 
-- [API参考文档](API_REFERENCE.md)
-- [并行评估详细指南](PARALLEL_EVALUATION_GUIDE.md)
-- [偏置模块说明](BIAS_README.md)
+- [稳定入口清单](../project/STABLE_API_SURFACE.md)
+- [并行评估指南](../user_guide/parallel_evaluation.md)
+- [偏置系统说明](../user_guide/bias_system.md)
 
 ---
 
