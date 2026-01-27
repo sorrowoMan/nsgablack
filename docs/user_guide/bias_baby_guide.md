@@ -12,7 +12,7 @@
 | 直接改目标值（奖励/惩罚） | 函数式偏置 `BiasModule` | 任意脚本/模块 | `BlackBoxSolverNSGAII` |
 | 需要上下文/更复杂逻辑 | 类偏置 `AlgorithmicBias/DomainBias` | `bias/algorithmic` 或 `bias/domain` | 偏置管理器或自定义流程 |
 | 让算法“变成偏置” | 算法偏置（本质还是类偏置或函数偏置） | 同上 | 同上 |
-| 控制代理流程（分阶段/不确定性预算） | 代理偏置 `SurrogateControlBias` | `bias/surrogate` | `SurrogateUnifiedNSGAII` |
+| 减少真实评估次数（代理评估/短路） | 代理评估插件 `SurrogateEvaluationPlugin` | `utils/plugins` | `ComposableSolver` / `BlankSolverBase` |
 
 ---
 
@@ -125,40 +125,54 @@ manager.add_algorithmic_bias(DiversityBias("diversity", weight=0.2))
 
 ---
 
-## D. 代理偏置（控制代理过程）
+## D. 代理评估（SurrogateEvaluationPlugin）
 
-**适合**：你要做“分阶段代理、基于不确定性动态调预算”。  
-**接口**：继承 `SurrogateControlBias`，返回配置更新字典。
+**适合**：`evaluate(x)` 很贵（仿真/调度/训练），你想“少做真实评估”，把更多候选交给代理模型排序/筛选。
 
-### 示例：分阶段切换代理策略
+框架当前推荐的落地方式是：用插件在一次运行内短路 `evaluate_population`，让 solver 的主流程保持不变。
 
-```python
-from nsgablack.bias.surrogate import SurrogateControlBias
-
-class MyPhaseBias(SurrogateControlBias):
-    def apply(self, context):
-        if context.progress < 0.3:
-            return {"prefilter": {"enabled": True, "ratio": 1.0}}
-        return {"surrogate_eval": {"enabled": True, "ratio": 0.7}}
-```
-
-### 怎么接入
+### 最小示例（ComposableSolver）
 
 ```python
-from nsgablack.experimental.solvers import SurrogateUnifiedNSGAII
+import numpy as np
+from nsgablack.core.base import BlackBoxProblem
+from nsgablack.core.composable_solver import ComposableSolver
+from nsgablack.core.adapters import AlgorithmAdapter
+from nsgablack.utils.plugins import SurrogateEvaluationPlugin, SurrogateEvaluationConfig
 
-solver = SurrogateUnifiedNSGAII(problem, surrogate_biases=[MyPhaseBias()])
+class MyProblem(BlackBoxProblem):
+    def __init__(self, dim=10):
+        super().__init__(name="my_problem", dimension=dim, bounds={f"x{i}": (-5.0, 5.0) for i in range(dim)})
+    def evaluate(self, x):
+        x = np.asarray(x, dtype=float)
+        return float(np.sum(x * x))
+
+class RandomBatch(AlgorithmAdapter):
+    def __init__(self, n=64):
+        super().__init__(name="random_batch")
+        self.n = int(n)
+    def propose(self, solver, context):
+        lows = np.array([solver.var_bounds[f\"x{i}\"][0] for i in range(solver.dimension)], dtype=float)
+        highs = np.array([solver.var_bounds[f\"x{i}\"][1] for i in range(solver.dimension)], dtype=float)
+        return [np.random.uniform(lows, highs, size=solver.dimension) for _ in range(self.n)]
+
+solver = ComposableSolver(problem=MyProblem(dim=16), adapter=RandomBatch(n=64))
+solver.max_steps = 20
+
+cfg = SurrogateEvaluationConfig(
+    min_train_samples=40,   # 数据不足时全真评估并积累训练数据
+    min_true_evals=8,       # 每代至少做多少次真实评估（保底）
+    topk_exploit=8,         # 额外：挑预测最优的 top-k 做真评估（防偏）
+    topk_explore=8,         # 额外：挑不确定性最高的 top-k 做真评估（主动学习）
+)
+solver.add_plugin(SurrogateEvaluationPlugin(config=cfg, model_type=\"rf\"))
+solver.run()
 ```
 
-### 可返回的更新键
+### 说明（避免误解）
 
-- `prefilter`
-- `score_bias`
-- `surrogate_eval`
-- `constraint_eval`
-- `min_training_samples`
-- `auto_update`
-- `update_interval`
+- 代理评估是“能力层插件”，不是 core solver 的默认行为；你可以随时开关它做消融对比。
+- `bias/surrogate` 下的控制类（`SurrogateControlBias`）目前主要作为预留扩展点；如果你需要“分阶段动态调预算”，建议先在插件/adapter 层显式实现，再沉淀成稳定契约。
 
 ---
 

@@ -307,8 +307,8 @@ with with_parallel_evaluation(solver, backend="process", max_workers=4):
 
 ## 相关资源
 
-- [API文档](API_REFERENCE.md#并行评估)
-- [性能基准测试](benchmarks/parallel_benchmark.py)
+- [对外入口导航](external_api_navigation.md)
+- [性能基准测试脚本](../../benchmarks/parallel_benchmark.py)
 
 ## Legacy: Mixin/装饰器方式（不推荐）
 
