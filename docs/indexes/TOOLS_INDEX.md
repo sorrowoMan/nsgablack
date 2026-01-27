@@ -1,0 +1,45 @@
+﻿# 工具索引（对齐当前架构）
+
+这份索引回答两类问题：
+
+1) “我要找某个能力/组件，它在哪？”
+2) “有哪些脚本/工具可以帮助我维护与验证工程？”
+
+如果你只想快速定位：优先用 Catalog（可发现性层）：
+
+```bash
+python -m nsgablack catalog search vns
+python -m nsgablack catalog list --kind suite
+python -m nsgablack catalog show adapter.sa
+```
+
+---
+
+## 1) 工程维护脚本（tools/ 与 scripts/）
+
+- `tools/build_catalog.py`：构建/更新工程索引类文件（如果你仍需要静态索引）
+- `tools/generate_api_docs.py`：生成 API 文档
+- `tools/cleanup_project.py`：清理工程杂项/归档
+- `scripts/organize_project.py`：项目结构整理脚本（如有）
+
+---
+
+## 2) 核心工程基础设施（utils/）
+
+- `utils/extension_contracts.py`：扩展点契约护栏（shape/语义/副作用边界）
+- `utils/context/context_schema.py`：context 最小 schema（用于扩展点一致性）
+- `utils/context/context_keys.py`：常用 context key 常量（避免各模块各写字符串）
+- `utils/plugins/`：插件系统（日志/调参/评估短路/并行调用等）
+- `utils/suites/`：权威组合（attach_* 一键装配，避免漏配）
+- `utils/parallel/evaluator.py`：并行评估工具（推荐 `from nsgablack.utils.parallel import ParallelEvaluator`）
+- `utils/parallel/integration.py`：并行评估集成（保持 solver 底座纯净）
+- `utils/engineering/logging_config.py`：日志配置（如有）
+
+---
+
+## 3) 目录边界提示（避免找错）
+
+- Core（稳定承诺）：`core/`、`representation/`、`bias/`、`utils/`、`catalog/`
+- 历史/实验内容：本仓库已清理相关目录以降低维护成本；如需追溯请查看 git 历史
+
+边界说明见：`docs/CORE_STABILITY.md`

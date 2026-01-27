@@ -5,92 +5,176 @@ import numpy as np
 from scipy.spatial.distance import cdist
 import json
 import os
+import logging
+from typing import Optional, Any, List
 
+# ============================================================================
+# 核心导入（必需）
+# ============================================================================
+from .base import BlackBoxProblem
+from ..utils.plugins import PluginManager
+
+# ============================================================================
+# 接口定义（用于类型提示和依赖注入）
+# ============================================================================
+from .interfaces import (
+    BiasInterface,
+    RepresentationInterface,
+    VisualizationInterface,
+    PluginInterface,
+    # 工厂函数
+    has_bias_module,
+    has_representation_module,
+    has_visualization_module,
+    has_numba,
+    load_bias_module,
+    load_representation_pipeline,
+    create_bias_context,
+)
+
+ensure_dependencies = None
+
+# ============================================================================
+# 可选模块导入（延迟加载）
+# ============================================================================
+
+# 可视化混入类
 try:
-    # 当作为包导入时使用相对导入
-    from .base import BlackBoxProblem
-    from .diversity import DiversityAwareInitializerBlackBox
-    from .elite import AdvancedEliteRetention
-    # 可选导入
-    try:
-        from ..utils.visualization import SolverVisualizationMixin
-    except ImportError:
-        try:
-            # 从上级目录导入
-            import sys
-            import os
-            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            from utils.visualization import SolverVisualizationMixin
-            # 移除添加的路径
-            sys.path.pop(0)
-        except ImportError:
-            class SolverVisualizationMixin:
-                def _init_visualization(self):
-                    pass
-    try:
-        from ..bias import BiasModule
-    except ImportError:
-        try:
-            import sys
-            import os
-            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            from bias import BiasModule
-            sys.path.pop(0)
-        except ImportError:
-            BiasModule = None
-    try:
-        from ..utils.numba_helpers import fast_is_dominated, NUMBA_AVAILABLE
-    except Exception:
-        fast_is_dominated = None
-        NUMBA_AVAILABLE = False
-    try:
-        from ..utils.experiment import ExperimentResult
-    except ImportError:
-        ExperimentResult = None
-    try:
-        from ..utils.representation import RepresentationPipeline
-    except ImportError:
-        RepresentationPipeline = None
+    from ..utils.viz import SolverVisualizationMixin as _SolverVisualizationMixin
 except ImportError:
-    # 当作为脚本运行时使用绝对导入
-    from base import BlackBoxProblem
-    from diversity import DiversityAwareInitializerBlackBox
-    from elite import AdvancedEliteRetention
-    # 可选导入
-    try:
-        from utils.visualization import SolverVisualizationMixin
-    except ImportError:
-        class SolverVisualizationMixin:
-            def _init_visualization(self):
-                pass
-    try:
-        from bias import BiasModule
-    except ImportError:
-        BiasModule = None
-    try:
-        from utils.numba_helpers import fast_is_dominated, NUMBA_AVAILABLE
-    except Exception:
-        fast_is_dominated = None
-        NUMBA_AVAILABLE = False
-    try:
-        from utils.experiment import ExperimentResult
-    except ImportError:
-        ExperimentResult = None
-    try:
-        from utils.representation import RepresentationPipeline
-    except ImportError:
-        RepresentationPipeline = None
+    class _SolverVisualizationMixin:
+        def _init_visualization(self):
+            pass
+
+# 偏置模块（延迟导入，通过属性访问）
+_BiasModule = None
+
+# Numba加速（延迟导入）
+_fast_is_dominated = None
+_NUMBA_AVAILABLE = False
+
+# 实验结果（延迟导入）
+_ExperimentResult = None
+
+# 日志器
+logger = logging.getLogger(__name__)
+
+# 表示管道（延迟导入）
+_RepresentationPipeline = None
 
 
-class BlackBoxSolverNSGAII(SolverVisualizationMixin):
-    def __init__(self, problem: BlackBoxProblem):
+# ============================================================================
+# 辅助函数：安全加载可选模块
+# ============================================================================
+
+def _get_bias_module():
+    """???? bias ??"""
+    global _BiasModule
+    if _BiasModule is None:
+        try:
+            from ..bias import BiasModule
+            _BiasModule = BiasModule
+        except ImportError:
+            _BiasModule = None
+    return _BiasModule
+
+
+def _get_numba_helpers():
+    """延迟加载 numba 辅助函数"""
+    global _fast_is_dominated, _NUMBA_AVAILABLE
+    if _fast_is_dominated is None:
+        try:
+            from ..utils.performance.numba_helpers import fast_is_dominated, NUMBA_AVAILABLE
+            _fast_is_dominated = fast_is_dominated
+            _NUMBA_AVAILABLE = NUMBA_AVAILABLE
+        except Exception:
+            _fast_is_dominated = None
+            _NUMBA_AVAILABLE = False
+    return _fast_is_dominated, _NUMBA_AVAILABLE
+
+
+def _get_experiment_result():
+    """延迟加载实验结果类"""
+    global _ExperimentResult
+    if _ExperimentResult is None:
+        try:
+            from ..utils.engineering.experiment import ExperimentResult
+            _ExperimentResult = ExperimentResult
+        except ImportError as e:
+            logger.warning("ExperimentResult unavailable: %s", e)
+            _ExperimentResult = None
+    return _ExperimentResult
+
+
+def _get_representation_pipeline():
+    """?????????"""
+    global _RepresentationPipeline
+    if _RepresentationPipeline is None:
+        try:
+            from ..representation import RepresentationPipeline
+            _RepresentationPipeline = RepresentationPipeline
+        except ImportError:
+            _RepresentationPipeline = None
+    return _RepresentationPipeline
+
+
+SolverVisualizationMixin = _SolverVisualizationMixin
+
+
+class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
+    """
+    NSGA-II 黑箱求解器（支持依赖注入）
+
+    参数:
+        problem: 优化问题实例
+        bias_module: 可选的偏置模块（支持依赖注入）
+        representation_pipeline: 可选的表示管道（支持依赖注入）
+        **kwargs: 其他配置参数
+
+    示例:
+        # 传统用法（向后兼容）
+        solver = BlackBoxSolverNSGAII(problem)
+        solver.bias_module = BiasModule()  # 之后设置
+
+        # 新用法（依赖注入）
+        from nsgablack.bias import BiasModule
+        bias = BiasModule()
+        solver = BlackBoxSolverNSGAII(problem, bias_module=bias)
+    """
+
+    def __init__(self,
+                 problem: BlackBoxProblem,
+                 bias_module: Optional[BiasInterface] = None,
+                 representation_pipeline: Optional[RepresentationInterface] = None,
+                 **kwargs):
+        config = kwargs.pop("config", None)
+        config_path = kwargs.pop("config_path", None)
+        config_section = kwargs.pop("config_section", "solver")
+        config_strict = kwargs.pop("config_strict", False)
+        log_config = kwargs.pop("log_config", None)
+
+        config_data = self._load_solver_config(
+            config=config,
+            config_path=config_path,
+            config_section=config_section,
+        )
+
+        if log_config:
+            try:
+                from ..utils.engineering.logging_config import configure_logging
+                configure_logging(**log_config)
+            except Exception as exc:
+                logger.warning("Logging config failed: %s", exc)
+        # 基本配置
         self.enable_diversity_init = False
         self.use_history = False
-        self.enable_elite_retention = True
+        # legacy flag; prefer Suite + plugins (core 不负责装配能力)
+        self.enable_elite_retention = False
         self.problem = problem
         self.variables = problem.variables
         self.num_objectives = problem.get_num_objectives()
         self.dimension = problem.dimension
+
         # 约束相关：通过 problem.evaluate_constraints 统一计算违背度
         self.constraints = []  # 保留占位，兼容旧用法
 
@@ -100,10 +184,62 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         self.temp_data = {}  # For temporary data that can be cleared
         self.constraint_violations = None
         self.var_bounds = problem.bounds
-        # 偏向模块（奖函数+罚函数）
-        self.bias_module: BiasModule = None
-        self.enable_bias = False
-        self.representation_pipeline: RepresentationPipeline = None
+
+        # Parallel evaluation (optional)
+        self.enable_parallel_evaluation = False
+        self.parallel_backend = "process"
+        self.parallel_max_workers = None
+        self.parallel_chunk_size = None
+        self.parallel_load_balancing = True
+        self.parallel_retry_errors = True
+        self.parallel_max_retries = 3
+        self.parallel_verbose = False
+        # Engineering safeguards (optional)
+        self.parallel_precheck = True
+        self.parallel_strict = False
+        self.parallel_fallback_backend = "thread"
+        self.parallel_problem_factory = None
+        self.parallel_context_builder = None
+        self.parallel_extra_context = None
+        self.parallel_evaluator = None
+
+        # 依赖检查（可选）
+        self.dependency_report = None
+        validate_dependencies = kwargs.pop('validate_dependencies', False)
+        if validate_dependencies:
+            try:
+                from ..utils.runtime.dependencies import ensure_dependencies as _ensure_dependencies
+            except Exception:
+                _ensure_dependencies = None
+            if _ensure_dependencies is not None:
+                try:
+                    self.dependency_report = _ensure_dependencies(
+                        required=[('numpy', None), ('numba', None)],
+                        raise_on_missing=False,
+                        logger=logger,
+                    )
+                except Exception as exc:
+                    logger.warning("Dependency validation failed: %s", exc)
+
+        # ====================================================================
+        # 依赖注入：支持外部传入的模块
+        # ====================================================================
+        self._bias_module_internal: Optional[BiasInterface] = None
+        self.bias_module = bias_module  # 使用属性setter处理
+        self.enable_bias = (bias_module is not None)
+        # If True, constraint violations will be ignored (set to 0) when bias is enabled.
+        # Use only when constraints are fully handled by representation repair and/or bias penalties.
+        self.ignore_constraint_violation_when_bias = bool(kwargs.pop("ignore_constraint_violation_when_bias", False))
+
+        # Visualization is optional and should not run during normal solver construction.
+        # Enable it explicitly (e.g. enable_visualization=True) if you want the UI.
+        self.enable_visualization = bool(kwargs.pop("enable_visualization", False))
+        self.plot_enabled = False
+
+        self._representation_internal: Optional[RepresentationInterface] = None
+        self.representation_pipeline = representation_pipeline
+
+        # 标准NSGA-II参数
         self.pop_size = 80
         self.max_generations = 150
         self.crossover_rate = 0.85
@@ -112,6 +248,9 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         self.mutation_range = self.initial_mutation_range
         self.tol = 1e-5
         self.elite_retention_prob = 0.9
+        self.random_seed = None
+
+        # 多样性参数
         self.diversity_params = {
             'candidate_size': 500,
             'similarity_threshold': 0.05,
@@ -119,6 +258,14 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
             'sampling_method': 'lhs',
             'save_history': True
         }
+
+        self._apply_solver_config(config_data, strict=config_strict)
+        self._apply_solver_overrides(kwargs)
+        self.mutation_range = self.initial_mutation_range
+        if self.enable_parallel_evaluation:
+            self._init_parallel_evaluator()
+
+        # 运行时状态
         self.population = None
         self.objectives = None
         self.pareto_solutions = None
@@ -127,6 +274,345 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         self.history = []
         self.running = False
         self.start_time = 0
+
+        # 插件系统（能力层）
+        # - 不强制使用；默认不影响现有流程
+        # - 提供评估短路插槽：允许插件接管评估（surrogate/缓存/远程评估等）
+        self.plugin_manager = PluginManager(
+            short_circuit=True,
+            short_circuit_events=["evaluate_population", "evaluate_individual", "initialize_population"],
+        )
+
+        # 完成初始化（向后兼容）
+        self._complete_initialization()
+
+    # --------------------------------------------------------------------
+    # Plugin helpers (optional)
+    # --------------------------------------------------------------------
+    def add_plugin(self, plugin: Any) -> "BlackBoxSolverNSGAII":
+        self.plugin_manager.register(plugin)
+        try:
+            plugin.attach(self)
+        except Exception:
+            pass
+        try:
+            if hasattr(plugin, "on_solver_init"):
+                plugin.on_solver_init(self)
+        except Exception:
+            pass
+        return self
+
+    def remove_plugin(self, plugin_name: str) -> None:
+        plugin = self.plugin_manager.get(plugin_name)
+        if plugin is not None:
+            try:
+                plugin.detach()
+            except Exception:
+                pass
+        self.plugin_manager.unregister(plugin_name)
+
+    def get_plugin(self, plugin_name: str) -> Any:
+        return self.plugin_manager.get(plugin_name)
+
+    # ========================================================================
+    # 属性访问器：支持延迟加载和依赖注入
+    # ========================================================================
+
+    @property
+    def bias_module(self) -> Optional[BiasInterface]:
+        """
+        获取偏置模块
+
+        支持：
+        1. 依赖注入的外部模块
+        2. 延迟加载的内部模块
+        """
+        if self._bias_module_internal is not None:
+            return self._bias_module_internal
+
+        # 延迟加载（向后兼容）
+        BiasModuleClass = _get_bias_module()
+        if BiasModuleClass is not None and self.enable_bias:
+            # 创建默认实例
+            if not hasattr(self, '_bias_module_cached'):
+                self._bias_module_cached = BiasModuleClass()
+            return self._bias_module_cached
+
+        return None
+
+    @bias_module.setter
+    def bias_module(self, value: Optional[BiasInterface]):
+        """
+        设置偏置模块
+
+        支持依赖注入和向后兼容。
+        """
+        self._bias_module_internal = value
+        if value is not None:
+            self.enable_bias = True
+            # 清除缓存
+            if hasattr(self, '_bias_module_cached'):
+                delattr(self, '_bias_module_cached')
+
+    @property
+    def representation_pipeline(self) -> Optional[RepresentationInterface]:
+        """
+        获取表示管道
+
+        支持：
+        1. 依赖注入的外部管道
+        2. 延迟加载的内部管道
+        """
+        if self._representation_internal is not None:
+            return self._representation_internal
+
+        # 延迟加载（向后兼容）
+        RepresentationPipelineClass = _get_representation_pipeline()
+        if RepresentationPipelineClass is not None:
+            if not hasattr(self, '_representation_cached'):
+                self._representation_cached = RepresentationPipelineClass()
+            return self._representation_cached
+
+        return None
+
+    @representation_pipeline.setter
+    def representation_pipeline(self, value: Optional[RepresentationInterface]):
+        """
+        设置表示管道
+
+        支持依赖注入和向后兼容。
+        """
+        self._representation_internal = value
+        if value is not None:
+            # 清除缓存
+            if hasattr(self, '_representation_cached'):
+                delattr(self, '_representation_cached')
+
+    @property
+    def population_size(self) -> int:
+        """Alias for pop_size (backward compatibility)."""
+        return self.pop_size
+
+    @population_size.setter
+    def population_size(self, value: int) -> None:
+        try:
+            pop_size = int(value)
+        except (TypeError, ValueError):
+            return
+        adjusted = pop_size if pop_size % 2 == 0 else pop_size + 1
+        self.pop_size = max(adjusted, 2 * self.num_objectives)
+
+    def _load_solver_config(
+        self,
+        *,
+        config: Optional[Any],
+        config_path: Optional[Any],
+        config_section: Optional[str],
+    ) -> dict:
+        from ..utils.engineering.config_loader import ConfigError, load_config, merge_dicts, select_section
+
+        data = {}
+        if config_path:
+            try:
+                data = load_config(config_path)
+            except ConfigError as exc:
+                logger.warning("Config load failed (%s): %s", config_path, exc)
+        if config:
+            try:
+                override = load_config(config)
+                data = merge_dicts(data, override)
+            except ConfigError as exc:
+                logger.warning("Config load failed (%s): %s", config, exc)
+        return select_section(data, config_section)
+
+    def _apply_solver_config(self, config_data: dict, *, strict: bool = False) -> None:
+        if not config_data:
+            return
+        try:
+            legacy_keys = {
+                "enable_diversity_init",
+                "use_history",
+                "enable_elite_retention",
+                "elite_retention_prob",
+                "diversity_params",
+            }
+            for k in legacy_keys:
+                if k in config_data:
+                    logger.warning(
+                        "Legacy solver config key '%s' is deprecated; prefer Plugin + Suite wiring.",
+                        k,
+                    )
+            if "parallel" in config_data and "enable_parallel_evaluation" not in config_data:
+                config_data = dict(config_data)
+                config_data["enable_parallel_evaluation"] = bool(config_data.get("parallel"))
+            if "enable_parallel" in config_data and "enable_parallel_evaluation" not in config_data:
+                config_data = dict(config_data)
+                config_data["enable_parallel_evaluation"] = bool(config_data.get("enable_parallel"))
+            from ..utils.engineering.config_loader import ConfigError, apply_config
+            unknown = apply_config(self, config_data, allow_unknown=not strict)
+            if unknown:
+                logger.warning("Unknown solver config keys: %s", ", ".join(sorted(unknown)))
+        except ConfigError as exc:
+            logger.warning("Failed to apply solver config: %s", exc)
+
+    def _apply_solver_overrides(self, overrides: dict) -> None:
+        if not overrides:
+            return
+        from ..utils.engineering.config_loader import merge_dicts
+        legacy_keys = {
+            "enable_diversity_init",
+            "use_history",
+            "enable_elite_retention",
+            "elite_retention_prob",
+            "diversity_params",
+        }
+        known_keys = {
+            "enable_diversity_init",
+            "use_history",
+            "enable_elite_retention",
+            "pop_size",
+            "max_generations",
+            "crossover_rate",
+            "mutation_rate",
+            "initial_mutation_range",
+            "tol",
+            "elite_retention_prob",
+            "random_seed",
+            "diversity_params",
+            "enable_parallel_evaluation",
+            "parallel_backend",
+            "parallel_max_workers",
+            "parallel_chunk_size",
+            "parallel_load_balancing",
+            "parallel_retry_errors",
+            "parallel_max_retries",
+            "parallel_verbose",
+            "parallel_precheck",
+            "parallel_strict",
+            "parallel_fallback_backend",
+            "parallel_problem_factory",
+            "parallel_context_builder",
+            "parallel_extra_context",
+        }
+        if "parallel" in overrides:
+            self.enable_parallel_evaluation = bool(overrides.get("parallel"))
+        if "enable_parallel" in overrides:
+            self.enable_parallel_evaluation = bool(overrides.get("enable_parallel"))
+        for key in known_keys:
+            if key not in overrides:
+                continue
+            value = overrides.get(key)
+            if key in legacy_keys:
+                try:
+                    import warnings
+
+                    warnings.warn(
+                        f"Solver override '{key}' is deprecated; prefer Plugin + Suite wiring.",
+                        DeprecationWarning,
+                        stacklevel=2,
+                    )
+                except Exception:
+                    pass
+            if key == "diversity_params" and isinstance(value, dict):
+                self.diversity_params = merge_dicts(self.diversity_params, value)
+            else:
+                setattr(self, key, value)
+
+    def _init_parallel_evaluator(self) -> None:
+        if self.parallel_evaluator is not None:
+            return
+        try:
+            from ..utils.parallel import ParallelEvaluator, SmartEvaluatorSelector
+        except Exception as exc:
+            logger.warning("Parallel evaluator unavailable: %s", exc)
+            self.enable_parallel_evaluation = False
+            return
+
+        if self.parallel_backend == "auto":
+            self.parallel_evaluator = SmartEvaluatorSelector.select_evaluator(
+                self.problem, self.pop_size
+            )
+            if hasattr(self.parallel_evaluator, "precheck"):
+                try:
+                    self.parallel_evaluator.precheck = bool(self.parallel_precheck)
+                    self.parallel_evaluator.strict = bool(self.parallel_strict)
+                    self.parallel_evaluator.fallback_backend = self.parallel_fallback_backend
+                    self.parallel_evaluator.problem_factory = self.parallel_problem_factory
+                    self.parallel_evaluator.context_builder = self.parallel_context_builder
+                    self.parallel_evaluator.extra_context = dict(self.parallel_extra_context or {})
+                except Exception:
+                    pass
+            return
+
+        self.parallel_evaluator = ParallelEvaluator(
+            backend=self.parallel_backend,
+            max_workers=self.parallel_max_workers,
+            chunk_size=self.parallel_chunk_size,
+            enable_load_balancing=self.parallel_load_balancing,
+            retry_errors=self.parallel_retry_errors,
+            max_retries=self.parallel_max_retries,
+            verbose=self.parallel_verbose,
+            precheck=self.parallel_precheck,
+            strict=self.parallel_strict,
+            fallback_backend=self.parallel_fallback_backend,
+            problem_factory=self.parallel_problem_factory,
+            context_builder=self.parallel_context_builder,
+            extra_context=self.parallel_extra_context,
+        )
+
+    # ========================================================================
+    # 便捷方法：检查模块可用性
+    # ========================================================================
+
+    def has_bias_support(self) -> bool:
+        """检查偏置系统是否可用"""
+        return self.bias_module is not None
+
+    def has_representation_support(self) -> bool:
+        """检查表示管道是否可用"""
+        return self.representation_pipeline is not None
+
+    def has_numba_support(self) -> bool:
+        """检查numba加速是否可用"""
+        _, numba_available = _get_numba_helpers()
+        return numba_available
+
+    # ========================================================================
+    # 兼容性方法：支持旧代码
+    # ========================================================================
+
+    def enable_bias_module(self, enable: bool = True):
+        """
+        启用或禁用偏置模块
+
+        向后兼容方法。
+        """
+        self.enable_bias = enable
+        if enable and self.bias_module is None:
+            # 尝试自动创建
+            BiasModuleClass = _get_bias_module()
+            if BiasModuleClass is not None:
+                self._bias_module_internal = BiasModuleClass()
+
+    def get_bias_module_class(self):
+        """
+        获取BiasModule类（向后兼容）
+
+        返回:
+            BiasModule类或None
+        """
+        return _get_bias_module()
+
+    # ========================================================================
+    # 其余初始化（保持原有逻辑）
+    # ========================================================================
+    def _complete_initialization(self):
+        """
+        完成初始化（向后兼容）
+
+        这个方法包含原 __init__ 的后续部分，
+        保持与旧代码的兼容性。
+        """
         self.run_count = 0
         self.evaluation_count = 0
         self.enable_progress_log = True
@@ -139,44 +625,15 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         self.selection_trace_stride = 1
         self.selection_trace_flush_interval = 1
         self.selection_trace_buffer = []
-        self.diversity_initializer = DiversityAwareInitializerBlackBox(
-            problem,
-            similarity_threshold=self.diversity_params['similarity_threshold'],
-            rejection_prob=self.diversity_params['rejection_prob']
-        )
-        self.elite_manager = AdvancedEliteRetention(
-            self.max_generations,
-            self.pop_size,
-            initial_retention_prob=self.elite_retention_prob,
-            min_replace_ratio=0.05,
-            max_replace_ratio=0.6,
-            replacement_weights=None,
-            enable_intelligent_history=True  # 启用智能历史管理
-        )
-        self.history_file = f"blackbox_{problem.name.replace(' ', '_')}_history.json"
-        self.diversity_initializer.set_history_file(self.history_file)
-        self.enable_convergence_detection = True
-        self.convergence_params = {
-            'stagnation_window': 20,
-            'improvement_epsilon': 1e-4,
-            'diversity_threshold': 0.08,
-            'min_generations': 30,
-            'noise_repeats': 3,
-            'noise_std_threshold': 1e-6
-        }
-        self.convergence_state = {
-            'status': 'INIT',
-            'best_f_history': [],
-            'stagnation_counter': 0,
-            'diversity_history': [],
-            'current_diversity': None,
-            'best_idx': None,
-            'best_x': None,
-            'best_f': None,
-            'noise_std': None,
-            'last_update_gen': 0
-        }
-        self._init_visualization()
+        # core 不负责“能力装配”：多样性初始化/精英保留/收敛检测应通过 Plugin + Suite 接入。
+        self.diversity_initializer = None
+        self.elite_manager = None
+        self.history_file = f"blackbox_{self.problem.name.replace(' ', '_')}_history.json"
+        self.enable_convergence_detection = False  # legacy flag; prefer ConvergencePlugin
+        self.convergence_params = None
+        self.convergence_state = None
+        if self.enable_visualization:
+            self._init_visualization()
 
     def update_candidate_size(self, text):
         try:
@@ -188,7 +645,8 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         try:
             value = float(text)
             self.diversity_params['similarity_threshold'] = value
-            self.diversity_initializer.similarity_threshold = value
+            if getattr(self, "diversity_initializer", None) is not None:
+                self.diversity_initializer.similarity_threshold = value
         except Exception:
             pass
 
@@ -196,7 +654,8 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         try:
             value = float(text)
             self.diversity_params['rejection_prob'] = value
-            self.diversity_initializer.rejection_prob = value
+            if getattr(self, "diversity_initializer", None) is not None:
+                self.diversity_initializer.rejection_prob = value
         except Exception:
             pass
 
@@ -211,7 +670,8 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
     def update_max_generations(self, text):
         try:
             self.max_generations = int(text)
-            self.elite_manager.max_generations = self.max_generations
+            if getattr(self, "elite_manager", None) is not None:
+                self.elite_manager.max_generations = self.max_generations
         except Exception:
             pass
 
@@ -254,17 +714,20 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
     def stop_algorithm(self, event):
         self.running = False
         self.stop_animation()
-        if self.enable_diversity_init and self.diversity_params.get('save_history', True):
-            self.diversity_initializer.save_history()
         # 保存求解历史（包含每代的平均目标值）
         try:
             self.save_history()
         except Exception:
             pass
-        # 保存智能历史数据
         try:
-            intelligent_history_file = f"intelligent_{self.history_file}"
-            self.elite_manager.save_intelligent_history(intelligent_history_file)
+            self.plugin_manager.on_solver_finish(
+                {
+                    "generation": self.generation,
+                    "eval_count": self.evaluation_count,
+                    "best_x": getattr(self, "best_x", None),
+                    "best_f": getattr(self, "best_f", None),
+                }
+            )
         except Exception:
             pass
         self._flush_selection_trace()
@@ -461,11 +924,7 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         self.history = []
         self.mutation_range = self.initial_mutation_range
         self.evaluation_count = 0
-        self.elite_manager = AdvancedEliteRetention(
-            self.max_generations,
-            self.pop_size,
-            initial_retention_prob=self.elite_retention_prob
-        )
+        self.elite_manager = None
         if self.plot_enabled:
             self.update_plot_dynamic()
         self.update_info_text()
@@ -477,39 +936,58 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         目标来自 problem.evaluate(x)，约束来自 problem.evaluate_constraints(x)。
         约定 g(x) <= 0 为可行，g(x) > 0 为违反程度，这里将所有正违背度求和。
         """
+        overridden = self.plugin_manager.trigger("evaluate_individual", self, x, individual_id)
+        if overridden is not None:
+            try:
+                obj, violation = overridden
+            except Exception as exc:
+                raise ValueError("evaluate_individual 插件返回值必须是 (objectives, violation)") from exc
+            obj = np.asarray(obj, dtype=float).flatten()
+            return obj, float(violation)
+
         val = self.problem.evaluate(x)
         obj = np.asarray(val, dtype=float).flatten()
+        from ..utils.constraints.constraint_utils import evaluate_constraints_safe
+        cons_arr, violation = evaluate_constraints_safe(self.problem, x)
 
-        try:
-            cons = self.problem.evaluate_constraints(x)
-            cons_arr = np.asarray(cons, dtype=float).flatten()
-            violation = float(np.sum(np.maximum(cons_arr, 0.0))) if cons_arr.size > 0 else 0.0
-        except Exception:
-            cons_arr = np.zeros(0, dtype=float)
-            violation = 0.0
-
-        context = {
-            "problem": self.problem,
-            "constraints": cons_arr.tolist() if cons_arr.size > 0 else [],
-            "constraint_violation": violation,
-            "individual_id": individual_id,
-        }
+        from ..utils.context.context_schema import build_minimal_context
+        context = build_minimal_context(
+            generation=getattr(self, "generation", None),
+            individual_id=0 if individual_id is None else int(individual_id),
+            constraints=cons_arr.tolist() if cons_arr.size > 0 else [],
+            constraint_violation=float(violation),
+            extra={
+                "problem": self.problem,
+                "bounds": getattr(self, "var_bounds", None),
+            },
+        )
 
         # 应用 bias 模块
         if self.enable_bias and self.bias_module is not None:
             if self.num_objectives == 1:
                 f_biased = self.bias_module.compute_bias(x, float(obj[0]), individual_id, context=context)
                 obj = np.array([f_biased])
+                if self.ignore_constraint_violation_when_bias:
+                    violation = 0.0
             else:
-                # 多目标：对每个目标分别应用 bias
-                obj_biased = []
-                for i in range(len(obj)):
-                    f_biased = self.bias_module.compute_bias(x, float(obj[i]), individual_id, context=context)
-                    obj_biased.append(f_biased)
-                obj = np.array(obj_biased)
-
-        if cons_arr.size == 0 and "constraint_violation" in context:
-            violation = float(context["constraint_violation"])
+                # 多目标：优先一次性批量应用 bias（减少重复开销）
+                if callable(getattr(self.bias_module, "compute_bias_vector", None)):
+                    obj = np.asarray(
+                        self.bias_module.compute_bias_vector(x, obj, individual_id, context=context),
+                        dtype=float,
+                    ).reshape(-1)
+                else:
+                    obj_biased = []
+                    for i in range(len(obj)):
+                        f_biased = self.bias_module.compute_bias(x, float(obj[i]), individual_id, context=context)
+                        obj_biased.append(f_biased)
+                    obj = np.array(obj_biased)
+                if self.ignore_constraint_violation_when_bias:
+                    violation = 0.0
+        else:
+            # 没有bias时，使用原始violation进行约束排序
+            if cons_arr.size == 0 and "constraint_violation" in context:
+                violation = float(context["constraint_violation"])
 
         return obj, violation
 
@@ -518,6 +996,47 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
 
         返回 (objectives, constraint_violations)。
         """
+        overridden = self.plugin_manager.trigger("evaluate_population", self, population)
+        if overridden is not None:
+            try:
+                objectives, violations = overridden
+            except Exception as exc:
+                raise ValueError("evaluate_population 插件返回值必须是 (objectives, violations)") from exc
+            objectives = np.asarray(objectives, dtype=float)
+            violations = np.asarray(violations, dtype=float).ravel()
+            # 保持与原先一致：把“评估过的个体数”计入 evaluation_count（真实评估次数见 problem.evaluation_count）
+            try:
+                self.evaluation_count += int(getattr(population, "shape", [len(population)])[0])
+            except Exception:
+                pass
+            if self.enable_bias and self.ignore_constraint_violation_when_bias:
+                violations = np.zeros_like(np.asarray(violations, dtype=float))
+            return objectives, violations
+
+        if self.enable_parallel_evaluation:
+            if self.parallel_evaluator is None:
+                self._init_parallel_evaluator()
+            if self.parallel_evaluator is not None:
+                try:
+                    objectives, violations = self.parallel_evaluator.evaluate_population(
+                        population=population,
+                        problem=self.problem,
+                        enable_bias=self.enable_bias,
+                        bias_module=self.bias_module,
+                        return_detailed=False,
+                    )
+                    # 保持与串行路径一致的统计与语义
+                    try:
+                        self.evaluation_count += int(getattr(population, "shape", [len(population)])[0])
+                    except Exception:
+                        pass
+                    if self.enable_bias and self.ignore_constraint_violation_when_bias:
+                        violations = np.zeros_like(np.asarray(violations, dtype=float))
+                    return objectives, violations
+                except Exception as exc:
+                    if getattr(self, "parallel_strict", False):
+                        raise
+                    logger.warning("Parallel evaluation failed; fallback to serial: %s", exc)
         pop_size = population.shape[0]
         objectives = np.zeros((pop_size, self.num_objectives))
         constraint_violations = np.zeros(pop_size, dtype=float)
@@ -536,40 +1055,52 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         return objectives, constraint_violations
 
     def initialize_population(self):
-        if self.enable_diversity_init:
-            print("使用多样性感知初始化种群...")
-            threshold, rejection_prob = self.diversity_initializer.adaptive_parameters(self.run_count)
-            self.diversity_initializer.similarity_threshold = threshold
-            self.diversity_initializer.rejection_prob = rejection_prob
-            self.population, self.objectives = self.diversity_initializer.initialize_diverse_population(
-                pop_size=self.pop_size,
-                candidate_size=self.diversity_params['candidate_size'],
-                sampling_method=self.diversity_params['sampling_method']
-            )
-            # 计算初始种群的约束违背度
-            self.constraint_violations = np.zeros(self.population.shape[0], dtype=float)
-            for i in range(self.population.shape[0]):
-                try:
-                    cons = self.problem.evaluate_constraints(self.population[i])
-                    cons_arr = np.asarray(cons, dtype=float).flatten()
-                    violation = float(np.sum(np.maximum(cons_arr, 0.0))) if cons_arr.size > 0 else 0.0
-                except Exception:
-                    violation = 0.0
-                self.constraint_violations[i] = violation
+        overridden = self.plugin_manager.trigger("initialize_population", self)
+        if overridden is not None:
+            pop, obj, vio = overridden
+            self.population = pop
+            self.objectives = obj
+            self.constraint_violations = vio
         else:
-            self.population = np.zeros((self.pop_size, self.dimension))
             if self.representation_pipeline is not None and self.representation_pipeline.initializer is not None:
-                for i in range(self.pop_size):
-                    context = {
-                        'generation': self.generation,
-                        'bounds': self.var_bounds
-                    }
+                # 先初始化一个样本，检查返回类型
+                context = {
+                    'generation': self.generation,
+                    'bounds': self.var_bounds
+                }
+                sample = self.representation_pipeline.init(self.problem, context)
+
+                # 根据Pipeline返回类型创建population
+                if hasattr(sample, 'dtype'):
+                    population_dtype = sample.dtype
+                else:
+                    population_dtype = type(sample[0]) if hasattr(sample, '__getitem__') else float
+
+                # 创建指定类型的数组
+                self.population = np.zeros((self.pop_size, self.dimension), dtype=population_dtype)
+                self.population[0] = sample
+
+                # 初始化剩余个体
+                for i in range(1, self.pop_size):
+                    context = {'generation': self.generation, 'bounds': self.var_bounds}
                     self.population[i] = self.representation_pipeline.init(self.problem, context)
             else:
-                for i, var in enumerate(self.variables):
-                    min_val, max_val = self.var_bounds[var]
-                    self.population[:, i] = np.random.uniform(min_val, max_val, self.pop_size)
+                # 没有Pipeline时使用float
+                self.population = np.zeros((self.pop_size, self.dimension))
+                if isinstance(self.var_bounds, dict):
+                    for i, var in enumerate(self.variables):
+                        min_val, max_val = self.var_bounds[var]
+                        self.population[:, i] = np.random.uniform(min_val, max_val, self.pop_size)
+                else:
+                    for i in range(self.dimension):
+                        min_val, max_val = self.var_bounds[i]
+                        self.population[:, i] = np.random.uniform(min_val, max_val, self.pop_size)
             self.objectives, self.constraint_violations = self.evaluate_population(self.population)
+
+        try:
+            self.plugin_manager.on_population_init(self.population, self.objectives, self.constraint_violations)
+        except Exception:
+            pass
 
     def is_dominated_vectorized(self, obj_matrix):
         """非支配判定：优先使用 numba 加速版本，失败时回退到 numpy 实现。"""
@@ -579,9 +1110,10 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
             obj = obj_matrix
 
         # 优先尝试 numba 加速实现
-        if NUMBA_AVAILABLE and fast_is_dominated is not None:
+        fast, numba = _get_numba_helpers()
+        if numba and fast is not None:
             try:
-                return fast_is_dominated(obj)
+                return fast(obj)
             except Exception:
                 # 任意 numba 相关错误一律回退
                 pass
@@ -599,7 +1131,7 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         """Optimized non-dominated sorting using O(MN²) algorithm"""
         try:
             # Import optimized fast non-dominated sort
-            from ..utils.fast_non_dominated_sort import fast_non_dominated_sort_optimized, FastNonDominatedSort
+            from ..utils.performance.fast_non_dominated_sort import fast_non_dominated_sort_optimized, FastNonDominatedSort
 
             # Use optimized algorithm
             fronts, rank = fast_non_dominated_sort_optimized(
@@ -701,16 +1233,35 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
     def crossover(self, parents):
         pop_size = parents.shape[0]
         offspring = parents.copy()
-        crossover_mask = np.random.rand(pop_size // 2) < self.crossover_rate
-        alpha = np.random.rand(np.sum(crossover_mask), self.dimension)
-        idx = 0
-        for i in range(0, pop_size, 2):
-            if i + 1 >= pop_size:
-                break
-            if crossover_mask[i // 2]:
-                offspring[i] = alpha[idx] * parents[i] + (1 - alpha[idx]) * parents[i+1]
-                offspring[i+1] = (1 - alpha[idx]) * parents[i] + alpha[idx] * parents[i+1]
-                idx += 1
+
+        # 如果Pipeline有crossover，使用Pipeline的crossover
+        if self.representation_pipeline is not None and self.representation_pipeline.crossover is not None:
+            context = {
+                'generation': self.generation,
+                'bounds': self.var_bounds
+            }
+            for i in range(0, pop_size, 2):
+                if i + 1 >= pop_size:
+                    break
+                if np.random.rand() < self.crossover_rate:
+                    child1, child2 = self.representation_pipeline.crossover.crossover(
+                        parents[i], parents[i+1]
+                    )
+                    offspring[i] = child1
+                    offspring[i+1] = child2
+        else:
+            # 否则使用标准SBX crossover
+            crossover_mask = np.random.rand(pop_size // 2) < self.crossover_rate
+            alpha = np.random.rand(np.sum(crossover_mask), self.dimension)
+            idx = 0
+            for i in range(0, pop_size, 2):
+                if i + 1 >= pop_size:
+                    break
+                if crossover_mask[i // 2]:
+                    offspring[i] = alpha[idx] * parents[i] + (1 - alpha[idx]) * parents[i+1]
+                    offspring[i+1] = (1 - alpha[idx]) * parents[i] + alpha[idx] * parents[i+1]
+                    idx += 1
+
         return offspring
 
     def mutate(self, offspring):
@@ -726,9 +1277,14 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
             mutation_mask = np.random.rand(pop_size) < self.mutation_rate
             mutation = np.random.uniform(-self.mutation_range, self.mutation_range, (pop_size, self.dimension))
             offspring[mutation_mask] += mutation[mutation_mask]
-            for j, var in enumerate(self.variables):
-                min_val, max_val = self.var_bounds[var]
-                offspring[:, j] = np.clip(offspring[:, j], min_val, max_val)
+            if isinstance(self.var_bounds, dict):
+                for j, var in enumerate(self.variables):
+                    min_val, max_val = self.var_bounds[var]
+                    offspring[:, j] = np.clip(offspring[:, j], min_val, max_val)
+            else:
+                for j in range(self.dimension):
+                    min_val, max_val = self.var_bounds[j]
+                    offspring[:, j] = np.clip(offspring[:, j], min_val, max_val)
             if self.representation_pipeline is not None and self.representation_pipeline.repair is not None:
                 for i in range(pop_size):
                     context = {
@@ -811,101 +1367,8 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
             # Don't raise for save failures; keep running
             pass
 
-    def _compute_population_diversity(self):
-        if self.population is None or len(self.population) < 2:
-            return 1.0
-        # 使用 var_bounds 的键，而不是 self.variables，以确保匹配
-        var_keys = list(self.var_bounds.keys())
-        lows = np.array([self.var_bounds[v][0] for v in var_keys])
-        highs = np.array([self.var_bounds[v][1] for v in var_keys])
-        span = np.maximum(highs - lows, 1e-12)
-        norm_pop = (self.population - lows) / span
-        sample_size = min(30, norm_pop.shape[0])
-        idx = np.random.choice(norm_pop.shape[0], sample_size, replace=False)
-        sub = norm_pop[idx]
-        distances = cdist(sub, sub)
-        upper = distances[np.triu_indices_from(distances, k=1)]
-        if upper.size == 0:
-            return 1.0
-        return float(np.mean(upper) / (math.sqrt(self.dimension) + 1e-12))
-
-    def _reference_best_value(self):
-        if self.objectives is None:
-            return None, None
-        if self.num_objectives == 1:
-            best_idx = int(np.argmin(self.objectives[:, 0]))
-            best_f = float(self.objectives[best_idx, 0])
-        else:
-            weights = np.linspace(1.0, 0.5, self.num_objectives)
-            scores = np.sum(self.objectives * weights, axis=1)
-            best_idx = int(np.argmin(scores))
-            best_f = float(scores[best_idx])
-        return best_idx, best_f
-
-    def _evaluate_noise_std(self, x, repeats):
-        try:
-            values = []
-            for _ in range(repeats):
-                fx = self.problem.evaluate(x)
-                fx_arr = np.atleast_1d(fx)
-                val = float(fx_arr[0]) if fx_arr.size > 0 else float(fx)
-                values.append(val)
-            return float(np.std(values))
-        except Exception:
-            return None
-
-    def update_convergence(self):
-        if not self.enable_convergence_detection or self.objectives is None:
-            return
-        cs = self.convergence_state
-        params = self.convergence_params
-        best_idx, best_f = self._reference_best_value()
-        if best_f is None:
-            return
-        cs['best_idx'] = best_idx
-        cs['best_f'] = best_f
-        cs['best_x'] = self.population[best_idx].copy()
-        cs['best_f_history'].append(best_f)
-        div = self._compute_population_diversity()
-        cs['current_diversity'] = div
-        cs['diversity_history'].append(div)
-        hist = cs['best_f_history']
-        window = params['stagnation_window']
-        if len(hist) >= window:
-            window_vals = hist[-window:]
-            prev_best = min(window_vals[:-1])
-            current_best = window_vals[-1]
-            denom = max(abs(prev_best), 1.0)
-            relative_improv = (prev_best - current_best) / denom
-            if relative_improv < params['improvement_epsilon']:
-                cs['stagnation_counter'] += 1
-            else:
-                cs['stagnation_counter'] = 0
-        if self.generation < params['min_generations']:
-            cs['status'] = 'EXPLORING'
-        else:
-            if cs['stagnation_counter'] == 0:
-                cs['status'] = 'EXPLORING'
-            elif cs['stagnation_counter'] < window // 2:
-                cs['status'] = 'STAGNATING'
-            else:
-                if div <= params['diversity_threshold']:
-                    if cs['noise_std'] is None:
-                        cs['noise_std'] = self._evaluate_noise_std(cs['best_x'], params['noise_repeats'])
-                    if cs['noise_std'] is None or cs['noise_std'] > params['noise_std_threshold']:
-                        cs['status'] = 'NOISY_EXPLORING'
-                    else:
-                        cs['status'] = 'CONVERGED_CANDIDATE'
-                else:
-                    cs['status'] = 'STAGNATING'
-        cs['last_update_gen'] = self.generation
-
-    def get_convergence_info(self):
-        return {
-            'enabled': self.enable_convergence_detection,
-            'params': self.convergence_params,
-            'state': self.convergence_state.copy()
-        }
+    # Legacy convergence helpers used to live in core, but are now expected to be
+    # implemented via plugins (e.g. utils/plugins/convergence.py) + suites.
 
     def _log_progress(self):
         if self.objectives is None or self.population is None:
@@ -983,72 +1446,6 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         offspring = self.crossover(parents)
         offspring = self.mutate(offspring)
         offspring_objectives, offspring_violations = self.evaluate_population(offspring)
-
-        # 更新智能历史管理器
-        diversity_metrics = {
-            'population_diversity': self._compute_population_diversity(),
-            'mutation_range': self.mutation_range
-        }
-
-        if self.enable_elite_retention and self.pareto_solutions is not None and len(self.pareto_solutions['individuals']) > 0:
-            if self.num_objectives == 1:
-                current_best = np.min(self.objectives)
-            else:
-                current_best = np.mean(self.pareto_solutions['objectives'][:, 0])
-            elite_retention_prob = self.elite_manager.calculate_elite_retention_probability(
-                self.generation, current_best, self.objectives, self.population
-            )
-            self.elite_manager.update_history(current_best)
-
-            # 更新智能历史管理器的代际数据
-            self.elite_manager.update_history_with_generation_data(
-                self.generation, self.population, self.objectives, self.var_bounds, diversity_metrics
-            )
-
-            if random.random() > elite_retention_prob:
-                elite_indices = np.where(self.non_dominated_sorting()[0] == 0)[0]
-                if len(elite_indices) > 0:
-                    ratio = self.elite_manager.get_elite_replacement_ratio(elite_retention_prob)
-                    if len(elite_indices) > 1:
-                        replace_count = int(np.ceil(len(elite_indices) * ratio))
-                        replace_count = max(1, min(len(elite_indices) - 1, replace_count))
-                    else:
-                        replace_count = 0
-                    if replace_count > 0:
-                        replace_indices = np.random.choice(elite_indices, replace_count, replace=False)
-
-                        # 检查是否应该使用智能历史替换
-                        use_historical = self.elite_manager.should_use_historical_replacement(
-                            self.generation, current_best
-                        )
-
-                        for i, idx in enumerate(replace_indices):
-                            if use_historical and i < replace_count // 2:
-                                # 使用智能历史管理器生成替换候选解
-                                historical_candidates = self.elite_manager.get_historical_replacement_candidates(
-                                    self.var_bounds, 1
-                                )
-                                if len(historical_candidates) > 0:
-                                    new_individual = historical_candidates[0]
-                                else:
-                                    # 回退到随机生成
-                                    new_individual = self._generate_random_individual()
-                            else:
-                                # 传统随机生成
-                                new_individual = self._generate_random_individual()
-
-                            self.population[idx] = new_individual
-                            # 重新评估被替换个体
-                            obj, vio = self._evaluate_individual(new_individual)
-                            if obj.size == self.num_objectives:
-                                self.objectives[idx] = obj
-                            elif obj.size > self.num_objectives:
-                                self.objectives[idx] = obj[: self.num_objectives]
-                            else:
-                                self.objectives[idx, : obj.size] = obj
-                            if self.constraint_violations is None:
-                                self.constraint_violations = np.zeros(self.pop_size, dtype=float)
-                            self.constraint_violations[idx] = vio
         combined_pop = np.vstack([self.population, offspring])
         combined_obj = np.vstack([self.objectives, offspring_objectives])
         if self.constraint_violations is None:
@@ -1058,39 +1455,53 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         combined_violations = np.concatenate([base_vio, offspring_violations])
         self.environmental_selection(combined_pop, combined_obj, combined_violations)
         self.generation += 1
-        self.update_convergence()
         if self.enable_progress_log and self.report_interval > 0 and (self.generation % self.report_interval == 0):
             self._log_progress()
 
     def _generate_random_individual(self):
         """生成随机个体"""
         new_individual = np.zeros(self.dimension)
-        # 使用 var_bounds 的键，而不是 self.variables，以确保匹配
-        var_keys = list(self.var_bounds.keys())
-        for j, var in enumerate(var_keys):
-            min_val, max_val = self.var_bounds[var]
-            new_individual[j] = np.random.uniform(min_val, max_val)
+        if isinstance(self.var_bounds, dict):
+            var_keys = list(self.var_bounds.keys())
+            for j, var in enumerate(var_keys):
+                min_val, max_val = self.var_bounds[var]
+                new_individual[j] = np.random.uniform(min_val, max_val)
+        else:
+            for j in range(self.dimension):
+                min_val, max_val = self.var_bounds[j]
+                new_individual[j] = np.random.uniform(min_val, max_val)
         return new_individual
 
     def animate(self, frame):
         if not self.running or self.generation >= self.max_generations:
             self.running = False
-            if self.enable_diversity_init and self.diversity_params.get('save_history', True):
-                self.diversity_initializer.save_history()
             try:
                 self.save_history()
             except Exception:
                 pass
-            # 保存智能历史数据
             try:
-                intelligent_history_file = f"intelligent_{self.history_file}"
-                self.elite_manager.save_intelligent_history(intelligent_history_file)
+                self.plugin_manager.on_solver_finish(
+                    {
+                        "generation": self.generation,
+                        "eval_count": self.evaluation_count,
+                        "best_x": getattr(self, "best_x", None),
+                        "best_f": getattr(self, "best_f", None),
+                    }
+                )
             except Exception:
                 pass
             self._flush_selection_trace()
             return
 
+        try:
+            self.plugin_manager.on_generation_start(self.generation)
+        except Exception:
+            pass
         self.evolve_one_generation()
+        try:
+            self.plugin_manager.on_generation_end(self.generation)
+        except Exception:
+            pass
         
         if self.plot_enabled and (self.generation - self.last_viz_update >= self.visualization_update_frequency):
             self.update_plot_dynamic()
@@ -1099,16 +1510,17 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         if self.generation >= self.max_generations:
             self.run_count += 1
 
-    def run(self, return_experiment=False):
+    def run(self, return_experiment=False, return_dict=False):
         """非 GUI 模式运行
 
         Args:
             return_experiment: 如果为 True，返回 ExperimentResult 对象；否则返回字典
+            return_dict: 如果为 True，返回结果字典；否则返回 (best_x, best_f)
         """
         # Initialize memory optimization
         if self.enable_memory_optimization and self.memory_optimizer is None:
             try:
-                from ..utils.memory_manager import OptimizationMemoryOptimizer
+                from ..utils.performance.memory_manager import OptimizationMemoryOptimizer
                 self.memory_optimizer = OptimizationMemoryOptimizer(self)
                 if self.enable_progress_log:
                     print("Memory optimization enabled")
@@ -1120,6 +1532,16 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
         self.running = True
         self.start_time = time.time()
         self.evaluation_count = 0
+        if self.random_seed is None:
+            try:
+                self.random_seed = int(np.random.randint(0, 2**32 - 1))
+            except Exception:
+                self.random_seed = 0
+        try:
+            np.random.seed(self.random_seed)
+            random.seed(self.random_seed)
+        except Exception:
+            pass
         if self.population is None:
             self.initialize_population()
         self.update_pareto_solutions()
@@ -1127,7 +1549,15 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
             self.record_history()
 
         while self.running and self.generation < self.max_generations:
+            try:
+                self.plugin_manager.on_generation_start(self.generation)
+            except Exception:
+                pass
             self.evolve_one_generation()
+            try:
+                self.plugin_manager.on_generation_end(self.generation)
+            except Exception:
+                pass
 
             # Memory optimization every 10 generations
             if self.enable_memory_optimization and self.memory_optimizer and self.generation % 10 == 0:
@@ -1137,16 +1567,19 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
                     self.memory_optimizer.memory_manager.cleanup_memory()
 
         self.running = False
-        if self.enable_diversity_init and self.diversity_params.get('save_history', True):
-            self.diversity_initializer.save_history()
         try:
             self.save_history()
         except Exception:
             pass
-        # 保存智能历史数据
         try:
-            intelligent_history_file = f"intelligent_{self.history_file}"
-            self.elite_manager.save_intelligent_history(intelligent_history_file)
+            self.plugin_manager.on_solver_finish(
+                {
+                    "generation": self.generation,
+                    "eval_count": self.evaluation_count,
+                    "best_x": getattr(self, "best_x", None),
+                    "best_f": getattr(self, "best_f", None),
+                }
+            )
         except Exception:
             pass
         self._flush_selection_trace()
@@ -1157,6 +1590,7 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
             self.memory_optimizer.clear_temporary_data()
         self.run_count += 1
 
+        ExperimentResult = _get_experiment_result()
         if return_experiment and ExperimentResult is not None:
             result = ExperimentResult(
                 problem_name=getattr(self.problem, 'name', 'unknown'),
@@ -1174,12 +1608,28 @@ class BlackBoxSolverNSGAII(SolverVisualizationMixin):
                 self.evaluation_count,
                 time.time() - self.start_time,
                 self.history,
-                self.get_convergence_info()
+                None
             )
             return result
-
-        return {
+        result = {
             'pareto_solutions': self.pareto_solutions,
             'pareto_objectives': self.pareto_objectives,
             'generation': self.generation
         }
+        self.last_result = result
+
+        if return_dict:
+            return result
+
+        best_x, best_f = self._get_best_solution()
+        return best_x, best_f
+
+    def _get_best_solution(self):
+        if self.population is None or self.objectives is None:
+            return None, None
+        if self.num_objectives == 1:
+            idx = int(np.argmin(self.objectives[:, 0]))
+            return self.population[idx], float(self.objectives[idx, 0])
+        scores = np.sum(self.objectives, axis=1)
+        idx = int(np.argmin(scores))
+        return self.population[idx], self.objectives[idx]

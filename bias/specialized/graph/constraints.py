@@ -26,7 +26,7 @@ from typing import List, Tuple, Dict, Optional, Set, Union, Callable, Any
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from bias_base import DomainBias, OptimizationContext
+from ...core.base import DomainBias, OptimizationContext
 
 
 class GraphConstraintViolation(Exception):

@@ -429,6 +429,17 @@ class UniversalBiasManager:
             'total_bias': total_bias
         }
 
+    def compute_total_algorithmic_bias(
+        self,
+        x: np.ndarray,
+        context: OptimizationContext,
+        performance_metric: Optional[float] = None,
+    ) -> float:
+        """测试/便捷接口：仅返回算法偏置总和（标量）。"""
+        if performance_metric is not None:
+            self.algorithmic_manager.adapt_weights(context, performance_metric)
+        return self.algorithmic_manager.compute_total_bias(x, context)
+
     def get_comprehensive_statistics(self) -> Dict[str, Any]:
         """
         获取全面的偏置统计信息

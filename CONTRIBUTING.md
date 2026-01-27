@@ -1,4 +1,4 @@
-# 贡献指南
+﻿# 贡献指南
 
 感谢您对 nsgablack 项目的关注！我们欢迎任何形式的贡献。
 
@@ -66,21 +66,25 @@
 ```
 nsgablack/
 ├── core/           # 核心模块
-├── solvers/        # 求解器
 ├── bias/           # 偏置系统
-├── utils/          # 工具函数
+├── representation/ # 表示/算子/修复（RepresentationPipeline）
+├── utils/          # 工具与插件（Plugin/Suite/并行/评估等）
+├── catalog/        # 可发现性（search/show/list）
 ├── examples/       # 示例代码
-└── test/           # 测试文件
+├── tests/          # pytest 测试（权威回归口径）
+├── docs/           # 文档
+├── tools/          # 工程脚本（构建索引/生成 API 文档等）
+└── deprecated/     # 历史目录（不再维护，仅保留兼容/考古）
 ```
 
 ### 运行测试
 
 ```bash
 # 运行所有测试
-python -m pytest test/
+pytest -q
 
-# 运行验证脚本
-python examples/validation_smoke_suite.py
+# 运行一个最短示例（可手动挑选更多）
+python examples/end_to_end_workflow_demo.py
 ```
 
 ### 添加新偏置

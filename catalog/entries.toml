@@ -1,0 +1,16 @@
+# Repo-local catalog extensions.
+#
+# This file lets you add discoverability entries without editing Python code
+# (no need to touch `catalog/registry.py`).
+#
+# Schema:
+#
+# [[entry]]
+# key = "suite.my_algo"
+# title = "attach_my_algo"
+# kind = "suite"  # suite|adapter|plugin|bias|representation|tool
+# import_path = "nsgablack.utils.suites.my_algo:attach_my_algo"
+# tags = ["my_algo", "recommended"]
+# summary = "One line description."
+# companions = ["adapter.my_algo", "plugin.benchmark_harness"]
+

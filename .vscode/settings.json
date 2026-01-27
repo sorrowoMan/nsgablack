@@ -1,8 +1,20 @@
 {
     "cSpell.words": [
-        "nsgablack"
+        "nsgablack",
+        "NSGA",
+        "CMAES",
+        "Nelder",
+        "Mead"
     ],
     "python.analysis.extraPaths": [
-        "./core"
-    ]
+        "${workspaceFolder}",
+        "${workspaceFolder}/.."
+    ],
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.diagnosticMode": "workspace",
+    "python.autoComplete.extraPaths": [
+        "${workspaceFolder}",
+        "${workspaceFolder}/.."
+    ],
+    "chatgpt.openOnStartup": false
 }

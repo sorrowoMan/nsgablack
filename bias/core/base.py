@@ -6,8 +6,32 @@
 """
 
 import numpy as np
-from typing import Dict, List, Any, Optional, Protocol
+import time
+from typing import Any, Callable, Dict, List, Optional, Protocol, runtime_checkable
 from abc import ABC, abstractmethod
+
+
+@runtime_checkable
+class BiasInterface(Protocol):
+    """统一偏置接口协议，用于约束偏置实现的公共方法。"""
+
+    def compute(self, x: np.ndarray, context: "OptimizationContext") -> float:
+        ...
+
+    def get_name(self) -> str:
+        ...
+
+    def get_weight(self) -> float:
+        ...
+
+    def set_weight(self, weight: float) -> None:
+        ...
+
+    def enable(self) -> None:
+        ...
+
+    def disable(self) -> None:
+        ...
 
 
 class OptimizationContext:
@@ -71,7 +95,7 @@ class OptimizationContext:
         self.is_violating_constraints = is_violating
 
 
-class BiasBase(ABC):
+class BiasBase(ABC, BiasInterface):
     """
     所有偏置类型的抽象基类
 
@@ -97,6 +121,15 @@ class BiasBase(ABC):
         self.enabled = True                                  # 是否启用
         self.usage_count = 0                                # 使用次数统计
         self.total_bias_value = 0.0                         # 累计偏置值
+
+        # 参数变化回调（用于缓存失效等）
+        self._param_change_callbacks = []
+
+        # 新增：详细统计信息
+        self._per_generation_values = []                     # 每代的平均偏置值
+        self._recent_values = []                             # 最近N次的偏置值
+        self._max_history = 100                              # 保留最近100次调用
+        self._current_generation_values = []                 # 当前代的累积值
 
     @abstractmethod
     def compute(self, x: np.ndarray, context: OptimizationContext) -> float:
@@ -134,18 +167,37 @@ class BiasBase(ABC):
 
         # 调用具体偏置计算方法
         bias_value = self.compute(x, context)
+        weighted_value = bias_value * self.weight
+
+        # 更新基础统计
         self.usage_count += 1                              # 增加使用计数
         self.total_bias_value += abs(bias_value)           # 累加偏置值
 
-        return bias_value * self.weight                      # 返回加权偏置值
+        # 新增：记录详细历史
+        value_record = {
+            'generation': context.generation,
+            'raw_value': float(bias_value),
+            'weighted_value': float(weighted_value),
+            'timestamp': time.time()
+        }
+        self._recent_values.append(value_record)
+        self._current_generation_values.append(weighted_value)
+
+        # 限制历史长度（避免内存无限增长）
+        if len(self._recent_values) > self._max_history:
+            self._recent_values.pop(0)
+
+        return weighted_value                             # 返回加权偏置值
 
     def enable(self):
         """启用偏置"""
         self.enabled = True
+        self._notify_param_change()
 
     def disable(self):
         """禁用偏置"""
         self.enabled = False
+        self._notify_param_change()
 
     def set_weight(self, weight: float):
         """
@@ -155,6 +207,26 @@ class BiasBase(ABC):
             weight: 新的权重值（必须非负）
         """
         self.weight = max(0.0, weight)
+        self._notify_param_change()
+
+    def get_weight(self) -> float:
+        return self.weight
+
+    def get_name(self) -> str:
+        return self.name
+
+    def register_param_change_callback(self, callback: Callable[["BiasBase"], None]):
+        """注册参数变化回调（用于外部缓存失效等）。"""
+        if callback not in self._param_change_callbacks:
+            self._param_change_callbacks.append(callback)
+
+    def _notify_param_change(self):
+        for cb in list(self._param_change_callbacks):
+            try:
+                cb(self)
+            except Exception:
+                # 保守忽略回调异常，避免影响主流程
+                pass
 
     def get_average_bias(self) -> float:
         """
@@ -169,6 +241,61 @@ class BiasBase(ABC):
         """重置使用统计信息"""
         self.usage_count = 0
         self.total_bias_value = 0.0
+        self._per_generation_values = []
+        self._recent_values = []
+        self._current_generation_values = []
+
+    def finalize_generation(self, generation: int):
+        """
+        一代结束时调用，记录该代的统计信息
+
+        Args:
+            generation: 当前代数
+        """
+        if not self._current_generation_values:
+            return
+
+        # 计算该代的统计信息
+        values = self._current_generation_values
+        gen_stats = {
+            'generation': generation,
+            'avg_bias': sum(values) / len(values) if values else 0.0,
+            'call_count': len(values),
+            'min_bias': min(values) if values else 0.0,
+            'max_bias': max(values) if values else 0.0,
+            'std_bias': np.std(values) if len(values) > 1 else 0.0
+        }
+
+        self._per_generation_values.append(gen_stats)
+        self._current_generation_values = []  # 清空当前代累积
+
+    def get_statistics(self) -> Dict[str, Any]:
+        """
+        获取详细的统计信息
+
+        Returns:
+            包含统计信息的字典
+        """
+        if self.usage_count == 0:
+            return {
+                'name': self.name,
+                'enabled': self.enabled,
+                'weight': self.weight,
+                'usage_count': 0,
+                'message': 'Never used'
+            }
+
+        return {
+            'name': self.name,
+            'enabled': self.enabled,
+            'weight': self.weight,
+            'usage_count': self.usage_count,
+            'total_contribution': self.total_bias_value,
+            'average_contribution': self.get_average_bias(),
+            'per_generation_stats': self._per_generation_values,
+            'recent_values': self._recent_values[-10:],  # 最近10次
+            'bias_type': getattr(self, 'bias_type', 'unknown')
+        }
 
     def __str__(self) -> str:
         """字符串表示"""
@@ -185,6 +312,13 @@ class AlgorithmicBias(BiasBase):
     - 引导搜索方向和探索-开发平衡
 
     例如：多样性偏置、收敛偏置、模拟退火偏置等
+
+    信号驱动偏置（Signal-driven Bias）约定：
+    - 有些算法偏置并不“自产”关键评估信号，而是消费能力层（Plugin/Adapter/外部评估器）
+      注入到 `context.metrics` 的统计量（例如 `mc_std`、`surrogate_std`、`eval_time` 等）。
+    - 这类偏置必须声明 `requires_metrics`（依赖哪些 metrics key），并提供
+      `recommended_plugins` 或一个 `utils/suites/*` 的权威组合入口，避免“偏置单独启用无效”。
+    - 当信号缺失时必须安全退化（返回 0.0），不得抛异常破坏主流程。
     """
 
     def __init__(

@@ -24,8 +24,7 @@ import networkx as nx
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import shortest_path, minimum_spanning_tree
 
-from bias_base import BaseBias, OptimizationContext
-from bias_v2 import AlgorithmicBias, DomainBias
+from ...core.base import AlgorithmicBias, DomainBias, OptimizationContext
 
 
 @dataclass

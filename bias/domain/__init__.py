@@ -12,6 +12,8 @@ from .constraint import (
     RuleBasedBias
 )
 
+from .callable_bias import CallableBias
+
 from .engineering import (
     EngineeringDesignBias,
     SafetyBias,
@@ -30,6 +32,7 @@ __all__ = [
     'FeasibilityBias',
     'PreferenceBias',
     'RuleBasedBias',
+    'CallableBias',
 
     # Engineering domain biases
     'EngineeringDesignBias',

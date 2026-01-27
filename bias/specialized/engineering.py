@@ -350,7 +350,10 @@ class EngineeringRobustnessBias(AlgorithmicBias):
         # 获取基准性能
         try:
             baseline_performance = eval_func(x)
-        except:
+        except Exception as e:
+            # 基准失败，记录后返回0偏置
+            import logging
+            logging.getLogger(__name__).warning("baseline eval failed in EngineeringRobustness: %s", e, exc_info=True)
             return 0.0
 
         # 在设计参数周围采样
@@ -367,8 +370,10 @@ class EngineeringRobustnessBias(AlgorithmicBias):
             try:
                 perturbed_performance = eval_func(x_perturbed)
                 perturbed_performances.append(perturbed_performance)
-            except:
-                # 评估失败时给予惩罚
+            except Exception as e:
+                # 评估失败时给予惩罚并记录
+                import logging
+                logging.getLogger(__name__).debug("perturbed eval failed; penalize inf: %s", e, exc_info=True)
                 perturbed_performances.append(float('inf'))
 
         # 计算鲁棒性指标

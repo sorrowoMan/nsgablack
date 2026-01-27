@@ -120,6 +120,14 @@ test_*.py
 *.temp
 .DS_Store
 Thumbs.db
+
+# Local runs/artifacts
+runs/
+results/test_runs/
+deprecated/legacy/experiments/results/
+
+# Local documents
+*.docx
 # Project organization
 data/results/
 data/experiments/

@@ -1,4 +1,4 @@
-# nsgablack 快速开始指南
+﻿# nsgablack 快速开始指南
 
 <div align="center">
 
@@ -23,7 +23,7 @@
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/yourusername/nsgablack.git
+git clone https://github.com/sorrowoMan/nsgablack.git
 cd nsgablack
 ```
 
@@ -113,8 +113,6 @@ print(f"目标值: {result['pareto_objectives'][best_idx]}")
 ```python
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.core.solver import BlackBoxSolverNSGAII
-from nsgablack.bias.bias_v2 import UniversalBiasManager
-from nsgablack.bias.bias_library_domain import ConstraintBias
 
 # 定义带约束的问题
 class ConstrainedProblem(BlackBoxProblem):
@@ -122,20 +120,12 @@ class ConstrainedProblem(BlackBoxProblem):
         return [x[0]**2, (x[0]-2)**2]
 
     def evaluate_constraints(self, x):
-        # 约束：x[0] + x[1] <= 1
+        # 约束：x[0] + x[1] <= 1 （约定：g(x) <= 0 为可行，>0 为违背度）
         return [max(0, x[0] + x[1] - 1)]
-
-# 使用约束偏置
-bias_manager = UniversalBiasManager()
-constraint_bias = ConstraintBias(weight=10.0)
-constraint_bias.add_hard_constraint(lambda x: max(0, x[0] + x[1] - 1))
-bias_manager.domain_manager.add_bias(constraint_bias)
 
 # 求解
 problem = ConstrainedProblem()
 solver = BlackBoxSolverNSGAII(problem)
-solver.bias_manager = bias_manager
-solver.enable_bias = True
 result = solver.run()
 
 print("找到满足约束的Pareto解！")
@@ -150,6 +140,7 @@ print("找到满足约束的Pareto解！")
 ```python
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.core.solver import BlackBoxSolverNSGAII
+import numpy as np
 
 # 数学函数优化
 class FunctionOptimization(BlackBoxProblem):
@@ -284,113 +275,57 @@ for i, (sol, obj) in enumerate(zip(result['pareto_solutions'][:5], result['paret
 
 ## 进阶使用
 
-### 1. 使用偏置系统
+### 1) 用 BiasModule 挂偏置（快速落地业务新想法）
+
+你可以从“领域软约束/倾向”开始：先让算法往你希望的方向走，再慢慢细化为更严格的约束或更专门的算子。
 
 ```python
-from nsgablack.bias.bias_v2 import UniversalBiasManager
-from nsgablack.bias.bias_library_algorithmic import (
-    DiversityBias, SimulatedAnnealingBias
+from nsgablack.bias import BiasModule
+from nsgablack.bias.domain import CallableBias
+
+bias = BiasModule()
+
+# 例：把“超预算”当作软惩罚（你可以直接把业务逻辑写成一个 callable）
+def over_budget_penalty(x, constraints=None, context=None) -> float:
+    budget = (constraints or {}).get("budget", None)
+    if budget is None:
+        return 0.0
+    return max(0.0, float(sum(x) - budget))
+
+bias.add(CallableBias("over_budget", over_budget_penalty, weight=1.0))
+solver.bias = bias
+```
+
+### 2) 用 Adapter 做“算法角色化/阶段化”
+
+当你发现“单一算法底座不够用”，最稳的做法是把策略拆成 Adapter，然后用 Suite/Controller 负责装配与协同。
+
+```python
+from nsgablack.core.adapters import VNSAdapter, MultiStrategyControllerAdapter, StrategySpec
+
+controller = MultiStrategyControllerAdapter(
+    strategies=[
+        StrategySpec(name="vns_refine", adapter=VNSAdapter()),
+    ]
 )
-
-# 创建偏置管理器
-bias_manager = UniversalBiasManager()
-
-# 添加多样性偏置
-bias_manager.algorithmic_manager.add_bias(
-    DiversityBias(weight=0.2)
-)
-
-# 添加模拟退火偏置
-bias_manager.algorithmic_manager.add_bias(
-    SimulatedAnnealingBias(
-        initial_weight=0.15,
-        initial_temperature=100.0,
-        cooling_rate=0.99
-    )
-)
-
-# 应用到求解器
-solver.bias_manager = bias_manager
-solver.enable_bias = True
-result = solver.run()
+solver.adapter = controller
 ```
 
-### 2. 使用多智能体系统
+提示：不知道有什么可用的 Adapter/Plugin/Suite？直接用 Catalog 搜：
 
-```python
-from nsgablack.solvers.multi_agent import MultiAgentBlackBoxSolver
-
-# 创建多智能体求解器
-solver = MultiAgentBlackBoxSolver(problem)
-
-# 自定义配置
-from nsgablack.solvers.multi_agent import AgentRole
-
-config = {
-    'total_population': 200,
-    'agent_ratios': {
-        AgentRole.EXPLORER: 0.3,     # 探索者
-        AgentRole.EXPLOITER: 0.4,    # 开发者
-        AgentRole.WAITER: 0.2,       # 等待者
-        AgentRole.COORDINATOR: 0.1   # 协调者
-    },
-    'max_generations': 200
-}
-
-solver = MultiAgentBlackBoxSolver(problem, config=config)
-result = solver.run()
+```bash
+python -m nsgablack catalog search vns
+python -m nsgablack catalog search suite
 ```
 
-### 3. 并行加速
+### 3) 昂贵评估：用 surrogate_evaluation 插件接入代理模型（可选）
 
-```python
-from nsgablack.utils.parallel_evaluator import ParallelEvaluator
+代理模型在框架里被当作“插件能力”，不侵入 Problem/Representation/Bias 的核心结构：
 
-# 创建并行评估器
-evaluator = ParallelEvaluator(
-    backend='multiprocessing',
-    max_workers=8
-)
+- 你先把 `problem.evaluate(x)` 写稳定
+- 再用 `utils/plugins/surrogate_evaluation.py` 把“少量真实评估 + 大量代理预测”接进流程
 
-# 应用到求解器
-solver.parallel_evaluator = evaluator
-result = solver.run()  # 自动并行加速
-```
-
-### 4. 实时可视化
-
-```python
-from nsgablack.utils.visualization import SolverVisualizationMixin
-
-class VisualSolver(SolverVisualizationMixin, BlackBoxSolverNSGAII):
-    def __init__(self, problem):
-        super().__init__(problem)
-        self.enable_visualization = True
-        self.plot_interval = 10
-
-# 运行（弹出可视化窗口）
-solver = VisualSolver(problem)
-solver.run()
-```
-
-### 5. 使用代理模型（昂贵评估）
-
-```python
-from nsgablack.solvers.surrogate import EnsembleSurrogate
-from nsgablack.utils.surrogate_model import SurrogateModel
-
-# 创建集成代理模型
-surrogate = EnsembleSurrogate([
-    SurrogateModel('gaussian_process'),
-    SurrogateModel('random_forest'),
-    SurrogateModel('rbf_network')
-])
-
-# 应用到求解器
-solver.surrogate_model = surrogate
-solver.evaluation_budget = 500  # 限制真实评估次数
-result = solver.run()
-```
+对应细节请直接看：`docs/user_guide/surrogate_workflow.md`
 
 ---
 
@@ -402,14 +337,17 @@ result = solver.run()
 
 **解决方案**：
 ```bash
-# 确保在项目根目录
+# 方案 A（推荐）：开发模式安装
 cd nsgablack
-
-# 安装项目
 pip install -e .
 
-# 或者添加到Python路径
-export PYTHONPATH="${PYTHONPATH}:$(pwd)"
+# 方案 B：从项目上一级目录运行
+cd ..
+python -m nsgablack ...
+
+# 方案 C：临时加 PYTHONPATH（Windows PowerShell）
+$env:PYTHONPATH=".."
+python -m nsgablack ...
 ```
 
 ### 问题2：依赖缺失
@@ -433,24 +371,19 @@ solver.pop_size = 50  # 从100减少到50
 # 启用内存优化
 solver.enable_memory_optimization = True
 
-# 使用代理模型减少评估次数
-solver.surrogate_model = surrogate
-solver.evaluation_budget = 200
+# 需要时再接入 surrogate 插件（减少真实评估次数）
+# 参考：docs/user_guide/surrogate_workflow.md
 ```
 
 ### 问题4：收敛速度慢
 
 **解决方案**：
 ```python
-# 启用偏置系统
-solver.bias_manager = bias_manager
-solver.enable_bias = True
+# 加入更贴合问题的 Bias（领域/算法/信号驱动）
+# 参考：docs/guides/DECOUPLING_BIAS.md
 
 # 调整变异率
 solver.mutation_prob = 0.2  # 增加变异率
-
-# 使用多智能体系统
-solver = MultiAgentBlackBoxSolver(problem)
 ```
 
 ### 问题5：结果不理想
@@ -464,8 +397,13 @@ solver.max_generations = 500
 solver.pop_size = 200
 
 # 尝试不同算法
-from nsgablack.solvers import BlackBoxSolverMOEAD
-solver = BlackBoxSolverMOEAD(problem)
+如果你想快速跑通“现代路径”，建议使用 `BlackBoxSolverNSGAII` 或 `BlankSolverBase` / `ComposableSolver`，并通过 Pipeline/Bias/Plugin/Adapter/Suite 组合。
+
+提示：不确定“有什么可用组件”时，用 Catalog 搜索：
+```bash
+python -m nsgablack catalog search vns
+python -m nsgablack catalog search suite
+```
 ```
 
 ---
@@ -475,26 +413,26 @@ solver = BlackBoxSolverMOEAD(problem)
 现在你已经掌握了基础，可以：
 
 1. **阅读详细文档**：
-   - [多智能体系统](MULTI_AGENT_SYSTEM.md) - 了解多智能体优化
-   - [API指南](API_GUIDE.md) - 完整API参考
-   - [偏置系统](docs/bias_system_guide.md) - 深入偏置系统
+   - `START_HERE.md` - 入口地图（最短路径 + 索引）
+   - `WORKFLOW_END_TO_END.md` - 面对一个问题的端到端落地流程
+   - `docs/user_guide/catalog.md` - Catalog / Suites 的用法
 
 2. **探索示例**：
    ```bash
    cd examples
-   python bias_demo_minimal.py
-   python intelligent_bias_system_demo.py
-   python tsp_simple_demo.py
+   python end_to_end_workflow_demo.py
+   python blank_vs_composable_demo.py
+   python multi_strategy_coop_demo.py
    ```
 
 3. **查看测试**：
    ```bash
-   python test/run_tests.py
+   pytest -q
    ```
 
 4. **运行基准测试**：
    ```bash
-   python test/performance_comparison.py
+   python -m nsgablack catalog show suite.benchmark_harness
    ```
 
 ---
@@ -523,18 +461,8 @@ result = solver.run()
 ### 高级模板（大规模问题）
 
 ```python
-# 使用多智能体系统
-solver = MultiAgentBlackBoxSolver(problem, config={
-    'total_population': 400,
-    'max_generations': 500
-})
-
-# 启用并行
-solver.parallel_evaluator = ParallelEvaluator(max_workers=8)
-
-# 启用偏置系统
-solver.bias_manager = bias_manager
-solver.enable_bias = True
+# 先用 Suite 跑通官方权威组合（避免漏配），再逐步替换其中某一块做实验。
+# 参考：docs/user_guide/catalog.md + docs/AUTHORITATIVE_EXAMPLES.md
 
 result = solver.run()
 ```

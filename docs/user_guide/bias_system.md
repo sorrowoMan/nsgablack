@@ -1,4 +1,4 @@
-# 偏置系统 v2.0 使用指南
+﻿# 偏置系统 v2.0 使用指南
 
 ## 概述
 
@@ -23,14 +23,21 @@ evaluate(x) = f(x) + algorithmic_bias(x) + domain_bias(x)
 
 算法偏置可以在不同问题间复用，业务偏置针对特定领域定制，两者灵活组合。
 
+### 3. **信号驱动偏置（需要能力层信号）**
+
+有一类算法偏置并不“自产”关键评估信号，而是消费能力层（插件/外部评估器）注入到 `context.metrics` 的统计量（例如 `mc_std`、代理模型不确定性等）。
+
+- 这类偏置必须与信号提供方配套（推荐通过 suite 的权威组合入口完成装配）
+- 详见：`docs/user_guide/signal_driven_bias.md`
+
 ## 快速开始
 
 ### 基础使用
 
 ```python
-from utils.bias_v2 import UniversalBiasManager, OptimizationContext
-from core.base import BlackBoxProblem
-from core.solver import BlackBoxSolverNSGAII
+from nsgablack.bias import UniversalBiasManager, OptimizationContext
+from nsgablack.core.base import BlackBoxProblem
+from nsgablack.core.solver import BlackBoxSolverNSGAII
 
 # 创建问题
 problem = YourProblem()
@@ -55,7 +62,7 @@ result = solver.run()
 ### 使用模板
 
 ```python
-from utils.bias_library import create_bias_manager_from_template
+from nsgablack.bias.library import create_bias_manager_from_template
 
 # 使用机器学习模板
 bias_manager = create_bias_manager_from_template('machine_learning')
@@ -73,7 +80,7 @@ bias_manager = create_bias_manager_from_template(
 ### 快速函数
 
 ```python
-from utils.bias_library import quick_engineering_bias, quick_ml_bias
+from nsgablack.bias.library import quick_engineering_bias, quick_ml_bias
 
 # 快速创建工程设计偏置
 eng_bias = quick_engineering_bias(
@@ -217,7 +224,7 @@ objective_bias.set_target('error_rate', target_value=0.01, direction='minimize')
 ### 算法偏置库
 
 ```python
-from utils.bias_library import BiasFactory, ALGORITHMIC_BIAS_LIBRARY
+from nsgablack.bias.library import BiasFactory, ALGORITHMIC_BIAS_LIBRARY
 
 # 列出可用的算法偏置
 for name, info in ALGORITHMIC_BIAS_LIBRARY.items():
@@ -236,7 +243,7 @@ for name, info in ALGORITHMIC_BIAS_LIBRARY.items():
 ### 业务偏置库
 
 ```python
-from utils.bias_library import DOMAIN_BIAS_LIBRARY
+from nsgablack.bias.library import DOMAIN_BIAS_LIBRARY
 
 # 列出可用的业务偏置
 for name, info in DOMAIN_BIAS_LIBRARY.items():
@@ -258,7 +265,7 @@ for name, info in DOMAIN_BIAS_LIBRARY.items():
 ### 偏置组合器
 
 ```python
-from utils.bias_library import BiasComposer
+from nsgablack.bias.library import BiasComposer
 
 composer = BiasComposer()
 
@@ -292,7 +299,7 @@ bias_manager.adjust_weights(optimization_state)
 ### 内置模板
 
 ```python
-from utils.bias_library import (
+from nsgablack.bias.library import (
     BASIC_ENGINEERING_TEMPLATE,
     FINANCIAL_OPTIMIZATION_TEMPLATE,
     MACHINE_LEARNING_TEMPLATE
@@ -324,7 +331,7 @@ CUSTOM_TEMPLATE = {
 ### 案例1：机械零件优化
 
 ```python
-from utils.bias_library import quick_engineering_bias
+from nsgablack.bias.library import quick_engineering_bias
 
 # 创建偏置
 bias_manager = quick_engineering_bias(
@@ -346,7 +353,7 @@ solver = BiasEnhancedSolver(problem, bias_manager)
 ### 案例2：神经网络架构搜索
 
 ```python
-from utils.bias_library import quick_ml_bias
+from nsgablack.bias.library import quick_ml_bias
 
 # 创建偏置
 bias_manager = quick_ml_bias(
@@ -367,7 +374,7 @@ bias_manager.domain_manager.get_bias('ml_hyperparameter').add_hard_constraint(fl
 ### 案例3：投资组合优化
 
 ```python
-from utils.bias_library import BiasFactory
+from nsgablack.bias.library import BiasFactory
 
 # 创建金融偏置
 finance_bias = BiasFactory.create_domain_bias('portfolio_optimization')
@@ -465,9 +472,13 @@ bias_manager.load_config('my_bias_config.json')
 
 ```python
 # 旧版本的代码仍然可以工作
-from utils.bias import create_standard_bias
+from nsgablack.bias import BiasModule
 
-bias_module = create_standard_bias(problem, reward_weight=0.05, penalty_weight=1.0)
+bias_module = BiasModule()
+# constraint_func 需返回 {"penalty": value}
+from nsgablack.bias.domain import CallableBias
+
+bias_module.add(CallableBias(name="constraint", func=constraint_func, weight=1.0, mode="penalty"))
 ```
 
 ### 迁移指南
@@ -475,8 +486,8 @@ bias_module = create_standard_bias(problem, reward_weight=0.05, penalty_weight=1
 ```python
 # 旧版本
 bias_module = BiasModule()
-bias_module.add_penalty(constraint_func, weight=2.0)
-bias_module.add_reward(reward_func, weight=0.05)
+bias_module.add(CallableBias(name="constraint_strict", func=constraint_func, weight=2.0, mode="penalty"))
+bias_module.add(CallableBias(name="reward", func=reward_func, weight=0.05, mode="reward"))
 
 # 新版本
 bias_manager = UniversalBiasManager()

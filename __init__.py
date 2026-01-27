@@ -1,130 +1,77 @@
 """
-nsgablack: A comprehensive multi-objective optimization framework
+nsgablack: A bias-driven multi-objective optimization framework
+
+Core Focus:
+- Representation Pipeline: Flexible encoding, initialization, mutation, and repair
+- Bias System: Modular integration of domain knowledge and algorithmic guidance
 """
 
-__version__ = "2.1.0"
+# NOTE:
+# This package intentionally keeps the top-level namespace small.
+# Prefer `python -m nsgablack catalog ...` to discover recommended building blocks,
+# and import concrete implementations from their subpackages (core/, bias/,
+# representation/, utils/, ...).
+
+# Version is managed by setuptools_scm (pyproject.toml: dynamic = ["version"]).
+# For editable installs, importlib.metadata provides the resolved version.
+try:
+    from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+    try:
+        __version__ = _pkg_version("nsgablack")
+    except PackageNotFoundError:  # pragma: no cover
+        __version__ = "0+unknown"
+except Exception:  # pragma: no cover
+    __version__ = "0+unknown"
 __author__ = "SorrowoMan"
 __email__ = "sorrowo@foxmail.com"
 
-import matplotlib
-matplotlib.use("Agg")
-
-# Core imports - provide clean API for users
-from .core.base import BlackBoxProblem
-from .core.solver import BlackBoxSolverNSGAII
-from .core.problems import (
-    ZDT1BlackBox, ZDT3BlackBox, DTLZ2BlackBox,
-    SphereBlackBox, ExpensiveSimulationBlackBox,
-    NeuralNetworkHyperparameterOptimization,
-    EngineeringDesignOptimization,
-    BusinessPortfolioOptimization
+from .catalog import (
+    CatalogEntry,
+    get_catalog,
+    search_catalog,
+    list_catalog,
+    get_entry,
+    reload_catalog,
 )
-
-# Bias system imports
-try:
-    from .bias.bias_base import (
-        BaseBias, AlgorithmicBias, DomainBias, OptimizationContext
-    )
-    from .bias.bias_library_algorithmic import (
-        DiversityBias, ConvergenceBias, ExplorationBias
-    )
-    from .bias.bias_library_domain import (
-        ConstraintBias, PreferenceBias, EngineeringDesignBias
-    )
-    from .bias.bias import BiasModule
-    _HAS_BIAS = True
-except ImportError:
-    _HAS_BIAS = False
-
-# Solver imports
-from .solvers.nsga2 import BlackBoxSolverNSGAII as SolverNSGA2
-from .solvers.monte_carlo import MonteCarloOptimizer, optimize_with_monte_carlo
-from .solvers.surrogate import SurrogateAssistedNSGAII, run_surrogate_assisted
-from .solvers.surrogate_interface import SurrogateUnifiedNSGAII
-
-# Utility imports
-from .utils.visualization import SolverVisualizationMixin
-from .utils.parallel_evaluator import ParallelEvaluator
-from .utils import (
-    CallableSingleObjectiveProblem,
-    run_headless_single_objective
-)
-
-# Machine learning imports
-try:
-    from .ml import ModelManager
-    _HAS_ML = True
-except ImportError:
-    _HAS_ML = False
 
 # Define what gets imported with "from nsgablack import *"
 __all__ = [
     # Version info
     '__version__',
 
-    # Core classes
-    'BlackBoxProblem',
-    'BlackBoxSolverNSGAII',
-    'SolverNSGA2',
-
-    # Problems
-    'ZDT1BlackBox',
-    'ZDT3BlackBox',
-    'DTLZ2BlackBox',
-    'SphereBlackBox',
-    'ExpensiveSimulationBlackBox',
-    'NeuralNetworkHyperparameterOptimization',
-    'EngineeringDesignOptimization',
-    'BusinessPortfolioOptimization',
-
-    # Solvers and optimizers
-    'MonteCarloOptimizer',
-    'SurrogateAssistedNSGAII',
-    'SurrogateUnifiedNSGAII',
-
-    # Utils
-    'SolverVisualizationMixin',
-    'ParallelEvaluator',
-    'CallableSingleObjectiveProblem',
-    'run_headless_single_objective',
-    'AdvancedEliteRetention',
-    'DiversityAwareInitializerBlackBox',
-    'evaluate_convergence_svm',
-    'evaluate_convergence_cluster',
-    'log_and_maybe_evaluate_convergence',
-
-    # Convenience functions
-    'optimize_with_monte_carlo',
-    'run_surrogate_assisted'
+    # Discoverability (recommended entry point)
+    'CatalogEntry',
+    'get_catalog',
+    'search_catalog',
+    'list_catalog',
+    'get_entry',
+    'reload_catalog',
 ]
-
-# Add bias system to __all__ if available
-if _HAS_BIAS:
-    __all__.extend([
-        'BaseBias', 'AlgorithmicBias', 'DomainBias', 'OptimizationContext',
-        'DiversityBias', 'ConvergenceBias', 'ExplorationBias',
-        'ConstraintBias', 'PreferenceBias', 'EngineeringDesignBias',
-        'BiasModule'
-    ])
-
-# Add ML module to __all__ if available
-if _HAS_ML:
-    __all__.append('ModelManager')
 
 # Package metadata
 _PACKAGE_INFO = {
     'name': 'nsgablack',
-    'description': 'A comprehensive multi-objective optimization framework with bias system',
+    'description': 'A bias-driven multi-objective optimization framework with representation pipeline',
     'long_description': '''
     nsgablack is a powerful multi-objective optimization framework featuring:
-    - Advanced bias system for domain knowledge integration
-    - Multiple optimization algorithms (NSGA-II, MOEA/D, Bayesian, etc.)
-    - Machine learning guided optimization
-    - Parallel computation support
-    - Memory optimization
-    - Comprehensive visualization tools
+
+    CORE INNOVATIONS:
+    - Representation Pipeline: Flexible encoding, initialization, mutation, and repair
+    - Bias System: Modular integration of domain knowledge and algorithmic guidance
+
+    ADDITIONAL FEATURES:
+    - Adapter ecosystem (VNS / SA / MOEA-D / multi-strategy cooperation)
+    - Parallel evaluation utilities
+    - Benchmark harness (unified experiment protocol)
+    - Memory optimization + visualization tools
+
+    The framework excels at handling complex optimization problems through:
+    1. Customizable representation for integers, permutations, binary, graphs, matrices
+    2. Algorithmic biases (diversity, convergence, exploration)
+    3. Domain biases (constraints, preferences, objectives)
     ''',
-    'url': 'https://github.com/yourusername/nsgablack',
+    'url': 'https://github.com/sorrowoMan/nsgablack',
     'author': 'SorrowoMan',
     'author_email': 'sorrowo@foxmail.com',
     'license': 'MIT',
@@ -145,7 +92,9 @@ _PACKAGE_INFO = {
     ],
     'keywords': [
         'optimization', 'multi-objective', 'nsga-ii',
-        'evolutionary-algorithms', 'bias-system', 'machine-learning'
+        'representation-pipeline', 'bias-system',
+        'evolutionary-algorithms', 'domain-knowledge',
+        'integer-optimization', 'permutation-optimization'
     ]
 }
 
@@ -159,10 +108,18 @@ def get_package_info():
 
 def get_available_features():
     """Get information about available optional features."""
+    def _has_mod(mod: str) -> bool:
+        try:
+            __import__(mod)
+            return True
+        except Exception:
+            return False
+
     return {
-        'bias_system': _HAS_BIAS,
-        'machine_learning': _HAS_ML,
+        'representation_pipeline': True,  # CORE feature
+        'bias_system': _has_mod("nsgablack.bias"),  # CORE feature
+        'machine_learning': False,  # out of scope for the core promise
         'parallel_computation': True,
-        'visualization': True,
+        'visualization': _has_mod("matplotlib"),
         'memory_optimization': True
     }
