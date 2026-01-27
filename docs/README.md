@@ -30,6 +30,7 @@ Discoverability:
 
 - `docs/user_guide/catalog.md`: Catalog + Suites usage
 - `docs/AUTHORITATIVE_EXAMPLES.md`: 2-4 authoritative runnable examples (fact standard)
+- `docs/cases/production_scheduling.md`: authoritative real-world case (production scheduling)
 
 Indexes:
 
