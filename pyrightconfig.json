@@ -1,0 +1,21 @@
+{
+  "include": [
+    "nsgablack",
+    "experimental"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/.pytest_cache",
+    "**/node_modules"
+  ],
+  "venvPath": "${workspaceFolder}",
+  "pythonVersion": "3.8",
+  "pythonPlatform": "All",
+  "typeCheckingMode": "off",
+  "extraPaths": [
+    "${workspaceFolder}",
+    "${workspaceFolder}/.."
+  ],
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none"
+}

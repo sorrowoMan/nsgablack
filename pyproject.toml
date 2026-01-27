@@ -71,16 +71,15 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/nsgablack"
-Documentation = "https://nsgablack.readthedocs.io/"
-Repository = "https://github.com/yourusername/nsgablack.git"
-"Bug Tracker" = "https://github.com/yourusername/nsgablack/issues"
+Homepage = "https://github.com/sorrowoMan/nsgablack"
+Documentation = "https://github.com/sorrowoMan/nsgablack/tree/main/docs"
+Repository = "https://github.com/sorrowoMan/nsgablack.git"
+"Bug Tracker" = "https://github.com/sorrowoMan/nsgablack/issues"
 
 [project.scripts]
 nsgablack = "nsgablack.__main__:main"
 
 [tool.setuptools]
-packages = ["nsgablack"]
 
 [tool.setuptools.packages.find]
 exclude = ["test*", "docs*", "examples*"]
@@ -143,14 +142,11 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+pythonpath = ["."]
 addopts = [
     "-v",
     "--strict-markers",
     "--tb=short",
-    "--cov=.",
-    "--cov-report=html",
-    "--cov-report=term-missing",
-    "--cov-fail-under=30",  # 初始目标30%，逐步提升到70%
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",

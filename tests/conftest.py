@@ -18,9 +18,8 @@ def sample_problem():
         BlackBoxProblem: 简单的二维Sphere问题
     """
     import sys
-    sys.path.insert(0, str(Path(__file__).parent.parent))
 
-    from core.base import BlackBoxProblem
+    from nsgablack.core.base import BlackBoxProblem
 
     class SimpleSphere(BlackBoxProblem):
         def __init__(self):
@@ -70,8 +69,8 @@ def sample_bias():
         BiasModule: 配置好的偏置模块
     """
     import sys
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    from bias.bias import BiasModule
+    from nsgablack.bias import BiasModule
+    from nsgablack.bias.domain import CallableBias
 
     bias = BiasModule()
 
@@ -80,6 +79,6 @@ def sample_bias():
         violation = np.sum(np.maximum(x, 5))  # x > 5时惩罚
         return {"penalty": violation}
 
-    bias.add_penalty(constraint_penalty, weight=1.0, name="bounds_penalty")
+    bias.add(CallableBias(name="bounds_penalty", func=constraint_penalty, weight=1.0, mode="penalty"))
 
     return bias

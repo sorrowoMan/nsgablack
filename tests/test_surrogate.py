@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Tuple, List
 
 # 添加项目根目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 class TestSurrogateTrainer:
@@ -26,7 +25,7 @@ class TestSurrogateTrainer:
 
     def test_trainer_initialization(self, sample_data):
         """测试训练器初始化。"""
-        from surrogate.trainer import SurrogateTrainer
+        from nsgablack.utils.surrogate.trainer import SurrogateTrainer
 
         X, y = sample_data
         trainer = SurrogateTrainer(model_type="knn")
@@ -37,7 +36,7 @@ class TestSurrogateTrainer:
     @pytest.mark.slow
     def test_train_and_predict(self, sample_data):
         """测试训练和预测。"""
-        from surrogate.trainer import SurrogateTrainer
+        from nsgablack.utils.surrogate.trainer import SurrogateTrainer
 
         X, y = sample_data
         trainer = SurrogateTrainer(model_type="knn")
@@ -58,7 +57,7 @@ class TestSurrogateManager:
 
     def test_manager_initialization(self):
         """测试管理器初始化。"""
-        from surrogate.manager import SurrogateManager
+        from nsgablack.utils.surrogate.manager import SurrogateManager
 
         manager = SurrogateManager()
 
@@ -67,7 +66,7 @@ class TestSurrogateManager:
 
     def test_add_surrogate_model(self):
         """测试添加代理模型。"""
-        from surrogate.manager import SurrogateManager
+        from nsgablack.utils.surrogate.manager import SurrogateManager
 
         manager = SurrogateManager()
         manager.add_model("model1", model_type="knn")
@@ -77,7 +76,7 @@ class TestSurrogateManager:
     @pytest.mark.slow
     def test_manager_training_and_prediction(self):
         """测试管理器的训练和预测。"""
-        from surrogate.manager import SurrogateManager
+        from nsgablack.utils.surrogate.manager import SurrogateManager
 
         # 创建训练数据
         np.random.seed(42)
@@ -99,9 +98,9 @@ class TestSurrogateManager:
 class TestSurrogateStrategies:
     """测试代理策略。"""
 
-    def test uncertainty_sampling(self):
+    def test_uncertainty_sampling(self):
         """测试不确定性采样策略。"""
-        from surrogate.strategies import UncertaintySampling
+        from nsgablack.utils.surrogate.strategies import UncertaintySampling
 
         strategy = UncertaintySampling()
 
@@ -117,7 +116,7 @@ class TestSurrogateStrategies:
 
     def test_exploitation_exploration_tradeoff(self):
         """测试开发-探索权衡。"""
-        from surrogate.strategies import AdaptiveStrategy
+        from nsgablack.utils.surrogate.strategies import AdaptiveStrategy
 
         strategy = AdaptiveStrategy(exploration_rate=0.3)
 
@@ -135,8 +134,8 @@ class TestSurrogateIntegration:
     @pytest.mark.slow
     def test_surrogate_assisted_optimization(self):
         """测试代理辅助优化。"""
-        from surrogate.manager import SurrogateManager
-        from core.base import BlackBoxProblem
+        from nsgablack.utils.surrogate.manager import SurrogateManager
+        from nsgablack.core.base import BlackBoxProblem
 
         # 定义昂贵评估问题
         class ExpensiveProblem(BlackBoxProblem):
@@ -181,7 +180,7 @@ class TestSurrogateIntegration:
 @pytest.mark.parametrize("model_type", ["knn", "rf"])
 def test_different_surrogate_models(model_type):
     """参数化测试：不同的代理模型。"""
-    from surrogate.trainer import SurrogateTrainer
+    from nsgablack.utils.surrogate.trainer import SurrogateTrainer
 
     # 创建数据
     np.random.seed(42)

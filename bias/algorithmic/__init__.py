@@ -70,6 +70,26 @@ from .levy_flight import (
     LevyFlightBias
 )
 
+from .moead import (
+    MOEADDecompositionBias,
+    AdaptiveMOEADBias
+)
+
+from .nsga3 import (
+    NSGA3ReferencePointBias,
+    AdaptiveNSGA3Bias
+)
+
+from .spea2 import (
+    SPEA2StrengthBias,
+    AdaptiveSPEA2Bias,
+    HybridSPEA2NSGA2Bias
+)
+
+from .signal_driven import (
+    RobustnessBias,
+)
+
 __all__ = [
     # Diversity biases
     'DiversityBias',
@@ -123,5 +143,21 @@ __all__ = [
     'TabuSearchBias',
 
     # Levy flight bias
-    'LevyFlightBias'
+    'LevyFlightBias',
+
+    # MOEA/D biases
+    'MOEADDecompositionBias',
+    'AdaptiveMOEADBias',
+
+    # NSGA-III biases
+    'NSGA3ReferencePointBias',
+    'AdaptiveNSGA3Bias',
+
+    # SPEA2 biases
+    'SPEA2StrengthBias',
+    'AdaptiveSPEA2Bias',
+    'HybridSPEA2NSGA2Bias',
+
+    # Robustness biases
+    'RobustnessBias',
 ]

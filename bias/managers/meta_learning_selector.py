@@ -21,8 +21,7 @@ warnings.filterwarnings('ignore')
 
 from .analytics import BiasEffectivenessAnalyzer, BiasEffectivenessMetrics
 from ..core.base import AlgorithmicBias, DomainBias
-from ..bias_library_algorithmic import AlgorithmicBiasFactory
-from ..bias_v2 import DomainBiasFactory
+from ..core.registry import get_bias_registry
 
 
 @dataclass

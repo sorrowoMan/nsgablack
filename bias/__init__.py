@@ -19,7 +19,7 @@
 - utils/: 工具函数和兼容性支持
 
 快速开始：
-    from bias import create_universal_bias_manager, quick_bias_setup
+    from nsgablack.bias import create_universal_bias_manager, quick_bias_setup
 
     # 创建预配置的偏置管理器
     manager = create_universal_bias_manager()
@@ -35,6 +35,13 @@
 5. 高度可扩展：支持自定义偏置和约束条件
 6. 算法无关：可与任何优化算法无缝集成
 """
+
+from typing import TYPE_CHECKING
+
+# Type hints for TYPE_CHECKING
+if TYPE_CHECKING:
+    from .core.base import BiasBase as _BiasBase
+    from .core.manager import UniversalBiasManager as _UniversalBiasManager
 
 # 核心组件导入 - 新的组织架构
 try:
@@ -67,13 +74,19 @@ try:
         ConvergenceBias,            # 收敛性偏置
         AdaptiveConvergenceBias,    # 自适应收敛性偏置
         PrecisionBias,              # 精度偏置
+        RobustnessBias,             # 鲁棒性偏置
         SimulatedAnnealingBias,     # 模拟退火偏置
         ParticleSwarmBias,          # PSO偏置
         AdaptivePSOBias,            # 自适应PSO偏置
         CMAESBias,                  # CMA-ES偏置
         AdaptiveCMAESBias,          # 自适应CMA-ES偏置
         TabuSearchBias,             # 禁忌搜索偏置
-        LevyFlightBias              # Levy飞行偏置
+        LevyFlightBias,             # Levy飞行偏置
+        NSGA2Bias,                  # NSGA-II偏置
+        AdaptiveNSGA2Bias,          # 自适应NSGA-II偏置
+        DifferentialEvolutionBias,  # 差分进化偏置
+        PatternSearchBias,          # 模式搜索偏置
+        GradientDescentBias,        # 梯度下降偏置
     )
 
     # 领域偏置导入
@@ -81,7 +94,8 @@ try:
         ConstraintBias,             # 约束偏置
         FeasibilityBias,            # 可行性偏置
         PreferenceBias,             # 偏好偏置
-        RuleBasedBias              # 基于规则的偏置
+        RuleBasedBias,              # 基于规则的偏置
+        CallableBias,               # 可调用规则偏置（快速规则）
     )
 
     # 高级管理器导入
@@ -90,6 +104,12 @@ try:
         MetaLearningBiasSelector,   # 元学习偏置选择器
         BiasEffectivenessAnalyzer   # 偏置效果分析器
     )
+
+    # 分析器导入（新增）
+    try:
+        from .analytics import BiasAnalytics
+    except ImportError:
+        BiasAnalytics = None
 
     # 专门偏置导入（可选模块）
     try:
@@ -135,47 +155,40 @@ try:
         ProductionSchedulingBiasManager = None
 
     NEW_STRUCTURE_AVAILABLE = True
+    LEGACY_AVAILABLE = False
 
 except ImportError as e:
-    # 如果新架构不完整，回退到旧结构
-    print(f"警告：新的偏置结构尚不可用，使用旧版结构: {e}")
+    # 如果新架构不完整，抛出错误
+    print(f"错误：新的偏置结构不完整: {e}")
+    print("请确保所有核心组件都已正确安装。")
     NEW_STRUCTURE_AVAILABLE = False
-
-# Legacy compatibility - KEEP OLD IMPORTS WORKING
-try:
-    from .bias_base import BaseBias, OptimizationContext  # Legacy base classes
-    from .bias import BiasModule  # v1.0 interface
-    from .bias_v2 import (
-        AlgorithmicBiasManager as LegacyAlgorithmicBiasManager,
-        DomainBiasManager as LegacyDomainBiasManager,
-        UniversalBiasManager as LegacyUniversalBiasManager
-    )
-    from .bias_library_algorithmic import ALGORITHMIC_BIAS_LIBRARY
-    from .bias_library_domain import DOMAIN_BIAS_LIBRARY
-    LEGACY_AVAILABLE = True
-except ImportError:
-    print("Warning: Legacy bias modules not available")
-    ALGORITHMIC_BIAS_LIBRARY = {}
-    DOMAIN_BIAS_LIBRARY = {}
     LEGACY_AVAILABLE = False
+    raise
 
 __version__ = "2.0.0-restructured"
 
-# Determine which classes to export based on availability
-if NEW_STRUCTURE_AVAILABLE:
-    # Export new structure
-    _BiasBase = BiasBase
-    _AlgorithmicBias = AlgorithmicBias
-    _DomainBias = DomainBias
-    _OptimizationContext = OptimizationContext
-    _UniversalBiasManager = UniversalBiasManager
-else:
-    # Fallback to legacy
-    _BiasBase = BaseBias if 'BaseBias' in locals() else object
-    _AlgorithmicBias = object
-    _DomainBias = object
-    _OptimizationContext = OptimizationContext if 'OptimizationContext' in locals() else object
-    _UniversalBiasManager = LegacyUniversalBiasManager if 'LegacyUniversalBiasManager' in locals() else object
+# Export new structure (no legacy fallback)
+_BiasBase = BiasBase
+_AlgorithmicBias = AlgorithmicBias
+_DomainBias = DomainBias
+_OptimizationContext = OptimizationContext
+_UniversalBiasManager = UniversalBiasManager
+
+# Import compatibility adapter
+try:
+    from .bias_module import (
+        BiasModule,
+        create_bias_module,
+        from_universal_manager,
+        proximity_reward,
+        improvement_reward,
+    )
+except ImportError:
+    BiasModule = None
+    create_bias_module = None
+    from_universal_manager = None
+    proximity_reward = None
+    improvement_reward = None
 
 # Public API
 __all__ = [
@@ -189,6 +202,13 @@ __all__ = [
     'DomainBiasManager',
     'create_bias',
 
+    # Compatibility adapter
+    'BiasModule',
+    'create_bias_module',
+    'from_universal_manager',
+    'proximity_reward',
+    'improvement_reward',
+
     # Registry system (if available)
     'get_bias_registry',
     'register_algorithmic_bias',
@@ -201,6 +221,7 @@ __all__ = [
     'ConvergenceBias',
     'AdaptiveConvergenceBias',
     'PrecisionBias',
+    'RobustnessBias',
     'SimulatedAnnealingBias',
     'ParticleSwarmBias',
     'AdaptivePSOBias',
@@ -208,17 +229,26 @@ __all__ = [
     'AdaptiveCMAESBias',
     'TabuSearchBias',
     'LevyFlightBias',
+    'NSGA2Bias',
+    'AdaptiveNSGA2Bias',
+    'DifferentialEvolutionBias',
+    'PatternSearchBias',
+    'GradientDescentBias',
 
     # Domain biases (if available)
     'ConstraintBias',
     'FeasibilityBias',
     'PreferenceBias',
     'RuleBasedBias',
+    'CallableBias',
 
     # Advanced managers (if available)
     'AdaptiveAlgorithmicManager',
     'MetaLearningBiasSelector',
     'BiasEffectivenessAnalyzer',
+
+    # Analytics (if available)
+    'BiasAnalytics',
 
     # Engineering biases (if available)
     'EngineeringPrecisionBias',
@@ -229,178 +259,28 @@ __all__ = [
     'ProductionSchedulingBiasManager',
 
     # Legacy compatibility
-    'ALGORITHMIC_BIAS_LIBRARY',
-    'DOMAIN_BIAS_LIBRARY',
     'BaseBias',  # Legacy name for BiasBase
-    'BiasModule'  # v1.0 interface
 ]
 
 # Aliases for backward compatibility
+BaseBias = _BiasBase
 BiasBase = _BiasBase
 AlgorithmicBias = _AlgorithmicBias
 DomainBias = _DomainBias
 OptimizationContext = _OptimizationContext
 UniversalBiasManager = _UniversalBiasManager
 
-# Convenience functions for quick bias setup
-def create_universal_bias_manager() -> 'UniversalBiasManager':
-    """
-    Create a pre-configured universal bias manager with common biases.
-
-    Returns:
-        UniversalBiasManager: Configured bias manager
-    """
-    if not NEW_STRUCTURE_AVAILABLE:
-        print("Warning: Using legacy bias manager")
-        return LegacyUniversalBiasManager() if LEGACY_AVAILABLE else None
-
-    manager = UniversalBiasManager()
-
-    # Add common algorithmic biases
-    try:
-        manager.add_algorithmic_bias(DiversityBias(weight=0.1))
-        manager.add_algorithmic_bias(ConvergenceBias(weight=0.05))
-        manager.add_algorithmic_bias(SimulatedAnnealingBias(weight=0.1))
-    except Exception as e:
-        print(f"Warning: Could not add standard biases: {e}")
-
-    # Add basic domain bias (users can add specific constraints)
-    try:
-        manager.add_domain_bias(ConstraintBias(weight=1.0))
-    except Exception as e:
-        print(f"Warning: Could not add constraint bias: {e}")
-
-    return manager
-
-
-def quick_bias_setup(
-    problem_type: str = "general",
-    add_constraints: bool = True,
-    add_adaptive: bool = True
-) -> 'UniversalBiasManager':
-    """
-    Quick bias setup for different problem types.
-
-    Args:
-        problem_type: Type of problem ('general', 'engineering', 'scheduling', 'constrained')
-        add_constraints: Whether to add constraint bias
-        add_adaptive: Whether to add adaptive manager
-
-    Returns:
-        UniversalBiasManager: Configured bias manager
-    """
-    if not NEW_STRUCTURE_AVAILABLE:
-        print("Warning: Using legacy bias manager for quick setup")
-        return create_universal_bias_manager()
-
-    manager = UniversalBiasManager()
-
-    # Problem-specific bias configurations
-    try:
-        if problem_type == "general":
-            if 'DiversityBias' in globals():
-                manager.add_algorithmic_bias(DiversityBias(weight=0.1))
-            if 'ConvergenceBias' in globals():
-                manager.add_algorithmic_bias(ConvergenceBias(weight=0.05))
-
-        elif problem_type == "engineering":
-            # 使用专门的工程应用偏置
-            if 'EngineeringPrecisionBias' in globals():
-                manager.add_algorithmic_bias(EngineeringPrecisionBias(weight=0.15))
-            elif 'PrecisionBias' in globals():
-                manager.add_algorithmic_bias(PrecisionBias(weight=0.15))
-
-            if 'AdaptiveDiversityBias' in globals():
-                manager.add_algorithmic_bias(AdaptiveDiversityBias(weight=0.1))
-
-            # 添加工程约束偏置（强制性的）
-            if 'EngineeringConstraintBias' in globals():
-                manager.add_domain_bias(EngineeringConstraintBias(safety_factor=1.5))
-            elif 'ConstraintBias' in globals():
-                manager.add_domain_bias(ConstraintBias(weight=1.0, penalty_factor=15.0))
-
-        elif problem_type == "scheduling":
-            if 'DiversityBias' in globals():
-                manager.add_algorithmic_bias(DiversityBias(weight=0.15))
-            if 'SimulatedAnnealingBias' in globals():
-                manager.add_algorithmic_bias(SimulatedAnnealingBias(weight=0.2))
-
-        elif problem_type == "constrained":
-            if 'AdaptiveDiversityBias' in globals():
-                manager.add_algorithmic_bias(AdaptiveDiversityBias(weight=0.2))
-
-        # Add constraint bias if requested
-        if add_constraints and 'ConstraintBias' in globals():
-            manager.add_domain_bias(ConstraintBias(weight=0.5, penalty_factor=20.0))
-
-    except Exception as e:
-        print(f"Warning: Could not configure biases for problem type '{problem_type}': {e}")
-
-    return manager
-
-
-# System information
-def get_bias_system_info() -> dict:
-    """
-    Get information about the bias system.
-
-    Returns:
-        dict: System information
-    """
-    info = {
-        'version': __version__,
-        'new_structure_available': NEW_STRUCTURE_AVAILABLE,
-        'legacy_available': LEGACY_AVAILABLE
-    }
-
-    if NEW_STRUCTURE_AVAILABLE:
-        try:
-            registry = get_bias_registry()
-            info.update({
-                'algorithmic_biases': registry.list_algorithmic_biases(),
-                'domain_biases': registry.list_domain_biases(),
-                'bias_factories': registry.list_bias_factories(),
-                'categories': registry.list_categories()
-            })
-        except Exception as e:
-            info['registry_error'] = str(e)
-
-    if LEGACY_AVAILABLE:
-        info.update({
-            'algorithmic_bias_library_size': len(ALGORITHMIC_BIAS_LIBRARY),
-            'domain_bias_library_size': len(DOMAIN_BIAS_LIBRARY)
-        })
-
-    return info
-
-
-def migrate_legacy_bias(legacy_bias_config: dict) -> 'BiasBase':
-    """
-    Migrate legacy bias configuration to new structure.
-
-    Args:
-        legacy_bias_config: Legacy bias configuration
-
-    Returns:
-        BiasBase: New bias instance
-    """
-    if not NEW_STRUCTURE_AVAILABLE:
-        raise RuntimeError("New structure not available for migration")
-
-    bias_type = legacy_bias_config.get('type', 'algorithmic')
-    bias_name = legacy_bias_config.get('name', 'migrated_bias')
-    weight = legacy_bias_config.get('weight', 1.0)
-    params = legacy_bias_config.get('params', {})
-
-    try:
-        if bias_type == 'algorithmic':
-            from .core.base import AlgorithmicBias
-            return AlgorithmicBias(bias_name, weight, **params)
-        elif bias_type == 'domain':
-            from .core.base import DomainBias
-            return DomainBias(bias_name, weight, **params)
-        else:
-            raise ValueError(f"Unknown bias type: {bias_type}")
-    except Exception as e:
-        print(f"Warning: Could not migrate bias {bias_name}: {e}")
-        return None
+# Import helper functions from utils/helpers
+try:
+    from .utils.helpers import (
+        create_universal_bias_manager,
+        quick_bias_setup,
+        get_bias_system_info,
+        migrate_legacy_bias
+    )
+except ImportError:
+    # If helpers are not available, create stub functions
+    create_universal_bias_manager = None
+    quick_bias_setup = None
+    get_bias_system_info = None
+    migrate_legacy_bias = None

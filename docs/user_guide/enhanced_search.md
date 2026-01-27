@@ -1,11 +1,11 @@
-# 增强搜索策略系统 - 使用指南
+﻿# 增强搜索策略系统 - 使用指南
 
 ## 📚 快速开始
 
 ### 1. 基础使用
 
 ```python
-from multi_agent.strategies.search_strategies import (
+from nsgablack.experimental.multi_agent.strategies.search_strategies import (
     SearchStrategyFactory,
     SearchMethod
 )
@@ -335,43 +335,33 @@ exploiter_methods = [
 
 ## 🚀 与当前代码集成
 
-### 修改 solvers/multi_agent.py
+### 推荐：用 Core 的多策略主协调 Adapter 接入（不需要 experimental 目录）
+
+思路：把“搜索策略”实现为 Adapter（或 RoleAdapter 包装），由主协调器下发任务/预算与共享事实。
 
 ```python
-from multi_agent.strategies.search_strategies import (
-    SearchStrategyFactory,
-    SearchMethod
+from nsgablack.core.composable_solver import ComposableSolver
+from nsgablack.core.adapters import RoleSpec, MultiStrategyConfig, MultiStrategyControllerAdapter
+from nsgablack.utils.suites import attach_multi_strategy_coop
+
+# 每个“角色/策略”都是一个 adapter（可以有多个 unit 并行）
+roles = [
+    RoleSpec(name="explorer", adapter=lambda uid: ExplorerAdapter(...), n_units=20, weight=1.0),
+    RoleSpec(name="exploiter", adapter=lambda uid: ExploiterAdapter(...), n_units=10, weight=1.0),
+]
+
+cfg = MultiStrategyConfig(
+    total_batch_size=200,
+    phase_schedule=(("explore", 20), ("exploit", -1)),
+    phase_roles={"explore": ["explorer"], "exploit": ["exploiter"]},
+    enable_regions=True,
+    n_regions=20,
+    seeds_per_task=2,
 )
 
-class MultiAgentBlackBoxSolver:
-    def __init__(self, problem, config=None):
-        # ... 现有代码 ...
-
-        # 添加搜索策略配置
-        self.search_strategies = {
-            AgentRole.EXPLORER: SearchMethod.DIFFERENTIAL_EVOLUTION,
-            AgentRole.EXPLOITER: SearchMethod.PATTERN_SEARCH,
-            AgentRole.WAITER: SearchMethod.HILL_CLIMBING,
-        }
-
-    def evolve_population(self, agent_pop):
-        """进化种群（使用增强搜索策略）"""
-        # ... 精英保留 ...
-
-        # 使用配置的搜索策略
-        search_method = self.search_strategies.get(agent_pop.role)
-        if search_method:
-            strategy = SearchStrategyFactory.create_strategy(search_method)
-            new_solutions = strategy.search(
-                population=agent_pop.population,
-                bounds=self.var_bounds,
-                n_solutions=pop_size - elite_size,
-                fitness=agent_pop.fitness  # 传递适应度
-            )
-            new_population.extend(new_solutions)
-        else:
-            # 回退到原始方法
-            # ... 原始代码 ...
+solver = ComposableSolver(problem=problem, representation_pipeline=pipeline)
+attach_multi_strategy_coop(solver, roles=roles, config=cfg, attach_pareto_archive=True)
+solver.run()
 ```
 
 ---

@@ -24,23 +24,17 @@ import numpy as np
 from typing import List, Dict, Any, Callable
 
 # 导入核心偏置类
+from ...core.manager import UniversalBiasManager
+from ...core.base import OptimizationContext, DomainBias, AlgorithmicBias
+from ...domain.constraint import ConstraintBias
+from ...algorithmic.diversity import DiversityBias
+
+# 尝试导入贝叶斯偏置（可选）
 try:
-    from ...core.manager import UniversalBiasManager
-    from ...core.base import OptimizationContext, DomainBias, AlgorithmicBias
-    from ...domain.constraint import ConstraintBias
-    from ...algorithmic.diversity import DiversityBias
-    from ...bayesian import BayesianGuidanceBias, BayesianExplorationBias
+    from ...specialized.bayesian import BayesianGuidanceBias, BayesianExplorationBias
 except ImportError:
-    # 回退到旧导入方式
-    from nsgablack.bias.bias_v2 import (
-        UniversalBiasManager,
-        OptimizationContext,
-        DomainBias,
-        AlgorithmicBias
-    )
-    from nsgablack.bias.bias_library_domain import ConstraintBias
-    from nsgablack.bias.bias_library_algorithmic import DiversityBias
-    from nsgablack.bias.bias_bayesian import BayesianGuidanceBias, BayesianExplorationBias
+    BayesianGuidanceBias = None
+    BayesianExplorationBias = None
 
 
 class ProductionSchedulingBiasManager:

@@ -1,4 +1,4 @@
-# 偏置系统宝宝级教程
+﻿# 偏置系统宝宝级教程
 
 本教程按“偏置类型”来讲，告诉你**怎么写**、**怎么接**、**什么时候用**。  
 一句话记住：**偏置就是给优化过程一个额外的“倾向”**。
@@ -39,11 +39,13 @@ def business_reward(x, constraints, context):
 ### 第二步：组装 BiasModule
 
 ```python
-from bias import BiasModule
+from nsgablack.bias import BiasModule
 
 bias = BiasModule()
-bias.add_penalty(constraint_penalty, weight=1.0, name="constraint")
-bias.add_reward(business_reward, weight=0.05, name="business")
+from nsgablack.bias.domain import CallableBias
+
+bias.add(CallableBias(name="constraint", func=constraint_penalty, weight=1.0, mode="penalty"))
+bias.add(CallableBias(name="business", func=business_reward, weight=0.05, mode="reward"))
 ```
 
 ### 第三步：挂到 NSGA 求解器
@@ -70,7 +72,7 @@ solver.bias_module = bias
 ### 示例 1：算法偏置（更偏搜索策略）
 
 ```python
-from bias.core.base import AlgorithmicBias, OptimizationContext
+from nsgablack.bias.core.base import AlgorithmicBias, OptimizationContext
 import numpy as np
 
 class DiversityBias(AlgorithmicBias):
@@ -85,7 +87,7 @@ class DiversityBias(AlgorithmicBias):
 ### 示例 2：业务偏置（更偏业务规则）
 
 ```python
-from bias.core.base import DomainBias, OptimizationContext
+from nsgablack.bias.core.base import DomainBias, OptimizationContext
 
 class SupplyRuleBias(DomainBias):
     def compute(self, x, context: OptimizationContext) -> float:
@@ -99,7 +101,7 @@ class SupplyRuleBias(DomainBias):
 你可以用偏置管理器在自定义流程里计算：
 
 ```python
-from bias.core.manager import AlgorithmicBiasManager
+from nsgablack.bias.core.manager import AlgorithmicBiasManager
 
 manager = AlgorithmicBiasManager()
 manager.add_algorithmic_bias(DiversityBias("diversity", weight=0.2))
@@ -131,7 +133,7 @@ manager.add_algorithmic_bias(DiversityBias("diversity", weight=0.2))
 ### 示例：分阶段切换代理策略
 
 ```python
-from bias.surrogate import SurrogateControlBias
+from nsgablack.bias.surrogate import SurrogateControlBias
 
 class MyPhaseBias(SurrogateControlBias):
     def apply(self, context):
@@ -143,7 +145,7 @@ class MyPhaseBias(SurrogateControlBias):
 ### 怎么接入
 
 ```python
-from solvers.surrogate_interface import SurrogateUnifiedNSGAII
+from nsgablack.experimental.solvers import SurrogateUnifiedNSGAII
 
 solver = SurrogateUnifiedNSGAII(problem, surrogate_biases=[MyPhaseBias()])
 ```

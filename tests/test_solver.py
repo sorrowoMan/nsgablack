@@ -9,10 +9,9 @@ import sys
 from pathlib import Path
 
 # 添加项目根目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.base import BlackBoxProblem
-from core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.base import BlackBoxProblem
+from nsgablack.core.solver import BlackBoxSolverNSGAII
 
 
 class SimpleSphere(BlackBoxProblem):
@@ -175,7 +174,8 @@ class TestSolverWithBias:
 
     def test_solver_with_penalty_bias(self, sample_problem):
         """测试带罚函数偏置的求解器。"""
-        from bias.bias import BiasModule
+        from nsgablack.bias import BiasModule
+        from nsgablack.bias.domain import CallableBias
 
         # 创建偏置：惩罚远离原点的解
         bias = BiasModule()
@@ -184,7 +184,7 @@ class TestSolverWithBias:
             distance = np.linalg.norm(x)
             return {"penalty": max(0, distance - 5)}
 
-        bias.add_penalty(far_from_origin_penalty, weight=2.0)
+        bias.add(CallableBias(name="far_from_origin", func=far_from_origin_penalty, weight=2.0, mode="penalty"))
 
         # 创建求解器
         solver = BlackBoxSolverNSGAII(sample_problem)
@@ -201,14 +201,14 @@ class TestSolverWithBias:
     @pytest.mark.slow
     def test_solver_with_convergence_bias(self):
         """测试带收敛加速偏置的求解器。"""
-        from bias.bias import BiasModule
-        from bias.algorithmic.convergence import ConvergenceBias
+        from nsgablack.bias import BiasModule
+        from nsgablack.bias.algorithmic.convergence import ConvergenceBias
 
         problem = SimpleSphere(dimension=5)
         bias = BiasModule()
         conv_bias = ConvergenceBias()
 
-        bias.add_penalty(conv_bias.compute, weight=0.5)
+        bias.add(conv_bias, weight=0.5)
 
         solver = BlackBoxSolverNSGAII(problem)
         solver.max_generations = 15

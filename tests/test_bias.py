@@ -10,9 +10,9 @@ import sys
 from pathlib import Path
 
 # 添加项目根目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from bias.bias import BiasModule, proximity_reward, improvement_reward
+from nsgablack.bias import BiasModule, proximity_reward, improvement_reward
+from nsgablack.bias.domain import CallableBias
 
 
 class TestBiasModule:
@@ -21,36 +21,41 @@ class TestBiasModule:
     def test_init(self):
         """测试BiasModule初始化。"""
         bias = BiasModule()
-        assert len(bias.penalties) == 0
-        assert len(bias.rewards) == 0
+        assert bias.list_biases() == []
         assert bias.history_best_x is None
         assert bias.history_best_f == float('inf')
 
     def test_add_penalty(self):
-        """测试添加罚函数。"""
+        """add_penalty 已移除：请使用 CallableBias。"""
+        bias = BiasModule()
+        with pytest.raises(AttributeError):
+            bias.add_penalty(lambda x: 1.0, weight=2.0, name="test_penalty")
+
+    def test_add_callable_penalty_bias(self):
+        """使用 CallableBias 添加快速惩罚规则。"""
         bias = BiasModule()
 
         def simple_penalty(x):
             return np.sum(np.maximum(x, 0))
 
-        bias.add_penalty(simple_penalty, weight=2.0, name="test_penalty")
-
-        assert len(bias.penalties) == 1
-        assert bias.penalties[0]['weight'] == 2.0
-        assert bias.penalties[0]['name'] == "test_penalty"
+        bias.add(CallableBias(name="test_penalty", func=simple_penalty, weight=2.0, mode="penalty"))
+        assert "test_penalty" in bias.list_biases()
 
     def test_add_reward(self):
-        """测试添加奖函数。"""
+        """add_reward 已移除：请使用 CallableBias。"""
+        bias = BiasModule()
+        with pytest.raises(AttributeError):
+            bias.add_reward(lambda x: 1.0, weight=0.1, name="test_reward")
+
+    def test_add_callable_reward_bias(self):
+        """使用 CallableBias 添加快速奖励规则。"""
         bias = BiasModule()
 
         def simple_reward(x):
-            return -np.sum(x**2)
+            return float(np.sum(np.maximum(0.0, 10.0 - np.linalg.norm(x))))
 
-        bias.add_reward(simple_reward, weight=0.1, name="test_reward")
-
-        assert len(bias.rewards) == 1
-        assert bias.rewards[0]['weight'] == 0.1
-        assert bias.rewards[0]['name'] == "test_reward"
+        bias.add(CallableBias(name="test_reward", func=simple_reward, weight=0.1, mode="reward"))
+        assert "test_reward" in bias.list_biases()
 
     def test_compute_bias_with_penalty(self):
         """测试带罚函数的偏置计算。"""
@@ -61,7 +66,7 @@ class TestBiasModule:
             violation = np.sum(np.maximum(np.abs(x) - 5, 0))
             return {"penalty": violation}
 
-        bias.add_penalty(bounds_penalty, weight=10.0)
+        bias.add(CallableBias(name="bounds", func=bounds_penalty, weight=10.0, mode="penalty"))
 
         # 测试可行解
         x_feasible = np.array([1.0, 2.0])
@@ -84,7 +89,7 @@ class TestBiasModule:
             distance = np.linalg.norm(x)
             return {"reward": max(0, 10 - distance)}
 
-        bias.add_reward(origin_reward, weight=0.5)
+        bias.add(CallableBias(name="origin_reward", func=origin_reward, weight=0.5, mode="reward"))
 
         # 测试接近原点
         x_near = np.array([1.0, 1.0])
@@ -103,8 +108,8 @@ class TestBiasModule:
         def reward_func(x, constraints, context):
             return 2.0 if np.sum(x**2) < 5 else 0.0
 
-        bias.add_penalty(penalty_func, weight=5.0)
-        bias.add_reward(reward_func, weight=0.1)
+        bias.add(CallableBias(name="penalty", func=penalty_func, weight=5.0, mode="penalty"))
+        bias.add(CallableBias(name="reward", func=reward_func, weight=0.1, mode="reward"))
 
         # 情况1: 无惩罚无奖励
         x1 = np.array([2.0, 2.0])  # f=8
@@ -142,16 +147,13 @@ class TestBiasModule:
         """测试清空偏置。"""
         bias = BiasModule()
 
-        bias.add_penalty(lambda x: 1.0)
-        bias.add_reward(lambda x: 1.0)
-
-        assert len(bias.penalties) == 1
-        assert len(bias.rewards) == 1
+        bias.add(CallableBias(name="p", func=lambda x: 1.0, weight=1.0, mode="penalty"))
+        bias.add(CallableBias(name="r", func=lambda x: 1.0, weight=1.0, mode="reward"))
+        assert len(bias.list_biases()) == 2
 
         bias.clear()
 
-        assert len(bias.penalties) == 0
-        assert len(bias.rewards) == 0
+        assert bias.list_biases() == []
 
 
 class TestRewardFunctions:
@@ -213,7 +215,7 @@ class TestBiasIntegration:
             context["constraints"].append({"type": "bounds", "violation": total_violation})
             return {"penalty": total_violation}
 
-        bias.add_penalty(constraint_penalty, weight=10.0, name="bounds")
+        bias.add(CallableBias(name="bounds", func=constraint_penalty, weight=10.0, mode="penalty"))
 
         # 可行解
         x1 = np.array([0.0, 0.0])

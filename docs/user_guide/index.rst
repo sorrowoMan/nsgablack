@@ -1,4 +1,4 @@
-User Guide
+﻿User Guide
 ==========
 
 .. toctree::
@@ -15,3 +15,5 @@ User Guide
    enhanced_search
    surrogate_workflow
    surrogate_cheatsheet
+   catalog
+

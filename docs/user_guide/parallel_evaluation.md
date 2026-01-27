@@ -1,28 +1,27 @@
-# 并行评估集成指南
+﻿# 并行评估集成指南
 
 本指南介绍如何将种群内并行评估功能集成到nsgablack优化框架中。
 
 ## 什么是种群内并行评估
 
-种群内并行评估是指在单次优化运行中，并行评估整个种群的个体，这与现有的 `utils/parallel_runs.py`（多次独立运行的并行）不同。
+种群内并行评估是指在单次优化运行中，并行评估整个种群的个体，这与现有的 `utils/parallel/runs.py`（多次独立运行的并行）不同。
 
-- **现有并行**: 多次独立运行优化 → `run_parallel_runs.py`
-- **新增并行**: 单次运行中并行评估种群 → `parallel_evaluator.py`
+- **现有并行**: 多次独立运行优化 → `utils/parallel/runs.py`
+- **新增并行**: 单次运行中并行评估种群 → `utils/parallel/evaluator.py`
 
 ## 架构设计
 
 ### 核心组件
 
-1. **ParallelEvaluator** (`utils/parallel_evaluator.py`)
+1. **ParallelEvaluator** (`utils/parallel/evaluator.py`)
 
    - 核心并行评估引擎
    - 支持多种后端 (process, thread, joblib, ray)
    - 智能负载均衡和错误处理
-2. **SolverExtensions** (`utils/solver_extensions.py`)
+2. **with_parallel_evaluation** (`utils/parallel/integration.py`)
 
-   - 混入类 (Mixin) 为现有求解器添加并行功能
-   - 自动集成和配置
-   - 性能监控和统计
+   - 推荐的“集成方式”：在不改 Solver 源码的前提下，把并行评估能力注入到一次运行里
+   - 保持 core 干净：并行属于工程能力（tool/plugin/suite），不属于求解器底座强绑定能力
 3. **SmartEvaluatorSelector** (智能选择器)
 
    - 根据问题特性自动选择最佳并行策略
@@ -33,8 +32,8 @@
 ### 方式1: 独立使用 (推荐)
 
 ```python
-from utils.parallel_evaluator import ParallelEvaluator
-from core.solver import BlackBoxSolverNSGAII
+from nsgablack.utils.parallel import ParallelEvaluator
+from nsgablack.core.solver import BlackBoxSolverNSGAII
 
 # 创建问题
 problem = MyProblem()
@@ -51,53 +50,26 @@ population = np.random.uniform(-5, 5, (100, 10))
 objectives, violations = evaluator.evaluate_population(population, problem)
 ```
 
-### 方式2: 集成到现有求解器 (最简单)
+### 方式2: 在一次运行中注入并行评估 (推荐)
 
 ```python
-from utils.solver_extensions import create_parallel_solver
+from nsgablack.utils.parallel import with_parallel_evaluation
+from nsgablack.core.solver import BlackBoxSolverNSGAII
 
-# 一行代码创建并行求解器
-solver = create_parallel_solver(
-    solver_class=BlackBoxSolverNSGAII,
-    problem=problem,
-    enable_parallel=True,
-    parallel_backend="process",
+solver = BlackBoxSolverNSGAII(problem, pop_size=100, max_generations=200)
+
+with with_parallel_evaluation(
+    solver,
+    backend="process",
     max_workers=4,
-    pop_size=100,
-    max_generations=200
-)
-
-# 正常运行，自动并行评估
-result = solver.run()
+    auto_configure=True,
+):
+    result = solver.run()
 ```
 
-### 方式3: 装饰器方式 (高级)
-
-```python
-from utils.solver_extensions import integrate_parallel_evaluation
-
-# 创建增强的求解器类
-EnhancedNSGAII = integrate_parallel_evaluation(BlackBoxSolverNSGAII)
-
-# 使用增强的求解器
-solver = EnhancedNSGAII(problem)
-solver.enable_parallel(backend="process", max_workers=4)
-result = solver.run()
-```
-
-### 方式4: 混入类方式 (面向对象)
-
-```python
-from utils.solver_extensions import ParallelEvaluationMixin
-
-class MyParallelSolver(ParallelEvaluationMixin, BlackBoxSolverNSGAII):
-    def __init__(self, problem):
-        super().__init__(problem)
-        self.enable_parallel(backend="process", max_workers=4)
-
-solver = MyParallelSolver(problem)
-result = solver.run()
-```
+说明：
+- 这种方式不会改变你的 Solver 类型，只是在运行期间把 `ParallelEvaluator` 挂接进去
+- 更符合当前框架的“单一路径收敛”：core 不做装配，装配在 suite/tool/plugin 层完成
 
 ## 配置选项
 
@@ -134,7 +106,7 @@ evaluator = ParallelEvaluator(
 ### 智能自动配置
 
 ```python
-from utils.parallel_evaluator import SmartEvaluatorSelector
+from nsgablack.utils.parallel import SmartEvaluatorSelector
 
 # 自动选择最佳配置
 evaluator = SmartEvaluatorSelector.select_evaluator(
@@ -158,7 +130,6 @@ evaluator = SmartEvaluatorSelector.select_evaluator(
 
 ```python
 # 运行性能测试
-python examples/parallel_evaluation_example.py
 ```
 
 典型结果：
@@ -172,19 +143,11 @@ python examples/parallel_evaluation_example.py
 ### 最小修改集成
 
 ```python
-# 原有代码
-class MySolver(BlackBoxSolverNSGAII):
-    def __init__(self, problem):
-        super().__init__(problem)
-        # 现有配置...
+from nsgablack.utils.parallel import with_parallel_evaluation
 
-# 只需添加两行
-from utils.solver_extensions import integrate_parallel_evaluation
-MySolver = integrate_parallel_evaluation(MySolver)
-
-# 现在支持并行了
-solver = MySolver(problem)
-solver.enable_parallel()  # 启用并行
+solver = BlackBoxSolverNSGAII(problem)
+with with_parallel_evaluation(solver, backend="process", max_workers=4):
+    result = solver.run()
 ```
 
 ### 渐进式集成
@@ -283,24 +246,19 @@ objectives, violations = evaluator.evaluate_population(
 ### 1. 自动配置优先
 
 ```python
-# 推荐：让系统自动选择
-solver = create_parallel_solver(
-    solver_class=BlackBoxSolverNSGAII,
-    problem=problem,
-    enable_parallel=True,
-    auto_configure=True  # 智能配置
-)
+from nsgablack.utils.parallel import with_parallel_evaluation
+
+solver = BlackBoxSolverNSGAII(problem)
+with with_parallel_evaluation(solver, auto_configure=True):
+    result = solver.run()
 ```
 
 ### 2. 性能监控
 
 ```python
-# 启用性能监控
-solver.enable_auto_configuration(performance_monitoring=True)
-
-# 获取性能报告
-report = solver.get_performance_report()
-print(f"评估速度: {report['evaluations_per_second']:.0f} eval/s")
+stats = evaluator.get_stats()
+print(f"avg_eval_time(ms)={stats['avg_evaluation_time']*1000:.2f}")
+print(f"errors={stats['error_count']}")
 ```
 
 ### 3. 错误处理
@@ -340,19 +298,22 @@ class CustomBackend(ParallelEvaluator):
 ### 集成到其他求解器
 
 ```python
-# 为任何求解器添加并行支持
-def add_parallel_support(solver_class):
-    return integrate_parallel_evaluation(solver_class)
+from nsgablack.utils.parallel import with_parallel_evaluation
 
-# 使用
-MyCustomSolver = add_parallel_support(MyCustomSolver)
+solver = MyCustomSolver(problem)
+with with_parallel_evaluation(solver, backend="process", max_workers=4):
+    result = solver.run()
 ```
 
 ## 相关资源
 
 - [API文档](API_REFERENCE.md#并行评估)
-- [完整示例](examples/parallel_evaluation_example.py)
 - [性能基准测试](benchmarks/parallel_benchmark.py)
+
+## Legacy: Mixin/装饰器方式（不推荐）
+
+历史版本曾提供 `SolverExtensions`（Mixin/动态类注入）。为了避免 core 侵入性、减少维护压力，
+这条路径已降权为 legacy（仍保留在 `nsgablack.utils.compat.solver_extensions` 供参考）。
 
 ---
 

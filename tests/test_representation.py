@@ -10,9 +10,8 @@ from pathlib import Path
 from typing import List, Tuple, Any
 
 # 添加项目根目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.representation.base import (
+from nsgablack.representation.base import (
     RepresentationPipeline,
     ContinuousRepresentation,
     IntegerRepresentation,
@@ -214,7 +213,7 @@ class TestRepresentationConstraints:
 
     def test_continuous_with_constraint(self):
         """测试带约束的连续变量。"""
-        from utils.representation.constraints import BoundConstraint
+        from nsgablack.representation.constraints import BoundConstraint
 
         rep = ContinuousRepresentation(
             dimension=2,
@@ -234,7 +233,7 @@ class TestRepresentationConstraints:
 
     def test_repair_infeasible_solution(self):
         """测试修复不可行解。"""
-        from utils.representation.constraints import BoundConstraint
+        from nsgablack.representation.constraints import BoundConstraint
 
         rep = ContinuousRepresentation(
             dimension=2,
