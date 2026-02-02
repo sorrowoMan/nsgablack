@@ -92,7 +92,7 @@ python -m nsgablack catalog show suite.vns
 
 - `examples/end_to_end_workflow_demo.py`：端到端闭环 + 统一实验口径输出
 - `examples/composable_solver_fusion_demo.py`：组合式求解器与阶段式融合
-- `examples/multi_strategy_coop_demo.py`：多策略协同/角色化思路的最小演示
+- `examples/multi_strategy_coop_demo.py`：多策略协同/角色化思路的最小演示（本质是“多策略提案者 + 统一评估/归档”的编排）
 - `examples/benchmark_harness_demo.py`：BenchmarkHarnessPlugin（统一实验口径：CSV + summary JSON）
 - `examples/surrogate_plugin_demo.py`：SurrogateEvaluationPlugin（减少真实评估次数的能力层演示）
 
