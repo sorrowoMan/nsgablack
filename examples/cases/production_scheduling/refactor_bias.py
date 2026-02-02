@@ -23,7 +23,8 @@ def _ensure_importable() -> None:
 
 _ensure_importable()
 
-from nsgablack.bias import BiasModule, CallableBias
+from nsgablack.bias.bias_module import BiasModule
+from nsgablack.bias.domain.callable_bias import CallableBias
 
 
 CONSTRAINT_INDEX = {
