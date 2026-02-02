@@ -7,6 +7,7 @@
 
 - 巩固传统优化主线：Adapter / Pipeline / Bias / Plugin 的稳定组合与可复现性
 - 完善可发现性与自检体验（Catalog + Suites + Run Inspector）
+- Catalog 搜索：支持 tag 过滤（多 tag 组合，含中英文别名）
 - 补齐高价值示例与对比基线（多策略协同/多偏置/并行评估）
 - 实验批次模板插件：自动跑 N seeds，输出 batch.json / batch.csv
 - 结果对比器插件：自动统计差异表（compare.csv / compare.md）
