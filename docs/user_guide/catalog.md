@@ -47,8 +47,22 @@ VNSAdapter = catalog.get("adapter.vns").load()
 python -m nsgablack catalog search vns
 python -m nsgablack catalog search suite
 python -m nsgablack catalog list --kind adapter
-python -m nsgablack catalog show adapter.vns
-python -m nsgablack catalog show suite.multi_strategy
+ python -m nsgablack catalog show adapter.vns
+ python -m nsgablack catalog show suite.multi_strategy
+ ```
+
+## 3.5) Run Inspector（Tk，运行前审查 wiring）
+
+Run Inspector 会读取当前 solver wiring，并基于 Catalog 的 `companions` 提示缺失搭配。
+
+```bash
+python utils/viz/visualizer_tk.py --entry examples/dynamic_multi_strategy_demo.py:build_solver
+```
+
+也可以用统一入口：
+
+```bash
+python -m nsgablack run_inspector --entry examples/dynamic_multi_strategy_demo.py:build_solver
 ```
 
 ## 4) Suites 是什么（为什么“推荐用 suite 装配”）
@@ -92,4 +106,3 @@ companions = ["plugin.pareto_archive", "suite.benchmark_harness"]
 
 - Catalog 是“可发现性层”，不是依赖注入系统：它可以扩展，但不会变成强耦合的装配中心。
 - 权威装配由 Suite 表达：Suite 是显式、可读、可测试的“事实标准”。
-

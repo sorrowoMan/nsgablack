@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nsgablack"
 dynamic = ["version"]
-description = "A comprehensive multi-objective optimization framework with bias system"
+description = "A decomposed optimization system with pipelines, biases, adapters, plugins"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [

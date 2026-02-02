@@ -203,7 +203,7 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
             unit.adapter.teardown(solver)
 
     def _build_units(self) -> List[UnitSpec]:
-        # StrategySpec mode (backward-compatible)
+        # StrategySpec mode
         if self.strategies:
             out: List[UnitSpec] = []
             for idx, spec in enumerate(self.strategies):
@@ -469,7 +469,7 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
 
             ctx = dict(context)
             ctx[KEY_SHARED] = shared
-            # Backward compatible keys (strategy == role)
+            # Strategy keys (strategy == role)
             ctx[KEY_STRATEGY] = unit.role
             ctx[KEY_STRATEGY_ID] = int(sid)
             # Role keys

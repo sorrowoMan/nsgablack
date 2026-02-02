@@ -11,7 +11,9 @@ Signal-driven algorithmic biases.
 """
 
 from .robustness import RobustnessBias
+from .uncertainty_exploration import UncertaintyExplorationBias
 
 __all__ = [
     "RobustnessBias",
+    "UncertaintyExplorationBias",
 ]

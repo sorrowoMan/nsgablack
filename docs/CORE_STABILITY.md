@@ -20,6 +20,10 @@ When building new algorithms / doing integrations, prefer relying on:
 Design principle: keep solver bases pure; bring capabilities in via
 Adapter/Plugin/Bias/Representation/Suite.
 
+Why this matters: the decomposition makes extensions feel natural. New features
+land in the right layer instead of the solver loop, keeping components reusable,
+combinations low-friction, and regressions easier to control.
+
 ## 2) Boundaries (non-goals / can change)
 
 To reduce maintenance pressure, this repository does not ship a first-class

@@ -95,7 +95,7 @@ class TestSolverInitialization:
         solver = BlackBoxSolverNSGAII(sample_problem)
 
         # 检查默认参数
-        assert hasattr(solver, 'population_size')
+        assert hasattr(solver, 'pop_size')
         assert hasattr(solver, 'max_generations')
 
 
@@ -109,7 +109,7 @@ class TestSolverBasicOperations:
         solver.initialize_population()
 
         # 检查种群大小
-        assert len(solver.population) == solver.population_size
+        assert len(solver.population) == solver.pop_size
 
         # 检查个体维度
         for individual in solver.population:
@@ -139,7 +139,7 @@ class TestSolverOptimization:
         problem = SimpleSphere(dimension=2)
         solver = BlackBoxSolverNSGAII(problem)
         solver.max_generations = 10
-        solver.population_size = 20
+        solver.pop_size = 20
 
         # 运行优化
         best_x, best_f = solver.run()
@@ -156,7 +156,7 @@ class TestSolverOptimization:
         problem = SimpleRastrigin(dimension=2)
         solver = BlackBoxSolverNSGAII(problem)
         solver.max_generations = 20
-        solver.population_size = 50
+        solver.pop_size = 50
 
         # 运行优化
         best_x, best_f = solver.run()
@@ -272,7 +272,7 @@ class TestSolverIntegration:
 
         solver = BlackBoxSolverNSGAII(problem)
         solver.max_generations = 20
-        solver.population_size = 100
+        solver.pop_size = 100
 
         best_x, best_f = solver.run()
 

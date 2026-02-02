@@ -68,6 +68,13 @@ class ModuleReportPlugin(Plugin):
         bias_md_path = out_dir / f"{self.cfg.run_id}.bias.md"
 
         modules_payload = self._collect_modules(solver)
+        ui_snapshot = getattr(solver, "_ui_snapshot", None)
+        ui_snapshot_path = getattr(solver, "_ui_snapshot_path", None)
+        if ui_snapshot is not None or ui_snapshot_path is not None:
+            modules_payload["ui_snapshot"] = {
+                "path": ui_snapshot_path,
+                "inline": ui_snapshot if isinstance(ui_snapshot, dict) else None,
+            }
         modules_payload["metadata"] = {
             "run_id": str(self.cfg.run_id),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -96,6 +103,7 @@ class ModuleReportPlugin(Plugin):
         payload: Dict[str, Any] = {
             "solver": {"class": solver.__class__.__name__},
             "adapter": {"class": getattr(getattr(solver, "adapter", None), "__class__", type(None)).__name__},
+            "adapter_state": {},
             "pipeline": None,
             "bias_module": None,
             "plugins": [],
@@ -104,11 +112,50 @@ class ModuleReportPlugin(Plugin):
 
         pipe = getattr(solver, "representation_pipeline", None)
         if pipe is not None:
-            payload["pipeline"] = {"class": pipe.__class__.__name__}
+            pipeline_payload: Dict[str, Any] = {"class": pipe.__class__.__name__}
+            for attr in ("initializer", "mutator", "repair", "crossover", "encoder"):
+                comp = getattr(pipe, attr, None)
+                if comp is None:
+                    continue
+                comp_info: Dict[str, Any] = {"class": comp.__class__.__name__}
+                if comp.__class__.__name__ == "ParallelRepair":
+                    comp_info["parallel"] = {
+                        "backend": getattr(comp, "backend", None),
+                        "max_workers": getattr(comp, "max_workers", None),
+                        "min_batch_size": getattr(comp, "min_batch_size", None),
+                    }
+                    inner = getattr(comp, "inner", None)
+                    if inner is not None:
+                        comp_info["inner_class"] = inner.__class__.__name__
+                pipeline_payload[attr] = comp_info
+            payload["pipeline"] = pipeline_payload
 
         bias = getattr(solver, "bias_module", None)
         if bias is not None:
             payload["bias_module"] = {"class": bias.__class__.__name__}
+
+        adapter = getattr(solver, "adapter", None)
+        if adapter is not None:
+            state: Dict[str, Any] = {"class": adapter.__class__.__name__}
+            strategies = []
+            if hasattr(adapter, "strategies"):
+                for spec in getattr(adapter, "strategies", []):
+                    strategies.append(
+                        {
+                            "name": getattr(spec, "name", "strategy"),
+                            "enabled": bool(getattr(spec, "enabled", True)),
+                            "weight": float(getattr(spec, "weight", 1.0)),
+                            "class": getattr(spec.adapter, "__class__", type(None)).__name__,
+                        }
+                    )
+            if strategies:
+                state["strategies"] = strategies
+            payload["adapter_state"] = state
+
+        # dynamic switch events (if any)
+        events = getattr(solver, "dynamic_switch_events", None)
+        if isinstance(events, list) and events:
+            payload["dynamic_switch_events"] = events
 
         pm = getattr(solver, "plugin_manager", None)
         if pm is not None and hasattr(pm, "list_plugins"):

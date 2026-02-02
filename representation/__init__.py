@@ -4,12 +4,19 @@ Representation pipeline and common plugins.
 
 from .base import (
     RepresentationPipeline,
+    ParallelRepair,
     ContinuousRepresentation,
     IntegerRepresentation,
     PermutationRepresentation,
     MixedRepresentation,
 )
-from .continuous import ClipRepair, GaussianMutation, ContextGaussianMutation, UniformInitializer
+from .continuous import (
+    ClipRepair,
+    ProjectionRepair,
+    GaussianMutation,
+    ContextGaussianMutation,
+    UniformInitializer,
+)
 from .integer import IntegerInitializer, IntegerMutation, IntegerRepair
 from .permutation import (
     PermutationInitializer,
@@ -35,14 +42,17 @@ from .matrix import (
 )
 from .constraints import BoundConstraint
 from .context_mutators import ContextSwitchMutator
+from .dynamic import DynamicRepair
 
 __all__ = [
     "RepresentationPipeline",
+    "ParallelRepair",
     "ContinuousRepresentation",
     "IntegerRepresentation",
     "PermutationRepresentation",
     "MixedRepresentation",
     "ClipRepair",
+    "ProjectionRepair",
     "GaussianMutation",
     "ContextGaussianMutation",
     "UniformInitializer",
@@ -75,4 +85,5 @@ __all__ = [
     "MatrixBlockSumRepair",
     "BoundConstraint",
     "ContextSwitchMutator",
+    "DynamicRepair",
 ]

@@ -143,11 +143,28 @@ class SurrogateEvaluationPlugin(Plugin):
                 self._append_training(true_X, true_obj)
                 self._maybe_retrain()
 
+        # 4.5) compute per-candidate uncertainty for bias consumption (best-effort)
+        unc_score = None
+        try:
+            unc = np.asarray(self._surrogate.uncertainty(X), dtype=float)
+            if unc.ndim == 2:
+                unc_score = np.mean(unc, axis=1)
+            else:
+                unc_score = np.asarray(unc, dtype=float).reshape(-1)
+        except Exception:
+            unc_score = None
+
         # 5) 应用偏置（对预测/真值统一处理，保持 Adapter/update 的语义一致）
         out_obj = np.zeros_like(pred, dtype=float)
         for i in range(n):
             obj_i = normalize_objectives(pred[i], num_objectives=int(solver.num_objectives), name="surrogate.objectives")
             ctx = solver.build_context(individual_id=i, constraints=cons_list[i], violation=float(violations[i]))
+            if unc_score is not None and i < len(unc_score):
+                metrics = ctx.get("metrics")
+                if not isinstance(metrics, dict):
+                    metrics = {}
+                    ctx["metrics"] = metrics
+                metrics["surrogate_std"] = float(unc_score[i])
             if getattr(solver, "enable_bias", False) and getattr(solver, "bias_module", None) is not None:
                 obj_i = solver._apply_bias(obj_i, X[i], i, ctx)
             out_obj[i] = obj_i

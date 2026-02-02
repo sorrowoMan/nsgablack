@@ -20,11 +20,16 @@ from .convergence import ConvergencePlugin
 from .memory_optimize import MemoryPlugin
 from .adaptive_parameters import AdaptiveParametersPlugin
 from .surrogate_evaluation import SurrogateEvaluationPlugin, SurrogateEvaluationConfig
+from .multi_fidelity_evaluation import MultiFidelityEvaluationPlugin, MultiFidelityEvaluationConfig
 from .monte_carlo_evaluation import MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig
 from .pareto_archive import ParetoArchivePlugin, ParetoArchiveConfig
 from .benchmark_harness import BenchmarkHarnessPlugin, BenchmarkHarnessConfig
 from .module_report import ModuleReportPlugin, ModuleReportConfig
 from .profiler import ProfilerPlugin, ProfilerConfig
+from .dynamic_switch import DynamicSwitchPlugin
+from .sensitivity_analysis import SensitivityAnalysisPlugin, SensitivityAnalysisConfig, SensitivityParam
+from .mas_model import MASModelPlugin, MASModelConfig
+from .subspace_basis import SubspaceBasisPlugin, SubspaceBasisConfig
 
 __all__ = [
     'Plugin',
@@ -37,6 +42,8 @@ __all__ = [
     'AdaptiveParametersPlugin',
     'SurrogateEvaluationPlugin',
     'SurrogateEvaluationConfig',
+    'MultiFidelityEvaluationPlugin',
+    'MultiFidelityEvaluationConfig',
     'MonteCarloEvaluationPlugin',
     'MonteCarloEvaluationConfig',
     'ParetoArchivePlugin',
@@ -47,4 +54,12 @@ __all__ = [
     'ModuleReportConfig',
     'ProfilerPlugin',
     'ProfilerConfig',
+    'DynamicSwitchPlugin',
+    'SensitivityAnalysisPlugin',
+    'SensitivityAnalysisConfig',
+    'SensitivityParam',
+    'MASModelPlugin',
+    'MASModelConfig',
+    'SubspaceBasisPlugin',
+    'SubspaceBasisConfig',
 ]

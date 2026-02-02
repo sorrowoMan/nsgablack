@@ -122,7 +122,6 @@ def get_bias_system_info() -> dict:
     info = {
         'version': __version__,
         'new_structure_available': NEW_STRUCTURE_AVAILABLE,
-        'legacy_available': False
     }
 
     if NEW_STRUCTURE_AVAILABLE:
@@ -138,31 +137,3 @@ def get_bias_system_info() -> dict:
             info['registry_error'] = str(e)
 
     return info
-
-
-def migrate_legacy_bias(legacy_bias_config: dict):
-    """
-    Migrate legacy bias configuration to new structure.
-
-    Args:
-        legacy_bias_config: Legacy bias configuration
-
-    Returns:
-        BiasBase: New bias instance or None if migration fails
-    """
-    from .. import create_bias, NEW_STRUCTURE_AVAILABLE
-
-    if not NEW_STRUCTURE_AVAILABLE:
-        raise RuntimeError("New structure not available for migration")
-
-    # Use the create_bias factory function instead of instantiating abstract classes
-    try:
-        bias_name = legacy_bias_config.get('name', 'migrated_bias')
-        weight = legacy_bias_config.get('weight', 1.0)
-        params = legacy_bias_config.get('params', {})
-
-        # Create bias using factory function
-        return create_bias(bias_name, weight, **params)
-    except Exception as e:
-        print(f"Warning: Could not migrate bias: {e}")
-        return None

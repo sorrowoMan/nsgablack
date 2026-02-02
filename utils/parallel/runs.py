@@ -19,10 +19,8 @@ import numpy as np
 from ..headless import run_headless_single_objective
 from ...core.base import BlackBoxProblem
 
-# Legacy note: earlier versions shipped a VNS solver implementation.
-# The modern architecture uses `core/adapters/vns.py` instead, so we keep
-# the parallel-run helper but disable VNS batch runs unless the legacy solver
-# is provided by user code.
+# Note: VNS is now provided via adapters (`core/adapters/vns.py`).
+# The batch VNS helper stays optional and requires a user-supplied solver.
 BlackBoxSolverVNS = None  # type: ignore
 
 Backend = Literal["thread", "process"]

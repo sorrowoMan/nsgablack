@@ -63,6 +63,16 @@ class ComposableSolver(BlankSolverBase):
             dimension=self.dimension,
             owner=getattr(self.adapter, "name", "adapter"),
         )
+        # If a representation pipeline is attached, enforce a repair pass so
+        # all adapter-produced candidates go through the main pipeline.
+        if candidates and self.representation_pipeline is not None:
+            repair = getattr(self.representation_pipeline, "repair", None)
+            if repair is not None:
+                if hasattr(self.representation_pipeline, "repair_batch"):
+                    contexts = [context] * len(candidates)
+                    candidates = self.representation_pipeline.repair_batch(candidates, contexts=contexts)
+                else:
+                    candidates = [self.repair_candidate(cand, context) for cand in candidates]
         if not candidates:
             return
 

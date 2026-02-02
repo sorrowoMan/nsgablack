@@ -19,13 +19,26 @@ from typing import Iterable, Optional
 
 
 _KIND_LABELS = {
-    "bias": "Bias(偏置)",
-    "adapter": "Adapter(策略内核)",
-    "plugin": "Plugin(胶水/调度)",
-    "representation": "Representation(算子/修复)",
-    "suite": "Suite(权威组合)",
-    "tool": "Tool(底座/工具)",
+    "bias": "Bias",
+    "adapter": "Adapter",
+    "plugin": "Plugin",
+    "representation": "Representation",
+    "suite": "Suite",
+    "tool": "Tool",
+    "example": "Example",
 }
+
+
+def _ensure_utf8_io() -> None:
+    for name in ("stdout", "stderr", "stdin"):
+        stream = getattr(sys, name, None)
+        if stream is None:
+            continue
+        try:
+            if hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 
 def _kind_label(kind: str) -> str:
@@ -85,7 +98,7 @@ def _cmd_catalog_search(args: argparse.Namespace) -> int:
         show_tags=args.show_tags,
         show_summary=not args.no_summary,
     )
-    print("Hint: `python -m nsgablack catalog show <key>` 查看条目详情/伙伴组件。")
+    print("Hint: `python -m nsgablack catalog show <key>` for details/companions.")
     return 0
 
 
@@ -102,7 +115,7 @@ def _cmd_catalog_list(args: argparse.Namespace) -> int:
         show_tags=args.show_tags,
         show_summary=not args.no_summary,
     )
-    print("Hint: `python -m nsgablack catalog show <key>` 查看条目详情/伙伴组件。")
+    print("Hint: `python -m nsgablack catalog show <key>` for details/companions.")
     return 0
 
 
@@ -132,6 +145,12 @@ def _cmd_catalog_show(args: argparse.Namespace) -> int:
             else:
                 print(f"  - {ce.key} ({ce.kind}) -> {ce.import_path}")
     return 0
+
+
+def _cmd_run_inspector(args: argparse.Namespace) -> int:
+    from .utils.viz import launch_from_entry
+
+    return int(launch_from_entry(args.entry))
 
 
 def _add_common_filters(p: argparse.ArgumentParser) -> None:
@@ -174,10 +193,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_show.add_argument("key", help="Entry key, e.g. adapter.vns")
     p_show.set_defaults(func=_cmd_catalog_show)
 
+    # run_inspector
+    p_inspect = sub.add_parser("run_inspector", help="Launch Run Inspector (Tk UI)")
+    p_inspect.add_argument("--entry", required=True, help="path/to/script.py:build_solver")
+    p_inspect.set_defaults(func=_cmd_run_inspector)
+
     return parser
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    _ensure_utf8_io()
     parser = build_parser()
     args = parser.parse_args(argv)
     func = getattr(args, "func", None)

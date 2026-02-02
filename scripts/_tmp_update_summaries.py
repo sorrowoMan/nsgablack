@@ -1,0 +1,157 @@
+﻿import pathlib, re
+
+summary_map = {
+    "adapter.role": "\u89d2\u8272\u9002\u914d\u5668\uff1a\u9644\u52a0\u89d2\u8272\u5143\u6570\u636e\u4e0e\u914d\u989d\uff0c\u7528\u4e8e\u5206\u5de5\u534f\u540c\u3002 / Adapter: role wrapper with metadata and candidate quotas for cooperation.",
+    "adapter.multi_role_controller": "\u591a\u89d2\u8272\u63a7\u5236\u5668\uff1a\u5171\u4eab\u4e0a\u4e0b\u6587\u4e0e\u9884\u7b97\u5206\u914d\uff0c\u7edf\u4e00\u8c03\u5ea6\u5404\u89d2\u8272\u3002 / Adapter: multi-role controller with shared context and budget scheduling.",
+    "adapter.composite": "\u7ec4\u5408\u9002\u914d\u5668\uff1a\u5408\u5e76\u591a\u4e2a\u9002\u914d\u5668\u5019\u9009\uff0c\u5e76\u5904\u7406\u51b2\u7a81\u3002 / Adapter: composite adapter merging proposals and resolving conflicts.",
+    "adapter.astar": "A*\u641c\u7d22\u5185\u6838\uff1a\u53ef\u914d\u7f6e\u90bb\u5c45\u3001\u542f\u53d1\u5f0f\u4e0e\u76ee\u6807\u5224\u5b9a\u3002 / Adapter: A* core with pluggable neighbors/heuristic/goal.",
+    "adapter.moa_star": "\u591a\u76ee\u6807A*\uff1aPareto\u6807\u7b7e\u4e0e\u652f\u914d\u526a\u679d\uff0c\u9762\u5411\u591a\u76ee\u6807\u8def\u5f84\u3002 / Adapter: MOA* with Pareto labels and dominance pruning.",
+    "suite.dynamic_switch": "\u6743\u5a01\u88c5\u914d\uff1a\u52a8\u6001\u5207\u6362\u63d2\u4ef6\uff0c\u7528\u4e8e\u8fd0\u884c\u65f6\u7b56\u7565/\u6743\u91cd\u5207\u6362\u3002 / Authority wiring: dynamic switch plugin for runtime strategy/weight switching.",
+    "bias.diversity_adaptive": "\u81ea\u9002\u5e94\u591a\u6837\u6027\u504f\u7f6e\uff1a\u6839\u636e\u72b6\u6001\u8c03\u8282\u591a\u6837\u6027\u538b\u529b\u3002 / Algorithmic bias: adaptively adjust diversity pressure.",
+    "bias.diversity_niche": "\u5c0f\u751f\u5883\u591a\u6837\u6027\u504f\u7f6e\uff1a\u57fa\u4e8eniche\u5212\u5206\u7ef4\u6301\u5206\u6563\u3002 / Algorithmic bias: niche-based diversity preservation.",
+    "bias.diversity_crowding": "\u62e5\u6324\u8ddd\u79bb\u504f\u7f6e\uff1a\u5229\u7528\u62e5\u6324\u5ea6\u559c\u597d\u7a00\u758f/\u8fb9\u754c\u89e3\u3002 / Algorithmic bias: favor sparse/frontier solutions via crowding distance.",
+    "bias.diversity_sharing": "\u5171\u4eab\u51fd\u6570\u504f\u7f6e\uff1a\u901a\u8fc7\u9002\u5e94\u5ea6\u5171\u4eab\u6291\u5236\u8fc7\u5ea6\u805a\u96c6\u3002 / Algorithmic bias: fitness sharing to reduce crowding.",
+    "bias.convergence_adaptive": "\u81ea\u9002\u5e94\u6536\u655b\u504f\u7f6e\uff1a\u52a8\u6001\u5e73\u8861\u63a2\u7d22\u4e0e\u6536\u655b\u3002 / Algorithmic bias: adaptively balance exploration vs convergence.",
+    "bias.convergence_precision": "\u7cbe\u5ea6\u504f\u7f6e\uff1a\u5f3a\u8c03\u5c40\u90e8\u7cbe\u4fee\u4e0e\u6570\u503c\u7a33\u5b9a\u3002 / Algorithmic bias: emphasize precision and local refinement.",
+    "bias.convergence_late_stage": "\u540e\u671f\u6536\u655b\u504f\u7f6e\uff1a\u672b\u671f\u52a0\u901f\u6536\u655b\u4e0e\u7cbe\u4fee\u3002 / Algorithmic bias: accelerate late-stage convergence.",
+    "bias.convergence_multi_stage": "\u591a\u9636\u6bb5\u6536\u655b\u504f\u7f6e\uff1a\u5206\u9636\u6bb5\u5207\u6362\u63a2\u7d22/\u5f00\u53d1\u7b56\u7565\u3002 / Algorithmic bias: multi-stage convergence scheduling.",
+    "bias.sa_adaptive": "\u81ea\u9002\u5e94\u9000\u706b\u504f\u7f6e\uff1a\u57fa\u4e8e\u63a5\u53d7\u7387\u8c03\u6574\u6e29\u5ea6\u3002 / Algorithmic bias: adaptive SA temperature/acceptance tuning.",
+    "bias.sa_multiobjective": "\u591a\u76ee\u6807\u9000\u706b\u504f\u7f6e\uff1a\u591a\u76ee\u6807\u63a5\u53d7\u51c6\u5219/\u6807\u5ea6\u5316\u3002 / Algorithmic bias: multi-objective SA acceptance/scalarization.",
+    "bias.nsga2_adaptive": "\u81ea\u9002\u5e94NSGA-II\u504f\u7f6e\uff1a\u52a8\u6001\u8c03\u6574\u9009\u62e9/\u53d8\u5f02\u53c2\u6570\u3002 / Algorithmic bias: adaptive NSGA-II selection/mutation.",
+    "bias.nsga2_diversity_preserving": "NSGA-II\u591a\u6837\u6027\u504f\u7f6e\uff1a\u5f3a\u8c03\u62e5\u6324\u5ea6\u4e0e\u5206\u5e03\u3002 / Algorithmic bias: NSGA-II diversity preservation.",
+    "bias.de_adaptive": "\u81ea\u9002\u5e94DE\u504f\u7f6e\uff1a\u52a8\u6001\u8c03\u6574F/CR\u6216\u7b56\u7565\u3002 / Algorithmic bias: adaptive DE parameters/strategy.",
+    "bias.de_multiobjective": "\u591a\u76ee\u6807DE\u504f\u7f6e\uff1a\u591a\u76ee\u6807\u6807\u5ea6\u4e0e\u9009\u62e9\u3002 / Algorithmic bias: DE for multi-objective search.",
+    "bias.pattern_search_adaptive": "\u81ea\u9002\u5e94\u6a21\u5f0f\u641c\u7d22\u504f\u7f6e\uff1a\u52a8\u6001\u8c03\u6574\u6b65\u957f/\u65b9\u5411\u3002 / Algorithmic bias: adaptive pattern search steps.",
+    "bias.coordinate_descent": "\u5750\u6807\u4e0b\u964d\u504f\u7f6e\uff1a\u504f\u5411\u9010\u5750\u6807\u7cbe\u4fee\u3002 / Algorithmic bias: coordinate-wise refinement.",
+    "bias.gd_momentum": "\u52a8\u91cf\u68af\u5ea6\u504f\u7f6e\uff1a\u52a0\u901f\u5e76\u7a33\u5b9a\u6536\u655b\u3002 / Algorithmic bias: momentum gradient descent.",
+    "bias.gd_adaptive": "\u81ea\u9002\u5e94\u68af\u5ea6\u504f\u7f6e\uff1a\u81ea\u9002\u5e94\u5b66\u4e60\u7387\u3002 / Algorithmic bias: adaptive learning-rate GD.",
+    "bias.gd_adam": "Adam\u68af\u5ea6\u504f\u7f6e\uff1a\u4e00\u9636/\u4e8c\u9636\u77e9\u4f30\u8ba1\u4fee\u6b63\u3002 / Algorithmic bias: Adam optimizer style.",
+    "bias.pso_adaptive": "\u81ea\u9002\u5e94PSO\u504f\u7f6e\uff1a\u52a8\u6001\u60ef\u6027\u4e0e\u5b66\u4e60\u56e0\u5b50\u3002 / Algorithmic bias: adaptive PSO parameters.",
+    "bias.cmaes_adaptive": "\u81ea\u9002\u5e94CMA-ES\u504f\u7f6e\uff1a\u534f\u65b9\u5dee/\u6b65\u957f\u81ea\u9002\u5e94\u3002 / Algorithmic bias: adaptive CMA-ES tuning.",
+    "bias.moead_adaptive": "\u81ea\u9002\u5e94MOEA/D\u504f\u7f6e\uff1a\u90bb\u57df/\u6743\u91cd\u52a8\u6001\u8c03\u6574\u3002 / Algorithmic bias: adaptive MOEA/D neighborhood/weights.",
+    "bias.nsga3_adaptive": "\u81ea\u9002\u5e94NSGA-III\u504f\u7f6e\uff1a\u53c2\u8003\u70b9\u81ea\u9002\u5e94\u3002 / Algorithmic bias: adaptive NSGA-III reference points.",
+    "bias.spea2_adaptive": "\u81ea\u9002\u5e94SPEA2\u504f\u7f6e\uff1a\u5f3a\u5ea6/\u5bc6\u5ea6\u53c2\u6570\u8c03\u6574\u3002 / Algorithmic bias: adaptive SPEA2 parameters.",
+    "bias.spea2_hybrid": "\u6df7\u5408SPEA2-NSGA2\u504f\u7f6e\uff1a\u878d\u5408\u5f3a\u5ea6\u4e0e\u62e5\u6324\u5ea6\u4fe1\u53f7\u3002 / Algorithmic bias: hybrid SPEA2+NSGA2 signals.",
+    "bias.constraint": "\u7ea6\u675f\u504f\u7f6e\uff1a\u5c06\u89c4\u5219/\u7ea6\u675f\u663e\u5f0f\u6ce8\u5165\u8bc4\u5206\u3002 / Domain bias: inject constraints into scoring.",
+    "bias.feasibility": "\u53ef\u884c\u6027\u504f\u7f6e\uff1a\u4f18\u5148\u53ef\u884c\u89e3/\u4fee\u590d\u503e\u5411\u3002 / Domain bias: prioritize feasibility.",
+    "bias.preference": "\u504f\u597d\u504f\u7f6e\uff1a\u7f16\u7801\u4e1a\u52a1\u504f\u597d\u4e0e\u6743\u91cd\u3002 / Domain bias: encode preferences/weights.",
+    "bias.rule_based": "\u89c4\u5219\u504f\u7f6e\uff1a\u57fa\u4e8e\u89c4\u5219\u7684\u52a0\u6743/\u60e9\u7f5a\u3002 / Domain bias: rule-based weighting/penalty.",
+    "bias.callable": "\u53ef\u8c03\u7528\u504f\u7f6e\uff1a\u7528\u6237\u51fd\u6570\u4f5c\u4e3a\u504f\u7f6e\u3002 / Domain bias: user callable bias function.",
+    "bias.engineering_design": "\u5de5\u7a0b\u8bbe\u8ba1\u504f\u7f6e\uff1a\u5de5\u7a0b\u53ef\u5236\u9020\u6027/\u516c\u5dee\u504f\u597d\u3002 / Domain bias: engineering design constraints/priors.",
+    "bias.safety": "\u5b89\u5168\u504f\u7f6e\uff1a\u98ce\u9669/\u5b89\u5168\u7ea6\u675f\u4f18\u5148\u3002 / Domain bias: safety/risk prioritization.",
+    "bias.manufacturing": "\u5236\u9020\u504f\u7f6e\uff1a\u5de5\u827a/\u4ea7\u7ebf\u53ef\u884c\u6027\u503e\u5411\u3002 / Domain bias: manufacturing feasibility.",
+    "bias.scheduling": "\u6392\u7a0b\u504f\u7f6e\uff1a\u4efb\u52a1\u987a\u5e8f/\u8d1f\u8f7d\u5e73\u8861\u3002 / Domain bias: scheduling preference.",
+    "bias.resource_constraint": "\u8d44\u6e90\u7ea6\u675f\u504f\u7f6e\uff1a\u8d44\u6e90\u5bb9\u91cf/\u6d88\u8017\u7ea6\u675f\u3002 / Domain bias: resource capacity constraints.",
+    "bias.time_window": "\u65f6\u95f4\u7a97\u504f\u7f6e\uff1a\u6ee1\u8db3\u65f6\u7a97\u4e0e\u65f6\u5e8f\u7ea6\u675f\u3002 / Domain bias: time window constraints.",
+    "bias.bayesian_guidance": "\u8d1d\u53f6\u65af\u5f15\u5bfc\u504f\u7f6e\uff1a\u7528\u4ee3\u7406/\u5148\u9a8c\u5f15\u5bfc\u641c\u7d22\u3002 / Specialized bias: Bayesian-guided exploration.",
+    "bias.bayesian_exploration": "\u8d1d\u53f6\u65af\u63a2\u7d22\u504f\u7f6e\uff1a\u4f18\u5148\u9ad8\u4e0d\u786e\u5b9a\u533a\u57df\u3002 / Specialized bias: favor uncertain regions.",
+    "bias.bayesian_convergence": "\u8d1d\u53f6\u65af\u6536\u655b\u504f\u7f6e\uff1a\u5728\u53ef\u4fe1\u533a\u95f4\u5185\u6536\u655b\u3002 / Specialized bias: converge within posterior confidence.",
+    "bias.engineering_precision": "\u5de5\u7a0b\u7cbe\u5ea6\u504f\u7f6e\uff1a\u7cbe\u5ea6/\u516c\u5dee\u4f18\u5148\u3002 / Domain bias: precision/tolerance bias.",
+    "bias.engineering_constraint": "\u5de5\u7a0b\u7ea6\u675f\u504f\u7f6e\uff1a\u5de5\u7a0b\u89c4\u8303/\u89c4\u5219\u7ea6\u675f\u3002 / Domain bias: engineering rule constraints.",
+    "bias.engineering_robustness": "\u5de5\u7a0b\u9c81\u68d2\u504f\u7f6e\uff1a\u5bf9\u6270\u52a8\u7a33\u5065\u3002 / Domain bias: robustness to perturbations.",
+    "bias.local_gd": "\u5c40\u90e8\u68af\u5ea6\u504f\u7f6e\uff1a\u5c40\u90e8\u68af\u5ea6\u7cbe\u4fee\u3002 / Specialized bias: local gradient refinement.",
+    "bias.local_newton": "\u725b\u987f\u504f\u7f6e\uff1a\u4e8c\u9636\u8fd1\u4f3c\u52a0\u901f\u5c40\u90e8\u6536\u655b\u3002 / Specialized bias: Newton-style refinement.",
+    "bias.local_line_search": "\u7ebf\u641c\u7d22\u504f\u7f6e\uff1a\u6b65\u957f\u7ebf\u641c\u7d22\u4e0e\u8c03\u5ea6\u3002 / Specialized bias: line-search step control.",
+    "bias.local_trust_region": "\u4fe1\u8d56\u57df\u504f\u7f6e\uff1a\u5c40\u90e8\u53ef\u4fe1\u533a\u57df\u5185\u641c\u7d22\u3002 / Specialized bias: trust-region refinement.",
+    "bias.local_nelder_mead": "Nelder-Mead\u504f\u7f6e\uff1a\u5355\u7eaf\u5f62\u5c40\u90e8\u641c\u7d22\u3002 / Specialized bias: Nelder-Mead simplex refinement.",
+    "bias.local_quasi_newton": "\u62df\u725b\u987f\u504f\u7f6e\uff1a\u6709\u9650\u8bb0\u5fc6/\u62df\u725b\u987f\u66f4\u65b0\u3002 / Specialized bias: quasi-Newton refinement.",
+    "bias.graph_connectivity": "\u8fde\u901a\u6027\u504f\u7f6e\uff1a\u9f13\u52b1\u56fe\u8fde\u901a\u3002 / Specialized bias: graph connectivity.",
+    "bias.graph_sparsity": "\u7a00\u758f\u504f\u7f6e\uff1a\u504f\u5411\u7a00\u758f\u56fe\u7ed3\u6784\u3002 / Specialized bias: graph sparsity.",
+    "bias.graph_degree_distribution": "\u5ea6\u5206\u5e03\u504f\u7f6e\uff1a\u5339\u914d\u76ee\u6807\u5ea6\u5206\u5e03\u3002 / Specialized bias: target degree distribution.",
+    "bias.graph_shortest_path": "\u6700\u77ed\u8def\u5f84\u504f\u7f6e\uff1a\u4f18\u5148\u66f4\u77ed\u8def\u5f84\u3002 / Specialized bias: shortest path preference.",
+    "bias.graph_max_flow": "\u6700\u5927\u6d41\u504f\u7f6e\uff1a\u63d0\u9ad8\u53ef\u8fbe\u6d41\u91cf\u3002 / Specialized bias: max-flow preference.",
+    "bias.graph_coloring": "\u56fe\u7740\u8272\u504f\u7f6e\uff1a\u51cf\u5c11\u51b2\u7a81\u8272\u3002 / Specialized bias: graph coloring bias.",
+    "bias.graph_community": "\u793e\u533a\u7ed3\u6784\u504f\u7f6e\uff1a\u589e\u5f3a\u793e\u533a\u5212\u5206\u3002 / Specialized bias: community structure bias.",
+    "bias.graph_constraint": "\u56fe\u7ed3\u6784\u7ea6\u675f\u504f\u7f6e\uff1a\u901a\u7528\u56fe\u7ed3\u6784\u7ea6\u675f\u3002 / Specialized bias: graph structural constraints.",
+    "bias.graph_tsp_constraint": "TSP\u7ea6\u675f\u504f\u7f6e\uff1a\u5de1\u56de\u8def\u5f84\u5408\u6cd5\u6027\u3002 / Specialized bias: TSP constraints.",
+    "bias.graph_path_constraint": "\u8def\u5f84\u7ea6\u675f\u504f\u7f6e\uff1a\u8def\u5f84\u5408\u6cd5\u6027/\u53ef\u8fbe\u6027\u3002 / Specialized bias: path constraints.",
+    "bias.graph_tree_constraint": "\u6811\u7ed3\u6784\u7ea6\u675f\u504f\u7f6e\uff1a\u6811\u7ed3\u6784\u7ea6\u675f\u3002 / Specialized bias: tree constraints.",
+    "bias.graph_coloring_constraint": "\u7740\u8272\u7ea6\u675f\u504f\u7f6e\uff1a\u7740\u8272\u5408\u6cd5\u6027\u7ea6\u675f\u3002 / Specialized bias: coloring constraints.",
+    "bias.graph_matching_constraint": "\u5339\u914d\u7ea6\u675f\u504f\u7f6e\uff1a\u5339\u914d\u5408\u6cd5\u6027\u7ea6\u675f\u3002 / Specialized bias: matching constraints.",
+    "bias.graph_hamiltonian_constraint": "\u54c8\u5bc6\u987f\u8def\u5f84\u7ea6\u675f\u504f\u7f6e\uff1a\u8bbf\u95ee\u5168\u90e8\u8282\u70b9\u3002 / Specialized bias: Hamiltonian path constraints.",
+    "bias.graph_composite_constraint": "\u590d\u5408\u56fe\u7ea6\u675f\u504f\u7f6e\uff1a\u591a\u7ea6\u675f\u7ec4\u5408\u3002 / Specialized bias: composite graph constraints.",
+    "bias.surrogate_control": "\u4ee3\u7406\u63a7\u5236\u504f\u7f6e\uff1a\u4ee3\u7406\u8bc4\u4f30\u63a7\u5236\u63a2\u7d22\u3002 / Specialized bias: surrogate-guided control.",
+    "bias.surrogate_phase_schedule": "\u9636\u6bb5\u8c03\u5ea6\u504f\u7f6e\uff1a\u5206\u9636\u6bb5\u5207\u6362\u4ee3\u7406/\u771f\u5b9e\u8bc4\u4f30\u3002 / Specialized bias: phase scheduling for surrogate/true eval.",
+    "bias.surrogate_uncertainty_budget": "\u4e0d\u786e\u5b9a\u9884\u7b97\u504f\u7f6e\uff1a\u6309\u4e0d\u786e\u5b9a\u5ea6\u5206\u914d\u8bc4\u4f30\u9884\u7b97\u3002 / Specialized bias: uncertainty-aware evaluation budget.",
+    "bias.production_constraint": "\u751f\u4ea7\u7ea6\u675f\u504f\u7f6e\uff1a\u4ea7\u7ebf/\u5de5\u827a\u7ea6\u675f\u3002 / Domain bias: production constraints.",
+    "bias.production_diversity": "\u751f\u4ea7\u591a\u6837\u6027\u504f\u7f6e\uff1a\u4ea7\u54c1/\u65b9\u6848\u591a\u6837\u6027\u3002 / Domain bias: production diversity.",
+    "bias.production_continuity": "\u751f\u4ea7\u8fde\u7eed\u6027\u504f\u7f6e\uff1a\u51cf\u5c11\u5207\u6362/\u4e2d\u65ad\u3002 / Domain bias: production continuity.",
+    "bias.production_scheduling": "\u751f\u4ea7\u6392\u7a0b\u504f\u7f6e\uff1a\u6392\u7a0b\u4f18\u5148\u4e0e\u8d1f\u8f7d\u5e73\u8861\u3002 / Domain bias: production scheduling preference.",
+    "bias.tabu": "\u7981\u5fcc\u641c\u7d22\u504f\u7f6e\uff1a\u8bb0\u5fc6\u8def\\u7ebf\\u9632\\u6b62\\u8fd4\\u56de\\u3002 / Algorithmic bias: tabu memory to avoid cycling.",
+    "bias.robustness": "\u9c81\u68d2\u6027\u504f\u7f6e\uff1a\u9488\\u5bf9\\u6270\\u52a8\\u7684\\u7a33\\u5b9a\\u6027\\u8bc4\\u4f30\\u3002 / Algorithmic bias: robustness-oriented scoring under perturbations.",
+    "bias.uncertainty_exploration": "\u4e0d\u786e\\u5b9a\\u63a2\\u7d22\\u504f\\u7f6e\\uff1a\\u4f18\\u5148\\u9ad8\\u4e0d\\u786e\\u5b9a\\u533a\\u57df\\u3002 / Algorithmic bias: explore high-uncertainty regions.",
+    "adapter.vns": "VNS\u5c40\u90e8\u641c\u7d22\u5185\u6838\uff1a\u591a\u90bb\u57df\u5206\u9636\u6bb5\u7cbe\u4fee\u3002 / Adapter: VNS local search core with multi-neighborhood refinement.",
+    "adapter.sa": "\u6a21\u62df\u9000\u706b\u5185\u6838\uff1a\u6e29\u5ea6\u8c03\u5ea6 + Metropolis\u63a5\u53d7\u3002 / Adapter: SA core with temperature schedule and Metropolis acceptance.",
+    "adapter.multi_strategy": "\u591a\u7b56\u7565\u534f\u540c\u63a7\u5236\u5668\uff1a\u7edf\u4e00\u8c03\u5ea6\u3001\u5171\u4eab\u72b6\u6001\u4e0e\u52a8\u6001\u9884\u7b97\u3002 / Adapter: multi-strategy controller with unified scheduling/shared state/dynamic budgets.",
+    "adapter.moead": "MOEA/D\u5206\u89e3\u5185\u6838\uff1a\u6743\u91cd\u5411\u91cf + \u90bb\u57df\u66ff\u6362\u3002 / Adapter: MOEA/D decomposition core with weight vectors and neighborhood replacement.",
+    "adapter.trust_region_dfo": "\u4fe1\u8d56\u57dfDFO\u5185\u6838\uff1a\u65e0\u68af\u5ea6\u5c40\u90e8\u641c\u7d22\u3002 / Adapter: trust-region derivative-free local search.",
+    "adapter.trust_region_subspace": "\u5b50\u7a7a\u95f4/\u4f4e\u79e9\u4fe1\u8d56\u57df\uff1a\u9002\u7528\u9ad8\u7ef4\u5c40\u90e8\u641c\u7d22\u3002 / Adapter: subspace/low-rank trust-region search for high-D.",
+    "adapter.trust_region_nonsmooth": "\u975e\u5149\u6ed1\u4fe1\u8d56\u57df\uff1a\u652f\u6301Linf\u805a\u5408\u7b49\u975e\u5149\u6ed1\u76ee\u6807\u3002 / Adapter: non-smooth trust-region with Linf aggregation.",
+    "adapter.mas": "Model-and-Search\uff1a\u4ea4\u66ff\u5efa\u6a21\u4e0e\u641c\u7d22\u3002 / Adapter: model-and-search alternating model update + search.",
+    "adapter.trust_region_mo_dfo": "\u591a\u76ee\u6807\u4fe1\u8d56\u57dfDFO\uff1a\u6743\u91cd\u6807\u5ea6/\u5e15\u7d2f\u6258\u7cbe\u4fee\u3002 / Adapter: MO trust-region DFO with scalarization.",
+    "bias.dynamic_penalty": "\u52a8\u6001\u60e9\u7f5a\u504f\u7f6e\uff1a\u968f\u8fdd\u53cd\u7a0b\u5ea6\u8c03\u8282\u60e9\u7f5a\u5f3a\u5ea6\u3002 / Domain bias: dynamic penalty for constraint violation.",
+    "bias.structure_prior": "\u7ed3\u6784\u5148\u9a8c\u504f\u7f6e\uff1a\u6ce8\u5165\u7ed3\u6784/\u5bf9\u79f0\u504f\u597d\u3002 / Domain bias: structure/symmetry prior.",
+    "bias.risk": "\u98ce\u9669\u504f\u7f6e\uff1a\u652f\u6301CVaR/\u6700\u574f\u60c5\u51b5\u98ce\u9669\u63a7\u5236\u3002 / Domain bias: risk-aware scoring (CVaR/worst-case).",
+    "bias.sa": "\u9000\u706b\u504f\u7f6e\uff1a\u6e29\u5ea6/\u63a5\u53d7\u51c6\u5219\u5f15\u5bfc\u63a2\u7d22\u3002 / Algorithmic bias: SA temperature/acceptance guidance.",
+    "bias.de": "\u5dee\u5206\u8fdb\u5316\u504f\u7f6e\uff1a\u5dee\u5206\u53d8\u5f02/\u4ea4\u53c9\u503e\u5411\u3002 / Algorithmic bias: DE mutation/crossover guidance.",
+    "bias.pso": "\u7c92\u5b50\u7fa4\u504f\u7f6e\uff1a\u60ef\u6027/\u7fa4\u4f53\u5438\u5f15\u5f15\u5bfc\u3002 / Algorithmic bias: PSO inertia/social guidance.",
+    "bias.cmaes": "CMA-ES\u504f\u7f6e\uff1a\u534f\u65b9\u5dee\u81ea\u9002\u5e94\u641c\u7d22\u3002 / Algorithmic bias: CMA-ES covariance adaptation.",
+    "bias.levy": "Levy\u98de\u884c\u504f\u7f6e\uff1a\u957f\u8df3\u8dc3\u63a2\u7d22\u3002 / Algorithmic bias: Levy-flight exploration.",
+    "bias.pattern_search": "\u6a21\u5f0f\u641c\u7d22\u504f\u7f6e\uff1a\u6b65\u957f/\u7f51\u683c\u6a21\u5f0f\u63a2\u7d22\u3002 / Algorithmic bias: pattern search steps.",
+    "bias.gradient_descent": "\u68af\u5ea6\u4e0b\u964d\u504f\u7f6e\uff1a\u6cbf\u8d1f\u68af\u5ea6\u7cbe\u4fee\u3002 / Algorithmic bias: gradient descent refinement.",
+    "bias.convergence": "\u6536\u655b\u504f\u7f6e\uff1a\u4f18\u5148\u6536\u655b\u4e0e\u7cbe\u4fee\u3002 / Algorithmic bias: convergence acceleration.",
+    "bias.diversity": "\u591a\u6837\u6027\u504f\u7f6e\uff1a\u7ef4\u6301\u89e3\u96c6\u5206\u6563\u3002 / Algorithmic bias: diversity maintenance.",
+    "bias.nsga2_core": "NSGA-II\u6838\u5fc3\u504f\u7f6e\uff1a\u975e\u652f\u914d\u6392\u5e8f + \u62e5\u6324\u5ea6\u3002 / Algorithmic bias: NSGA-II ranking/crowding.",
+    "bias.nsga3_core": "NSGA-III\u53c2\u8003\u70b9\u504f\u7f6e\uff1a\u53c2\u8003\u70b9\u9a71\u52a8\u6392\u5e8f\u3002 / Algorithmic bias: NSGA-III reference points.",
+    "bias.spea2_core": "SPEA2\u5f3a\u5ea6\u504f\u7f6e\uff1a\u5f3a\u5ea6/\u5bc6\u5ea6\u8bc4\u4f30\u3002 / Algorithmic bias: SPEA2 strength/density.",
+    "bias.moead_decomposition": "MOEA/D\u5206\u89e3\u504f\u7f6e\uff1a\u6743\u91cd\u4e0e\u90bb\u57df\u5206\u89e3\u4fe1\u53f7\u3002 / Algorithmic bias: MOEA/D decomposition signals.",
+    "suite.monte_carlo_robustness": "\u6743\u5a01\u88c5\u914d\uff1aMonte Carlo\u8bc4\u4f30 + \u9c81\u68d2\u6027\u504f\u7f6e\u3002 / Authority wiring: MC evaluation + robustness bias.",
+    "suite.ray_parallel": "\u6743\u5a01\u88c5\u914d\uff1aRay\u5e76\u884c\u8bc4\u4f30/\u8c03\u5ea6\u3002 / Authority wiring: Ray parallel evaluation/scheduling.",
+    "suite.moead": "\u6743\u5a01\u88c5\u914d\uff1aMOEA/D\u9002\u914d\u5668 + Pareto\u5f52\u6863\u3002 / Authority wiring: MOEA/D adapter + Pareto archive.",
+    "suite.sa": "\u6743\u5a01\u88c5\u914d\uff1aSA\u9002\u914d\u5668 + \u63a8\u8350\u7b97\u5b50\u3002 / Authority wiring: SA adapter + recommended operators.",
+    "suite.vns": "\u6743\u5a01\u88c5\u914d\uff1aVNS\u9002\u914d\u5668 + \u591a\u90bb\u57df\u7b97\u5b50\u3002 / Authority wiring: VNS adapter + multi-neighborhood operators.",
+    "suite.trust_region_dfo": "\u6743\u5a01\u88c5\u914d\uff1a\u4fe1\u8d56\u57dfDFO + \u62a5\u544a\u63d2\u4ef6\u3002 / Authority wiring: trust-region DFO + reporting.",
+    "suite.trust_region_subspace": "\u6743\u5a01\u88c5\u914d\uff1a\u5b50\u7a7a\u95f4\u4fe1\u8d56\u57df + \u62a5\u544a\u63d2\u4ef6\u3002 / Authority wiring: subspace trust-region + reporting.",
+    "suite.trust_region_subspace_learned": "\u6743\u5a01\u88c5\u914d\uff1a\u5b50\u7a7a\u95f4\u4fe1\u8d56\u57df + \u5b66\u4e60\u57fa\u5e95(PCA/SVD)\u3002 / Authority wiring: subspace trust-region + learned basis (PCA/SVD).",
+    "suite.trust_region_nonsmooth": "\u6743\u5a01\u88c5\u914d\uff1a\u975e\u5149\u6ed1\u4fe1\u8d56\u57df + \u62a5\u544a\u63d2\u4ef6\u3002 / Authority wiring: nonsmooth trust-region + reporting.",
+    "suite.mas": "\u6743\u5a01\u88c5\u914d\uff1aMAS + \u6a21\u578b\u63d2\u4ef6 + \u62a5\u544a\u3002 / Authority wiring: MAS + model plugin + reporting.",
+    "suite.multi_strategy": "\u6743\u5a01\u88c5\u914d\uff1a\u591a\u7b56\u7565\u534f\u540c\uff08\u89d2\u8272/\u9884\u7b97/\u5171\u4eab\u72b6\u6001\uff09\u3002 / Authority wiring: multi-strategy cooperation with roles/budgets/shared state.",
+    "suite.benchmark_harness": "\u6743\u5a01\u88c5\u914d\uff1aBenchmarkHarness\u7edf\u4e00\u8f93\u51fa\u53e3\u5f84\u3002 / Authority wiring: BenchmarkHarness output protocol.",
+    "suite.module_report": "\u6743\u5a01\u88c5\u914d\uff1aModuleReport\u5ba1\u8ba1/\u6d88\u878d\u3002 / Authority wiring: ModuleReport audit/ablation.",
+    "suite.nsga2_engineering": "\u6743\u5a01\u88c5\u914d\uff1aNSGA-II\u5de5\u7a0b\u5316\u63d2\u4ef6\u96c6\uff08\u65e5\u5fd7/\u7cbe\u82f1/\u591a\u6837\u6027\uff09\u3002 / Authority wiring: NSGA-II engineering bundle (logging/elite/diversity).",
+    "suite.trust_region_mo_dfo": "\u6743\u5a01\u88c5\u914d\uff1a\u591a\u76ee\u6807DFO + Pareto + \u62a5\u544a\u3002 / Authority wiring: MO DFO + Pareto + reporting.",
+    "suite.trust_region_subspace_frontier": "\u6743\u5a01\u88c5\u914d\uff1a\u5b50\u7a7a\u95f4\u4fe1\u8d56\u57df\u524d\u6cbf\u7ec4\u5408 + \u62a5\u544a\u3002 / Authority wiring: subspace trust-region frontier bundle.",
+    "suite.active_learning_surrogate": "\u6743\u5a01\u88c5\u914d\uff1a\u4e3b\u52a8\u5b66\u4e60\u4ee3\u7406\u8bc4\u4f30 + \u62a5\u544a\u3002 / Authority wiring: active-learning surrogate evaluation + reporting.",
+    "suite.robust_dfo": "\u6743\u5a01\u88c5\u914d\uff1aDFO + MC\u8bc4\u4f30 + \u9c81\u68d2\u504f\u7f6e\u3002 / Authority wiring: DFO + MC eval + robustness bias.",
+    "suite.surrogate_assisted_ea": "\u6743\u5a01\u88c5\u914d\uff1a\u4ee3\u7406\u8f85\u52a9\u8fdb\u5316\u641c\u7d22\u3002 / Authority wiring: surrogate-assisted evolutionary search.",
+    "suite.surrogate_model_lab": "\u6743\u5a01\u88c5\u914d\uff1a\u4ee3\u7406\u6a21\u578b\u5bb6\u65cf\u5b9e\u9a8c\u5ba4\u3002 / Authority wiring: surrogate model family lab bundle.",
+    "suite.structure_prior_mo": "\u6743\u5a01\u88c5\u914d\uff1a\u7ed3\u6784\u5148\u9a8c + \u591a\u76ee\u6807\u7ec4\u5408\u3002 / Authority wiring: structure-prior + multi-objective bundle.",
+    "suite.multi_fidelity_eval": "\u6743\u5a01\u88c5\u914d\uff1a\u591a\u4fdd\u771f\u8bc4\u4f30 + \u62a5\u544a\u3002 / Authority wiring: multi-fidelity evaluation + reporting.",
+    "suite.risk_cvar": "\u6743\u5a01\u88c5\u914d\uff1aMC\u8bc4\u4f30 + CVaR\u98ce\u9669\u504f\u7f6e\u3002 / Authority wiring: MC evaluation + CVaR risk bias.",
+}
+
+
+def _update_file(path: pathlib.Path) -> None:
+    lines = path.read_text(encoding='utf-8').splitlines()
+    out = []
+    cur = None
+    for line in lines:
+        m = re.match(r'\s*key\s*=\s*"([^"]+)"', line)
+        if m:
+            cur = m.group(1)
+        m2 = re.search(r'key="([^"]+)"', line)
+        if m2:
+            cur = m2.group(1)
+        if 'summary' in line and cur in summary_map:
+            indent = line.split('summary')[0]
+            if path.suffix == '.toml':
+                out.append(f'{indent}summary = "{summary_map[cur]}"')
+            else:
+                out.append(f'{indent}summary="{summary_map[cur]}",')
+            continue
+        out.append(line)
+    path.write_text('\n'.join(out) + '\n', encoding='utf-8')
+
+_update_file(pathlib.Path('catalog/entries.toml'))
+_update_file(pathlib.Path('catalog/registry.py'))
+print('updated')

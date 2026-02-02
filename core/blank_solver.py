@@ -77,7 +77,7 @@ class BlankSolverBase:
         self.start_time = 0.0
 
     # ------------------------------------------------------------------
-    # Optional dependency accessors (compatible with core solver behavior)
+    # Optional dependency accessors (mirrors core solver behavior)
     # ------------------------------------------------------------------
     @property
     def bias_module(self) -> Optional[BiasInterface]:
@@ -196,7 +196,7 @@ class BlankSolverBase:
         constraints: Optional[np.ndarray] = None,
         violation: Optional[float] = None,
     ) -> Dict[str, Any]:
-        return {
+        ctx = {
             "problem": self.problem,
             "generation": self.generation,
             "population": self.population if self.population is not None else [],
@@ -205,6 +205,28 @@ class BlankSolverBase:
             "constraint_violation": float(violation or 0.0),
             "individual_id": individual_id,
         }
+        dynamic = getattr(self, "dynamic_signals", None)
+        if dynamic is not None:
+            ctx["dynamic"] = dynamic
+        phase_id = getattr(self, "dynamic_phase_id", None)
+        if phase_id is not None:
+            ctx["phase_id"] = phase_id
+        # allow plugins to inject extra context fields
+        if getattr(self, "plugin_manager", None) is not None:
+            try:
+                ctx = self.plugin_manager.dispatch("on_context_build", ctx) or ctx
+            except Exception:
+                pass
+        return ctx
+
+    def get_context(self) -> Dict[str, Any]:
+        """Return a snapshot context for visualization/monitoring."""
+        ctx = self.build_context()
+        ctx["population"] = self.population if self.population is not None else []
+        ctx["objectives"] = self.objectives if self.objectives is not None else []
+        ctx["constraint_violations"] = self.constraint_violations if self.constraint_violations is not None else []
+        ctx["evaluation_count"] = int(getattr(self, "evaluation_count", 0))
+        return ctx
 
     def evaluate_individual(self, x: np.ndarray, individual_id: Optional[int] = None) -> Tuple[np.ndarray, float]:
         overridden = self.plugin_manager.trigger("evaluate_individual", self, x, individual_id)

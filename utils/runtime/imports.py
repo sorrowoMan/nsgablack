@@ -170,18 +170,9 @@ def import_core():
     """Import core modules."""
     from ..core.base import BlackBoxProblem
     from ..core.solver import BlackBoxSolverNSGAII
-    from ..core.problems import (
-        ZDT1BlackBox, ZDT3BlackBox, DTLZ2BlackBox,
-        SphereBlackBox, ExpensiveSimulationBlackBox
-    )
     return {
         'BlackBoxProblem': BlackBoxProblem,
         'BlackBoxSolverNSGAII': BlackBoxSolverNSGAII,
-        'ZDT1BlackBox': ZDT1BlackBox,
-        'ZDT3BlackBox': ZDT3BlackBox,
-        'DTLZ2BlackBox': DTLZ2BlackBox,
-        'SphereBlackBox': SphereBlackBox,
-        'ExpensiveSimulationBlackBox': ExpensiveSimulationBlackBox
     }
 
 
@@ -218,19 +209,6 @@ def import_bias():
         pass
 
     return bias_modules
-
-
-def import_solvers():
-    """Import solver modules."""
-    from ..solvers.nsga2 import BlackBoxSolverNSGAII as SolverNSGA2
-    from ..solvers.monte_carlo import MonteCarloOptimizer
-    from ..solvers.bayesian_optimizer import BayesianOptimizer
-
-    return {
-        'SolverNSGA2': SolverNSGA2,
-        'MonteCarloOptimizer': MonteCarloOptimizer,
-        'BayesianOptimizer': BayesianOptimizer
-    }
 
 
 def import_utils():

@@ -64,10 +64,6 @@ class Plugin(ABC):
         """求解器初始化时调用（默认无操作，便于快速开发）。"""
         return None
 
-    def on_initialization(self, solver):
-        """兼容旧接口：初始化时调用。"""
-        return None
-
     def on_population_init(self, population, objectives, violations):
         """种群初始化后调用（默认无操作）。"""
         return None
@@ -86,10 +82,6 @@ class Plugin(ABC):
 
     def on_solver_finish(self, result: Dict[str, Any]):
         """求解器结束时调用（默认无操作）。"""
-        return None
-
-    def on_completion(self, solver):
-        """兼容旧接口：求解器结束时调用。"""
         return None
 
     def get_report(self) -> Optional[Dict[str, Any]]:
@@ -226,6 +218,25 @@ class PluginManager:
                         f"[WARNING] Plugin {plugin.name} failed to handle {event_name}: {e}\n"
                         f"{traceback.format_exc()}"
                     )
+            # allow return values for custom hooks via dispatch()
+
+    def dispatch(self, event_name: str, *args, **kwargs):
+        """
+        Dispatch an event and return the last non-None value.
+        """
+        out = None
+        for plugin in self.plugins:
+            if not plugin.enabled:
+                continue
+            handler = getattr(plugin, event_name, None)
+            if handler and callable(handler):
+                try:
+                    result = handler(*args, **kwargs)
+                except Exception:
+                    continue
+                if result is not None:
+                    out = result
+        return out
 
     def on_solver_init(self, solver):
         """通知所有插件：求解器初始化"""
@@ -234,8 +245,6 @@ class PluginManager:
             if plugin.enabled:
                 plugin.attach(solver)
                 plugin.on_solver_init(solver)
-                if hasattr(plugin, "on_initialization"):
-                    plugin.on_initialization(solver)
 
     def on_population_init(self, population, objectives, violations):
         """通知所有插件：种群初始化"""
@@ -259,8 +268,6 @@ class PluginManager:
         for plugin in self.plugins:
             if not plugin.enabled:
                 continue
-            if hasattr(plugin, "on_completion"):
-                plugin.on_completion(self._solver or plugin.solver)
 
     def list_plugins(self, enabled_only: bool = False) -> list:
         """
