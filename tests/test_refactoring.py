@@ -3,7 +3,7 @@ Refactoring Verification Test - Circular Dependency Solution
 
 Tests:
 1. Basic import test
-2. Backward compatibility test
+2. API stability test
 3. Dependency injection test
 4. Interface isolation test
 """
@@ -204,10 +204,10 @@ print("=" * 70)
 print("\nRefactoring Summary:")
 print("1. [OK] Created interface isolation layer (core/interfaces.py)")
 print("2. [OK] Eliminated circular dependencies (lazy loading + DI)")
-print("3. [OK] Maintained backward compatibility")
+print("3. [OK] Maintained API stability")
 print("4. [OK] Code is clearer and more maintainable")
 print("\nNext Steps:")
 print("- Run full test suite to verify all functionality")
-print("- Gradually clean up bias system legacy code")
+print("- Gradually clean up bias system glue code")
 print("- Update documentation for new dependency injection usage")
 

@@ -68,7 +68,7 @@ _RepresentationPipeline = None
 # ============================================================================
 
 def _get_bias_module():
-    """???? bias ??"""
+    """bias"""
     global _BiasModule
     if _BiasModule is None:
         try:
@@ -107,7 +107,7 @@ def _get_experiment_result():
 
 
 def _get_representation_pipeline():
-    """?????????"""
+    """管线"""
     global _RepresentationPipeline
     if _RepresentationPipeline is None:
         try:
@@ -168,7 +168,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         # 基本配置
         self.enable_diversity_init = False
         self.use_history = False
-        # legacy flag; prefer Suite + plugins (core 不负责装配能力)
+        # Optional flag; prefer Suite + plugins for wiring.
         self.enable_elite_retention = False
         self.problem = problem
         self.variables = problem.variables
@@ -314,6 +314,26 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
     def get_plugin(self, plugin_name: str) -> Any:
         return self.plugin_manager.get(plugin_name)
 
+    def get_context(self) -> dict:
+        """Return a snapshot context for visualization/monitoring."""
+        ctx = {
+            "generation": int(getattr(self, "generation", 0)),
+            "population": self.population if self.population is not None else [],
+            "objectives": self.objectives if self.objectives is not None else [],
+            "constraint_violations": self.constraint_violations if self.constraint_violations is not None else [],
+            "pareto_objectives": self.pareto_objectives if self.pareto_objectives is not None else [],
+            "pareto_solutions": self.pareto_solutions if self.pareto_solutions is not None else {},
+            "evaluation_count": int(getattr(self, "evaluation_count", 0)),
+            "history": self.history if self.history is not None else [],
+        }
+        dynamic = getattr(self, "dynamic_signals", None)
+        if dynamic is not None:
+            ctx["dynamic"] = dynamic
+        phase_id = getattr(self, "dynamic_phase_id", None)
+        if phase_id is not None:
+            ctx["phase_id"] = phase_id
+        return ctx
+
     # ========================================================================
     # 属性访问器：支持延迟加载和依赖注入
     # ========================================================================
@@ -388,20 +408,6 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             if hasattr(self, '_representation_cached'):
                 delattr(self, '_representation_cached')
 
-    @property
-    def population_size(self) -> int:
-        """Alias for pop_size (backward compatibility)."""
-        return self.pop_size
-
-    @population_size.setter
-    def population_size(self, value: int) -> None:
-        try:
-            pop_size = int(value)
-        except (TypeError, ValueError):
-            return
-        adjusted = pop_size if pop_size % 2 == 0 else pop_size + 1
-        self.pop_size = max(adjusted, 2 * self.num_objectives)
-
     def _load_solver_config(
         self,
         *,
@@ -429,19 +435,6 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         if not config_data:
             return
         try:
-            legacy_keys = {
-                "enable_diversity_init",
-                "use_history",
-                "enable_elite_retention",
-                "elite_retention_prob",
-                "diversity_params",
-            }
-            for k in legacy_keys:
-                if k in config_data:
-                    logger.warning(
-                        "Legacy solver config key '%s' is deprecated; prefer Plugin + Suite wiring.",
-                        k,
-                    )
             if "parallel" in config_data and "enable_parallel_evaluation" not in config_data:
                 config_data = dict(config_data)
                 config_data["enable_parallel_evaluation"] = bool(config_data.get("parallel"))
@@ -459,13 +452,6 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         if not overrides:
             return
         from ..utils.engineering.config_loader import merge_dicts
-        legacy_keys = {
-            "enable_diversity_init",
-            "use_history",
-            "enable_elite_retention",
-            "elite_retention_prob",
-            "diversity_params",
-        }
         known_keys = {
             "enable_diversity_init",
             "use_history",
@@ -502,17 +488,6 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             if key not in overrides:
                 continue
             value = overrides.get(key)
-            if key in legacy_keys:
-                try:
-                    import warnings
-
-                    warnings.warn(
-                        f"Solver override '{key}' is deprecated; prefer Plugin + Suite wiring.",
-                        DeprecationWarning,
-                        stacklevel=2,
-                    )
-                except Exception:
-                    pass
             if key == "diversity_params" and isinstance(value, dict):
                 self.diversity_params = merge_dicts(self.diversity_params, value)
             else:
@@ -629,7 +604,6 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         self.diversity_initializer = None
         self.elite_manager = None
         self.history_file = f"blackbox_{self.problem.name.replace(' ', '_')}_history.json"
-        self.enable_convergence_detection = False  # legacy flag; prefer ConvergencePlugin
         self.convergence_params = None
         self.convergence_state = None
         if self.enable_visualization:
@@ -951,15 +925,23 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         cons_arr, violation = evaluate_constraints_safe(self.problem, x)
 
         from ..utils.context.context_schema import build_minimal_context
+        extra_context = {
+            "problem": self.problem,
+            "bounds": getattr(self, "var_bounds", None),
+        }
+        dynamic = getattr(self, "dynamic_signals", None)
+        if dynamic is not None:
+            extra_context["dynamic"] = dynamic
+        phase_id = getattr(self, "dynamic_phase_id", None)
+        if phase_id is not None:
+            extra_context["phase_id"] = phase_id
+
         context = build_minimal_context(
             generation=getattr(self, "generation", None),
             individual_id=0 if individual_id is None else int(individual_id),
             constraints=cons_arr.tolist() if cons_arr.size > 0 else [],
             constraint_violation=float(violation),
-            extra={
-                "problem": self.problem,
-                "bounds": getattr(self, "var_bounds", None),
-            },
+            extra=extra_context,
         )
 
         # 应用 bias 模块
@@ -996,6 +978,22 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
 
         返回 (objectives, constraint_violations)。
         """
+        # If a representation pipeline is attached, enforce a repair pass so
+        # all candidates go through the main pipeline before evaluation.
+        if self.representation_pipeline is not None and getattr(self.representation_pipeline, "repair", None) is not None:
+            context_base = {
+                "generation": self.generation,
+                "bounds": self.var_bounds,
+            }
+            if hasattr(self.representation_pipeline, "repair_batch") and callable(getattr(self.representation_pipeline, "repair_batch")):
+                contexts = [context_base] * len(population)
+                population = self.representation_pipeline.repair_batch(population, contexts=contexts)
+            else:
+                repaired = []
+                for i in range(len(population)):
+                    repaired.append(self.representation_pipeline.repair.repair(population[i], dict(context_base)))
+                population = np.asarray(repaired)
+
         overridden = self.plugin_manager.trigger("evaluate_population", self, population)
         if overridden is not None:
             try:
@@ -1128,89 +1126,31 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         return dominated
 
     def non_dominated_sorting(self):
-        """Optimized non-dominated sorting using O(MN²) algorithm"""
-        try:
-            # Import optimized fast non-dominated sort
-            from ..utils.performance.fast_non_dominated_sort import fast_non_dominated_sort_optimized, FastNonDominatedSort
+        """Optimized non-dominated sorting using O(MN^2) algorithm"""
+        from ..utils.performance.fast_non_dominated_sort import (
+            fast_non_dominated_sort_optimized,
+            FastNonDominatedSort,
+        )
 
-            # Use optimized algorithm
-            fronts, rank = fast_non_dominated_sort_optimized(
-                self.objectives[:self.pop_size],
-                self.constraint_violations[:self.pop_size]
-            )
+        fronts, rank = fast_non_dominated_sort_optimized(
+            self.objectives[:self.pop_size],
+            self.constraint_violations[:self.pop_size],
+        )
 
-            # Calculate crowding distance only for the first front (and possibly others if needed)
-            crowding_distance = np.zeros(self.pop_size)
+        crowding_distance = np.zeros(self.pop_size)
+        for front in fronts:
+            if len(front) > 1:
+                front_distances = FastNonDominatedSort.calculate_crowding_distance(
+                    self.objectives[:self.pop_size], front
+                )
+                for i, idx in enumerate(front):
+                    if idx < self.pop_size:
+                        crowding_distance[idx] = front_distances[idx]
 
-            # Calculate crowding distance for all fronts for better diversity
-            for front in fronts:
-                if len(front) > 1:
-                    front_distances = FastNonDominatedSort.calculate_crowding_distance(
-                        self.objectives[:self.pop_size], front
-                    )
-                    for i, idx in enumerate(front):
-                        if idx < self.pop_size:  # Ensure index is within bounds
-                            crowding_distance[idx] = front_distances[idx]
+        if len(rank) < self.pop_size:
+            rank = np.pad(rank, (0, self.pop_size - len(rank)), 'constant', constant_values=len(fronts))
 
-            # Ensure we have the right number of ranks (handle edge cases)
-            if len(rank) < self.pop_size:
-                rank = np.pad(rank, (0, self.pop_size - len(rank)), 'constant', constant_values=len(fronts))
-
-            return rank[:self.pop_size], crowding_distance[:self.pop_size], fronts
-
-        except ImportError:
-            # Fallback to original implementation if optimized version is not available
-            return self._legacy_non_dominated_sorting()
-
-    def _legacy_non_dominated_sorting(self):
-        """Legacy non-dominated sorting implementation (O(N³) complexity)"""
-        pop_size = self.population.shape[0]
-        if self.constraint_violations is None:
-            constraint_violations = np.zeros(pop_size, dtype=float)
-        else:
-            constraint_violations = np.asarray(self.constraint_violations, dtype=float)
-
-        feasible_mask = constraint_violations <= 1e-10
-        infeasible_mask = ~feasible_mask
-        rank = np.zeros(pop_size, dtype=int)
-        crowding_distance = np.zeros(pop_size)
-        fronts = [[]]
-
-        # Feasible solutions: classic non-dominated sorting
-        feasible_indices = np.where(feasible_mask)[0]
-        if feasible_indices.size > 0:
-            feasible_objs = self.objectives[feasible_indices]
-            dominated = self.is_dominated_vectorized(feasible_objs)
-            first_front_feasible = feasible_indices[~dominated]
-            fronts[0].extend(first_front_feasible.tolist())
-            rank[first_front_feasible] = 0
-
-        # Infeasible solutions: rank by constraint violation
-        infeasible_indices = np.where(infeasible_mask)[0]
-        if infeasible_indices.size > 0:
-            sorted_infeasible = infeasible_indices[np.argsort(constraint_violations[infeasible_indices])]
-            current_rank = 1 if len(fronts[0]) > 0 else 0
-            for idx in sorted_infeasible:
-                rank[idx] = current_rank
-                current_rank += 1
-
-        # Crowding distance calculation for feasible solutions only
-        if feasible_indices.size > 0:
-            for obj_idx in range(self.num_objectives):
-                sorted_idx = feasible_indices[np.argsort(self.objectives[feasible_indices, obj_idx])]
-                if len(sorted_idx) > 1:
-                    crowding_distance[sorted_idx[0]] = np.inf
-                    crowding_distance[sorted_idx[-1]] = np.inf
-                    obj_range = self.objectives[sorted_idx[-1], obj_idx] - self.objectives[sorted_idx[0], obj_idx]
-                    if obj_range > 1e-10 and len(sorted_idx) > 2:
-                        # Safe crowding distance calculation
-                        for i in range(1, len(sorted_idx) - 1):
-                            if i + 1 < len(sorted_idx) and i - 1 >= 0:
-                                crowding_distance[sorted_idx[i]] += (
-                                    self.objectives[sorted_idx[i + 1], obj_idx] -
-                                    self.objectives[sorted_idx[i - 1], obj_idx]
-                                ) / obj_range
-        return rank, crowding_distance, fronts
+        return rank[:self.pop_size], crowding_distance[:self.pop_size], fronts
 
     def selection(self):
         parent_indices = np.zeros(self.pop_size, dtype=int)

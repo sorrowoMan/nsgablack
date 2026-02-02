@@ -14,6 +14,25 @@ from .benchmark_harness import attach_benchmark_harness
 from .nsga2_engineering import attach_nsga2_engineering
 from .module_report import attach_module_report
 from .ray_parallel import attach_ray_parallel
+from .dynamic_switch import attach_dynamic_switch
+from .trust_region_local import (
+    attach_trust_region_dfo,
+    attach_trust_region_subspace,
+    attach_trust_region_subspace_learned,
+    attach_trust_region_nonsmooth,
+    attach_mas,
+)
+from .frontier_algorithms import (
+    attach_trust_region_mo_dfo,
+    attach_trust_region_subspace_frontier,
+    attach_active_learning_surrogate,
+    attach_robust_dfo,
+    attach_surrogate_assisted_ea,
+    attach_surrogate_model_lab,
+    attach_structure_prior_mo,
+    attach_multi_fidelity_eval,
+    attach_risk_cvar,
+)
 
 __all__ = [
     "attach_monte_carlo_robustness",
@@ -25,4 +44,19 @@ __all__ = [
     "attach_module_report",
     "attach_nsga2_engineering",
     "attach_ray_parallel",
+    "attach_dynamic_switch",
+    "attach_trust_region_dfo",
+    "attach_trust_region_subspace",
+    "attach_trust_region_subspace_learned",
+    "attach_trust_region_nonsmooth",
+    "attach_mas",
+    "attach_trust_region_mo_dfo",
+    "attach_trust_region_subspace_frontier",
+    "attach_active_learning_surrogate",
+    "attach_robust_dfo",
+    "attach_surrogate_assisted_ea",
+    "attach_surrogate_model_lab",
+    "attach_structure_prior_mo",
+    "attach_multi_fidelity_eval",
+    "attach_risk_cvar",
 ]

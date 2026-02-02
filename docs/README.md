@@ -25,15 +25,27 @@ Core references:
 - `docs/project/MIGRATION_GUIDE_TEMPLATE.md`: template for breaking/deprecation migrations
 - `docs/project/TECH_STACK_RESUME.md`: resume-style tech stack highlights (with complexity proof)
 - `docs/project/TECH_STACK_ALIGNED.md`: implementation details map (deeper engineering notes)
+- `docs/architecture/LOCAL_OPTIMIZATION_INTEGRATION_REPORT.md`: local optimization integration report
+- `docs/architecture/FRONTIER_ALGOS_INTEGRATION.md`: frontier algorithm suites + demos
 
 Discoverability:
 
 - `docs/user_guide/catalog.md`: Catalog + Suites usage
+- `docs/user_guide/RUN_INSPECTOR.md`: Run Inspector usage manual
+- `utils/viz/visualizer_tk.py`: Run Inspector UI (review wiring before run)
+  - `python -m nsgablack run_inspector --entry path/to/script.py:build_solver`
 - `docs/AUTHORITATIVE_EXAMPLES.md`: 2-4 authoritative runnable examples (fact standard)
 - `docs/cases/production_scheduling.md`: authoritative real-world case (production scheduling)
 
+Project snapshots:
+
+- `docs/FEATURES_OVERVIEW.md`: feature map / capability overview
+- `docs/PROJECT_COLLAB_RESEARCH_PLAN.md`: academic-style collaboration plan
+- `docs/TODO.md`: near-term roadmap and idea pool
+
 Indexes:
 
+- `docs/indexes/API_INDEX.md`: strict API entrypoints map
 - `docs/indexes/REPRESENTATION_INDEX.md`: representation pipeline index
 - `docs/indexes/TOOLS_INDEX.md`: tools + utilities
 - `docs/indexes/TAGGED_INDEX.md`: tagged module index

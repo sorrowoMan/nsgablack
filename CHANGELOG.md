@@ -8,6 +8,8 @@ The format is based on Keep a Changelog, and this project aims to follow SemVer.
 
 ### Added
 - API stability policy and release process documentation.
+- Pipeline repair guardrails: ComposableSolver uses repair_batch when available; NSGA-II evaluates repaired candidates.
+- ParallelRepair wrapper for optional parallel repair_batch (thread/process).
 
 ### Changed
 - (fill in as you cut releases)
@@ -20,4 +22,3 @@ The format is based on Keep a Changelog, and this project aims to follow SemVer.
 
 ### Fixed
 - (fill in as you cut releases)
-

@@ -25,14 +25,10 @@ import numpy as np
 from typing import List, Dict, Any, Callable, Optional
 
 # 导入核心偏置类
-try:
-    from ...core.base import AlgorithmicBias, DomainBias, OptimizationContext
-    from ...algorithmic.convergence import ConvergenceBias, PrecisionBias
-    from ...algorithmic.diversity import AdaptiveDiversityBias
-    from ...domain.constraint import ConstraintBias, FeasibilityBias
-except ImportError:
-    # 回退到旧导入方式
-    from nsgablack.bias.bias_base import AlgorithmicBias, DomainBias, OptimizationContext
+from ...core.base import AlgorithmicBias, DomainBias, OptimizationContext
+from ...algorithmic.convergence import ConvergenceBias, PrecisionBias
+from ...algorithmic.diversity import AdaptiveDiversityBias
+from ...domain.constraint import ConstraintBias, FeasibilityBias
 
 
 class EngineeringPrecisionBias(AlgorithmicBias):

@@ -62,3 +62,9 @@
 
 - `docs/development/DECOMPOSITION_CHECKLIST.md`
 
+
+## 6. Catalog 搜索的中英文支持（开发约定）
+- `catalog search` 支持中英文关键字，靠 `catalog/registry.py` 的 `_expand_token_groups` 做别名映射。
+- 新增能力/领域词汇时，**同时更新 alias map**，保证中文检索命中。
+- 推荐用 `python -m nsgablack catalog search <query>` 自检中文/英文搜索一致性。
+- 新增条目需提供中英双语 `summary`，避免中文用户看不到条目含义。

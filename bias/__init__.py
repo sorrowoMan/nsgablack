@@ -1,39 +1,13 @@
 """
-偏置系统 - NSGABlack优化生态系统的核心组件
+Bias system for NSGABlack.
 
-该包提供了一个全面的偏置系统，将算法层面的关注点与领域知识分离，
-实现智能化、自适应的优化能力。
+This package provides a modular bias system to separate domain preferences
+and algorithmic search signals from the core solver loop.
 
-偏置系统核心思想：
-- 算法偏置：控制"如何搜索"，引导搜索策略和优化行为
-- 领域偏置：控制"搜索什么"，融入业务知识和约束条件
-- 分离管理：算法偏置可动态调整，领域偏置全局固定
-- 智能组合：支持多种偏置的协同工作和自适应权重调整
-
-版本2.0 - 重构架构：
-- core/: 基础类和管理器核心组件
-- algorithmic/: 算法层面的偏置实现
-- domain/: 领域特定的偏置实现
-- managers/: 高级管理和分析工具
-- specialized/: 专门的偏置类型（贝叶斯、图等）
-- utils/: 工具函数和兼容性支持
-
-快速开始：
-    from nsgablack.bias import create_universal_bias_manager, quick_bias_setup
-
-    # 创建预配置的偏置管理器
-    manager = create_universal_bias_manager()
-
-    # 或者为特定问题类型快速设置
-    manager = quick_bias_setup(problem_type="engineering")
-
-主要特性：
-1. 双层架构：算法偏置和领域偏置分离管理
-2. 自适应能力：算法偏置可根据优化状态动态调整
-3. 效果评估：内置偏置效果量化分析框架
-4. 元学习支持：基于历史数据自动选择最优偏置组合
-5. 高度可扩展：支持自定义偏置和约束条件
-6. 算法无关：可与任何优化算法无缝集成
+Key ideas:
+- Algorithmic bias: how to search.
+- Domain bias: what to prefer.
+- Bias modules are optional and composable.
 """
 
 from typing import TYPE_CHECKING
@@ -49,19 +23,19 @@ try:
         BiasBase,                    # 偏置基类
         AlgorithmicBias,            # 算法偏置基类
         DomainBias,                 # 领域偏置基类
-        OptimizationContext,        # 优化上下文
+        OptimizationContext,        # 优化上下?
         create_bias                 # 偏置工厂函数
     )
 
     from .core.manager import (
-        UniversalBiasManager,       # 通用偏置管理器
-        AlgorithmicBiasManager,     # 算法偏置管理器
-        DomainBiasManager          # 领域偏置管理器
+        UniversalBiasManager,       # 通用偏置管理?
+        AlgorithmicBiasManager,     # 算法偏置管理?
+        DomainBiasManager          # 领域偏置管理?
     )
 
     from .core.registry import (
-        BiasRegistry,               # 偏置注册表
-        get_bias_registry,          # 获取注册表
+        BiasRegistry,               # 偏置注册?
+        get_bias_registry,          # 获取注册?
         register_algorithmic_bias,  # 注册算法偏置
         register_domain_bias,       # 注册领域偏置
         register_bias_factory       # 注册偏置工厂
@@ -69,43 +43,43 @@ try:
 
     # 算法偏置导入
     from .algorithmic import (
-        DiversityBias,              # 多样性偏置
-        AdaptiveDiversityBias,      # 自适应多样性偏置
-        ConvergenceBias,            # 收敛性偏置
-        AdaptiveConvergenceBias,    # 自适应收敛性偏置
+        DiversityBias,              # 多样性偏?
+        AdaptiveDiversityBias,      # 自应多样性偏?
+        ConvergenceBias,            # 收敛性偏?
+        AdaptiveConvergenceBias,    # 自应收敛性偏?
         PrecisionBias,              # 精度偏置
-        RobustnessBias,             # 鲁棒性偏置
-        SimulatedAnnealingBias,     # 模拟退火偏置
-        ParticleSwarmBias,          # PSO偏置
-        AdaptivePSOBias,            # 自适应PSO偏置
+        RobustnessBias,             # 鲁棒性偏?        SimulatedAnnealingBias,     # 模拟逢火偏?        ParticleSwarmBias,          # PSO偏置
+        AdaptivePSOBias,            # 自应PSO偏置
         CMAESBias,                  # CMA-ES偏置
-        AdaptiveCMAESBias,          # 自适应CMA-ES偏置
+        AdaptiveCMAESBias,          # 自应CMA-ES偏置
         TabuSearchBias,             # 禁忌搜索偏置
         LevyFlightBias,             # Levy飞行偏置
         NSGA2Bias,                  # NSGA-II偏置
-        AdaptiveNSGA2Bias,          # 自适应NSGA-II偏置
+        AdaptiveNSGA2Bias,          # 自应NSGA-II偏置
         DifferentialEvolutionBias,  # 差分进化偏置
         PatternSearchBias,          # 模式搜索偏置
         GradientDescentBias,        # 梯度下降偏置
+        UncertaintyExplorationBias, # 不确定驱动探索偏?
     )
 
     # 领域偏置导入
     from .domain import (
         ConstraintBias,             # 约束偏置
-        FeasibilityBias,            # 可行性偏置
-        PreferenceBias,             # 偏好偏置
-        RuleBasedBias,              # 基于规则的偏置
-        CallableBias,               # 可调用规则偏置（快速规则）
+        FeasibilityBias,            # 可行性偏?        PreferenceBias,             # 偏好偏置
+        RuleBasedBias,              # 基于规则的偏?        CallableBias,               # 可调用规则偏置（快规则）
+        DynamicPenaltyBias,         # 动惯罚偏?
+        StructurePriorBias,         # 结构先验偏置
+        RiskBias,                   # 鲁棒/风险偏置
     )
 
-    # 高级管理器导入
+    # 高级管理器导?
     from .managers import (
-        AdaptiveAlgorithmicManager, # 自适应算法管理器
-        MetaLearningBiasSelector,   # 元学习偏置选择器
-        BiasEffectivenessAnalyzer   # 偏置效果分析器
+        AdaptiveAlgorithmicManager, # 自应算法管理?
+        MetaLearningBiasSelector,   # 元学习偏置择?
+        BiasEffectivenessAnalyzer   # 偏置效果分析?
     )
 
-    # 分析器导入（新增）
+    # 分析器导入（新增?
     try:
         from .analytics import BiasAnalytics
     except ImportError:
@@ -113,27 +87,27 @@ try:
 
     # 专门偏置导入（可选模块）
     try:
-        from .specialized.bayesian import (
-            BayesianGuidanceBias,    # 贝叶斯引导偏置
-            BayesianExplorationBias, # 贝叶斯探索偏置
-            BayesianConvergenceBias  # 贝叶斯收敛偏置
+        from .specialized.bayesian_biases import (
+            BayesianGuidanceBias,    # 贝叶斯引导偏?
+            BayesianExplorationBias, # 贝叶斯探索偏?
+            BayesianConvergenceBias  # 贝叶斯收敛偏?
         )
         # 统一命名为BayesianBias
         BayesianBias = BayesianGuidanceBias
-    except ImportError:
+    except Exception:
         BayesianBias = None
 
     try:
         from .specialized.local_search import (
             GradientDescentBias,     # 梯度下降偏置
-            NewtonMethodBias,       # 牛顿法偏置
-            LineSearchBias,         # 线搜索偏置
-            TrustRegionBias,        # 信赖域偏置
+            NewtonMethodBias,       # 牛顿法偏?
+            LineSearchBias,         # 线搜索偏?
+            TrustRegionBias,        # 信赖域偏?
             NelderMeadBias          # 单纯形法偏置
         )
         # 统一命名为LocalSearchBias（使用梯度下降作为代表）
         LocalSearchBias = GradientDescentBias
-    except ImportError:
+    except Exception:
         LocalSearchBias = None
 
     # 工程应用偏置导入
@@ -141,9 +115,9 @@ try:
         from .specialized.engineering import (
             EngineeringPrecisionBias,    # 工程精度偏置
             EngineeringConstraintBias,   # 工程约束偏置
-            EngineeringRobustnessBias    # 工程鲁棒性偏置
+            EngineeringRobustnessBias    # 工程鲁棒性偏?
         )
-    except ImportError:
+    except Exception:
         EngineeringPrecisionBias = None
         EngineeringConstraintBias = None
         EngineeringRobustnessBias = None
@@ -151,30 +125,28 @@ try:
     # 生产调度偏置导入
     try:
         from .specialized.production.scheduling import ProductionSchedulingBiasManager
-    except ImportError:
+    except Exception:
         ProductionSchedulingBiasManager = None
 
     NEW_STRUCTURE_AVAILABLE = True
-    LEGACY_AVAILABLE = False
 
 except ImportError as e:
-    # 如果新架构不完整，抛出错误
+    # 如果新架构不完整，抛出错?
     print(f"错误：新的偏置结构不完整: {e}")
-    print("请确保所有核心组件都已正确安装。")
+    print("Please ensure all core components are installed correctly.")
     NEW_STRUCTURE_AVAILABLE = False
-    LEGACY_AVAILABLE = False
     raise
 
 __version__ = "2.0.0-restructured"
 
-# Export new structure (no legacy fallback)
+# Export new structure
 _BiasBase = BiasBase
 _AlgorithmicBias = AlgorithmicBias
 _DomainBias = DomainBias
 _OptimizationContext = OptimizationContext
 _UniversalBiasManager = UniversalBiasManager
 
-# Import compatibility adapter
+# Bias module facade
 try:
     from .bias_module import (
         BiasModule,
@@ -202,7 +174,7 @@ __all__ = [
     'DomainBiasManager',
     'create_bias',
 
-    # Compatibility adapter
+    # Bias module facade
     'BiasModule',
     'create_bias_module',
     'from_universal_manager',
@@ -234,6 +206,7 @@ __all__ = [
     'DifferentialEvolutionBias',
     'PatternSearchBias',
     'GradientDescentBias',
+    'UncertaintyExplorationBias',
 
     # Domain biases (if available)
     'ConstraintBias',
@@ -241,6 +214,9 @@ __all__ = [
     'PreferenceBias',
     'RuleBasedBias',
     'CallableBias',
+    'DynamicPenaltyBias',
+    'StructurePriorBias',
+    'RiskBias',
 
     # Advanced managers (if available)
     'AdaptiveAlgorithmicManager',
@@ -258,12 +234,8 @@ __all__ = [
     # Production scheduling (if available)
     'ProductionSchedulingBiasManager',
 
-    # Legacy compatibility
-    'BaseBias',  # Legacy name for BiasBase
 ]
 
-# Aliases for backward compatibility
-BaseBias = _BiasBase
 BiasBase = _BiasBase
 AlgorithmicBias = _AlgorithmicBias
 DomainBias = _DomainBias
@@ -275,12 +247,11 @@ try:
     from .utils.helpers import (
         create_universal_bias_manager,
         quick_bias_setup,
-        get_bias_system_info,
-        migrate_legacy_bias
+        get_bias_system_info
     )
 except ImportError:
     # If helpers are not available, create stub functions
     create_universal_bias_manager = None
     quick_bias_setup = None
     get_bias_system_info = None
-    migrate_legacy_bias = None
+

@@ -61,7 +61,7 @@ def _default_context_builder(
         metadata=extra_context.get("metadata"),
         extra=extra_context,
     )
-    # Keep a reference for legacy bias implementations (thread backend only).
+    # Keep a reference for bias implementations that need the problem (thread backend only).
     ctx["problem"] = problem
     try:
         ctx.setdefault("bounds", getattr(problem, "bounds", None))
@@ -566,4 +566,3 @@ class SmartEvaluatorSelector:
             "has_constraints": bool(hasattr(problem, "evaluate_constraints")),
             "is_multi_objective": bool(problem.get_num_objectives() and problem.get_num_objectives() > 1),
         }
-

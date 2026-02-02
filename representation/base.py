@@ -24,6 +24,89 @@ class RepairPlugin(Protocol):
         ...
 
 
+def _parallel_repair_task(args: tuple) -> Any:
+    """Top-level helper for process-based repair."""
+    inner, x, context = args
+    return inner.repair(x, context)
+
+
+class ParallelRepair:
+    """Optional wrapper to run repair_batch in parallel (thread/process).
+
+    Notes:
+    - Default backend is "thread" for safety with non-picklable repair objects.
+    - "process" requires the repair object to be picklable; otherwise it
+      falls back to thread or serial execution.
+    """
+
+    def __init__(
+        self,
+        inner: RepairPlugin,
+        *,
+        backend: str = "thread",
+        max_workers: Optional[int] = None,
+        min_batch_size: int = 16,
+        chunk_size: Optional[int] = None,
+        verbose: bool = False,
+    ) -> None:
+        self.inner = inner
+        self.backend = str(backend or "thread")
+        self.max_workers = max_workers
+        self.min_batch_size = int(min_batch_size)
+        self.chunk_size = chunk_size
+        self.verbose = bool(verbose)
+
+    def repair(self, x: Any, context: Optional[dict] = None) -> Any:
+        return self.inner.repair(x, context)
+
+    def repair_batch(self, xs: Any, contexts: Optional[Iterable[Optional[dict]]] = None) -> Any:
+        if xs is None:
+            return xs
+        items = list(xs)
+        n = len(items)
+        if n == 0:
+            return []
+
+        if contexts is None:
+            contexts_list = [None] * n
+        else:
+            contexts_list = list(contexts)
+            if len(contexts_list) != n:
+                contexts_list = (contexts_list + [None] * n)[:n]
+
+        if n < max(1, self.min_batch_size) or int(self.max_workers or 0) == 1:
+            return [self.repair(items[i], contexts_list[i]) for i in range(n)]
+
+        backend = self.backend
+        if backend not in ("thread", "process"):
+            backend = "thread"
+
+        if backend == "process":
+            try:
+                import pickle
+
+                pickle.dumps(self.inner)
+            except Exception:
+                backend = "thread"
+
+        try:
+            if backend == "process":
+                from concurrent.futures import ProcessPoolExecutor
+
+                tasks = [(self.inner, items[i], contexts_list[i]) for i in range(n)]
+                with ProcessPoolExecutor(max_workers=self.max_workers) as ex:
+                    return list(ex.map(_parallel_repair_task, tasks, chunksize=self.chunk_size))
+
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=self.max_workers) as ex:
+                futures = [ex.submit(self.repair, items[i], contexts_list[i]) for i in range(n)]
+                return [f.result() for f in futures]
+        except Exception:
+            # Fallback: serial repair
+            return [self.repair(items[i], contexts_list[i]) for i in range(n)]
+
+
 class InitPlugin(Protocol):
     def initialize(self, problem: Any, context: Optional[dict] = None) -> Any:
         ...

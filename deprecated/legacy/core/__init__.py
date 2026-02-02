@@ -1,2 +1,0 @@
-"""Legacy core modules (archived)."""
-

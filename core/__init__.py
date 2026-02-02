@@ -3,10 +3,6 @@
 # ============================================================================
 from .base import BlackBoxProblem
 
-# Legacy note: benchmark/toy problems live in `core/problems.py` but are *not*
-# part of the stable Core API surface. Import them directly when needed:
-# `from nsgablack.core import problems as problems` or `from nsgablack.core.problems import ...`
-
 # ============================================================================
 # 求解器（支持依赖注入）
 # ============================================================================
@@ -73,31 +69,3 @@ __all__ = [
     'load_representation_pipeline',
     'create_bias_context',
 ]
-
-
-_LEGACY_PROBLEM_EXPORTS = {
-    "SphereBlackBox",
-    "ZDT1BlackBox",
-    "ZDT3BlackBox",
-    "DTLZ2BlackBox",
-    "ExpensiveSimulationBlackBox",
-    "NeuralNetworkHyperparameterOptimization",
-    "EngineeringDesignOptimization",
-    "BusinessPortfolioOptimization",
-}
-
-
-def __getattr__(name):  # pragma: no cover
-    if name in _LEGACY_PROBLEM_EXPORTS:
-        import warnings
-
-        warnings.warn(
-            f"nsgablack.core.{name} is a legacy benchmark helper; "
-            "prefer importing from nsgablack.deprecated.legacy.core.problems explicitly (not part of core stability promise).",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        from ..deprecated.legacy.core import problems as _problems
-
-        return getattr(_problems, name)
-    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")

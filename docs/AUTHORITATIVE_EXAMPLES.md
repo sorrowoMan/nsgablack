@@ -44,3 +44,8 @@ python nsgablack/examples/end_to_end_workflow_demo.py
 python nsgablack/examples/cases/production_scheduling/working_integrated_optimizer.py --no-export --generations 2 --pop-size 20
 ```
 
+
+## 6) Dynamic + Multi-Strategy：动态协同的事实标准
+
+- 文件：`examples/dynamic_multi_strategy_demo.py`
+- 目的：展示动态信号驱动的软切换、策略权重调整，以及多策略协同的可复现输出口径

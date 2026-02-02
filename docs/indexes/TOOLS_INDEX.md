@@ -19,6 +19,8 @@ python -m nsgablack catalog show adapter.sa
 
 - `tools/build_catalog.py`：构建/更新工程索引类文件（如果你仍需要静态索引）
 - `tools/generate_api_docs.py`：生成 API 文档
+- `utils/viz/visualizer_tk.py`：Run Inspector（运行前审查 wiring + 缺失伙伴提示）
+  - 统一入口：`python -m nsgablack run_inspector --entry path/to/script.py:build_solver`
 - `tools/cleanup_project.py`：清理工程杂项/归档
 - `scripts/organize_project.py`：项目结构整理脚本（如有）
 
@@ -33,6 +35,7 @@ python -m nsgablack catalog show adapter.sa
 - `utils/suites/`：权威组合（attach_* 一键装配，避免漏配）
 - `utils/parallel/evaluator.py`：并行评估工具（推荐 `from nsgablack.utils.parallel import ParallelEvaluator`）
 - `utils/parallel/integration.py`：并行评估集成（保持 solver 底座纯净）
+- `representation/ParallelRepair`：可选的 repair 并行封装（修复阶段并行化）
 - `utils/engineering/logging_config.py`：日志配置（如有）
 
 ---

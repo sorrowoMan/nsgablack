@@ -88,6 +88,7 @@ from .spea2 import (
 
 from .signal_driven import (
     RobustnessBias,
+    UncertaintyExplorationBias,
 )
 
 __all__ = [
@@ -160,4 +161,5 @@ __all__ = [
 
     # Robustness biases
     'RobustnessBias',
+    'UncertaintyExplorationBias',
 ]
