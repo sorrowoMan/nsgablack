@@ -49,6 +49,7 @@ from nsgablack.utils.plugins import (  # noqa: E402
     ProfilerConfig,
 )
 from nsgablack.utils.parallel import with_parallel_evaluation  # noqa: E402
+from nsgablack.utils.viz import launch_from_builder  # noqa: E402
 
 from refactor_bias import build_production_bias_module
 from refactor_data import load_production_data
@@ -449,12 +450,8 @@ def run_nsga2(problem, args):
     )
 
 
-def run_multi_agent(problem, args):
-    """
-    \"multi-agent\" in this repo is implemented as \"multi-strategy cooperation\":
-    multiple strategy adapters propose candidates in parallel, while the solver
-    evaluates them together.
-    """
+def build_multi_agent_solver(problem, args):
+    """Build solver for multi-agent cooperation (no run)."""
     pipeline = build_schedule_pipeline(
         problem,
         problem.constraints,
@@ -578,6 +575,16 @@ def run_multi_agent(problem, args):
     solver.add_plugin(ParetoArchivePlugin())
     solver.add_plugin(ConsoleProgressPlugin(report_every=args.report_every))
     solver.max_steps = int(args.generations)
+    return solver
+
+
+def run_multi_agent(problem, args):
+    """
+    \"multi-agent\" in this repo is implemented as \"multi-strategy cooperation\":
+    multiple strategy adapters propose candidates in parallel, while the solver
+    evaluates them together.
+    """
+    solver = build_multi_agent_solver(problem, args)
     solver.run()
 
     individuals, objectives = _extract_pareto(solver)
@@ -613,6 +620,7 @@ def run_multi_agent(problem, args):
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Refactored production scheduling (pipeline-first).")
     parser.add_argument("--solver", choices=["multi-agent"], default="multi-agent")
+    parser.add_argument("--ui", action="store_true", help="Launch Run Inspector UI before running.")
     parser.add_argument("--bom", type=str, default=None)
     parser.add_argument("--supply", type=str, default=None)
     parser.add_argument("--machines", type=int, default=22)
@@ -764,8 +772,34 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main():
-    args = build_parser().parse_args()
+
+def _build_solver_from_args(args) -> ComposableSolver:
+    problem = _build_problem(args)
+    return build_multi_agent_solver(problem, args)
+
+
+
+def build_solver(argv: Optional[list] = None) -> ComposableSolver:
+    """
+    Build solver for Run Inspector / programmatic launch.
+
+    Usage:
+        python -m nsgablack run_inspector --entry working_integrated_optimizer.py:build_solver
+    """
+    parser = build_parser()
+    args = parser.parse_args(argv if argv is not None else [])
+    if not getattr(args, "run_id", None):
+        args.run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+
+    return _build_solver_from_args(args)
+
+
+def main(args=None):
+    if args is None:
+        args = build_parser().parse_args()
     # Defaults: this workload is evaluation-heavy (Python loops + constraints),
     # so parallel evaluation is almost always beneficial on a high-core CPU.
     if not getattr(args, "parallel", False):
@@ -795,4 +829,13 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    args = build_parser().parse_args()
+    if args.ui:
+        if not getattr(args, "run_id", None):
+            args.run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        launch_from_builder(
+            lambda: _build_solver_from_args(args),
+            entry_label="working_integrated_optimizer.py:build_solver",
+        )
+        raise SystemExit(0)
+    main(args)

@@ -1,13 +1,12 @@
 # NSGABlack
 
-Why complex optimization experiments silently degrade - and how I try to make that visible.
+为什么复杂优化实验会“悄悄退化”，以及我如何试图让它变得可见。
 
-This is an **experimental framework under active design**.
-I'm sharing it to discuss ideas, not as a finished product.
+这是一个 **仍在快速演化中的实验性框架**。
+
+我分享它是为了讨论思想，而不是作为已完成的产品。
 
 算法解构的优化生态框架：把“问题/表示/倾向/策略/工程能力”解耦，让你能更快、更稳地把新点子落地到真实问题上。
-
-
 
 你可以把它当成一套工程化的优化搭积木：
 
@@ -136,9 +135,3 @@ python utils/viz/visualizer_tk.py --entry examples/dynamic_multi_strategy_demo.p
 如果你想看“为什么会走到今天这套拆分”，原始长文保存在：
 
 - `docs/FRAMEWORK_ORIGIN_STORY.md`
-
-# Catalog search language support
-
-Catalog search supports bilingual (CN/EN) keywords via a lightweight alias map in `catalog/registry.py` (`_expand_token_groups`).
-If you add new categories or want better Chinese search hits, update that alias map alongside the catalog entries.
-This keeps `python -m nsgablack catalog search <query>` consistent for both Chinese and English users.

@@ -358,6 +358,61 @@ class VisualizerApp(tk.Tk):
                         )
                     )
                     setattr(adapter_items[-1], "_delta_key", f"strategy.{name}.enabled")
+            # Role-based multi-strategy (RoleSpec/units)
+            if hasattr(adapter, "roles"):
+                for role in getattr(adapter, "roles", []):
+                    name = getattr(role, "name", "role")
+
+                    def _make_role_toggle(r: Any):
+                        def _t(flag: bool):
+                            r.enabled = bool(flag)
+                            units = getattr(adapter, "units", None)
+                            if units:
+                                for unit in units:
+                                    if getattr(unit, "role", None) == r.name:
+                                        unit.enabled = bool(flag)
+                        return _t
+
+                    adapter_items.append(
+                        WireItem(
+                            label=f"role: {name}",
+                            enabled=bool(getattr(role, "enabled", True)),
+                            on_toggle=_make_role_toggle(role),
+                            detail=f"Role adapter: {getattr(role, 'adapter', None).__class__.__name__}",
+                            kind="adapter",
+                        )
+                    )
+                    setattr(adapter_items[-1], "_delta_key", f"role.{name}.enabled")
+            elif hasattr(adapter, "units"):
+                role_names = []
+                for unit in getattr(adapter, "units", []):
+                    rname = getattr(unit, "role", None)
+                    if rname and rname not in role_names:
+                        role_names.append(rname)
+                for name in role_names:
+                    def _make_unit_toggle(role_name: str):
+                        def _t(flag: bool):
+                            for unit in getattr(adapter, "units", []):
+                                if getattr(unit, "role", None) == role_name:
+                                    unit.enabled = bool(flag)
+                        return _t
+
+                    adapter_items.append(
+                        WireItem(
+                            label=f"role: {name}",
+                            enabled=bool(
+                                any(
+                                    getattr(u, "enabled", True)
+                                    for u in getattr(adapter, "units", [])
+                                    if getattr(u, "role", None) == name
+                                )
+                            ),
+                            on_toggle=_make_unit_toggle(name),
+                            detail=f"Role units: {name}",
+                            kind="adapter",
+                        )
+                    )
+                    setattr(adapter_items[-1], "_delta_key", f"role.{name}.enabled")
         sections.append(("Adapter", adapter_items))
 
         # Pipeline section
