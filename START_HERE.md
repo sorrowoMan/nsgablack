@@ -37,7 +37,7 @@
 
 - 工具索引：`docs/indexes/TOOLS_INDEX.md`
 - 表征索引：`docs/indexes/REPRESENTATION_INDEX.md`
-- 算法拆解原则（总纲）：`DECOMPOSITION_RULES.md`
+- 算法拆解原则（总纲）：`docs/project/DECOMPOSITION_RULES.md`
 - 权威现代示例（事实标准）：`docs/AUTHORITATIVE_EXAMPLES.md`
 - 端到端落地流程（面对一个问题怎么做）：`WORKFLOW_END_TO_END.md`
 - 扩展点契约（护栏）：`docs/user_guide/EXTENSION_CONTRACTS.md`
