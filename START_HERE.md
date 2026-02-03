@@ -63,6 +63,7 @@
 - Pareto 归档：`utils/plugins/pareto_archive.py`
 - Benchmark 口径输出（CSV + summary）：`utils/plugins/benchmark_harness.py`
 - 模块审计/偏置启用报告：`utils/plugins/module_report.py`
+- 外部存储/数据库记录（可扩展插件）
 - 性能剖析：`utils/plugins/profiler.py`
 - 精英保留、多样性初始化、收敛监控、自适应参数：`utils/plugins/elite_retention.py`, `utils/plugins/diversity_init.py`, `utils/plugins/convergence.py`, `utils/plugins/adaptive_parameters.py`
 - 内存优化：`utils/plugins/memory_optimize.py`

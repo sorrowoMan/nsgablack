@@ -75,6 +75,7 @@ python -m nsgablack catalog search vns
 - `RepresentationPipeline`：初始化/变异/修复/编码解码（硬约束优先放这里）
 - `BiasModule`：软约束/偏好/算法倾向
 - `Plugin`：能力层（并行、记录、监控、短路评估等）
+- `Plugin` 也支持对接外部存储/数据库（用于实验资产沉淀与检索）
 
 在此之上：
 

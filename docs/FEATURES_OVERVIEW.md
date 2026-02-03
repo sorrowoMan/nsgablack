@@ -47,6 +47,7 @@
 - **并行评估**：多后端并行（含 Ray）
 - **统计评估**：MonteCarloEvaluationPlugin
 - **Pareto 归档**：全局非支配解集维护
+- **外部存储/数据库记录**：可扩展插件对接外部存储系统
 - **Profiler**：性能剖析
 - **Adaptive / Convergence / Elite**：自适应、收敛监控、精英保留
 - **Dynamic Switch**：动态切换（软/硬切换基类）
