@@ -30,6 +30,7 @@ from .dynamic_switch import DynamicSwitchPlugin
 from .sensitivity_analysis import SensitivityAnalysisPlugin, SensitivityAnalysisConfig, SensitivityParam
 from .mas_model import MASModelPlugin, MASModelConfig
 from .subspace_basis import SubspaceBasisPlugin, SubspaceBasisConfig
+from .mysql_run_logger import MySQLRunLoggerPlugin, MySQLRunLoggerConfig
 
 __all__ = [
     'Plugin',
@@ -62,4 +63,6 @@ __all__ = [
     'MASModelConfig',
     'SubspaceBasisPlugin',
     'SubspaceBasisConfig',
+    'MySQLRunLoggerPlugin',
+    'MySQLRunLoggerConfig',
 ]

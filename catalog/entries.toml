@@ -655,3 +655,10 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.production.scheduling:ProductionSchedulingBias"
 tags = ["bias", "domain", "production", "scheduling"]
 summary = "生产排程偏置：排程优先与负载平衡。 / Domain bias: production scheduling preference."
+[[entries]]
+key = "plugin.mysql_run_logger"
+kind = "plugin"
+title = "MySQLRunLoggerPlugin"
+summary = "MySQL 运行日志插件：把 run_id / 结果 / 模块报告路径写入数据库。 / MySQL run logger plugin: persist run metadata and report paths."
+import_path = "nsgablack.utils.plugins.mysql_run_logger:MySQLRunLoggerPlugin"
+tags = ["mysql", "database", "logging", "run", "experiment"]
