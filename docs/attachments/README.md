@@ -1,9 +1,13 @@
-﻿# Attachments
+# docs/attachments
 
-这个目录用于存放仓库内的附件（例如 docx 草稿、截图等）。
+用途：附录/附件与补充材料。
+边界：非核心正文。
+示例：图表或辅助说明。
 
-原则：
-- 代码与核心文档（.md/.rst）优先放在主文档树中
-- 附件不参与“事实标准/权威入口”的维护，避免拖累主线
-- 本目录内容默认不参与版本对外 API 承诺
+Purpose: appendices and attachments.
+Boundary: supplemental only.
+Example: figures/notes.
 
+## Added
+
+- `sql/mysql_event_logging_schema.sql`: MySQL schema for runs/snapshots/context_events.

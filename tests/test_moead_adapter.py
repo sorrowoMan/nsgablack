@@ -7,7 +7,7 @@ def test_moead_adapter_runs_and_updates_archive():
     from nsgablack.core.adapters import MOEADAdapter, MOEADConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
-    from nsgablack.utils.plugins import ParetoArchivePlugin
+    from nsgablack.plugins import ParetoArchivePlugin
 
     class BiSphere(BlackBoxProblem):
         def __init__(self, dim=4, low=-3.0, high=3.0):
@@ -46,3 +46,4 @@ def test_moead_adapter_runs_and_updates_archive():
     assert getattr(solver, "pareto_objectives", None) is not None
     assert np.asarray(solver.pareto_objectives).ndim == 2
     assert np.asarray(solver.pareto_objectives).shape[1] == 2
+

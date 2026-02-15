@@ -6,9 +6,9 @@
 
 | 你要的能力 | 推荐入口/组件 | 关键实现文件 | 产物/输出 |
 | --- | --- | --- | --- |
-| 组装一个可运行的实验（问题 + 算法 + 口径 + 输出） | `suite.*` + `plugin.*` | `utils/suites/`、`utils/plugins/` | 运行目录下 CSV/JSON/报告文件 |
-| 统一实验口径（逐步记录 + summary） | `plugin.benchmark_harness` | `utils/plugins/benchmark_harness.py` | `steps.csv`、`summary.json` |
-| 模块/偏置生效审计（“到底是谁在起作用”） | `plugin.module_report` | `utils/plugins/module_report.py`、`utils/plugins/base.py` | `modules.json`、`bias.json`（可选 `bias.md`） |
+| 组装一个可运行的实验（问题 + 算法 + 口径 + 输出） | `suite.*` + `plugin.*` | `utils/suites/`、`plugins/` | 运行目录下 CSV/JSON/报告文件 |
+| 统一实验口径（逐步记录 + summary） | `plugin.benchmark_harness` | `plugins/ops/benchmark_harness.py` | `steps.csv`、`summary.json` |
+| 模块/偏置生效审计（“到底是谁在起作用”） | `plugin.module_report` | `plugins/ops/module_report.py`、`plugins/base.py` | `modules.json`、`bias.json`（可选 `bias.md`） |
 | 并行评估（加速 evaluate + bias/constraint） | `with_parallel_evaluation(...)` | `utils/parallel/evaluator.py`、`utils/parallel/integration.py` | 进程/线程池并行评估结果 |
 | 约束计算与容错 | `evaluate_constraints_safe(...)` | `utils/constraints/constraint_utils.py` | 约束向量 + violation |
 | Context 约定（跨模块共享信息） | `context_keys.*` | `utils/context/context_keys.py` | 统一 key 命名与约定 |
@@ -25,7 +25,7 @@
 定位：通用求解生命周期与基础接口，追求“稳定、可复用、少副作用”。
 
 - 求解器底座与通用接口：`core/`
-- “不要在 core 里做装配”：装配放到 `utils/suites/`，生态能力放到 `utils/plugins/`
+- “不要在 core 里做装配”：装配放到 `utils/suites/`，生态能力放到 `plugins/`
 
 ### 1.2 Representation：表示与变换管线（可插拔）
 
@@ -40,19 +40,19 @@
 
 - 偏置组合器：`bias/bias_module.py`
 - 组合方式：`bias.add(CallableBias(...))`（旧的 `add_penalty` 已移除，避免 API 隐式膨胀）
-- 输出/审计：见 `utils/plugins/module_report.py` 对 bias 的导出
+- 输出/审计：见 `plugins/ops/module_report.py` 对 bias 的导出
 
 ### 1.4 Plugin：生态能力（调度/记录/导出/增强）
 
 定位：把“非核心生命周期但很必要的工程能力”做成插件，避免 solver 文件继续膨胀。
 
-- 插件基类与 manager：`utils/plugins/base.py`
+- 插件基类与 manager：`plugins/base.py`
 - 典型插件：
-  - 实验口径：`utils/plugins/benchmark_harness.py`
-  - 模块/偏置报告：`utils/plugins/module_report.py`
+  - 实验口径：`plugins/ops/benchmark_harness.py`
+  - 模块/偏置报告：`plugins/ops/module_report.py`
 - 工程机制：
   - 插件可声明 `is_algorithmic`（用于“贡献报告”筛选：哪些算算法模块，哪些是胶水模块）
-  - PluginManager 对插件 hook 进行计时/采样（实现以 `utils/plugins/base.py` 为准）
+  - PluginManager 对插件 hook 进行计时/采样（实现以 `plugins/base.py` 为准）
 
 ### 1.5 Suite：装配层（官方推荐入口）
 
@@ -115,7 +115,7 @@
 
 ### 4.1 统一实验口径：BenchmarkHarnessPlugin
 
-- 插件：`utils/plugins/benchmark_harness.py`
+- 插件：`plugins/ops/benchmark_harness.py`
 - 关键输出：
   - 每步/每代的逐步记录（CSV）
   - run 级 summary（JSON）：seed/time/eval_count/best_score 等
@@ -124,13 +124,13 @@
 
 ### 4.2 模块贡献报告：ModuleReportPlugin
 
-- 插件：`utils/plugins/module_report.py`
+- 插件：`plugins/ops/module_report.py`
 - 关键输出：
   - `modules.json`：启用的插件/adapter/bias/pipeline 组件清单与元信息
   - `bias.json`：bias 细项的累计/统计（以 bias 能提供的信息为准）
   - 可选 `bias.md`：把偏置拆解成可读报告（用于展示/审计）
 - 工程点：
-  - 插件计时：基于 PluginManager hook profiling（见 `utils/plugins/base.py`）
+  - 插件计时：基于 PluginManager hook profiling（见 `plugins/base.py`）
   - “算法模块”识别：插件可标记 `is_algorithmic`，报告按此过滤/聚合
 
 ## 5. 配置、加载与兼容（让用户更容易“跑起来”）
@@ -194,10 +194,10 @@
 
 ### 8.2 实验口径产物：CSV/JSON（可追溯、可对比、易汇总）
 
-- BenchmarkHarness：`utils/plugins/benchmark_harness.py`
+- BenchmarkHarness：`plugins/ops/benchmark_harness.py`
   - `steps.csv`：逐步/逐代记录（可用于画收敛曲线、做 time-to-target）
   - `summary.json`：run 元数据（seed/time/eval_count/best_score 等）
-- ModuleReport：`utils/plugins/module_report.py`
+- ModuleReport：`plugins/ops/module_report.py`
   - `modules.json`：本次 run 启用的“算法模块 + 胶水模块”清单
   - `bias.json`：偏置/惩罚的累计贡献信息（以 BiasModule 暴露的信息为准）
 
@@ -304,7 +304,7 @@
 - 插件尽量只读 context/solver 状态，少改 solver 内部字段
 
 入口与基类：
-- `utils/plugins/base.py`
+- `plugins/base.py`
 
 建议最小模板（概念示例，具体 hook 名以基类为准）：
 ```python
@@ -372,7 +372,7 @@ class MyPlugin(Plugin):
 
 ### 15.1 标准 hook 列表（按触发顺序）
 
-实现：`utils/plugins/base.py`
+实现：`plugins/base.py`
 
 Solver 初始化阶段：
 - `on_solver_init(solver)`：插件 attach 完成后立刻调用；适合创建输出目录、初始化随机种子、打开文件句柄
@@ -383,7 +383,7 @@ Solver 初始化阶段：
 
 迭代阶段：
 - `on_generation_start(generation)`
-- `on_generation_end(generation)`：BenchmarkHarness 在这里写一行 CSV（见 `utils/plugins/benchmark_harness.py`）
+- `on_generation_end(generation)`：BenchmarkHarness 在这里写一行 CSV（见 `plugins/ops/benchmark_harness.py`）
 
 空白求解器/自定义循环阶段：
 - `on_step(solver, generation)`：给 BlankSolverBase 这类“外部循环”提供的每步回调
@@ -394,7 +394,7 @@ Solver 初始化阶段：
 
 ### 15.2 调度顺序、优先级与短路（short-circuit）
 
-实现：`utils/plugins/base.py` 的 `PluginManager`
+实现：`plugins/base.py` 的 `PluginManager`
 
 - 插件注册后按 `priority` 逆序执行（数值越大越先执行）
 - 默认情况下：插件 hook 的返回值会被忽略；如果返回了非 None，会发出 RuntimeWarning（避免“你以为返回值会生效”这种隐性 bug）
@@ -405,7 +405,7 @@ Solver 初始化阶段：
 
 ### 15.3 插件性能剖析（profile）
 
-实现：`utils/plugins/base.py`
+实现：`plugins/base.py`
 
 - PluginManager 会对每个 hook 计时，并累计到插件实例的 `plugin._profile`：
   - `total_s`：累计耗时
@@ -414,7 +414,7 @@ Solver 初始化阶段：
 
 ### 15.4 “算法插件”识别（is_algorithmic）
 
-实现：`utils/plugins/base.py`、`utils/plugins/module_report.py`
+实现：`plugins/base.py`、`plugins/ops/module_report.py`
 
 - `plugin.is_algorithmic=False`（默认）：记录/导出/可视化/胶水类插件
 - `plugin.is_algorithmic=True`：会影响搜索行为的插件（elite、restart、archive、region 等）
@@ -426,7 +426,7 @@ Solver 初始化阶段：
 
 ### 16.1 BenchmarkHarnessPlugin 输出格式
 
-实现：`utils/plugins/benchmark_harness.py`
+实现：`plugins/ops/benchmark_harness.py`
 
 CSV：`{output_dir}/{run_id}.csv`
 - 字段（固定列）：`run_id, step, elapsed_s, eval_count, throughput_eval_s, best_score, phase, pareto_archive_size`
@@ -444,7 +444,7 @@ JSON：`{output_dir}/{run_id}.summary.json`
 
 ### 16.2 ModuleReportPlugin 输出格式
 
-实现：`utils/plugins/module_report.py`
+实现：`plugins/ops/module_report.py`
 
 modules.json：`{output_dir}/{run_id}.modules.json`
 - 顶层结构（示意）：

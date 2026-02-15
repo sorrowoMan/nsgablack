@@ -5,9 +5,10 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import filedialog, ttk
 
 from .ui.catalog_view import CatalogView
+from .ui.context_view import ContextView
 from .ui.contrib_view import ContributionView
 from .ui.run_view import RunView
 
@@ -25,12 +26,19 @@ class WireItem:
 
 
 class VisualizerApp(tk.Tk):
-    def __init__(self, builder: Callable[[], Any], entry: str) -> None:
+    def __init__(
+        self,
+        builder: Optional[Callable[[], Any]],
+        entry: str,
+        *,
+        workspace: Optional[Path] = None,
+    ) -> None:
         super().__init__()
         self.title("NSGABlack Run Inspector")
         self.geometry("980x720")
         self.builder = builder
         self.entry = entry
+        self.workspace = Path(workspace).resolve() if workspace is not None else None
 
         self._catalog_obj = None
         self.catalog: Dict[str, Dict[str, Any]] = {}
@@ -54,8 +62,14 @@ class VisualizerApp(tk.Tk):
         self.run_view: Optional[RunView] = None
         self.contrib_view: Optional[ContributionView] = None
         self.catalog_view: Optional[CatalogView] = None
+        self.context_view: Optional[ContextView] = None
+        self._entry_path_var = tk.StringVar(value="")
+        self._entry_func_var = tk.StringVar(value="build_solver")
+        self._entry_label_var = tk.StringVar(value="")
 
         self._build_ui()
+        self._apply_entry_to_controls()
+        self._update_entry_label()
         self._rebuild_solver()
 
     def _build_ui(self) -> None:
@@ -63,7 +77,16 @@ class VisualizerApp(tk.Tk):
         top.pack(fill="x", padx=12, pady=8)
 
         ttk.Label(top, text="Run Inspector", font=("Segoe UI", 14, "bold")).pack(anchor="w")
-        ttk.Label(top, text=f"Entry: {self.entry}", foreground="#666").pack(anchor="w")
+        ttk.Label(top, textvariable=self._entry_label_var, foreground="#666").pack(anchor="w")
+        load_row = ttk.Frame(top)
+        load_row.pack(fill="x", pady=(6, 0))
+        ttk.Label(load_row, text="File").pack(side="left")
+        ttk.Entry(load_row, textvariable=self._entry_path_var).pack(side="left", fill="x", expand=True, padx=(6, 6))
+        ttk.Button(load_row, text="Browse", command=self._browse_entry_file).pack(side="left")
+        ttk.Label(load_row, text="Func").pack(side="left", padx=(8, 0))
+        ttk.Entry(load_row, textvariable=self._entry_func_var, width=20).pack(side="left", padx=(4, 6))
+        ttk.Button(load_row, text="Load", command=self._load_selected_entry).pack(side="left")
+        ttk.Button(load_row, text="Refresh", command=self._refresh_current_entry).pack(side="left", padx=(6, 0))
 
         main = ttk.Frame(self)
         main.pack(fill="both", expand=True, padx=12, pady=8)
@@ -115,17 +138,20 @@ class VisualizerApp(tk.Tk):
         contrib_tab = ttk.Frame(notebook)
         traj_tab = ttk.Frame(notebook)
         catalog_tab = ttk.Frame(notebook)
+        context_tab = ttk.Frame(notebook)
         self._tab_details = details_tab
         self._tab_run = run_tab
         self._tab_contrib = contrib_tab
         self._tab_traj = traj_tab
         self._tab_catalog = catalog_tab
+        self._tab_context = context_tab
 
         notebook.add(details_tab, text="Details")
         notebook.add(run_tab, text="Run")
         notebook.add(contrib_tab, text="Contribution")
         notebook.add(traj_tab, text="Trajectory")
         notebook.add(catalog_tab, text="Catalog")
+        notebook.add(context_tab, text="Context")
 
         # Details tab
         ttk.Label(details_tab, text="Details", font=("Segoe UI", 11, "bold")).pack(anchor="w")
@@ -151,14 +177,112 @@ class VisualizerApp(tk.Tk):
         self.run_view = RunView(self, run_tab)
         self.contrib_view = ContributionView(self, contrib_tab, traj_tab)
         self.catalog_view = CatalogView(self, catalog_tab)
+        self.context_view = ContextView(self, context_tab)
         self.catalog = self.catalog_view.load_catalog()
 
+    def _apply_entry_to_controls(self) -> None:
+        if not self.entry:
+            return
+        if ":" in self.entry:
+            path_str, func = self.entry.rsplit(":", 1)
+        else:
+            path_str, func = self.entry, "build_solver"
+        self._entry_path_var.set(path_str)
+        self._entry_func_var.set(func or "build_solver")
+
+    def _update_entry_label(self) -> None:
+        entry_text = self.entry if self.entry else "(empty start)"
+        workspace_text = str(self.workspace) if self.workspace else str(Path.cwd())
+        self._entry_label_var.set(f"Entry: {entry_text} | Workspace: {workspace_text}")
+
+    def _set_status(self, text: str) -> None:
+        if self.run_view:
+            self.run_view.status_label.config(text=text)
+
+    def _resolve_entry_file(self, raw_path: str) -> Path:
+        text = str(raw_path).strip()
+        if not text:
+            raise ValueError("Entry file is empty")
+        p = Path(text)
+        if not p.is_absolute():
+            base = self.workspace or Path.cwd()
+            p = (base / p).resolve()
+        else:
+            p = p.resolve()
+        return p
+
+    def _browse_entry_file(self) -> None:
+        start_dir = str(self.workspace or Path.cwd())
+        chosen = filedialog.askopenfilename(
+            title="Select solver entry file",
+            initialdir=start_dir,
+            filetypes=[("Python files", "*.py"), ("All files", "*.*")],
+        )
+        if chosen:
+            self._entry_path_var.set(chosen)
+
+    def _load_selected_entry(self) -> None:
+        try:
+            path = self._resolve_entry_file(self._entry_path_var.get())
+            func = self._entry_func_var.get().strip() or "build_solver"
+            entry = f"{path}:{func}"
+            self.builder = _load_entry(entry)
+            self.entry = entry
+            self.workspace = path.parent
+            self._update_entry_label()
+            self._refresh_catalog()
+            self._set_status(f"Loaded entry: {entry}")
+            self._rebuild_solver()
+        except Exception as exc:
+            self._set_status(f"Load failed: {exc}")
+
+    def _refresh_current_entry(self) -> None:
+        if not self.entry:
+            self._set_status("No entry loaded; use Browse/Load first")
+            self._refresh_catalog()
+            return
+        try:
+            self.builder = _load_entry(self.entry)
+            self._refresh_catalog()
+            self._set_status("Entry reloaded")
+            self._rebuild_solver()
+        except Exception as exc:
+            self.solver = None
+            self.items = []
+            for child in self.scroll_frame.winfo_children():
+                child.destroy()
+            self._set_status(f"Refresh failed: {exc}")
+            if self.run_view:
+                self.run_view.update_sensitivity_button()
+            if self.context_view:
+                self.context_view.refresh()
+
+    def _refresh_catalog(self) -> None:
+        if self.catalog_view:
+            self.catalog = self.catalog_view.load_catalog()
+
     def _rebuild_solver(self) -> None:
+        if self.builder is None:
+            self.solver = None
+            self.items = []
+            for child in self.scroll_frame.winfo_children():
+                child.destroy()
+            self._set_status("Empty mode: load an entry file to inspect wiring")
+            if self.run_view:
+                self.run_view.update_sensitivity_button()
+            if self.context_view:
+                self.context_view.refresh()
+            return
         try:
             self.solver = self.builder()
         except Exception as exc:
+            self.solver = None
+            self.items = []
+            for child in self.scroll_frame.winfo_children():
+                child.destroy()
+            self._set_status(f"Build failed: {exc}")
             if self.run_view:
-                self.run_view.status_label.config(text=f"Build failed: {exc}")
+                self.run_view.update_sensitivity_button()
             return
         self._pipeline_cache = {}
         self.items = self._collect_items(self.solver)
@@ -167,6 +291,8 @@ class VisualizerApp(tk.Tk):
         self._render_items()
         if self.run_view:
             self.run_view.update_sensitivity_button()
+        if self.context_view:
+            self.context_view.refresh()
         if self.contrib_view:
             self.contrib_view.reload_run_choices()
         if self.run_view:
@@ -180,6 +306,8 @@ class VisualizerApp(tk.Tk):
         self._render_items()
         if self.run_view:
             self.run_view.update_sensitivity_button()
+        if self.context_view:
+            self.context_view.refresh()
 
     def _render_items(self) -> None:
         self._missing_rows = []
@@ -545,7 +673,7 @@ def _load_entry(entry: str) -> Callable[[], Any]:
     import sys
 
     if ":" in entry:
-        path_str, func_name = entry.split(":", 1)
+        path_str, func_name = entry.rsplit(":", 1)
     else:
         path_str, func_name = entry, "build_solver"
 
@@ -585,6 +713,14 @@ def launch_from_entry(entry: str) -> int:
     return 0
 
 
+def launch_empty(*, workspace: Optional[str] = None) -> int:
+    """Launch UI without preloaded solver entry."""
+    ws = Path(workspace).resolve() if workspace else Path.cwd()
+    app = VisualizerApp(None, entry="", workspace=ws)
+    app.mainloop()
+    return 0
+
+
 def maybe_launch_ui(
     builder: Callable[[], Any],
     *,
@@ -602,13 +738,18 @@ def maybe_launch_ui(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--entry", required=True, help="path/to/script.py:build_solver")
+    parser.add_argument("--entry", default="", help="path/to/script.py:build_solver")
+    parser.add_argument("--workspace", default="", help="Workspace folder for empty mode/catalog")
+    parser.add_argument("--empty", action="store_true", help="Start without loading an entry")
     args = parser.parse_args()
 
-    builder = _load_entry(args.entry)
-    app = VisualizerApp(builder, entry=args.entry)
-    app.mainloop()
-    return 0
+    if args.empty:
+        ws = args.workspace or str(Path.cwd())
+        return launch_empty(workspace=ws)
+    if args.entry:
+        return launch_from_entry(args.entry)
+    ws = args.workspace or str(Path.cwd())
+    return launch_empty(workspace=ws)
 
 
 if __name__ == "__main__":

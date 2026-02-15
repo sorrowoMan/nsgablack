@@ -357,12 +357,17 @@ class ContributionView:
         if not left_path.exists() or not right_path.exists():
             return "Missing snapshot(s) in runs/visualizer. Run once with UI to generate snapshots."
         try:
-            left = json.loads(left_path.read_text(encoding="utf-8"))
-            right = json.loads(right_path.read_text(encoding="utf-8"))
+            left = self._normalize_snapshot(json.loads(left_path.read_text(encoding="utf-8")))
+            right = self._normalize_snapshot(json.loads(right_path.read_text(encoding="utf-8")))
         except Exception as exc:
             return f"Snapshot load failed: {exc}"
 
         diffs = []
+        lv = left.get("schema_version", 0)
+        rv = right.get("schema_version", 0)
+        if lv != rv:
+            diffs.append(f"- schema_version: {lv} -> {rv}")
+
         def key_fmt(prefix, name, field):
             return f"{prefix}.{name}.{field}"
 
@@ -415,7 +420,7 @@ class ContributionView:
         if not path.exists():
             return None
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            return self._normalize_snapshot(json.loads(path.read_text(encoding="utf-8")))
         except Exception:
             return None
 
@@ -426,7 +431,7 @@ class ContributionView:
         buckets: Dict[str, List[str]] = {}
         for path in RUNS_DIR.glob("*.json"):
             try:
-                data = json.loads(path.read_text(encoding="utf-8"))
+                data = self._normalize_snapshot(json.loads(path.read_text(encoding="utf-8")))
             except Exception:
                 continue
             h = data.get("structure_hash_short") or ""
@@ -453,6 +458,7 @@ class ContributionView:
             return sorted(out, key=lambda x: str(x.get("name", "")))
 
         data = {
+            "schema_version": snap.get("schema_version", 0),
             "adapter": snap.get("adapter"),
             "pipeline": snap.get("pipeline"),
             "strategies": sort_items(snap.get("strategies", []), ["name", "enabled", "weight"]),
@@ -464,6 +470,19 @@ class ContributionView:
         except Exception:
             return ""
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
+
+    def _normalize_snapshot(self, snap: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(snap, dict):
+            return {}
+        out = dict(snap)
+        out.setdefault("schema_version", 0)
+        out.setdefault("strategies", [])
+        out.setdefault("plugins", [])
+        out.setdefault("biases", [])
+        out.setdefault("pipeline", {})
+        out.setdefault("adapter", None)
+        out.setdefault("solver", None)
+        return out
     def _compute_delta_keys(self, left: Dict[str, Any], right: Dict[str, Any]) -> List[str]:
         keys: List[str] = []
 

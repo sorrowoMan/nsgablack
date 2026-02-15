@@ -7,10 +7,10 @@
 ## 1) 架构与设计模式（可解释、可扩展、可维护）
 
 - 分层与边界：Core 稳定底座 + Suite 装配层 + Plugin 生态层（core 不装配，suite 做权威装配）
-  - 证据：`core/`、`utils/suites/`、`utils/plugins/`
+  - 证据：`core/`、`utils/suites/`、`plugins/`
   - 复杂度证明：难点是“扩展点多但依赖方向不混乱”；我把装配收敛进 suite，让 core 长期稳定，避免新需求把 solver 变成胶水堆。
 - 插件化生命周期（事件分发）：统一 hook（init/pop/gen/finish），支持 priority 调度与可选 short-circuit
-  - 证据：`utils/plugins/base.py`
+  - 证据：`plugins/base.py`
   - 复杂度证明：常见坑是 hook 顺序不一致/返回值悄悄失效/插件互相踩踏；我用统一契约 + priority +（可选）短路规则把行为边界固定。
 - Adapter/Strategy：把“搜索策略/控制器/多智能体协调”从 solver 解耦，允许多策略组合与替换
   - 证据：`core/algorithm_adapter.py`、`core/role_adapters.py`
@@ -49,13 +49,13 @@
 ## 4) 可复现、可追溯、可审计（实验口径 + 模块贡献）
 
 - 统一实验口径：逐代 CSV + summary JSON（seed/time/eval_count/best_score 等），便于横向对比
-  - 证据：`utils/plugins/benchmark_harness.py`
+  - 证据：`plugins/ops/benchmark_harness.py`
   - 复杂度证明：常见坑是每个脚本各写一套记录导致口径不一致；我把口径固化成插件，算法只管搜索。
 - 模块贡献报告：modules.json + bias.json（可选 bias.md），并记录插件 hook 耗时 profile
-  - 证据：`utils/plugins/module_report.py`、`utils/plugins/base.py`
+  - 证据：`plugins/ops/module_report.py`、`plugins/base.py`
   - 复杂度证明：难点是“组合多了说不清谁贡献了什么”；我把启用模块、偏置统计、插件耗时统一落盘，变成可审计证据。
 - 插件 profiling：PluginManager 自动统计每个 hook 的耗时（total + per-event），支持定位瓶颈
-  - 证据：`utils/plugins/base.py`
+  - 证据：`plugins/base.py`
   - 复杂度证明：性能问题常被误判成“抽象层开销”；我用 hook 级 profile 把瓶颈定位到模块级。
 
 ## 5) 配置、日志与落盘（工程化跑实验）

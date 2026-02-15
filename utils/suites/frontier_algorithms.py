@@ -1,4 +1,4 @@
-﻿"""
+"""
 Suites for frontier algorithms (combined wiring).
 """
 
@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ..plugins import (
+from ...plugins import (
     BenchmarkHarnessPlugin,
     ModuleReportPlugin,
     ParetoArchivePlugin,
@@ -114,3 +114,4 @@ def attach_risk_cvar(solver) -> None:
     solver.enable_bias = True
     solver.add_plugin(BenchmarkHarnessPlugin())
     solver.add_plugin(ModuleReportPlugin())
+

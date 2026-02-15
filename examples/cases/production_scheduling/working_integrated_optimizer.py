@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Refactored entrypoint: pipeline-first production scheduling.
 
 This script is a real-world application of NSGABlack's decomposition:
@@ -39,7 +39,7 @@ from nsgablack.core.adapters import (  # noqa: E402
     MultiStrategyControllerAdapter,
     RoleSpec,
 )
-from nsgablack.utils.plugins import (  # noqa: E402
+from nsgablack.plugins import (  # noqa: E402
     ParetoArchivePlugin,
     BenchmarkHarnessPlugin,
     BenchmarkHarnessConfig,
@@ -167,7 +167,7 @@ class ConsoleProgressPlugin:
     """Minimal console progress to avoid the 'looks stuck' feeling."""
 
     def __init__(self, report_every: int = 10):
-        from nsgablack.utils.plugins import Plugin
+        from nsgablack.plugins import Plugin
 
         # Use Plugin base to integrate with PluginManager.
         class _Impl(Plugin):
@@ -283,7 +283,7 @@ def _resolve_pareto_export_root(base: Optional[Path]) -> Path:
     if base is None:
         base_dir = Path(__file__).resolve().parents[1]
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        root = base_dir / f"集成优化结果_pareto_{ts}"
+        root = base_dir / f"�����Ż����_pareto_{ts}"
     elif base.suffix:
         root = base.with_name(f"{base.stem}_pareto")
     else:
@@ -348,7 +348,7 @@ def _export_pareto_batch(
     return len(rows)
 
 
-def _default_export_path(prefix: str = "集成优化结果", label: Optional[str] = None) -> Path:
+def _default_export_path(prefix: str = "�����Ż����", label: Optional[str] = None) -> Path:
     base_dir = Path(__file__).resolve().parents[1]
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     if label:
@@ -373,15 +373,15 @@ def _export_schedule(path: Path, schedule: np.ndarray) -> None:
 
     data = {
         "Day_Index": list(range(days)),
-        "Date": [f"规划天{day}" for day in range(days)],
+        "Date": [f"�滮��{day}" for day in range(days)],
     }
     for m in range(machines):
-        data[f"机种{m}"] = schedule[m, :].tolist()
+        data[f"����{m}"] = schedule[m, :].tolist()
 
     df = pd.DataFrame(data)
     if path.suffix.lower() == ".xlsx":
         # Keep a stable sheet name for downstream visualization scripts.
-        df.to_excel(path, index=False, sheet_name="生产计划")
+        df.to_excel(path, index=False, sheet_name="�����ƻ�")
     else:
         df.to_csv(path, index=False)
 
@@ -839,3 +839,4 @@ if __name__ == "__main__":
         )
         raise SystemExit(0)
     main(args)
+

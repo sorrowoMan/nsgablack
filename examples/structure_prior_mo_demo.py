@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import numpy as np
 
@@ -6,7 +6,7 @@ from nsgablack.core.composable_solver import ComposableSolver
 from nsgablack.core.adapters import MOEADAdapter
 from nsgablack.representation import RepresentationPipeline, UniformInitializer, GaussianMutation, ClipRepair
 from nsgablack.bias import BiasModule, StructurePriorBias
-from nsgablack.utils.plugins import BenchmarkHarnessPlugin, ModuleReportPlugin, ParetoArchivePlugin
+from nsgablack.plugins import BenchmarkHarnessPlugin, ModuleReportPlugin, ParetoArchivePlugin
 
 
 class SymmetricMOProblem:
@@ -46,9 +46,10 @@ def build_solver():
 def main():
     solver = build_solver()
     result = solver.run(max_generations=40, seed=7)
-    print("运行状态:", result.get("status"))
+    print("����״̬:", result.get("status"))
     print("best_objective:", result.get("best_objective"))
 
 
 if __name__ == "__main__":
     main()
+

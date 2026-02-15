@@ -20,6 +20,18 @@ class CatalogEntry:
     tags: Tuple[str, ...] = ()
     summary: str = ""
     companions: Tuple[str, ...] = ()  # entry keys (soft links)
+    # Optional context contracts (component-level read/write semantics).
+    context_requires: Tuple[str, ...] = ()
+    context_provides: Tuple[str, ...] = ()
+    context_mutates: Tuple[str, ...] = ()
+    context_cache: Tuple[str, ...] = ()
+    context_notes: Tuple[str, ...] = ()
+    # Optional usage contracts (how to apply component without reading source).
+    use_when: Tuple[str, ...] = ()
+    minimal_wiring: Tuple[str, ...] = ()
+    required_companions: Tuple[str, ...] = ()
+    config_keys: Tuple[str, ...] = ()
+    example_entry: str = ""
 
     def load(self):
         """Import and return the referenced symbol."""
@@ -34,6 +46,7 @@ class Catalog:
     def __init__(self, entries: Sequence[CatalogEntry]):
         self._entries = list(entries)
         self._by_key: Dict[str, CatalogEntry] = {e.key: e for e in self._entries}
+        self._context_blob_cache: Dict[str, str] = {}
 
     def get(self, key: str) -> Optional[CatalogEntry]:
         return self._by_key.get(key)
@@ -64,6 +77,15 @@ class Catalog:
         token_groups = _expand_token_groups(tokens)
         kind_set = {str(k).lower().strip() for k in (kinds or [])}
         tag_set = {str(t).lower().strip() for t in (tags or [])}
+        field = (fields or "all").strip().lower()
+        use_context_in_all = field == "all" and any(
+            ("context" in t) or (t in {"requires", "provides", "mutates", "cache", "contract", "contracts"})
+            for t in tokens
+        )
+        use_usage_in_all = field == "all" and any(
+            (t in {"use", "usage", "wiring", "wire", "companion", "companions", "config", "example"})
+            for t in tokens
+        )
 
         def match(e: CatalogEntry) -> bool:
             if kind_set and e.kind not in kind_set:
@@ -72,13 +94,20 @@ class Catalog:
                 e_tags = {t.lower() for t in e.tags}
                 if not tag_set.issubset(e_tags):
                     return False
-            field = (fields or "all").strip().lower()
             if field == "name":
                 hay = " ".join([e.key, e.title]).lower()
             elif field == "tag":
                 hay = " ".join(e.tags).lower()
+            elif field == "context":
+                hay = self._entry_context_blob(e)
+            elif field == "usage":
+                hay = self._entry_usage_blob(e)
             else:
                 hay = " ".join([e.key, e.title, e.kind, e.summary, " ".join(e.tags)]).lower()
+                if use_context_in_all:
+                    hay = f"{hay} {self._entry_context_blob(e)}"
+                if use_usage_in_all:
+                    hay = f"{hay} {self._entry_usage_blob(e)}"
             return all(any(t in hay for t in group) for group in token_groups)
 
         out = [e for e in self._entries if match(e)]
@@ -96,6 +125,96 @@ class Catalog:
 
         out.sort(key=rank)
         return out[: max(0, int(limit))]
+
+    def _entry_context_blob(self, e: CatalogEntry) -> str:
+        cached = self._context_blob_cache.get(e.key)
+        if cached is not None:
+            return cached
+
+        parts: List[str] = []
+
+        def add_field(label: str, values: object, *, include_label: bool) -> None:
+            if include_label:
+                parts.append(label)
+            parts.extend(_coerce_str_tuple(values))
+
+        add_field("context_requires", e.context_requires, include_label=bool(e.context_requires))
+        add_field("context_provides", e.context_provides, include_label=bool(e.context_provides))
+        add_field("context_mutates", e.context_mutates, include_label=bool(e.context_mutates))
+        add_field("context_cache", e.context_cache, include_label=bool(e.context_cache))
+        add_field("context_notes", e.context_notes, include_label=bool(e.context_notes))
+
+        # If contracts are not attached on CatalogEntry, try reading class-level declarations.
+        if not parts:
+            try:
+                symbol = e.load()
+            except Exception:
+                symbol = None
+            if symbol is not None:
+                add_field(
+                    "context_requires",
+                    getattr(symbol, "context_requires", ()),
+                    include_label=hasattr(symbol, "context_requires"),
+                )
+                add_field(
+                    "context_provides",
+                    getattr(symbol, "context_provides", ()),
+                    include_label=hasattr(symbol, "context_provides"),
+                )
+                add_field(
+                    "context_mutates",
+                    getattr(symbol, "context_mutates", ()),
+                    include_label=hasattr(symbol, "context_mutates"),
+                )
+                add_field(
+                    "context_cache",
+                    getattr(symbol, "context_cache", ()),
+                    include_label=hasattr(symbol, "context_cache"),
+                )
+                add_field(
+                    "context_notes",
+                    getattr(symbol, "context_notes", ()),
+                    include_label=hasattr(symbol, "context_notes"),
+                )
+
+        blob = " ".join(parts).lower()
+        self._context_blob_cache[e.key] = blob
+        return blob
+
+    def _entry_usage_blob(self, e: CatalogEntry) -> str:
+        parts: List[str] = []
+        parts.extend(_coerce_str_tuple(getattr(e, "use_when", ())))
+        parts.extend(_coerce_str_tuple(getattr(e, "minimal_wiring", ())))
+        parts.extend(_coerce_str_tuple(getattr(e, "required_companions", ())))
+        parts.extend(_coerce_str_tuple(getattr(e, "config_keys", ())))
+        parts.extend(_coerce_str_tuple(getattr(e, "example_entry", "")))
+        if not parts:
+            parts.extend(_coerce_str_tuple(getattr(e, "companions", ())))
+        return " ".join(parts).lower()
+
+
+def _coerce_str_tuple(value: object) -> Tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        text = value.strip()
+        return (text,) if text else ()
+    if isinstance(value, dict):
+        # Keep deterministic order on dict-like configs.
+        return tuple(
+            str(k).strip()
+            for k in value.keys()
+            if str(k).strip()
+        )
+    if isinstance(value, (list, tuple, set)):
+        out: List[str] = []
+        for item in value:
+            text = str(item).strip()
+            if text:
+                out.append(text)
+        return tuple(out)
+    text = str(value).strip()
+    return (text,) if text else ()
 
 
 def _expand_token_groups(tokens: List[str]) -> List[List[str]]:
@@ -115,6 +234,9 @@ def _expand_token_groups(tokens: List[str]) -> List[List[str]]:
         "\u591a\u76ee\u6807": ['multiobjective', 'mo'],
         "\u7ea6\u675f": ['constraint'],
         "\u56fe": ['graph'],
+        "\u53ef\u89c6\u5316": ['viz', 'visual', 'visualization', 'run_inspector'],
+        "\u53ef\u89c6\u5316\u5148\u9a8c": ['visualization', 'prior', 'structure_prior', 'run_inspector'],
+        "\u5148\u9a8c": ['prior', 'structure_prior'],
         "\u8def\u5f84": ['path'],
         "\u542f\u53d1": ['heuristic'],
         "\u8bc4\u4f30": ['evaluation', 'evaluate'],
@@ -333,7 +455,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="plugin.monte_carlo_eval",
             title="MonteCarloEvaluationPlugin",
             kind="plugin",
-            import_path="nsgablack.utils.plugins:MonteCarloEvaluationPlugin",
+            import_path="nsgablack.plugins.evaluation.monte_carlo_evaluation:MonteCarloEvaluationPlugin",
             tags=('evaluation', 'mc', 'signal'),
             summary="\u63d2\u4ef6\uff1aMonteCarloEvaluationPlugin\u3002 / Plugin: MonteCarloEvaluationPlugin.",
             companions=("bias.robustness", "suite.monte_carlo_robustness"),
@@ -342,7 +464,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="plugin.pareto_archive",
             title="ParetoArchivePlugin",
             kind="plugin",
-            import_path="nsgablack.utils.plugins:ParetoArchivePlugin",
+            import_path="nsgablack.plugins.runtime.pareto_archive:ParetoArchivePlugin",
             tags=('archive', 'multiobjective', 'pareto'),
             summary="\u63d2\u4ef6\uff1aParetoArchivePlugin\u3002 / Plugin: ParetoArchivePlugin.",
             companions=("adapter.moead", "suite.moead"),
@@ -351,7 +473,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="plugin.benchmark_harness",
             title="BenchmarkHarnessPlugin",
             kind="plugin",
-            import_path="nsgablack.utils.plugins:BenchmarkHarnessPlugin",
+            import_path="nsgablack.plugins.ops.benchmark_harness:BenchmarkHarnessPlugin",
             tags=('benchmark', 'comparison', 'logging', 'protocol'),
             summary="\u63d2\u4ef6\uff1aBenchmarkHarnessPlugin\u3002 / Plugin: BenchmarkHarnessPlugin.",
             companions=("suite.benchmark_harness",),
@@ -360,7 +482,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="plugin.module_report",
             title="ModuleReportPlugin",
             kind="plugin",
-            import_path="nsgablack.utils.plugins:ModuleReportPlugin",
+            import_path="nsgablack.plugins.ops.module_report:ModuleReportPlugin",
             tags=('ablation', 'audit', 'bias', 'report'),
             summary="\u63d2\u4ef6\uff1aModuleReportPlugin\u3002 / Plugin: ModuleReportPlugin.",
             companions=("suite.module_report", "plugin.benchmark_harness"),
@@ -369,7 +491,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="plugin.profiler",
             title="ProfilerPlugin",
             kind="plugin",
-            import_path="nsgablack.utils.plugins:ProfilerPlugin",
+            import_path="nsgablack.plugins.ops.profiler:ProfilerPlugin",
             tags=('audit', 'performance', 'profile', 'throughput'),
             summary="\u63d2\u4ef6\uff1aProfilerPlugin\u3002 / Plugin: ProfilerPlugin.",
             companions=("plugin.benchmark_harness", "plugin.module_report"),
@@ -378,7 +500,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="plugin.surrogate_eval",
             title="SurrogateEvaluationPlugin",
             kind="plugin",
-            import_path="nsgablack.utils.plugins:SurrogateEvaluationPlugin",
+            import_path="nsgablack.plugins.evaluation.surrogate_evaluation:SurrogateEvaluationPlugin",
             tags=('evaluation', 'optional', 'surrogate'),
             summary="\u63d2\u4ef6\uff1aSurrogateEvaluationPlugin\u3002 / Plugin: SurrogateEvaluationPlugin.",
         ),
@@ -387,7 +509,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="plugin.multi_fidelity_eval",
             title="MultiFidelityEvaluationPlugin",
             kind="plugin",
-            import_path="nsgablack.utils.plugins:MultiFidelityEvaluationPlugin",
+            import_path="nsgablack.plugins.evaluation.multi_fidelity_evaluation:MultiFidelityEvaluationPlugin",
             tags=('evaluation', 'frontier', 'multi_fidelity', 'plugin'),
             summary="\u63d2\u4ef6\uff1aMultiFidelityEvaluationPlugin\u3002 / Plugin: MultiFidelityEvaluationPlugin.",
         ),
@@ -396,7 +518,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="plugin.mas_model",
             title="MASModelPlugin",
             kind="plugin",
-            import_path="nsgablack.utils.plugins:MASModelPlugin",
+            import_path="nsgablack.plugins.models.mas_model:MASModelPlugin",
             tags=('mas', 'surrogate'),
             summary="\u63d2\u4ef6\uff1aMASModelPlugin\u3002 / Plugin: MASModelPlugin.",
         ),
@@ -404,7 +526,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="plugin.subspace_basis",
             title="SubspaceBasisPlugin",
             kind="plugin",
-            import_path="nsgablack.utils.plugins:SubspaceBasisPlugin",
+            import_path="nsgablack.plugins.models.subspace_basis:SubspaceBasisPlugin",
             tags=('cluster', 'dfo', 'pca', 'random', 'sparse_pca', 'subspace', 'svd'),
             summary="\u63d2\u4ef6\uff1aSubspaceBasisPlugin\u3002 / Plugin: SubspaceBasisPlugin.",
         ),
@@ -765,7 +887,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="plugin.adaptive_parameters",
             title="AdaptiveParametersPlugin",
             kind="plugin",
-            import_path="nsgablack.utils.plugins:AdaptiveParametersPlugin",
+            import_path="nsgablack.plugins.runtime.adaptive_parameters:AdaptiveParametersPlugin",
             tags=('adaptive', 'parameters', 'plugin'),
             summary="\u63d2\u4ef6\uff1aAdaptiveParametersPlugin\u3002 / Plugin: AdaptiveParametersPlugin.",
         ),
@@ -773,7 +895,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="plugin.elite",
             title="BasicElitePlugin",
             kind="plugin",
-            import_path="nsgablack.utils.plugins:BasicElitePlugin",
+            import_path="nsgablack.plugins.runtime.elite_retention:BasicElitePlugin",
             tags=('archive', 'elite', 'plugin'),
             summary="\u63d2\u4ef6\uff1aBasicElitePlugin\u3002 / Plugin: BasicElitePlugin.",
         ),
@@ -781,7 +903,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="plugin.convergence_monitor",
             title="ConvergencePlugin",
             kind="plugin",
-            import_path="nsgablack.utils.plugins:ConvergencePlugin",
+            import_path="nsgablack.plugins.runtime.convergence:ConvergencePlugin",
             tags=('convergence', 'monitor', 'plugin'),
             summary="\u63d2\u4ef6\uff1aConvergencePlugin\u3002 / Plugin: ConvergencePlugin.",
         ),
@@ -789,7 +911,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="plugin.diversity_init",
             title="DiversityInitPlugin",
             kind="plugin",
-            import_path="nsgablack.utils.plugins:DiversityInitPlugin",
+            import_path="nsgablack.plugins.runtime.diversity_init:DiversityInitPlugin",
             tags=('diversity', 'init', 'plugin'),
             summary="\u63d2\u4ef6\uff1aDiversityInitPlugin\u3002 / Plugin: DiversityInitPlugin.",
         ),
@@ -797,7 +919,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="plugin.memory",
             title="MemoryPlugin",
             kind="plugin",
-            import_path="nsgablack.utils.plugins:MemoryPlugin",
+            import_path="nsgablack.plugins.system.memory_optimize:MemoryPlugin",
             tags=('engineering', 'memory', 'plugin'),
             summary="\u63d2\u4ef6\uff1aMemoryPlugin\u3002 / Plugin: MemoryPlugin.",
         ),
@@ -1197,9 +1319,19 @@ def _discover_python_entries() -> List[CatalogEntry]:
                             title=str(it.get("title", "")).strip(),
                             kind=str(it.get("kind", "")).strip().lower(),
                             import_path=str(it.get("import_path", "")).strip(),
-            tags=('t', 'a', 'g', 's'),
-            summary="\u793a\u4f8b\uff1adynamic_cli_signal_demo\u3002 / Example: dynamic_cli_signal_demo.",
-                            companions=tuple(it.get("companions", []) or ()),
+                            tags=_coerce_str_tuple(it.get("tags", ())),
+                            summary=str(it.get("summary", "")).strip(),
+                            companions=_coerce_str_tuple(it.get("companions", ())),
+                            context_requires=_coerce_str_tuple(it.get("context_requires", ())),
+                            context_provides=_coerce_str_tuple(it.get("context_provides", ())),
+                            context_mutates=_coerce_str_tuple(it.get("context_mutates", ())),
+                            context_cache=_coerce_str_tuple(it.get("context_cache", ())),
+                            context_notes=_coerce_str_tuple(it.get("context_notes", ())),
+                            use_when=_coerce_str_tuple(it.get("use_when", ())),
+                            minimal_wiring=_coerce_str_tuple(it.get("minimal_wiring", ())),
+                            required_companions=_coerce_str_tuple(it.get("required_companions", ())),
+                            config_keys=_coerce_str_tuple(it.get("config_keys", ())),
+                            example_entry=str(it.get("example_entry", "")).strip(),
                         )
                     )
                 except Exception:
@@ -1211,7 +1343,7 @@ def _discover_python_entries() -> List[CatalogEntry]:
         "nsgablack.bias",
         "nsgablack.representation",
         "nsgablack.utils.suites",
-        "nsgablack.utils.plugins",
+        "nsgablack.plugins",
     ]
     out: List[CatalogEntry] = []
     for pkg_name in packages:
@@ -1252,6 +1384,16 @@ def _load_external_entries() -> List[CatalogEntry]:
     tags = ["foo", "bar"]
     summary = "one line"
     companions = ["plugin.xxx", "suite.yyy"]
+    context_requires = ["context.population"]
+    context_provides = ["context.report.meta"]
+    context_mutates = ["context.cache.memo"]
+    context_cache = ["context.cache.memo"]
+    context_notes = ["One-line contract notes"]
+    use_when = ["When to use this component"]
+    minimal_wiring = ["from ... import ...", "solver.add_plugin(...)"]
+    required_companions = ["suite.xxx"]
+    config_keys = ["weight", "threshold"]
+    example_entry = "examples/demo.py:build_solver"
     """
 
     try:
@@ -1277,9 +1419,19 @@ def _load_external_entries() -> List[CatalogEntry]:
                     title=str(item.get("title", "")).strip(),
                     kind=str(item.get("kind", "")).strip().lower(),
                     import_path=str(item.get("import_path", "")).strip(),
-            tags=('t', 'a', 'g', 's'),
+                    tags=_coerce_str_tuple(item.get("tags", ())),
                     summary=str(item.get("summary", "")).strip(),
-                    companions=tuple(item.get("companions", []) or ()),
+                    companions=_coerce_str_tuple(item.get("companions", ())),
+                    context_requires=_coerce_str_tuple(item.get("context_requires", ())),
+                    context_provides=_coerce_str_tuple(item.get("context_provides", ())),
+                    context_mutates=_coerce_str_tuple(item.get("context_mutates", ())),
+                    context_cache=_coerce_str_tuple(item.get("context_cache", ())),
+                    context_notes=_coerce_str_tuple(item.get("context_notes", ())),
+                    use_when=_coerce_str_tuple(item.get("use_when", ())),
+                    minimal_wiring=_coerce_str_tuple(item.get("minimal_wiring", ())),
+                    required_companions=_coerce_str_tuple(item.get("required_companions", ())),
+                    config_keys=_coerce_str_tuple(item.get("config_keys", ())),
+                    example_entry=str(item.get("example_entry", "")).strip(),
                 )
             )
         return [e for e in out if e.key and e.kind and e.import_path]
@@ -1310,6 +1462,8 @@ def _load_external_entries() -> List[CatalogEntry]:
 def get_catalog(*, refresh: bool = False) -> Catalog:
     global _CATALOG
     if refresh or _CATALOG is None:
+        from .usage import enrich_context_contracts, enrich_usage_contracts
+
         base = _default_entries()
         discovered = _discover_python_entries()
         extra = _load_external_entries()
@@ -1323,6 +1477,7 @@ def get_catalog(*, refresh: bool = False) -> Catalog:
             merged[e.key] = e
         for e in eps:
             merged[e.key] = e
-        _CATALOG = Catalog(list(merged.values()))
+        enriched = enrich_context_contracts(list(merged.values()), kinds=("plugin",))
+        enriched = enrich_usage_contracts(enriched)
+        _CATALOG = Catalog(enriched)
     return _CATALOG
-

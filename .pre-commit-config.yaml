@@ -82,6 +82,15 @@ repos:
       - id: nbqa-isort
       - id: nbqa-flake8
 
+  # NSGABlack contract gates
+  - repo: local
+    hooks:
+      - id: nsgablack-catalog-contracts
+        name: nsgablack catalog contracts
+        entry: python tools/catalog_integrity_checker.py --check-usage --strict-usage --check-context --context-kinds plugin --require-context-notes --strict-context
+        language: system
+        pass_filenames: false
+
 # Configuration for specific files
 exclude: |
   (?x)^(

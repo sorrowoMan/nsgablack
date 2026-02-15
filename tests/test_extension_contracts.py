@@ -30,7 +30,7 @@ def test_composable_solver_rejects_wrong_candidate_shape():
 
 
 def test_plugin_return_value_warns_by_default():
-    from nsgablack.utils.plugins import Plugin, PluginManager
+    from nsgablack.plugins import Plugin, PluginManager
 
     class BadPlugin(Plugin):
         def __init__(self):
@@ -44,3 +44,4 @@ def test_plugin_return_value_warns_by_default():
 
     with pytest.warns(RuntimeWarning):
         mgr.on_generation_start(0)
+

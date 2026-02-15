@@ -69,7 +69,7 @@ Use this as the definitive map for import paths and stable entrypoints.
 
 ## 6) Plugins (capabilities)
 
-- `utils/plugins/__init__.py`
+- `plugins/__init__.py`
   - `Plugin`, `PluginManager`
   - `BasicElitePlugin`, `HistoricalElitePlugin`
   - `DiversityInitPlugin`

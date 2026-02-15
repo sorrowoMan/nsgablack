@@ -1,11 +1,11 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import numpy as np
 
 from nsgablack.core.composable_solver import ComposableSolver
 from nsgablack.core.adapters import TrustRegionDFOAdapter
 from nsgablack.representation import RepresentationPipeline, UniformInitializer, GaussianMutation, ClipRepair
-from nsgablack.utils.plugins import BenchmarkHarnessPlugin, ModuleReportPlugin, SurrogateEvaluationPlugin, SurrogateEvaluationConfig
+from nsgablack.plugins import BenchmarkHarnessPlugin, ModuleReportPlugin, SurrogateEvaluationPlugin, SurrogateEvaluationConfig
 
 
 class SmallExpensiveProblem:
@@ -47,3 +47,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

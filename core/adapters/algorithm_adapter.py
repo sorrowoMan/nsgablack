@@ -15,6 +15,13 @@ import numpy as np
 class AlgorithmAdapter(ABC):
     """Base adapter for integrating arbitrary optimization logic."""
 
+    # Optional context contract (class-level defaults)
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = None
+
     def __init__(self, name: str, priority: int = 0) -> None:
         self.name = name
         self.priority = priority
@@ -50,6 +57,15 @@ class AlgorithmAdapter(ABC):
     def set_state(self, state: Dict[str, Any]) -> None:
         """Restore adapter state."""
         return None
+
+    def get_context_contract(self) -> Dict[str, Any]:
+        return {
+            "requires": getattr(self, "context_requires", ()),
+            "provides": getattr(self, "context_provides", ()),
+            "mutates": getattr(self, "context_mutates", ()),
+            "cache": getattr(self, "context_cache", ()),
+            "notes": getattr(self, "context_notes", None),
+        }
 
 
 class CompositeAdapter(AlgorithmAdapter):
@@ -111,3 +127,23 @@ class CompositeAdapter(AlgorithmAdapter):
         for adapter in self.adapters:
             if adapter.name in state:
                 adapter.set_state(state[adapter.name])
+
+    def get_context_contract(self) -> Dict[str, Any]:
+        contract = super().get_context_contract()
+        requires = list(contract.get("requires", ()) or ())
+        provides = list(contract.get("provides", ()) or ())
+        mutates = list(contract.get("mutates", ()) or ())
+        cache = list(contract.get("cache", ()) or ())
+        for adapter in self.adapters:
+            sub = adapter.get_context_contract()
+            requires.extend(list(sub.get("requires", ()) or ()))
+            provides.extend(list(sub.get("provides", ()) or ()))
+            mutates.extend(list(sub.get("mutates", ()) or ()))
+            cache.extend(list(sub.get("cache", ()) or ()))
+        return {
+            "requires": requires,
+            "provides": provides,
+            "mutates": mutates,
+            "cache": cache,
+            "notes": "composite",
+        }

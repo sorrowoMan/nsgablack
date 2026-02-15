@@ -402,7 +402,7 @@ def process(x: Optional[List[ConfigDict]]) -> Dict[str, List[float]]:
 对于大型项目，采用渐进式策略：
 
 ### 阶段1: 核心模块（高优先级）
-- `bias/bias.py`
+- `bias/bias_module.py`
 - `core/solver.py`
 - `core/base.py`
 - （已清理）历史/实验目录（如需追溯请查看 git 历史）

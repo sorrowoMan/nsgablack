@@ -1,95 +1,116 @@
-﻿# START_HERE — NSGABlack 入口地图
+# START_HERE — NSGABlack 入口地图
 
-一句话记住：**问题接口 + 表征管线 + 偏置策略 + 求解器入口**。
+一句话记住：**Problem + Pipeline + Bias + Adapter + Plugin**。  
+Solver 只负责生命周期和运行容器。
 
 ---
 
-## 1) 新问题最短路径（10 分钟跑通）
+## 1) 推荐起手式：先创建项目骨架（推荐）
 
-1. 定义问题接口
+在任意目录执行（已 `pip install -e .`）：
+
+```powershell
+python -m nsgablack project init my_project
+cd my_project
+python -m nsgablack project doctor --path . --build
+python build_solver.py
+```
+
+为什么推荐这条路：
+- 自带 `problem/pipeline/bias/adapter/plugins` 结构，不会乱
+- 自带 `project_registry.py`，本地组件可被 project catalog 搜到
+- `doctor` 可提前暴露接线/契约问题
+
+---
+
+## 2) 新问题最短路径（框架最小闭环）
+
+1. 定义问题接口（Problem）
    - `core/base.py`
-2. 选择表征管线（变量类型）
+2. 选择表征管线（Pipeline，硬约束优先放这里）
    - `representation/`
-- `docs/indexes/REPRESENTATION_INDEX.md`
-3. 选择偏置（策略/规则/代理控制）
-   - `bias/bias.py`
+   - `docs/indexes/REPRESENTATION_INDEX.md`
+3. 装配偏置（Bias，软约束/偏好）
+   - `bias/`
    - `docs/user_guide/bias_baby_guide.md`
-4. 选择求解器入口  
-   - 标准多目标（NSGA-II 底座）：`core/solver.py`（`BlackBoxSolverNSGAII`）  
-   - 可组合/可融合（Adapter 驱动）：`core/composable_solver.py` + `core/adapters/` + `utils/suites/`  
-   - 特殊流程/非进化原型：`core/blank_solver.py` + `utils/plugins/`  
-   - 多策略协同/多角色并行：`core/adapters/multi_strategy.py` + `utils/suites/multi_strategy.py`  
-5. 冒烟验证（确认框架可用）
+4. 选择策略内核（Adapter）
+   - `core/adapters/`
+5. 加能力层（Plugin）
+   - `plugins/`
+6. Solver 组装 + 冒烟验证
+   - `build_solver.py`
 
 ---
 
-## 2) 我该选哪个入口？
+## 3) Catalog 怎么用（含 context 搜索）
 
-- **标准多目标优化**：`core/solver.py`
-- **昂贵评估/代理加速（能力层，不污染底座）**：`utils/plugins/surrogate_evaluation.py`
-- **多策略并行协同（进阶能力）**：`core/adapters/multi_strategy.py`
-- **算法/业务偏置驱动**：`bias/`、`docs/user_guide/bias_system.md`
-- **想快速看 API 入口**：`docs/user_guide/external_api_navigation.md`
+全局 Catalog：
 
----
+```powershell
+python -m nsgablack catalog search vns
+python -m nsgablack catalog show suite.multi_strategy
+python -m nsgablack catalog search context_requires --field context --kind plugin
+```
 
-## 3) 常用“找不到就看这里”
+项目 Catalog（本地 + 全局）：
 
-- 工具索引：`docs/indexes/TOOLS_INDEX.md`
-- 表征索引：`docs/indexes/REPRESENTATION_INDEX.md`
-- 算法拆解原则（总纲）：`docs/project/DECOMPOSITION_RULES.md`
-- 权威现代示例（事实标准）：`docs/AUTHORITATIVE_EXAMPLES.md`
-- 端到端落地流程（面对一个问题怎么做）：`WORKFLOW_END_TO_END.md`
-- 扩展点契约（护栏）：`docs/user_guide/EXTENSION_CONTRACTS.md`
-- Catalog / Suites（可发现性 + 权威组合）：`docs/user_guide/catalog.md`
-- Core 稳定性与边界说明：`docs/CORE_STABILITY.md`
-- 详尽说明书：`docs/project/PROJECT_DETAILED_OVERVIEW.md`
-- 功能总览（一页版）：`docs/FEATURES_OVERVIEW.md`
-- 合作/研究计划（学术化版本）：`docs/PROJECT_COLLAB_RESEARCH_PLAN.md`
-- 待办清单：`docs/TODO.md`
-- API 严格索引：`docs/indexes/API_INDEX.md`
-- 标签化目录：`docs/indexes/TAGGED_INDEX.md`
+```powershell
+python -m nsgablack project catalog list --path my_project
+python -m nsgablack project catalog search context_mutates --field context --path my_project --global
+```
 
 ---
 
-## 4) 工程能力地图（高级功能一览）
+## 4) Run Inspector（结构审计 UI）
 
-下面这张清单帮你快速建立“工程能力全貌”的直觉——哪些问题可以用现成能力解决，哪些需要你自己扩展。
+统一入口：
 
-能力层（Plugins）
-- 并行评估（多后端/Ray）：`utils/parallel/*`, `utils/suites/ray_parallel.py`
-- 代理评估/减评估：`utils/plugins/surrogate_evaluation.py`
-- Monte Carlo 统计评估：`utils/plugins/monte_carlo_evaluation.py`
-- Pareto 归档：`utils/plugins/pareto_archive.py`
-- Benchmark 口径输出（CSV + summary）：`utils/plugins/benchmark_harness.py`
-- 模块审计/偏置启用报告：`utils/plugins/module_report.py`
-- 外部存储/数据库记录（可扩展插件）
-- 性能剖析：`utils/plugins/profiler.py`
-- 精英保留、多样性初始化、收敛监控、自适应参数：`utils/plugins/elite_retention.py`, `utils/plugins/diversity_init.py`, `utils/plugins/convergence.py`, `utils/plugins/adaptive_parameters.py`
-- 内存优化：`utils/plugins/memory_optimize.py`
-- 动态切换（软/硬切换基类）：`utils/plugins/dynamic_switch.py`
+```powershell
+python -m nsgablack run_inspector --entry path/to/script.py:build_solver
+```
 
-权威组合（Suites）
-- 并行（Ray）：`utils/suites/ray_parallel.py`
-- 基准口径：`utils/suites/benchmark_harness.py`
-- NSGA-II 工程配套：`utils/suites/nsga2_engineering.py`
-- MonteCarlo 鲁棒：`utils/suites/monte_carlo_robustness.py`
-- 多策略协同：`utils/suites/multi_strategy.py`
-- 动态切换：`utils/suites/dynamic_switch.py`
+你会看到：
+- 左侧 Wiring：Solver / Adapter / Pipeline / Bias / Plugin 组件开关
+- 中间 History：运行记录
+- 右侧 Tabs：Details / Run / Contribution / Trajectory / Catalog / Context
 
-工程基础设施
-- 配置与日志：`utils/engineering/config_loader.py`, `utils/engineering/logging_config.py`
-- 依赖检查：`utils/runtime/dependencies.py`
-- 实验结果结构化：`utils/engineering/experiment.py`
-- 性能加速：`utils/performance/*`
-- 统计指标：`utils/analysis/metrics.py`
+重点：
+- `Catalog` Tab 已支持 `Match=context`
+- `Context` Tab 直接看运行时字段
+- 可用搜索词：`context_requires`、`visualization prior`、`可视化先验`
 
 ---
 
-## 5) 常用工具（懒人优先）
+## 5) 工程能力地图（高频）
 
-- 生成目录索引：`tools/build_catalog.py`
-- 生成 API 文档：`tools/generate_api_docs.py`
-- Run Inspector（Tk）：`utils/viz/visualizer_tk.py`（运行前审查 wiring/偏置/插件）
-- 统一入口：`python -m nsgablack run_inspector --entry path/to/script.py:build_solver`
-- Run Inspector 说明书：`docs/user_guide/RUN_INSPECTOR.md`
+- 评估能力：`plugins/evaluation/`（surrogate / MC / multi-fidelity）
+- 运行能力：`plugins/runtime/`（archive / adaptive / elite / convergence / switch）
+- 审计能力：`plugins/ops/`（benchmark / module_report / profiler / sensitivity）
+- 系统能力：`plugins/system/`（async_event_hub / boundary_guard / memory）
+- 存储能力：`plugins/storage/mysql_run_logger.py`
+- 权威组合：`utils/suites/`
+
+---
+
+## 6) 常用工具（tool 层）
+
+- Catalog 导入完整性检查：
+
+```powershell
+python tools/catalog_integrity_checker.py
+python tools/catalog_integrity_checker.py --check-context
+```
+
+- Catalog 构建：`tools/build_catalog.py`
+- API 文档生成：`tools/generate_api_docs.py`
+
+---
+
+## 7) 常用索引（找不到就看）
+
+- 单文件总手册：`docs/INDEX_MANUAL.md`
+- 端到端流程：`WORKFLOW_END_TO_END.md`
+- 功能总览：`docs/FEATURES_OVERVIEW.md`
+- 示例总览：`docs/AUTHORITATIVE_EXAMPLES.md`
+- context 契约：`docs/user_guide/CONTEXT_CONTRACTS.md`
+- Run Inspector 说明：`docs/user_guide/RUN_INSPECTOR.md`

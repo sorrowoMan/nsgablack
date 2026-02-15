@@ -25,7 +25,7 @@ try:
     from nsgablack.bias import BiasModule
     from nsgablack.bias.domain import DynamicPenaltyBias
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
-    from nsgablack.utils.plugins import DynamicSwitchPlugin, SensitivityAnalysisPlugin, SensitivityAnalysisConfig, SensitivityParam
+    from nsgablack.plugins import DynamicSwitchPlugin, SensitivityAnalysisPlugin, SensitivityAnalysisConfig, SensitivityParam
     from nsgablack.utils.dynamic import SignalProviderBase
     from nsgablack.utils.suites import attach_benchmark_harness, attach_module_report
 except ModuleNotFoundError:  # pragma: no cover - convenience for direct script runs
@@ -48,7 +48,7 @@ except ModuleNotFoundError:  # pragma: no cover - convenience for direct script 
     from nsgablack.bias import BiasModule
     from nsgablack.bias.domain import DynamicPenaltyBias
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
-    from nsgablack.utils.plugins import DynamicSwitchPlugin, SensitivityAnalysisPlugin, SensitivityAnalysisConfig, SensitivityParam
+    from nsgablack.plugins import DynamicSwitchPlugin, SensitivityAnalysisPlugin, SensitivityAnalysisConfig, SensitivityParam
     from nsgablack.utils.dynamic import SignalProviderBase
     from nsgablack.utils.suites import attach_benchmark_harness, attach_module_report
 
@@ -251,7 +251,8 @@ if __name__ == "__main__":
     else:
         solver = build_solver()
         result = solver.run()
-        print("运行状态:", result["status"], "steps:", result["steps"])
+        print("运行状�?", result["status"], "steps:", result["steps"])
         if solver.best_x is not None:
-            print("最优目标值:", f"{solver.best_objective:.6f}")
+            print("最优目标�?", f"{solver.best_objective:.6f}")
             print("最优解:", solver.best_x)
+

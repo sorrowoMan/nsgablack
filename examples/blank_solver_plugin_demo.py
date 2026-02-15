@@ -1,7 +1,7 @@
-﻿"""空白求解器 + 偏置/管线/插件 的组合示例
+"""�հ������ + ƫ��/����/��� �����ʾ��
 
-目标：用 BlankSolverBase 构建一个非进化流程（随机游走 + 贪心保留），
-演示如何把表示管线、偏置系统与插件系统拼装成自定义算法。
+Ŀ�꣺�� BlankSolverBase ����һ���ǽ������̣�������� + ̰�ı������
+��ʾ��ΰѱ�ʾ���ߡ�ƫ��ϵͳ����ϵͳƴװ���Զ����㷨��
 """
 
 import numpy as np
@@ -12,7 +12,7 @@ try:
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
     from nsgablack.bias import BiasModule, ConvergenceBias
-    from nsgablack.utils.plugins import Plugin
+    from nsgablack.plugins import Plugin
 except ModuleNotFoundError:  # pragma: no cover - convenience for direct script runs
     import sys
     from pathlib import Path
@@ -23,11 +23,11 @@ except ModuleNotFoundError:  # pragma: no cover - convenience for direct script 
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
     from nsgablack.bias import BiasModule, ConvergenceBias
-    from nsgablack.utils.plugins import Plugin
+    from nsgablack.plugins import Plugin
 
 
 class SimpleSphereProblem(BlackBoxProblem):
-    """简单 Sphere 单目标问题。"""
+    """�� Sphere ��Ŀ�����⡣"""
 
     def __init__(self, dimension=5, low=-5.0, high=5.0):
         super().__init__(
@@ -44,7 +44,7 @@ class SimpleSphereProblem(BlackBoxProblem):
 
 
 class RandomWalkPlugin(Plugin):
-    """随机游走 + 贪心保留的插件化流程。"""
+    """������� + ̰�ı���Ĳ�������̡�"""
 
     def __init__(self, name="random_walk", buffer_size=20):
         super().__init__(name=name)
@@ -119,7 +119,8 @@ if __name__ == "__main__":
     result = solver.run()
 
     plugin = solver.get_plugin("random_walk")
-    print("运行状态:", result["status"], "steps:", result["steps"])
+    print("����״̬:", result["status"], "steps:", result["steps"])
     if plugin is not None and plugin.best_x is not None:
-        print("最优目标值:", f"{plugin.best_f:.6f}")
-        print("最优解:", plugin.best_x)
+        print("����Ŀ��ֵ:", f"{plugin.best_f:.6f}")
+        print("���Ž�:", plugin.best_x)
+

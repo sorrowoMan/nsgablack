@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ..plugins import BenchmarkHarnessPlugin, ModuleReportPlugin
-from ..plugins import MASModelPlugin
+from ...plugins import BenchmarkHarnessPlugin, ModuleReportPlugin
+from ...plugins import MASModelPlugin
 from ...core.adapters import (
     TrustRegionDFOAdapter,
     TrustRegionSubspaceAdapter,
@@ -32,7 +32,7 @@ def attach_trust_region_subspace(solver) -> None:
 
 def attach_trust_region_subspace_learned(solver) -> None:
     """Attach TrustRegionSubspaceAdapter + learned subspace basis."""
-    from ..plugins import SubspaceBasisPlugin, SubspaceBasisConfig
+    from ...plugins import SubspaceBasisPlugin, SubspaceBasisConfig
 
     solver.adapter = TrustRegionSubspaceAdapter()
     solver.add_plugin(SubspaceBasisPlugin(SubspaceBasisConfig(method="pca")))
@@ -53,3 +53,4 @@ def attach_mas(solver) -> None:
     solver.add_plugin(MASModelPlugin())
     solver.add_plugin(BenchmarkHarnessPlugin())
     solver.add_plugin(ModuleReportPlugin())
+

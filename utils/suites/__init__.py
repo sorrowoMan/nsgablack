@@ -15,6 +15,8 @@ from .nsga2_engineering import attach_nsga2_engineering
 from .module_report import attach_module_report
 from .ray_parallel import attach_ray_parallel
 from .dynamic_switch import attach_dynamic_switch
+from .async_event_driven import attach_async_event_driven
+from .single_trajectory_adaptive import attach_single_trajectory_adaptive
 from .trust_region_local import (
     attach_trust_region_dfo,
     attach_trust_region_subspace,
@@ -45,6 +47,8 @@ __all__ = [
     "attach_nsga2_engineering",
     "attach_ray_parallel",
     "attach_dynamic_switch",
+    "attach_async_event_driven",
+    "attach_single_trajectory_adaptive",
     "attach_trust_region_dfo",
     "attach_trust_region_subspace",
     "attach_trust_region_subspace_learned",

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ..plugins import BenchmarkHarnessConfig, BenchmarkHarnessPlugin
+from ...plugins import BenchmarkHarnessConfig, BenchmarkHarnessPlugin
 
 
 def attach_benchmark_harness(
@@ -46,4 +46,5 @@ def attach_benchmark_harness(
 
     solver.add_plugin(plugin)
     return plugin
+
 

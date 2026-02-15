@@ -21,7 +21,7 @@
 - `__init__.py` — 对外入口聚合 [layer:entry] [goal:api]
 - `__main__.py` — 脚本入口 [layer:entry] [goal:cli]
 - `docs/user_guide/external_api_navigation.md` — 外部入口清单 [layer:docs] [goal:api]
-- `docs/project/PROJECT_DETAILED_OVERVIEW.md` — 极详细说明书 [layer:docs] [goal:overview]
+- `docs/INDEX_MANUAL.md` — 极详细说明书 [layer:docs] [goal:overview]
 
 ---
 
@@ -39,7 +39,7 @@
 
 ## 偏置系统（Bias）
 
-- `bias/bias.py` — 偏置模块（奖惩 + 约束） [layer:bias] [bias:domain]
+- `bias/bias_module.py` — 偏置模块（奖惩 + 约束） [layer:bias] [bias:domain]
 - `bias/bias_base.py` — 偏置基类 [layer:bias] [bias:base]
 - `bias/bias_v2.py` — 新版偏置接口 [layer:bias] [bias:base]
 - `bias/core/base.py` — OptimizationContext 与偏置协议 [layer:bias] [cap:context]
@@ -93,7 +93,7 @@ Core（推荐）
 
 推荐：作为“能力层”接入，不污染底座
 
-- `utils/plugins/surrogate_evaluation.py` — 代理评估短路插件（`SurrogateEvaluationPlugin`）[layer:utils] [goal:surrogate]
+- `plugins/evaluation/surrogate_evaluation.py` — 代理评估短路插件（`SurrogateEvaluationPlugin`）[layer:utils] [goal:surrogate]
 - `utils/surrogate/` — 轻量代理工具（训练/管理/策略的最小实现）[layer:utils] [goal:surrogate]
 
 文档
@@ -131,4 +131,4 @@ Core（推荐）
 - `docs/indexes/TOOLS_INDEX.md` — 工具索引 [layer:docs] [goal:index]
 - `docs/user_guide/bias_system.md` — 偏置系统指南 [layer:docs] [goal:index]
 - `docs/concepts/FRAMEWORK_OVERVIEW.md` — 框架总览（当前）[layer:docs] [goal:overview]
-- `docs/project/PROJECT_DETAILED_OVERVIEW.md` — 极详细说明书 [layer:docs] [goal:overview]
+- `docs/INDEX_MANUAL.md` — 极详细说明书 [layer:docs] [goal:overview]

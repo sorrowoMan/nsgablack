@@ -23,7 +23,7 @@ from ..utils.extension_contracts import (
     normalize_violation,
     stack_population,
 )
-from ..utils.plugins import PluginManager
+from ..plugins import PluginManager
 
 
 class BlankSolverBase:
@@ -195,6 +195,7 @@ class BlankSolverBase:
         individual_id: Optional[int] = None,
         constraints: Optional[np.ndarray] = None,
         violation: Optional[float] = None,
+        individual: Optional[np.ndarray] = None,
     ) -> Dict[str, Any]:
         ctx = {
             "problem": self.problem,
@@ -205,6 +206,8 @@ class BlankSolverBase:
             "constraint_violation": float(violation or 0.0),
             "individual_id": individual_id,
         }
+        if individual is not None:
+            ctx["individual"] = individual
         dynamic = getattr(self, "dynamic_signals", None)
         if dynamic is not None:
             ctx["dynamic"] = dynamic
@@ -245,7 +248,12 @@ class BlankSolverBase:
         obj = normalize_objectives(val, num_objectives=self.num_objectives, name="problem.evaluate")
         cons_arr, violation = evaluate_constraints_safe(self.problem, x)
         violation = normalize_violation(violation, name="constraint_violation")
-        context = self.build_context(individual_id=individual_id, constraints=cons_arr, violation=violation)
+        context = self.build_context(
+            individual_id=individual_id,
+            constraints=cons_arr,
+            violation=violation,
+            individual=x,
+        )
 
         if self.enable_bias and self.bias_module is not None:
             obj = self._apply_bias(obj, x, individual_id, context)

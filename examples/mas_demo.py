@@ -9,7 +9,7 @@ try:
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
     from nsgablack.utils.suites import attach_benchmark_harness
-    from nsgablack.utils.plugins import MASModelPlugin
+    from nsgablack.plugins import MASModelPlugin
 except ModuleNotFoundError:  # pragma: no cover
     import sys
     from pathlib import Path
@@ -21,7 +21,7 @@ except ModuleNotFoundError:  # pragma: no cover
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
     from nsgablack.utils.suites import attach_benchmark_harness
-    from nsgablack.utils.plugins import MASModelPlugin
+    from nsgablack.plugins import MASModelPlugin
 
 
 class SphereProblem(BlackBoxProblem):
@@ -75,3 +75,4 @@ if __name__ == "__main__":
     result = solver.run()
     print("status:", result.get("status"))
     print("best:", solver.best_objective)
+

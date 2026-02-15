@@ -131,6 +131,13 @@ class BiasBase(ABC, BiasInterface):
         self._max_history = 100                              # 保留最近100次调用
         self._current_generation_values = []                 # 当前代的累积值
 
+        # Optional context contract (defaults empty for compatibility).
+        self.context_requires = ()
+        self.context_provides = ()
+        self.context_mutates = ()
+        self.context_cache = ()
+        self.context_notes = None
+
     @abstractmethod
     def compute(self, x: np.ndarray, context: OptimizationContext) -> float:
         """
@@ -188,6 +195,15 @@ class BiasBase(ABC, BiasInterface):
             self._recent_values.pop(0)
 
         return weighted_value                             # 返回加权偏置值
+
+    def get_context_contract(self) -> Dict[str, Any]:
+        return {
+            "requires": getattr(self, "context_requires", ()),
+            "provides": getattr(self, "context_provides", ()),
+            "mutates": getattr(self, "context_mutates", ()),
+            "cache": getattr(self, "context_cache", ()),
+            "notes": getattr(self, "context_notes", None),
+        }
 
     def enable(self):
         """启用偏置"""

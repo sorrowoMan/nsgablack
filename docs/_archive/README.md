@@ -1,12 +1,9 @@
-﻿# _archive
+# docs/_archive
 
-这个目录用于存放历史/重复/未维护的文档（例如：早期长文、已被重构替代的说明等）。
+用途：历史/弃用文档归档。
+边界：不作为当前标准参考。
+示例：旧版架构文档。
 
-原则：
-- 主线文档只保留“事实标准入口”，避免同一概念被多份文档重复解释而漂移
-- 归档内容不保证更新，不属于对外承诺
-
-当前归档文件示例：
-- `FRAMEWORK_OVERVIEW_GARBLED.md`
-- `MULTIPLE_DECOMPOSITION_GARBLED.md`
-
+Purpose: archived/legacy docs.
+Boundary: not current reference.
+Example: old architecture docs.

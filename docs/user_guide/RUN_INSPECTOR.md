@@ -19,6 +19,16 @@ python utils/viz/visualizer_tk.py --entry examples/dynamic_multi_strategy_demo.p
 - `--entry` 指向你的 `build_solver()` 函数。
 - 运行后，会读取当前 solver wiring，并展示可开关的组件。
 
+空启动模式（先用 Catalog 搜索，再 Load 文件）：
+
+```bash
+python -m nsgablack run_inspector --empty --workspace .
+```
+
+在 UI 顶部可直接：
+- `Load`：选择/输入 `*.py` + 函数名（默认 `build_solver`）后加载
+- `Refresh`：代码改动后重新读取当前 entry
+
 ---
 
 ## 2. 界面总览（你会看到什么）
@@ -128,6 +138,9 @@ Contribution 页还会显示：
 Catalog 页：
 - 支持关键词搜索
 - 可过滤 kind（suite / bias / adapter / example 等）
+- `Scope` 支持 `all / project / framework`（全部 / 本地项目组件 / 框架内组件）
+- 选中条目会显示 `How to Use`（适用场景、最小接线、必配组件、配置键、示例入口）
+- 选中条目会显示 `Context Contract`（requires/provides/mutates/cache/notes；为空也会显示 `(none)`）
 
 用于快速回答：
 > “这个功能到底有没有？”

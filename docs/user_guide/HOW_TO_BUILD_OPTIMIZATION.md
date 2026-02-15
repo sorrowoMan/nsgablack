@@ -7,17 +7,21 @@
 ## 你应该看哪里（按推荐顺序）
 
 1) 手把手落地真实问题（强烈推荐）
+
 - `WORKFLOW_END_TO_END.md`
 
-2) 四个解耦对象导读（你会越用越依赖）
+2) 五个解耦对象导读（你会越用越依赖）
+
 - `docs/guides/DECOUPLING_PROBLEM.md`
 - `docs/guides/DECOUPLING_REPRESENTATION.md`
 - `docs/guides/DECOUPLING_BIAS.md`
 - `docs/guides/DECOUPLING_CAPABILITIES.md`
+- `docs/guides/DECOUPLING_ADAPTER.md`
 
 3) 权威示例（参数命名/组合方式事实标准）
+
 - `docs/AUTHORITATIVE_EXAMPLES.md`
 
 4) 案例（当你需要“像真实业务”的东西）
-- `docs/cases/`
 
+- `docs/cases/`

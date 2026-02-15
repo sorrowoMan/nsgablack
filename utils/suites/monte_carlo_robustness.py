@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from ..plugins import MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig
+from ...plugins import MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig
 
 
 def attach_monte_carlo_robustness(
@@ -77,4 +77,5 @@ def attach_monte_carlo_robustness(
         solver.add_plugin(plugin)
 
     return solver
+
 

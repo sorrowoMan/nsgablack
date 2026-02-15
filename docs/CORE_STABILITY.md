@@ -13,7 +13,7 @@ When building new algorithms / doing integrations, prefer relying on:
 - `utils/`:
   - `utils/extension_contracts.py` (executable safeguards)
   - `utils/context/context_keys.py` (canonical context keys)
-  - `utils/plugins/` (capabilities layer)
+  - `plugins/` (capabilities layer)
   - `utils/suites/` (authoritative wiring)
 - `catalog/`: discoverability (search/show/list)
 

@@ -13,7 +13,7 @@ from ...core.adapters import (
     RoleSpec,
     StrategySpec,
 )
-from ..plugins import ParetoArchivePlugin
+from ...plugins import ParetoArchivePlugin
 
 
 def attach_multi_strategy_coop(
@@ -51,3 +51,4 @@ def attach_multi_strategy_coop(
             solver.add_plugin(ParetoArchivePlugin())
 
     return adapter
+

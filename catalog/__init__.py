@@ -10,6 +10,7 @@ it only makes components discoverable.
 """
 
 from .registry import CatalogEntry, get_catalog
+from .usage import CatalogUsage, build_usage_profile, enrich_context_contracts, enrich_usage_contracts
 
 __all__ = [
     "CatalogEntry",
@@ -18,6 +19,10 @@ __all__ = [
     "list_catalog",
     "get_entry",
     "reload_catalog",
+    "CatalogUsage",
+    "build_usage_profile",
+    "enrich_context_contracts",
+    "enrich_usage_contracts",
 ]
 
 

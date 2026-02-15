@@ -19,7 +19,8 @@ def test_stable_catalog_entry_points_importable():
 
 
 def test_profiler_plugin_importable():
-    from nsgablack.utils.plugins import ProfilerPlugin
+    from nsgablack.plugins import ProfilerPlugin
 
     assert ProfilerPlugin is not None
+
 

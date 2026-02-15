@@ -63,6 +63,6 @@ python -m nsgablack catalog search context
 ## 你应该看哪里
 
 - Catalog 指南：`docs/user_guide/catalog.md`
-- Plugins：`utils/plugins/`
+- Plugins：`plugins/`
 - Suites：`utils/suites/`
 

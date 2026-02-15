@@ -12,7 +12,7 @@
 | 直接改目标值（奖励/惩罚） | 函数式偏置 `BiasModule` | 任意脚本/模块 | `BlackBoxSolverNSGAII` |
 | 需要上下文/更复杂逻辑 | 类偏置 `AlgorithmicBias/DomainBias` | `bias/algorithmic` 或 `bias/domain` | 偏置管理器或自定义流程 |
 | 让算法“变成偏置” | 算法偏置（本质还是类偏置或函数偏置） | 同上 | 同上 |
-| 减少真实评估次数（代理评估/短路） | 代理评估插件 `SurrogateEvaluationPlugin` | `utils/plugins` | `ComposableSolver` / `BlankSolverBase` |
+| 减少真实评估次数（代理评估/短路） | 代理评估插件 `SurrogateEvaluationPlugin` | `plugins` | `ComposableSolver` / `BlankSolverBase` |
 
 ---
 

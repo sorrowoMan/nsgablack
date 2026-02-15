@@ -42,11 +42,11 @@ Algorithm decomposition / fusion:
 Custom workflow / non-evolutionary prototype:
 
 - Solver base: `BlankSolverBase`
-- Orchestration: `utils/plugins/*`
+- Orchestration: `plugins/*`
 
 Expensive black-box evaluation (cache / surrogate / short-circuit):
 
-- Plugin: `utils/plugins/surrogate_evaluation.py` (`SurrogateEvaluationPlugin`)
+- Plugin: `plugins/evaluation/surrogate_evaluation.py` (`SurrogateEvaluationPlugin`)
 
 Multi-strategy cooperation (roles + many units + shared facts):
 
@@ -56,7 +56,7 @@ Multi-strategy cooperation (roles + many units + shared facts):
 
 Unified experiment protocol (fair comparisons):
 
-- Plugin: `utils/plugins/benchmark_harness.py`
+- Plugin: `plugins/ops/benchmark_harness.py`
 - Suite: `utils/suites/benchmark_harness.py`
 
 ## 3) Discoverability
