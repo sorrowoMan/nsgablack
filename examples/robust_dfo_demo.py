@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import numpy as np
 
@@ -7,7 +7,7 @@ from nsgablack.core.adapters import TrustRegionDFOAdapter
 from nsgablack.representation import RepresentationPipeline, UniformInitializer, GaussianMutation, ClipRepair
 from nsgablack.bias import BiasModule, DynamicPenaltyBias
 from nsgablack.bias.algorithmic.signal_driven import RobustnessBias
-from nsgablack.utils.plugins import BenchmarkHarnessPlugin, ModuleReportPlugin, MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig
+from nsgablack.plugins import BenchmarkHarnessPlugin, ModuleReportPlugin, MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig
 
 
 class NoisyConstrainedProblem:
@@ -54,9 +54,10 @@ def build_solver():
 def main():
     solver = build_solver()
     result = solver.run(max_generations=40, seed=7)
-    print("运行状态:", result.get("status"))
+    print("����״̬:", result.get("status"))
     print("best_objective:", result.get("best_objective"))
 
 
 if __name__ == "__main__":
     main()
+

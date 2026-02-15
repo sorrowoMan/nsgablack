@@ -31,7 +31,7 @@ python -m nsgablack catalog show adapter.sa
 - `utils/extension_contracts.py`：扩展点契约护栏（shape/语义/副作用边界）
 - `utils/context/context_schema.py`：context 最小 schema（用于扩展点一致性）
 - `utils/context/context_keys.py`：常用 context key 常量（避免各模块各写字符串）
-- `utils/plugins/`：插件系统（日志/调参/评估短路/并行调用等）
+- `plugins/`：插件系统（日志/调参/评估短路/并行调用等）
 - `utils/suites/`：权威组合（attach_* 一键装配，避免漏配）
 - `utils/parallel/evaluator.py`：并行评估工具（推荐 `from nsgablack.utils.parallel import ParallelEvaluator`）
 - `utils/parallel/integration.py`：并行评估集成（保持 solver 底座纯净）

@@ -5,7 +5,7 @@ def test_surrogate_evaluation_plugin_reduces_true_evals_for_composable_solver():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.core.adapters import AlgorithmAdapter
-    from nsgablack.utils.plugins import SurrogateEvaluationPlugin, SurrogateEvaluationConfig
+    from nsgablack.plugins import SurrogateEvaluationPlugin, SurrogateEvaluationConfig
 
     class ExpensiveSphere(BlackBoxProblem):
         def __init__(self, dim=5):
@@ -47,3 +47,4 @@ def test_surrogate_evaluation_plugin_reduces_true_evals_for_composable_solver():
     assert plugin.stats["true_evals"] > 0
     assert plugin.stats["true_evals"] < total_candidates
     assert problem.evaluation_count == plugin.stats["true_evals"]
+

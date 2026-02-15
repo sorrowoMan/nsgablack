@@ -1,8 +1,8 @@
-"""BlankSolverBase vs ComposableSolver 对比示例。
+﻿"""BlankSolverBase vs ComposableSolver demo.
 
-同一问题、同一“随机游走 + 贪心保留”策略，用两种方式实现：
-- BlankSolverBase：流程写在插件里
-- ComposableSolver + Adapter：流程写成可复用算法模块
+Compare two ways to express a greedy search loop:
+- BlankSolverBase: algorithm loop in a plugin
+- ComposableSolver + Adapter: loop as reusable strategy
 """
 
 import numpy as np
@@ -15,7 +15,7 @@ try:
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
     from nsgablack.bias import BiasModule, ConvergenceBias
-    from nsgablack.utils.plugins import Plugin
+    from nsgablack.plugins import Plugin
 except ModuleNotFoundError:  # pragma: no cover - convenience for direct script runs
     import sys
     from pathlib import Path
@@ -28,7 +28,7 @@ except ModuleNotFoundError:  # pragma: no cover - convenience for direct script 
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
     from nsgablack.bias import BiasModule, ConvergenceBias
-    from nsgablack.utils.plugins import Plugin
+    from nsgablack.plugins import Plugin
 
 
 class SimpleSphereProblem(BlackBoxProblem):
@@ -47,7 +47,7 @@ class SimpleSphereProblem(BlackBoxProblem):
 
 
 class GreedyStepPlugin(Plugin):
-    """BlankSolverBase：把算法流程写在插件里。"""
+    """BlankSolverBase: implement algorithm loop in a plugin."""
 
     def __init__(self, name="greedy_plugin"):
         super().__init__(name=name)
@@ -77,7 +77,7 @@ class GreedyStepPlugin(Plugin):
 
 
 class GreedyAdapter(AlgorithmAdapter):
-    """ComposableSolver：把算法逻辑写成可复用模块。"""
+    """ComposableSolver: put algorithm logic into a reusable adapter."""
 
     def __init__(self):
         super().__init__(name="greedy_adapter")
@@ -139,3 +139,4 @@ if __name__ == "__main__":
 
     best_f_comp, best_x_comp = run_composable()
     print("[ComposableSolver] best_f:", f"{best_f_comp:.6f}", "best_x:", best_x_comp)
+

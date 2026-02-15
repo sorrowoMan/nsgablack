@@ -29,6 +29,14 @@
   - 历史实验检索 / 对比 / 回溯
   - 本地 UI 作为前端，服务端提供实验资产
 
+- DB 事件日志升级路径（可选高级能力）
+  - 分层目标：资产层（run/report）→ 事件层（context_events 可回放）
+  - 三表落地：runs / snapshots / context_events（参考 `docs/user_guide/DB_EVENT_LOGGING.md`）
+  - 接入策略：默认不强制；当进入多人协作/批量实验阶段再启用
+  - 写入策略：内存缓冲 + 批量 flush（N 条 / T 秒 / generation_end）+ 后台线程异步落库
+  - 查询策略：按 run_id/step/key/source 建索引，支持快速检索与回放定位
+  - 容错策略：失败重试 + 本地 WAL/临时文件兜底，避免事件丢失
+
 - 组合类型系统与算法 DSL（静态验证 + 解释装配）
   - 扩展 catalog：组件 provides/requires
   - 组合静态检查器：装配前验证缺失/冲突/顺序
@@ -46,4 +54,3 @@
   - 非光滑/复杂约束的信赖域方法
   - 局部搜索的自动设计（LSTM/神经进化）
   - MAS（Model-and-Search）类方法
-

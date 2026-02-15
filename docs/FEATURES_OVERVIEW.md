@@ -150,22 +150,22 @@
 
 ### Plugin（能力层）
 
-- 基类：`utils/plugins/base.py` → `Plugin`  
+- 基类：`plugins/base.py` → `Plugin`  
 - 核心生命周期：`on_solver_init` / `on_generation_end` / `on_solver_finish`
 
 常用插件默认配置：
 
-- `BenchmarkHarnessPlugin`（`utils/plugins/benchmark_harness.py`）  
+- `BenchmarkHarnessPlugin`（`plugins/ops/benchmark_harness.py`）  
   - `output_dir="runs"`  
   - `run_id="run"`  
   - `log_every=1`, `flush_every=10`, `overwrite=False`
 
-- `ModuleReportPlugin`（`utils/plugins/module_report.py`）  
+- `ModuleReportPlugin`（`plugins/ops/module_report.py`）  
   - `output_dir="runs"`  
   - `run_id="run"`  
   - `write_bias_markdown=True`
 
-- `SensitivityAnalysisPlugin`（`utils/plugins/sensitivity_analysis.py`）  
+- `SensitivityAnalysisPlugin`（`plugins/ops/sensitivity_analysis.py`）  
   - `output_dir="runs/sensitivity"`  
   - `run_id="sensitivity"`  
   - `patch_benchmark_run_id=True`

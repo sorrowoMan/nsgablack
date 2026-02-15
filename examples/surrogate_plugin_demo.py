@@ -40,7 +40,7 @@ from nsgablack.core.base import BlackBoxProblem  # noqa: E402
 from nsgablack.core.composable_solver import ComposableSolver  # noqa: E402
 from nsgablack.representation import RepresentationPipeline  # noqa: E402
 from nsgablack.representation.continuous import ClipRepair, GaussianMutation, UniformInitializer  # noqa: E402
-from nsgablack.utils.plugins import SurrogateEvaluationConfig, SurrogateEvaluationPlugin  # noqa: E402
+from nsgablack.plugins import SurrogateEvaluationConfig, SurrogateEvaluationPlugin  # noqa: E402
 from nsgablack.utils.suites import attach_benchmark_harness, attach_simulated_annealing  # noqa: E402
 
 
@@ -119,3 +119,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

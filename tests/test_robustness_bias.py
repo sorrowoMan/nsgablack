@@ -6,7 +6,7 @@ def test_robustness_bias_penalizes_high_mc_std():
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.core.adapters import AlgorithmAdapter
     from nsgablack.bias import BiasModule, RobustnessBias
-    from nsgablack.utils.plugins import MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig
+    from nsgablack.plugins import MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig
 
     class HeteroscedasticNoisySphere(BlackBoxProblem):
         def __init__(self, dim=2):
@@ -106,3 +106,4 @@ def test_suite_attach_monte_carlo_robustness_runs():
     attach_monte_carlo_robustness(solver, mc_samples=8, robustness_weight=0.2, random_seed=0)
     solver.run()
     assert solver.objectives is not None
+

@@ -122,3 +122,11 @@ def metrics_demo() -> str:
 
 def dynamic_cli_signal_demo() -> str:
     return _path("dynamic_cli_signal_demo.py")
+
+
+def async_event_driven_demo() -> str:
+    return _path("async_event_driven_demo.py")
+
+
+def single_trajectory_adaptive_demo() -> str:
+    return _path("single_trajectory_adaptive_demo.py")

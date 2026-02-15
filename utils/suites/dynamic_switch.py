@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional
 
-from ..plugins import DynamicSwitchPlugin
+from ...plugins import DynamicSwitchPlugin
 from ..dynamic import DynamicSwitchConfig, SignalProviderBase
 
 
@@ -40,3 +40,4 @@ def attach_dynamic_switch(
         )
     solver.add_plugin(plugin)
     return solver
+

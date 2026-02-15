@@ -64,12 +64,139 @@ tags = ["adapter", "astar", "core", "graph", "heuristic", "multiobjective", "par
 summary = "多目标A*：Pareto标签与支配剪枝，面向多目标路径。 / Adapter: MOA* with Pareto labels and dominance pruning."
 
 [[entry]]
+key = "adapter.async_event_driven"
+title = "AsyncEventDrivenAdapter"
+kind = "adapter"
+import_path = "nsgablack.core.adapters.async_event_driven:AsyncEventDrivenAdapter"
+tags = ["adapter", "async", "context", "controller", "event", "multi_strategy", "orchestration"]
+summary = "异步事件驱动控制器：以事件队列编排 propose/update。 / Adapter: event-queue orchestration for propose/update."
+companions = ["plugin.async_event_hub", "plugin.pareto_archive", "suite.async_event_driven"]
+context_requires = ["generation"]
+context_provides = ["event_queue", "event_inflight", "event_archive", "event_history", "event_shared"]
+context_mutates = ["event_queue", "event_inflight", "event_archive", "event_history", "event_shared"]
+context_cache = ["event_history", "event_inflight"]
+context_notes = ["Queue-based controller; strategy-level updates are driven by completion events."]
+use_when = ["需要异步时序语义（事件流）而非代际同步时", "希望多策略协同且保持可审计事件历史时"]
+minimal_wiring = [
+  "from nsgablack.core.adapters import AsyncEventDrivenAdapter, AsyncEventDrivenConfig, EventStrategySpec",
+  "solver.set_adapter(AsyncEventDrivenAdapter(strategies=[...], config=AsyncEventDrivenConfig()))"
+]
+required_companions = ["plugin.async_event_hub (recommended)", "plugin.pareto_archive (recommended)"]
+config_keys = ["total_batch_size", "target_queue_size", "bootstrap_events_per_strategy", "max_queue_size", "refill_events_per_completion"]
+example_entry = "examples/async_event_driven_demo.py:build_solver"
+
+[[entry]]
+key = "adapter.single_trajectory_adaptive"
+title = "SingleTrajectoryAdaptiveAdapter"
+kind = "adapter"
+import_path = "nsgablack.core.adapters.single_trajectory_adaptive:SingleTrajectoryAdaptiveAdapter"
+tags = ["adapter", "adaptive", "local_search", "single_trajectory", "strategy"]
+summary = "单轨迹自适应搜索：一条轨迹在线调节邻域尺度。 / Adapter: single-trajectory search with online neighborhood adaptation."
+companions = ["suite.single_trajectory_adaptive", "repr.context_gaussian"]
+context_requires = ["generation"]
+context_provides = ["single_traj_state", "single_traj_sigma"]
+context_mutates = ["single_traj_state", "single_traj_sigma"]
+context_cache = []
+context_notes = ["Maintains one active trajectory; adapts mutation_sigma from success rate."]
+use_when = ["需要比种群法更轻量的单轨迹搜索时", "希望快速迭代并自动调节局部步长时"]
+minimal_wiring = [
+  "from nsgablack.core.adapters import SingleTrajectoryAdaptiveAdapter, SingleTrajectoryAdaptiveConfig",
+  "solver.set_adapter(SingleTrajectoryAdaptiveAdapter(SingleTrajectoryAdaptiveConfig()))"
+]
+required_companions = ["repr.context_gaussian (recommended)"]
+config_keys = ["batch_size", "initial_sigma", "target_success_rate", "restart_patience", "accept_worse_prob"]
+example_entry = "examples/single_trajectory_adaptive_demo.py:build_solver"
+
+[[entry]]
+key = "suite.async_event_driven"
+title = "attach_async_event_driven"
+kind = "suite"
+import_path = "nsgablack.utils.suites:attach_async_event_driven"
+tags = ["async", "authority", "bundle", "event", "suite"]
+summary = "权威装配：异步事件驱动适配器 + 事件中枢 + 归档。 / Authority wiring: async event adapter + event hub + archive."
+companions = ["adapter.async_event_driven", "plugin.async_event_hub", "plugin.pareto_archive"]
+use_when = ["想快速启用事件驱动编排并带上常用运行插件时"]
+minimal_wiring = [
+  "from nsgablack.utils.suites import attach_async_event_driven",
+  "attach_async_event_driven(solver, strategies=[...])"
+]
+required_companions = ["adapter.async_event_driven"]
+config_keys = ["attach_async_hub", "attach_pareto_archive", "config", "async_hub_config"]
+example_entry = "examples/async_event_driven_demo.py:build_solver"
+
+[[entry]]
+key = "suite.single_trajectory_adaptive"
+title = "attach_single_trajectory_adaptive"
+kind = "suite"
+import_path = "nsgablack.utils.suites:attach_single_trajectory_adaptive"
+tags = ["adaptive", "authority", "bundle", "single_trajectory", "suite"]
+summary = "权威装配：单轨迹自适应搜索适配器。 / Authority wiring: single-trajectory adaptive search adapter."
+companions = ["adapter.single_trajectory_adaptive"]
+use_when = ["希望快速启用单轨迹自适应搜索且保持标准装配方式时"]
+minimal_wiring = [
+  "from nsgablack.utils.suites import attach_single_trajectory_adaptive",
+  "attach_single_trajectory_adaptive(solver)"
+]
+required_companions = ["adapter.single_trajectory_adaptive"]
+config_keys = ["config"]
+example_entry = "examples/single_trajectory_adaptive_demo.py:build_solver"
+
+[[entry]]
+key = "example.async_event_driven"
+title = "async_event_driven_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:async_event_driven_demo"
+tags = ["adapter", "async", "demo", "event", "multi_strategy"]
+summary = "示例：异步事件驱动协同优化。 / Example: async event-driven cooperative optimization."
+companions = ["adapter.async_event_driven", "suite.async_event_driven"]
+use_when = ["需要最小可运行样例以理解事件队列编排时"]
+minimal_wiring = ["python examples/async_event_driven_demo.py", "python examples/async_event_driven_demo.py --ui"]
+required_companions = ["suite.async_event_driven"]
+config_keys = ["--ui"]
+example_entry = "examples/async_event_driven_demo.py:build_solver"
+
+[[entry]]
+key = "example.single_trajectory_adaptive"
+title = "single_trajectory_adaptive_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:single_trajectory_adaptive_demo"
+tags = ["adaptive", "demo", "single_trajectory", "strategy"]
+summary = "示例：单轨迹自适应搜索。 / Example: single-trajectory adaptive search."
+companions = ["adapter.single_trajectory_adaptive", "suite.single_trajectory_adaptive"]
+use_when = ["需要最小示例理解单轨迹在线调参搜索时"]
+minimal_wiring = ["python examples/single_trajectory_adaptive_demo.py", "python examples/single_trajectory_adaptive_demo.py --ui"]
+required_companions = ["suite.single_trajectory_adaptive"]
+config_keys = ["--ui"]
+example_entry = "examples/single_trajectory_adaptive_demo.py:build_solver"
+
+[[entry]]
 key = "plugin.dynamic_switch"
 title = "DynamicSwitchPlugin"
 kind = "plugin"
-import_path = "nsgablack.utils.plugins.dynamic_switch:DynamicSwitchPlugin"
+import_path = "nsgablack.plugins.runtime.dynamic_switch:DynamicSwitchPlugin"
 tags = ["context", "dynamic", "plugin", "switch"]
 summary = "\u63d2\u4ef6\uff1aDynamicSwitchPlugin\u3002 / Plugin: DynamicSwitchPlugin."
+
+[[entry]]
+key = "plugin.async_event_hub"
+title = "AsyncEventHubPlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.system.async_event_hub:AsyncEventHubPlugin"
+tags = ["async", "context", "event", "plugin", "runtime"]
+summary = "异步事件中枢：统一排队/提交上下文事件。 / Plugin: async context event queue + commit boundary."
+context_requires = []
+context_provides = ["context_events"]
+context_mutates = ["context_events"]
+context_cache = []
+context_notes = ["Use generation_end commit to avoid half-written snapshots during UI/report reads."]
+use_when = ["插件异步执行且需要统一事件提交边界时", "需要上下文事件回放/审计时"]
+minimal_wiring = [
+  "from nsgablack.plugins import AsyncEventHubPlugin",
+  "solver.add_plugin(AsyncEventHubPlugin())"
+]
+required_companions = []
+config_keys = ["mode", "commit_policy", "max_pending", "drop_policy", "events_key"]
+example_entry = "examples/async_event_driven_demo.py:build_solver"
 
 [[entry]]
 key = "suite.dynamic_switch"
@@ -655,10 +782,303 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.production.scheduling:ProductionSchedulingBias"
 tags = ["bias", "domain", "production", "scheduling"]
 summary = "生产排程偏置：排程优先与负载平衡。 / Domain bias: production scheduling preference."
-[[entries]]
-key = "plugin.mysql_run_logger"
+
+# --- Plugin usability overrides (high-frequency runtime/system/storage/evaluation) ---
+[[entry]]
+key = "plugin.monte_carlo_eval"
+title = "MonteCarloEvaluationPlugin"
 kind = "plugin"
+import_path = "nsgablack.plugins.evaluation.monte_carlo_evaluation:MonteCarloEvaluationPlugin"
+tags = ["evaluation", "mc", "robustness", "plugin"]
+summary = "Monte Carlo 评估插件：对候选解做扰动采样评估并写入统计量。 / Plugin: perturbation-based Monte Carlo evaluation with metrics."
+companions = ["bias.robustness", "suite.monte_carlo_robustness"]
+context_provides = ["metrics.mc_samples", "metrics.mc_mean", "metrics.mc_std", "metrics.mc_min", "metrics.mc_max"]
+context_mutates = ["metrics"]
+use_when = ["需要比较解的稳健性（而非单点幸运值）时", "存在输入扰动/噪声且希望统计意义评估时"]
+minimal_wiring = [
+  "from nsgablack.plugins import MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig",
+  "solver.add_plugin(MonteCarloEvaluationPlugin(config=MonteCarloEvaluationConfig(n_samples=16)))"
+]
+required_companions = ["bias.robustness"]
+config_keys = ["n_samples", "noise_std", "aggregation", "seed", "parallel"]
+example_entry = "examples/monte_carlo_dp_robust_demo.py:build_solver"
+
+[[entry]]
+key = "plugin.surrogate_eval"
+title = "SurrogateEvaluationPlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.evaluation.surrogate_evaluation:SurrogateEvaluationPlugin"
+tags = ["evaluation", "surrogate", "plugin"]
+summary = "代理评估插件：用 surrogate 近似评估并输出不确定度指标。 / Plugin: surrogate-assisted evaluation with uncertainty metrics."
+companions = ["suite.surrogate_assisted_ea"]
+context_provides = ["metrics.surrogate_std"]
+context_mutates = ["metrics"]
+use_when = ["真实评估昂贵，需要先用代理筛选候选时", "希望降低总体评估成本时"]
+minimal_wiring = [
+  "from nsgablack.plugins import SurrogateEvaluationPlugin, SurrogateEvaluationConfig",
+  "solver.add_plugin(SurrogateEvaluationPlugin(config=SurrogateEvaluationConfig()))"
+]
+required_companions = []
+config_keys = ["train_interval", "warmup_evals", "uncertainty_threshold", "model_type", "fallback_on_error"]
+example_entry = "examples/surrogate_plugin_demo.py:build_solver"
+
+[[entry]]
+key = "plugin.multi_fidelity_eval"
+title = "MultiFidelityEvaluationPlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.evaluation.multi_fidelity_evaluation:MultiFidelityEvaluationPlugin"
+tags = ["evaluation", "multi_fidelity", "plugin"]
+summary = "多保真评估插件：按阶段/规则切换低保真与高保真评估。 / Plugin: multi-fidelity evaluation switching between low/high fidelity."
+companions = ["suite.multi_fidelity_eval"]
+use_when = ["评估成本高且可构造低保真近似时", "希望先粗筛再精评时"]
+minimal_wiring = [
+  "from nsgablack.plugins import MultiFidelityEvaluationPlugin, MultiFidelityEvaluationConfig",
+  "solver.add_plugin(MultiFidelityEvaluationPlugin(config=MultiFidelityEvaluationConfig()))"
+]
+required_companions = []
+config_keys = ["low_fidelity_ratio", "switch_step", "budget", "fallback_to_high_fidelity"]
+example_entry = "examples/multi_fidelity_demo.py:build_solver"
+
+[[entry]]
+key = "plugin.mas_model"
+title = "MASModelPlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.models.mas_model:MASModelPlugin"
+tags = ["plugin", "model", "mas", "surrogate"]
+summary = "MAS model plugin: accumulates population/objective samples, trains lightweight surrogate, and exposes context['mas_model'] for MASAdapter."
+companions = ["adapter.mas", "suite.mas"]
+context_requires = []
+context_provides = ["mas_model"]
+context_mutates = ["mas_model"]
+context_cache = []
+context_notes = ["Reads solver.population and solver.objectives on generation end; writes context key mas_model on context build."]
+use_when = ["MASAdapter needs model-guided exploit step.", "Real evaluation is expensive and runtime surrogate guidance is desired."]
+minimal_wiring = [
+  "from nsgablack.plugins import MASModelPlugin, MASModelConfig",
+  "solver.add_plugin(MASModelPlugin(config=MASModelConfig(min_train_samples=20, retrain_every_call=True, model_type='rf')))"
+]
+required_companions = ["adapter.mas"]
+config_keys = ["min_train_samples", "retrain_every_call", "model_type"]
+example_entry = "examples/mas_demo.py:build_solver"
+
+[[entry]]
+key = "plugin.subspace_basis"
+title = "SubspaceBasisPlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.models.subspace_basis:SubspaceBasisPlugin"
+tags = ["plugin", "model", "subspace", "pca", "svd", "random", "cluster", "sparse_pca"]
+summary = "Subspace basis plugin: learns or samples low-rank basis from population and exposes context['subspace_basis'] for trust-region subspace adapters."
+companions = ["adapter.trust_region_subspace", "suite.trust_region_subspace_learned", "suite.trust_region_subspace_frontier"]
+context_requires = []
+context_provides = ["subspace_basis"]
+context_mutates = ["subspace_basis"]
+context_cache = []
+context_notes = ["Reads solver.population on generation end and periodically updates context key subspace_basis."]
+use_when = ["Trust-region subspace search needs data-driven basis instead of purely random basis.", "High-dimensional search benefits from periodic low-rank projection updates."]
+minimal_wiring = [
+  "from nsgablack.plugins import SubspaceBasisPlugin, SubspaceBasisConfig",
+  "solver.add_plugin(SubspaceBasisPlugin(config=SubspaceBasisConfig(method='pca', subspace_dim=8, min_samples=32, update_every=5)))"
+]
+required_companions = ["adapter.trust_region_subspace"]
+config_keys = ["method", "subspace_dim", "min_samples", "update_every", "random_seed"]
+example_entry = "examples/trust_region_subspace_demo.py:build_solver"
+
+[[entry]]
+key = "plugin.pareto_archive"
+title = "ParetoArchivePlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.runtime.pareto_archive:ParetoArchivePlugin"
+tags = ["archive", "pareto", "runtime", "plugin"]
+summary = "Pareto 归档插件：维护非支配解集合并对外提供共享前沿状态。 / Plugin: maintain non-dominated archive and shared frontier state."
+companions = ["adapter.multi_strategy", "suite.multi_strategy", "suite.moead"]
+use_when = ["多目标优化需要稳定维护前沿解时", "多策略协同需要共享档案时"]
+minimal_wiring = [
+  "from nsgablack.plugins import ParetoArchivePlugin, ParetoArchiveConfig",
+  "solver.add_plugin(ParetoArchivePlugin(config=ParetoArchiveConfig(max_size=200)))"
+]
+required_companions = []
+config_keys = ["max_size", "deduplicate", "dominance_eps", "export_path"]
+example_entry = "examples/dynamic_multi_strategy_demo.py:build_solver"
+
+[[entry]]
+key = "plugin.benchmark_harness"
+title = "BenchmarkHarnessPlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.ops.benchmark_harness:BenchmarkHarnessPlugin"
+tags = ["benchmark", "ops", "report", "plugin"]
+summary = "基准输出插件：统一记录 run 产物和指标口径。 / Plugin: standardized benchmark artifacts and metric protocol."
+companions = ["suite.benchmark_harness", "plugin.module_report"]
+use_when = ["需要统一实验输出口径（CSV/JSON）时", "要做横向对比与批量复现时"]
+minimal_wiring = [
+  "from nsgablack.plugins import BenchmarkHarnessPlugin, BenchmarkHarnessConfig",
+  "solver.add_plugin(BenchmarkHarnessPlugin(config=BenchmarkHarnessConfig(output_dir='runs')))"
+]
+required_companions = []
+config_keys = ["output_dir", "run_id", "overwrite", "log_every", "save_population"]
+example_entry = "examples/benchmark_harness_demo.py:build_solver"
+
+[[entry]]
+key = "plugin.module_report"
+title = "ModuleReportPlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.ops.module_report:ModuleReportPlugin"
+tags = ["ops", "audit", "ablation", "plugin"]
+summary = "模块审计插件：记录组件组合、参数与贡献摘要。 / Plugin: module-level audit and contribution report."
+companions = ["suite.module_report", "plugin.benchmark_harness"]
+use_when = ["需要做组件贡献归因/消融报告时", "希望对每次实验的组件接线留痕时"]
+minimal_wiring = [
+  "from nsgablack.plugins import ModuleReportPlugin, ModuleReportConfig",
+  "solver.add_plugin(ModuleReportPlugin(config=ModuleReportConfig(output_dir='runs')))"
+]
+required_companions = []
+config_keys = ["output_dir", "run_id", "write_markdown", "include_contracts", "include_hash"]
+example_entry = "examples/dynamic_multi_strategy_demo.py:build_solver"
+
+[[entry]]
+key = "plugin.profiler"
+title = "ProfilerPlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.ops.profiler:ProfilerPlugin"
+tags = ["ops", "profile", "performance", "plugin"]
+summary = "性能剖析插件：统计阶段耗时与吞吐。 / Plugin: runtime profiling for stage latency and throughput."
+companions = ["plugin.benchmark_harness"]
+use_when = ["怀疑评估/插件/调度成为瓶颈时", "需要输出性能证据做优化决策时"]
+minimal_wiring = [
+  "from nsgablack.plugins import ProfilerPlugin, ProfilerConfig",
+  "solver.add_plugin(ProfilerPlugin(config=ProfilerConfig()))"
+]
+required_companions = []
+config_keys = ["log_interval", "include_plugin_breakdown", "output_path", "enabled_events"]
+example_entry = "examples/plugin_gallery_demo.py:build_solver"
+
+[[entry]]
+key = "plugin.dynamic_switch"
+title = "DynamicSwitchPlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.runtime.dynamic_switch:DynamicSwitchPlugin"
+tags = ["runtime", "dynamic", "switch", "plugin"]
+summary = "动态切换插件：按信号驱动阶段/策略软硬切换。 / Plugin: signal-driven runtime mode/strategy switching."
+context_provides = ["dynamic", "phase_id"]
+context_mutates = ["dynamic", "phase_id"]
+use_when = ["希望根据收敛状态动态调整策略权重时", "需要显式阶段切换（explore/exploit）时"]
+minimal_wiring = [
+  "from nsgablack.plugins import DynamicSwitchPlugin",
+  "solver.add_plugin(DynamicSwitchPlugin(should_switch_fn=..., soft_switch_fn=...))"
+]
+required_companions = []
+config_keys = ["should_switch_fn", "soft_switch_fn", "hard_switch_fn", "signal_provider", "config"]
+example_entry = "examples/dynamic_multi_strategy_demo.py:build_solver"
+
+[[entry]]
+key = "plugin.async_event_hub"
+title = "AsyncEventHubPlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.system.async_event_hub:AsyncEventHubPlugin"
+tags = ["system", "async", "event", "plugin"]
+summary = "异步事件中枢：统一事件排队与提交边界，避免半状态读取。 / Plugin: unified async event queue and commit boundary."
+context_provides = ["context_events"]
+context_mutates = ["context_events"]
+use_when = ["插件/策略异步执行且需要最终一致性时", "需要 context 事件回放和时序审计时"]
+minimal_wiring = [
+  "from nsgablack.plugins import AsyncEventHubPlugin, AsyncEventHubConfig",
+  "solver.add_plugin(AsyncEventHubPlugin(cfg=AsyncEventHubConfig(commit_policy='generation_end')))"
+]
+required_companions = []
+config_keys = ["mode", "commit_policy", "max_pending", "drop_policy", "events_key"]
+example_entry = "examples/async_event_driven_demo.py:build_solver"
+
+[[entry]]
+key = "plugin.mysql_run_logger"
 title = "MySQLRunLoggerPlugin"
-summary = "MySQL 运行日志插件：把 run_id / 结果 / 模块报告路径写入数据库。 / MySQL run logger plugin: persist run metadata and report paths."
-import_path = "nsgablack.utils.plugins.mysql_run_logger:MySQLRunLoggerPlugin"
-tags = ["mysql", "database", "logging", "run", "experiment"]
+kind = "plugin"
+import_path = "nsgablack.plugins.storage.mysql_run_logger:MySQLRunLoggerPlugin"
+tags = ["storage", "mysql", "database", "plugin"]
+summary = "MySQL 运行日志插件：持久化 run 元数据与报告路径。 / Plugin: persist run metadata and report paths to MySQL."
+use_when = ["多人协作需要集中检索实验资产时", "批量实验需要统一落库管理时"]
+minimal_wiring = [
+  "from nsgablack.plugins import MySQLRunLoggerPlugin, MySQLRunLoggerConfig",
+  "solver.add_plugin(MySQLRunLoggerPlugin(config=MySQLRunLoggerConfig(database='nsgablack')))"
+]
+required_companions = []
+config_keys = ["host", "port", "user", "password", "database", "table", "connect_timeout"]
+example_entry = "python -m nsgablack catalog show plugin.mysql_run_logger"
+
+[[entry]]
+key = "plugin.adaptive_parameters"
+title = "AdaptiveParametersPlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.runtime.adaptive_parameters:AdaptiveParametersPlugin"
+tags = ["runtime", "adaptive", "plugin", "parameters"]
+summary = "自适应参数插件：根据停滞/改进状态调节搜索参数。 / Plugin: adapt mutation/crossover parameters from progress signals."
+use_when = ["搜索出现早熟收敛或停滞时", "希望减少手工调参频率时"]
+minimal_wiring = [
+  "from nsgablack.plugins import AdaptiveParametersPlugin",
+  "solver.add_plugin(AdaptiveParametersPlugin())"
+]
+required_companions = []
+config_keys = ["stagnation_window", "improvement_threshold", "min_mutation_rate", "max_mutation_rate", "min_crossover_rate", "max_crossover_rate"]
+example_entry = "examples/plugin_gallery_demo.py:build_solver"
+
+[[entry]]
+key = "plugin.convergence_monitor"
+title = "ConvergencePlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.runtime.convergence:ConvergencePlugin"
+tags = ["runtime", "convergence", "monitor", "plugin"]
+summary = "收敛监控插件：监测停滞与多样性，支持早停策略。 / Plugin: convergence/stagnation monitor with optional early stop."
+use_when = ["希望在无效迭代阶段提前终止时", "需要可解释的收敛过程信号时"]
+minimal_wiring = [
+  "from nsgablack.plugins import ConvergencePlugin",
+  "solver.add_plugin(ConvergencePlugin())"
+]
+required_companions = []
+config_keys = ["stagnation_window", "improvement_epsilon", "diversity_threshold", "min_generations", "enable_early_stop"]
+example_entry = "examples/nsga2_solver_demo.py:build_solver"
+
+[[entry]]
+key = "plugin.diversity_init"
+title = "DiversityInitPlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.runtime.diversity_init:DiversityInitPlugin"
+tags = ["runtime", "diversity", "initializer", "plugin"]
+summary = "多样性初始化插件：降低初始群体重复与相似解比例。 / Plugin: improve initial population diversity by duplicate/similarity control."
+use_when = ["初始化种群容易重复、覆盖不足时", "希望提高早期探索广度时"]
+minimal_wiring = [
+  "from nsgablack.plugins import DiversityInitPlugin",
+  "solver.add_plugin(DiversityInitPlugin())"
+]
+required_companions = []
+config_keys = ["similarity_threshold", "rejection_prob"]
+example_entry = "examples/blank_solver_plugin_demo.py:build_solver"
+
+[[entry]]
+key = "plugin.elite"
+title = "BasicElitePlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.runtime.elite_retention:BasicElitePlugin"
+tags = ["runtime", "elite", "retention", "plugin"]
+summary = "精英保留插件：保留高质量个体，降低退化风险。 / Plugin: elite retention to reduce quality regression."
+use_when = ["搜索后期解质量波动较大时", "希望提高最优解稳定性时"]
+minimal_wiring = [
+  "from nsgablack.plugins import BasicElitePlugin",
+  "solver.add_plugin(BasicElitePlugin())"
+]
+required_companions = []
+config_keys = ["retention_prob", "retention_ratio"]
+example_entry = "examples/nsga2_solver_demo.py:build_solver"
+
+[[entry]]
+key = "plugin.memory"
+title = "MemoryPlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.system.memory_optimize:MemoryPlugin"
+tags = ["system", "memory", "runtime", "plugin"]
+summary = "内存优化插件：周期清理临时数据并记录内存指标。 / Plugin: periodic memory cleanup with memory metric snapshots."
+use_when = ["长时运行存在内存增长风险时", "并行评估导致内存压力较大时"]
+minimal_wiring = [
+  "from nsgablack.plugins import MemoryPlugin",
+  "solver.add_plugin(MemoryPlugin())"
+]
+required_companions = []
+config_keys = ["cleanup_interval", "enable_auto_gc"]
+example_entry = "examples/plugin_gallery_demo.py:build_solver"

@@ -15,7 +15,7 @@ Core idea:
 - Controller: `core/adapters/multi_strategy.py` (`MultiStrategyControllerAdapter`)
 - Role wrapper + contracts: `core/adapters/role_adapters.py` (`RoleAdapter`)
 - Authoritative wiring: `utils/suites/multi_strategy.py` (`attach_multi_strategy_coop`)
-- Shared archive (recommended): `utils/plugins/pareto_archive.py`
+- Shared archive (recommended): `plugins/runtime/pareto_archive.py`
 
 ## Task / report contract
 

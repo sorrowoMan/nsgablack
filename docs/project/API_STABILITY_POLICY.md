@@ -23,7 +23,7 @@ Stable 的含义：
 - `python -m nsgablack catalog ...`（可发现性）
 - `nsgablack.catalog` 的查询 API（`get_catalog/search/list/show` 等）
 - `utils/suites/` 下的 suite（“权威装配”）
-- `utils/plugins/base.py` 的插件契约（hook 名称与基本语义）
+- `plugins/base.py` 的插件契约（hook 名称与基本语义）
 - `utils/context/context_schema.py` 的最小 context schema
 
 ### 1.2 Provisional（试用 / 可能变）

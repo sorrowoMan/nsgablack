@@ -26,7 +26,7 @@ class RunView:
         ttk.Entry(self.tab, textvariable=self.app.run_id_var).pack(fill="x", pady=(6, 6))
         btn_row = ttk.Frame(self.tab)
         btn_row.pack(fill="x")
-        ttk.Button(btn_row, text="Rebuild", command=self.app._rebuild_solver).pack(
+        ttk.Button(btn_row, text="Refresh", command=self.app._refresh_current_entry).pack(
             side="left",
             expand=True,
             fill="x",
@@ -92,6 +92,7 @@ class RunView:
             "entry": self.app.entry,
             "run_id": run_id,
             "timestamp": time.time(),
+            "schema_version": 1,
             "solver": solver.__class__.__name__ if solver else None,
             "adapter": adapter.__class__.__name__ if adapter else None,
             "strategies": [],
@@ -230,8 +231,11 @@ class RunView:
                     print(f"[ui] plugins(enabled)={enabled_plugins}")
                 if enabled_strategies:
                     print(f"[ui] strategies(enabled)={enabled_strategies}")
-                (RUNS_DIR / f"{run_id}.json").write_text(
-                    json.dumps(snap, indent=2, ensure_ascii=False), encoding="utf-8"
+                from ...engineering.file_io import atomic_write_text
+                atomic_write_text(
+                    RUNS_DIR / f"{run_id}.json",
+                    json.dumps(snap, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
                 )
                 try:
                     self.app.solver._ui_snapshot = snap
@@ -285,6 +289,8 @@ class RunView:
                 if self.app.contrib_view:
                     self.app.contrib_view.add_run_choice(run_id)
                     self.app.contrib_view.refresh_contribution()
+                if getattr(self.app, "context_view", None):
+                    self.app.context_view.refresh()
                 if self.app.close_on_finish_var.get():
                     self.app.destroy()
             self.app.after(0, _finish)

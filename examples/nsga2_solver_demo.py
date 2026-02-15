@@ -1,11 +1,11 @@
-﻿"""NSGA-II solver demo with engineering suite wiring."""
+"""NSGA-II solver demo with engineering suite wiring."""
 
 import numpy as np
 
 try:
     from nsgablack.core.solver import BlackBoxSolverNSGAII
     from nsgablack.utils.suites import attach_nsga2_engineering
-    from nsgablack.utils.plugins import BenchmarkHarnessPlugin, ModuleReportPlugin
+    from nsgablack.plugins import BenchmarkHarnessPlugin, ModuleReportPlugin
 except ModuleNotFoundError:  # pragma: no cover
     import sys
     from pathlib import Path
@@ -13,7 +13,7 @@ except ModuleNotFoundError:  # pragma: no cover
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from nsgablack.core.solver import BlackBoxSolverNSGAII
     from nsgablack.utils.suites import attach_nsga2_engineering
-    from nsgablack.utils.plugins import BenchmarkHarnessPlugin, ModuleReportPlugin
+    from nsgablack.plugins import BenchmarkHarnessPlugin, ModuleReportPlugin
 
 
 class BiObjectiveSphere:
@@ -56,3 +56,4 @@ if __name__ == "__main__":
     result = solver.run(max_generations=40, seed=3)
     print("status:", result.get("status"))
     print("best objective:", result.get("best_objective"))
+

@@ -45,7 +45,7 @@ nsgablack/
 
 ### 2.4 `utils/`（横切能力与基础设施）
 
-- `utils/plugins/`：插件系统（日志/调参/并行评估调用/评估短路等）
+- `plugins/`：插件系统（日志/调参/并行评估调用/评估短路等）
 - `utils/suites/`：权威组合（attach_* 一键装配，避免漏配）
 - `utils/parallel/evaluator.py`：并行评估工具（推荐 import：`from nsgablack.utils.parallel import ParallelEvaluator`）
 - `utils/extension_contracts.py`：扩展点契约护栏（可执行约定）

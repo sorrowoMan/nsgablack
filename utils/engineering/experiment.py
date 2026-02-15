@@ -3,6 +3,7 @@ import os
 from datetime import datetime
 from typing import Dict, Any, Optional
 import numpy as np
+from .file_io import atomic_write_json
 
 
 class ExperimentResult:
@@ -52,8 +53,7 @@ class ExperimentResult:
             'config': self.config,
             'metrics': self.metrics
         }
-        with open(os.path.join(exp_dir, "config.json"), 'w') as f:
-            json.dump(config_data, f, indent=2)
+        atomic_write_json(os.path.join(exp_dir, "config.json"), config_data, ensure_ascii=False, indent=2)
 
         # Save history
         if self.history:
@@ -76,8 +76,13 @@ class ExperimentResult:
                 return obj
 
             safe_history = _to_serializable(self.history)
-            with open(os.path.join(exp_dir, "history.json"), 'w', encoding='utf-8') as f:
-                json.dump({'history': safe_history}, f, indent=2, ensure_ascii=False)
+            atomic_write_json(
+                os.path.join(exp_dir, "history.json"),
+                {"history": safe_history},
+                ensure_ascii=False,
+                indent=2,
+                encoding="utf-8",
+            )
 
         return exp_dir
 

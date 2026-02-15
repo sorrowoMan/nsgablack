@@ -8,7 +8,7 @@ Attaches ModuleReportPlugin to write:
 
 from __future__ import annotations
 
-from ..plugins import ModuleReportConfig, ModuleReportPlugin
+from ...plugins import ModuleReportConfig, ModuleReportPlugin
 
 
 def attach_module_report(
@@ -33,4 +33,5 @@ def attach_module_report(
 
     solver.add_plugin(plugin)
     return plugin
+
 

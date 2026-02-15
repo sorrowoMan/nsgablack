@@ -34,3 +34,8 @@ KEY_PHASE = "phase"
 KEY_REGION_ID = "region_id"
 KEY_REGION_BOUNDS = "region_bounds"
 KEY_SEEDS = "seeds"
+
+# Context meta
+KEY_CONTEXT_SCHEMA = "context_schema"
+KEY_CONTEXT_EVENTS = "context_events"
+KEY_CONTEXT_CACHE = "context_cache"

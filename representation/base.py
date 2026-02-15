@@ -124,6 +124,12 @@ class CrossoverPlugin(Protocol):
 
 @dataclass
 class RepresentationPipeline:
+    # Optional context contract (class-level defaults)
+    context_requires: tuple = field(default_factory=tuple)
+    context_provides: tuple = field(default_factory=tuple)
+    context_mutates: tuple = field(default_factory=tuple)
+    context_cache: tuple = field(default_factory=tuple)
+    context_notes: Optional[str] = None
     encoder: Optional[EncodingPlugin] = None
     repair: Optional[RepairPlugin] = None
     initializer: Optional[InitPlugin] = None
@@ -141,6 +147,15 @@ class RepresentationPipeline:
     copy_context: bool = False
     threadsafe: bool = False
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False, compare=False)
+
+    def get_context_contract(self) -> dict:
+        return {
+            "requires": self.context_requires,
+            "provides": self.context_provides,
+            "mutates": self.context_mutates,
+            "cache": self.context_cache,
+            "notes": self.context_notes,
+        }
 
     def _maybe_lock(self):
         return self._lock if self.threadsafe else contextlib.nullcontext()

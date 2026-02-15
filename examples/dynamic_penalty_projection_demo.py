@@ -1,11 +1,11 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import numpy as np
 
 from nsgablack.core.solver import BlackBoxSolverNSGAII
 from nsgablack.representation import RepresentationPipeline, UniformInitializer, GaussianMutation, ProjectionRepair
 from nsgablack.bias import BiasModule, DynamicPenaltyBias
-from nsgablack.utils.plugins import BenchmarkHarnessPlugin
+from nsgablack.plugins import BenchmarkHarnessPlugin
 
 
 class SimpleConstrainedProblem:
@@ -66,10 +66,11 @@ def build_solver():
 def main():
     solver = build_solver()
     result = solver.run(max_generations=40, seed=7)
-    print("运行状态:", result.get("status"))
-    print("最优目标值:", result.get("best_objective"))
-    print("最优解:", result.get("best_solution"))
+    print("����״̬:", result.get("status"))
+    print("����Ŀ��ֵ:", result.get("best_objective"))
+    print("���Ž�:", result.get("best_solution"))
 
 
 if __name__ == "__main__":
     main()
+

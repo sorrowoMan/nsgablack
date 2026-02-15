@@ -5,7 +5,7 @@ def test_surrogate_plugin_accepts_pretrained_model_without_online_training():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.core.adapters import AlgorithmAdapter
-    from nsgablack.utils.plugins import SurrogateEvaluationPlugin, SurrogateEvaluationConfig
+    from nsgablack.plugins import SurrogateEvaluationPlugin, SurrogateEvaluationConfig
 
     class DummySurrogate:
         def predict(self, X):
@@ -51,3 +51,4 @@ def test_surrogate_plugin_accepts_pretrained_model_without_online_training():
     assert solver.objectives is not None
     # since we used pure surrogate prediction and no bias, values should match sum(x^2)
     assert float(solver.objectives[0, 0]) == 0.0
+

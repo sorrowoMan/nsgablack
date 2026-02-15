@@ -27,19 +27,21 @@ def attach_nsga2_engineering(
     """
 
     if enable_basic_elite:
-        from ..plugins.elite_retention import BasicElitePlugin
+        from ...plugins.runtime.elite_retention import BasicElitePlugin
 
         solver.add_plugin(BasicElitePlugin(retention_prob=0.9, retention_ratio=0.1))
 
     if enable_convergence:
-        from ..plugins.convergence import ConvergencePlugin
+        from ...plugins.runtime.convergence import ConvergencePlugin
 
         solver.add_plugin(ConvergencePlugin(enable_early_stop=bool(convergence_early_stop)))
 
     if enable_diversity_metrics:
-        from ..plugins.diversity_init import DiversityInitPlugin
+        from ...plugins.runtime.diversity_init import DiversityInitPlugin
 
         solver.add_plugin(DiversityInitPlugin())
 
     return solver
+
+
 

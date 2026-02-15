@@ -20,7 +20,7 @@ def attach_moead(
     archive: bool = True,
 ) -> Any:
     from ...core.adapters import MOEADAdapter, MOEADConfig
-    from ..plugins import ParetoArchivePlugin
+    from ...plugins import ParetoArchivePlugin
 
     cfg = config if config is not None else MOEADConfig()
 
@@ -41,4 +41,5 @@ def attach_moead(
         solver.add_plugin(ParetoArchivePlugin())
 
     return solver
+
 

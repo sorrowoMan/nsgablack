@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 from abc import ABC, abstractmethod
 import time
 
-from ..plugins.base import Plugin
+from ...plugins.base import Plugin
 
 
 @dataclass
@@ -55,6 +55,13 @@ class DynamicSwitchBase(Plugin, ABC):
     - when to switch (should_switch)
     - how to switch (soft_switch/hard_switch)
     """
+    context_requires = ()
+    context_provides = ("dynamic", "phase_id")
+    context_mutates = ("dynamic", "phase_id")
+    context_cache = ()
+    context_notes = (
+        "Builds dynamic switch context and syncs solver dynamic phase/signals/events."
+    )
 
     def __init__(
         self,
@@ -194,3 +201,4 @@ class DynamicSwitchBase(Plugin, ABC):
                     }
                 )
         return weights
+

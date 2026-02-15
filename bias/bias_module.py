@@ -42,6 +42,22 @@ class BiasModule:
         # Callback for cache invalidation when bias params change
         self._param_change_handler = self._on_bias_param_change
 
+        # Optional context contract (defaults empty for compatibility).
+        self.context_requires = ()
+        self.context_provides = ()
+        self.context_mutates = ()
+        self.context_cache = ()
+        self.context_notes = None
+
+    def get_context_contract(self) -> Dict[str, Any]:
+        return {
+            "requires": getattr(self, "context_requires", ()),
+            "provides": getattr(self, "context_provides", ()),
+            "mutates": getattr(self, "context_mutates", ()),
+            "cache": getattr(self, "context_cache", ()),
+            "notes": getattr(self, "context_notes", None),
+        }
+
     @classmethod
     def from_universal_manager(cls, manager: UniversalBiasManager) -> "BiasModule":
         bias_module = cls()
