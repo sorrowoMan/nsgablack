@@ -16,12 +16,27 @@ import numpy as np
 
 from .core.base import AlgorithmicBias, DomainBias, OptimizationContext
 from .core.manager import UniversalBiasManager
+from ..utils.context.context_keys import (
+    KEY_CONSTRAINTS,
+    KEY_CONSTRAINT_VIOLATION,
+    KEY_GENERATION,
+    KEY_HISTORY,
+    KEY_INDIVIDUAL_ID,
+    KEY_METRICS,
+    KEY_POPULATION,
+    KEY_PROBLEM_DATA,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class BiasModule:
     """Facade over UniversalBiasManager used by solvers and utilities."""
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Bias facade: aggregates algorithmic/domain bias contracts."
 
     def __init__(self):
         self._manager = UniversalBiasManager()
@@ -43,19 +58,47 @@ class BiasModule:
         self._param_change_handler = self._on_bias_param_change
 
         # Optional context contract (defaults empty for compatibility).
-        self.context_requires = ()
-        self.context_provides = ()
-        self.context_mutates = ()
-        self.context_cache = ()
-        self.context_notes = None
+        self.context_requires = tuple(getattr(self, "context_requires", ()) or ())
+        self.context_provides = tuple(getattr(self, "context_provides", ()) or ())
+        self.context_mutates = tuple(getattr(self, "context_mutates", ()) or ())
+        self.context_cache = tuple(getattr(self, "context_cache", ()) or ())
+        self.context_notes = getattr(self, "context_notes", None)
 
     def get_context_contract(self) -> Dict[str, Any]:
+        requires = set(getattr(self, "context_requires", ()) or ())
+        provides = set(getattr(self, "context_provides", ()) or ())
+        mutates = set(getattr(self, "context_mutates", ()) or ())
+        cache = set(getattr(self, "context_cache", ()) or ())
+        notes = [str(getattr(self, "context_notes", "") or "").strip()]
+
+        for mgr in (
+            getattr(self._manager, "algorithmic_manager", None),
+            getattr(self._manager, "domain_manager", None),
+        ):
+            if mgr is None:
+                continue
+            for bias in getattr(mgr, "biases", {}).values():
+                if bias is None or not hasattr(bias, "get_context_contract"):
+                    continue
+                try:
+                    sub = bias.get_context_contract() or {}
+                except Exception:
+                    continue
+                requires.update(sub.get("requires", ()) or ())
+                provides.update(sub.get("provides", ()) or ())
+                mutates.update(sub.get("mutates", ()) or ())
+                cache.update(sub.get("cache", ()) or ())
+                note = str(sub.get("notes", "") or "").strip()
+                if note:
+                    notes.append(note)
+
+        note_text = " | ".join(x for x in notes if x)
         return {
-            "requires": getattr(self, "context_requires", ()),
-            "provides": getattr(self, "context_provides", ()),
-            "mutates": getattr(self, "context_mutates", ()),
-            "cache": getattr(self, "context_cache", ()),
-            "notes": getattr(self, "context_notes", None),
+            "requires": sorted(requires),
+            "provides": sorted(provides),
+            "mutates": sorted(mutates),
+            "cache": sorted(cache),
+            "notes": note_text or None,
         }
 
     @classmethod
@@ -125,8 +168,8 @@ class BiasModule:
 
         if context is None:
             context = {}
-        context.setdefault("constraints", [])
-        context.setdefault("generation", 0)
+        context.setdefault(KEY_CONSTRAINTS, [])
+        context.setdefault(KEY_GENERATION, 0)
 
         x_bytes = None
         if self.cache_enabled:
@@ -158,8 +201,8 @@ class BiasModule:
     ) -> np.ndarray:
         if context is None:
             context = {}
-        context.setdefault("constraints", [])
-        context.setdefault("generation", 0)
+        context.setdefault(KEY_CONSTRAINTS, [])
+        context.setdefault(KEY_GENERATION, 0)
 
         obj_arr = np.asarray(objective_values, dtype=float).reshape(-1)
         out = obj_arr.copy()
@@ -234,7 +277,7 @@ class BiasModule:
                     individual_id,
                     float(objective_value),
                     _x_bytes if _x_bytes is not None else np.asarray(x).tobytes(),
-                    context.get("generation", 0),
+                    context.get(KEY_GENERATION, 0),
                     self._bias_cache_version,
                 )
                 cached = self._bias_cache.get(cache_key)
@@ -272,33 +315,33 @@ class BiasModule:
         individual_id: int,
         context: Dict[str, Any],
     ) -> Optional[OptimizationContext]:
-        extra_metrics = context.get("metrics", {})
+        extra_metrics = context.get(KEY_METRICS, {})
         if not isinstance(extra_metrics, dict):
             extra_metrics = {}
 
         if self._context_cache is None:
             try:
-                problem_data = context.get("problem_data", {})
+                problem_data = context.get(KEY_PROBLEM_DATA, {})
                 if not isinstance(problem_data, dict):
                     problem_data = {}
                 else:
                     problem_data = dict(problem_data)
-                if "constraints" in context:
-                    problem_data.setdefault("constraints", context.get("constraints", []))
+                if KEY_CONSTRAINTS in context:
+                    problem_data.setdefault(KEY_CONSTRAINTS, context.get(KEY_CONSTRAINTS, []))
 
                 metrics = {
                     "objective_value": objective_value,
-                    "individual_id": individual_id,
-                    "constraint_violation": context.get("constraint_violation", 0.0),
+                    KEY_INDIVIDUAL_ID: individual_id,
+                    KEY_CONSTRAINT_VIOLATION: context.get(KEY_CONSTRAINT_VIOLATION, 0.0),
                 }
                 metrics.update(extra_metrics)
 
                 self._context_cache = OptimizationContext(
-                    generation=context.get("generation", 0),
+                    generation=context.get(KEY_GENERATION, 0),
                     individual=x,
-                    population=context.get("population", []),
+                    population=context.get(KEY_POPULATION, []),
                     metrics=metrics,
-                    history=context.get("history", []),
+                    history=context.get(KEY_HISTORY, []),
                     problem_data=problem_data,
                 )
             except Exception:
@@ -306,25 +349,25 @@ class BiasModule:
 
         try:
             ctx = copy.copy(self._context_cache)
-            setattr(ctx, "generation", context.get("generation", 0))
+            setattr(ctx, "generation", context.get(KEY_GENERATION, 0))
             setattr(ctx, "individual", x)
-            setattr(ctx, "population", context.get("population", []))
+            setattr(ctx, "population", context.get(KEY_POPULATION, []))
             metrics = {
                 "objective_value": objective_value,
-                "individual_id": individual_id,
-                "constraint_violation": context.get("constraint_violation", 0.0),
+                KEY_INDIVIDUAL_ID: individual_id,
+                KEY_CONSTRAINT_VIOLATION: context.get(KEY_CONSTRAINT_VIOLATION, 0.0),
             }
             metrics.update(extra_metrics)
             setattr(ctx, "metrics", metrics)
             try:
-                setattr(ctx, "history", context.get("history", []))
-                problem_data = context.get("problem_data", {})
+                setattr(ctx, "history", context.get(KEY_HISTORY, []))
+                problem_data = context.get(KEY_PROBLEM_DATA, {})
                 if not isinstance(problem_data, dict):
                     problem_data = {}
                 else:
                     problem_data = dict(problem_data)
-                if "constraints" in context:
-                    problem_data.setdefault("constraints", context.get("constraints", []))
+                if KEY_CONSTRAINTS in context:
+                    problem_data.setdefault(KEY_CONSTRAINTS, context.get(KEY_CONSTRAINTS, []))
                 setattr(ctx, "problem_data", problem_data)
             except Exception:
                 pass
@@ -397,7 +440,6 @@ class BiasModule:
             from .algorithmic import (
                 DiversityBias,
                 ConvergenceBias,
-                SimulatedAnnealingBias,
                 TabuSearchBias,
                 PrecisionBias,
             )
@@ -406,7 +448,6 @@ class BiasModule:
             bias_map = {
                 "diversity": (DiversityBias, params),
                 "convergence": (ConvergenceBias, params),
-                "simulated_annealing": (SimulatedAnnealingBias, params),
                 "tabu_search": (TabuSearchBias, params),
                 "precision": (PrecisionBias, params),
                 "constraint": (ConstraintBias, params),
@@ -431,6 +472,7 @@ class BiasModule:
             pass
         self.history_best_x = None
         self.history_best_f = float("inf")
+        self._context_cache = None
         self._bump_cache_version()
 
     def __repr__(self):

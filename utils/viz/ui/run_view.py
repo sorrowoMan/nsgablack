@@ -8,6 +8,9 @@ from typing import Any, Dict, List, Optional
 import tkinter as tk
 from tkinter import ttk
 
+from ...engineering.schema_version import stamp_schema
+from ...context.context_keys import KEY_BEST_OBJECTIVE, KEY_BEST_X
+
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNS_DIR = ROOT / "runs" / "visualizer"
@@ -26,7 +29,7 @@ class RunView:
         ttk.Entry(self.tab, textvariable=self.app.run_id_var).pack(fill="x", pady=(6, 6))
         btn_row = ttk.Frame(self.tab)
         btn_row.pack(fill="x")
-        ttk.Button(btn_row, text="Refresh", command=self.app._refresh_current_entry).pack(
+        ttk.Button(btn_row, text="Refresh", command=self.on_refresh_ui).pack(
             side="left",
             expand=True,
             fill="x",
@@ -81,6 +84,20 @@ class RunView:
                 except Exception:
                     pass
 
+    def _read_best_from_context(self) -> tuple[Any, Any]:
+        solver = self.app.solver
+        if solver is None:
+            return None, None
+        getter = getattr(solver, "get_context", None)
+        if callable(getter):
+            try:
+                ctx = getter()
+            except Exception:
+                ctx = None
+            if isinstance(ctx, dict):
+                return ctx.get(KEY_BEST_OBJECTIVE), ctx.get(KEY_BEST_X)
+        return getattr(solver, "best_objective", None), getattr(solver, "best_x", None)
+
     def snapshot(self, run_id: str) -> dict:
         solver = self.app.solver
         adapter = getattr(solver, "adapter", None)
@@ -92,7 +109,6 @@ class RunView:
             "entry": self.app.entry,
             "run_id": run_id,
             "timestamp": time.time(),
-            "schema_version": 1,
             "solver": solver.__class__.__name__ if solver else None,
             "adapter": adapter.__class__.__name__ if adapter else None,
             "strategies": [],
@@ -147,17 +163,38 @@ class RunView:
                     )
             elif hasattr(adapter, "roles"):
                 for role in getattr(adapter, "roles", []):
+                    role_name = getattr(role, "name", "role")
+                    role_units = [
+                        u for u in getattr(adapter, "units", [])
+                        if getattr(u, "role", None) == role_name and getattr(u, "adapter", None) is not None
+                    ]
+                    role_adapter_names = sorted({u.adapter.__class__.__name__ for u in role_units})
+                    role_class = ", ".join(role_adapter_names) if role_adapter_names else None
+                    if role_class is None:
+                        role_adapter = getattr(role, "adapter", None)
+                        if callable(role_adapter):
+                            try:
+                                infer_fn = getattr(adapter, "_instantiate_role_adapter", None)
+                                if callable(infer_fn):
+                                    inferred = infer_fn(role_adapter, 0)
+                                    role_class = inferred.__class__.__name__
+                                else:
+                                    role_class = "factory"
+                            except Exception:
+                                role_class = "factory"
+                        else:
+                            role_class = getattr(role_adapter, "__class__", type(None)).__name__
                     snap["strategies"].append(
                         {
-                            "name": getattr(role, "name", "role"),
+                            "name": role_name,
                             "enabled": bool(getattr(role, "enabled", True)),
                             "weight": float(getattr(role, "weight", 1.0)),
-                            "class": getattr(role, "adapter", None).__class__.__name__,
+                            "class": role_class,
                         }
                     )
         snap["structure_hash"] = self._structure_hash(snap)
         snap["structure_hash_short"] = snap["structure_hash"][:8]
-        return snap
+        return stamp_schema(snap, "run_inspector_snapshot")
 
     def _structure_hash(self, snap: Dict[str, Any]) -> str:
         def sort_items(items, keys):
@@ -192,6 +229,9 @@ class RunView:
                 self.app._hash_index[str(h)] = str(rid)
 
     def on_run(self) -> None:
+        if getattr(self.app, "_is_running", False):
+            self.status_label.config(text="Run already in progress")
+            return
         if self.app.solver is None:
             self.status_label.config(text="No solver")
             return
@@ -199,6 +239,7 @@ class RunView:
         self.app.run_id_var.set(run_id)
         self.sync_run_id_plugins(run_id)
         self.status_label.config(text=f"Running... {run_id}")
+        self.app._is_running = True
 
         def _worker():
             enabled_strategies: List[str] = []
@@ -247,8 +288,7 @@ class RunView:
                 if isinstance(result, dict):
                     steps = result.get("steps")
                     artifacts = result.get("artifacts", {}) if isinstance(result.get("artifacts", {}), dict) else {}
-                best_obj = getattr(self.app.solver, "best_objective", None)
-                best_x = getattr(self.app.solver, "best_x", None)
+                best_obj, best_x = self._read_best_from_context()
                 msg = f"Done: {run_id} ({status})"
                 if steps is not None:
                     msg = f"{msg} steps={steps}"
@@ -260,6 +300,7 @@ class RunView:
             except Exception as exc:
                 msg = f"Failed: {exc}"
             def _finish():
+                self.app._is_running = False
                 self.app.result_var.set(msg)
                 self.status_label.config(text=msg)
                 self.app._last_run_id = run_id
@@ -296,6 +337,18 @@ class RunView:
             self.app.after(0, _finish)
 
         threading.Thread(target=_worker, daemon=True).start()
+
+    def on_refresh_ui(self) -> None:
+        """Refresh UI state from current solver without reloading entry/building a new solver."""
+        if self.app.solver is None:
+            self.status_label.config(text="No solver loaded")
+            return
+        self.app._refresh_sections()
+        if self.app.contrib_view:
+            self.app.contrib_view.refresh_contribution()
+        if getattr(self.app, "context_view", None):
+            self.app.context_view.refresh()
+        self.status_label.config(text="UI refreshed")
 
     def on_sensitivity(self) -> None:
         plugin = self.get_plugin("sensitivity_analysis")

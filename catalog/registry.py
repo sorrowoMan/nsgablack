@@ -15,7 +15,7 @@ class CatalogEntry:
 
     key: str
     title: str
-    kind: str  # "bias" | "adapter" | "plugin" | "representation" | "suite" | "tool"
+    kind: str  # "bias" | "adapter" | "plugin" | "representation" | "suite" | "tool" | "example" | "doc"
     import_path: str  # "pkg.mod:Symbol"
     tags: Tuple[str, ...] = ()
     summary: str = ""
@@ -119,7 +119,16 @@ class Catalog:
             # smaller is better
             primary = 0 if is_suite else 1
             # keep stable-ish grouping by kind and key
-            kind_order = {"suite": 0, "adapter": 1, "plugin": 2, "bias": 3, "representation": 4, "tool": 5, "example": 6}
+            kind_order = {
+                "suite": 0,
+                "adapter": 1,
+                "plugin": 2,
+                "bias": 3,
+                "representation": 4,
+                "tool": 5,
+                "doc": 6,
+                "example": 7,
+            }
             secondary = int(kind_order.get(e.kind, 99))
             return (primary, secondary, e.key)
 
@@ -302,6 +311,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.core.solver:BlackBoxSolverNSGAII",
             tags=('evolutionary', 'nsga2', 'solver'),
             summary="\u5de5\u5177\uff1aBlackBoxSolverNSGAII\u3002 / Tool: BlackBoxSolverNSGAII.",
+            use_when=(
+                'Need this utility/tool in workflow assembly or diagnostics.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.core.solver import BlackBoxSolverNSGAII',
+                'BlackBoxSolverNSGAII()',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search nsga2 --kind example',
         ),
         CatalogEntry(
             key="solver.blank",
@@ -310,6 +333,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.core.blank_solver:BlankSolverBase",
             tags=('base', 'blank', 'solver'),
             summary="\u5de5\u5177\uff1aBlankSolverBase\u3002 / Tool: BlankSolverBase.",
+            use_when=(
+                'Need this utility/tool in workflow assembly or diagnostics.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.core.blank_solver import BlankSolverBase',
+                'BlankSolverBase()',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search blank --kind example',
         ),
         CatalogEntry(
             key="solver.composable",
@@ -318,6 +355,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.core.composable_solver:ComposableSolver",
             tags=('adapter', 'composition', 'solver'),
             summary="\u5de5\u5177\uff1aComposableSolver\u3002 / Tool: ComposableSolver.",
+            use_when=(
+                'Need this utility/tool in workflow assembly or diagnostics.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.core.composable_solver import ComposableSolver',
+                'ComposableSolver()',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search composable --kind example',
         ),
         # --- Adapters ---
         CatalogEntry(
@@ -328,6 +379,17 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('adapter', 'core', 'local_search', 'refinement', 'stage', 'strategy', 'vns'),
             summary="VNS局部搜索内核：多邻域分阶段精修。 / Adapter: VNS local search core with multi-neighborhood refinement.",
             companions=("repr.context_gaussian", "repr.context_switch", "suite.vns"),
+            use_when=(
+                "需要以局部精修为主，并可逐步扩大/切换邻域时",
+                "希望用少量评估预算做稳定改进时",
+            ),
+            minimal_wiring=(
+                "from nsgablack.core.adapters import VNSAdapter",
+                "solver.set_adapter(VNSAdapter())",
+            ),
+            required_companions=("repr.context_gaussian",),
+            config_keys=("batch_size", "sigma", "k_max", "n_iter"),
+            example_entry="examples/trust_region_subspace_frontier_demo.py:build_solver",
         ),
         CatalogEntry(
             key="adapter.sa",
@@ -337,6 +399,17 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('adapter', 'core', 'local_search', 'sa', 'simulated_annealing', 'strategy'),
             summary="模拟退火内核：温度调度 + Metropolis接受。 / Adapter: SA core with temperature schedule and Metropolis acceptance.",
             companions=("repr.context_gaussian", "suite.sa"),
+            use_when=(
+                "需要允许小概率接受劣解以跳出局部最优时",
+                "希望通过温度控制探索-收敛节奏时",
+            ),
+            minimal_wiring=(
+                "from nsgablack.core.adapters import SimulatedAnnealingAdapter",
+                "solver.set_adapter(SimulatedAnnealingAdapter())",
+            ),
+            required_companions=("repr.context_gaussian",),
+            config_keys=("batch_size", "initial_temperature", "cooling_rate", "min_temperature"),
+            example_entry="examples/trust_region_subspace_frontier_demo.py:build_solver",
         ),
         CatalogEntry(
             key="adapter.multi_strategy",
@@ -346,6 +419,17 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('adapter', 'controller', 'cooperation', 'core', 'multi_strategy', 'parallel', 'roles', 'strategy'),
             summary="多策略协同控制器：统一调度、共享状态与动态预算。 / Adapter: multi-strategy controller with unified scheduling/shared state/dynamic budgets.",
             companions=("suite.multi_strategy", "plugin.pareto_archive"),
+            use_when=(
+                "需要 explorer/exploiter 等角色协同并保持可审计流程时",
+                "需要把多个 adapter 组合成同一运行回路时",
+            ),
+            minimal_wiring=(
+                "from nsgablack.core.adapters import MultiStrategyControllerAdapter",
+                "solver.set_adapter(MultiStrategyControllerAdapter(...))",
+            ),
+            required_companions=("plugin.pareto_archive",),
+            config_keys=("roles", "total_batch_size", "phase_schedule", "seed"),
+            example_entry="examples/dynamic_multi_strategy_demo.py:build_solver",
         ),
         CatalogEntry(
             key="adapter.moead",
@@ -355,6 +439,131 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('adapter', 'core', 'decomposition', 'moead', 'multiobjective', 'strategy'),
             summary="MOEA/D分解内核：权重向量 + 邻域替换。 / Adapter: MOEA/D decomposition core with weight vectors and neighborhood replacement.",
             companions=("plugin.pareto_archive", "suite.moead"),
+            use_when=(
+                "多目标问题希望用分解子问题并行推进时",
+                "需要稳定的邻域协同更新而非全局排序时",
+            ),
+            minimal_wiring=(
+                "from nsgablack.core.adapters import MOEADAdapter",
+                "solver.set_adapter(MOEADAdapter())",
+            ),
+            required_companions=("plugin.pareto_archive",),
+            config_keys=("n_subproblems", "neighbor_size", "decomposition", "seed"),
+            example_entry="examples/moead_demo.py:build_solver",
+        ),
+        CatalogEntry(
+            key="adapter.nsga2",
+            title="NSGA2Adapter",
+            kind="adapter",
+            import_path="nsgablack.core.adapters:NSGA2Adapter",
+            tags=('adapter', 'core', 'evolutionary', 'multiobjective', 'nsga2', 'strategy'),
+            summary="Adapter: NSGA-II with non-dominated sorting and crowding selection.",
+            use_when=(
+                "标准多目标演化基线，需要稳健 Pareto 前沿维护时",
+                "希望在收敛与多样性之间取得平衡时",
+            ),
+            minimal_wiring=(
+                "from nsgablack.core.adapters import NSGA2Adapter",
+                "solver.set_adapter(NSGA2Adapter())",
+            ),
+            required_companions=(),
+            config_keys=("batch_size", "crossover_rate", "mutation_rate"),
+            example_entry="examples/nsga2_solver_demo.py:build_solver",
+        ),
+        CatalogEntry(
+            key="adapter.nsga3",
+            title="NSGA3Adapter",
+            kind="adapter",
+            import_path="nsgablack.core.adapters:NSGA3Adapter",
+            tags=('adapter', 'core', 'evolutionary', 'multiobjective', 'nsga3', 'strategy'),
+            summary="Adapter: NSGA-III with reference-point niching.",
+            use_when=(
+                "高维多目标（>=3 目标）需要参考点引导覆盖时",
+                "希望提升前沿分布均匀性时",
+            ),
+            minimal_wiring=(
+                "from nsgablack.core.adapters import NSGA3Adapter",
+                "solver.set_adapter(NSGA3Adapter())",
+            ),
+            required_companions=(),
+            config_keys=("batch_size", "n_reference_points", "crossover_rate", "mutation_rate"),
+            example_entry="examples/template_multiobjective_pareto.py:build_solver",
+        ),
+        CatalogEntry(
+            key="adapter.spea2",
+            title="SPEA2Adapter",
+            kind="adapter",
+            import_path="nsgablack.core.adapters:SPEA2Adapter",
+            tags=('adapter', 'core', 'evolutionary', 'multiobjective', 'spea2', 'strategy'),
+            summary="Adapter: SPEA2 with strength and density fitness.",
+            use_when=(
+                "需要精英保留 + 强度密度联合选择时",
+                "希望作为 NSGA 系列的对照方法时",
+            ),
+            minimal_wiring=(
+                "from nsgablack.core.adapters import SPEA2Adapter",
+                "solver.set_adapter(SPEA2Adapter())",
+            ),
+            required_companions=(),
+            config_keys=("batch_size", "archive_size", "k_neighbor"),
+            example_entry="examples/template_multiobjective_pareto.py:build_solver",
+        ),
+        CatalogEntry(
+            key="adapter.de",
+            title="DifferentialEvolutionAdapter",
+            kind="adapter",
+            import_path="nsgablack.core.adapters:DifferentialEvolutionAdapter",
+            tags=('adapter', 'core', 'de', 'differential_evolution', 'evolutionary', 'strategy'),
+            summary="Adapter: Differential Evolution with greedy replacement.",
+            use_when=(
+                "连续变量优化且希望简单稳定的差分变异时",
+                "需要快速基线而非复杂控制逻辑时",
+            ),
+            minimal_wiring=(
+                "from nsgablack.core.adapters import DifferentialEvolutionAdapter",
+                "solver.set_adapter(DifferentialEvolutionAdapter())",
+            ),
+            required_companions=(),
+            config_keys=("batch_size", "f", "cr", "strategy", "seed"),
+            example_entry="examples/template_continuous_constrained.py:build_solver",
+        ),
+        CatalogEntry(
+            key="adapter.pattern_search",
+            title="PatternSearchAdapter",
+            kind="adapter",
+            import_path="nsgablack.core.adapters:PatternSearchAdapter",
+            tags=('adapter', 'core', 'local_search', 'pattern_search', 'strategy'),
+            summary="Adapter: coordinate pattern search with adaptive step size.",
+            use_when=(
+                "目标不可导或噪声较大，梯度不可用时",
+                "需要轻量坐标方向搜索作为局部改进器时",
+            ),
+            minimal_wiring=(
+                "from nsgablack.core.adapters import PatternSearchAdapter",
+                "solver.set_adapter(PatternSearchAdapter())",
+            ),
+            required_companions=(),
+            config_keys=("batch_size", "initial_step", "expand_factor", "shrink_factor"),
+            example_entry="examples/template_continuous_constrained.py:build_solver",
+        ),
+        CatalogEntry(
+            key="adapter.gradient_descent",
+            title="GradientDescentAdapter",
+            kind="adapter",
+            import_path="nsgablack.core.adapters:GradientDescentAdapter",
+            tags=('adapter', 'core', 'gradient', 'gradient_descent', 'local_search', 'strategy'),
+            summary="Adapter: finite-difference gradient descent local refinement.",
+            use_when=(
+                "需要在候选附近做快速局部下降精修时",
+                "可以接受有限差分带来的额外评估开销时",
+            ),
+            minimal_wiring=(
+                "from nsgablack.core.adapters import GradientDescentAdapter",
+                "solver.set_adapter(GradientDescentAdapter())",
+            ),
+            required_companions=(),
+            config_keys=("batch_size", "learning_rate", "gradient_eps", "max_inner_steps"),
+            example_entry="examples/template_continuous_constrained.py:build_solver",
         ),
         CatalogEntry(
             key="adapter.trust_region_dfo",
@@ -363,6 +572,17 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.core.adapters:TrustRegionDFOAdapter",
             tags=('adapter', 'core', 'dfo', 'local_search', 'strategy', 'trust_region'),
             summary="信赖域DFO内核：无梯度局部搜索。 / Adapter: trust-region derivative-free local search.",
+            use_when=(
+                "目标不可导且需要稳定局部改进时",
+                "希望在受控半径内做无梯度精修时",
+            ),
+            minimal_wiring=(
+                "from nsgablack.core.adapters import TrustRegionDFOAdapter",
+                "solver.set_adapter(TrustRegionDFOAdapter())",
+            ),
+            required_companions=(),
+            config_keys=("batch_size", "initial_radius", "min_radius", "max_radius"),
+            example_entry="examples/trust_region_dfo_demo.py:build_solver",
         ),
         CatalogEntry(
             key="adapter.trust_region_subspace",
@@ -371,6 +591,17 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.core.adapters:TrustRegionSubspaceAdapter",
             tags=('adapter', 'core', 'dfo', 'strategy', 'subspace', 'trust_region'),
             summary="子空间/低秩信赖域：适用高维局部搜索。 / Adapter: subspace/low-rank trust-region search for high-D.",
+            use_when=(
+                "高维变量空间需要降维后再做局部精修时",
+                "希望把评估预算聚焦到主导子空间时",
+            ),
+            minimal_wiring=(
+                "from nsgablack.core.adapters import TrustRegionSubspaceAdapter",
+                "solver.set_adapter(TrustRegionSubspaceAdapter())",
+            ),
+            required_companions=("plugin.subspace_basis",),
+            config_keys=("batch_size", "subspace_dim", "initial_radius", "update_every"),
+            example_entry="examples/trust_region_subspace_demo.py:build_solver",
         ),
         CatalogEntry(
             key="adapter.trust_region_nonsmooth",
@@ -379,6 +610,17 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.core.adapters:TrustRegionNonSmoothAdapter",
             tags=('adapter', 'core', 'local_search', 'nonsmooth', 'strategy', 'trust_region'),
             summary="非光滑信赖域：支持Linf聚合等非光滑目标。 / Adapter: non-smooth trust-region with Linf aggregation.",
+            use_when=(
+                "目标非光滑或带 max/Linf 类聚合项时",
+                "需要比纯随机局部扰动更稳的非光滑精修时",
+            ),
+            minimal_wiring=(
+                "from nsgablack.core.adapters import TrustRegionNonSmoothAdapter",
+                "solver.set_adapter(TrustRegionNonSmoothAdapter())",
+            ),
+            required_companions=(),
+            config_keys=("batch_size", "initial_radius", "min_radius", "aggregation"),
+            example_entry="examples/trust_region_nonsmooth_demo.py:build_solver",
         ),
         CatalogEntry(
             key="adapter.mas",
@@ -387,6 +629,17 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.core.adapters:MASAdapter",
             tags=('adapter', 'core', 'local_search', 'mas', 'strategy', 'surrogate'),
             summary="Model-and-Search：交替建模与搜索。 / Adapter: model-and-search alternating model update + search.",
+            use_when=(
+                "希望在线更新轻量模型并引导局部搜索时",
+                "评估昂贵，想优先在模型建议区域探索时",
+            ),
+            minimal_wiring=(
+                "from nsgablack.core.adapters import MASAdapter",
+                "solver.set_adapter(MASAdapter())",
+            ),
+            required_companions=("plugin.mas_model",),
+            config_keys=("batch_size", "explore_ratio", "exploit_ratio", "seed"),
+            example_entry="examples/mas_demo.py:build_solver",
         ),
         # --- Biases (algorithmic) ---
         CatalogEntry(
@@ -396,6 +649,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.bias.algorithmic.tabu_search:TabuSearchBias",
             tags=('bias', 'memory', 'strategy', 'tabu', 'algorithmic'),
             summary="禁忌搜索偏置：记忆路\u7ebf\u9632\u6b62\u8fd4\u56de\u3002 / Algorithmic bias: tabu memory to avoid cycling.",
+            use_when=(
+                'Need to inject soft preference guidance without changing hard constraints.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.bias.algorithmic.tabu_search import TabuSearchBias',
+                'bias_module.add(TabuSearchBias())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search tabu --kind example',
         ),
         CatalogEntry(
             key="bias.robustness",
@@ -405,6 +672,21 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('bias', 'mc', 'robustness', 'signal_driven', 'algorithmic'),
             summary="鲁棒性偏置：针\u5bf9\u6270\u52a8\u7684\u7a33\u5b9a\u6027\u8bc4\u4f30\u3002 / Algorithmic bias: robustness-oriented scoring under perturbations.",
             companions=("plugin.monte_carlo_eval", "suite.monte_carlo_robustness"),
+            use_when=(
+                'Need to inject soft preference guidance without changing hard constraints.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.bias.algorithmic.signal_driven.robustness import RobustnessBias',
+                'bias_module.add(RobustnessBias())',
+            ),
+            required_companions=(
+                'plugin.monte_carlo_eval',
+                'suite.monte_carlo_robustness',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search robustness --kind example',
         ),
         CatalogEntry(
             key="bias.dynamic_penalty",
@@ -413,6 +695,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.bias.domain.dynamic_penalty:DynamicPenaltyBias",
             tags=('bias', 'constraint', 'domain', 'dynamic', 'penalty', 'schedule'),
             summary="动态惩罚偏置：随违反程度调节惩罚强度。 / Domain bias: dynamic penalty for constraint violation.",
+            use_when=(
+                'Need to inject soft preference guidance without changing hard constraints.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.bias.domain.dynamic_penalty import DynamicPenaltyBias',
+                'bias_module.add(DynamicPenaltyBias())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search dynamic_penalty --kind example',
         ),
         
         CatalogEntry(
@@ -422,6 +718,17 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.core.adapters:TrustRegionMODFOAdapter",
             tags=('adapter', 'core', 'dfo', 'multiobjective', 'strategy', 'trust_region'),
             summary="多目标信赖域DFO：权重标度/帕累托精修。 / Adapter: MO trust-region DFO with scalarization.",
+            use_when=(
+                "多目标问题需要局部信赖域精修并保持 Pareto 导向时",
+                "希望把多目标优化与局部 DFO 结合时",
+            ),
+            minimal_wiring=(
+                "from nsgablack.core.adapters import TrustRegionMODFOAdapter",
+                "solver.set_adapter(TrustRegionMODFOAdapter())",
+            ),
+            required_companions=("plugin.pareto_archive",),
+            config_keys=("batch_size", "initial_radius", "scalarization", "weights"),
+            example_entry="examples/trust_region_mo_dfo_demo.py:build_solver",
         ),
         
         CatalogEntry(
@@ -431,6 +738,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.bias.domain.structure_prior:StructurePriorBias",
             tags=('bias', 'domain', 'prior', 'structure', 'symmetry'),
             summary="结构先验偏置：注入结构/对称偏好。 / Domain bias: structure/symmetry prior.",
+            use_when=(
+                'Need to inject soft preference guidance without changing hard constraints.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.bias.domain.structure_prior import StructurePriorBias',
+                'bias_module.add(StructurePriorBias())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search structure_prior --kind example',
         ),
         
         CatalogEntry(
@@ -440,6 +761,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.bias.algorithmic.signal_driven.uncertainty_exploration:UncertaintyExplorationBias",
             tags=('bias', 'exploration', 'signal_driven', 'uncertainty', 'algorithmic'),
             summary="不确\u5b9a\u63a2\u7d22\u504f\u7f6e\uff1a\u4f18\u5148\u9ad8\u4e0d\u786e\u5b9a\u533a\u57df\u3002 / Algorithmic bias: explore high-uncertainty regions.",
+            use_when=(
+                'Need to inject soft preference guidance without changing hard constraints.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.bias.algorithmic.signal_driven.uncertainty_exploration import UncertaintyExplorationBias',
+                'bias_module.add(UncertaintyExplorationBias())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search uncertainty_exploration --kind example',
         ),
         
         CatalogEntry(
@@ -449,6 +784,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.bias.domain.risk_bias:RiskBias",
             tags=('bias', 'cvar', 'domain', 'risk', 'worst_case'),
             summary="风险偏置：支持CVaR/最坏情况风险控制。 / Domain bias: risk-aware scoring (CVaR/worst-case).",
+            use_when=(
+                'Need to inject soft preference guidance without changing hard constraints.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.bias.domain.risk_bias import RiskBias',
+                'bias_module.add(RiskBias())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search risk --kind example',
         ),
         # --- Plugins ---
         CatalogEntry(
@@ -459,6 +808,22 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('evaluation', 'mc', 'signal'),
             summary="\u63d2\u4ef6\uff1aMonteCarloEvaluationPlugin\u3002 / Plugin: MonteCarloEvaluationPlugin.",
             companions=("bias.robustness", "suite.monte_carlo_robustness"),
+            use_when=(
+                '需要记录/审查/并行/评估增强等工程能力时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.plugins.evaluation.monte_carlo_evaluation import MonteCarloEvaluationPlugin',
+                'solver.add_plugin(MonteCarloEvaluationPlugin())',
+            ),
+            required_companions=(
+                'bias.robustness',
+                'suite.monte_carlo_robustness',
+            ),
+            config_keys=(
+                'name',
+                'config',
+            ),
+            example_entry='python -m nsgablack catalog search monte_carlo_eval --kind example',
         ),
         CatalogEntry(
             key="plugin.pareto_archive",
@@ -468,6 +833,22 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('archive', 'multiobjective', 'pareto'),
             summary="\u63d2\u4ef6\uff1aParetoArchivePlugin\u3002 / Plugin: ParetoArchivePlugin.",
             companions=("adapter.moead", "suite.moead"),
+            use_when=(
+                '需要记录/审查/并行/评估增强等工程能力时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.plugins.runtime.pareto_archive import ParetoArchivePlugin',
+                'solver.add_plugin(ParetoArchivePlugin())',
+            ),
+            required_companions=(
+                'adapter.moead',
+                'suite.moead',
+            ),
+            config_keys=(
+                'name',
+                'config',
+            ),
+            example_entry='python -m nsgablack catalog search pareto_archive --kind example',
         ),
         CatalogEntry(
             key="plugin.benchmark_harness",
@@ -477,6 +858,22 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('benchmark', 'comparison', 'logging', 'protocol'),
             summary="\u63d2\u4ef6\uff1aBenchmarkHarnessPlugin\u3002 / Plugin: BenchmarkHarnessPlugin.",
             companions=("suite.benchmark_harness",),
+            use_when=(
+                '需要记录/审查/并行/评估增强等工程能力时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.plugins.ops.benchmark_harness import BenchmarkHarnessPlugin',
+                'solver.add_plugin(BenchmarkHarnessPlugin())',
+            ),
+            required_companions=(
+                'suite.benchmark_harness',
+            ),
+            config_keys=(
+                'name',
+                'config',
+                'priority',
+            ),
+            example_entry='python -m nsgablack catalog search benchmark_harness --kind example',
         ),
         CatalogEntry(
             key="plugin.module_report",
@@ -486,6 +883,23 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('ablation', 'audit', 'bias', 'report'),
             summary="\u63d2\u4ef6\uff1aModuleReportPlugin\u3002 / Plugin: ModuleReportPlugin.",
             companions=("suite.module_report", "plugin.benchmark_harness"),
+            use_when=(
+                '需要记录/审查/并行/评估增强等工程能力时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.plugins.ops.module_report import ModuleReportPlugin',
+                'solver.add_plugin(ModuleReportPlugin())',
+            ),
+            required_companions=(
+                'suite.module_report',
+                'plugin.benchmark_harness',
+            ),
+            config_keys=(
+                'name',
+                'config',
+                'priority',
+            ),
+            example_entry='python -m nsgablack catalog search module_report --kind example',
         ),
         CatalogEntry(
             key="plugin.profiler",
@@ -495,6 +909,23 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('audit', 'performance', 'profile', 'throughput'),
             summary="\u63d2\u4ef6\uff1aProfilerPlugin\u3002 / Plugin: ProfilerPlugin.",
             companions=("plugin.benchmark_harness", "plugin.module_report"),
+            use_when=(
+                '需要记录/审查/并行/评估增强等工程能力时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.plugins.ops.profiler import ProfilerPlugin',
+                'solver.add_plugin(ProfilerPlugin())',
+            ),
+            required_companions=(
+                'plugin.benchmark_harness',
+                'plugin.module_report',
+            ),
+            config_keys=(
+                'name',
+                'config',
+                'priority',
+            ),
+            example_entry='python -m nsgablack catalog search profiler --kind example',
         ),
         CatalogEntry(
             key="plugin.surrogate_eval",
@@ -503,6 +934,26 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.plugins.evaluation.surrogate_evaluation:SurrogateEvaluationPlugin",
             tags=('evaluation', 'optional', 'surrogate'),
             summary="\u63d2\u4ef6\uff1aSurrogateEvaluationPlugin\u3002 / Plugin: SurrogateEvaluationPlugin.",
+            use_when=(
+                '需要记录/审查/并行/评估增强等工程能力时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.plugins.evaluation.surrogate_evaluation import SurrogateEvaluationPlugin',
+                'solver.add_plugin(SurrogateEvaluationPlugin())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                'name',
+                'config',
+                'model_type',
+                'surrogate',
+                'online_training',
+                'parallel_evaluator',
+                'parallel_kwargs',
+            ),
+            example_entry='python -m nsgablack catalog search surrogate_eval --kind example',
         ),
         
         CatalogEntry(
@@ -512,6 +963,22 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.plugins.evaluation.multi_fidelity_evaluation:MultiFidelityEvaluationPlugin",
             tags=('evaluation', 'frontier', 'multi_fidelity', 'plugin'),
             summary="\u63d2\u4ef6\uff1aMultiFidelityEvaluationPlugin\u3002 / Plugin: MultiFidelityEvaluationPlugin.",
+            use_when=(
+                '需要记录/审查/并行/评估增强等工程能力时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.plugins.evaluation.multi_fidelity_evaluation import MultiFidelityEvaluationPlugin',
+                'solver.add_plugin(MultiFidelityEvaluationPlugin())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                'name',
+                'config',
+                'low_fidelity',
+            ),
+            example_entry='python -m nsgablack catalog search multi_fidelity_eval --kind example',
         ),
         # --- Representation helpers ---
         CatalogEntry(
@@ -521,6 +988,21 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.plugins.models.mas_model:MASModelPlugin",
             tags=('mas', 'surrogate'),
             summary="\u63d2\u4ef6\uff1aMASModelPlugin\u3002 / Plugin: MASModelPlugin.",
+            use_when=(
+                '需要记录/审查/并行/评估增强等工程能力时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.plugins.models.mas_model import MASModelPlugin',
+                'solver.add_plugin(MASModelPlugin())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                'name',
+                'config',
+            ),
+            example_entry='python -m nsgablack catalog search mas_model --kind example',
         ),
         CatalogEntry(
             key="plugin.subspace_basis",
@@ -529,6 +1011,21 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.plugins.models.subspace_basis:SubspaceBasisPlugin",
             tags=('cluster', 'dfo', 'pca', 'random', 'sparse_pca', 'subspace', 'svd'),
             summary="\u63d2\u4ef6\uff1aSubspaceBasisPlugin\u3002 / Plugin: SubspaceBasisPlugin.",
+            use_when=(
+                '需要记录/审查/并行/评估增强等工程能力时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.plugins.models.subspace_basis import SubspaceBasisPlugin',
+                'solver.add_plugin(SubspaceBasisPlugin())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                'name',
+                'config',
+            ),
+            example_entry='python -m nsgablack catalog search subspace_basis --kind example',
         ),
         CatalogEntry(
             key="repr.context_gaussian",
@@ -538,6 +1035,20 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('context', 'continuous', 'mutation', 'vns'),
             summary="\u8868\u793a\u7ec4\u4ef6\uff1aContextGaussianMutation\u3002 / Representation: ContextGaussianMutation.",
             companions=("adapter.vns",),
+            use_when=(
+                'Need to wire representation initializer/mutator/repair behavior.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.representation.continuous import ContextGaussianMutation',
+                'Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.',
+            ),
+            required_companions=(
+                'adapter.vns',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search context_gaussian --kind example',
         ),
         CatalogEntry(
             key="repr.context_switch",
@@ -547,6 +1058,20 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('context', 'discrete', 'mutation', 'switch', 'vns'),
             summary="\u8868\u793a\u7ec4\u4ef6\uff1aContextSwitchMutator\u3002 / Representation: ContextSwitchMutator.",
             companions=("adapter.vns",),
+            use_when=(
+                'Need to wire representation initializer/mutator/repair behavior.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.representation import ContextSwitchMutator',
+                'Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.',
+            ),
+            required_companions=(
+                'adapter.vns',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search context_switch --kind example',
         ),
         CatalogEntry(
             key="repr.projection_repair",
@@ -555,6 +1080,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.representation.continuous:ProjectionRepair",
             tags=('bounds', 'pipeline', 'projection', 'repair', 'simplex'),
             summary="\u8868\u793a\u7ec4\u4ef6\uff1aProjectionRepair\u3002 / Representation: ProjectionRepair.",
+            use_when=(
+                'Need to wire representation initializer/mutator/repair behavior.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.representation.continuous import ProjectionRepair',
+                'Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search projection_repair --kind example',
         ),
         
         CatalogEntry(
@@ -564,6 +1103,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.representation.dynamic:DynamicRepair",
             tags=('dynamic', 'pipeline', 'repair'),
             summary="\u8868\u793a\u7ec4\u4ef6\uff1aDynamicRepair\u3002 / Representation: DynamicRepair.",
+            use_when=(
+                'Need to wire representation initializer/mutator/repair behavior.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.representation.dynamic import DynamicRepair',
+                'Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search dynamic_repair --kind example',
         ),
         # --- Suites (authority wiring) ---
         CatalogEntry(
@@ -574,6 +1127,27 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'mc', 'robustness', 'suite'),
             summary="权威装配：Monte Carlo评估 + 鲁棒性偏置。 / Authority wiring: MC evaluation + robustness bias.",
             companions=("plugin.monte_carlo_eval", "bias.robustness"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_monte_carlo_robustness',
+                'attach_monte_carlo_robustness(solver)',
+            ),
+            required_companions=(
+                'plugin.monte_carlo_eval',
+                'bias.robustness',
+            ),
+            config_keys=(
+                'mc_samples',
+                'reduce',
+                'cvar_alpha',
+                'random_seed',
+                'robustness_weight',
+                'robustness_aggregate',
+                'robustness_power',
+            ),
+            example_entry='python -m nsgablack catalog search monte_carlo_robustness --kind example',
         ),
         CatalogEntry(
             key="suite.ray_parallel",
@@ -583,6 +1157,27 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'distributed', 'parallel', 'ray', 'suite'),
             summary="权威装配：Ray并行评估/调度。 / Authority wiring: Ray parallel evaluation/scheduling.",
             companions=("plugin.profiler", "plugin.benchmark_harness"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_ray_parallel',
+                'attach_ray_parallel(solver)',
+            ),
+            required_companions=(
+                'plugin.profiler',
+                'plugin.benchmark_harness',
+            ),
+            config_keys=(
+                'problem_factory',
+                'address',
+                'init_ray',
+                'init_kwargs',
+                'max_workers',
+                'chunk_size',
+                'strict',
+            ),
+            example_entry='python -m nsgablack catalog search ray_parallel --kind example',
         ),
         CatalogEntry(
             key="suite.moead",
@@ -592,6 +1187,22 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'moead', 'multiobjective', 'suite'),
             summary="权威装配：MOEA/D适配器 + Pareto归档。 / Authority wiring: MOEA/D adapter + Pareto archive.",
             companions=("adapter.moead", "plugin.pareto_archive"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_moead',
+                'attach_moead(solver)',
+            ),
+            required_companions=(
+                'adapter.moead',
+                'plugin.pareto_archive',
+            ),
+            config_keys=(
+                'config',
+                'archive',
+            ),
+            example_entry='python -m nsgablack catalog search moead --kind example',
         ),
         CatalogEntry(
             key="suite.sa",
@@ -601,6 +1212,21 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'sa', 'simulated_annealing', 'suite'),
             summary="权威装配：SA适配器 + 推荐算子。 / Authority wiring: SA adapter + recommended operators.",
             companions=("adapter.sa", "repr.context_gaussian"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_simulated_annealing',
+                'attach_simulated_annealing(solver)',
+            ),
+            required_companions=(
+                'adapter.sa',
+                'repr.context_gaussian',
+            ),
+            config_keys=(
+                'config',
+            ),
+            example_entry='python -m nsgablack catalog search sa --kind example',
         ),
         CatalogEntry(
             key="suite.vns",
@@ -610,6 +1236,23 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'local_search', 'suite', 'vns'),
             summary="权威装配：VNS适配器 + 多邻域算子。 / Authority wiring: VNS adapter + multi-neighborhood operators.",
             companions=("adapter.vns", "repr.context_gaussian", "repr.context_switch"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_vns',
+                'attach_vns(solver)',
+            ),
+            required_companions=(
+                'adapter.vns',
+                'repr.context_gaussian',
+                'repr.context_switch',
+            ),
+            config_keys=(
+                'config',
+                'ensure_context_mutator',
+            ),
+            example_entry='python -m nsgablack catalog search vns --kind example',
         ),
         CatalogEntry(
             key="suite.trust_region_dfo",
@@ -619,6 +1262,22 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'dfo', 'local_search', 'suite', 'trust_region'),
             summary="权威装配：信赖域DFO + 报告插件。 / Authority wiring: trust-region DFO + reporting.",
             companions=("adapter.trust_region_dfo", "plugin.benchmark_harness", "plugin.module_report"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_trust_region_dfo',
+                'attach_trust_region_dfo(solver)',
+            ),
+            required_companions=(
+                'adapter.trust_region_dfo',
+                'plugin.benchmark_harness',
+                'plugin.module_report',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search trust_region_dfo --kind example',
         ),
         CatalogEntry(
             key="suite.trust_region_subspace",
@@ -628,6 +1287,22 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'local_search', 'subspace', 'suite', 'trust_region'),
             summary="权威装配：子空间信赖域 + 报告插件。 / Authority wiring: subspace trust-region + reporting.",
             companions=("adapter.trust_region_subspace", "plugin.benchmark_harness", "plugin.module_report"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_trust_region_subspace',
+                'attach_trust_region_subspace(solver)',
+            ),
+            required_companions=(
+                'adapter.trust_region_subspace',
+                'plugin.benchmark_harness',
+                'plugin.module_report',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search trust_region_subspace --kind example',
         ),
         CatalogEntry(
             key="suite.trust_region_subspace_learned",
@@ -637,6 +1312,23 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'learned', 'subspace', 'suite', 'trust_region'),
             summary="权威装配：子空间信赖域 + 学习基底(PCA/SVD)。 / Authority wiring: subspace trust-region + learned basis (PCA/SVD).",
             companions=("adapter.trust_region_subspace", "plugin.subspace_basis", "plugin.benchmark_harness", "plugin.module_report"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_trust_region_subspace_learned',
+                'attach_trust_region_subspace_learned(solver)',
+            ),
+            required_companions=(
+                'adapter.trust_region_subspace',
+                'plugin.subspace_basis',
+                'plugin.benchmark_harness',
+                'plugin.module_report',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search trust_region_subspace_learned --kind example',
         ),
         CatalogEntry(
             key="suite.trust_region_nonsmooth",
@@ -646,6 +1338,22 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'local_search', 'nonsmooth', 'suite', 'trust_region'),
             summary="权威装配：非光滑信赖域 + 报告插件。 / Authority wiring: nonsmooth trust-region + reporting.",
             companions=("adapter.trust_region_nonsmooth", "plugin.benchmark_harness", "plugin.module_report"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_trust_region_nonsmooth',
+                'attach_trust_region_nonsmooth(solver)',
+            ),
+            required_companions=(
+                'adapter.trust_region_nonsmooth',
+                'plugin.benchmark_harness',
+                'plugin.module_report',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search trust_region_nonsmooth --kind example',
         ),
         CatalogEntry(
             key="suite.mas",
@@ -655,6 +1363,23 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'local_search', 'mas', 'suite', 'surrogate'),
             summary="权威装配：MAS + 模型插件 + 报告。 / Authority wiring: MAS + model plugin + reporting.",
             companions=("adapter.mas", "plugin.mas_model", "plugin.benchmark_harness", "plugin.module_report"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_mas',
+                'attach_mas(solver)',
+            ),
+            required_companions=(
+                'adapter.mas',
+                'plugin.mas_model',
+                'plugin.benchmark_harness',
+                'plugin.module_report',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search mas --kind example',
         ),
         CatalogEntry(
             key="suite.multi_strategy",
@@ -664,6 +1389,24 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'cooperation', 'multi_strategy', 'parallel', 'suite'),
             summary="权威装配：多策略协同（角色/预算/共享状态）。 / Authority wiring: multi-strategy cooperation with roles/budgets/shared state.",
             companions=("adapter.multi_strategy", "plugin.pareto_archive"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_multi_strategy_coop',
+                'attach_multi_strategy_coop(solver)',
+            ),
+            required_companions=(
+                'adapter.multi_strategy',
+                'plugin.pareto_archive',
+            ),
+            config_keys=(
+                'strategies',
+                'roles',
+                'config',
+                'attach_pareto_archive',
+            ),
+            example_entry='python -m nsgablack catalog search multi_strategy --kind example',
         ),
         CatalogEntry(
             key="suite.benchmark_harness",
@@ -673,6 +1416,25 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'benchmark', 'bundle', 'comparison', 'protocol', 'suite'),
             summary="权威装配：BenchmarkHarness统一输出口径。 / Authority wiring: BenchmarkHarness output protocol.",
             companions=("plugin.benchmark_harness",),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_benchmark_harness',
+                'attach_benchmark_harness(solver)',
+            ),
+            required_companions=(
+                'plugin.benchmark_harness',
+            ),
+            config_keys=(
+                'output_dir',
+                'run_id',
+                'seed',
+                'log_every',
+                'flush_every',
+                'overwrite',
+            ),
+            example_entry='python -m nsgablack catalog search benchmark_harness --kind example',
         ),
         CatalogEntry(
             key="suite.module_report",
@@ -682,6 +1444,23 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('ablation', 'audit', 'authority', 'bundle', 'report', 'suite'),
             summary="权威装配：ModuleReport审计/消融。 / Authority wiring: ModuleReport audit/ablation.",
             companions=("plugin.module_report", "plugin.benchmark_harness"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_module_report',
+                'attach_module_report(solver)',
+            ),
+            required_companions=(
+                'plugin.module_report',
+                'plugin.benchmark_harness',
+            ),
+            config_keys=(
+                'output_dir',
+                'run_id',
+                'write_bias_markdown',
+            ),
+            example_entry='python -m nsgablack catalog search module_report --kind example',
         ),
         CatalogEntry(
             key="suite.nsga2_engineering",
@@ -691,25 +1470,29 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'engineering', 'nsga2', 'plugins', 'suite'),
             summary="权威装配：NSGA-II工程化插件集（日志/精英/多样性）。 / Authority wiring: NSGA-II engineering bundle (logging/elite/diversity).",
             companions=("plugin.elite", "plugin.convergence_monitor", "plugin.diversity_init", "plugin.benchmark_harness"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_nsga2_engineering',
+                'attach_nsga2_engineering(solver)',
+            ),
+            required_companions=(
+                'plugin.elite',
+                'plugin.convergence_monitor',
+                'plugin.diversity_init',
+                'plugin.benchmark_harness',
+            ),
+            config_keys=(
+                'enable_basic_elite',
+                'enable_convergence',
+                'enable_diversity_metrics',
+                'convergence_early_stop',
+            ),
+            example_entry='python -m nsgablack catalog search nsga2_engineering --kind example',
         ),
 
         # --- Biases (more algorithmic building blocks; kept as "main class per module") ---
-        CatalogEntry(
-            key="bias.sa",
-            title="SimulatedAnnealingBias",
-            kind="bias",
-            import_path="nsgablack.bias.algorithmic.simulated_annealing:SimulatedAnnealingBias",
-            tags=('algorithmic', 'bias', 'local_search', 'sa', 'simulated_annealing', 'strategy'),
-            summary="退火偏置：温度/接受准则引导探索。 / Algorithmic bias: SA temperature/acceptance guidance.",
-        ),
-        CatalogEntry(
-            key="bias.de",
-            title="DifferentialEvolutionBias",
-            kind="bias",
-            import_path="nsgablack.bias.algorithmic.differential_evolution:DifferentialEvolutionBias",
-            tags=('algorithmic', 'bias', 'de', 'differential_evolution', 'mutation', 'strategy'),
-            summary="差分进化偏置：差分变异/交叉倾向。 / Algorithmic bias: DE mutation/crossover guidance.",
-        ),
         CatalogEntry(
             key="bias.pso",
             title="ParticleSwarmBias",
@@ -717,6 +1500,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.bias.algorithmic.pso:ParticleSwarmBias",
             tags=('algorithmic', 'bias', 'particle_swarm', 'pso', 'strategy', 'swarm'),
             summary="粒子群偏置：惯性/群体吸引引导。 / Algorithmic bias: PSO inertia/social guidance.",
+            use_when=(
+                'Need to inject soft preference guidance without changing hard constraints.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.bias.algorithmic.pso import ParticleSwarmBias',
+                'bias_module.add(ParticleSwarmBias())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search pso --kind example',
         ),
         CatalogEntry(
             key="bias.cmaes",
@@ -725,6 +1522,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.bias.algorithmic.cma_es:CMAESBias",
             tags=('algorithmic', 'bias', 'cma-es', 'cmaes', 'covariance', 'strategy'),
             summary="CMA-ES偏置：协方差自适应搜索。 / Algorithmic bias: CMA-ES covariance adaptation.",
+            use_when=(
+                'Need to inject soft preference guidance without changing hard constraints.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.bias.algorithmic.cma_es import CMAESBias',
+                'bias_module.add(CMAESBias())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search cmaes --kind example',
         ),
         CatalogEntry(
             key="bias.levy",
@@ -733,22 +1544,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.bias.algorithmic.levy_flight:LevyFlightBias",
             tags=('algorithmic', 'bias', 'exploration', 'levy', 'random_walk'),
             summary="Levy飞行偏置：长跳跃探索。 / Algorithmic bias: Levy-flight exploration.",
-        ),
-        CatalogEntry(
-            key="bias.pattern_search",
-            title="PatternSearchBias",
-            kind="bias",
-            import_path="nsgablack.bias.algorithmic.pattern_search:PatternSearchBias",
-            tags=('algorithmic', 'bias', 'derivative_free', 'local_search', 'pattern_search'),
-            summary="模式搜索偏置：步长/网格模式探索。 / Algorithmic bias: pattern search steps.",
-        ),
-        CatalogEntry(
-            key="bias.gradient_descent",
-            title="GradientDescentBias",
-            kind="bias",
-            import_path="nsgablack.bias.algorithmic.gradient_descent:GradientDescentBias",
-            tags=('algorithmic', 'bias', 'continuous', 'gd', 'gradient_descent'),
-            summary="梯度下降偏置：沿负梯度精修。 / Algorithmic bias: gradient descent refinement.",
+            use_when=(
+                'Need to inject soft preference guidance without changing hard constraints.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.bias.algorithmic.levy_flight import LevyFlightBias',
+                'bias_module.add(LevyFlightBias())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search levy --kind example',
         ),
         CatalogEntry(
             key="bias.convergence",
@@ -757,6 +1566,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.bias.algorithmic.convergence:ConvergenceBias",
             tags=('algorithmic', 'bias', 'convergence', 'exploitation', 'schedule'),
             summary="收敛偏置：优先收敛与精修。 / Algorithmic bias: convergence acceleration.",
+            use_when=(
+                'Need to inject soft preference guidance without changing hard constraints.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.bias.algorithmic.convergence import ConvergenceBias',
+                'bias_module.add(ConvergenceBias())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search convergence --kind example',
         ),
         CatalogEntry(
             key="bias.diversity",
@@ -765,38 +1588,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.bias.algorithmic.diversity:DiversityBias",
             tags=('algorithmic', 'bias', 'diversity', 'exploration', 'niching'),
             summary="多样性偏置：维持解集分散。 / Algorithmic bias: diversity maintenance.",
-        ),
-        CatalogEntry(
-            key="bias.nsga2_core",
-            title="NSGA2Bias",
-            kind="bias",
-            import_path="nsgablack.bias.algorithmic.nsga2:NSGA2Bias",
-            tags=('algorithmic', 'bias', 'crowding', 'multiobjective', 'nsga2'),
-            summary="NSGA-II核心偏置：非支配排序 + 拥挤度。 / Algorithmic bias: NSGA-II ranking/crowding.",
-        ),
-        CatalogEntry(
-            key="bias.nsga3_core",
-            title="NSGA3ReferencePointBias",
-            kind="bias",
-            import_path="nsgablack.bias.algorithmic.nsga3:NSGA3ReferencePointBias",
-            tags=('algorithmic', 'bias', 'multiobjective', 'nsga3', 'reference_point'),
-            summary="NSGA-III参考点偏置：参考点驱动排序。 / Algorithmic bias: NSGA-III reference points.",
-        ),
-        CatalogEntry(
-            key="bias.spea2_core",
-            title="SPEA2StrengthBias",
-            kind="bias",
-            import_path="nsgablack.bias.algorithmic.spea2:SPEA2StrengthBias",
-            tags=('algorithmic', 'bias', 'multiobjective', 'spea2', 'strength'),
-            summary="SPEA2强度偏置：强度/密度评估。 / Algorithmic bias: SPEA2 strength/density.",
-        ),
-        CatalogEntry(
-            key="bias.moead_decomposition",
-            title="MOEADDecompositionBias",
-            kind="bias",
-            import_path="nsgablack.bias.algorithmic.moead:MOEADDecompositionBias",
-            tags=('algorithmic', 'bias', 'decomposition', 'moead', 'multiobjective'),
-            summary="MOEA/D分解偏置：权重与邻域分解信号。 / Algorithmic bias: MOEA/D decomposition signals.",
+            use_when=(
+                'Need to inject soft preference guidance without changing hard constraints.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.bias.algorithmic.diversity import DiversityBias',
+                'bias_module.add(DiversityBias())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search diversity --kind example',
         ),
 
         
@@ -808,6 +1613,21 @@ def _default_entries() -> List[CatalogEntry]:
             tags=(', ', 'authority', 'bundle', 'frontier', 'multiobjective', 'suite', 'trust_region'),
             summary="权威装配：多目标DFO + Pareto + 报告。 / Authority wiring: MO DFO + Pareto + reporting.",
             companions=("adapter.trust_region_mo_dfo", "plugin.pareto_archive"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_trust_region_mo_dfo',
+                'attach_trust_region_mo_dfo(solver)',
+            ),
+            required_companions=(
+                'adapter.trust_region_mo_dfo',
+                'plugin.pareto_archive',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search trust_region_mo_dfo --kind example',
         ),
         CatalogEntry(
             key="suite.trust_region_subspace_frontier",
@@ -817,6 +1637,21 @@ def _default_entries() -> List[CatalogEntry]:
             tags=(', ', 'authority', 'bundle', 'frontier', 'subspace', 'suite', 'trust_region'),
             summary="权威装配：子空间信赖域前沿组合 + 报告。 / Authority wiring: subspace trust-region frontier bundle.",
             companions=("adapter.trust_region_subspace", "plugin.subspace_basis"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_trust_region_subspace_frontier',
+                'attach_trust_region_subspace_frontier(solver)',
+            ),
+            required_companions=(
+                'adapter.trust_region_subspace',
+                'plugin.subspace_basis',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search trust_region_subspace_frontier --kind example',
         ),
         CatalogEntry(
             key="suite.active_learning_surrogate",
@@ -826,6 +1661,20 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('active_learning', 'authority', 'bundle', 'frontier', 'suite', 'surrogate'),
             summary="权威装配：主动学习代理评估 + 报告。 / Authority wiring: active-learning surrogate evaluation + reporting.",
             companions=("plugin.surrogate_eval",),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_active_learning_surrogate',
+                'attach_active_learning_surrogate(solver)',
+            ),
+            required_companions=(
+                'plugin.surrogate_eval',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search active_learning_surrogate --kind example',
         ),
         CatalogEntry(
             key="suite.robust_dfo",
@@ -835,6 +1684,22 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'dfo', 'frontier', 'mc', 'robustness', 'suite'),
             summary="权威装配：DFO + MC评估 + 鲁棒偏置。 / Authority wiring: DFO + MC eval + robustness bias.",
             companions=("adapter.trust_region_dfo", "plugin.monte_carlo_eval", "bias.robustness"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_robust_dfo',
+                'attach_robust_dfo(solver)',
+            ),
+            required_companions=(
+                'adapter.trust_region_dfo',
+                'plugin.monte_carlo_eval',
+                'bias.robustness',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search robust_dfo --kind example',
         ),
         CatalogEntry(
             key="suite.surrogate_assisted_ea",
@@ -844,6 +1709,20 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'evolutionary', 'frontier', 'suite', 'surrogate'),
             summary="权威装配：代理辅助进化搜索。 / Authority wiring: surrogate-assisted evolutionary search.",
             companions=("plugin.surrogate_eval",),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_surrogate_assisted_ea',
+                'attach_surrogate_assisted_ea(solver)',
+            ),
+            required_companions=(
+                'plugin.surrogate_eval',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search surrogate_assisted_ea --kind example',
         ),
         CatalogEntry(
             key="suite.surrogate_model_lab",
@@ -853,6 +1732,20 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'frontier', 'model_type', 'suite', 'surrogate'),
             summary="权威装配：代理模型家族实验室。 / Authority wiring: surrogate model family lab bundle.",
             companions=("plugin.surrogate_eval",),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_surrogate_model_lab',
+                'attach_surrogate_model_lab(solver)',
+            ),
+            required_companions=(
+                'plugin.surrogate_eval',
+            ),
+            config_keys=(
+                'model_type',
+            ),
+            example_entry='python -m nsgablack catalog search surrogate_model_lab --kind example',
         ),
         CatalogEntry(
             key="suite.structure_prior_mo",
@@ -862,6 +1755,21 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'frontier', 'multiobjective', 'structure', 'suite'),
             summary="权威装配：结构先验 + 多目标组合。 / Authority wiring: structure-prior + multi-objective bundle.",
             companions=("bias.structure_prior", "adapter.moead"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_structure_prior_mo',
+                'attach_structure_prior_mo(solver)',
+            ),
+            required_companions=(
+                'bias.structure_prior',
+                'adapter.moead',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search structure_prior_mo --kind example',
         ),
         
         CatalogEntry(
@@ -872,6 +1780,20 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'evaluation', 'frontier', 'multi_fidelity', 'suite'),
             summary="权威装配：多保真评估 + 报告。 / Authority wiring: multi-fidelity evaluation + reporting.",
             companions=("plugin.multi_fidelity_eval",),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_multi_fidelity_eval',
+                'attach_multi_fidelity_eval(solver)',
+            ),
+            required_companions=(
+                'plugin.multi_fidelity_eval',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search multi_fidelity_eval --kind example',
         ),
         CatalogEntry(
             key="suite.risk_cvar",
@@ -881,6 +1803,21 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('authority', 'bundle', 'cvar', 'frontier', 'risk', 'suite'),
             summary="权威装配：MC评估 + CVaR风险偏置。 / Authority wiring: MC evaluation + CVaR risk bias.",
             companions=("plugin.monte_carlo_eval", "bias.risk"),
+            use_when=(
+                '想一键接入权威组合，避免漏配时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.suites import attach_risk_cvar',
+                'attach_risk_cvar(solver)',
+            ),
+            required_companions=(
+                'plugin.monte_carlo_eval',
+                'bias.risk',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search risk_cvar --kind example',
         ),
         # --- Plugins (more capabilities) ---
         CatalogEntry(
@@ -890,6 +1827,25 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.plugins.runtime.adaptive_parameters:AdaptiveParametersPlugin",
             tags=('adaptive', 'parameters', 'plugin'),
             summary="\u63d2\u4ef6\uff1aAdaptiveParametersPlugin\u3002 / Plugin: AdaptiveParametersPlugin.",
+            use_when=(
+                '需要记录/审查/并行/评估增强等工程能力时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.plugins.runtime.adaptive_parameters import AdaptiveParametersPlugin',
+                'solver.add_plugin(AdaptiveParametersPlugin())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                'stagnation_window',
+                'improvement_threshold',
+                'min_mutation_rate',
+                'max_mutation_rate',
+                'min_crossover_rate',
+                'max_crossover_rate',
+            ),
+            example_entry='python -m nsgablack catalog search adaptive_parameters --kind example',
         ),
         CatalogEntry(
             key="plugin.elite",
@@ -898,6 +1854,21 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.plugins.runtime.elite_retention:BasicElitePlugin",
             tags=('archive', 'elite', 'plugin'),
             summary="\u63d2\u4ef6\uff1aBasicElitePlugin\u3002 / Plugin: BasicElitePlugin.",
+            use_when=(
+                '需要记录/审查/并行/评估增强等工程能力时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.plugins.runtime.elite_retention import BasicElitePlugin',
+                'solver.add_plugin(BasicElitePlugin())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                'retention_prob',
+                'retention_ratio',
+            ),
+            example_entry='python -m nsgablack catalog search elite --kind example',
         ),
         CatalogEntry(
             key="plugin.convergence_monitor",
@@ -906,6 +1877,24 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.plugins.runtime.convergence:ConvergencePlugin",
             tags=('convergence', 'monitor', 'plugin'),
             summary="\u63d2\u4ef6\uff1aConvergencePlugin\u3002 / Plugin: ConvergencePlugin.",
+            use_when=(
+                '需要记录/审查/并行/评估增强等工程能力时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.plugins.runtime.convergence import ConvergencePlugin',
+                'solver.add_plugin(ConvergencePlugin())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                'stagnation_window',
+                'improvement_epsilon',
+                'diversity_threshold',
+                'min_generations',
+                'enable_early_stop',
+            ),
+            example_entry='python -m nsgablack catalog search convergence_monitor --kind example',
         ),
         CatalogEntry(
             key="plugin.diversity_init",
@@ -914,6 +1903,21 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.plugins.runtime.diversity_init:DiversityInitPlugin",
             tags=('diversity', 'init', 'plugin'),
             summary="\u63d2\u4ef6\uff1aDiversityInitPlugin\u3002 / Plugin: DiversityInitPlugin.",
+            use_when=(
+                '需要记录/审查/并行/评估增强等工程能力时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.plugins.runtime.diversity_init import DiversityInitPlugin',
+                'solver.add_plugin(DiversityInitPlugin())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                'similarity_threshold',
+                'rejection_prob',
+            ),
+            example_entry='python -m nsgablack catalog search diversity_init --kind example',
         ),
         CatalogEntry(
             key="plugin.memory",
@@ -922,6 +1926,21 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.plugins.system.memory_optimize:MemoryPlugin",
             tags=('engineering', 'memory', 'plugin'),
             summary="\u63d2\u4ef6\uff1aMemoryPlugin\u3002 / Plugin: MemoryPlugin.",
+            use_when=(
+                '需要记录/审查/并行/评估增强等工程能力时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.plugins.system.memory_optimize import MemoryPlugin',
+                'solver.add_plugin(MemoryPlugin())',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                'cleanup_interval',
+                'enable_auto_gc',
+            ),
+            example_entry='python -m nsgablack catalog search memory --kind example',
         ),
 
         # --- Representation (core presets) ---
@@ -932,6 +1951,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.representation:RepresentationPipeline",
             tags=('core', 'pipeline', 'representation'),
             summary="\u8868\u793a\u7ec4\u4ef6\uff1aRepresentationPipeline\u3002 / Representation: RepresentationPipeline.",
+            use_when=(
+                'Need to wire representation initializer/mutator/repair behavior.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.representation import RepresentationPipeline',
+                'Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search pipeline --kind example',
         ),
         CatalogEntry(
             key="repr.continuous",
@@ -940,6 +1973,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.representation.continuous:UniformInitializer",
             tags=('continuous', 'initializer', 'real'),
             summary="\u8868\u793a\u7ec4\u4ef6\uff1aUniformInitializer\u3002 / Representation: UniformInitializer.",
+            use_when=(
+                'Need to wire representation initializer/mutator/repair behavior.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.representation.continuous import UniformInitializer',
+                'Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search continuous --kind example',
         ),
         CatalogEntry(
             key="repr.integer",
@@ -948,6 +1995,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.representation.integer:IntegerInitializer",
             tags=('discrete', 'initializer', 'integer'),
             summary="\u8868\u793a\u7ec4\u4ef6\uff1aIntegerInitializer\u3002 / Representation: IntegerInitializer.",
+            use_when=(
+                'Need to wire representation initializer/mutator/repair behavior.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.representation.integer import IntegerInitializer',
+                'Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search integer --kind example',
         ),
         CatalogEntry(
             key="repr.permutation",
@@ -956,6 +2017,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.representation.permutation:PermutationInitializer",
             tags=('discrete', 'initializer', 'permutation', 'tsp'),
             summary="\u8868\u793a\u7ec4\u4ef6\uff1aPermutationInitializer\u3002 / Representation: PermutationInitializer.",
+            use_when=(
+                'Need to wire representation initializer/mutator/repair behavior.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.representation.permutation import PermutationInitializer',
+                'Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search permutation --kind example',
         ),
         CatalogEntry(
             key="repr.binary",
@@ -964,6 +2039,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.representation.binary:BinaryInitializer",
             tags=('binary', 'bit', 'initializer'),
             summary="\u8868\u793a\u7ec4\u4ef6\uff1aBinaryInitializer\u3002 / Representation: BinaryInitializer.",
+            use_when=(
+                'Need to wire representation initializer/mutator/repair behavior.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.representation.binary import BinaryInitializer',
+                'Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search binary --kind example',
         ),
         CatalogEntry(
             key="repr.graph",
@@ -972,6 +2061,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.representation.graph:GraphEdgeInitializer",
             tags=('graph', 'initializer', 'network'),
             summary="\u8868\u793a\u7ec4\u4ef6\uff1aGraphEdgeInitializer\u3002 / Representation: GraphEdgeInitializer.",
+            use_when=(
+                'Need to wire representation initializer/mutator/repair behavior.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.representation.graph import GraphEdgeInitializer',
+                'Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search graph --kind example',
         ),
         CatalogEntry(
             key="repr.matrix",
@@ -980,6 +2083,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.representation.matrix:IntegerMatrixInitializer",
             tags=('grid', 'initializer', 'matrix'),
             summary="\u8868\u793a\u7ec4\u4ef6\uff1aIntegerMatrixInitializer\u3002 / Representation: IntegerMatrixInitializer.",
+            use_when=(
+                'Need to wire representation initializer/mutator/repair behavior.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.representation.matrix import IntegerMatrixInitializer',
+                'Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search matrix --kind example',
         ),
 
         # --- Tools (utilities; discoverable but not part of the solver base) ---
@@ -990,6 +2107,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.utils.parallel:ParallelEvaluator",
             tags=('evaluation', 'parallel', 'tool'),
             summary="\u5de5\u5177\uff1aParallelEvaluator\u3002 / Tool: ParallelEvaluator.",
+            use_when=(
+                'Need this utility/tool in workflow assembly or diagnostics.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.parallel import ParallelEvaluator',
+                'ParallelEvaluator()',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search parallel_evaluator --kind example',
         ),
         CatalogEntry(
             key="tool.context_keys",
@@ -998,6 +2129,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.utils.context:context_keys",
             tags=('context', 'keys', 'schema', 'tool'),
             summary="\u5de5\u5177\uff1aContext Keys\u3002 / Tool: Context Keys.",
+            use_when=(
+                'Need this utility/tool in workflow assembly or diagnostics.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.context import context_keys',
+                'context_keys()',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search context_keys --kind example',
         ),
         CatalogEntry(
             key="tool.context_schema",
@@ -1007,6 +2152,20 @@ def _default_entries() -> List[CatalogEntry]:
             tags=('context', 'parallel', 'schema', 'tool'),
             summary="\u5de5\u5177\uff1aMinimalEvaluationContext\u3002 / Tool: MinimalEvaluationContext.",
             companions=("tool.context_keys",),
+            use_when=(
+                'Need this utility/tool in workflow assembly or diagnostics.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.context import MinimalEvaluationContext',
+                'MinimalEvaluationContext()',
+            ),
+            required_companions=(
+                'tool.context_keys',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search context_schema --kind example',
         ),
         CatalogEntry(
             key="tool.logging",
@@ -1015,6 +2174,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.utils.engineering:configure_logging",
             tags=('engineering', 'logging', 'tool'),
             summary="\u5de5\u5177\uff1aconfigure_logging\u3002 / Tool: configure_logging.",
+            use_when=(
+                'Need this utility/tool in workflow assembly or diagnostics.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.engineering import configure_logging',
+                'configure_logging()',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search logging --kind example',
         ),
         CatalogEntry(
             key="tool.metrics",
@@ -1023,6 +2196,20 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.utils.analysis:pareto_filter",
             tags=('analysis', 'metrics', 'pareto', 'tool'),
             summary="\u5de5\u5177\uff1apareto_filter\u3002 / Tool: pareto_filter.",
+            use_when=(
+                'Need this utility/tool in workflow assembly or diagnostics.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.utils.analysis import pareto_filter',
+                'pareto_filter()',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='python -m nsgablack catalog search metrics --kind example',
         ),
         # --- Examples (templates / demos) ---
         CatalogEntry(
@@ -1032,6 +2219,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:template_continuous_constrained",
             tags=('bias', 'constraint', 'continuous', 'example', 'pipeline', 'template'),
             summary="\u793a\u4f8b\uff1atemplate_continuous_constrained\u3002 / Example: template_continuous_constrained.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import template_continuous_constrained',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\template_continuous_constrained.py:build_solver',
         ),
         CatalogEntry(
             key="example.template_knapsack",
@@ -1040,6 +2240,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:template_knapsack_binary",
             tags=('binary', 'example', 'knapsack', 'repair', 'template'),
             summary="\u793a\u4f8b\uff1atemplate_knapsack_binary\u3002 / Example: template_knapsack_binary.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import template_knapsack_binary',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\template_knapsack_binary.py:build_solver',
         ),
         CatalogEntry(
             key="example.template_tsp",
@@ -1048,6 +2261,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:template_tsp_permutation",
             tags=('2opt', 'example', 'permutation', 'template', 'tsp'),
             summary="\u793a\u4f8b\uff1atemplate_tsp_permutation\u3002 / Example: template_tsp_permutation.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import template_tsp_permutation',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\template_tsp_permutation.py:build_solver',
         ),
         CatalogEntry(
             key="example.template_graph_path",
@@ -1056,6 +2282,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:template_graph_path",
             tags=('example', 'graph', 'path', 'repair', 'template'),
             summary="\u793a\u4f8b\uff1atemplate_graph_path\u3002 / Example: template_graph_path.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import template_graph_path',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\template_graph_path.py:build_solver',
         ),
         CatalogEntry(
             key="example.template_assignment",
@@ -1064,6 +2303,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:template_assignment_matrix",
             tags=('assignment', 'example', 'matrix', 'repair', 'template'),
             summary="\u793a\u4f8b\uff1atemplate_assignment_matrix\u3002 / Example: template_assignment_matrix.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import template_assignment_matrix',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\template_assignment_matrix.py:build_solver',
         ),
         CatalogEntry(
             key="example.template_production_simple",
@@ -1072,6 +2324,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:template_production_schedule_simple",
             tags=('example', 'matrix', 'production', 'schedule', 'template'),
             summary="\u793a\u4f8b\uff1atemplate_production_schedule_simple\u3002 / Example: template_production_schedule_simple.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import template_production_schedule_simple',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\template_production_schedule_simple.py:build_solver',
         ),
         CatalogEntry(
             key="example.template_portfolio",
@@ -1080,6 +2345,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:template_portfolio_pareto",
             tags=('example', 'mo', 'pareto', 'portfolio', 'template'),
             summary="\u793a\u4f8b\uff1atemplate_portfolio_pareto\u3002 / Example: template_portfolio_pareto.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import template_portfolio_pareto',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\template_portfolio_pareto.py:build_solver',
         ),
         CatalogEntry(
             key="example.template_mo_pareto",
@@ -1088,6 +2366,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:template_multiobjective_pareto",
             tags=('example', 'moead', 'multiobjective', 'pareto', 'template'),
             summary="\u793a\u4f8b\uff1atemplate_multiobjective_pareto\u3002 / Example: template_multiobjective_pareto.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import template_multiobjective_pareto',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\template_multiobjective_pareto.py:build_solver',
         ),
         CatalogEntry(
             key="example.dynamic_multi_strategy",
@@ -1096,6 +2387,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:dynamic_multi_strategy_demo",
             tags=('demo', 'dynamic', 'example', 'multi_strategy', 'switch'),
             summary="\u793a\u4f8b\uff1adynamic_multi_strategy_demo\u3002 / Example: dynamic_multi_strategy_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import dynamic_multi_strategy_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\dynamic_multi_strategy_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.trust_region_dfo",
@@ -1104,6 +2408,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:trust_region_dfo_demo",
             tags=('demo', 'dfo', 'example', 'trust_region'),
             summary="\u793a\u4f8b\uff1atrust_region_dfo_demo\u3002 / Example: trust_region_dfo_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import trust_region_dfo_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\trust_region_dfo_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.trust_region_subspace",
@@ -1112,6 +2429,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:trust_region_subspace_demo",
             tags=('demo', 'example', 'subspace', 'trust_region'),
             summary="\u793a\u4f8b\uff1atrust_region_subspace_demo\u3002 / Example: trust_region_subspace_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import trust_region_subspace_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\trust_region_subspace_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.monte_carlo_robust",
@@ -1120,6 +2450,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:monte_carlo_dp_robust_demo",
             tags=('demo', 'example', 'monte_carlo', 'robust'),
             summary="\u793a\u4f8b\uff1amonte_carlo_dp_robust_demo\u3002 / Example: monte_carlo_dp_robust_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import monte_carlo_dp_robust_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\monte_carlo_dp_robust_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.surrogate_plugin",
@@ -1128,6 +2471,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:surrogate_plugin_demo",
             tags=('demo', 'example', 'plugin', 'surrogate'),
             summary="\u793a\u4f8b\uff1asurrogate_plugin_demo\u3002 / Example: surrogate_plugin_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import surrogate_plugin_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\surrogate_plugin_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.multi_fidelity",
@@ -1136,6 +2492,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:multi_fidelity_demo",
             tags=('demo', 'example', 'multi_fidelity'),
             summary="\u793a\u4f8b\uff1amulti_fidelity_demo\u3002 / Example: multi_fidelity_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import multi_fidelity_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\multi_fidelity_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.risk_bias",
@@ -1144,6 +2513,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:risk_bias_demo",
             tags=('bias', 'demo', 'example', 'risk'),
             summary="\u793a\u4f8b\uff1arisk_bias_demo\u3002 / Example: risk_bias_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import risk_bias_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\risk_bias_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.bias_gallery",
@@ -1152,6 +2534,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:bias_gallery_demo",
             tags=('bias', 'demo', 'example', 'gallery'),
             summary="\u793a\u4f8b\uff1abias_gallery_demo\u3002 / Example: bias_gallery_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import bias_gallery_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\bias_gallery_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.plugin_gallery",
@@ -1160,6 +2555,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:plugin_gallery_demo",
             tags=('demo', 'example', 'gallery', 'plugin'),
             summary="\u793a\u4f8b\uff1aplugin_gallery_demo\u3002 / Example: plugin_gallery_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import plugin_gallery_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\plugin_gallery_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.role_adapters",
@@ -1168,6 +2576,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:role_adapters_demo",
             tags=('adapter', 'demo', 'example', 'multi_role', 'role'),
             summary="\u793a\u4f8b\uff1arole_adapters_demo\u3002 / Example: role_adapters_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import role_adapters_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\role_adapters_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.astar",
@@ -1176,6 +2597,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:astar_demo",
             tags=('astar', 'demo', 'example', 'graph', 'search'),
             summary="\u793a\u4f8b\uff1aastar_demo\u3002 / Example: astar_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import astar_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\astar_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.moa_star",
@@ -1184,6 +2618,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:moa_star_demo",
             tags=('demo', 'example', 'moa_star', 'pareto', 'search'),
             summary="\u793a\u4f8b\uff1amoa_star_demo\u3002 / Example: moa_star_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import moa_star_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\moa_star_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.parallel_repair",
@@ -1192,6 +2639,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:parallel_repair_demo",
             tags=('demo', 'example', 'parallel', 'pipeline', 'repair'),
             summary="\u793a\u4f8b\uff1aparallel_repair_demo\u3002 / Example: parallel_repair_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import parallel_repair_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\parallel_repair_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.nsga2_solver",
@@ -1200,6 +2660,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:nsga2_solver_demo",
             tags=('demo', 'example', 'nsga2', 'solver', 'suite'),
             summary="\u793a\u4f8b\uff1ansga2_solver_demo\u3002 / Example: nsga2_solver_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import nsga2_solver_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\nsga2_solver_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.parallel_evaluator",
@@ -1208,6 +2681,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:parallel_evaluator_demo",
             tags=('demo', 'evaluation', 'example', 'parallel'),
             summary="\u793a\u4f8b\uff1aparallel_evaluator_demo\u3002 / Example: parallel_evaluator_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import parallel_evaluator_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\parallel_evaluator_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.context_keys",
@@ -1216,6 +2702,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:context_keys_demo",
             tags=('context', 'demo', 'example', 'keys'),
             summary="\u793a\u4f8b\uff1acontext_keys_demo\u3002 / Example: context_keys_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import context_keys_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\context_keys_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.context_schema",
@@ -1224,6 +2723,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:context_schema_demo",
             tags=('context', 'demo', 'example', 'schema'),
             summary="\u793a\u4f8b\uff1acontext_schema_demo\u3002 / Example: context_schema_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import context_schema_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\context_schema_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.logging",
@@ -1232,6 +2744,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:logging_demo",
             tags=('demo', 'example', 'logging', 'tool'),
             summary="\u793a\u4f8b\uff1alogging_demo\u3002 / Example: logging_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import logging_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\logging_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.metrics",
@@ -1240,6 +2765,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:metrics_demo",
             tags=('demo', 'example', 'metrics', 'pareto'),
             summary="\u793a\u4f8b\uff1ametrics_demo\u3002 / Example: metrics_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import metrics_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\metrics_demo.py:build_solver',
         ),
         CatalogEntry(
             key="example.dynamic_cli_signal",
@@ -1248,6 +2786,19 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.examples_registry:dynamic_cli_signal_demo",
             tags=('cli', 'demo', 'dynamic', 'example', 'signal'),
             summary="\u793a\u4f8b\uff1adynamic_cli_signal_demo\u3002 / Example: dynamic_cli_signal_demo.",
+            use_when=(
+                '需要可运行参考实现时',
+            ),
+            minimal_wiring=(
+                'from nsgablack.examples_registry import dynamic_cli_signal_demo',
+            ),
+            required_companions=(
+                '(none)',
+            ),
+            config_keys=(
+                '(none)',
+            ),
+            example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\dynamic_cli_signal_demo.py:build_solver',
         ),
     ]
 
@@ -1477,7 +3028,10 @@ def get_catalog(*, refresh: bool = False) -> Catalog:
             merged[e.key] = e
         for e in eps:
             merged[e.key] = e
-        enriched = enrich_context_contracts(list(merged.values()), kinds=("plugin",))
+        enriched = enrich_context_contracts(
+            list(merged.values()),
+            kinds=("plugin", "adapter", "bias", "representation"),
+        )
         enriched = enrich_usage_contracts(enriched)
         _CATALOG = Catalog(enriched)
     return _CATALOG

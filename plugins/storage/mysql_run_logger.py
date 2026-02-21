@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 import json
 
 from ..base import Plugin
+from ...utils.context.context_keys import KEY_BEST_OBJECTIVE, KEY_BEST_X
 
 
 @dataclass
@@ -115,17 +116,11 @@ CREATE TABLE IF NOT EXISTS `{table}` (
         payload = {
             "status": result.get("status") if isinstance(result, dict) else None,
             "steps": result.get("steps") if isinstance(result, dict) else None,
-            "best_objective": getattr(solver, "best_objective", None),
-            "best_x": getattr(solver, "best_x", None),
+            "best_objective": self._resolve_context_value(solver, KEY_BEST_OBJECTIVE, "best_objective"),
+            "best_x": self._resolve_context_value(solver, KEY_BEST_X, "best_x"),
         }
 
-        run_id = None
-        try:
-            run_id = getattr(getattr(self, "cfg", None), "run_id", None)
-        except Exception:
-            run_id = None
-        if run_id is None and isinstance(artifacts, dict):
-            run_id = artifacts.get("run_id")
+        run_id = self._resolve_run_id(solver, result, artifacts)
 
         conn = self._get_connection()
         try:
@@ -152,6 +147,55 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         finally:
             try:
                 conn.close()
+            except Exception:
+                pass
+        return None
+
+    def _resolve_context_value(self, solver: Any, key: str, attr_fallback: str) -> Any:
+        getter = getattr(solver, "get_context", None)
+        if callable(getter):
+            try:
+                ctx = getter()
+            except Exception:
+                ctx = None
+            if isinstance(ctx, dict) and key in ctx:
+                return ctx.get(key)
+        try:
+            return getattr(solver, attr_fallback, None)
+        except Exception:
+            return None
+
+    def _resolve_run_id(self, solver: Any, result: Dict[str, Any], artifacts: Dict[str, Any] | None) -> Optional[str]:
+        # 1) explicit result-level run_id
+        if isinstance(result, dict):
+            rid = result.get("run_id")
+            if rid:
+                return str(rid)
+
+        # 2) artifact metadata
+        if isinstance(artifacts, dict):
+            rid = artifacts.get("run_id")
+            if rid:
+                return str(rid)
+
+        # 3) known solver attributes (ui / scripts may set these)
+        for attr in ("run_id", "_last_run_id", "benchmark_run_id"):
+            try:
+                rid = getattr(solver, attr, None)
+            except Exception:
+                rid = None
+            if rid:
+                return str(rid)
+
+        # 4) discover from plugin configs (BenchmarkHarness / ModuleReport / Profiler ...)
+        pm = getattr(solver, "plugin_manager", None)
+        if pm is not None and hasattr(pm, "list_plugins"):
+            try:
+                for plugin in pm.list_plugins(enabled_only=False):
+                    cfg = getattr(plugin, "cfg", None)
+                    rid = getattr(cfg, "run_id", None) if cfg is not None else None
+                    if rid:
+                        return str(rid)
             except Exception:
                 pass
         return None

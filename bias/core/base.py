@@ -7,8 +7,11 @@
 
 import numpy as np
 import time
+import logging
 from typing import Any, Callable, Dict, List, Optional, Protocol, runtime_checkable
 from abc import ABC, abstractmethod
+
+logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -106,6 +109,16 @@ class BiasBase(ABC, BiasInterface):
     偏置值将作为适应度函数的调整项，引导优化过程。
     """
 
+    # Class-level context contract defaults (static introspection friendly).
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = None
+    requires_metrics = ()
+    metrics_fallback = "none"  # "none" | "safe_zero" | "default" | "problem_data"
+    missing_metrics_policy = "warn"  # "warn" | "error" | "ignore"
+
     def __init__(self, name: str, weight: float = 1.0, description: str = ""):
         """
         初始化偏置基类
@@ -131,12 +144,16 @@ class BiasBase(ABC, BiasInterface):
         self._max_history = 100                              # 保留最近100次调用
         self._current_generation_values = []                 # 当前代的累积值
 
-        # Optional context contract (defaults empty for compatibility).
-        self.context_requires = ()
-        self.context_provides = ()
-        self.context_mutates = ()
-        self.context_cache = ()
-        self.context_notes = None
+        # Keep instance-level copies for backward compatibility with dynamic assignment.
+        self.context_requires = tuple(getattr(self, "context_requires", ()) or ())
+        self.context_provides = tuple(getattr(self, "context_provides", ()) or ())
+        self.context_mutates = tuple(getattr(self, "context_mutates", ()) or ())
+        self.context_cache = tuple(getattr(self, "context_cache", ()) or ())
+        self.context_notes = getattr(self, "context_notes", None)
+        self.requires_metrics = tuple(getattr(self, "requires_metrics", ()) or ())
+        self.metrics_fallback = str(getattr(self, "metrics_fallback", "none") or "none").strip().lower()
+        self.missing_metrics_policy = str(getattr(self, "missing_metrics_policy", "warn") or "warn").strip().lower()
+        self._missing_metrics_reported = set()
 
     @abstractmethod
     def compute(self, x: np.ndarray, context: OptimizationContext) -> float:
@@ -172,6 +189,8 @@ class BiasBase(ABC, BiasInterface):
         if not self.enabled:
             return 0.0                                    # 禁用时返回0
 
+        self._enforce_required_metrics(context)
+
         # 调用具体偏置计算方法
         bias_value = self.compute(x, context)
         weighted_value = bias_value * self.weight
@@ -197,13 +216,84 @@ class BiasBase(ABC, BiasInterface):
         return weighted_value                             # 返回加权偏置值
 
     def get_context_contract(self) -> Dict[str, Any]:
+        requires = list(getattr(self, "context_requires", ()) or ())
+        metric_keys = getattr(self, "requires_metrics", ()) or ()
+        for key in metric_keys:
+            text = str(key).strip()
+            if not text:
+                continue
+            if text.startswith("metrics."):
+                requires.append(text)
+            else:
+                requires.append(f"metrics.{text}")
+
+        notes_parts: List[str] = []
+        base_notes = getattr(self, "context_notes", None)
+        if base_notes:
+            notes_parts.append(str(base_notes))
+        rec_plugins = getattr(self, "recommended_plugins", ()) or ()
+        if rec_plugins:
+            notes_parts.append("recommended_plugins=" + ", ".join(str(x) for x in rec_plugins))
+        if metric_keys:
+            metric_list = [str(x).strip() for x in metric_keys if str(x).strip()]
+            if metric_list:
+                notes_parts.append("requires_metrics=" + ", ".join(metric_list))
+        policy = str(getattr(self, "missing_metrics_policy", "warn") or "warn").strip().lower()
+        if policy:
+            notes_parts.append(f"missing_metrics_policy={policy}")
+        fallback = str(getattr(self, "metrics_fallback", "none") or "none").strip().lower()
+        if fallback:
+            notes_parts.append(f"metrics_fallback={fallback}")
+
         return {
-            "requires": getattr(self, "context_requires", ()),
+            "requires": requires,
             "provides": getattr(self, "context_provides", ()),
             "mutates": getattr(self, "context_mutates", ()),
             "cache": getattr(self, "context_cache", ()),
-            "notes": getattr(self, "context_notes", None),
+            "notes": " | ".join(notes_parts) if notes_parts else None,
         }
+
+    def _enforce_required_metrics(self, context: OptimizationContext) -> None:
+        missing = self._missing_required_metrics(context)
+        if not missing:
+            return
+
+        policy = str(getattr(self, "missing_metrics_policy", "warn") or "warn").strip().lower()
+        generation = int(getattr(context, "generation", -1) or -1)
+        marker = (generation, tuple(missing))
+        message = (
+            f"Bias '{self.name}' missing required metrics: {', '.join(missing)} "
+            f"(policy={policy})."
+        )
+
+        if policy == "error":
+            raise KeyError(message)
+        if policy in {"ignore", "none", "off"}:
+            return
+        if marker in self._missing_metrics_reported:
+            return
+        self._missing_metrics_reported.add(marker)
+        logger.warning(message)
+
+    def _missing_required_metrics(self, context: OptimizationContext) -> List[str]:
+        metric_keys = tuple(getattr(self, "requires_metrics", ()) or ())
+        if not metric_keys:
+            return []
+
+        metrics_obj = getattr(context, "metrics", {})
+        metrics = metrics_obj if isinstance(metrics_obj, dict) else {}
+        available = {str(k).strip() for k in metrics.keys() if str(k).strip()}
+
+        missing: List[str] = []
+        for key in metric_keys:
+            text = str(key).strip()
+            if not text:
+                continue
+            short_key = text.split(".", 1)[1] if text.startswith("metrics.") else text
+            if short_key in available or f"metrics.{short_key}" in available:
+                continue
+            missing.append(short_key)
+        return sorted(set(missing))
 
     def enable(self):
         """启用偏置"""
@@ -336,6 +426,13 @@ class AlgorithmicBias(BiasBase):
       `recommended_plugins` 或一个 `utils/suites/*` 的权威组合入口，避免“偏置单独启用无效”。
     - 当信号缺失时必须安全退化（返回 0.0），不得抛异常破坏主流程。
     """
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(
         self,
@@ -383,6 +480,13 @@ class DomainBias(BiasBase):
 
     例如：工程约束偏置、安全规范偏置、业务规则偏置等
     """
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(
         self,

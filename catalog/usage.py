@@ -80,7 +80,7 @@ def _infer_minimal_wiring(kind: str, import_path: str) -> Tuple[str, ...]:
     if k == "adapter":
         return (
             f"from {import_path.split(':', 1)[0]} import {symbol}",
-            f"solver.adapter = {symbol}()",
+            f"solver.set_adapter({symbol}())",
         )
     if k == "bias":
         return (

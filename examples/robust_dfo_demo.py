@@ -42,8 +42,8 @@ def build_solver():
     bias = BiasModule()
     bias.add(RobustnessBias(weight=0.2))
     bias.add(DynamicPenaltyBias(penalty_func=lambda x, c, ctx: {"penalty": float(ctx.get("constraint_violation", 0.0))}, start_scale=0.2, end_scale=2.0, max_generations=40))
-    solver.bias_module = bias
-    solver.enable_bias = True
+    solver.set_bias_module(bias)
+    solver.set_enable_bias(True)
 
     solver.add_plugin(MonteCarloEvaluationPlugin(MonteCarloEvaluationConfig(mc_samples=12)))
     solver.add_plugin(BenchmarkHarnessPlugin(run_id="robust_dfo_demo"))
@@ -54,10 +54,11 @@ def build_solver():
 def main():
     solver = build_solver()
     result = solver.run(max_generations=40, seed=7)
-    print("����״̬:", result.get("status"))
+    print("运行状态:", result.get("status"))
     print("best_objective:", result.get("best_objective"))
 
 
 if __name__ == "__main__":
     main()
+
 

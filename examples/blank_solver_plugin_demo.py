@@ -1,7 +1,7 @@
-"""�հ������ + ƫ��/����/��� �����ʾ��
+"""BlankSolverBase + 偏置/管线/插件 的最小可运行示例。
 
-Ŀ�꣺�� BlankSolverBase ����һ���ǽ������̣�������� + ̰�ı������
-��ʾ��ΰѱ�ʾ���ߡ�ƫ��ϵͳ����ϵͳƴװ���Զ����㷨��
+目标：展示 BlankSolverBase 在保持核心求解循环简洁的同时，
+可以自然接入表示管线、偏置模块与插件能力。
 """
 
 import numpy as np
@@ -27,7 +27,7 @@ except ModuleNotFoundError:  # pragma: no cover - convenience for direct script 
 
 
 class SimpleSphereProblem(BlackBoxProblem):
-    """�� Sphere ��Ŀ�����⡣"""
+    """简单 Sphere 测试问题。"""
 
     def __init__(self, dimension=5, low=-5.0, high=5.0):
         super().__init__(
@@ -44,7 +44,7 @@ class SimpleSphereProblem(BlackBoxProblem):
 
 
 class RandomWalkPlugin(Plugin):
-    """������� + ̰�ı���Ĳ�������̡�"""
+    """随机游走插件：维护候选缓冲并记录当前最优。"""
 
     def __init__(self, name="random_walk", buffer_size=20):
         super().__init__(name=name)
@@ -109,7 +109,7 @@ def build_solver():
     bias.add(ConvergenceBias(weight=0.2, early_gen=5, late_gen=25))
 
     solver = BlankSolverBase(problem, bias_module=bias, representation_pipeline=pipeline)
-    solver.max_steps = 40
+    solver.set_max_steps(40)
     solver.add_plugin(RandomWalkPlugin(buffer_size=20))
     return solver
 
@@ -119,8 +119,8 @@ if __name__ == "__main__":
     result = solver.run()
 
     plugin = solver.get_plugin("random_walk")
-    print("����״̬:", result["status"], "steps:", result["steps"])
+    print("运行状态:", result["status"], "steps:", result["steps"])
     if plugin is not None and plugin.best_x is not None:
-        print("����Ŀ��ֵ:", f"{plugin.best_f:.6f}")
-        print("���Ž�:", plugin.best_x)
+        print("最优目标值:", f"{plugin.best_f:.6f}")
+        print("最优解:", plugin.best_x)
 

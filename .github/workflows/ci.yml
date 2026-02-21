@@ -53,6 +53,17 @@ jobs:
         run: |
           python tools/catalog_integrity_checker.py --check-usage --strict-usage --check-context --context-kinds plugin --require-context-notes --strict-context
 
+      - name: Project doctor (strict)
+        run: |
+          python -m nsgablack project doctor --path . --strict
+          python -m nsgablack project doctor --path examples/cases/production_scheduling --build --strict
+
+      - name: Context/Schema governance
+        run: |
+          python -m pytest -q tests/test_context_key_alignment.py tests/test_schema_version.py tests/test_context_field_guard.py
+          python tools/context_field_guard.py --strict
+          python tools/schema_tool.py --strict runs
+
       - name: Black
         run: |
           python -m black --check .

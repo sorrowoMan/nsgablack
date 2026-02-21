@@ -35,9 +35,13 @@ ensure_nsgablack_importable(Path(__file__))
 from nsgablack.core.composable_solver import ComposableSolver  # noqa: E402
 from nsgablack.core.adapters import (  # noqa: E402
     AlgorithmAdapter,
+    MOEADAdapter,
+    MOEADConfig,
     MultiStrategyConfig,
     MultiStrategyControllerAdapter,
     RoleSpec,
+    VNSAdapter,
+    VNSConfig,
 )
 from nsgablack.plugins import (  # noqa: E402
     ParetoArchivePlugin,
@@ -171,6 +175,15 @@ class ConsoleProgressPlugin:
 
         # Use Plugin base to integrate with PluginManager.
         class _Impl(Plugin):
+            # Explicit context contract: this plugin only reports runtime progress.
+            context_requires = ()
+            context_provides = ()
+            context_mutates = ()
+            context_cache = ()
+            context_notes = (
+                "Console progress reporter; reads solver runtime state via hooks and writes no context fields.",
+            )
+
             def __init__(self, report_every: int):
                 super().__init__(name="console_progress")
                 self.report_every = int(max(1, report_every))
@@ -283,7 +296,7 @@ def _resolve_pareto_export_root(base: Optional[Path]) -> Path:
     if base is None:
         base_dir = Path(__file__).resolve().parents[1]
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        root = base_dir / f"�����Ż����_pareto_{ts}"
+        root = base_dir / f"生产调度结果_pareto_{ts}"
     elif base.suffix:
         root = base.with_name(f"{base.stem}_pareto")
     else:
@@ -348,7 +361,7 @@ def _export_pareto_batch(
     return len(rows)
 
 
-def _default_export_path(prefix: str = "�����Ż����", label: Optional[str] = None) -> Path:
+def _default_export_path(prefix: str = "生产调度结果", label: Optional[str] = None) -> Path:
     base_dir = Path(__file__).resolve().parents[1]
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     if label:
@@ -373,15 +386,15 @@ def _export_schedule(path: Path, schedule: np.ndarray) -> None:
 
     data = {
         "Day_Index": list(range(days)),
-        "Date": [f"�滮��{day}" for day in range(days)],
+        "Date": [f"?{day}?" for day in range(days)],
     }
     for m in range(machines):
-        data[f"����{m}"] = schedule[m, :].tolist()
+        data[f"机种{m}"] = schedule[m, :].tolist()
 
     df = pd.DataFrame(data)
     if path.suffix.lower() == ".xlsx":
         # Keep a stable sheet name for downstream visualization scripts.
-        df.to_excel(path, index=False, sheet_name="�����ƻ�")
+        df.to_excel(path, index=False, sheet_name="生产计划")
     else:
         df.to_csv(path, index=False)
 
@@ -485,20 +498,68 @@ def build_multi_agent_solver(problem, args):
     explorer_batch = max(4, int(total_batch * 0.65))
     exploiter_batch = max(4, total_batch - explorer_batch)
 
-    roles = [
-        RoleSpec(
-            name="explorer",
-            adapter=lambda uid: ProductionRandomSearchAdapter(batch_size=max(4, explorer_batch // 4)),
-            n_units=4,
-            weight=1.0,
-        ),
-        RoleSpec(
-            name="exploiter",
-            adapter=lambda uid: ProductionLocalSearchAdapter(batch_size=max(2, exploiter_batch // 2)),
-            n_units=2,
-            weight=1.0,
-        ),
-    ]
+    roles = []
+    if str(getattr(args, "explorer_adapter", "moead")).lower() == "random":
+        roles.append(
+            RoleSpec(
+                name="explorer",
+                adapter=lambda uid: ProductionRandomSearchAdapter(batch_size=max(4, explorer_batch // 4)),
+                n_units=4,
+                weight=1.0,
+            )
+        )
+    else:
+        moead_pop = max(32, int(getattr(args, "moead_pop_size", max(64, args.pop_size // 2))))
+        moead_neighbor = max(2, int(getattr(args, "moead_neighborhood", 20)))
+        moead_nr = max(1, int(getattr(args, "moead_nr", 2)))
+        moead_delta = float(getattr(args, "moead_delta", 0.9))
+        roles.append(
+            RoleSpec(
+                name="explorer",
+                adapter=lambda uid: MOEADAdapter(
+                    MOEADConfig(
+                        population_size=moead_pop,
+                        neighborhood_size=moead_neighbor,
+                        batch_size=max(4, explorer_batch),
+                        delta=moead_delta,
+                        nr=moead_nr,
+                        variation="pipeline",
+                        random_seed=(None if args.seed is None else int(args.seed) + int(uid)),
+                    )
+                ),
+                n_units=1,
+                weight=1.0,
+            )
+        )
+    if str(getattr(args, "exploiter_adapter", "vns")).lower() == "local":
+        roles.append(
+            RoleSpec(
+                name="exploiter",
+                adapter=lambda uid: ProductionLocalSearchAdapter(batch_size=max(2, exploiter_batch // 2)),
+                n_units=2,
+                weight=1.0,
+            )
+        )
+    else:
+        vns_batch = max(4, int(getattr(args, "vns_batch_size", exploiter_batch)))
+        vns_kmax = max(1, int(getattr(args, "vns_k_max", 4)))
+        vns_sigma = float(getattr(args, "vns_base_sigma", 0.2))
+        roles.append(
+            RoleSpec(
+                name="exploiter",
+                adapter=lambda uid: VNSAdapter(
+                    VNSConfig(
+                        batch_size=vns_batch,
+                        k_max=vns_kmax,
+                        base_sigma=vns_sigma,
+                        scale=1.6,
+                        objective_aggregation="sum",
+                    )
+                ),
+                n_units=1,
+                weight=1.0,
+            )
+        )
 
     cfg = MultiStrategyConfig(
         total_batch_size=total_batch,
@@ -574,7 +635,7 @@ def build_multi_agent_solver(problem, args):
         print(f"[run] logs_dir={run_dir} run_id={run_id}")
     solver.add_plugin(ParetoArchivePlugin())
     solver.add_plugin(ConsoleProgressPlugin(report_every=args.report_every))
-    solver.max_steps = int(args.generations)
+    solver.set_max_steps(int(args.generations))
     return solver
 
 
@@ -656,6 +717,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-export", action="store_true", help="Disable exporting schedules (no Excel/CSV output).")
     parser.add_argument("--comm-interval", type=int, default=5)
     parser.add_argument("--adapt-interval", type=int, default=20)
+    parser.add_argument(
+        "--explorer-adapter",
+        choices=["moead", "random"],
+        default="moead",
+        help="Explorer role adapter: moead (default) or random search.",
+    )
+    parser.add_argument("--vns-batch-size", type=int, default=96, help="VNS candidates per step.")
+    parser.add_argument("--vns-k-max", type=int, default=4, help="VNS neighborhood depth.")
+    parser.add_argument("--vns-base-sigma", type=float, default=0.2, help="VNS initial mutation sigma.")
+    parser.add_argument(
+        "--exploiter-adapter",
+        choices=["vns", "local"],
+        default="vns",
+        help="Exploiter role adapter: vns (default) or local search.",
+    )
+    parser.add_argument("--moead-pop-size", type=int, default=96, help="MOEA/D subproblem population size.")
+    parser.add_argument("--moead-neighborhood", type=int, default=20, help="MOEA/D neighborhood size.")
+    parser.add_argument("--moead-delta", type=float, default=0.9, help="MOEA/D neighbor sampling probability.")
+    parser.add_argument("--moead-nr", type=int, default=2, help="MOEA/D max replacements per offspring.")
     parser.add_argument("--parallel", action="store_true", help="Enable parallel evaluation (CPU).")
     parser.add_argument(
         "--parallel-backend",

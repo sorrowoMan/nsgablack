@@ -23,6 +23,13 @@ class RiskBias(DomainBias):
     This bias consumes metrics from context.metrics (e.g., provided by
     MonteCarloEvaluationPlugin).
     """
+    context_requires = ("problem_data",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: problem_data; outputs scalar bias only."
+
+
 
     mode: str = "cvar"
     alpha: float = 0.2
@@ -30,6 +37,7 @@ class RiskBias(DomainBias):
     metric_prefix: str = "mc"
 
     requires_metrics = ("mc_mean", "mc_std", "mc_min", "mc_max")
+    metrics_fallback = "safe_zero"
     recommended_plugins = ("plugin.monte_carlo_eval",)
 
     def __init__(

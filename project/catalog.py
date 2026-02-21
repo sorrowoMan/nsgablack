@@ -72,30 +72,84 @@ def _normalize_project_entries(entries: Iterable[CatalogEntry]) -> List[CatalogE
     return out
 
 
+def _load_project_toml_entries(project_root: Path) -> List[CatalogEntry]:
+    """
+    Load project-local entries from <project_root>/catalog/entries.toml.
+    This is used by UI register flow and merged with project_registry entries.
+    """
+    toml_path = project_root / "catalog" / "entries.toml"
+    if not toml_path.is_file():
+        return []
+    try:
+        import tomllib  # py>=3.11
+    except Exception:
+        return []
+    try:
+        data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    out: List[CatalogEntry] = []
+    for item in data.get("entry", []):
+        if not isinstance(item, dict):
+            continue
+        try:
+            out.append(
+                CatalogEntry(
+                    key=str(item.get("key", "")).strip(),
+                    title=str(item.get("title", "")).strip(),
+                    kind=str(item.get("kind", "")).strip().lower(),
+                    import_path=str(item.get("import_path", "")).strip(),
+                    tags=tuple(str(x).strip() for x in item.get("tags", ()) if str(x).strip()),
+                    summary=str(item.get("summary", "")).strip(),
+                    companions=tuple(str(x).strip() for x in item.get("companions", ()) if str(x).strip()),
+                    context_requires=tuple(str(x).strip() for x in item.get("context_requires", ()) if str(x).strip()),
+                    context_provides=tuple(str(x).strip() for x in item.get("context_provides", ()) if str(x).strip()),
+                    context_mutates=tuple(str(x).strip() for x in item.get("context_mutates", ()) if str(x).strip()),
+                    context_cache=tuple(str(x).strip() for x in item.get("context_cache", ()) if str(x).strip()),
+                    context_notes=tuple(str(x).strip() for x in item.get("context_notes", ()) if str(x).strip()),
+                    use_when=tuple(str(x).strip() for x in item.get("use_when", ()) if str(x).strip()),
+                    minimal_wiring=tuple(str(x).strip() for x in item.get("minimal_wiring", ()) if str(x).strip()),
+                    required_companions=tuple(
+                        str(x).strip() for x in item.get("required_companions", ()) if str(x).strip()
+                    ),
+                    config_keys=tuple(str(x).strip() for x in item.get("config_keys", ()) if str(x).strip()),
+                    example_entry=str(item.get("example_entry", "")).strip(),
+                )
+            )
+        except Exception:
+            continue
+    return [e for e in out if e.key and e.kind and e.import_path]
+
+
 def load_project_entries(project_root: Path | str) -> List[CatalogEntry]:
     """Load entries from project_registry.py."""
     root = Path(project_root).resolve()
     registry_path = root / "project_registry.py"
-    if not registry_path.is_file():
-        raise FileNotFoundError(f"project_registry.py not found under: {root}")
+    entries: List[CatalogEntry] = []
 
-    # Ensure local project modules are importable.
-    if str(root) not in sys.path:
-        sys.path.insert(0, str(root))
+    if registry_path.is_file():
+        # Ensure local project modules are importable.
+        if str(root) not in sys.path:
+            sys.path.insert(0, str(root))
 
-    mod = _load_registry_module(registry_path)
+        mod = _load_registry_module(registry_path)
 
-    raw_entries: Sequence = []
-    if hasattr(mod, "get_project_entries"):
-        raw_entries = mod.get_project_entries()
-    elif hasattr(mod, "PROJECT_CATALOG_ENTRIES"):
-        raw_entries = getattr(mod, "PROJECT_CATALOG_ENTRIES")
-    elif hasattr(mod, "CATALOG_ENTRIES"):
-        raw_entries = getattr(mod, "CATALOG_ENTRIES")
-    else:
-        raise AttributeError("project_registry.py must define get_project_entries() or PROJECT_CATALOG_ENTRIES")
+        raw_entries: Sequence = []
+        if hasattr(mod, "get_project_entries"):
+            raw_entries = mod.get_project_entries()
+        elif hasattr(mod, "PROJECT_CATALOG_ENTRIES"):
+            raw_entries = getattr(mod, "PROJECT_CATALOG_ENTRIES")
+        elif hasattr(mod, "CATALOG_ENTRIES"):
+            raw_entries = getattr(mod, "CATALOG_ENTRIES")
+        else:
+            raise AttributeError("project_registry.py must define get_project_entries() or PROJECT_CATALOG_ENTRIES")
+        entries.extend([_coerce_entry(item) for item in list(raw_entries)])
 
-    entries = [_coerce_entry(item) for item in list(raw_entries)]
+    # Merge project-local TOML entries (UI registration target).
+    entries.extend(_load_project_toml_entries(root))
+    if not entries:
+        raise FileNotFoundError(f"No project catalog entries found under: {root}")
     return _normalize_project_entries(entries)
 
 

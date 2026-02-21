@@ -24,11 +24,10 @@ def attach_moead(
 
     cfg = config if config is not None else MOEADConfig()
 
-    # Install adapter
-    if getattr(solver, "set_adapter", None) is not None:
-        solver.set_adapter(MOEADAdapter(cfg))
-    else:
-        setattr(solver, "adapter", MOEADAdapter(cfg))
+    set_adapter = getattr(solver, "set_adapter", None)
+    if not callable(set_adapter):
+        raise RuntimeError("attach_moead requires solver.set_adapter(adapter)")
+    set_adapter(MOEADAdapter(cfg))
 
     # Recommended: archive plugin
     if archive and getattr(solver, "add_plugin", None) is not None:

@@ -87,8 +87,8 @@ def build_solver(bias_key: str, steps: int = 40):
         representation_pipeline=pipeline,
         bias_module=bias_module,
     )
-    solver.enable_bias = True
-    solver.max_steps = int(steps)
+    solver.set_enable_bias(True)
+    solver.set_max_steps(int(steps))
 
     attach_benchmark_harness(solver, output_dir="runs", run_id="bias_gallery", overwrite=True, log_every=1)
     attach_module_report(solver, output_dir="runs", run_id="bias_gallery", write_bias_markdown=True)

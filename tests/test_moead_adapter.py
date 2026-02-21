@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 
 def test_moead_adapter_runs_and_updates_archive():
@@ -46,4 +47,26 @@ def test_moead_adapter_runs_and_updates_archive():
     assert getattr(solver, "pareto_objectives", None) is not None
     assert np.asarray(solver.pareto_objectives).ndim == 2
     assert np.asarray(solver.pareto_objectives).shape[1] == 2
+    # Adapter-owned population is exposed via runtime context projection.
+    ctx = solver.get_context()
+    assert np.asarray(ctx.get("population", np.zeros((0, 0))), dtype=float).shape[0] == 40
+
+
+def test_moead_adapter_rejects_legacy_nsga_loop_solver():
+    from nsgablack.core.adapters import MOEADAdapter
+
+    class _LegacyLikeSolver:
+        num_objectives = 2
+
+        def selection(self):  # pragma: no cover - behavior not used
+            return None
+
+        def environmental_selection(self, *args, **kwargs):  # pragma: no cover - behavior not used
+            _ = args, kwargs
+            return None
+
+    adapter = MOEADAdapter()
+    solver = _LegacyLikeSolver()
+    with pytest.raises(TypeError):
+        adapter.setup(solver)
 

@@ -7,6 +7,7 @@ from typing import Any, Dict
 import numpy as np
 
 from ..base import Plugin
+from ...utils.context.context_keys import KEY_CROSSOVER_RATE, KEY_MUTATION_RATE
 
 
 class AdaptiveParametersPlugin(Plugin):
@@ -15,10 +16,10 @@ class AdaptiveParametersPlugin(Plugin):
     is_algorithmic = True
     context_requires = ()
     context_provides = ()
-    context_mutates = ()
+    context_mutates = (KEY_MUTATION_RATE, KEY_CROSSOVER_RATE)
     context_cache = ()
     context_notes = (
-        "Reads solver objective history and adaptively mutates solver "
+        "Reads adapter/context objective snapshot and adaptively mutates solver "
         "mutation_rate/crossover_rate; writes adaptation summary into run result."
     )
 
@@ -59,11 +60,21 @@ class AdaptiveParametersPlugin(Plugin):
     def on_generation_start(self, generation: int) -> None:
         return None
 
+    def on_context_build(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        if self.solver is None:
+            return context
+        context[KEY_MUTATION_RATE] = float(getattr(self.solver, "mutation_rate", 0.0))
+        context[KEY_CROSSOVER_RATE] = float(getattr(self.solver, "crossover_rate", 0.0))
+        return context
+
     def on_generation_end(self, generation: int) -> None:
         if self.solver is None or not self.enabled:
             return None
 
-        current_best = self._get_best_fitness(self.solver.objectives)
+        _, objectives, _ = self.resolve_population_snapshot(self.solver)
+        if objectives.size == 0:
+            return None
+        current_best = self._get_best_fitness(objectives)
         self.best_fitness_history.append(current_best)
 
         if len(self.best_fitness_history) < 2:

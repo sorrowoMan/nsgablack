@@ -1,0 +1,18 @@
+[[entry]]
+key = 'project.bias.testbias'
+title = 'testbias'
+kind = 'bias'
+import_path = 'my_project.bias.template_bias:testbias'
+tags = []
+summary = 'Bias component: testbias.'
+companions = []
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ['注册检测']
+use_when = ['需要表达软偏好或搜索倾向时']
+minimal_wiring = ['from my_project.bias.template_bias import testbias', 'bias_module.add(testbias())']
+required_companions = ['(none)']
+config_keys = ['weight']
+example_entry = 'python -m nsgablack catalog search testbias --kind example'

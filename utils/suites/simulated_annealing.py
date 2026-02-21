@@ -31,8 +31,7 @@ def attach_simulated_annealing(
 
     cfg = config or SAConfig(**config_kwargs)
     adapter = SimulatedAnnealingAdapter(config=cfg)
-    if hasattr(solver, "set_adapter"):
-        solver.set_adapter(adapter)
-    else:
-        solver.adapter = adapter
+    if not hasattr(solver, "set_adapter"):
+        raise ValueError("attach_simulated_annealing: solver missing set_adapter()")
+    solver.set_adapter(adapter)
     return adapter

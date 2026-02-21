@@ -25,8 +25,10 @@ def test_single_trajectory_adapter_runs(sample_problem):
     solver.run()
 
     assert solver.best_objective is not None
-    assert getattr(solver, "sta_sigma", None) is not None
-    assert getattr(solver, "sta_best_x", None) is not None
+    ctx = solver.get_context()
+    assert ctx.get("single_traj_sigma", None) is not None
+    st = ctx.get("single_traj_state", {}) or {}
+    assert "best_score" in st
 
 
 def test_attach_single_trajectory_suite(sample_problem):

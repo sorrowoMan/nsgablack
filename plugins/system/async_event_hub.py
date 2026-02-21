@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from ..base import Plugin
 from ...utils.context.context_events import record_context_event, replay_context
+from ...utils.context.context_keys import KEY_CONTEXT_EVENTS
 
 
 @dataclass
@@ -14,13 +15,13 @@ class AsyncEventHubConfig:
     commit_policy: str = "generation_end"  # generation_end | manual
     max_pending: int = 10000
     drop_policy: str = "drop_old"  # drop_old | drop_new
-    events_key: str = "context_events"
+    events_key: str = KEY_CONTEXT_EVENTS
 
 
 class AsyncEventHubPlugin(Plugin):
     context_requires = ()
-    context_provides = ("context_events",)
-    context_mutates = ("context_events",)
+    context_provides = (KEY_CONTEXT_EVENTS,)
+    context_mutates = (KEY_CONTEXT_EVENTS,)
     context_cache = ()
     context_notes = (
         "Queues async context events and commits them on policy; "

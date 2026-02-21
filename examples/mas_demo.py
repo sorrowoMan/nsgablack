@@ -55,7 +55,7 @@ def build_solver():
         adapter=adapter,
         representation_pipeline=pipeline,
     )
-    solver.max_steps = 40
+    solver.set_max_steps(40)
 
     solver.add_plugin(MASModelPlugin())
 

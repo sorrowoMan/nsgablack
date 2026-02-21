@@ -7,3 +7,9 @@
 Purpose: runnable demos (minimal to end-to-end).
 Boundary: demos are not API.
 Example: `end_to_end_workflow_demo.py`.
+
+## Migration workshops
+
+- `migration_lab/README.md`: traditional script -> framework migration labs
+- `migration_lab/ga_single_objective/`: first workshop (single-objective GA)
+

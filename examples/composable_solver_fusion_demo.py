@@ -1,7 +1,7 @@
-"""ComposableSolver �ں�ʾ��
+"""ComposableSolver 组合式适配器示例。
 
-��ʾ���ʹ�� AlgorithmAdapter + CompositeAdapter �ں϶���������ԣ�
-����ƫ�á���ʾ���ߡ����ϵͳЭ����
+演示 AlgorithmAdapter + CompositeAdapter 的组合方式，
+并结合表示管线、偏置与插件进行端到端运行。
 """
 
 import numpy as np
@@ -99,7 +99,7 @@ def build_solver():
         bias_module=bias,
         representation_pipeline=pipeline,
     )
-    solver.max_steps = 30
+    solver.set_max_steps(30)
     solver.add_plugin(StepLoggerPlugin(interval=5))
     return solver
 
@@ -107,8 +107,8 @@ def build_solver():
 if __name__ == "__main__":
     solver = build_solver()
     result = solver.run()
-    print("����״̬:", result["status"], "steps:", result["steps"])
+    print("运行状态:", result["status"], "steps:", result["steps"])
     if solver.best_x is not None:
-        print("����Ŀ��ֵ:", f"{solver.best_objective:.6f}")
-        print("���Ž�:", solver.best_x)
+        print("最优目标值:", f"{solver.best_objective:.6f}")
+        print("最优解:", solver.best_x)
 

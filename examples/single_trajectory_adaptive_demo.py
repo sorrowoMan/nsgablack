@@ -48,7 +48,7 @@ def build_solver():
     )
 
     solver = ComposableSolver(problem=problem, representation_pipeline=pipeline)
-    solver.max_steps = 40
+    solver.set_max_steps(40)
 
     attach_single_trajectory_adaptive(
         solver,

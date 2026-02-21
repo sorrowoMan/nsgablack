@@ -57,7 +57,7 @@ def build_solver(plugin_keys, steps: int = 40):
 
     adapter = SimulatedAnnealingAdapter(SAConfig(batch_size=8, initial_temperature=6.0, cooling_rate=0.96))
     solver = ComposableSolver(problem=problem, adapter=adapter, representation_pipeline=pipeline)
-    solver.max_steps = int(steps)
+    solver.set_max_steps(int(steps))
 
     for key in plugin_keys:
         plugin = _load_plugin(key)

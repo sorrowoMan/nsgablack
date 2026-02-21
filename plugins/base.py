@@ -1,56 +1,55 @@
-﻿"""
-鎻掍欢绯荤粺鍩虹鏋舵瀯
-"""
+"""Plugin base classes and plugin manager."""
+
+from __future__ import annotations
 
 from abc import ABC
-from typing import Optional, Dict, Any
+import copy
 import time
 import traceback
 import warnings
+from typing import Any, Dict, Mapping, Optional
+
+import numpy as np
+
+from ..utils.context.context_keys import (
+    KEY_CONSTRAINT_VIOLATIONS,
+    KEY_OBJECTIVES,
+    KEY_POPULATION,
+)
 
 
 class Plugin(ABC):
-    """
-    鎻掍欢鍩虹被
+    """Base class for all plugins."""
 
-    鎵€鏈夋彃浠堕兘搴旂户鎵挎绫诲苟瀹炵幇鐩稿簲鐨勬柟娉?
-    """
-
-    def __init__(self, name: str, solver=None, priority: int = 0):
-        """
-        鍒濆鍖栨彃浠?
-
-        Args:
-            name: 鎻掍欢鍚嶇О
-            solver: 姹傝В鍣ㄥ疄渚嬶紙鍙€夛紝绋嶅悗鍙互attach锛?
-            priority: 鎻掍欢浼樺厛绾э紙鏁板€艰秺澶т紭鍏堢骇瓒婇珮锛?
-        """
-        self.name = name
-        self.solver = solver
-        self.enabled = True
-        self.config = {}
-        self.priority = priority
-        # Optional semantics:
-        # - is_algorithmic=True: plugin contributes to search behavior and should be audited.
-        # - get_report(): returns a small dict for ModuleReportPlugin to persist.
-        self.is_algorithmic = False
-        self._profile = {"total_s": 0.0, "events": {}}
-
-        # Context contract (optional; for compatibility the defaults are empty).
-        # Declare as class attributes in subclasses when needed.
-        # - context_requires: fields this plugin expects in context
-        # - context_provides: fields this plugin writes to context
-        # - context_mutates: fields this plugin may overwrite
-        # - context_cache: fields considered cache (non-replayable)
-
-    # Optional contract metadata (class-level defaults)
+    # Optional context contract metadata (class-level defaults)
     context_requires = ()
     context_provides = ()
     context_mutates = ()
     context_cache = ()
     context_notes = None
 
+    def __init__(self, name: str, solver=None, priority: int = 0):
+        """Create a plugin.
+
+        Args:
+            name: Plugin name.
+            solver: Optional solver instance; can also be attached later.
+            priority: Larger values run earlier.
+        """
+        self.name = name
+        self.solver = solver
+        self.enabled = True
+        self.config: Dict[str, Any] = {}
+        self.priority = priority
+
+        # Optional semantics:
+        # - is_algorithmic=True: plugin affects search behavior and should be audited.
+        # - get_report(): returns a small dict persisted by reporting plugins.
+        self.is_algorithmic = False
+        self._profile = {"total_s": 0.0, "events": {}}
+
     def get_context_contract(self) -> Dict[str, Any]:
+        """Return context contract metadata for this plugin."""
         return {
             "requires": getattr(self, "context_requires", ()),
             "provides": getattr(self, "context_provides", ()),
@@ -59,58 +58,67 @@ class Plugin(ABC):
             "notes": getattr(self, "context_notes", None),
         }
 
+    def create_local_rng(self, seed: Optional[int] = None, solver: Any = None) -> np.random.Generator:
+        """Create a plugin-local RNG."""
+        if seed is not None:
+            return np.random.default_rng(int(seed))
+        target = solver if solver is not None else self.solver
+        if target is not None:
+            fork = getattr(target, "fork_rng", None)
+            if callable(fork):
+                try:
+                    rng = fork(self.name)
+                    if isinstance(rng, np.random.Generator):
+                        return rng
+                except Exception:
+                    pass
+        return np.random.default_rng()
+
     def attach(self, solver):
-        """闄勫姞鍒版眰瑙ｅ櫒"""
+        """Attach this plugin to a solver."""
         self.solver = solver
 
     def detach(self):
-        """浠庢眰瑙ｅ櫒鍒嗙"""
+        """Detach this plugin from its solver."""
         self.solver = None
 
     def enable(self):
-        """鍚敤鎻掍欢"""
+        """Enable this plugin."""
         self.enabled = True
 
     def disable(self):
-        """绂佺敤鎻掍欢"""
+        """Disable this plugin."""
         self.enabled = False
 
     def configure(self, **kwargs):
-        """閰嶇疆鎻掍欢鍙傛暟"""
+        """Update plugin config."""
         self.config.update(kwargs)
 
     def get_config(self, key: str, default=None):
-        """鑾峰彇閰嶇疆鍙傛暟"""
+        """Get one config value."""
         return self.config.get(key, default)
 
+    # Lifecycle hooks (optional)
     def on_solver_init(self, solver):
-        """姹傝В鍣ㄥ垵濮嬪寲鏃惰皟鐢紙榛樿鏃犳搷浣滐紝渚夸簬蹇€熷紑鍙戯級銆?"""
         return None
 
     def on_population_init(self, population, objectives, violations):
-        """绉嶇兢鍒濆鍖栧悗璋冪敤锛堥粯璁ゆ棤鎿嶄綔锛夈€?"""
         return None
 
     def on_generation_start(self, generation: int):
-        """姣忎唬寮€濮嬫椂璋冪敤锛堥粯璁ゆ棤鎿嶄綔锛夈€?"""
         return None
 
     def on_generation_end(self, generation: int):
-        """姣忎唬缁撴潫鏃惰皟鐢紙榛樿鏃犳搷浣滐級銆?"""
         return None
 
     def on_step(self, solver, generation: int):
-        """绌虹櫧姹傝В鍣ㄦ瘡姝ュ洖璋冿紙榛樿鏃犳搷浣滐級銆?"""
         return None
 
     def on_solver_finish(self, result: Dict[str, Any]):
-        """姹傝В鍣ㄧ粨鏉熸椂璋冪敤锛堥粯璁ゆ棤鎿嶄綔锛夈€?"""
         return None
 
     def get_report(self) -> Optional[Dict[str, Any]]:
-        """
-        鍙€夛細杩斿洖鎻掍欢鐨勨€滅畻娉曡础鐚?琛屼负鎽樿鈥濄€?
-        绾﹀畾锛?        - 宸ュ叿鍨嬫彃浠讹紙log/export/viz锛変繚鎸?is_algorithmic=False锛岃繑鍥?None銆?        - 绠楁硶鍨嬫彃浠讹紙elite/regions/閲嶅惎/绛涢€夌瓑锛夎缃?is_algorithmic=True锛屽彲杩斿洖绠€瑕?dict銆?        """
+        """Return a small algorithmic report; tool-only plugins should return None."""
         if not bool(getattr(self, "is_algorithmic", False)):
             return None
         try:
@@ -118,17 +126,128 @@ class Plugin(ABC):
         except Exception:
             return {"config": {}}
 
+    def resolve_population_snapshot(self, solver=None):
+        """Return (population, objectives, violations) with adapter-first fallback order.
+
+        Priority:
+        1) adapter.get_population()
+        2) adapter runtime context projection
+        3) solver.{population, objectives, constraint_violations}
+        """
+        target = solver if solver is not None else self.solver
+        if target is None:
+            return np.zeros((0, 0), dtype=float), np.zeros((0, 0), dtype=float), np.zeros((0,), dtype=float)
+
+        adapter = getattr(target, "adapter", None)
+        if adapter is not None:
+            getter = getattr(adapter, "get_population", None)
+            if callable(getter):
+                try:
+                    x, f, v = getter()
+                    x_arr = np.asarray(x, dtype=float)
+                    f_arr = np.asarray(f, dtype=float)
+                    v_arr = np.asarray(v, dtype=float).reshape(-1)
+                    if x_arr.ndim == 1:
+                        x_arr = x_arr.reshape(1, -1) if x_arr.size > 0 else x_arr.reshape(0, 0)
+                    if f_arr.ndim == 1:
+                        f_arr = f_arr.reshape(-1, 1) if f_arr.size > 0 else f_arr.reshape(0, 0)
+                    return x_arr, f_arr, v_arr
+                except Exception:
+                    pass
+            projector = getattr(adapter, "get_runtime_context_projection", None)
+            if callable(projector):
+                try:
+                    projection = projector(target)
+                except Exception:
+                    projection = None
+                if isinstance(projection, dict):
+                    try:
+                        x = np.asarray(projection.get(KEY_POPULATION, np.zeros((0, 0))), dtype=float)
+                        f = np.asarray(projection.get(KEY_OBJECTIVES, np.zeros((0, 0))), dtype=float)
+                        v = np.asarray(
+                            projection.get(KEY_CONSTRAINT_VIOLATIONS, np.zeros((0,))),
+                            dtype=float,
+                        ).reshape(-1)
+                        if x.ndim == 1:
+                            x = x.reshape(1, -1) if x.size > 0 else x.reshape(0, 0)
+                        if f.ndim == 1:
+                            f = f.reshape(-1, 1) if f.size > 0 else f.reshape(0, 0)
+                        if x.size > 0 or f.size > 0:
+                            return x, f, v
+                    except Exception:
+                        pass
+
+        x = np.asarray(getattr(target, "population", np.zeros((0, 0))), dtype=float)
+        f = np.asarray(getattr(target, "objectives", np.zeros((0, 0))), dtype=float)
+        v = np.asarray(getattr(target, "constraint_violations", np.zeros((0,))), dtype=float).reshape(-1)
+        if x.ndim == 1:
+            x = x.reshape(1, -1) if x.size > 0 else x.reshape(0, 0)
+        if f.ndim == 1:
+            f = f.reshape(-1, 1) if f.size > 0 else f.reshape(0, 0)
+        return x, f, v
+
+    def commit_population_snapshot(
+        self,
+        population,
+        objectives,
+        violations,
+        solver=None,
+    ) -> bool:
+        """Write back updated population snapshot.
+
+        Priority:
+        1) adapter.set_population / set_population_snapshot / update_population
+        2) solver.write_population_snapshot(...) protocol
+        """
+        target = solver if solver is not None else self.solver
+        if target is None:
+            return False
+
+        try:
+            x_arr = np.asarray(population, dtype=float)
+            f_arr = np.asarray(objectives, dtype=float)
+            v_arr = np.asarray(violations, dtype=float).reshape(-1)
+        except Exception:
+            return False
+
+        if x_arr.ndim == 1:
+            x_arr = x_arr.reshape(1, -1) if x_arr.size > 0 else x_arr.reshape(0, 0)
+        if f_arr.ndim == 1:
+            f_arr = f_arr.reshape(-1, 1) if f_arr.size > 0 else f_arr.reshape(0, 0)
+
+        adapter = getattr(target, "adapter", None)
+        if adapter is not None:
+            for method_name in ("set_population", "set_population_snapshot", "update_population"):
+                setter = getattr(adapter, method_name, None)
+                if not callable(setter):
+                    continue
+                try:
+                    handled = setter(x_arr, f_arr, v_arr)
+                except TypeError:
+                    try:
+                        handled = setter(target, x_arr, f_arr, v_arr)
+                    except Exception:
+                        handled = False
+                except Exception:
+                    handled = False
+                if handled is not False:
+                    return True
+
+        writer = getattr(target, "write_population_snapshot", None)
+        if callable(writer):
+            try:
+                return bool(writer(x_arr, f_arr, v_arr))
+            except Exception:
+                return False
+        return False
+
     def __repr__(self):
         status = "enabled" if self.enabled else "disabled"
         return f"<{self.__class__.__name__}({self.name}, {status})>"
 
 
 class PluginManager:
-    """
-    鎻掍欢绠＄悊鍣?
-
-    绠＄悊澶氫釜鎻掍欢鐨勭敓鍛藉懆鏈熷拰浜嬩欢鍒嗗彂
-    """
+    """Manage plugin registration, lifecycle callbacks, and dispatch."""
 
     def __init__(self, short_circuit: bool = False, short_circuit_events: Optional[list] = None):
         self.plugins = []
@@ -136,30 +255,45 @@ class PluginManager:
         self.short_circuit = short_circuit
         self.short_circuit_events = set(short_circuit_events or [])
         self._solver = None
+        self._context_build_writers: Dict[str, str] = {}
+
+    @staticmethod
+    def _safe_values_differ(a: Any, b: Any) -> bool:
+        if a is b:
+            return False
+        try:
+            neq = a != b
+            if isinstance(neq, bool):
+                return bool(neq)
+            # numpy arrays / pandas objects may return vectorized result
+            return True
+        except Exception:
+            return True
+
+    def _collect_changed_keys(self, before: Mapping[str, Any], after: Mapping[str, Any]) -> list[str]:
+        keys = set(before.keys()) | set(after.keys())
+        changed: list[str] = []
+        for key in keys:
+            if key not in before or key not in after:
+                changed.append(str(key))
+                continue
+            if self._safe_values_differ(before[key], after[key]):
+                changed.append(str(key))
+        return changed
 
     def register(self, plugin: Plugin):
-        """
-        娉ㄥ唽鎻掍欢
-
-        Args:
-            plugin: 鎻掍欢瀹炰緥
-        """
+        """Register a plugin."""
         if plugin.name in self.plugin_map:
             raise ValueError(f"Plugin '{plugin.name}' already registered")
 
         self.plugins.append(plugin)
-        # 楂樹紭鍏堢骇鍦ㄥ墠锛屼繚鎸佸悓浼樺厛绾ф敞鍐岄『搴?
+        # Keep stable order among same-priority plugins.
         self.plugins.sort(key=lambda p: p.priority, reverse=True)
         self.plugin_map[plugin.name] = plugin
         return plugin
 
     def unregister(self, plugin_name: str):
-        """
-        娉ㄩ攢鎻掍欢
-
-        Args:
-            plugin_name: 鎻掍欢鍚嶇О
-        """
+        """Unregister one plugin by name."""
         if plugin_name not in self.plugin_map:
             raise ValueError(f"Plugin '{plugin_name}' not found")
 
@@ -168,37 +302,24 @@ class PluginManager:
         del self.plugin_map[plugin_name]
 
     def get(self, plugin_name: str) -> Optional[Plugin]:
-        """
-        鑾峰彇鎻掍欢
-
-        Args:
-            plugin_name: 鎻掍欢鍚嶇О
-
-        Returns:
-            鎻掍欢瀹炰緥锛屽鏋滀笉瀛樺湪鍒欒繑鍥濶one
-        """
+        """Return plugin instance by name, or None."""
         return self.plugin_map.get(plugin_name)
 
     def enable(self, plugin_name: str):
-        """鍚敤鎻掍欢"""
         plugin = self.get(plugin_name)
         if plugin:
             plugin.enable()
 
     def disable(self, plugin_name: str):
-        """绂佺敤鎻掍欢"""
         plugin = self.get(plugin_name)
         if plugin:
             plugin.disable()
 
     def trigger(self, event_name: str, *args, **kwargs):
-        """
-        瑙﹀彂浜嬩欢
+        """Trigger an event on plugins.
 
-        Args:
-            event_name: 浜嬩欢鍚嶇О
-            *args: 浣嶇疆鍙傛暟
-            **kwargs: 鍏抽敭瀛楀弬鏁?
+        If short-circuit is enabled for this event, returns the first non-None
+        handler result.
         """
         should_short_circuit = self.short_circuit and event_name in self.short_circuit_events
 
@@ -238,73 +359,100 @@ class PluginManager:
                         f"[WARNING] Plugin {plugin.name} failed to handle {event_name}: {e}\n"
                         f"{traceback.format_exc()}"
                     )
-            # allow return values for custom hooks via dispatch()
 
     def dispatch(self, event_name: str, *args, **kwargs):
-        """
-        Dispatch an event and return the last non-None value.
+        """Dispatch an event and return the last non-None result.
+
+        For `on_context_build`, it also tracks which plugin changed which keys
+        and stores attribution into `solver._context_build_writers`.
         """
         out = None
+        context_writers: Dict[str, str] = {}
+        is_context_build = (
+            str(event_name) == "on_context_build"
+            and len(args) >= 1
+            and isinstance(args[0], dict)
+        )
         for plugin in self.plugins:
             if not plugin.enabled:
                 continue
             handler = getattr(plugin, event_name, None)
             if handler and callable(handler):
+                before_ctx = None
+                if is_context_build:
+                    try:
+                        before_ctx = copy.deepcopy(args[0])
+                    except Exception:
+                        before_ctx = dict(args[0])
                 try:
                     result = handler(*args, **kwargs)
-                except Exception:
+                except Exception as exc:
+                    warnings.warn(
+                        (
+                            f"Plugin '{plugin.name}' dispatch failed on event '{event_name}': {exc}\n"
+                            f"{traceback.format_exc()}"
+                        ),
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
                     continue
+
+                if is_context_build and before_ctx is not None:
+                    after_ctx = result if isinstance(result, dict) else args[0]
+                    if isinstance(after_ctx, dict):
+                        changed = self._collect_changed_keys(before_ctx, after_ctx)
+                        source = f"plugin.{plugin.name}"
+                        for key in changed:
+                            context_writers[str(key)] = source
+
                 if result is not None:
                     out = result
+
+        if is_context_build:
+            self._context_build_writers = context_writers
+            if self._solver is not None:
+                try:
+                    setattr(self._solver, "_context_build_writers", dict(context_writers))
+                except Exception:
+                    pass
         return out
 
     def on_solver_init(self, solver):
-        """閫氱煡鎵€鏈夋彃浠讹細姹傝В鍣ㄥ垵濮嬪寲"""
+        """Notify all plugins that solver init has started."""
         self._solver = solver
+        self._context_build_writers = {}
+        try:
+            setattr(solver, "_context_build_writers", {})
+        except Exception:
+            pass
         for plugin in self.plugins:
             if plugin.enabled:
                 plugin.attach(solver)
                 plugin.on_solver_init(solver)
 
     def on_population_init(self, population, objectives, violations):
-        """閫氱煡鎵€鏈夋彃浠讹細绉嶇兢鍒濆鍖?"""
-        self.trigger('on_population_init', population, objectives, violations)
+        self.trigger("on_population_init", population, objectives, violations)
 
     def on_generation_start(self, generation: int):
-        """閫氱煡鎵€鏈夋彃浠讹細浠ｅ紑濮?"""
-        self.trigger('on_generation_start', generation)
+        self.trigger("on_generation_start", generation)
 
     def on_generation_end(self, generation: int):
-        """閫氱煡鎵€鏈夋彃浠讹細浠ｇ粨鏉?"""
-        self.trigger('on_generation_end', generation)
+        self.trigger("on_generation_end", generation)
 
     def on_step(self, solver, generation: int):
-        """閫氱煡鎵€鏈夋彃浠讹細鍗曟锛堢┖鐧芥眰瑙ｅ櫒锛?"""
-        self.trigger('on_step', solver, generation)
+        self.trigger("on_step", solver, generation)
 
     def on_solver_finish(self, result: Dict[str, Any]):
-        """閫氱煡鎵€鏈夋彃浠讹細姹傝В鍣ㄧ粨鏉?"""
-        self.trigger('on_solver_finish', result)
-        for plugin in self.plugins:
-            if not plugin.enabled:
-                continue
+        self.trigger("on_solver_finish", result)
 
     def list_plugins(self, enabled_only: bool = False) -> list:
-        """
-        鍒楀嚭鎵€鏈夋彃浠?
-
-        Args:
-            enabled_only: 鏄惁鍙垪鍑哄惎鐢ㄧ殑鎻掍欢
-
-        Returns:
-            鎻掍欢鍒楄〃
-        """
+        """List plugins, optionally only enabled ones."""
         if enabled_only:
             return [p for p in self.plugins if p.enabled]
         return self.plugins.copy()
 
     def clear(self):
-        """娓呯┖鎵€鏈夋彃浠?"""
+        """Clear all plugins."""
         self.plugins.clear()
         self.plugin_map.clear()
 

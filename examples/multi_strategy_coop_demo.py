@@ -64,7 +64,7 @@ def main():
     )
 
     solver = ComposableSolver(problem=problem, representation_pipeline=pipeline)
-    solver.max_steps = 40
+    solver.set_max_steps(40)
 
     # 子策略 1：VNS（suite 可自动把 GaussianMutation 升级为 ContextGaussianMutation）
     vns = VNSAdapter(VNSConfig(batch_size=16, k_max=4, base_sigma=0.15))

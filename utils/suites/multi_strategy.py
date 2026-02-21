@@ -39,10 +39,9 @@ def attach_multi_strategy_coop(
     if strategies is None and roles is None:
         raise ValueError("attach_multi_strategy_coop: provide strategies=... or roles=...")
     adapter = MultiStrategyControllerAdapter(strategies=strategies, roles=roles, config=config)
-    if hasattr(solver, "set_adapter"):
-        solver.set_adapter(adapter)
-    else:
-        solver.adapter = adapter
+    if not hasattr(solver, "set_adapter"):
+        raise ValueError("attach_multi_strategy_coop: solver missing set_adapter()")
+    solver.set_adapter(adapter)
 
     if attach_pareto_archive and hasattr(solver, "add_plugin"):
         if getattr(solver, "get_plugin", None) is not None and solver.get_plugin("pareto_archive") is None:

@@ -71,6 +71,13 @@ class _Node:
 
 class AStarAdapter(AlgorithmAdapter):
     """Generic A* adapter driven by neighbor expansion and heuristic search."""
+    context_requires = ("generation",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = (
+        "Consumes context for neighbor expansion / heuristic / goal callbacks.",
+    )
 
     def __init__(
         self,
@@ -288,3 +295,14 @@ class AStarAdapter(AlgorithmAdapter):
             "open_size": int(len(self._open)),
             "closed_size": int(len(self._closed)),
         }
+
+    def set_state(self, state: Dict[str, Any]) -> None:
+        if not state:
+            return
+        if "found" in state:
+            self.found = bool(state["found"])
+        if "best_score" in state:
+            self.best_score = state["best_score"]
+        bs = state.get("best_state")
+        if bs is not None:
+            self.best_state = np.asarray(bs, dtype=float)

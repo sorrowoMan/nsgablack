@@ -52,7 +52,7 @@ def build_solver():
     adapter = SimulatedAnnealingAdapter(SAConfig(batch_size=24, initial_temperature=8.0, cooling_rate=0.97))
 
     solver = ComposableSolver(problem=problem, adapter=adapter, representation_pipeline=pipeline)
-    solver.max_steps = 40
+    solver.set_max_steps(40)
 
     attach_benchmark_harness(solver, output_dir="runs", run_id="parallel_repair", overwrite=True, log_every=1)
     attach_module_report(solver, output_dir="runs", run_id="parallel_repair", write_bias_markdown=True)

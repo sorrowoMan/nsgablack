@@ -46,7 +46,8 @@ def test_async_event_driven_adapter_runs(sample_problem):
     solver.run()
 
     assert solver.best_objective is not None
-    state = getattr(solver, "event_shared_state", {}) or {}
+    ctx = solver.get_context()
+    state = ctx.get("event_shared", {}) or {}
     assert "queue_size" in state
     assert "stats" in state
     assert len(adapter.event_history) > 0

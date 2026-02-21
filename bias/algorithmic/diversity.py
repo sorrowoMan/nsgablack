@@ -26,6 +26,13 @@ class DiversityBias(AlgorithmicBias):
 
     适用场景：多模态优化、需要全局搜索的问题
     """
+    context_requires = ("population",)
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Algorithmic bias: reads metrics and outputs scalar guidance."
+
 
     def __init__(self, weight: float = 0.1, metric: str = 'euclidean'):
         """
@@ -118,6 +125,13 @@ class AdaptiveDiversityBias(AlgorithmicBias):
 
     适用于动态变化的优化问题和需要平衡多样性的场景。
     """
+    context_requires = ("population",)
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Algorithmic bias: reads metrics and outputs scalar guidance."
+
 
     def __init__(
         self,
@@ -219,6 +233,13 @@ class NicheDiversityBias(AlgorithmicBias):
 
     适用于需要覆盖多个解空间区域的问题。
     """
+    context_requires = ()
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Algorithmic bias: reads metrics and outputs scalar guidance."
+
 
     def __init__(
         self,
@@ -305,6 +326,13 @@ class CrowdingDistanceBias(AlgorithmicBias):
 
     适用于多目标优化和需要均匀分布解的问题。
     """
+    context_requires = ("population",)
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Algorithmic bias: reads metrics and outputs scalar guidance."
+
 
     def __init__(self, weight: float = 0.15):
         """
@@ -368,6 +396,13 @@ class SharingFunctionBias(AlgorithmicBias):
 
     适用于需要精确控制相似度的问题。
     """
+    context_requires = ("population",)
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Algorithmic bias: reads metrics and outputs scalar guidance."
+
 
     def __init__(self, weight: float = 0.1, sigma_share: float = 0.2, alpha: float = 1.0):
         """

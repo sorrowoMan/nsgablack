@@ -30,9 +30,20 @@ from ...bias import BiasModule, DynamicPenaltyBias, StructurePriorBias, Uncertai
 from ...bias.algorithmic.signal_driven import RobustnessBias
 
 
+def _require_set_adapter(solver) -> None:
+    if not hasattr(solver, "set_adapter"):
+        raise ValueError("suite wiring requires solver.set_adapter()")
+
+
+def _require_set_bias_module(solver) -> None:
+    if not hasattr(solver, "set_bias_module"):
+        raise ValueError("suite wiring requires solver.set_bias_module()")
+
+
 def attach_trust_region_mo_dfo(solver) -> None:
     """Attach multi-objective trust-region DFO + Pareto archive + reports."""
-    solver.adapter = TrustRegionMODFOAdapter(TrustRegionMODFOConfig())
+    _require_set_adapter(solver)
+    solver.set_adapter(TrustRegionMODFOAdapter(TrustRegionMODFOConfig()))
     solver.add_plugin(ParetoArchivePlugin())
     solver.add_plugin(BenchmarkHarnessPlugin())
     solver.add_plugin(ModuleReportPlugin())
@@ -40,7 +51,8 @@ def attach_trust_region_mo_dfo(solver) -> None:
 
 def attach_trust_region_subspace_frontier(solver) -> None:
     """Attach subspace trust-region with learned basis + reports."""
-    solver.adapter = TrustRegionSubspaceAdapter()
+    _require_set_adapter(solver)
+    solver.set_adapter(TrustRegionSubspaceAdapter())
     solver.add_plugin(SubspaceBasisPlugin(SubspaceBasisConfig(method="pca")))
     solver.add_plugin(BenchmarkHarnessPlugin())
     solver.add_plugin(ModuleReportPlugin())
@@ -56,14 +68,15 @@ def attach_active_learning_surrogate(solver) -> None:
 
 def attach_robust_dfo(solver) -> None:
     """Attach DFO + Monte Carlo evaluation + robustness + dynamic penalty."""
-    solver.adapter = TrustRegionDFOAdapter()
+    _require_set_adapter(solver)
+    _require_set_bias_module(solver)
+    solver.set_adapter(TrustRegionDFOAdapter())
     solver.add_plugin(MonteCarloEvaluationPlugin(MonteCarloEvaluationConfig(mc_samples=12)))
     # Bias module
     bias = BiasModule()
     bias.add(RobustnessBias(weight=0.2))
     bias.add(DynamicPenaltyBias(penalty_func=lambda x, c, ctx: {"penalty": float(ctx.get("constraint_violation", 0.0))}))
-    solver.bias_module = bias
-    solver.enable_bias = True
+    solver.set_bias_module(bias, enable=True)
     solver.add_plugin(BenchmarkHarnessPlugin())
     solver.add_plugin(ModuleReportPlugin())
 
@@ -86,12 +99,13 @@ def attach_surrogate_model_lab(solver, *, model_type: str = "rf") -> None:
 
 def attach_structure_prior_mo(solver) -> None:
     """Attach MOEA/D + structure prior bias for multi-objective structural priors."""
-    solver.adapter = MOEADAdapter()
+    _require_set_adapter(solver)
+    _require_set_bias_module(solver)
+    solver.set_adapter(MOEADAdapter())
     bias = BiasModule()
     bias.add(StructurePriorBias(pairs=[(0, 1), (2, 3)], weight=0.2))
     bias.add(UncertaintyExplorationBias(weight=0.05))
-    solver.bias_module = bias
-    solver.enable_bias = True
+    solver.set_bias_module(bias, enable=True)
     solver.add_plugin(ParetoArchivePlugin())
     solver.add_plugin(BenchmarkHarnessPlugin())
     solver.add_plugin(ModuleReportPlugin())
@@ -107,11 +121,11 @@ def attach_multi_fidelity_eval(solver) -> None:
 
 def attach_risk_cvar(solver) -> None:
     """Attach MC evaluation + risk bias (CVaR-like)."""
+    _require_set_bias_module(solver)
     solver.add_plugin(MonteCarloEvaluationPlugin(MonteCarloEvaluationConfig(mc_samples=12, reduce="mean")))
     bias = BiasModule()
     bias.add(RiskBias(mode="cvar", alpha=0.2, weight=0.2))
-    solver.bias_module = bias
-    solver.enable_bias = True
+    solver.set_bias_module(bias, enable=True)
     solver.add_plugin(BenchmarkHarnessPlugin())
     solver.add_plugin(ModuleReportPlugin())
 

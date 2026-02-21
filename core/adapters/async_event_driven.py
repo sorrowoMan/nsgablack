@@ -19,6 +19,13 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from .algorithm_adapter import AlgorithmAdapter
+from ...utils.context.context_keys import (
+    KEY_EVENT_ARCHIVE,
+    KEY_EVENT_HISTORY,
+    KEY_EVENT_INFLIGHT,
+    KEY_EVENT_QUEUE,
+    KEY_EVENT_SHARED,
+)
 
 
 @dataclass
@@ -67,20 +74,20 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
 
     context_requires = ("generation",)
     context_provides = (
-        "event_queue",
-        "event_inflight",
-        "event_archive",
-        "event_history",
-        "event_shared",
+        KEY_EVENT_QUEUE,
+        KEY_EVENT_INFLIGHT,
+        KEY_EVENT_ARCHIVE,
+        KEY_EVENT_HISTORY,
+        KEY_EVENT_SHARED,
     )
     context_mutates = (
-        "event_queue",
-        "event_inflight",
-        "event_archive",
-        "event_history",
-        "event_shared",
+        KEY_EVENT_QUEUE,
+        KEY_EVENT_INFLIGHT,
+        KEY_EVENT_ARCHIVE,
+        KEY_EVENT_HISTORY,
+        KEY_EVENT_SHARED,
     )
-    context_cache = ("event_history", "event_inflight")
+    context_cache = (KEY_EVENT_HISTORY, KEY_EVENT_INFLIGHT)
     context_notes = (
         "Queue-based event orchestration for multi-strategy propose/update.",
         "Provides queue/inflight/archive snapshots for replay and inspection.",
@@ -109,6 +116,8 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         self.shared_state: Dict[str, Any] = {}
         self._stats: Dict[str, Dict[str, float]] = {}
         self._solver_ref: Optional[Any] = None
+        self._last_runtime_projection: Dict[str, Any] = {}
+        self._rng = np.random.default_rng()
 
     def setup(self, solver: Any) -> None:
         self._solver_ref = solver
@@ -120,6 +129,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         self.event_history = []
         self.shared_state = {}
         self._stats = {}
+        self._last_runtime_projection = {}
         for spec in self.strategies:
             self._stats[spec.name] = {
                 "proposed": 0.0,
@@ -285,7 +295,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         probs = weights / float(np.sum(weights))
 
         for _ in range(missing):
-            idx = int(np.random.choice(len(enabled), p=probs))
+            idx = int(self._rng.choice(len(enabled), p=probs))
             spec = enabled[idx]
             self._enqueue_propose(strategy=spec.name, budget=1, source="topup")
 
@@ -389,12 +399,23 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             "inflight": inflight_snapshot,
             "archive": archive_snapshot,
         }
+        _ = solver
+        self._last_runtime_projection = {
+            KEY_EVENT_SHARED: self.shared_state,
+            KEY_EVENT_QUEUE: queue_snapshot,
+            KEY_EVENT_INFLIGHT: inflight_snapshot,
+            KEY_EVENT_ARCHIVE: archive_snapshot,
+            KEY_EVENT_HISTORY: list(self.event_history),
+        }
 
-        solver.event_shared_state = self.shared_state
-        solver.event_queue = queue_snapshot
-        solver.event_inflight = inflight_snapshot
-        solver.event_archive = archive_snapshot
-        solver.event_history = list(self.event_history)
+    def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
+        _ = solver
+        return dict(self._last_runtime_projection)
+
+    def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
+        _ = solver
+        source = f"adapter.{self.__class__.__name__}"
+        return {str(key): source for key in self._last_runtime_projection.keys()}
 
     def get_state(self) -> Dict[str, Any]:
         return {

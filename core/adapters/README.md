@@ -1,9 +1,14 @@
-# core/adapters
+﻿# core/adapters
 
-用途：策略内核实现（Adapter 家族）。
-边界：只处理搜索策略，不绑定问题与评估。
-示例：NSGA2/SA/VNS 等 Adapter。
+Purpose:
+- Canonical home of algorithm adapters.
+- Adapters are first-class runtime units with `propose()` and `update()`.
 
-Purpose: adapter implementations (search strategies).
-Boundary: strategy only; no problem/evaluation binding.
-Example: NSGA2/SA/VNS adapters.
+Boundary:
+- Keep process/search logic here.
+- Do not put process-level classes in `bias.*`.
+- Keep problem modeling in `problem/*`, and representation operators in `representation/*`.
+
+Single-entry rule:
+- One algorithm, one canonical adapter entry.
+- Multi-strategy composition should wire these adapters instead of duplicating algorithm variants.

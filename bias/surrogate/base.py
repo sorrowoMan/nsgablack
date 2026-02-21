@@ -38,6 +38,13 @@ class SurrogateBiasContext:
 
 class SurrogateControlBias:
     """Base class for surrogate control biases."""
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(self, name: str = "surrogate_control_bias"):
         self.name = name

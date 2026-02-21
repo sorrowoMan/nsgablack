@@ -71,7 +71,7 @@ def main() -> None:
         overwrite=True,
     )
 
-    solver.max_steps = 40
+    solver.set_max_steps(40)
     result = solver.run()
 
     print("done.")

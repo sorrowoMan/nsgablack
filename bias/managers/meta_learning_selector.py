@@ -9,6 +9,7 @@ from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field
 from collections import defaultdict
 import json
+import os
 import logging
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.neural_network import MLPRegressor
@@ -179,8 +180,9 @@ class MetaLearningBiasSelector:
         self.bias_performance_db: Dict[str, List[BiasEffectivenessMetrics]] = defaultdict(list)
 
         # 可用偏置池
-        self.available_algorithmic_biases = list(AlgorithmicBiasFactory.get_available_types())
-        self.available_domain_biases = list(DomainBiasFactory.get_available_types())
+        registry = get_bias_registry()
+        self.available_algorithmic_biases = list(registry.list_algorithmic_biases())
+        self.available_domain_biases = list(registry.list_domain_biases())
 
         self.logger = logging.getLogger(__name__)
 
@@ -330,12 +332,12 @@ class MetaLearningBiasSelector:
         for problem_data in self.problem_database:
             features = problem_data['features']
             feature_vector = self._extract_feature_vector(features)
-            X.append(feature_vector)
 
             # 获取该问题的最佳偏置效果
             best_metrics = self._get_best_bias_metrics_for_problem(features.problem_id)
 
             if best_metrics:
+                X.append(feature_vector)
                 y_convergence.append(best_metrics.convergence_improvement)
                 y_quality.append(best_metrics.solution_quality_boost)
                 y_diversity.append(best_metrics.diversity_score)
@@ -420,29 +422,53 @@ class MetaLearningBiasSelector:
     def _select_top_biases(self, predictions: Dict[str, Dict[str, float]],
                           optimization_goal: str, top_k: int) -> List[Tuple[str, float]]:
         """根据优化目标选择top_k偏置"""
-        if optimization_goal == 'convergence':
-            sorted_biases = sorted(predictions.items(),
-                                key=lambda x: x[1]['convergence'], reverse=True)
-        elif optimization_goal == 'quality':
-            sorted_biases = sorted(predictions.items(),
-                                key=lambda x: x[1]['quality'], reverse=True)
-        else:  # balanced
-            sorted_biases = sorted(predictions.items(),
-                                key=lambda x: x[1]['overall'], reverse=True)
+        if not predictions:
+            return []
+        metric_key = {
+            "convergence": "convergence",
+            "quality": "quality",
+        }.get(str(optimization_goal).lower(), "overall")
+        scored: List[Tuple[str, float]] = []
+        for name, pred in predictions.items():
+            try:
+                score = float(pred.get(metric_key, 0.0)) if isinstance(pred, dict) else float(pred)
+            except Exception:
+                score = 0.0
+            scored.append((str(name), score))
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[:max(0, int(top_k))]
 
-        return sorted_biases[:top_k]
-
-    def _compute_bias_weights(self, selected_biases: List[Tuple[str, float]]) -> Dict[str, float]:
+    def _compute_bias_weights(self, selected_biases: List[Tuple[str, Any]]) -> Dict[str, float]:
         """计算偏置权重"""
         if not selected_biases:
             return {}
 
         # 标准化权重
-        scores = [score for _, score in selected_biases]
+        extracted: List[Tuple[str, float]] = []
+        for bias_name, score_raw in selected_biases:
+            if isinstance(score_raw, dict):
+                score = None
+                for key in ("overall", "quality", "convergence", "diversity"):
+                    if key in score_raw:
+                        try:
+                            score = float(score_raw[key])
+                        except Exception:
+                            score = None
+                        break
+                if score is None:
+                    score = 0.0
+            else:
+                try:
+                    score = float(score_raw)
+                except Exception:
+                    score = 0.0
+            extracted.append((str(bias_name), float(score)))
+
+        scores = [score for _, score in extracted]
         max_score = max(scores) if scores else 1.0
 
         weights = {}
-        for bias_name, score in selected_biases:
+        for bias_name, score in extracted:
             # 将预测分数转换为0.05-0.3的权重范围
             normalized_score = score / max_score if max_score > 0 else 0
             weight = 0.05 + normalized_score * 0.25
@@ -657,14 +683,13 @@ class MetaLearningBiasSelector:
 
     def _models_trained(self) -> bool:
         """检查模型是否已训练"""
-        try:
-            # 简单检查：尝试加载模型
-            joblib.load(f"{self.model_save_path}_rf.pkl")
-            joblib.load(f"{self.model_save_path}_gb.pkl")
-            joblib.load(f"{self.model_save_path}_nn.pkl")
-            return True
-        except:
-            return False
+        paths = (
+            f"{self.model_save_path}_rf.pkl",
+            f"{self.model_save_path}_gb.pkl",
+            f"{self.model_save_path}_nn.pkl",
+            f"{self.model_save_path}_scaler.pkl",
+        )
+        return all(os.path.exists(p) for p in paths)
 
     def _save_models(self):
         """保存训练好的模型"""

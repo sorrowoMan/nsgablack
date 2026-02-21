@@ -22,6 +22,8 @@ import numpy as np
 
 from .algorithm_adapter import AlgorithmAdapter
 from ...utils.context.context_keys import (
+    KEY_CANDIDATE_ROLES,
+    KEY_CANDIDATE_UNITS,
     KEY_ROLE,
     KEY_ROLE_ADAPTER,
     KEY_ROLE_INDEX,
@@ -34,6 +36,7 @@ from ...utils.context.context_keys import (
     KEY_REGION_BOUNDS,
     KEY_REGION_ID,
     KEY_SEEDS,
+    KEY_UNIT_TASKS,
 )
 
 
@@ -131,6 +134,30 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
     - Split feedback and call child.update().
     - Update shared state (best solution, per-strategy metrics) for communication.
     """
+    context_requires = ("generation",)
+    context_provides = (
+        KEY_SHARED,
+        KEY_STRATEGY,
+        KEY_STRATEGY_ID,
+        KEY_ROLE,
+        KEY_ROLE_INDEX,
+        KEY_ROLE_ADAPTER,
+        KEY_TASK,
+        KEY_PHASE,
+        KEY_REGION_ID,
+        KEY_REGION_BOUNDS,
+        KEY_SEEDS,
+        KEY_ROLE_REPORTS,
+        KEY_CANDIDATE_ROLES,
+        KEY_CANDIDATE_UNITS,
+        KEY_UNIT_TASKS,
+    )
+    context_mutates = (KEY_SHARED, KEY_ROLE_REPORTS, KEY_CANDIDATE_ROLES, KEY_CANDIDATE_UNITS, KEY_UNIT_TASKS)
+    context_cache = ()
+    context_notes = (
+        "Orchestrates multi-strategy/multi-role cooperation and injects strategy task context.",
+        "Shared state is updated every step and exposed via runtime context projection.",
+    )
 
     def __init__(
         self,
@@ -158,9 +185,14 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
         # Shared state broadcast to children (also mirrored to solver.*)
         self.shared_state: Dict[str, Any] = {}
 
-        # Unit-level reports (optional; RoleAdapter also writes to solver.role_reports)
+        # Unit-level reports (exposed via runtime context projection).
         self.unit_reports: Dict[Tuple[str, int], Dict[str, Any]] = {}
         self._unit_tasks: Dict[Tuple[str, int], Dict[str, Any]] = {}
+        self._last_task_projection: Dict[str, Any] = {}
+        self._last_projection_writers: Dict[str, str] = {}
+        self._runtime_shared_projection: Dict[str, Any] = {}
+        self._runtime_meta_projection: Dict[str, Any] = {}
+        self._rng = np.random.default_rng()
 
         self._current_phase_name: str = "explore"
         self._phase_step: int = 0
@@ -172,6 +204,7 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
             raise ValueError("MultiStrategyControllerAdapter: provide either strategies=... or roles=..., not both.")
 
     def setup(self, solver: Any) -> None:
+        self._rng = self.create_local_rng(solver)
         self._step = 0
         self._best_score.clear()
         self._ema_score.clear()
@@ -179,6 +212,10 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
         self._last_allocations.clear()
         self.unit_reports.clear()
         self._unit_tasks.clear()
+        self._last_task_projection = {}
+        self._last_projection_writers = {}
+        self._runtime_shared_projection = {}
+        self._runtime_meta_projection = {}
         self._unit_region.clear()
         self._regions = []
         self._current_phase_name = self._phase_for_step(0)[0]
@@ -413,7 +450,7 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
                 if X.ndim == 1:
                     X = X.reshape(1, -1)
                 if X.size > 0:
-                    idx = np.random.choice(X.shape[0], size=min(k, X.shape[0]), replace=False)
+                    idx = self._rng.choice(X.shape[0], size=min(k, X.shape[0]), replace=False)
                     return [np.asarray(X[i]) for i in idx]
         best = self.shared_state.get("best_x")
         if best is None:
@@ -421,11 +458,12 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
         return [np.asarray(best) for _ in range(int(k))]
 
     def _broadcast_state(self, solver: Any) -> None:
-        # Mirror shared state onto solver for plugins / user inspection.
-        solver.shared_state = self.shared_state
-        solver.shared_best_x = self.shared_state.get("best_x")
-        solver.shared_best_score = self.shared_state.get("best_score")
-        solver.shared_strategy_stats = self.shared_state.get("strategies", {})
+        _ = solver
+        self._runtime_shared_projection = {
+            KEY_SHARED: self.shared_state,
+            KEY_ROLE_REPORTS: self.shared_state.get(KEY_ROLE_REPORTS),
+            KEY_PHASE: self.shared_state.get(KEY_PHASE),
+        }
 
     def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         # phase bookkeeping
@@ -502,6 +540,18 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
             ctx[KEY_SEEDS] = seeds
             ctx[KEY_TASK] = task
             self._unit_tasks[(unit.role, int(unit.unit_id))] = dict(task)
+            self._last_task_projection = {
+                KEY_ROLE: unit.role,
+                KEY_ROLE_INDEX: int(role_index.get(unit.role, 0)),
+                KEY_ROLE_ADAPTER: getattr(unit.adapter, "name", f"{unit.role}:{unit.unit_id}"),
+                KEY_STRATEGY: unit.role,
+                KEY_STRATEGY_ID: int(sid),
+                KEY_PHASE: self._current_phase_name,
+                KEY_REGION_ID: task["region_id"],
+                KEY_REGION_BOUNDS: region_bounds,
+                KEY_SEEDS: seeds,
+                KEY_TASK: dict(task),
+            }
 
             proposed = list(unit.adapter.propose(solver, ctx) or [])
             if not proposed:
@@ -516,15 +566,12 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
             allocations.append((unit.role, int(unit.unit_id), start, end))
 
         self._last_allocations = allocations
+        self._runtime_meta_projection = {
+            KEY_CANDIDATE_ROLES: [r for (r, _uid, s, e) in allocations for _ in range(e - s)],
+            KEY_CANDIDATE_UNITS: [int(uid) for (_r, uid, s, e) in allocations for _ in range(e - s)],
+            KEY_UNIT_TASKS: dict(self._unit_tasks),
+        }
         self._broadcast_state(solver)
-
-        # Optional mapping exposure for analysis/plugins.
-        try:
-            solver.last_candidate_roles = [r for (r, _uid, s, e) in allocations for _ in range(e - s)]
-            solver.last_candidate_units = [int(uid) for (_r, uid, s, e) in allocations for _ in range(e - s)]
-            solver.last_unit_tasks = dict(self._unit_tasks)
-        except Exception:
-            pass
         return candidates
 
     def update(
@@ -610,11 +657,59 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
         self.shared_state["regions"] = self._build_region_stats()
         self._broadcast_state(solver)
 
-        # also mirror best to solver-level (convenience)
-        solver.best_x = global_best_x
-        solver.best_objective = global_best_score
-
         self._step += 1
+
+    def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
+        _ = solver
+        out: Dict[str, Any] = {}
+        writers: Dict[str, str] = {}
+        self_source = f"adapter.{self.__class__.__name__}"
+        for key, value in self._runtime_shared_projection.items():
+            if value is None:
+                continue
+            out[str(key)] = value
+            writers[str(key)] = self_source
+
+        for key, value in self._last_task_projection.items():
+            if value is None:
+                continue
+            out[key] = value
+            writers[str(key)] = self_source
+        for key, value in self._runtime_meta_projection.items():
+            if value is None:
+                continue
+            out[str(key)] = value
+            writers[str(key)] = self_source
+
+        # Pull child adapter projection to make role-local runtime fields visible
+        # in global context snapshots (e.g., moead_* / vns_*).
+        for unit in self.units:
+            adapter = getattr(unit, "adapter", None)
+            if adapter is None:
+                continue
+            unit_source = f"adapter.unit.{unit.role}#{int(unit.unit_id)}:{adapter.__class__.__name__}"
+            getter = getattr(adapter, "get_runtime_context_projection", None)
+            if not callable(getter):
+                continue
+            try:
+                proj = getter(solver)
+            except Exception:
+                proj = None
+            if not isinstance(proj, dict):
+                continue
+            for key, value in proj.items():
+                if key is None or value is None:
+                    continue
+                key_str = str(key)
+                if key_str not in out:
+                    out[key_str] = value
+                    writers[key_str] = unit_source
+        self._last_projection_writers = writers
+        return out
+
+    def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
+        _ = solver
+        return dict(self._last_projection_writers)
 
     def _record_unit_report(
         self,
@@ -768,3 +863,34 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
             if stagnant:
                 w = w * (1.0 + float(self.cfg.stagnation_boost))
             spec.weight = float(min(self.cfg.max_weight, max(self.cfg.min_weight, w)))
+
+    def get_context_contract(self) -> Dict[str, Any]:
+        contract = super().get_context_contract()
+        requires = list(contract.get("requires", ()) or ())
+        provides = list(contract.get("provides", ()) or ())
+        mutates = list(contract.get("mutates", ()) or ())
+        cache = list(contract.get("cache", ()) or ())
+
+        for spec in self.strategies:
+            sub = spec.adapter.get_context_contract() if spec.adapter is not None else {}
+            requires.extend(list(sub.get("requires", ()) or ()))
+            provides.extend(list(sub.get("provides", ()) or ()))
+            mutates.extend(list(sub.get("mutates", ()) or ()))
+            cache.extend(list(sub.get("cache", ()) or ()))
+
+        for role in self.roles:
+            role_adapter = getattr(role, "adapter", None)
+            if isinstance(role_adapter, AlgorithmAdapter):
+                sub = role_adapter.get_context_contract()
+                requires.extend(list(sub.get("requires", ()) or ()))
+                provides.extend(list(sub.get("provides", ()) or ()))
+                mutates.extend(list(sub.get("mutates", ()) or ()))
+                cache.extend(list(sub.get("cache", ()) or ()))
+
+        return {
+            "requires": requires,
+            "provides": provides,
+            "mutates": mutates,
+            "cache": cache,
+            "notes": contract.get("notes"),
+        }

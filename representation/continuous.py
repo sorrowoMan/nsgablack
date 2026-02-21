@@ -9,31 +9,50 @@ from typing import Optional, Any
 
 import numpy as np
 
+from .base import RepresentationComponentContract
+from ..utils.context.context_keys import KEY_MUTATION_SIGMA
+
 
 @dataclass
-class UniformInitializer:
+class UniformInitializer(RepresentationComponentContract):
     low: float = 0.0
     high: float = 1.0
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Uniform initializer uses constructor bounds only; no context I/O.",)
+
+    def __post_init__(self) -> None:
+        self._rng = np.random.default_rng()
 
     def initialize(self, problem: Any, context: Optional[dict] = None) -> np.ndarray:
-        return np.random.uniform(self.low, self.high, problem.dimension)
+        return self._rng.uniform(self.low, self.high, problem.dimension)
 
 
 @dataclass
-class GaussianMutation:
+class GaussianMutation(RepresentationComponentContract):
     sigma: float = 0.1
     low: Optional[float] = None
     high: Optional[float] = None
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Gaussian mutation uses local sigma/bounds; no context I/O.",)
+
+    def __post_init__(self) -> None:
+        self._rng = np.random.default_rng()
 
     def mutate(self, x: np.ndarray, context: Optional[dict] = None) -> np.ndarray:
-        mutated = x + np.random.normal(0.0, self.sigma, size=x.shape)
+        mutated = x + self._rng.normal(0.0, self.sigma, size=x.shape)
         if self.low is not None and self.high is not None:
             mutated = np.clip(mutated, self.low, self.high)
         return mutated
 
 
 @dataclass
-class ContextGaussianMutation:
+class ContextGaussianMutation(RepresentationComponentContract):
     """Gaussian mutation with sigma optionally controlled by context.
 
     This is useful for algorithms that vary neighborhood scale (e.g., VNS),
@@ -41,9 +60,19 @@ class ContextGaussianMutation:
     """
 
     base_sigma: float = 0.1
-    sigma_key: str = "mutation_sigma"
+    sigma_key: str = KEY_MUTATION_SIGMA
     low: Optional[float] = None
     high: Optional[float] = None
+    context_requires = (KEY_MUTATION_SIGMA,)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = (
+        "Reads mutation sigma from context; used by adaptive/VNS/SA style adapters.",
+    )
+
+    def __post_init__(self) -> None:
+        self._rng = np.random.default_rng()
 
     def mutate(self, x: np.ndarray, context: Optional[dict] = None) -> np.ndarray:
         sigma = float(self.base_sigma)
@@ -52,16 +81,21 @@ class ContextGaussianMutation:
                 sigma = float(context[self.sigma_key])
             except Exception:
                 sigma = float(self.base_sigma)
-        mutated = x + np.random.normal(0.0, sigma, size=x.shape)
+        mutated = x + self._rng.normal(0.0, sigma, size=x.shape)
         if self.low is not None and self.high is not None:
             mutated = np.clip(mutated, self.low, self.high)
         return mutated
 
 
 @dataclass
-class ClipRepair:
+class ClipRepair(RepresentationComponentContract):
     low: float = 0.0
     high: float = 1.0
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Clip projection only; no context I/O.",)
 
     def repair(self, x: np.ndarray, context: Optional[dict] = None) -> np.ndarray:
         return np.clip(x, self.low, self.high)
@@ -87,7 +121,7 @@ def _project_to_simplex(v: np.ndarray, z: float = 1.0) -> np.ndarray:
 
 
 @dataclass
-class ProjectionRepair:
+class ProjectionRepair(RepresentationComponentContract):
     """
     Generic projection-based repair.
 
@@ -103,6 +137,11 @@ class ProjectionRepair:
     sum_target: Optional[float] = None
     cap: Optional[float] = None
     nonnegative: bool = True
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Projection is driven by constructor/config values; no context I/O by default.",)
 
     def repair(self, x: np.ndarray, context: Optional[dict] = None) -> np.ndarray:
         if self.projection is not None:

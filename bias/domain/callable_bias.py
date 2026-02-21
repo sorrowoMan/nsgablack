@@ -30,6 +30,13 @@ class CallableBias(DomainBias):
 
     If a dict is returned, it will try to read keys: "penalty"/"reward"/"value".
     """
+    context_requires = ("problem_data",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: problem_data; outputs scalar bias only."
+
+
 
     func: Callable[..., Any] = None
     mode: str = "penalty"

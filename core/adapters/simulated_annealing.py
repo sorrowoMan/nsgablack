@@ -47,6 +47,13 @@ class SAConfig:
 
 class SimulatedAnnealingAdapter(AlgorithmAdapter):
     """Simulated annealing adapter for ComposableSolver."""
+    context_requires = ("generation",)
+    context_provides = (KEY_TEMPERATURE, KEY_MUTATION_SIGMA)
+    context_mutates = ()
+    context_cache = ()
+    context_notes = (
+        "SA writes temperature and optional sigma into context for mutator scheduling.",
+    )
 
     # Soft partner contracts: SA communicates temperature and (optionally)
     # mutation scale via context. Representation mutator may consume these keys.
@@ -61,6 +68,8 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
         self.current_x: Optional[np.ndarray] = None
         self.current_score: Optional[float] = None
         self._warned_missing_operator = False
+        self._last_runtime_projection: Dict[str, Any] = {}
+        self._rng = np.random.default_rng()
 
     def setup(self, solver: Any) -> None:
         self.t0 = float(self.cfg.initial_temperature)
@@ -68,6 +77,7 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
         self.current_x = None
         self.current_score = None
         self._warn_if_pipeline_has_no_mutator(solver)
+        self._last_runtime_projection = {}
 
     def _warn_if_pipeline_has_no_mutator(self, solver: Any) -> None:
         if self._warned_missing_operator:
@@ -153,7 +163,7 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
                 T = max(float(self.temperature), float(self.cfg.min_temperature))
                 if T > 0:
                     p = math.exp(-delta / T)
-                    accept = (np.random.random() < p)
+                    accept = (self._rng.random() < p)
 
             if accept:
                 self.current_x = np.asarray(cand)
@@ -164,8 +174,41 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
         # cool down once per step (not per candidate)
         self.temperature = max(float(self.cfg.min_temperature), float(self.temperature) * float(self.cfg.cooling_rate))
 
-        # expose current accepted state (optional convenience for plugins)
-        solver.current_x = self.current_x
-        solver.current_score = self.current_score
-        solver.sa_temperature = float(self.temperature)
-        solver.sa_accepted = bool(accepted_any)
+        # Keep runtime state in adapter projection (non-invasive to solver object).
+        projection: Dict[str, Any] = {
+            KEY_TEMPERATURE: float(self.temperature),
+            "sa_accepted": bool(accepted_any),
+        }
+        if self.current_x is not None:
+            projection["sa_current_x"] = np.asarray(self.current_x, dtype=float)
+        if self.current_score is not None:
+            projection["sa_current_score"] = float(self.current_score)
+        self._last_runtime_projection = projection
+
+    def get_state(self) -> Dict[str, Any]:
+        return {
+            "temperature": float(self.temperature),
+            "t0": float(self.t0),
+            "current_x": None if self.current_x is None else np.asarray(self.current_x, dtype=float).tolist(),
+            "current_score": None if self.current_score is None else float(self.current_score),
+        }
+
+    def set_state(self, state: Dict[str, Any]) -> None:
+        if not state:
+            return
+        if "temperature" in state:
+            self.temperature = float(state["temperature"])
+        if "t0" in state:
+            self.t0 = float(state["t0"])
+        cx = state.get("current_x")
+        self.current_x = None if cx is None else np.asarray(cx, dtype=float)
+        self.current_score = state.get("current_score")
+
+    def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
+        _ = solver
+        return dict(self._last_runtime_projection)
+
+    def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
+        _ = solver
+        source = f"adapter.{self.__class__.__name__}"
+        return {str(key): source for key in self._last_runtime_projection.keys()}

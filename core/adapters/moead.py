@@ -16,6 +16,14 @@ import warnings
 import numpy as np
 
 from .algorithm_adapter import AlgorithmAdapter
+from ...utils.context.context_keys import (
+    KEY_CONSTRAINT_VIOLATIONS,
+    KEY_MOEAD_NEIGHBOR_MODE,
+    KEY_MOEAD_SUBPROBLEM,
+    KEY_MOEAD_WEIGHT,
+    KEY_OBJECTIVES,
+    KEY_POPULATION,
+)
 
 
 @dataclass
@@ -51,9 +59,23 @@ class MOEADConfig:
 
 class MOEADAdapter(AlgorithmAdapter):
     """MOEA/D adapter for ComposableSolver."""
+    context_requires = ("generation",)
+    context_provides = (
+        KEY_POPULATION,
+        KEY_OBJECTIVES,
+        KEY_CONSTRAINT_VIOLATIONS,
+        KEY_MOEAD_SUBPROBLEM,
+        KEY_MOEAD_WEIGHT,
+        KEY_MOEAD_NEIGHBOR_MODE,
+    )
+    context_mutates = ()
+    context_cache = ()
+    context_notes = (
+        "MOEA/D writes decomposition subproblem metadata into context for variation/repair plugins.",
+    )
 
     # Soft partner contracts (informational; no hard dependency).
-    requires_context_keys = {"moead_subproblem", "moead_weight", "moead_neighbor_mode"}
+    requires_context_keys = {KEY_MOEAD_SUBPROBLEM, KEY_MOEAD_WEIGHT, KEY_MOEAD_NEIGHBOR_MODE}
     recommended_plugins = ["ParetoArchivePlugin"]
 
     def __init__(self, config: Optional[MOEADConfig] = None, name: str = "moead", priority: int = 0) -> None:
@@ -73,12 +95,22 @@ class MOEADAdapter(AlgorithmAdapter):
         self.pop_V: Optional[np.ndarray] = None  # (N,)
 
         self._pending_indices: List[int] = []
+        self._pending_modes: List[str] = []
         self._warned_archive = False
+        self._last_context_projection: Dict[str, Any] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
     def setup(self, solver: Any) -> None:
+        # MOEA/D adapter is intended for composable/blank solver runtimes.
+        # Reject legacy NSGA-II loop solvers to avoid state ownership races.
+        if hasattr(solver, "selection") and hasattr(solver, "environmental_selection"):
+            raise TypeError(
+                "MOEADAdapter requires a composable solver runtime. "
+                "Do not attach it to legacy NSGA-II loop solvers."
+            )
+
         self._m = int(getattr(solver, "num_objectives", 1) or 1)
         if self._m < 2:
             raise ValueError("MOEADAdapter requires a multi-objective problem (num_objectives >= 2)")
@@ -102,9 +134,9 @@ class MOEADAdapter(AlgorithmAdapter):
         self.pop_F = np.asarray(F, dtype=float)
         self.pop_V = np.asarray(V, dtype=float).reshape(-1)
         self._update_ideal(self.pop_F)
-
-        # expose current population to solver for context/bias/plugins
-        self._sync_solver_population(solver)
+        self._pending_indices = []
+        self._pending_modes = []
+        self._refresh_runtime_projection()
 
         # Optional: warn if user did not attach any archive/recording plugin.
         self._warn_if_no_archive_plugin(solver)
@@ -127,15 +159,19 @@ class MOEADAdapter(AlgorithmAdapter):
         indices = self._rng.choice(self._n, size=batch, replace=False) if batch < self._n else np.arange(self._n)
 
         self._pending_indices = [int(i) for i in indices]
+        self._pending_modes = []
         out: List[np.ndarray] = []
         for idx in self._pending_indices:
             ctx = dict(context)
-            ctx["moead_subproblem"] = int(idx)
-            ctx["moead_weight"] = np.asarray(self.weights[idx], dtype=float)
-            ctx["moead_neighbor_mode"] = "neighborhood" if (self._rng.random() < float(self.cfg.delta)) else "global"
+            mode = "neighborhood" if (self._rng.random() < float(self.cfg.delta)) else "global"
+            self._pending_modes.append(str(mode))
+            ctx[KEY_MOEAD_SUBPROBLEM] = int(idx)
+            ctx[KEY_MOEAD_WEIGHT] = np.asarray(self.weights[idx], dtype=float)
+            ctx[KEY_MOEAD_NEIGHBOR_MODE] = mode
             cand = self._variation(solver, idx, ctx)
             cand = solver.repair_candidate(cand, ctx)
             out.append(np.asarray(cand))
+        self._refresh_runtime_projection()
         return out
 
     def update(
@@ -170,10 +206,13 @@ class MOEADAdapter(AlgorithmAdapter):
 
             # choose update set
             mode = "neighborhood"
-            try:
-                mode = str(context.get("moead_neighbor_mode", "neighborhood"))
-            except Exception:
-                mode = "neighborhood"
+            if k < len(self._pending_modes):
+                mode = str(self._pending_modes[k])
+            else:
+                try:
+                    mode = str(context.get(KEY_MOEAD_NEIGHBOR_MODE, "neighborhood"))
+                except Exception:
+                    mode = "neighborhood"
             if mode == "global":
                 P = np.arange(self._n, dtype=int)
             else:
@@ -192,7 +231,16 @@ class MOEADAdapter(AlgorithmAdapter):
                     self.pop_V[int(j)] = yv
                     replaced += 1
 
-        self._sync_solver_population(solver)
+        self._refresh_runtime_projection()
+
+    def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
+        _ = solver
+        return dict(self._last_context_projection)
+
+    def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
+        _ = solver
+        source = f"adapter.{self.__class__.__name__}"
+        return {str(k): source for k in self._last_context_projection.keys()}
 
     # ------------------------------------------------------------------
     # Public helpers for plugins
@@ -201,6 +249,29 @@ class MOEADAdapter(AlgorithmAdapter):
         if self.pop_X is None or self.pop_F is None or self.pop_V is None:
             return np.zeros((0, 0)), np.zeros((0, 0)), np.zeros((0,))
         return np.asarray(self.pop_X), np.asarray(self.pop_F), np.asarray(self.pop_V)
+
+    def set_population(self, population: np.ndarray, objectives: np.ndarray, violations: np.ndarray) -> bool:
+        """Write back population snapshot from plugins (context-first path)."""
+        try:
+            x_arr, f_arr, v_arr = self.validate_population_snapshot(population, objectives, violations)
+        except Exception:
+            return False
+
+        n = int(x_arr.shape[0]) if x_arr.ndim >= 2 else 0
+        if self._n > 0 and n not in (0, self._n):
+            return False
+        if f_arr.shape[0] != n or v_arr.shape[0] != n:
+            return False
+        if n > 0 and f_arr.shape[1] != int(self._m):
+            return False
+
+        self.pop_X = x_arr
+        self.pop_F = f_arr
+        self.pop_V = v_arr
+        if n > 0:
+            self._recompute_ideal()
+        self._refresh_runtime_projection()
+        return True
 
     # ------------------------------------------------------------------
     # Internals
@@ -215,26 +286,47 @@ class MOEADAdapter(AlgorithmAdapter):
         names = [getattr(p, "name", "") for p in plugins]
         if not any("archive" in str(n).lower() for n in names):
             warnings.warn(
-                "MOEADAdapter 未检测到 archive 类插件。MOEA/D 内部维护的是分解子问题解集；"
-                "如需输出 Pareto 前沿，建议添加 ParetoArchivePlugin（能力层，不污染底座）。",
+                "MOEADAdapter did not detect an archive plugin. "
+                "MOEA/D internally keeps decomposition subproblem solutions; "
+                "attach ParetoArchivePlugin if explicit Pareto-front output is needed.",
                 RuntimeWarning,
                 stacklevel=3,
             )
             self._warned_archive = True
 
-    def _sync_solver_population(self, solver: Any) -> None:
-        try:
-            solver.population = np.asarray(self.pop_X, dtype=float) if self.pop_X is not None else None
-            solver.objectives = np.asarray(self.pop_F, dtype=float) if self.pop_F is not None else None
-            solver.constraint_violations = np.asarray(self.pop_V, dtype=float) if self.pop_V is not None else None
-        except Exception:
-            pass
+    def _refresh_runtime_projection(self) -> None:
+        projection = dict(self._last_context_projection)
+        if self.pop_X is not None:
+            projection[KEY_POPULATION] = np.asarray(self.pop_X, dtype=float)
+        if self.pop_F is not None:
+            projection[KEY_OBJECTIVES] = np.asarray(self.pop_F, dtype=float)
+        if self.pop_V is not None:
+            projection[KEY_CONSTRAINT_VIOLATIONS] = np.asarray(self.pop_V, dtype=float).reshape(-1)
+        if self._pending_indices and self.weights is not None:
+            batch_indices = np.asarray(self._pending_indices, dtype=int)
+            projection[KEY_MOEAD_SUBPROBLEM] = batch_indices
+            projection[KEY_MOEAD_WEIGHT] = np.asarray(self.weights[batch_indices], dtype=float)
+            projection[KEY_MOEAD_NEIGHBOR_MODE] = list(self._pending_modes)
+        self._last_context_projection = projection
+
+    def _recompute_ideal(self) -> None:
+        if self.pop_F is None or self.pop_F.size == 0:
+            self.ideal = None
+            return
+        if self.pop_V is None or self.pop_V.size == 0:
+            self.ideal = np.min(np.asarray(self.pop_F, dtype=float), axis=0)
+            return
+        feasible = np.asarray(self.pop_V, dtype=float).reshape(-1) <= 0.0
+        if np.any(feasible):
+            self.ideal = np.min(np.asarray(self.pop_F, dtype=float)[feasible], axis=0)
+        else:
+            self.ideal = np.min(np.asarray(self.pop_F, dtype=float), axis=0)
 
     def _variation(self, solver: Any, idx: int, ctx: Dict[str, Any]) -> np.ndarray:
         if self.pop_X is None or self.neighbors is None:
             return np.asarray(solver.init_candidate(ctx))
 
-        mode = str(ctx.get("moead_neighbor_mode", "neighborhood"))
+        mode = str(ctx.get(KEY_MOEAD_NEIGHBOR_MODE, "neighborhood"))
         if mode == "global":
             pool = np.arange(self._n, dtype=int)
         else:
@@ -303,7 +395,7 @@ class MOEADAdapter(AlgorithmAdapter):
             return y_v < x_v
 
         w = np.asarray(self.weights[j], dtype=float)
-        return self._g(y_f, w) <= self._g(x_f, w)
+        return self._g(y_f, w) < self._g(x_f, w)
 
     def _g(self, f: np.ndarray, w: np.ndarray) -> float:
         f = np.asarray(f, dtype=float).reshape(-1)
@@ -380,4 +472,3 @@ class MOEADAdapter(AlgorithmAdapter):
         dist = np.sqrt(np.sum(diff * diff, axis=2))
         idx = np.argsort(dist, axis=1)[:, :T]
         return np.asarray(idx, dtype=int)
-

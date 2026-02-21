@@ -8,6 +8,13 @@ from ..core.base import DomainBias, OptimizationContext
 
 class ExampleDomainBias(DomainBias):
     """Template domain bias that enforces a soft business rule."""
+    context_requires = ("problem_data",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: problem_data; outputs scalar bias only."
+
+
 
     def __init__(
         self,

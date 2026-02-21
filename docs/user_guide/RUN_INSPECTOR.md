@@ -2,6 +2,7 @@
 
 Run Inspector 是 NSGABlack 的“结构审计”界面。
 它不是画曲线的 UI，而是让你在运行前就看见 **算法结构、组件搭配、缺失伙伴、实验快照**。
+UI 变更记录见：`docs/changelog/RUN_INSPECTOR_CHANGELOG.md`（每次界面行为变化都会追加）。
 
 > 适用场景：
 > - 多算法/多偏置/多插件组合时，避免“跑完才发现漏配”
@@ -28,6 +29,11 @@ python -m nsgablack run_inspector --empty --workspace .
 在 UI 顶部可直接：
 - `Load`：选择/输入 `*.py` + 函数名（默认 `build_solver`）后加载
 - `Refresh`：代码改动后重新读取当前 entry
+- `View`：一键切换工作视图（单击按钮即可）
+  - `Build(装配)`：Details / Catalog / Context（找组件与字段对齐）
+  - `Run(实验)`：Run / Contribution / Trajectory / Catalog（执行与对比）
+  - `Audit(审计)`：Details / Context / Doctor / Contribution（排障与治理）
+  - 注意：三种视图是**分工视图，不是层层累加**
 
 ---
 
@@ -47,6 +53,9 @@ python -m nsgablack run_inspector --empty --workspace .
 - Contribution：模块贡献、对比、结构 hash 图谱
 - Trajectory：策略权重轨迹（dynamic_switch）
 - Catalog：组件搜索入口
+- Context：上下文字段生命周期与归因
+- Doctor：项目结构/契约体检
+  - `Strict` 模式下会额外显示守卫计数：`mirror`（solver 镜像写入）与 `plugin-state`（插件直接访问 solver population/objectives/violations）
 
 ---
 
@@ -141,13 +150,42 @@ Catalog 页：
 - `Scope` 支持 `all / project / framework`（全部 / 本地项目组件 / 框架内组件）
 - 选中条目会显示 `How to Use`（适用场景、最小接线、必配组件、配置键、示例入口）
 - 选中条目会显示 `Context Contract`（requires/provides/mutates/cache/notes；为空也会显示 `(none)`）
+- Context 选中字段后可直接联动：
+  - `Providers`：默认打开字段小窗并聚焦提供者（`context_provides + context_mutates`）
+  - `Consumers`：默认打开字段小窗并聚焦需求者（`context_requires`）
+- Context 还支持 `Window`（非模态），可连续查看字段归因
+- 字段小窗支持组件交互：选中组件可查看 `Contract + Catalog Intro`，双击组件可打开主界面 `Details`
+- 小窗底部不放操作按钮（保持轻量）；需要搜索时直接回主界面 Catalog
+- 字段小窗右侧会显示组件 `Contract + Catalog Intro`（摘要/用途/最小接线），便于不翻源码快速理解
 
 用于快速回答：
 > “这个功能到底有没有？”
 
 ---
 
-## 10. 常见问题
+## 10. Context 字段治理（本轮重点）
+
+Context 页现在按 canonical key 做统一显示与联动。重点字段包括：
+
+- 协同调度：`candidate_roles`、`candidate_units`、`unit_tasks`
+- 运行状态：`running`、`evaluation_count`
+- 参数自适应：`mutation_rate`、`crossover_rate`
+- 快照字段：`individual`、`metadata`、`pareto_solutions`、`pareto_objectives`
+
+建议用法：
+
+- 先在 Context 页选字段，看 `declared_by / last_writer`
+- 再点 `Providers / Consumers / Window` 做字段级追踪
+- 对同一字段做 Catalog 联动，检查是否缺必要组件
+
+配套门禁：
+
+- `project doctor --strict`：结构与契约体检
+- `python -m tools.context_field_guard`：非 canonical key 守卫
+
+---
+
+## 11. 常见问题
 
 **Q1：为什么结构哈希为空？**
 - 旧快照可能没有 `structure_hash`，现在会自动计算
@@ -162,7 +200,7 @@ Catalog 页：
 
 ---
 
-## 11. 最重要的正确理解
+## 12. 最重要的正确理解
 
 Run Inspector 不是“好看 UI”，而是：
 

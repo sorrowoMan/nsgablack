@@ -73,6 +73,13 @@ class DynamicPenaltyBias(DomainBias):
     Typical usage: increase constraint penalties over time so early search can
     explore, then later tighten feasibility pressure.
     """
+    context_requires = ("problem_data",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: problem_data; outputs scalar bias only."
+
+
 
     penalty_func: Callable[..., Any] = None
     schedule: str = "linear"

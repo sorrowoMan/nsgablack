@@ -71,7 +71,7 @@ def build_solver():
     adapter = VNSAdapter(VNSConfig(batch_size=6, k_max=4, base_sigma=0.2, scale=1.5))
 
     solver = ComposableSolver(problem=problem, adapter=adapter, representation_pipeline=pipeline)
-    solver.max_steps = 80
+    solver.set_max_steps(80)
 
     attach_benchmark_harness(solver, output_dir="runs", run_id="template_tsp", overwrite=True, log_every=1)
     attach_module_report(solver, output_dir="runs", run_id="template_tsp", write_bias_markdown=True)

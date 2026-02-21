@@ -77,5 +77,6 @@ def test_multi_role_controller_adapter_runs_with_composable_solver():
 
     assert result["status"] in {"completed", "stopped"}
     assert solver.best_objective is not None
-    assert getattr(solver, "last_candidate_roles", None) is not None
-    assert getattr(solver, "role_reports", None) is not None
+    ctx = solver.get_context()
+    assert isinstance(ctx.get("candidate_roles"), list)
+    assert isinstance(ctx.get("role_reports"), dict)

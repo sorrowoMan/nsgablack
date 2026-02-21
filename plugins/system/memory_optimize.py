@@ -58,12 +58,10 @@ class MemoryPlugin(Plugin):
             if hasattr(self.solver, "temp_data"):
                 self.solver.temp_data.clear()
 
-            if hasattr(self.solver, "population") and self.solver.population is not None:
-                self._optimize_arrays(
-                    self.solver.population,
-                    self.solver.objectives,
-                    self.solver.constraint_violations,
-                )
+            pop, obj, vio = self.resolve_population_snapshot(self.solver)
+            if pop is not None and len(pop) > 0:
+                self._optimize_arrays(pop, obj, vio)
+                self.commit_population_snapshot(self.solver, pop, obj, vio)
 
         self._take_memory_snapshot(generation)
         return None

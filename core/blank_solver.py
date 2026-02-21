@@ -8,6 +8,7 @@ enforcing any specific optimization loop.
 from __future__ import annotations
 
 import time
+import random
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
@@ -15,6 +16,7 @@ import numpy as np
 from .base import BlackBoxProblem
 from .interfaces import BiasInterface, RepresentationInterface, load_bias_module, load_representation_pipeline
 from ..utils.constraints.constraint_utils import evaluate_constraints_safe
+from ..utils.context.context_keys import KEY_BEST_OBJECTIVE, KEY_BEST_X
 from ..utils.extension_contracts import (
     ContractError,
     normalize_bias_output,
@@ -57,9 +59,9 @@ class BlankSolverBase:
         self._representation_internal: Optional[RepresentationInterface] = None
         self.representation_pipeline = representation_pipeline
 
-        # 为“能力层”预留短路事件：
-        # - evaluate_population: 允许插件接管评估（例如 surrogate/缓存/分层评估）
-        # - evaluate_individual: 允许单点评估覆盖（更细粒度）
+        # Keep short-circuit hooks in capability layer.
+        # - evaluate_population: plugin takeover (surrogate/cache/layered eval)
+        # - evaluate_individual: per-candidate override
         self.plugin_manager = PluginManager(
             short_circuit=True,
             short_circuit_events=["evaluate_population", "evaluate_individual"],
@@ -75,6 +77,9 @@ class BlankSolverBase:
         self.stop_requested = False
         self.max_steps = 1
         self.start_time = 0.0
+        self.random_seed: Optional[int] = None
+        self._rng = np.random.default_rng()
+        self._rng_streams: Dict[str, np.random.Generator] = {}
 
     # ------------------------------------------------------------------
     # Optional dependency accessors (mirrors core solver behavior)
@@ -128,6 +133,42 @@ class BlankSolverBase:
 
     def get_plugin(self, plugin_name: str) -> Any:
         return self.plugin_manager.get(plugin_name)
+
+    # ------------------------------------------------------------------
+    # Control-plane wiring helpers (preferred over direct attribute writes)
+    # ------------------------------------------------------------------
+    def set_adapter(self, adapter: Any) -> None:
+        setattr(self, "adapter", adapter)
+
+    def set_bias_module(self, bias_module: Optional[BiasInterface], enable: Optional[bool] = None) -> None:
+        self.bias_module = bias_module
+        if enable is not None:
+            self.enable_bias = bool(enable)
+        elif bias_module is not None:
+            self.enable_bias = True
+
+    def set_enable_bias(self, enable: bool) -> None:
+        self.enable_bias = bool(enable)
+
+    def set_max_steps(self, max_steps: int) -> None:
+        self.max_steps = int(max_steps)
+
+    def set_solver_hyperparams(
+        self,
+        *,
+        pop_size: Optional[int] = None,
+        max_generations: Optional[int] = None,
+        mutation_rate: Optional[float] = None,
+        crossover_rate: Optional[float] = None,
+    ) -> None:
+        if pop_size is not None:
+            setattr(self, "pop_size", int(pop_size))
+        if max_generations is not None:
+            setattr(self, "max_generations", int(max_generations))
+        if mutation_rate is not None:
+            setattr(self, "mutation_rate", float(mutation_rate))
+        if crossover_rate is not None:
+            setattr(self, "crossover_rate", float(crossover_rate))
 
     # ------------------------------------------------------------------
     # Representation helpers (optional)
@@ -187,6 +228,61 @@ class BlankSolverBase:
             )
         return self.population
 
+    def write_population_snapshot(
+        self,
+        population: np.ndarray,
+        objectives: np.ndarray,
+        violations: np.ndarray,
+    ) -> bool:
+        pop = np.asarray(population, dtype=float)
+        obj = np.asarray(objectives, dtype=float)
+        vio = np.asarray(violations, dtype=float).reshape(-1)
+        if pop.ndim == 1:
+            pop = pop.reshape(1, -1) if pop.size > 0 else pop.reshape(0, 0)
+        if obj.ndim == 1:
+            obj = obj.reshape(-1, 1) if obj.size > 0 else obj.reshape(0, 0)
+        if obj.shape[0] != pop.shape[0] or vio.shape[0] != pop.shape[0]:
+            return False
+        self.population = pop
+        self.objectives = obj
+        self.constraint_violations = vio
+        return True
+
+    def set_random_seed(self, seed: Optional[int]) -> None:
+        self.random_seed = None if seed is None else int(seed)
+        self._rng = np.random.default_rng(self.random_seed)
+        self._rng_streams = {}
+        if self.random_seed is not None:
+            try:
+                random.seed(self.random_seed)
+            except Exception:
+                pass
+
+    def fork_rng(self, stream: str = "") -> np.random.Generator:
+        key = str(stream or "_default")
+        existing = self._rng_streams.get(key)
+        if existing is not None:
+            return existing
+        child_seed = int(self._rng.integers(0, 2**63 - 1))
+        child = np.random.default_rng(child_seed)
+        self._rng_streams[key] = child
+        return child
+
+    def get_rng_state(self) -> Dict[str, Any]:
+        return {"bit_generator_state": self._rng.bit_generator.state}
+
+    def set_rng_state(self, state: Dict[str, Any]) -> None:
+        if not isinstance(state, dict):
+            return
+        bit_state = state.get("bit_generator_state")
+        if bit_state is None:
+            return
+        try:
+            self._rng.bit_generator.state = bit_state
+        except Exception:
+            return
+        self._rng_streams = {}
+
     # ------------------------------------------------------------------
     # Evaluation helpers
     # ------------------------------------------------------------------
@@ -206,6 +302,9 @@ class BlankSolverBase:
             "constraint_violation": float(violation or 0.0),
             "individual_id": individual_id,
         }
+        best_x, best_obj = self._resolve_best_snapshot()
+        ctx[KEY_BEST_X] = best_x
+        ctx[KEY_BEST_OBJECTIVE] = best_obj
         if individual is not None:
             ctx["individual"] = individual
         dynamic = getattr(self, "dynamic_signals", None)
@@ -229,7 +328,83 @@ class BlankSolverBase:
         ctx["objectives"] = self.objectives if self.objectives is not None else []
         ctx["constraint_violations"] = self.constraint_violations if self.constraint_violations is not None else []
         ctx["evaluation_count"] = int(getattr(self, "evaluation_count", 0))
+        for key, value in self._collect_runtime_context_projection().items():
+            if value is None:
+                continue
+            ctx[key] = value
+        best_x, best_obj = self._resolve_best_snapshot()
+        ctx[KEY_BEST_X] = best_x
+        ctx[KEY_BEST_OBJECTIVE] = best_obj
         return ctx
+
+    def _resolve_best_snapshot(self) -> Tuple[Optional[Any], Optional[float]]:
+        best_x = getattr(self, "best_x", None)
+        best_obj = getattr(self, "best_objective", None)
+
+        if best_obj is None:
+            best_f = getattr(self, "best_f", None)
+            if best_f is not None:
+                try:
+                    best_obj = float(best_f)
+                except Exception:
+                    best_obj = None
+
+        if best_obj is None and self.objectives is not None:
+            try:
+                obj = np.asarray(self.objectives, dtype=float)
+                if obj.size > 0:
+                    if obj.ndim == 1:
+                        best_obj = float(np.min(obj))
+                    else:
+                        scores = np.sum(obj, axis=1)
+                        if self.constraint_violations is not None:
+                            vio = np.asarray(self.constraint_violations, dtype=float).reshape(-1)
+                            if vio.shape[0] == scores.shape[0]:
+                                scores = scores + vio * 1e6
+                        best_idx = int(np.argmin(scores))
+                        best_obj = float(scores[best_idx])
+                        if best_x is None and self.population is not None:
+                            pop = np.asarray(self.population)
+                            if pop.ndim >= 2 and best_idx < pop.shape[0]:
+                                best_x = pop[best_idx]
+            except Exception:
+                pass
+
+        return best_x, best_obj
+
+    def _collect_runtime_context_projection(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        projection_writers: Dict[str, str] = {}
+
+        adapter = getattr(self, "adapter", None)
+        if adapter is not None:
+            projector = getattr(adapter, "get_runtime_context_projection", None)
+            source_getter = getattr(adapter, "get_runtime_context_projection_sources", None)
+            if callable(projector):
+                try:
+                    proj = projector(self)
+                except Exception:
+                    proj = None
+                try:
+                    proj_sources = source_getter(self) if callable(source_getter) else {}
+                except Exception:
+                    proj_sources = {}
+                if not isinstance(proj_sources, dict):
+                    proj_sources = {}
+                if isinstance(proj, dict):
+                    for key, value in proj.items():
+                        if key is None or value is None:
+                            continue
+                        key_str = str(key)
+                        out[key_str] = value
+                        source = proj_sources.get(key_str)
+                        if source:
+                            projection_writers[key_str] = str(source)
+                        else:
+                            projection_writers[key_str] = f"adapter.{adapter.__class__.__name__}"
+
+        setattr(self, "_runtime_projection_writers", projection_writers)
+        return out
 
     def evaluate_individual(self, x: np.ndarray, individual_id: Optional[int] = None) -> Tuple[np.ndarray, float]:
         overridden = self.plugin_manager.trigger("evaluate_individual", self, x, individual_id)
@@ -237,7 +412,7 @@ class BlankSolverBase:
             try:
                 obj, vio = overridden
             except Exception as exc:  # pragma: no cover
-                raise ContractError("evaluate_individual 插件返回值必须是 (objectives, violation)") from exc
+                raise ContractError("evaluate_individual plugin return must be (objectives, violation)") from exc
             obj = normalize_objectives(obj, num_objectives=self.num_objectives, name="plugin.evaluate_individual.objectives")
             vio = normalize_violation(vio, name="plugin.evaluate_individual.violation")
             self.evaluation_count += 1
@@ -269,27 +444,27 @@ class BlankSolverBase:
             try:
                 objectives, violations = overridden
             except Exception as exc:  # pragma: no cover
-                raise ContractError("evaluate_population 插件返回值必须是 (objectives, violations)") from exc
+                raise ContractError("evaluate_population plugin return must be (objectives, violations)") from exc
             objectives = np.asarray(objectives, dtype=float)
             violations = np.asarray(violations, dtype=float).ravel()
             if objectives.ndim != 2 or objectives.shape[1] != self.num_objectives:
                 raise ContractError(
-                    f"plugin.evaluate_population.objectives shape 错误: got {tuple(objectives.shape)} expected (N, {self.num_objectives})"
+                    f"plugin.evaluate_population.objectives shape mismatch: got {tuple(objectives.shape)} expected (N, {self.num_objectives})"
                 )
             if violations.shape[0] != objectives.shape[0]:
                 raise ContractError(
-                    f"plugin.evaluate_population.violations 长度不匹配: got {int(violations.shape[0])} expected {int(objectives.shape[0])}"
+                    f"plugin.evaluate_population.violations length mismatch: got {int(violations.shape[0])} expected {int(objectives.shape[0])}"
                 )
             return objectives, violations
 
         if population is None:
-            raise ContractError("evaluate_population.population 不能为空")
+            raise ContractError("evaluate_population.population cannot be empty")
         population = np.asarray(population)
         if population.ndim == 1:
             population = population.reshape(1, -1)
         if population.ndim != 2 or population.shape[1] != self.dimension:
             raise ContractError(
-                f"evaluate_population.population shape 错误: got {tuple(population.shape)} expected (N, {self.dimension})"
+                f"evaluate_population.population shape mismatch: got {tuple(population.shape)} expected (N, {self.dimension})"
             )
         pop_size = int(population.shape[0])
         objectives = np.zeros((pop_size, self.num_objectives))
@@ -357,19 +532,42 @@ class BlankSolverBase:
         self.plugin_manager.on_solver_init(self)
         self.setup()
 
-        for step_idx in range(steps):
+        resume_loaded = bool(getattr(self, "_resume_loaded", False))
+        if resume_loaded:
+            start_step = int(getattr(self, "_resume_cursor", getattr(self, "generation", 0)))
+            start_step = max(0, start_step)
+            try:
+                self.evaluation_count = int(getattr(self, "evaluation_count", 0))
+            except Exception:
+                self.evaluation_count = 0
+        else:
+            start_step = 0
+            self.generation = 0
+            self.evaluation_count = 0
+        setattr(self, "_resume_loaded", False)
+        setattr(self, "_resume_cursor", 0)
+
+        executed_steps = 0
+        for step_idx in range(start_step, steps):
             if self.stop_requested:
                 break
             self.generation = step_idx
             self.plugin_manager.on_generation_start(self.generation)
             self.step()
             self.plugin_manager.on_generation_end(self.generation)
+            executed_steps += 1
 
         self.teardown()
         elapsed = time.time() - self.start_time
+        if executed_steps > 0:
+            total_steps = int(self.generation + 1)
+        else:
+            total_steps = int(start_step)
         result = {
             "status": "stopped" if self.stop_requested else "completed",
-            "steps": self.generation + 1 if steps > 0 else 0,
+            "steps": total_steps,
+            "steps_executed": int(executed_steps),
+            "resume_from": int(start_step) if resume_loaded else 0,
             "elapsed_sec": elapsed,
         }
         self.plugin_manager.on_solver_finish(result)
@@ -388,4 +586,4 @@ class BlankSolverBase:
             bounds = np.asarray(self.var_bounds, dtype=float)
             lows = bounds[:, 0]
             highs = bounds[:, 1]
-        return np.random.uniform(lows, highs, size=self.dimension)
+        return self._rng.uniform(lows, highs, size=self.dimension)

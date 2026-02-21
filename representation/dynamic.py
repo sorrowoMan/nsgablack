@@ -7,9 +7,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Sequence, Tuple, Any
 
+from .base import RepresentationComponentContract
+from ..utils.context.context_keys import KEY_GENERATION
+
 
 @dataclass
-class DynamicRepair:
+class DynamicRepair(RepresentationComponentContract):
     """
     Switch repair operators by generation.
 
@@ -17,6 +20,11 @@ class DynamicRepair:
     """
 
     stages: Sequence[Tuple[int, Any]]
+    context_requires = (KEY_GENERATION,)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Selects repair stage by generation from context.",)
 
     def __init__(self, stages: Sequence[Tuple[int, Any]]) -> None:
         self.stages = sorted([(int(s), r) for s, r in stages], key=lambda x: x[0])
@@ -25,7 +33,7 @@ class DynamicRepair:
         gen = 0
         if context is not None:
             try:
-                gen = int(context.get("generation", 0))
+                gen = int(context.get(KEY_GENERATION, 0))
             except Exception:
                 gen = 0
         chosen = None

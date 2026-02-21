@@ -54,6 +54,13 @@ class GraphConstraintBias(DomainBias):
 
     专门用于验证图论问题的约束合法性
     """
+    context_requires = ("problem_data",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: problem_data; outputs scalar bias only."
+
+
 
     def __init__(self, name: str, penalty_scale: float = 1e6):
         super().__init__(name, weight=1.0)
@@ -89,6 +96,13 @@ class TSPConstraintBias(GraphConstraintBias):
     2. 每个城市只能访问一次
     3. 必须形成闭合回路
     """
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(self, num_cities: int, penalty_scale: float = 1e6):
         super().__init__("tsp_constraint", penalty_scale)
@@ -184,6 +198,13 @@ class PathConstraintBias(GraphConstraintBias):
     2. 路径连续性
     3. 不包含环路（除非是回路问题）
     """
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(self, num_nodes: int, start_node: int = 0, end_node: int = None,
                  allow_cycles: bool = False, penalty_scale: float = 1e6):
@@ -268,6 +289,13 @@ class TreeConstraintBias(GraphConstraintBias):
     2. 无环路
     3. 边数 = 节点数 - 1
     """
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(self, num_nodes: int, penalty_scale: float = 1e6):
         super().__init__("tree_constraint", penalty_scale)
@@ -383,6 +411,13 @@ class GraphColoringConstraintBias(GraphConstraintBias):
     1. 相邻节点颜色不同
     2. 颜色数不超过限制
     """
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(self, adjacency_matrix: np.ndarray, max_colors: int = None, penalty_scale: float = 1e6):
         super().__init__("coloring_constraint", penalty_scale)
@@ -440,6 +475,13 @@ class MatchingConstraintBias(GraphConstraintBias):
     验证匹配的约束：
     1. 每个节点最多参与一条边
     """
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(self, num_nodes: int, is_perfect: bool = False, penalty_scale: float = 1e6):
         super().__init__("matching_constraint", penalty_scale)
@@ -508,6 +550,13 @@ class HamiltonianPathConstraintBias(GraphConstraintBias):
     1. 访问每个节点恰好一次
     2. 路径连续
     """
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(self, num_nodes: int, is_cycle: bool = False, penalty_scale: float = 1e6):
         super().__init__("hamiltonian_constraint", penalty_scale)
@@ -618,6 +667,13 @@ class CompositeGraphConstraintBias(GraphConstraintBias):
 
     可以同时验证多个图论约束
     """
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(self, constraints: List[GraphConstraintBias], penalty_scale: float = 1e6):
         super().__init__("composite_constraint", penalty_scale)

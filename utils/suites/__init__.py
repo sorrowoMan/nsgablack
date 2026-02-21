@@ -13,6 +13,7 @@ from .multi_strategy import attach_multi_strategy_coop
 from .benchmark_harness import attach_benchmark_harness
 from .nsga2_engineering import attach_nsga2_engineering
 from .module_report import attach_module_report
+from .checkpoint_resume import attach_checkpoint_resume
 from .ray_parallel import attach_ray_parallel
 from .dynamic_switch import attach_dynamic_switch
 from .async_event_driven import attach_async_event_driven
@@ -44,6 +45,7 @@ __all__ = [
     "attach_multi_strategy_coop",
     "attach_benchmark_harness",
     "attach_module_report",
+    "attach_checkpoint_resume",
     "attach_nsga2_engineering",
     "attach_ray_parallel",
     "attach_dynamic_switch",

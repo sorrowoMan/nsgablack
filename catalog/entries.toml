@@ -5,14 +5,7 @@
 #
 # Schema:
 #
-# [[entry]]
-# key = "suite.my_algo"
-# title = "attach_my_algo"
-# kind = "suite"  # suite|adapter|plugin|bias|representation|tool
-# import_path = "nsgablack.utils.suites.my_algo:attach_my_algo"
-# tags = ["my_algo", "recommended"]
-# summary = "One line description."
-# companions = ["adapter.my_algo", "plugin.benchmark_harness"]
+#
 
 [[entry]]
 key = "representation.parallel_repair"
@@ -23,6 +16,11 @@ tags = ["parallel", "pipeline", "repair"]
 summary = "\u8868\u793a\u7ec4\u4ef6\uff1aParallelRepair\u3002 / Representation: ParallelRepair."
 
 # --- Adapters (additional) ---
+use_when = ['Need to wire representation initializer/mutator/repair behavior.']
+minimal_wiring = ['from nsgablack.representation import ParallelRepair', 'Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search parallel_repair --kind example'
 [[entry]]
 key = "adapter.role"
 title = "RoleAdapter"
@@ -30,7 +28,6 @@ kind = "adapter"
 import_path = "nsgablack.core.adapters.role_adapters:RoleAdapter"
 tags = ["adapter", "composition", "core", "roles", "strategy"]
 summary = "角色适配器：附加角色元数据与配额，用于分工协同。 / Adapter: role wrapper with metadata and candidate quotas for cooperation."
-
 [[entry]]
 key = "adapter.multi_role_controller"
 title = "MultiRoleControllerAdapter"
@@ -38,7 +35,6 @@ kind = "adapter"
 import_path = "nsgablack.core.adapters.role_adapters:MultiRoleControllerAdapter"
 tags = ["adapter", "composition", "controller", "core", "roles", "strategy"]
 summary = "多角色控制器：共享上下文与预算分配，统一调度各角色。 / Adapter: multi-role controller with shared context and budget scheduling."
-
 [[entry]]
 key = "adapter.composite"
 title = "CompositeAdapter"
@@ -46,7 +42,6 @@ kind = "adapter"
 import_path = "nsgablack.core.adapters.algorithm_adapter:CompositeAdapter"
 tags = ["adapter", "composition", "core", "strategy"]
 summary = "组合适配器：合并多个适配器候选，并处理冲突。 / Adapter: composite adapter merging proposals and resolving conflicts."
-
 [[entry]]
 key = "adapter.astar"
 title = "AStarAdapter"
@@ -54,7 +49,6 @@ kind = "adapter"
 import_path = "nsgablack.core.adapters.astar:AStarAdapter"
 tags = ["adapter", "astar", "core", "graph", "heuristic", "pathfinding", "strategy"]
 summary = "A*搜索内核：可配置邻居、启发式与目标判定。 / Adapter: A* core with pluggable neighbors/heuristic/goal."
-
 [[entry]]
 key = "adapter.moa_star"
 title = "MOAStarAdapter"
@@ -62,7 +56,6 @@ kind = "adapter"
 import_path = "nsgablack.core.adapters.moa_star:MOAStarAdapter"
 tags = ["adapter", "astar", "core", "graph", "heuristic", "multiobjective", "pareto", "strategy"]
 summary = "多目标A*：Pareto标签与支配剪枝，面向多目标路径。 / Adapter: MOA* with Pareto labels and dominance pruning."
-
 [[entry]]
 key = "adapter.async_event_driven"
 title = "AsyncEventDrivenAdapter"
@@ -84,7 +77,6 @@ minimal_wiring = [
 required_companions = ["plugin.async_event_hub (recommended)", "plugin.pareto_archive (recommended)"]
 config_keys = ["total_batch_size", "target_queue_size", "bootstrap_events_per_strategy", "max_queue_size", "refill_events_per_completion"]
 example_entry = "examples/async_event_driven_demo.py:build_solver"
-
 [[entry]]
 key = "adapter.single_trajectory_adaptive"
 title = "SingleTrajectoryAdaptiveAdapter"
@@ -106,7 +98,6 @@ minimal_wiring = [
 required_companions = ["repr.context_gaussian (recommended)"]
 config_keys = ["batch_size", "initial_sigma", "target_success_rate", "restart_patience", "accept_worse_prob"]
 example_entry = "examples/single_trajectory_adaptive_demo.py:build_solver"
-
 [[entry]]
 key = "suite.async_event_driven"
 title = "attach_async_event_driven"
@@ -123,7 +114,6 @@ minimal_wiring = [
 required_companions = ["adapter.async_event_driven"]
 config_keys = ["attach_async_hub", "attach_pareto_archive", "config", "async_hub_config"]
 example_entry = "examples/async_event_driven_demo.py:build_solver"
-
 [[entry]]
 key = "suite.single_trajectory_adaptive"
 title = "attach_single_trajectory_adaptive"
@@ -140,7 +130,6 @@ minimal_wiring = [
 required_companions = ["adapter.single_trajectory_adaptive"]
 config_keys = ["config"]
 example_entry = "examples/single_trajectory_adaptive_demo.py:build_solver"
-
 [[entry]]
 key = "example.async_event_driven"
 title = "async_event_driven_demo"
@@ -154,7 +143,6 @@ minimal_wiring = ["python examples/async_event_driven_demo.py", "python examples
 required_companions = ["suite.async_event_driven"]
 config_keys = ["--ui"]
 example_entry = "examples/async_event_driven_demo.py:build_solver"
-
 [[entry]]
 key = "example.single_trajectory_adaptive"
 title = "single_trajectory_adaptive_demo"
@@ -168,7 +156,6 @@ minimal_wiring = ["python examples/single_trajectory_adaptive_demo.py", "python 
 required_companions = ["suite.single_trajectory_adaptive"]
 config_keys = ["--ui"]
 example_entry = "examples/single_trajectory_adaptive_demo.py:build_solver"
-
 [[entry]]
 key = "plugin.dynamic_switch"
 title = "DynamicSwitchPlugin"
@@ -176,7 +163,6 @@ kind = "plugin"
 import_path = "nsgablack.plugins.runtime.dynamic_switch:DynamicSwitchPlugin"
 tags = ["context", "dynamic", "plugin", "switch"]
 summary = "\u63d2\u4ef6\uff1aDynamicSwitchPlugin\u3002 / Plugin: DynamicSwitchPlugin."
-
 [[entry]]
 key = "plugin.async_event_hub"
 title = "AsyncEventHubPlugin"
@@ -197,7 +183,43 @@ minimal_wiring = [
 required_companions = []
 config_keys = ["mode", "commit_policy", "max_pending", "drop_policy", "events_key"]
 example_entry = "examples/async_event_driven_demo.py:build_solver"
-
+[[entry]]
+key = "plugin.checkpoint_resume"
+title = "CheckpointResumePlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.system.checkpoint_resume:CheckpointResumePlugin"
+tags = ["checkpoint", "plugin", "recovery", "resume", "runtime", "state"]
+summary = "检查点恢复插件：代际快照 + 失败后续跑。 / Plugin: generation checkpointing and resume-after-failure."
+companions = ["suite.checkpoint_resume"]
+context_requires = []
+context_provides = ["checkpoint.latest_path", "checkpoint.last_loaded_path"]
+context_mutates = ["checkpoint.latest_path"]
+context_cache = ["checkpoint.latest_path"]
+context_notes = ["Persists solver/adapter/plugin state with optional RNG restore; supports latest/path resume."]
+use_when = ["运行中断后需要从最近状态继续时", "需要保留阶段快照用于调试/审计时"]
+minimal_wiring = [
+  "from nsgablack.plugins import CheckpointResumePlugin, CheckpointResumeConfig",
+  "solver.add_plugin(CheckpointResumePlugin(config=CheckpointResumeConfig(auto_resume=True)))"
+]
+required_companions = []
+config_keys = ["checkpoint_dir", "file_prefix", "save_every", "save_on_finish", "keep_last", "auto_resume", "resume_from", "restore_plugin_state", "restore_rng_state", "strict"]
+example_entry = "build_solver.py:build_solver"
+[[entry]]
+key = "suite.checkpoint_resume"
+title = "attach_checkpoint_resume"
+kind = "suite"
+import_path = "nsgablack.utils.suites:attach_checkpoint_resume"
+tags = ["authority", "bundle", "checkpoint", "recovery", "resume", "suite"]
+summary = "权威装配：接入 checkpoint/resume 插件。 / Authority wiring: attach checkpoint/resume plugin."
+companions = ["plugin.checkpoint_resume"]
+use_when = ["希望快速启用稳定续跑能力并减少脚手架代码时"]
+minimal_wiring = [
+  "from nsgablack.utils.suites import attach_checkpoint_resume",
+  "attach_checkpoint_resume(solver, auto_resume=True, save_every=10)"
+]
+required_companions = ["plugin.checkpoint_resume"]
+config_keys = ["checkpoint_dir", "file_prefix", "save_every", "keep_last", "auto_resume", "resume_from", "save_on_finish", "restore_plugin_state", "restore_rng_state", "strict"]
+example_entry = "build_solver.py:build_solver"
 [[entry]]
 key = "suite.dynamic_switch"
 title = "attach_dynamic_switch"
@@ -205,7 +227,6 @@ kind = "suite"
 import_path = "nsgablack.utils.suites.dynamic_switch:attach_dynamic_switch"
 tags = ["authority", "bundle", "dynamic", "suite", "switch"]
 summary = "权威装配：动态切换插件，用于运行时策略/权重切换。 / Authority wiring: dynamic switch plugin for runtime strategy/weight switching."
-
 [[entry]]
 key = "tool.dynamic_cli_signal"
 title = "CLISignalProvider"
@@ -215,6 +236,11 @@ tags = ["cli", "dynamic", "signal", "tool"]
 summary = "\u5de5\u5177\uff1aCLISignalProvider\u3002 / Tool: CLISignalProvider."
 
 # --- Algorithmic biases (additional) ---
+use_when = ['Need this utility/tool in workflow assembly or diagnostics.']
+minimal_wiring = ['from nsgablack.utils.dynamic import CLISignalProvider', 'CLISignalProvider()']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search dynamic_cli_signal --kind example'
 [[entry]]
 key = "bias.diversity_adaptive"
 title = "AdaptiveDiversityBias"
@@ -222,7 +248,11 @@ kind = "bias"
 import_path = "nsgablack.bias.algorithmic.diversity:AdaptiveDiversityBias"
 tags = ["adaptive", "algorithmic", "bias", "diversity"]
 summary = "自适应多样性偏置：根据状态调节多样性压力。 / Algorithmic bias: adaptively adjust diversity pressure."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.algorithmic.diversity import AdaptiveDiversityBias', 'bias_module.add(AdaptiveDiversityBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search diversity_adaptive --kind example'
 [[entry]]
 key = "bias.diversity_niche"
 title = "NicheDiversityBias"
@@ -230,7 +260,11 @@ kind = "bias"
 import_path = "nsgablack.bias.algorithmic.diversity:NicheDiversityBias"
 tags = ["algorithmic", "bias", "diversity", "niching"]
 summary = "小生境多样性偏置：基于niche划分维持分散。 / Algorithmic bias: niche-based diversity preservation."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.algorithmic.diversity import NicheDiversityBias', 'bias_module.add(NicheDiversityBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search diversity_niche --kind example'
 [[entry]]
 key = "bias.diversity_crowding"
 title = "CrowdingDistanceBias"
@@ -238,7 +272,11 @@ kind = "bias"
 import_path = "nsgablack.bias.algorithmic.diversity:CrowdingDistanceBias"
 tags = ["algorithmic", "bias", "crowding", "diversity"]
 summary = "拥挤距离偏置：利用拥挤度喜好稀疏/边界解。 / Algorithmic bias: favor sparse/frontier solutions via crowding distance."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.algorithmic.diversity import CrowdingDistanceBias', 'bias_module.add(CrowdingDistanceBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search diversity_crowding --kind example'
 [[entry]]
 key = "bias.diversity_sharing"
 title = "SharingFunctionBias"
@@ -246,7 +284,11 @@ kind = "bias"
 import_path = "nsgablack.bias.algorithmic.diversity:SharingFunctionBias"
 tags = ["algorithmic", "bias", "diversity", "sharing"]
 summary = "共享函数偏置：通过适应度共享抑制过度聚集。 / Algorithmic bias: fitness sharing to reduce crowding."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.algorithmic.diversity import SharingFunctionBias', 'bias_module.add(SharingFunctionBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search diversity_sharing --kind example'
 [[entry]]
 key = "bias.convergence_adaptive"
 title = "AdaptiveConvergenceBias"
@@ -254,7 +296,11 @@ kind = "bias"
 import_path = "nsgablack.bias.algorithmic.convergence:AdaptiveConvergenceBias"
 tags = ["adaptive", "algorithmic", "bias", "convergence"]
 summary = "自适应收敛偏置：动态平衡探索与收敛。 / Algorithmic bias: adaptively balance exploration vs convergence."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.algorithmic.convergence import AdaptiveConvergenceBias', 'bias_module.add(AdaptiveConvergenceBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search convergence_adaptive --kind example'
 [[entry]]
 key = "bias.convergence_precision"
 title = "PrecisionBias"
@@ -262,7 +308,11 @@ kind = "bias"
 import_path = "nsgablack.bias.algorithmic.convergence:PrecisionBias"
 tags = ["algorithmic", "bias", "convergence", "precision"]
 summary = "精度偏置：强调局部精修与数值稳定。 / Algorithmic bias: emphasize precision and local refinement."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.algorithmic.convergence import PrecisionBias', 'bias_module.add(PrecisionBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search convergence_precision --kind example'
 [[entry]]
 key = "bias.convergence_late_stage"
 title = "LateStageConvergenceBias"
@@ -270,7 +320,11 @@ kind = "bias"
 import_path = "nsgablack.bias.algorithmic.convergence:LateStageConvergenceBias"
 tags = ["algorithmic", "bias", "convergence", "late_stage"]
 summary = "后期收敛偏置：末期加速收敛与精修。 / Algorithmic bias: accelerate late-stage convergence."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.algorithmic.convergence import LateStageConvergenceBias', 'bias_module.add(LateStageConvergenceBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search convergence_late_stage --kind example'
 [[entry]]
 key = "bias.convergence_multi_stage"
 title = "MultiStageConvergenceBias"
@@ -278,95 +332,11 @@ kind = "bias"
 import_path = "nsgablack.bias.algorithmic.convergence:MultiStageConvergenceBias"
 tags = ["algorithmic", "bias", "convergence", "multi_stage"]
 summary = "多阶段收敛偏置：分阶段切换探索/开发策略。 / Algorithmic bias: multi-stage convergence scheduling."
-
-[[entry]]
-key = "bias.sa_adaptive"
-title = "AdaptiveSABias"
-kind = "bias"
-import_path = "nsgablack.bias.algorithmic.simulated_annealing:AdaptiveSABias"
-tags = ["adaptive", "algorithmic", "bias", "sa"]
-summary = "自适应退火偏置：基于接受率调整温度。 / Algorithmic bias: adaptive SA temperature/acceptance tuning."
-
-[[entry]]
-key = "bias.sa_multiobjective"
-title = "MultiObjectiveSABias"
-kind = "bias"
-import_path = "nsgablack.bias.algorithmic.simulated_annealing:MultiObjectiveSABias"
-tags = ["algorithmic", "bias", "multiobjective", "sa"]
-summary = "多目标退火偏置：多目标接受准则/标度化。 / Algorithmic bias: multi-objective SA acceptance/scalarization."
-
-[[entry]]
-key = "bias.nsga2_adaptive"
-title = "AdaptiveNSGA2Bias"
-kind = "bias"
-import_path = "nsgablack.bias.algorithmic.nsga2:AdaptiveNSGA2Bias"
-tags = ["adaptive", "algorithmic", "bias", "nsga2"]
-summary = "自适应NSGA-II偏置：动态调整选择/变异参数。 / Algorithmic bias: adaptive NSGA-II selection/mutation."
-
-[[entry]]
-key = "bias.nsga2_diversity_preserving"
-title = "DiversityPreservingNSGA2Bias"
-kind = "bias"
-import_path = "nsgablack.bias.algorithmic.nsga2:DiversityPreservingNSGA2Bias"
-tags = ["algorithmic", "bias", "diversity", "nsga2"]
-summary = "NSGA-II多样性偏置：强调拥挤度与分布。 / Algorithmic bias: NSGA-II diversity preservation."
-
-[[entry]]
-key = "bias.de_adaptive"
-title = "AdaptiveDEBias"
-kind = "bias"
-import_path = "nsgablack.bias.algorithmic.differential_evolution:AdaptiveDEBias"
-tags = ["adaptive", "algorithmic", "bias", "de"]
-summary = "自适应DE偏置：动态调整F/CR或策略。 / Algorithmic bias: adaptive DE parameters/strategy."
-
-[[entry]]
-key = "bias.de_multiobjective"
-title = "MultiObjectiveDEBias"
-kind = "bias"
-import_path = "nsgablack.bias.algorithmic.differential_evolution:MultiObjectiveDEBias"
-tags = ["algorithmic", "bias", "de", "multiobjective"]
-summary = "多目标DE偏置：多目标标度与选择。 / Algorithmic bias: DE for multi-objective search."
-
-[[entry]]
-key = "bias.pattern_search_adaptive"
-title = "AdaptivePatternSearchBias"
-kind = "bias"
-import_path = "nsgablack.bias.algorithmic.pattern_search:AdaptivePatternSearchBias"
-tags = ["adaptive", "algorithmic", "bias", "pattern_search"]
-summary = "自适应模式搜索偏置：动态调整步长/方向。 / Algorithmic bias: adaptive pattern search steps."
-
-[[entry]]
-key = "bias.coordinate_descent"
-title = "CoordinateDescentBias"
-kind = "bias"
-import_path = "nsgablack.bias.algorithmic.pattern_search:CoordinateDescentBias"
-tags = ["algorithmic", "bias", "coordinate_descent"]
-summary = "坐标下降偏置：偏向逐坐标精修。 / Algorithmic bias: coordinate-wise refinement."
-
-[[entry]]
-key = "bias.gd_momentum"
-title = "MomentumGradientDescentBias"
-kind = "bias"
-import_path = "nsgablack.bias.algorithmic.gradient_descent:MomentumGradientDescentBias"
-tags = ["algorithmic", "bias", "gradient_descent", "momentum"]
-summary = "动量梯度偏置：加速并稳定收敛。 / Algorithmic bias: momentum gradient descent."
-
-[[entry]]
-key = "bias.gd_adaptive"
-title = "AdaptiveGradientDescentBias"
-kind = "bias"
-import_path = "nsgablack.bias.algorithmic.gradient_descent:AdaptiveGradientDescentBias"
-tags = ["adaptive", "algorithmic", "bias", "gradient_descent"]
-summary = "自适应梯度偏置：自适应学习率。 / Algorithmic bias: adaptive learning-rate GD."
-
-[[entry]]
-key = "bias.gd_adam"
-title = "AdamGradientBias"
-kind = "bias"
-import_path = "nsgablack.bias.algorithmic.gradient_descent:AdamGradientBias"
-tags = ["adam", "algorithmic", "bias", "gradient_descent"]
-summary = "Adam梯度偏置：一阶/二阶矩估计修正。 / Algorithmic bias: Adam optimizer style."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.algorithmic.convergence import MultiStageConvergenceBias', 'bias_module.add(MultiStageConvergenceBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search convergence_multi_stage --kind example'
 [[entry]]
 key = "bias.pso_adaptive"
 title = "AdaptivePSOBias"
@@ -374,7 +344,11 @@ kind = "bias"
 import_path = "nsgablack.bias.algorithmic.pso:AdaptivePSOBias"
 tags = ["adaptive", "algorithmic", "bias", "pso"]
 summary = "自适应PSO偏置：动态惯性与学习因子。 / Algorithmic bias: adaptive PSO parameters."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.algorithmic.pso import AdaptivePSOBias', 'bias_module.add(AdaptivePSOBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search pso_adaptive --kind example'
 [[entry]]
 key = "bias.cmaes_adaptive"
 title = "AdaptiveCMAESBias"
@@ -382,40 +356,11 @@ kind = "bias"
 import_path = "nsgablack.bias.algorithmic.cma_es:AdaptiveCMAESBias"
 tags = ["adaptive", "algorithmic", "bias", "cmaes"]
 summary = "自适应CMA-ES偏置：协方差/步长自适应。 / Algorithmic bias: adaptive CMA-ES tuning."
-
-[[entry]]
-key = "bias.moead_adaptive"
-title = "AdaptiveMOEADBias"
-kind = "bias"
-import_path = "nsgablack.bias.algorithmic.moead:AdaptiveMOEADBias"
-tags = ["adaptive", "algorithmic", "bias", "moead"]
-summary = "自适应MOEA/D偏置：邻域/权重动态调整。 / Algorithmic bias: adaptive MOEA/D neighborhood/weights."
-
-[[entry]]
-key = "bias.nsga3_adaptive"
-title = "AdaptiveNSGA3Bias"
-kind = "bias"
-import_path = "nsgablack.bias.algorithmic.nsga3:AdaptiveNSGA3Bias"
-tags = ["adaptive", "algorithmic", "bias", "nsga3"]
-summary = "自适应NSGA-III偏置：参考点自适应。 / Algorithmic bias: adaptive NSGA-III reference points."
-
-[[entry]]
-key = "bias.spea2_adaptive"
-title = "AdaptiveSPEA2Bias"
-kind = "bias"
-import_path = "nsgablack.bias.algorithmic.spea2:AdaptiveSPEA2Bias"
-tags = ["adaptive", "algorithmic", "bias", "spea2"]
-summary = "自适应SPEA2偏置：强度/密度参数调整。 / Algorithmic bias: adaptive SPEA2 parameters."
-
-[[entry]]
-key = "bias.spea2_hybrid"
-title = "HybridSPEA2NSGA2Bias"
-kind = "bias"
-import_path = "nsgablack.bias.algorithmic.spea2:HybridSPEA2NSGA2Bias"
-tags = ["algorithmic", "bias", "hybrid", "nsga2", "spea2"]
-summary = "混合SPEA2-NSGA2偏置：融合强度与拥挤度信号。 / Algorithmic bias: hybrid SPEA2+NSGA2 signals."
-
-# --- Domain biases ---
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.algorithmic.cma_es import AdaptiveCMAESBias', 'bias_module.add(AdaptiveCMAESBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search cmaes_adaptive --kind example'
 [[entry]]
 key = "bias.constraint"
 title = "ConstraintBias"
@@ -423,7 +368,11 @@ kind = "bias"
 import_path = "nsgablack.bias.domain.constraint:ConstraintBias"
 tags = ["bias", "constraint", "domain"]
 summary = "约束偏置：将规则/约束显式注入评分。 / Domain bias: inject constraints into scoring."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.domain.constraint import ConstraintBias', 'bias_module.add(ConstraintBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search constraint --kind example'
 [[entry]]
 key = "bias.feasibility"
 title = "FeasibilityBias"
@@ -431,7 +380,11 @@ kind = "bias"
 import_path = "nsgablack.bias.domain.constraint:FeasibilityBias"
 tags = ["bias", "domain", "feasibility"]
 summary = "可行性偏置：优先可行解/修复倾向。 / Domain bias: prioritize feasibility."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.domain.constraint import FeasibilityBias', 'bias_module.add(FeasibilityBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search feasibility --kind example'
 [[entry]]
 key = "bias.preference"
 title = "PreferenceBias"
@@ -439,7 +392,11 @@ kind = "bias"
 import_path = "nsgablack.bias.domain.constraint:PreferenceBias"
 tags = ["bias", "domain", "preference"]
 summary = "偏好偏置：编码业务偏好与权重。 / Domain bias: encode preferences/weights."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.domain.constraint import PreferenceBias', 'bias_module.add(PreferenceBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search preference --kind example'
 [[entry]]
 key = "bias.rule_based"
 title = "RuleBasedBias"
@@ -447,7 +404,11 @@ kind = "bias"
 import_path = "nsgablack.bias.domain.constraint:RuleBasedBias"
 tags = ["bias", "domain", "rule"]
 summary = "规则偏置：基于规则的加权/惩罚。 / Domain bias: rule-based weighting/penalty."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.domain.constraint import RuleBasedBias', 'bias_module.add(RuleBasedBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search rule_based --kind example'
 [[entry]]
 key = "bias.callable"
 title = "CallableBias"
@@ -455,7 +416,11 @@ kind = "bias"
 import_path = "nsgablack.bias.domain.callable_bias:CallableBias"
 tags = ["bias", "callable", "domain"]
 summary = "可调用偏置：用户函数作为偏置。 / Domain bias: user callable bias function."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.domain.callable_bias import CallableBias', 'bias_module.add(CallableBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search callable --kind example'
 [[entry]]
 key = "bias.engineering_design"
 title = "EngineeringDesignBias"
@@ -463,7 +428,11 @@ kind = "bias"
 import_path = "nsgablack.bias.domain.engineering:EngineeringDesignBias"
 tags = ["bias", "domain", "engineering"]
 summary = "工程设计偏置：工程可制造性/公差偏好。 / Domain bias: engineering design constraints/priors."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.domain.engineering import EngineeringDesignBias', 'bias_module.add(EngineeringDesignBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search engineering_design --kind example'
 [[entry]]
 key = "bias.safety"
 title = "SafetyBias"
@@ -471,7 +440,11 @@ kind = "bias"
 import_path = "nsgablack.bias.domain.engineering:SafetyBias"
 tags = ["bias", "domain", "safety"]
 summary = "安全偏置：风险/安全约束优先。 / Domain bias: safety/risk prioritization."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.domain.engineering import SafetyBias', 'bias_module.add(SafetyBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search safety --kind example'
 [[entry]]
 key = "bias.manufacturing"
 title = "ManufacturingBias"
@@ -479,7 +452,11 @@ kind = "bias"
 import_path = "nsgablack.bias.domain.engineering:ManufacturingBias"
 tags = ["bias", "domain", "manufacturing"]
 summary = "制造偏置：工艺/产线可行性倾向。 / Domain bias: manufacturing feasibility."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.domain.engineering import ManufacturingBias', 'bias_module.add(ManufacturingBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search manufacturing --kind example'
 [[entry]]
 key = "bias.scheduling"
 title = "SchedulingBias"
@@ -487,7 +464,11 @@ kind = "bias"
 import_path = "nsgablack.bias.domain.scheduling:SchedulingBias"
 tags = ["bias", "domain", "scheduling"]
 summary = "排程偏置：任务顺序/负载平衡。 / Domain bias: scheduling preference."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.domain.scheduling import SchedulingBias', 'bias_module.add(SchedulingBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search scheduling --kind example'
 [[entry]]
 key = "bias.resource_constraint"
 title = "ResourceConstraintBias"
@@ -495,7 +476,11 @@ kind = "bias"
 import_path = "nsgablack.bias.domain.scheduling:ResourceConstraintBias"
 tags = ["bias", "domain", "resource"]
 summary = "资源约束偏置：资源容量/消耗约束。 / Domain bias: resource capacity constraints."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.domain.scheduling import ResourceConstraintBias', 'bias_module.add(ResourceConstraintBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search resource_constraint --kind example'
 [[entry]]
 key = "bias.time_window"
 title = "TimeWindowBias"
@@ -505,6 +490,11 @@ tags = ["bias", "domain", "time_window"]
 summary = "时间窗偏置：满足时窗与时序约束。 / Domain bias: time window constraints."
 
 # --- Specialized (Bayesian) biases ---
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.domain.scheduling import TimeWindowBias', 'bias_module.add(TimeWindowBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search time_window --kind example'
 [[entry]]
 key = "bias.bayesian_guidance"
 title = "BayesianGuidanceBias"
@@ -512,7 +502,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.bayesian_biases:BayesianGuidanceBias"
 tags = ["bayesian", "bias", "guidance", "specialized"]
 summary = "贝叶斯引导偏置：用代理/先验引导搜索。 / Specialized bias: Bayesian-guided exploration."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.bayesian_biases import BayesianGuidanceBias', 'bias_module.add(BayesianGuidanceBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search bayesian_guidance --kind example'
 [[entry]]
 key = "bias.bayesian_exploration"
 title = "BayesianExplorationBias"
@@ -520,7 +514,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.bayesian_biases:BayesianExplorationBias"
 tags = ["bayesian", "bias", "exploration", "specialized"]
 summary = "贝叶斯探索偏置：优先高不确定区域。 / Specialized bias: favor uncertain regions."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.bayesian_biases import BayesianExplorationBias', 'bias_module.add(BayesianExplorationBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search bayesian_exploration --kind example'
 [[entry]]
 key = "bias.bayesian_convergence"
 title = "BayesianConvergenceBias"
@@ -531,6 +529,11 @@ summary = "贝叶斯收敛偏置：在可信区间内收敛。 / Specialized bia
 
 
 # --- Specialized (engineering) biases ---
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.bayesian_biases import BayesianConvergenceBias', 'bias_module.add(BayesianConvergenceBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search bayesian_convergence --kind example'
 [[entry]]
 key = "bias.engineering_precision"
 title = "EngineeringPrecisionBias"
@@ -538,7 +541,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.engineering:EngineeringPrecisionBias"
 tags = ["bias", "domain", "engineering", "precision"]
 summary = "工程精度偏置：精度/公差优先。 / Domain bias: precision/tolerance bias."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.engineering import EngineeringPrecisionBias', 'bias_module.add(EngineeringPrecisionBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search engineering_precision --kind example'
 [[entry]]
 key = "bias.engineering_constraint"
 title = "EngineeringConstraintBias"
@@ -546,7 +553,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.engineering:EngineeringConstraintBias"
 tags = ["bias", "constraint", "domain", "engineering"]
 summary = "工程约束偏置：工程规范/规则约束。 / Domain bias: engineering rule constraints."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.engineering import EngineeringConstraintBias', 'bias_module.add(EngineeringConstraintBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search engineering_constraint --kind example'
 [[entry]]
 key = "bias.engineering_robustness"
 title = "EngineeringRobustnessBias"
@@ -556,6 +567,11 @@ tags = ["bias", "domain", "engineering", "robustness"]
 summary = "工程鲁棒偏置：对扰动稳健。 / Domain bias: robustness to perturbations."
 
 # --- Specialized (local search) biases ---
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.engineering import EngineeringRobustnessBias', 'bias_module.add(EngineeringRobustnessBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search engineering_robustness --kind example'
 [[entry]]
 key = "bias.local_gd"
 title = "GradientDescentBias (LocalSearch)"
@@ -563,7 +579,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.local_search:GradientDescentBias"
 tags = ["bias", "gradient_descent", "local_search", "specialized"]
 summary = "局部梯度偏置：局部梯度精修。 / Specialized bias: local gradient refinement."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.local_search import GradientDescentBias', 'bias_module.add(GradientDescentBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search local_gd --kind example'
 [[entry]]
 key = "bias.local_newton"
 title = "NewtonMethodBias"
@@ -571,7 +591,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.local_search:NewtonMethodBias"
 tags = ["bias", "local_search", "newton", "specialized"]
 summary = "牛顿偏置：二阶近似加速局部收敛。 / Specialized bias: Newton-style refinement."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.local_search import NewtonMethodBias', 'bias_module.add(NewtonMethodBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search local_newton --kind example'
 [[entry]]
 key = "bias.local_line_search"
 title = "LineSearchBias"
@@ -579,7 +603,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.local_search:LineSearchBias"
 tags = ["bias", "line_search", "local_search", "specialized"]
 summary = "线搜索偏置：步长线搜索与调度。 / Specialized bias: line-search step control."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.local_search import LineSearchBias', 'bias_module.add(LineSearchBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search local_line_search --kind example'
 [[entry]]
 key = "bias.local_trust_region"
 title = "TrustRegionBias"
@@ -587,7 +615,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.local_search:TrustRegionBias"
 tags = ["bias", "local_search", "specialized", "trust_region"]
 summary = "信赖域偏置：局部可信区域内搜索。 / Specialized bias: trust-region refinement."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.local_search import TrustRegionBias', 'bias_module.add(TrustRegionBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search local_trust_region --kind example'
 [[entry]]
 key = "bias.local_nelder_mead"
 title = "NelderMeadBias"
@@ -595,7 +627,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.local_search:NelderMeadBias"
 tags = ["bias", "local_search", "nelder_mead", "specialized"]
 summary = "Nelder-Mead偏置：单纯形局部搜索。 / Specialized bias: Nelder-Mead simplex refinement."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.local_search import NelderMeadBias', 'bias_module.add(NelderMeadBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search local_nelder_mead --kind example'
 [[entry]]
 key = "bias.local_quasi_newton"
 title = "QuasiNewtonBias"
@@ -605,6 +641,11 @@ tags = ["bias", "local_search", "quasi_newton", "specialized"]
 summary = "拟牛顿偏置：有限记忆/拟牛顿更新。 / Specialized bias: quasi-Newton refinement."
 
 # --- Specialized (graph) biases ---
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.local_search import QuasiNewtonBias', 'bias_module.add(QuasiNewtonBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search local_quasi_newton --kind example'
 [[entry]]
 key = "bias.graph_connectivity"
 title = "ConnectivityBias"
@@ -612,7 +653,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.base:ConnectivityBias"
 tags = ["bias", "connectivity", "graph", "specialized"]
 summary = "连通性偏置：鼓励图连通。 / Specialized bias: graph connectivity."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.graph.base import ConnectivityBias', 'bias_module.add(ConnectivityBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search graph_connectivity --kind example'
 [[entry]]
 key = "bias.graph_sparsity"
 title = "SparsityBias"
@@ -620,7 +665,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.base:SparsityBias"
 tags = ["bias", "graph", "sparsity", "specialized"]
 summary = "稀疏偏置：偏向稀疏图结构。 / Specialized bias: graph sparsity."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.graph.base import SparsityBias', 'bias_module.add(SparsityBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search graph_sparsity --kind example'
 [[entry]]
 key = "bias.graph_degree_distribution"
 title = "DegreeDistributionBias"
@@ -628,7 +677,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.base:DegreeDistributionBias"
 tags = ["bias", "degree", "graph", "specialized"]
 summary = "度分布偏置：匹配目标度分布。 / Specialized bias: target degree distribution."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.graph.base import DegreeDistributionBias', 'bias_module.add(DegreeDistributionBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search graph_degree_distribution --kind example'
 [[entry]]
 key = "bias.graph_shortest_path"
 title = "ShortestPathBias"
@@ -636,7 +689,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.base:ShortestPathBias"
 tags = ["bias", "graph", "shortest_path", "specialized"]
 summary = "最短路径偏置：优先更短路径。 / Specialized bias: shortest path preference."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.graph.base import ShortestPathBias', 'bias_module.add(ShortestPathBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search graph_shortest_path --kind example'
 [[entry]]
 key = "bias.graph_max_flow"
 title = "MaxFlowBias"
@@ -644,7 +701,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.base:MaxFlowBias"
 tags = ["bias", "graph", "max_flow", "specialized"]
 summary = "最大流偏置：提高可达流量。 / Specialized bias: max-flow preference."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.graph.base import MaxFlowBias', 'bias_module.add(MaxFlowBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search graph_max_flow --kind example'
 [[entry]]
 key = "bias.graph_coloring"
 title = "GraphColoringBias"
@@ -652,7 +713,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.base:GraphColoringBias"
 tags = ["bias", "coloring", "graph", "specialized"]
 summary = "图着色偏置：减少冲突色。 / Specialized bias: graph coloring bias."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.graph.base import GraphColoringBias', 'bias_module.add(GraphColoringBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search graph_coloring --kind example'
 [[entry]]
 key = "bias.graph_community"
 title = "CommunityDetectionBias"
@@ -660,7 +725,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.base:CommunityDetectionBias"
 tags = ["bias", "community", "graph", "specialized"]
 summary = "社区结构偏置：增强社区划分。 / Specialized bias: community structure bias."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.graph.base import CommunityDetectionBias', 'bias_module.add(CommunityDetectionBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search graph_community --kind example'
 [[entry]]
 key = "bias.graph_constraint"
 title = "GraphConstraintBias"
@@ -668,7 +737,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.constraints:GraphConstraintBias"
 tags = ["bias", "constraint", "graph", "specialized"]
 summary = "图结构约束偏置：通用图结构约束。 / Specialized bias: graph structural constraints."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.graph.constraints import GraphConstraintBias', 'bias_module.add(GraphConstraintBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search graph_constraint --kind example'
 [[entry]]
 key = "bias.graph_tsp_constraint"
 title = "TSPConstraintBias"
@@ -676,7 +749,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.constraints:TSPConstraintBias"
 tags = ["bias", "constraint", "graph", "specialized", "tsp"]
 summary = "TSP约束偏置：巡回路径合法性。 / Specialized bias: TSP constraints."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.graph.constraints import TSPConstraintBias', 'bias_module.add(TSPConstraintBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search graph_tsp_constraint --kind example'
 [[entry]]
 key = "bias.graph_path_constraint"
 title = "PathConstraintBias"
@@ -684,7 +761,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.constraints:PathConstraintBias"
 tags = ["bias", "constraint", "graph", "path", "specialized"]
 summary = "路径约束偏置：路径合法性/可达性。 / Specialized bias: path constraints."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.graph.constraints import PathConstraintBias', 'bias_module.add(PathConstraintBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search graph_path_constraint --kind example'
 [[entry]]
 key = "bias.graph_tree_constraint"
 title = "TreeConstraintBias"
@@ -692,7 +773,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.constraints:TreeConstraintBias"
 tags = ["bias", "constraint", "graph", "specialized", "tree"]
 summary = "树结构约束偏置：树结构约束。 / Specialized bias: tree constraints."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.graph.constraints import TreeConstraintBias', 'bias_module.add(TreeConstraintBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search graph_tree_constraint --kind example'
 [[entry]]
 key = "bias.graph_coloring_constraint"
 title = "GraphColoringConstraintBias"
@@ -700,7 +785,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.constraints:GraphColoringConstraintBias"
 tags = ["bias", "coloring", "constraint", "graph", "specialized"]
 summary = "着色约束偏置：着色合法性约束。 / Specialized bias: coloring constraints."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.graph.constraints import GraphColoringConstraintBias', 'bias_module.add(GraphColoringConstraintBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search graph_coloring_constraint --kind example'
 [[entry]]
 key = "bias.graph_matching_constraint"
 title = "MatchingConstraintBias"
@@ -708,7 +797,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.constraints:MatchingConstraintBias"
 tags = ["bias", "constraint", "graph", "matching", "specialized"]
 summary = "匹配约束偏置：匹配合法性约束。 / Specialized bias: matching constraints."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.graph.constraints import MatchingConstraintBias', 'bias_module.add(MatchingConstraintBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search graph_matching_constraint --kind example'
 [[entry]]
 key = "bias.graph_hamiltonian_constraint"
 title = "HamiltonianPathConstraintBias"
@@ -716,7 +809,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.constraints:HamiltonianPathConstraintBias"
 tags = ["bias", "constraint", "graph", "hamiltonian", "specialized"]
 summary = "哈密顿路径约束偏置：访问全部节点。 / Specialized bias: Hamiltonian path constraints."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.graph.constraints import HamiltonianPathConstraintBias', 'bias_module.add(HamiltonianPathConstraintBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search graph_hamiltonian_constraint --kind example'
 [[entry]]
 key = "bias.graph_composite_constraint"
 title = "CompositeGraphConstraintBias"
@@ -726,6 +823,11 @@ tags = ["bias", "composite", "constraint", "graph", "specialized"]
 summary = "复合图约束偏置：多约束组合。 / Specialized bias: composite graph constraints."
 
 # --- Surrogate biases ---
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.graph.constraints import CompositeGraphConstraintBias', 'bias_module.add(CompositeGraphConstraintBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search graph_composite_constraint --kind example'
 [[entry]]
 key = "bias.surrogate_control"
 title = "SurrogateControlBias"
@@ -733,7 +835,11 @@ kind = "bias"
 import_path = "nsgablack.bias.surrogate.base:SurrogateControlBias"
 tags = ["bias", "control", "specialized", "surrogate"]
 summary = "代理控制偏置：代理评估控制探索。 / Specialized bias: surrogate-guided control."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.surrogate.base import SurrogateControlBias', 'bias_module.add(SurrogateControlBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search surrogate_control --kind example'
 [[entry]]
 key = "bias.surrogate_phase_schedule"
 title = "PhaseScheduleBias"
@@ -741,7 +847,11 @@ kind = "bias"
 import_path = "nsgablack.bias.surrogate.phase_schedule:PhaseScheduleBias"
 tags = ["bias", "schedule", "specialized", "surrogate"]
 summary = "阶段调度偏置：分阶段切换代理/真实评估。 / Specialized bias: phase scheduling for surrogate/true eval."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.surrogate.phase_schedule import PhaseScheduleBias', 'bias_module.add(PhaseScheduleBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search surrogate_phase_schedule --kind example'
 [[entry]]
 key = "bias.surrogate_uncertainty_budget"
 title = "UncertaintyBudgetBias"
@@ -751,6 +861,11 @@ tags = ["bias", "specialized", "surrogate", "uncertainty"]
 summary = "不确定预算偏置：按不确定度分配评估预算。 / Specialized bias: uncertainty-aware evaluation budget."
 
 # --- Production scheduling biases ---
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.surrogate.uncertainty_budget import UncertaintyBudgetBias', 'bias_module.add(UncertaintyBudgetBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search surrogate_uncertainty_budget --kind example'
 [[entry]]
 key = "bias.production_constraint"
 title = "ProductionConstraintBias"
@@ -758,7 +873,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.production.scheduling:ProductionConstraintBias"
 tags = ["bias", "constraint", "domain", "production"]
 summary = "生产约束偏置：产线/工艺约束。 / Domain bias: production constraints."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.production.scheduling import ProductionConstraintBias', 'bias_module.add(ProductionConstraintBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search production_constraint --kind example'
 [[entry]]
 key = "bias.production_diversity"
 title = "ProductionDiversityBias"
@@ -766,7 +885,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.production.scheduling:ProductionDiversityBias"
 tags = ["bias", "diversity", "domain", "production"]
 summary = "生产多样性偏置：产品/方案多样性。 / Domain bias: production diversity."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.production.scheduling import ProductionDiversityBias', 'bias_module.add(ProductionDiversityBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search production_diversity --kind example'
 [[entry]]
 key = "bias.production_continuity"
 title = "ProductionContinuityBias"
@@ -774,7 +897,11 @@ kind = "bias"
 import_path = "nsgablack.bias.specialized.production.scheduling:ProductionContinuityBias"
 tags = ["bias", "continuity", "domain", "production"]
 summary = "生产连续性偏置：减少切换/中断。 / Domain bias: production continuity."
-
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.production.scheduling import ProductionContinuityBias', 'bias_module.add(ProductionContinuityBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search production_continuity --kind example'
 [[entry]]
 key = "bias.production_scheduling"
 title = "ProductionSchedulingBias"
@@ -784,6 +911,11 @@ tags = ["bias", "domain", "production", "scheduling"]
 summary = "生产排程偏置：排程优先与负载平衡。 / Domain bias: production scheduling preference."
 
 # --- Plugin usability overrides (high-frequency runtime/system/storage/evaluation) ---
+use_when = ['Need to inject soft preference guidance without changing hard constraints.']
+minimal_wiring = ['from nsgablack.bias.specialized.production.scheduling import ProductionSchedulingBias', 'bias_module.add(ProductionSchedulingBias())']
+required_companions = ['(none)']
+config_keys = ['(none)']
+example_entry = 'python -m nsgablack catalog search production_scheduling --kind example'
 [[entry]]
 key = "plugin.monte_carlo_eval"
 title = "MonteCarloEvaluationPlugin"
@@ -802,7 +934,6 @@ minimal_wiring = [
 required_companions = ["bias.robustness"]
 config_keys = ["n_samples", "noise_std", "aggregation", "seed", "parallel"]
 example_entry = "examples/monte_carlo_dp_robust_demo.py:build_solver"
-
 [[entry]]
 key = "plugin.surrogate_eval"
 title = "SurrogateEvaluationPlugin"
@@ -821,7 +952,6 @@ minimal_wiring = [
 required_companions = []
 config_keys = ["train_interval", "warmup_evals", "uncertainty_threshold", "model_type", "fallback_on_error"]
 example_entry = "examples/surrogate_plugin_demo.py:build_solver"
-
 [[entry]]
 key = "plugin.multi_fidelity_eval"
 title = "MultiFidelityEvaluationPlugin"
@@ -838,7 +968,6 @@ minimal_wiring = [
 required_companions = []
 config_keys = ["low_fidelity_ratio", "switch_step", "budget", "fallback_to_high_fidelity"]
 example_entry = "examples/multi_fidelity_demo.py:build_solver"
-
 [[entry]]
 key = "plugin.mas_model"
 title = "MASModelPlugin"
@@ -860,7 +989,6 @@ minimal_wiring = [
 required_companions = ["adapter.mas"]
 config_keys = ["min_train_samples", "retrain_every_call", "model_type"]
 example_entry = "examples/mas_demo.py:build_solver"
-
 [[entry]]
 key = "plugin.subspace_basis"
 title = "SubspaceBasisPlugin"
@@ -882,7 +1010,6 @@ minimal_wiring = [
 required_companions = ["adapter.trust_region_subspace"]
 config_keys = ["method", "subspace_dim", "min_samples", "update_every", "random_seed"]
 example_entry = "examples/trust_region_subspace_demo.py:build_solver"
-
 [[entry]]
 key = "plugin.pareto_archive"
 title = "ParetoArchivePlugin"
@@ -899,7 +1026,6 @@ minimal_wiring = [
 required_companions = []
 config_keys = ["max_size", "deduplicate", "dominance_eps", "export_path"]
 example_entry = "examples/dynamic_multi_strategy_demo.py:build_solver"
-
 [[entry]]
 key = "plugin.benchmark_harness"
 title = "BenchmarkHarnessPlugin"
@@ -916,7 +1042,6 @@ minimal_wiring = [
 required_companions = []
 config_keys = ["output_dir", "run_id", "overwrite", "log_every", "save_population"]
 example_entry = "examples/benchmark_harness_demo.py:build_solver"
-
 [[entry]]
 key = "plugin.module_report"
 title = "ModuleReportPlugin"
@@ -933,7 +1058,6 @@ minimal_wiring = [
 required_companions = []
 config_keys = ["output_dir", "run_id", "write_markdown", "include_contracts", "include_hash"]
 example_entry = "examples/dynamic_multi_strategy_demo.py:build_solver"
-
 [[entry]]
 key = "plugin.profiler"
 title = "ProfilerPlugin"
@@ -950,7 +1074,6 @@ minimal_wiring = [
 required_companions = []
 config_keys = ["log_interval", "include_plugin_breakdown", "output_path", "enabled_events"]
 example_entry = "examples/plugin_gallery_demo.py:build_solver"
-
 [[entry]]
 key = "plugin.dynamic_switch"
 title = "DynamicSwitchPlugin"
@@ -968,7 +1091,6 @@ minimal_wiring = [
 required_companions = []
 config_keys = ["should_switch_fn", "soft_switch_fn", "hard_switch_fn", "signal_provider", "config"]
 example_entry = "examples/dynamic_multi_strategy_demo.py:build_solver"
-
 [[entry]]
 key = "plugin.async_event_hub"
 title = "AsyncEventHubPlugin"
@@ -986,7 +1108,6 @@ minimal_wiring = [
 required_companions = []
 config_keys = ["mode", "commit_policy", "max_pending", "drop_policy", "events_key"]
 example_entry = "examples/async_event_driven_demo.py:build_solver"
-
 [[entry]]
 key = "plugin.mysql_run_logger"
 title = "MySQLRunLoggerPlugin"
@@ -1002,7 +1123,6 @@ minimal_wiring = [
 required_companions = []
 config_keys = ["host", "port", "user", "password", "database", "table", "connect_timeout"]
 example_entry = "python -m nsgablack catalog show plugin.mysql_run_logger"
-
 [[entry]]
 key = "plugin.adaptive_parameters"
 title = "AdaptiveParametersPlugin"
@@ -1018,7 +1138,6 @@ minimal_wiring = [
 required_companions = []
 config_keys = ["stagnation_window", "improvement_threshold", "min_mutation_rate", "max_mutation_rate", "min_crossover_rate", "max_crossover_rate"]
 example_entry = "examples/plugin_gallery_demo.py:build_solver"
-
 [[entry]]
 key = "plugin.convergence_monitor"
 title = "ConvergencePlugin"
@@ -1034,7 +1153,6 @@ minimal_wiring = [
 required_companions = []
 config_keys = ["stagnation_window", "improvement_epsilon", "diversity_threshold", "min_generations", "enable_early_stop"]
 example_entry = "examples/nsga2_solver_demo.py:build_solver"
-
 [[entry]]
 key = "plugin.diversity_init"
 title = "DiversityInitPlugin"
@@ -1050,7 +1168,6 @@ minimal_wiring = [
 required_companions = []
 config_keys = ["similarity_threshold", "rejection_prob"]
 example_entry = "examples/blank_solver_plugin_demo.py:build_solver"
-
 [[entry]]
 key = "plugin.elite"
 title = "BasicElitePlugin"
@@ -1066,7 +1183,6 @@ minimal_wiring = [
 required_companions = []
 config_keys = ["retention_prob", "retention_ratio"]
 example_entry = "examples/nsga2_solver_demo.py:build_solver"
-
 [[entry]]
 key = "plugin.memory"
 title = "MemoryPlugin"
@@ -1082,3 +1198,451 @@ minimal_wiring = [
 required_companions = []
 config_keys = ["cleanup_interval", "enable_auto_gc"]
 example_entry = "examples/plugin_gallery_demo.py:build_solver"
+
+# --- Catalog-indexed documentation entries (actionable docs only) ---
+[[entry]]
+key = "doc.authoritative_examples"
+title = "AUTHORITATIVE_EXAMPLES"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_authoritative_examples"
+tags = ["doc", "manual", "examples", "authority"]
+summary = "Authoritative runnable examples and baseline references. / 权威可运行示例与基线参考。"
+example_entry = "docs/AUTHORITATIVE_EXAMPLES.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.component_examples_index"
+title = "COMPONENT_EXAMPLES_INDEX"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_component_examples_index"
+tags = ["doc", "reference", "examples", "components"]
+summary = "Component-to-example mapping index. / 组件到示例的映射索引。"
+example_entry = "docs/COMPONENT_EXAMPLES_INDEX.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.index_manual"
+title = "INDEX_MANUAL"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_index_manual"
+tags = ["doc", "manual", "index", "navigation"]
+summary = "Manual index for docs and module navigation. / 文档与模块导航总索引。"
+example_entry = "docs/INDEX_MANUAL.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.getting_started"
+title = "User Guide: getting_started"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_getting_started"
+tags = ["doc", "guide", "onboarding", "user_guide"]
+summary = "Getting started guide for first runnable workflow. / 首次跑通工作流的入门指南。"
+example_entry = "docs/user_guide/getting_started.rst"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.project_scaffold"
+title = "User Guide: PROJECT_SCAFFOLD"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_project_scaffold"
+tags = ["doc", "guide", "project", "scaffold"]
+summary = "Project scaffold usage and boundary guidance. / 项目脚手架使用与边界说明。"
+example_entry = "docs/user_guide/PROJECT_SCAFFOLD.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.catalog"
+title = "User Guide: catalog"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_catalog"
+tags = ["doc", "guide", "catalog", "search"]
+summary = "Catalog search/list/show usage and patterns. / Catalog 搜索、列表与查看用法及模式。"
+example_entry = "docs/user_guide/catalog.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.context_contracts"
+title = "User Guide: CONTEXT_CONTRACTS"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_context_contracts"
+tags = ["doc", "guide", "context", "contract"]
+summary = "Context contract rules for components. / 组件 Context 契约规则。"
+example_entry = "docs/user_guide/CONTEXT_CONTRACTS.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.context_field_rules"
+title = "User Guide: CONTEXT_FIELD_RULES"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_context_field_rules"
+tags = ["doc", "guide", "context", "naming"]
+summary = "Context field naming and governance rules. / Context 字段命名与治理规则。"
+example_entry = "docs/user_guide/CONTEXT_FIELD_RULES.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.run_inspector"
+title = "User Guide: RUN_INSPECTOR"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_run_inspector"
+tags = ["doc", "guide", "ui", "run_inspector"]
+summary = "Run Inspector usage and diagnostics workflow. / Run Inspector 使用与诊断流程。"
+example_entry = "docs/user_guide/RUN_INSPECTOR.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.plugin_system"
+title = "User Guide: PLUGIN_SYSTEM"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_plugin_system"
+tags = ["doc", "guide", "plugin", "runtime"]
+summary = "Plugin lifecycle, contracts, and wiring patterns. / 插件生命周期、契约与接线模式。"
+example_entry = "docs/user_guide/PLUGIN_SYSTEM.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.plugin_selection"
+title = "User Guide: PLUGIN_SELECTION"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_plugin_selection"
+tags = ["doc", "guide", "plugin", "selection"]
+summary = "How to select plugin combinations by scenario. / 按场景选择插件组合的方法。"
+example_entry = "docs/user_guide/PLUGIN_SELECTION.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.parallel_evaluation"
+title = "User Guide: parallel_evaluation"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_parallel_evaluation"
+tags = ["doc", "guide", "parallel", "evaluation"]
+summary = "Parallel evaluation setup and safeguards. / 并行评估配置与保护策略。"
+example_entry = "docs/user_guide/parallel_evaluation.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.surrogate_workflow"
+title = "User Guide: surrogate_workflow"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_surrogate_workflow"
+tags = ["doc", "guide", "surrogate", "workflow"]
+summary = "Surrogate-assisted optimization workflow. / 代理模型辅助优化工作流。"
+example_entry = "docs/user_guide/surrogate_workflow.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.surrogate_cheatsheet"
+title = "User Guide: surrogate_cheatsheet"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_surrogate_cheatsheet"
+tags = ["doc", "cheatsheet", "surrogate", "guide"]
+summary = "Quick reference for surrogate configuration. / 代理模型配置速查表。"
+example_entry = "docs/user_guide/surrogate_cheatsheet.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.signal_driven_bias"
+title = "User Guide: signal_driven_bias"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_signal_driven_bias"
+tags = ["doc", "guide", "bias", "signal_driven"]
+summary = "Signal-driven bias design and integration. / 信号驱动偏置设计与接入。"
+example_entry = "docs/user_guide/signal_driven_bias.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.how_to_build_optimization"
+title = "User Guide: HOW_TO_BUILD_OPTIMIZATION"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_how_to_build_optimization"
+tags = ["doc", "guide", "workflow", "build"]
+summary = "Step-by-step optimization build process. / 分步构建优化系统流程。"
+example_entry = "docs/user_guide/HOW_TO_BUILD_OPTIMIZATION.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.optimization_strategies"
+title = "User Guide: optimization_strategies"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_optimization_strategies"
+tags = ["doc", "guide", "strategy", "adapter"]
+summary = "Strategy and adapter selection reference. / 策略与 Adapter 选型参考。"
+example_entry = "docs/user_guide/optimization_strategies.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.extension_contracts"
+title = "User Guide: EXTENSION_CONTRACTS"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_extension_contracts"
+tags = ["doc", "guide", "contracts", "extension"]
+summary = "Extension contracts and compatibility requirements. / 扩展契约与兼容性要求。"
+example_entry = "docs/user_guide/EXTENSION_CONTRACTS.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.enhanced_search"
+title = "User Guide: enhanced_search"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_enhanced_search"
+tags = ["doc", "guide", "search", "catalog"]
+summary = "Enhanced catalog search techniques. / Catalog 增强搜索技巧。"
+example_entry = "docs/user_guide/enhanced_search.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.db_event_logging"
+title = "User Guide: DB_EVENT_LOGGING"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_db_event_logging"
+tags = ["doc", "guide", "database", "logging"]
+summary = "Database event logging integration guide. / 数据库事件日志集成指南。"
+example_entry = "docs/user_guide/DB_EVENT_LOGGING.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.guides.decoupling_problem"
+title = "Guide: DECOUPLING_PROBLEM"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_guides_decoupling_problem"
+tags = ["doc", "guide", "decoupling", "problem"]
+summary = "Decouple problem semantics from runtime process. / 将问题语义与运行过程解耦。"
+example_entry = "docs/guides/DECOUPLING_PROBLEM.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.guides.decoupling_representation"
+title = "Guide: DECOUPLING_REPRESENTATION"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_guides_decoupling_representation"
+tags = ["doc", "guide", "decoupling", "representation"]
+summary = "Representation pipeline decoupling practice. / 表示层与管线解耦实践。"
+example_entry = "docs/guides/DECOUPLING_REPRESENTATION.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.guides.decoupling_bias"
+title = "Guide: DECOUPLING_BIAS"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_guides_decoupling_bias"
+tags = ["doc", "guide", "decoupling", "bias"]
+summary = "Bias decoupling and preference design; explains what should stay in bias vs adapter/pipeline. / 偏置解耦与偏好建模指南，说明哪些逻辑应放在 bias，哪些应放在 adapter/pipeline。"
+example_entry = "docs/guides/DECOUPLING_BIAS.md"
+use_when = [
+  "Need to decide whether a rule is preference (bias) or process/algorithm logic.",
+  "Need design guidance before adding new domain/algorithmic bias modules.",
+]
+minimal_wiring = [
+  "Open docs/guides/DECOUPLING_BIAS.md and follow section checklist.",
+  "Align component contracts (context_requires/provides/mutates) with the guide before registration.",
+]
+required_companions = [
+  "doc.user_guide.context_contracts",
+  "doc.user_guide.bias_system",
+]
+config_keys = [
+  "context_requires",
+  "context_provides",
+  "context_mutates",
+  "metrics_fallback",
+]
+[[entry]]
+key = "doc.guides.decoupling_adapter"
+title = "Guide: DECOUPLING_ADAPTER"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_guides_decoupling_adapter"
+tags = ["doc", "guide", "decoupling", "adapter"]
+summary = "Adapter decoupling and process wiring. / Adapter 解耦与流程接线。"
+example_entry = "docs/guides/DECOUPLING_ADAPTER.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.guides.decoupling_capabilities"
+title = "Guide: DECOUPLING_CAPABILITIES"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_guides_decoupling_capabilities"
+tags = ["doc", "guide", "decoupling", "capability"]
+summary = "Capability-layer decomposition methodology. / 能力层分解方法论。"
+example_entry = "docs/guides/DECOUPLING_CAPABILITIES.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.guides.production_walkthrough"
+title = "Guide: PRODUCTION_SCHEDULING_WALKTHROUGH"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_guides_production_walkthrough"
+tags = ["doc", "guide", "production", "walkthrough"]
+summary = "Production scheduling walkthrough (end-to-end). / 生产排程端到端实战导览。"
+example_entry = "docs/guides/PRODUCTION_SCHEDULING_WALKTHROUGH.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.cases.production_scheduling"
+title = "Case: production_scheduling"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_cases_production_scheduling"
+tags = ["doc", "case", "production", "scheduling"]
+summary = "Production scheduling case documentation. / 生产排程案例文档。"
+example_entry = "docs/cases/production_scheduling.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.quickstart"
+title = "Quickstart"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_quickstart"
+tags = ["doc", "guide", "quickstart", "onboarding"]
+summary = "Quickstart entry for first setup and run. / 首次安装与运行快速入口。"
+example_entry = "docs/quickstart.rst"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.readme"
+title = "Docs README"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_readme"
+tags = ["doc", "guide", "navigation"]
+summary = "Docs hub and navigation overview. / 文档中心与导航总览。"
+example_entry = "docs/README.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.algorithm_decomposition_hands_on"
+title = "ALGORITHM_DECOMPOSITION_HANDS_ON"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_algorithm_decomposition_hands_on"
+tags = ["doc", "tutorial", "decomposition", "hands_on"]
+summary = "Hands-on decomposition tutorial with practical steps. / 算法解构实操教程（含步骤）。"
+example_entry = "docs/ALGORITHM_DECOMPOSITION_HANDS_ON.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.bias_system"
+title = "User Guide: bias_system"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_bias_system"
+tags = ["doc", "guide", "bias", "system"]
+summary = "Bias system design and composition guide. / Bias 系统设计与组合指南。"
+example_entry = "docs/user_guide/bias_system.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.bias_baby_guide"
+title = "User Guide: bias_baby_guide"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_bias_baby_guide"
+tags = ["doc", "guide", "bias", "onboarding"]
+summary = "Beginner-friendly bias writing walkthrough. / 新手友好的 Bias 编写教程。"
+example_entry = "docs/user_guide/bias_baby_guide.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.user_guide.external_api_navigation"
+title = "User Guide: external_api_navigation"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_external_api_navigation"
+tags = ["doc", "guide", "api", "navigation"]
+summary = "External API navigation and lookup guide. / 外部 API 导航与检索指南。"
+example_entry = "docs/user_guide/external_api_navigation.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.indexes.api_index"
+title = "Indexes: API_INDEX"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_indexes_api_index"
+tags = ["doc", "reference", "index", "api"]
+summary = "API index for component lookup. / 用于组件检索的 API 索引。"
+example_entry = "docs/indexes/API_INDEX.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.indexes.bias_index"
+title = "Indexes: BIAS_INDEX"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_indexes_bias_index"
+tags = ["doc", "reference", "index", "bias"]
+summary = "Bias index for bias module lookup. / Bias 模块检索索引。"
+example_entry = "docs/indexes/BIAS_INDEX.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+[[entry]]
+key = "doc.indexes.tools_index"
+title = "Indexes: TOOLS_INDEX"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_indexes_tools_index"
+tags = ["doc", "reference", "index", "tools"]
+summary = "Tools index for operational scripts. / 工具与运维脚本索引。"
+example_entry = "docs/indexes/TOOLS_INDEX.md"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]

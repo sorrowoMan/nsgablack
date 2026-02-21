@@ -1,5 +1,9 @@
 ﻿# 偏置系统 v2.0 使用指南
 
+> **权威入口提示**：如果你只是想快速上手偏置，推荐先看 `docs/user_guide/bias_baby_guide.md`（宝宝级教程）。
+> 本文档是偏置系统 v2.0 的完整参考手册。部分高级示例使用简化伪代码描述设计意图，
+> 实际 API 以 `bias/` 目录下的源码为准。
+
 ## 概述
 
 偏置系统 v2.0 是对原有偏置模块的重大升级，实现了**算法偏置**和**业务偏置**的分离，提供了更强大、更灵活、更可复用的优化引导机制。
@@ -51,11 +55,14 @@ bias_manager.algorithmic_manager.add_bias(ConvergenceBias(weight=0.1))
 
 # 添加业务偏置
 constraint_bias = ConstraintBias(weight=2.0)
-constraint_bias.add_hard_constraint(your_constraint_function)
+constraint_bias.add_constraint(your_constraint_function, constraint_type='hard')
 bias_manager.domain_manager.add_bias(constraint_bias)
 
-# 使用偏置的求解器
-solver = YourBiasEnhancedSolver(problem, bias_manager)
+# 挂到求解器
+from nsgablack.core.solver import BlackBoxSolverNSGAII
+solver = BlackBoxSolverNSGAII(problem)
+solver.enable_bias = True
+solver.bias_module = bias_manager  # UniversalBiasManager 兼容 BiasModule 接口
 result = solver.run()
 ```
 
@@ -131,15 +138,18 @@ convergence_bias = ConvergenceBias(
 - 需要快速收敛的问题
 - 后期精度要求高的问题
 
-### 3. **探索性偏置 (ExplorationBias)**
+### 3. **探索性偏置（信号驱动）**
 
-检测停滞并增加探索倾向。
+> 注意：框架中没有简单的 `ExplorationBias` 类。探索倾向通过以下方式实现：
+> - `UncertaintyExplorationBias`（信号驱动，消费 `context.metrics` 中的不确定性指标）
+> - `BayesianExplorationBias`（贝叶斯探索，在 `bias/specialized/bayesian_biases.py`）
+> - `DiversityBias` 本身也有探索效果
 
 ```python
-exploration_bias = ExplorationBias(
-    weight=0.1,                # 偏置权重
-    stagnation_threshold=20    # 停滞阈值
-)
+from nsgablack.bias.algorithmic.signal_driven import UncertaintyExplorationBias
+
+exploration_bias = UncertaintyExplorationBias(weight=0.1)
+# 需要配套统计信号插件（推荐通过 suite 装配）
 ```
 
 **适用场景**：
@@ -175,48 +185,55 @@ precision_bias.add_good_solution(np.array([1.0, 2.0, 3.0]))
 ```python
 constraint_bias = ConstraintBias(weight=2.0)
 
-# 硬约束：违反则严重惩罚
-constraint_bias.add_hard_constraint(lambda x: max(0, stress_limit - calculate_stress(x)))
+# 硬约束：违反则严重惩罚（constraint_type='hard' 为默认值）
+constraint_bias.add_constraint(lambda x: max(0, stress_limit - calculate_stress(x)),
+                               weight=2.0, constraint_type='hard')
 
 # 软约束：违反则适度惩罚
-constraint_bias.add_soft_constraint(lambda x: max(0, cost_limit - calculate_cost(x)))
-
-# 偏好约束：满足则奖励
-constraint_bias.add_preferred_constraint(lambda x: calculate_manufacturability(x))
+constraint_bias.add_constraint(lambda x: max(0, cost_limit - calculate_cost(x)),
+                               weight=1.0, constraint_type='soft')
 ```
 
 **约束类型**：
-- **硬约束**：必须满足，违反时大惩罚
-- **软约束**：尽量满足，违反时适度惩罚
-- **偏好约束**：满足时给予奖励
+- **硬约束** (`constraint_type='hard'`)：必须满足，违反时大惩罚（乘以 `penalty_factor`）
+- **软约束** (`constraint_type='soft'`)：尽量满足，违反时标准惩罚
+- **偏好引导**：如需奖励满足某种偏好，请使用 `PreferenceBias`
 
 ### 2. **偏好偏置 (PreferenceBias)**
 
 体现业务偏好和目标。
 
 ```python
-preference_bias = PreferenceBias(weight=0.5)
+preference_bias = PreferenceBias(
+    weight=0.5,
+    aspiration_levels={
+        'reliability': (0.9, 1.0),     # 满意区间
+        'cost': 1000.0,                # 单一目标值
+    }
+)
 
-# 设置偏好
-preference_bias.set_preference('reliability', 'maximize', weight=2.0)
-preference_bias.set_preference('cost', 'minimize', weight=1.5)
-preference_bias.set_preference('manufacturing_time', 'minimize', weight=1.0)
+# 也可以添加自定义偏好函数
+preference_bias.add_preference_function(lambda x: -float(x.sum()))  # 总量越小越好
 ```
 
-**偏好类型**：
-- **最小化**：值越小越好
-- **最大化**：值越大越好
+**偏好表达方式**：
+- **愿望水平（区间）**：`aspiration_levels={'obj': (min, max)}`
+- **愿望水平（单值）**：`aspiration_levels={'obj': target}`
+- **偏好函数**：`add_preference_function(func)` 自定义评分
 
-### 3. **目标偏置 (ObjectiveBias)**
+### 3. **目标引导**
 
-引导向理想目标方向。
+> 注意：框架中没有独立的 `ObjectiveBias` 类。目标引导可通过 `PreferenceBias` 的
+> `aspiration_levels` 实现（设定目标值后，偏离目标会被惩罚）：
 
 ```python
-objective_bias = ObjectiveBias(weight=1.0)
-
-# 设置目标值和方向
-objective_bias.set_target('performance', target_value=0.95, direction='maximize')
-objective_bias.set_target('error_rate', target_value=0.01, direction='minimize')
+preference_bias = PreferenceBias(
+    weight=1.0,
+    aspiration_levels={
+        'performance': 0.95,    # 越接近 0.95 越好
+        'error_rate': 0.01,     # 越接近 0.01 越好
+    }
+)
 ```
 
 ## 偏置库
@@ -224,41 +241,32 @@ objective_bias.set_target('error_rate', target_value=0.01, direction='minimize')
 ### 算法偏置库
 
 ```python
-from nsgablack.bias.library import BiasFactory, ALGORITHMIC_BIAS_LIBRARY
+from nsgablack.bias.library import BiasFactory
 
 # 列出可用的算法偏置
-for name, info in ALGORITHMIC_BIAS_LIBRARY.items():
-    print(f"{name}: {info['description']}")
-    print(f"  适用场景: {info['use_case']}")
-    print(f"  默认参数: {info['default_params']}")
+for name, info in BiasFactory.list_available_algorithmic_biases().items():
+    print(f"{name}: {info.get('description', '')}")
 ```
 
-可用的算法偏置：
-- `diversity_promotion` - 促进多样性
-- `fast_convergence` - 快速收敛
-- `precision_search` - 精度搜索
-- `balanced_exploration` - 平衡探索
-- `late_precision` - 后期精度
+常用算法偏置别名（可用于 `BiasFactory.create_algorithmic_bias(name)`）：
+- `diversity_promotion` → `DiversityBias`
+- `fast_convergence` → `ConvergenceBias`
+- `precision_search` → `PrecisionBias`
+- `balanced_exploration` → `DiversityBias`
 
 ### 业务偏置库
 
 ```python
-from nsgablack.bias.library import DOMAIN_BIAS_LIBRARY
+from nsgablack.bias.library import BiasFactory
 
 # 列出可用的业务偏置
-for name, info in DOMAIN_BIAS_LIBRARY.items():
-    print(f"{name}: {info['description']}")
-    print(f"  约束: {info['constraints']}")
-    print(f"  偏好: {info['preferences']}")
+for name, info in BiasFactory.list_available_domain_biases().items():
+    print(f"{name}: {info.get('description', '')}")
 ```
 
-可用的业务偏置：
-- `engineering_design` - 工程设计
-- `financial_optimization` - 金融优化
-- `supply_chain` - 供应链优化
-- `machine_learning` - 机器学习
-- `scheduling` - 调度优化
-- `portfolio_optimization` - 投资组合优化
+常用业务偏置别名（可用于 `BiasFactory.create_domain_bias(name)`）：
+- `financial_optimization` / `portfolio_optimization` → `PreferenceBias`
+- `supply_chain` → `ConstraintBias`
 
 ## 偏置组合
 
@@ -283,27 +291,27 @@ bias = composer.compose(x, context, alg_weight=0.3, domain_weight=0.7)
 ### 动态权重调整
 
 ```python
-# 根据优化状态调整权重
-bias_manager.set_bias_weights(algorithmic_weight=0.5, domain_weight=0.5)
-
-# 自动调整
-optimization_state = {
-    'is_stuck': True,      # 陷入局部最优
-    'is_violating_constraints': False  # 没有违反约束
-}
-bias_manager.adjust_weights(optimization_state)
+# 根据优化状态手动调整权重
+# （UniversalBiasManager 没有内置的 adjust_weights，需自行实现逻辑）
+def adjust_for_state(bias_manager, is_stuck, is_violating):
+    if is_stuck:
+        bias_manager.algorithmic_weight = 0.7  # 加大探索
+    if is_violating:
+        bias_manager.domain_weight = 0.9       # 加大约束惩罚
 ```
 
 ## 偏置模板系统
 
 ### 内置模板
 
+模板不是以常量导出的，而是通过函数调用：
+
 ```python
-from nsgablack.bias.library import (
-    BASIC_ENGINEERING_TEMPLATE,
-    FINANCIAL_OPTIMIZATION_TEMPLATE,
-    MACHINE_LEARNING_TEMPLATE
-)
+from nsgablack.bias.library import create_bias_manager_from_template
+
+# 可用模板名: 'engineering', 'financial_optimization'/'finance', 'machine_learning'/'ml'
+manager = create_bias_manager_from_template('engineering')
+manager = create_bias_manager_from_template('machine_learning')
 ```
 
 ### 创建自定义模板
@@ -346,8 +354,10 @@ bias_manager = quick_engineering_bias(
     reliability_weight=3.0
 )
 
-# 使用偏置的求解器
-solver = BiasEnhancedSolver(problem, bias_manager)
+# 挂到求解器
+solver = BlackBoxSolverNSGAII(problem)
+solver.enable_bias = True
+solver.bias_module = bias_manager
 ```
 
 ### 案例2：神经网络架构搜索
@@ -368,51 +378,60 @@ def flops_constraint(x):
     flops = hidden_units * hidden_units * 100  # 简化FLOP计算
     return max(0, flops - 1e9)  # 不超过10亿FLOPS
 
-bias_manager.domain_manager.get_bias('ml_hyperparameter').add_hard_constraint(flops_constraint)
+flops_bias = ConstraintBias(weight=1.5)
+flops_bias.add_constraint(flops_constraint, constraint_type='hard')
+bias_manager.domain_manager.add_bias(flops_bias)
 ```
 
 ### 案例3：投资组合优化
 
 ```python
 from nsgablack.bias.library import BiasFactory
+from nsgablack.bias.domain.constraint import ConstraintBias
 
-# 创建金融偏置
-finance_bias = BiasFactory.create_domain_bias('portfolio_optimization')
+# 创建金融偏好偏置（实际返回 PreferenceBias）
+finance_pref = BiasFactory.create_domain_bias('portfolio_optimization')
 
-# 添加自定义风险模型
+# 自定义风险约束需用 ConstraintBias
+risk_constraint = ConstraintBias(weight=2.0)
+
 def custom_risk_model(x):
-    weights = x / np.sum(x)  # 归一化
-    # VaR计算
+    weights = x / np.sum(x)
     var_95 = calculate_var_95(weights, returns_history)
     return var_95
 
-finance_bias.add_hard_constraint(lambda x: max(0, custom_risk_model(x) - 0.05))
+risk_constraint.add_constraint(lambda x: max(0, custom_risk_model(x) - 0.05),
+                               weight=2.0, constraint_type='hard')
 
-# 设置收益率目标
-finance_bias.set_target('expected_return', 0.15, 'maximize')
+# 收益率目标通过 aspiration_levels 设定
+finance_pref.aspiration_levels['expected_return'] = 0.15
 ```
 
 ## 性能优化建议
 
 ### 1. **偏置权重调整**
 
+> 注意：`UniversalBiasManager` 没有 `set_bias_weights()` 全局方法。
+> 权重调整通过 `algorithmic_weight` / `domain_weight` 属性或逐个偏置的 `weight` 属性完成：
+
 ```python
-# 早期：增加算法偏置
-bias_manager.set_bias_weights(algorithmic_weight=0.6, domain_weight=0.4)
+# 调整整体权重比例
+bias_manager.algorithmic_weight = 0.3
+bias_manager.domain_weight = 0.7
 
-# 中期：平衡
-bias_manager.set_bias_weights(algorithmic_weight=0.5, domain_weight=0.5)
-
-# 后期：增加业务偏置
-bias_manager.set_bias_weights(algorithmic_weight=0.3, domain_weight=0.7)
+# 或者调整单个偏置的权重
+for bias in bias_manager.algorithmic_manager.biases.values():
+    bias.weight *= 0.5
 ```
 
 ### 2. **偏置开关管理**
 
 ```python
-# 动态启用/禁用偏置
-bias_manager.algorithmic_manager.get_bias('diversity').disable()
-bias_manager.domain_manager.get_bias('constraint').enable()
+# 动态启用/禁用偏置——通过子管理器的 get_bias(name) 操作
+bias = bias_manager.algorithmic_manager.get_bias('diversity')
+if bias:
+    bias.enabled = False   # 禁用
+    # bias.enabled = True  # 启用
 
 # 批量操作
 bias_manager.algorithmic_manager.enable_all()
@@ -423,8 +442,9 @@ bias_manager.algorithmic_manager.disable_all()
 
 ```python
 # 精细调整权重
-diversity_bias = bias_manager.get_algorithmic_bias('diversity')
-diversity_bias.set_weight(0.15)  # 调整多样性权重
+diversity_bias = bias_manager.algorithmic_manager.get_bias('diversity')
+if diversity_bias:
+    diversity_bias.weight = 0.15  # 直接设置属性
 ```
 
 ## 配置管理
@@ -432,13 +452,13 @@ diversity_bias.set_weight(0.15)  # 调整多样性权重
 ### 保存配置
 
 ```python
-bias_manager.save_config('my_bias_config.json')
+bias_manager.save_configuration('my_bias_config.json')
 ```
 
 ### 加载配置
 
 ```python
-bias_manager.load_config('my_bias_config.json')
+bias_manager.load_configuration('my_bias_config.json')
 ```
 
 ### 配置文件格式
@@ -492,7 +512,7 @@ bias_module.add(CallableBias(name="reward", func=reward_func, weight=0.05, mode=
 # 新版本
 bias_manager = UniversalBiasManager()
 constraint_bias = ConstraintBias(weight=2.0)
-constraint_bias.add_hard_constraint(constraint_func)
+constraint_bias.add_constraint(constraint_func, constraint_type='hard')
 bias_manager.domain_manager.add_bias(constraint_bias)
 ```
 
@@ -513,7 +533,8 @@ class AdaptiveBiasManager(UniversalBiasManager):
 
         if hasattr(problem, 'evaluate_constraints'):
             # 有约束的问题：增加约束偏置权重
-            self.set_bias_weights(algorithmic_weight=0.2, domain_weight=0.8)
+            self.algorithmic_weight = 0.2
+            self.domain_weight = 0.8
 ```
 
 ### 2. **多阶段偏置**
@@ -576,9 +597,9 @@ def analyze_bias_effectiveness(bias_manager, evaluation_history):
 
 **A**:
 - **算法偏置**：根据优化问题的特性选择
-  - 简单问题：`diversity` + `convergence`
-  - 复杂问题：添加 `exploration`
-  - 精度要求高：添加 `precision`
+  - 简单问题：`DiversityBias` + `ConvergenceBias`
+  - 需要探索：添加 `UncertaintyExplorationBias`（需配信号插件）
+  - 精度要求高：添加 `PrecisionBias`
 
 - **业务偏置**：根据应用领域选择
   - 工程设计：`engineering_design`
@@ -603,10 +624,13 @@ baseline_result = solver.run()
 
 # 2. 逐一启用偏置，观察效果
 for bias_name in ['diversity', 'constraint', 'preference']:
-    bias_manager.get_bias(bias_name).enable()
-    result = solver.run()
-    print(f"{bias_name}: 改进 = {result['best_f'] - baseline_result['best_f']}")
-    bias_manager.get_bias(bias_name).disable()
+    bias = bias_manager.algorithmic_manager.get_bias(bias_name) or \
+           bias_manager.domain_manager.get_bias(bias_name)
+    if bias:
+        bias.enabled = True
+        result = solver.run()
+        print(f"{bias_name}: 改进 = {result['best_f'] - baseline_result['best_f']}")
+        bias.enabled = False
 ```
 
 ## 总结

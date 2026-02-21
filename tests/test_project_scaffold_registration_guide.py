@@ -19,3 +19,410 @@ def test_project_doctor_warns_when_registration_guide_missing(tmp_path):
     codes = {d.code for d in report.diagnostics}
     assert "missing-component-registration-guide" in codes
 
+
+def test_project_doctor_skips_scaffold_checks_for_non_scaffold_folder(tmp_path):
+    report = run_project_doctor(tmp_path, instantiate_solver=False)
+    assert report.error_count == 0
+    codes = {d.code for d in report.diagnostics}
+    assert "structure-skip" in codes
+    assert "registry-skip" in codes
+
+
+def test_project_doctor_parses_utf8_sig_python_source(tmp_path):
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir(parents=True)
+    source = "\ufeffclass ExampleAdapter:\n    pass\n"
+    (adapter_dir / "example.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False)
+    codes = [d.code for d in report.diagnostics]
+    assert "source-parse-failed" not in codes
+
+
+def test_project_doctor_strict_escalates_missing_contract_to_error(tmp_path):
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir(parents=True)
+    source = "class DemoAdapter:\n    pass\n"
+    (adapter_dir / "demo_adapter.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "class-contract-missing"]
+    assert rows
+    assert all(d.level == "error" for d in rows)
+
+
+def test_project_doctor_strict_blocks_solver_mirror_writes(tmp_path):
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir(parents=True)
+    source = (
+        "class DemoAdapter:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'ok'\n"
+        "    def update(self, solver):\n"
+        "        solver.shared_state = {}\n"
+    )
+    (adapter_dir / "demo_adapter.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "solver-mirror-write"]
+    assert rows
+    assert all(d.level == "error" for d in rows)
+
+
+def test_project_doctor_non_strict_warns_solver_mirror_writes(tmp_path):
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir(parents=True)
+    source = (
+        "class DemoAdapter:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'ok'\n"
+        "    def update(self, solver):\n"
+        "        solver.shared_state = {}\n"
+    )
+    (adapter_dir / "demo_adapter.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=False)
+    rows = [d for d in report.diagnostics if d.code == "solver-mirror-write"]
+    assert rows
+    assert all(d.level == "warn" for d in rows)
+
+
+def test_project_doctor_strict_blocks_plugin_direct_solver_state_access(tmp_path):
+    plugins_dir = tmp_path / "plugins"
+    plugins_dir.mkdir(parents=True)
+    source = (
+        "class DemoPlugin:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'ok'\n"
+        "    def on_generation_end(self):\n"
+        "        x = self.solver.population\n"
+        "        self.solver.objectives[0] = x[0]\n"
+    )
+    (plugins_dir / "demo_plugin.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "plugin-direct-solver-state-access"]
+    assert rows
+    assert all(d.level == "error" for d in rows)
+
+
+def test_project_doctor_strict_blocks_examples_direct_solver_control_writes(tmp_path):
+    examples_dir = tmp_path / "examples"
+    examples_dir.mkdir(parents=True)
+    source = (
+        "def run_demo(solver):\n"
+        "    solver.max_steps = 12\n"
+        "    solver.adapter = object()\n"
+    )
+    (examples_dir / "demo.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "examples-suites-direct-solver-control-write"]
+    assert rows
+    assert all(d.level == "error" for d in rows)
+
+
+def test_project_doctor_accepts_examples_using_solver_control_plane_methods(tmp_path):
+    examples_dir = tmp_path / "examples"
+    examples_dir.mkdir(parents=True)
+    source = (
+        "def run_demo(solver):\n"
+        "    solver.set_max_steps(12)\n"
+        "    solver.set_adapter(object())\n"
+        "    solver.set_solver_hyperparams(pop_size=16)\n"
+    )
+    (examples_dir / "demo_ok.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "examples-suites-direct-solver-control-write"]
+    assert not rows
+
+
+def test_project_doctor_strict_blocks_missing_metrics_provider(tmp_path):
+    root = init_project(tmp_path / "metrics_project")
+    (root / "build_solver.py").write_text(
+        "from types import SimpleNamespace\n"
+        "\n"
+        "class DemoMetricsConsumer:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'demo metrics consumer'\n"
+        "    requires_metrics = ('foo',)\n"
+        "    missing_metrics_policy = 'error'\n"
+        "    def get_context_contract(self):\n"
+        "        return {\n"
+        "            'requires': ('metrics.foo',),\n"
+        "            'provides': (),\n"
+        "            'mutates': (),\n"
+        "            'cache': (),\n"
+        "            'notes': 'no fallback',\n"
+        "        }\n"
+        "\n"
+        "def build_solver():\n"
+        "    return SimpleNamespace(\n"
+        "        representation_pipeline=None,\n"
+        "        bias_module=DemoMetricsConsumer(),\n"
+        "        adapter=None,\n"
+        "        plugin_manager=None,\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+
+    report = run_project_doctor(root, instantiate_solver=True, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "metrics-provider-missing"]
+    assert rows
+    assert all(d.level == "error" for d in rows)
+
+
+def test_project_doctor_allows_requires_metrics_with_explicit_fallback(tmp_path):
+    root = init_project(tmp_path / "metrics_fallback_project")
+    (root / "build_solver.py").write_text(
+        "from types import SimpleNamespace\n"
+        "\n"
+        "class DemoMetricsConsumer:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'demo metrics consumer'\n"
+        "    requires_metrics = ('foo',)\n"
+        "    missing_metrics_policy = 'error'\n"
+        "    metrics_fallback = 'default'\n"
+        "    def get_context_contract(self):\n"
+        "        return {\n"
+        "            'requires': ('metrics.foo',),\n"
+            "            'provides': (),\n"
+            "            'mutates': (),\n"
+            "            'cache': (),\n"
+        "            'notes': 'fallback is explicit in metrics_fallback',\n"
+        "        }\n"
+        "\n"
+        "def build_solver():\n"
+        "    return SimpleNamespace(\n"
+        "        representation_pipeline=None,\n"
+        "        bias_module=DemoMetricsConsumer(),\n"
+        "        adapter=None,\n"
+        "        plugin_manager=None,\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+
+    report = run_project_doctor(root, instantiate_solver=True, strict=True)
+    assert not [d for d in report.diagnostics if d.code == "metrics-provider-missing"]
+
+
+def test_project_doctor_does_not_treat_notes_as_metrics_fallback(tmp_path):
+    root = init_project(tmp_path / "metrics_notes_only_project")
+    (root / "build_solver.py").write_text(
+        "from types import SimpleNamespace\n"
+        "\n"
+        "class DemoMetricsConsumer:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'demo metrics consumer'\n"
+        "    requires_metrics = ('foo',)\n"
+        "    missing_metrics_policy = 'error'\n"
+        "    def get_context_contract(self):\n"
+        "        return {\n"
+        "            'requires': ('metrics.foo',),\n"
+        "            'provides': (),\n"
+        "            'mutates': (),\n"
+        "            'cache': (),\n"
+        "            'notes': 'fallback from notes only',\n"
+        "        }\n"
+        "\n"
+        "def build_solver():\n"
+        "    return SimpleNamespace(\n"
+        "        representation_pipeline=None,\n"
+        "        bias_module=DemoMetricsConsumer(),\n"
+        "        adapter=None,\n"
+        "        plugin_manager=None,\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+
+    report = run_project_doctor(root, instantiate_solver=True, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "metrics-provider-missing"]
+    assert rows
+    assert all(d.level == "error" for d in rows)
+
+
+def test_project_doctor_strict_blocks_invalid_metrics_fallback_literal(tmp_path):
+    bias_dir = tmp_path / "bias"
+    bias_dir.mkdir(parents=True)
+    source = (
+        "class DemoBias:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'ok'\n"
+        "    metrics_fallback = 'bad_mode'\n"
+    )
+    (bias_dir / "demo_bias.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "metrics-fallback-invalid"]
+    assert rows
+    assert all(d.level == "error" for d in rows)
+
+
+def test_project_doctor_strict_blocks_nonliteral_metrics_fallback(tmp_path):
+    bias_dir = tmp_path / "bias"
+    bias_dir.mkdir(parents=True)
+    source = (
+        "class DemoBias:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'ok'\n"
+        "    metrics_fallback = FALLBACK_MODE\n"
+    )
+    (bias_dir / "demo_bias.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "metrics-fallback-nonliteral"]
+    assert rows
+    assert all(d.level == "error" for d in rows)
+
+
+def test_project_doctor_strict_blocks_invalid_metrics_fallback_in_build_solver(tmp_path):
+    root = init_project(tmp_path / "metrics_bad_fallback_project")
+    (root / "build_solver.py").write_text(
+        "from types import SimpleNamespace\n"
+        "\n"
+        "class DemoMetricsConsumer:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'demo metrics consumer'\n"
+        "    requires_metrics = ('foo',)\n"
+        "    missing_metrics_policy = 'error'\n"
+        "    metrics_fallback = 'bad_mode'\n"
+        "    def get_context_contract(self):\n"
+        "        return {\n"
+        "            'requires': ('metrics.foo',),\n"
+        "            'provides': (),\n"
+        "            'mutates': (),\n"
+        "            'cache': (),\n"
+        "            'notes': 'invalid fallback enum value',\n"
+        "        }\n"
+        "\n"
+        "def build_solver():\n"
+        "    return SimpleNamespace(\n"
+        "        representation_pipeline=None,\n"
+        "        bias_module=DemoMetricsConsumer(),\n"
+        "        adapter=None,\n"
+        "        plugin_manager=None,\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+
+    report = run_project_doctor(root, instantiate_solver=True, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "metrics-fallback-invalid"]
+    assert rows
+    assert all(d.level == "error" for d in rows)
+
+
+def test_project_doctor_strict_blocks_process_like_algorithm_as_bias(tmp_path):
+    root = init_project(tmp_path / "process_like_bias_project")
+    (root / "build_solver.py").write_text(
+        "from types import SimpleNamespace\n"
+        "\n"
+        "class NSGA2Bias:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'demo'\n"
+        "NSGA2Bias.__module__ = 'nsgablack.bias.algorithmic.nsga2'\n"
+        "\n"
+        "class FakeBiasModule:\n"
+        "    def __init__(self, manager):\n"
+        "        self._manager = manager\n"
+        "    def get_context_contract(self):\n"
+        "        return {\n"
+        "            'requires': (),\n"
+        "            'provides': (),\n"
+        "            'mutates': (),\n"
+        "            'cache': (),\n"
+        "            'notes': 'fake',\n"
+        "        }\n"
+        "\n"
+        "def build_solver():\n"
+        "    fake_mgr = SimpleNamespace(\n"
+        "        algorithmic_manager=SimpleNamespace(biases={'nsga2': NSGA2Bias()}),\n"
+        "        domain_manager=SimpleNamespace(biases={}),\n"
+        "    )\n"
+        "    fake_bias_module = FakeBiasModule(fake_mgr)\n"
+        "    return SimpleNamespace(\n"
+        "        representation_pipeline=None,\n"
+        "        bias_module=fake_bias_module,\n"
+        "        adapter=None,\n"
+        "        plugin_manager=None,\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+
+    report = run_project_doctor(root, instantiate_solver=True, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "algorithm-as-bias"]
+    assert rows
+    assert all(d.level == "error" for d in rows)
+
+
+def test_project_doctor_does_not_flag_normal_bias_as_process_like(tmp_path):
+    root = init_project(tmp_path / "normal_bias_project")
+    (root / "build_solver.py").write_text(
+        "from types import SimpleNamespace\n"
+        "\n"
+        "class ConvergenceBias:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'demo'\n"
+        "\n"
+        "class FakeBiasModule:\n"
+        "    def __init__(self, manager):\n"
+        "        self._manager = manager\n"
+        "    def get_context_contract(self):\n"
+        "        return {\n"
+        "            'requires': (),\n"
+        "            'provides': (),\n"
+        "            'mutates': (),\n"
+        "            'cache': (),\n"
+        "            'notes': 'fake',\n"
+        "        }\n"
+        "\n"
+        "def build_solver():\n"
+        "    fake_mgr = SimpleNamespace(\n"
+        "        algorithmic_manager=SimpleNamespace(biases={'conv': ConvergenceBias()}),\n"
+        "        domain_manager=SimpleNamespace(biases={}),\n"
+        "    )\n"
+        "    fake_bias_module = FakeBiasModule(fake_mgr)\n"
+        "    return SimpleNamespace(\n"
+        "        representation_pipeline=None,\n"
+        "        bias_module=fake_bias_module,\n"
+        "        adapter=None,\n"
+        "        plugin_manager=None,\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+
+    report = run_project_doctor(root, instantiate_solver=True, strict=True)
+    assert not [d for d in report.diagnostics if d.code == "algorithm-as-bias"]

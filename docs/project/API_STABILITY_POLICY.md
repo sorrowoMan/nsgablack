@@ -4,7 +4,7 @@
 - 让使用者知道“哪些东西可以放心依赖”
 - 让维护者在演进架构时有明确边界，避免无意破坏用户代码
 
-本文件与 `docs/CORE_STABILITY.md` 一致：`suite + plugin + adapter + representation + bias` 是主路径；历史内容集中在 `deprecated/legacy/`，不做稳定性承诺。
+本文件与 `docs/CORE_STABILITY.md` 一致：`suite + plugin + adapter + representation + bias` 是主路径；历史 `deprecated/legacy/` 内容已从仓库清理（如需追溯请查看 git 历史），不做稳定性承诺。
 
 ## 1. API 分级
 
@@ -39,7 +39,7 @@ Stable 的含义：
 ### 1.3 Experimental / Internal（实验 / 内部）
 
 默认规则：
-- `deprecated/legacy/`：明确不承诺稳定
+- 历史 `deprecated/legacy/`（已从仓库清理）：明确不承诺稳定
 - 以 `_` 开头的符号：内部实现细节
 - `core/solver.py` 内部字段/非公开方法：内部实现细节（除非明确列为 Stable）
 

@@ -114,3 +114,15 @@ python tools/catalog_integrity_checker.py --check-context
 - 示例总览：`docs/AUTHORITATIVE_EXAMPLES.md`
 - context 契约：`docs/user_guide/CONTEXT_CONTRACTS.md`
 - Run Inspector 说明：`docs/user_guide/RUN_INSPECTOR.md`
+---
+
+## Catalog registration priority / 注册路径优先级（明确）
+
+- Preferred: `catalog/entries.toml` (project local, UI-friendly)  
+  首选：`catalog/entries.toml`（项目本地，适合 UI 注册与维护）
+- Optional fallback: `project_registry.py`  
+  备选：`project_registry.py`（仅用于动态/代码式注册）
+
+Rule of thumb / 经验规则：
+- Static, searchable component metadata -> `entries.toml`
+- Dynamic programmatic registration -> `project_registry.py`

@@ -26,8 +26,10 @@ class DiversityInitPlugin(Plugin):
         super().__init__("diversity_init")
         self.similarity_threshold = float(similarity_threshold)
         self.rejection_prob = float(rejection_prob)
+        self._rng = np.random.default_rng()
 
     def on_solver_init(self, solver) -> None:
+        self._rng = self.create_local_rng(solver=solver)
         if hasattr(solver, "use_diverse_init"):
             solver.use_diverse_init = True
         return None
@@ -55,7 +57,7 @@ class DiversityInitPlugin(Plugin):
         )
 
         n_samples = min(30, len(pop_norm))
-        indices = np.random.choice(len(pop_norm), n_samples, replace=False)
+        indices = self._rng.choice(len(pop_norm), n_samples, replace=False)
         samples = pop_norm[indices]
 
         distances = []
@@ -79,4 +81,4 @@ class DiversityInitPlugin(Plugin):
     def should_accept(self, individual: np.ndarray, existing_population: np.ndarray) -> bool:
         if not self.is_similar(individual, existing_population):
             return True
-        return bool(np.random.random() > self.rejection_prob)
+        return bool(self._rng.random() > self.rejection_prob)

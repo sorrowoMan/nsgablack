@@ -7,12 +7,13 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, Optional
 
 from ...utils.dynamic import DynamicSwitchBase, DynamicSwitchConfig, SignalProviderBase
+from ...utils.context.context_keys import KEY_DYNAMIC, KEY_PHASE_ID
 
 
 class DynamicSwitchPlugin(DynamicSwitchBase):
     context_requires = ()
-    context_provides = ("dynamic", "phase_id")
-    context_mutates = ("dynamic", "phase_id")
+    context_provides = (KEY_DYNAMIC, KEY_PHASE_ID)
+    context_mutates = (KEY_DYNAMIC, KEY_PHASE_ID)
     context_cache = ()
     context_notes = (
         "Builds runtime switch context with dynamic signals and phase id; "

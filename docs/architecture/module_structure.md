@@ -14,10 +14,11 @@ nsgablack/
 ├── core/                 # 求解器底座 + Adapter 体系（核心承诺）
 ├── representation/       # 表示管线与算子（核心承诺）
 ├── bias/                 # 偏置系统（核心承诺）
-├── utils/                # 工具/插件/套件/护栏（核心承诺）
+├── plugins/              # 插件系统（能力扩展层）
+├── utils/                # 工具/套件/护栏（核心承诺）
 ├── catalog/              # 可发现性层（where is X?）
 ├── examples/             # 2~3 个权威现代示例（事实标准）
-└── deprecated/legacy/     # 历史/过渡内容（不再维护；仅兼容/考古）
+# deprecated/legacy/       # 已从仓库清理（如需追溯请查看 git 历史）
 ```
 
 ---
@@ -43,12 +44,22 @@ nsgablack/
 - `bias/algorithmic/`：算法偏置（策略倾向、调度、软约束）
 - `bias/domain/`：领域偏置（业务规则）
 
-### 2.4 `utils/`（横切能力与基础设施）
+### 2.4 `plugins/`（能力扩展层 — 顶层目录）
 
-- `plugins/`：插件系统（日志/调参/并行评估调用/评估短路等）
+- `plugins/base.py`：插件基类 `Plugin`、`PluginManager`、State Governance（`resolve_population_snapshot`/`commit_population_snapshot`）
+- `plugins/evaluation/`：评估类插件（surrogate 短路、多保真、Monte Carlo 等）
+- `plugins/system/`：系统类插件（checkpoint/resume 等）
+- `plugins/runtime/`：运行时插件（动态策略切换等）
+- `plugins/ops/`：分析类插件（敏感性分析等）
+- `plugins/models/`：模型类插件（MAS、子空间基等）
+
+### 2.5 `utils/`（横切能力与基础设施）
+
 - `utils/suites/`：权威组合（attach_* 一键装配，避免漏配）
 - `utils/parallel/evaluator.py`：并行评估工具（推荐 import：`from nsgablack.utils.parallel import ParallelEvaluator`）
 - `utils/extension_contracts.py`：扩展点契约护栏（可执行约定）
+- `utils/engineering/`：工程基础设施（`schema_version` / `file_io` / `config_loader` / `experiment`）
+- `utils/context/`：Context 治理（`context_keys` / `context_schema` / `context_contracts` / `context_field_governance`）
 
 ---
 

@@ -9,33 +9,52 @@ from typing import Optional
 
 import numpy as np
 
+from .base import RepresentationComponentContract
+from ..utils.context.context_keys import KEY_NUM_NODES
+
 
 @dataclass
-class GraphEdgeInitializer:
+class GraphEdgeInitializer(RepresentationComponentContract):
     num_nodes: Optional[int] = None
     density: float = 0.1
+    context_requires = (KEY_NUM_NODES,)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Reads number of graph nodes from context when problem metadata is absent.",)
+
+    def __post_init__(self) -> None:
+        self._rng = np.random.default_rng()
 
     def initialize(self, problem, context: Optional[dict] = None) -> np.ndarray:
         if self.num_nodes is None:
             n = getattr(problem, "num_nodes", None)
             if n is None and context:
-                n = context.get("num_nodes")
+                n = context.get(KEY_NUM_NODES)
             if n is None:
                 n = problem.dimension
         else:
             n = self.num_nodes
 
         edge_count = n * (n - 1) // 2
-        return (np.random.rand(edge_count) < self.density).astype(int)
+        return (self._rng.random(edge_count) < self.density).astype(int)
 
 
 @dataclass
-class GraphEdgeMutation:
+class GraphEdgeMutation(RepresentationComponentContract):
     rate: float = 0.02
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Edge-flip mutation is stateless; no context I/O.",)
+
+    def __post_init__(self) -> None:
+        self._rng = np.random.default_rng()
 
     def mutate(self, x: np.ndarray, context: Optional[dict] = None) -> np.ndarray:
         mutated = np.array(x, copy=True)
-        mask = np.random.rand(len(mutated)) < self.rate
+        mask = self._rng.random(len(mutated)) < self.rate
         mutated[mask] = 1 - mutated[mask]
         return mutated
 
@@ -63,9 +82,18 @@ def _pair_to_edge_index(i: int, j: int, n: int) -> int:
 
 
 @dataclass
-class GraphConnectivityRepair:
+class GraphConnectivityRepair(RepresentationComponentContract):
+    context_requires = (KEY_NUM_NODES,)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Repairs connectivity using num_nodes from context.",)
+
+    def __post_init__(self) -> None:
+        self._rng = np.random.default_rng()
+
     def repair(self, x: np.ndarray, context: Optional[dict] = None) -> np.ndarray:
-        n = context.get("num_nodes") if context else None
+        n = context.get(KEY_NUM_NODES) if context else None
         if n is None:
             raise ValueError("num_nodes is required in context for graph repair")
         vec = np.array(x, copy=True).astype(int)
@@ -99,8 +127,8 @@ class GraphConnectivityRepair:
 
         # connect components with random edges
         for c_idx in range(len(comps) - 1):
-            a = np.random.choice(comps[c_idx])
-            b = np.random.choice(comps[c_idx + 1])
+            a = self._rng.choice(comps[c_idx])
+            b = self._rng.choice(comps[c_idx + 1])
             e_idx = _pair_to_edge_index(a, b, n)
             if e_idx >= 0:
                 vec[e_idx] = 1
@@ -108,12 +136,20 @@ class GraphConnectivityRepair:
 
 
 @dataclass
-class GraphDegreeRepair:
+class GraphDegreeRepair(RepresentationComponentContract):
     min_degree: int = 1
     max_degree: Optional[int] = None
+    context_requires = (KEY_NUM_NODES,)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Repairs graph node degree constraints using num_nodes from context.",)
+
+    def __post_init__(self) -> None:
+        self._rng = np.random.default_rng()
 
     def repair(self, x: np.ndarray, context: Optional[dict] = None) -> np.ndarray:
-        n = context.get("num_nodes") if context else None
+        n = context.get(KEY_NUM_NODES) if context else None
         if n is None:
             raise ValueError("num_nodes is required in context for graph repair")
         vec = np.array(x, copy=True).astype(int)
@@ -133,7 +169,7 @@ class GraphDegreeRepair:
                 neighbors = np.where(adj[i] > 0)[0]
                 if neighbors.size == 0:
                     break
-                j = int(np.random.choice(neighbors))
+                j = int(self._rng.choice(neighbors))
                 adj[i, j] = 0
                 adj[j, i] = 0
                 degrees[i] -= 1
@@ -145,7 +181,7 @@ class GraphDegreeRepair:
                 candidates = [j for j in range(n) if j != i and adj[i, j] == 0]
                 if not candidates:
                     break
-                j = int(np.random.choice(candidates))
+                j = int(self._rng.choice(candidates))
                 adj[i, j] = 1
                 adj[j, i] = 1
                 degrees[i] += 1

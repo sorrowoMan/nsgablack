@@ -14,7 +14,11 @@ from typing import Any, Deque, Dict, Optional, Sequence
 import numpy as np
 
 from .algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import KEY_MUTATION_SIGMA
+from ...utils.context.context_keys import (
+    KEY_MUTATION_SIGMA,
+    KEY_SINGLE_TRAJ_SIGMA,
+    KEY_SINGLE_TRAJ_STATE,
+)
 
 
 @dataclass
@@ -49,8 +53,8 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
     """
 
     context_requires = ("generation",)
-    context_provides = ("single_traj_state", "single_traj_sigma")
-    context_mutates = ("single_traj_state", "single_traj_sigma")
+    context_provides = (KEY_SINGLE_TRAJ_STATE, KEY_SINGLE_TRAJ_SIGMA)
+    context_mutates = (KEY_SINGLE_TRAJ_STATE, KEY_SINGLE_TRAJ_SIGMA)
     context_cache = ()
     context_notes = (
         "Maintains one active trajectory and adaptively updates mutation scale.",
@@ -73,6 +77,7 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
         self.no_improve_steps: int = 0
         self.success_history: Deque[int] = deque(maxlen=max(1, int(self.cfg.success_window)))
         self.step_count: int = 0
+        self._rng = np.random.default_rng()
 
     def setup(self, solver: Any) -> None:
         self.current_x = None
@@ -94,8 +99,8 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
     def _build_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
         ctx = dict(context)
         ctx[KEY_MUTATION_SIGMA] = float(self.sigma)
-        ctx["single_traj_sigma"] = float(self.sigma)
-        ctx["single_traj_state"] = {
+        ctx[KEY_SINGLE_TRAJ_SIGMA] = float(self.sigma)
+        ctx[KEY_SINGLE_TRAJ_STATE] = {
             "step": int(self.step_count),
             "no_improve_steps": int(self.no_improve_steps),
             "best_score": self.best_score,
@@ -144,7 +149,7 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
             self.current_score = cand_score
         else:
             accept_prob = float(max(0.0, min(1.0, self.cfg.accept_worse_prob)))
-            if np.random.random() < accept_prob:
+            if self._rng.random() < accept_prob:
                 self.current_x = cand
                 self.current_score = cand_score
 
@@ -169,12 +174,6 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
             self.current_x = np.asarray(solver.init_candidate(context), dtype=float)
             self.current_score = None
             self.no_improve_steps = 0
-
-        solver.current_x = self.current_x
-        solver.current_score = self.current_score
-        solver.sta_sigma = float(self.sigma)
-        solver.sta_best_x = self.best_x
-        solver.sta_best_score = self.best_score
 
     def get_state(self) -> Dict[str, Any]:
         return {
@@ -203,3 +202,23 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
         )
         self.step_count = int(state.get("step_count", 0))
 
+    def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
+        _ = solver
+        return {
+            KEY_MUTATION_SIGMA: float(self.sigma),
+            KEY_SINGLE_TRAJ_SIGMA: float(self.sigma),
+            KEY_SINGLE_TRAJ_STATE: {
+                "step": int(self.step_count),
+                "no_improve_steps": int(self.no_improve_steps),
+                "best_score": self.best_score,
+            },
+        }
+
+    def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
+        _ = solver
+        source = f"adapter.{self.__class__.__name__}"
+        return {
+            KEY_MUTATION_SIGMA: source,
+            KEY_SINGLE_TRAJ_SIGMA: source,
+            KEY_SINGLE_TRAJ_STATE: source,
+        }

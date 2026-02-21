@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 
 from ..base import Plugin
+from ...utils.context.context_keys import KEY_SUBSPACE_BASIS
 
 
 @dataclass
@@ -25,8 +26,8 @@ class SubspaceBasisConfig:
 
 class SubspaceBasisPlugin(Plugin):
     context_requires = ()
-    context_provides = ("subspace_basis",)
-    context_mutates = ("subspace_basis",)
+    context_provides = (KEY_SUBSPACE_BASIS,)
+    context_mutates = (KEY_SUBSPACE_BASIS,)
     context_cache = ()
     context_notes = "Updates subspace basis from population samples."
     """
@@ -52,8 +53,8 @@ class SubspaceBasisPlugin(Plugin):
         self._steps += 1
         if (self._steps % max(1, int(self.cfg.update_every))) != 0:
             return None
-        pop = getattr(solver, "population", None)
-        if pop is None:
+        pop, _, _ = self.resolve_population_snapshot(solver)
+        if pop is None or len(pop) == 0:
             return None
         X = np.asarray(pop, dtype=float)
         if X.ndim != 2 or X.shape[0] < int(self.cfg.min_samples):
@@ -63,7 +64,7 @@ class SubspaceBasisPlugin(Plugin):
 
     def on_context_build(self, context: Dict[str, Any]) -> Dict[str, Any]:
         if self._basis is not None:
-            context["subspace_basis"] = self._basis
+            context[KEY_SUBSPACE_BASIS] = self._basis
         return context
 
     def _build_basis(self, X: np.ndarray) -> np.ndarray:

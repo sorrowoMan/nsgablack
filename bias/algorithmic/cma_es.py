@@ -3,6 +3,7 @@ CMA-ES style bias.
 
 This bias uses a mean vector and covariance (if available) to encourage
 solutions to follow an adaptive search distribution.
+
 """
 
 from __future__ import annotations
@@ -25,6 +26,16 @@ class CMAESBias(AlgorithmicBias):
     - context.metrics['cov'] or context.problem_data['cov']
     - context.metrics['sigma'] or context.problem_data['sigma']
     """
+    context_requires = ("problem_data",)
+    requires_metrics = ("mean", "cov", "sigma")
+    metrics_fallback = "problem_data"
+    missing_metrics_policy = "ignore"
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: metrics, problem_data; outputs scalar bias only."
+
+
 
     weight: float = 0.1
     scale: float = 0.1
@@ -76,6 +87,15 @@ class AdaptiveCMAESBias(CMAESBias):
     """
     Adaptive CMA-ES bias that shrinks scale over generations.
     """
+    context_requires = ("generation",)
+    requires_metrics = ("max_generations",)
+    metrics_fallback = "default"
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: generation, metrics; outputs scalar bias only."
+
+
 
     min_scale: float = 0.02
     max_scale: float = 0.2

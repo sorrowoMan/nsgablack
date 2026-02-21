@@ -9,6 +9,13 @@ from .base import SurrogateControlBias
 
 class UncertaintyBudgetBias(SurrogateControlBias):
     """Adjust real-eval budget based on surrogate uncertainty."""
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(
         self,
@@ -35,6 +42,7 @@ class UncertaintyBudgetBias(SurrogateControlBias):
         self.min_real = min_real
         self.force_real_when_not_ready = bool(force_real_when_not_ready)
         self.quality_floor = quality_floor
+        self._rng = np.random.default_rng()
 
     def should_apply(self, context: Any) -> bool:
         generation = getattr(context, "generation", 0)
@@ -56,7 +64,7 @@ class UncertaintyBudgetBias(SurrogateControlBias):
             population = population.reshape(1, -1)
 
         if self.sample_size and population.shape[0] > self.sample_size:
-            indices = np.random.choice(population.shape[0], self.sample_size, replace=False)
+            indices = self._rng.choice(population.shape[0], self.sample_size, replace=False)
             sample = population[indices]
         else:
             sample = population

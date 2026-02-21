@@ -37,6 +37,15 @@ BayesianOptimizer = SimpleBayesianOptimizer
 
 class BayesianGuidanceBias(AlgorithmicBias):
     """Bayesian guidance bias for exploration/exploitation direction."""
+    context_requires = ("dynamic", "generation", "individual", "population")
+    requires_metrics = ("objective",)
+    metrics_fallback = "safe_zero"
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: dynamic, generation, individual, metrics, population; outputs scalar bias only."
+
+
 
     def __init__(
         self,
@@ -55,6 +64,7 @@ class BayesianGuidanceBias(AlgorithmicBias):
         self.exploration_factor = exploration_factor
 
         self.local_bo = BayesianOptimizer(acquisition=acquisition, kernel=kernel)
+        self._rng = np.random.default_rng()
 
         self.data_buffer = []
         self.last_update_gen = 0
@@ -179,10 +189,10 @@ class BayesianGuidanceBias(AlgorithmicBias):
                     base_idx = i % len(solver.X_real)
                     base_point = solver.X_real[base_idx]
                 else:
-                    base_idx = np.random.randint(0, len(solver.X_real))
+                    base_idx = int(self._rng.integers(0, len(solver.X_real)))
                     base_point = solver.X_real[base_idx]
 
-                noise = np.random.normal(0, 0.1, base_point.shape)
+                noise = self._rng.normal(0, 0.1, base_point.shape)
                 new_point = np.clip(base_point + noise, 0, 1)
                 X_train.append(new_point)
 
@@ -294,6 +304,13 @@ class BayesianGuidanceBias(AlgorithmicBias):
 
 class BayesianExplorationBias(AlgorithmicBias):
     """Bayesian exploration bias using uncertainty estimates."""
+    context_requires = ("generation", "population")
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: generation, population; outputs scalar bias only."
+
+
 
     def __init__(self, weight: float = 0.3, uncertainty_threshold: float = 0.1, decay_rate: float = 0.95):
         super().__init__("bayesian_exploration", weight)
@@ -372,6 +389,14 @@ class BayesianExplorationBias(AlgorithmicBias):
 
 class BayesianConvergenceBias(AlgorithmicBias):
     """Bayesian convergence bias using predicted improvement trends."""
+    context_requires = ()
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: metrics; outputs scalar bias only."
+
+
 
     def __init__(self, weight: float = 0.2, convergence_threshold: float = 1e-4, history_window: int = 20):
         super().__init__("bayesian_convergence", weight)

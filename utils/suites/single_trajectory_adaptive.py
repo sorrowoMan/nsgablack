@@ -23,9 +23,7 @@ def attach_single_trajectory_adaptive(
             raise ValueError(f"attach_single_trajectory_adaptive: solver missing required method: {meth}")
 
     adapter = SingleTrajectoryAdaptiveAdapter(config=config)
-    if hasattr(solver, "set_adapter"):
-        solver.set_adapter(adapter)
-    else:
-        solver.adapter = adapter
+    if not hasattr(solver, "set_adapter"):
+        raise ValueError("attach_single_trajectory_adaptive: solver missing set_adapter()")
+    solver.set_adapter(adapter)
     return adapter
-

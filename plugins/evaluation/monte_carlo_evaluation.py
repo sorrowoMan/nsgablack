@@ -8,6 +8,14 @@ import numpy as np
 from ..base import Plugin
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
 from ...utils.extension_contracts import ContractError, normalize_candidate
+from ...utils.context.context_keys import (
+    KEY_METRICS,
+    KEY_METRICS_MC_MAX,
+    KEY_METRICS_MC_MEAN,
+    KEY_METRICS_MC_MIN,
+    KEY_METRICS_MC_SAMPLES,
+    KEY_METRICS_MC_STD,
+)
 
 
 @dataclass
@@ -21,8 +29,14 @@ class MonteCarloEvaluationConfig:
 class MonteCarloEvaluationPlugin(Plugin):
     is_algorithmic = True
     context_requires = ()
-    context_provides = ("metrics.mc_samples", "metrics.mc_mean", "metrics.mc_std", "metrics.mc_min", "metrics.mc_max")
-    context_mutates = ("metrics",)
+    context_provides = (
+        KEY_METRICS_MC_SAMPLES,
+        KEY_METRICS_MC_MEAN,
+        KEY_METRICS_MC_STD,
+        KEY_METRICS_MC_MIN,
+        KEY_METRICS_MC_MAX,
+    )
+    context_mutates = (KEY_METRICS,)
     context_cache = ()
     context_notes = (
         "Per-candidate Monte Carlo evaluation; writes MC statistics into context.metrics "
@@ -76,12 +90,21 @@ class MonteCarloEvaluationPlugin(Plugin):
             # MC objective samples
             ys = []
             for _ in range(samples):
-                # allow per-sample randomness control if user uses numpy global RNG
+                # Compatibility boundary:
+                # If problem.evaluate() uses global numpy RNG, isolate it per sample
+                # so the outer solver RNG stream is not polluted.
+                seed = int(self._rng.integers(0, 2**31 - 1))
+                prev_state = None
                 try:
-                    np.random.seed(int(self._rng.integers(0, 2**31 - 1)))
-                except Exception:
-                    pass
-                val = solver.problem.evaluate(x)
+                    prev_state = np.random.get_state()
+                    np.random.seed(seed)
+                    val = solver.problem.evaluate(x)
+                finally:
+                    if prev_state is not None:
+                        try:
+                            np.random.set_state(prev_state)
+                        except Exception:
+                            pass
                 y = np.asarray(val, dtype=float).ravel()
                 if y.size == 1 and m > 1:
                     # pad for compatibility
@@ -97,10 +120,10 @@ class MonteCarloEvaluationPlugin(Plugin):
             # Expose MC statistics to downstream capability layers (e.g. Bias).
             # Keep the solver base pure: stats are carried via context["metrics"].
             ctx = solver.build_context(individual_id=i, constraints=cons, violation=float(violations[i]))
-            ctx_metrics = ctx.get("metrics")
+            ctx_metrics = ctx.get(KEY_METRICS)
             if not isinstance(ctx_metrics, dict):
                 ctx_metrics = {}
-                ctx["metrics"] = ctx_metrics
+                ctx[KEY_METRICS] = ctx_metrics
             ctx_metrics.update(self._stats(Y))
             if getattr(solver, "enable_bias", False) and getattr(solver, "bias_module", None) is not None:
                 reduced = solver._apply_bias(np.asarray(reduced, dtype=float), x, i, ctx)

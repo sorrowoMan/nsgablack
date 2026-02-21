@@ -33,10 +33,9 @@ def attach_async_event_driven(
             raise ValueError(f"attach_async_event_driven: solver missing required method: {meth}")
 
     adapter = AsyncEventDrivenAdapter(strategies=strategies, config=config)
-    if hasattr(solver, "set_adapter"):
-        solver.set_adapter(adapter)
-    else:
-        solver.adapter = adapter
+    if not hasattr(solver, "set_adapter"):
+        raise ValueError("attach_async_event_driven: solver missing set_adapter()")
+    solver.set_adapter(adapter)
 
     if attach_async_hub and hasattr(solver, "add_plugin"):
         existing = solver.get_plugin("async_event_hub") if hasattr(solver, "get_plugin") else None
@@ -49,4 +48,3 @@ def attach_async_event_driven(
             solver.add_plugin(ParetoArchivePlugin())
 
     return adapter
-

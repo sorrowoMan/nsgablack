@@ -13,27 +13,31 @@ from ...utils.extension_contracts import (
     normalize_objectives,
     normalize_violation,
 )
+from ...utils.context.context_keys import (
+    KEY_METRICS,
+    KEY_METRICS_SURROGATE_STD,
+)
 
 
 @dataclass
 class SurrogateEvaluationConfig:
-    # 训练数据达到该数量后才启�?surrogate 筛选（之前全真评估�?
+    # 训练样本达到该数量后才启用 surrogate 筛选（此前全部真实评估）
     min_train_samples: int = 30
 
-    # 每次 evaluate_population 里“至少”做多少真实评估
-    # 允许�?0：表示本轮不强制做真实评估（仅在你确�?surrogate 可用时使用）
+    # 每次 evaluate_population 至少做多少真实评估
+    # 允许为 0：表示本轮不强制真实评估（仅在 surrogate 已可用时建议使用）
     min_true_evals: int = 6
 
-    # 额外：选预测最优的 top-k 做真评估（避�?surrogate 偏差�?
+    # 额外策略：选择预测最优的 top-k 做真实评估（抑制模型偏差）
     topk_exploit: int = 6
 
-    # 额外：选不确定性最高的 top-k 做真评估（主动学习）
+    # 额外策略：选择不确定性最高的 top-k 做真实评估（主动学习）
     topk_explore: int = 6
 
-    # 每次调用后是否立即重训（更稳定但更慢�?
+    # 每次调用后是否立即重训（更稳健但更慢）
     retrain_every_call: bool = True
 
-    # 目标聚合方式（用于“预测最�?top-k”排序）
+    # 目标聚合方式（用于“预测最优 top-k”排序）
     objective_aggregation: str = "sum"  # "sum" or "first"
 
     random_seed: Optional[int] = 0
@@ -42,19 +46,19 @@ class SurrogateEvaluationConfig:
 class SurrogateEvaluationPlugin(Plugin):
     is_algorithmic = True
     context_requires = ()
-    context_provides = ("metrics.surrogate_std",)
-    context_mutates = ("metrics",)
+    context_provides = (KEY_METRICS_SURROGATE_STD,)
+    context_mutates = (KEY_METRICS,)
     context_cache = ()
     context_notes = (
         "Uses surrogate prediction with partial true evaluations; "
         "optionally writes surrogate uncertainty into context.metrics."
     )
-    """�?surrogate 改写 evaluate_population 的能力插件�?
+    """使用 surrogate 接管 evaluate_population 的能力插件。
 
-    设计原则�?
-    - 不污�?solver 底座：通过 BlankSolverBase 的短路事�?evaluate_population 接入�?
-    - 只减少“真实评估”的次数，不改变表示/偏置/策略模块边界�?
-    - 训练数据来自真实评估点，预测只作为“筛选与排序”的手段�?
+    设计原则：
+    - 不污染 solver 核心：通过短路事件 evaluate_population 接入。
+    - 仅减少真实评估次数，不改变表示/偏置/策略模块边界。
+    - 训练数据来自真实评估点，预测仅用于筛选与排序。
     """
 
     def __init__(
@@ -92,8 +96,8 @@ class SurrogateEvaluationPlugin(Plugin):
         if self._surrogate is not None:
             return
 
-        # 延迟 import，避免把 sklearn 强绑到核心路�?
-        from ..surrogate.vector_surrogate import VectorSurrogate
+        # 延迟 import，避免把 sklearn 强绑定到核心路径
+        from ...utils.surrogate.vector_surrogate import VectorSurrogate
 
         n_obj = int(getattr(solver, "num_objectives", 1) or 1)
         self._surrogate = VectorSurrogate(num_objectives=n_obj, model_type=self.model_type)  # type: ignore[arg-type]
@@ -111,11 +115,11 @@ class SurrogateEvaluationPlugin(Plugin):
         if n == 0:
             return np.zeros((0, int(getattr(solver, "num_objectives", 1) or 1))), np.zeros((0,), dtype=float)
 
-        # normalize candidates (shape + length)
+        # 标准化候选解（形状 + 维度）
         xs = [normalize_candidate(pop[i], dimension=int(solver.dimension), name=f"population[{i}]") for i in range(n)]
         X = np.stack(xs, axis=0)
 
-        # 先算约束（通常比真实目标评估便宜；即使 surrogate 也需�?violations�?
+        # 先算约束（通常比真实目标评估便宜；即使 surrogate 也需要 violations）
         cons_list = []
         vio_list = []
         for i in range(n):
@@ -124,8 +128,8 @@ class SurrogateEvaluationPlugin(Plugin):
             vio_list.append(float(vio))
         violations = np.asarray(vio_list, dtype=float)
 
-        # 数据不足：全真评估（同时累积训练数据�?
-        # 但若你使用“预训练代理 + 关闭在线训练”，则直接进�?surrogate 模式（由你自行保证代理可用）�?
+        # 数据不足时：全真实评估（同时累积训练数据）
+        # 若使用“预训练代理 + 关闭在线训练”，可直接进入 surrogate 模式
         if self.online_training and len(self._X) < int(self.cfg.min_train_samples):
             objectives = self._true_evaluate(solver, X, cons_list, violations)
             self._append_training(X, objectives)
@@ -136,14 +140,14 @@ class SurrogateEvaluationPlugin(Plugin):
         self.stats["surrogate_calls"] += 1
         pred = np.asarray(self._surrogate.predict(X), dtype=float)
         if pred.ndim != 2:
-            raise ContractError("surrogate.predict 必须返回二维数组 (N, M)")
+            raise ContractError("surrogate.predict must return 2D array with shape (N, M)")
 
-        # 2) 选择要做真评估的子集（exploitation + exploration + min_true_evals�?
+        # 2) 选择要做真实评估的子集（exploitation + exploration + min_true_evals）
         selected = self._select_indices_for_true_eval(X, pred)
         if not selected and int(self.cfg.min_true_evals) > 0:
             selected = [int(self._rng.integers(0, n))]
 
-        # 3) �?selected 做真评估并回�?
+        # 3) 对 selected 做真实评估并回填结果
         if selected:
             true_X = X[selected]
             true_cons = [cons_list[i] for i in selected]
@@ -151,7 +155,7 @@ class SurrogateEvaluationPlugin(Plugin):
             true_obj = self._true_evaluate(solver, true_X, true_cons, true_vio)
             pred[selected] = true_obj
 
-            # 4) 用真评估点更新训练集 & 可能重训（仅在线训练时）
+            # 4) 用真实评估结果更新训练集，并按配置重训
             if self.online_training:
                 self._append_training(true_X, true_obj)
                 self._maybe_retrain()
@@ -167,17 +171,17 @@ class SurrogateEvaluationPlugin(Plugin):
         except Exception:
             unc_score = None
 
-        # 5) 应用偏置（对预测/真值统一处理，保�?Adapter/update 的语义一致）
+        # 5) 应用偏置（对预测值/真值统一处理，保持与 Adapter/update 语义一致）
         out_obj = np.zeros_like(pred, dtype=float)
         for i in range(n):
             obj_i = normalize_objectives(pred[i], num_objectives=int(solver.num_objectives), name="surrogate.objectives")
             ctx = solver.build_context(individual_id=i, constraints=cons_list[i], violation=float(violations[i]))
             if unc_score is not None and i < len(unc_score):
-                metrics = ctx.get("metrics")
+                metrics = ctx.get(KEY_METRICS)
                 if not isinstance(metrics, dict):
                     metrics = {}
-                    ctx["metrics"] = metrics
-                metrics["surrogate_std"] = float(unc_score[i])
+                    ctx[KEY_METRICS] = metrics
+                metrics[KEY_METRICS_SURROGATE_STD.split(".", 1)[1]] = float(unc_score[i])
             if getattr(solver, "enable_bias", False) and getattr(solver, "bias_module", None) is not None:
                 obj_i = solver._apply_bias(obj_i, X[i], i, ctx)
             out_obj[i] = obj_i
@@ -211,11 +215,11 @@ class SurrogateEvaluationPlugin(Plugin):
     def _select_indices_for_true_eval(self, X: np.ndarray, pred: np.ndarray) -> list[int]:
         n = int(X.shape[0])
         scores = self._aggregate_objectives(pred)
-        # exploitation: 预测最�?
+        # exploitation: 预测最优样本
         exploit_k = min(int(self.cfg.topk_exploit), n)
         exploit = list(np.argsort(scores)[:exploit_k])
 
-        # exploration: 不确定性最�?
+        # exploration: 不确定性最高样本
         unc = np.asarray(self._surrogate.uncertainty(X), dtype=float)
         if unc.ndim == 2:
             unc_score = np.mean(unc, axis=1)
@@ -226,7 +230,7 @@ class SurrogateEvaluationPlugin(Plugin):
 
         selected = set(int(i) for i in exploit + explore)
 
-        # 保底数量（允许为 0�?
+        # 保底数量（允许为 0）
         min_true = min(max(0, int(self.cfg.min_true_evals)), n)
         if min_true > 0:
             while len(selected) < min_true:
@@ -250,25 +254,27 @@ class SurrogateEvaluationPlugin(Plugin):
         cons_list: list[np.ndarray],
         violations: np.ndarray,
     ) -> np.ndarray:
-        # 可选并行：由能力层主动调用，并�?Bias/constraints 对齐
+        # 可选并行：由能力层主动调用，并保持 Bias/constraints 对齐
         if self.parallel_evaluator is not None and getattr(X, "shape", (0,))[0] > 0:
             try:
+                # NOTE: bias is disabled here. _true_evaluate returns raw objectives;
+                # bias is applied once in evaluate_population Step 5.
                 objs, vios = self.parallel_evaluator.evaluate_population(
                     np.asarray(X, dtype=float),
                     problem=getattr(solver, "problem", None),
-                    enable_bias=bool(getattr(solver, "enable_bias", False)),
-                    bias_module=getattr(solver, "bias_module", None),
+                    enable_bias=False,
+                    bias_module=None,
                     num_objectives=int(getattr(solver, "num_objectives", 1) or 1),
                     extra_context={"generation": int(getattr(solver, "generation", 0) or 0)},
                     **self.parallel_kwargs,
                 )
-                # 并行评估返回�?violation 更权威（可能来自 context_builder�?
+                # 并行评估返回的 violation 更权威（可能来自 context_builder）
                 violations[:] = np.asarray(vios, dtype=float).reshape(-1)
                 self.stats["true_evals"] += int(np.asarray(X).shape[0])
                 solver.evaluation_count += int(np.asarray(X).shape[0])
                 return np.asarray(objs, dtype=float)
             except Exception:
-                # 并行失败回退串行
+                # 并行失败时回退串行
                 pass
 
         n = int(np.asarray(X).shape[0])
@@ -276,13 +282,11 @@ class SurrogateEvaluationPlugin(Plugin):
         for i in range(n):
             val = solver.problem.evaluate(X[i])
             obj = normalize_objectives(val, num_objectives=int(solver.num_objectives), name="problem.evaluate")
-            vio = normalize_violation(float(violations[i]), name="constraint_violation")
-            ctx = solver.build_context(individual_id=i, constraints=cons_list[i], violation=vio)
-            if getattr(solver, "enable_bias", False) and getattr(solver, "bias_module", None) is not None:
-                obj = solver._apply_bias(obj, X[i], i, ctx)
+            # NOTE: bias is NOT applied here. _true_evaluate returns raw objective
+            # values so that (1) training data stays unbiased (N-02) and (2) bias
+            # is applied exactly once in evaluate_population Step 5 (N-01).
             out[i] = obj
 
         self.stats["true_evals"] += n
         solver.evaluation_count += n
         return out
-

@@ -90,7 +90,7 @@ def run_baseline_vns(*, out_dir: str, seed: int = 42) -> None:
     attach_vns(solver, config=VNSConfig(batch_size=32, k_max=4))
     attach_benchmark_harness(solver, output_dir=out_dir, run_id="baseline_vns", seed=seed, overwrite=True)
 
-    solver.max_steps = 40
+    solver.set_max_steps(40)
     solver.run()
     print(f"[baseline_vns] done -> {out_dir}")
 
@@ -134,7 +134,7 @@ def run_coop_phase_regions(*, out_dir: str, seed: int = 42) -> None:
     attach_multi_strategy_coop(solver, roles=roles, config=cfg, attach_pareto_archive=True)
     attach_benchmark_harness(solver, output_dir=out_dir, run_id="coop_phase_regions", seed=seed, overwrite=True)
 
-    solver.max_steps = 40
+    solver.set_max_steps(40)
     solver.run()
     print(f"[coop_phase_regions] done -> {out_dir}")
 

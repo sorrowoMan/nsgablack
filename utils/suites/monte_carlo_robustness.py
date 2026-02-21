@@ -35,8 +35,10 @@ def attach_monte_carlo_robustness(
     bias_module = getattr(solver, "bias_module", None)
     if bias_module is None:
         bias_module = BiasModule()
-        setattr(solver, "bias_module", bias_module)
-    setattr(solver, "enable_bias", True)
+    set_bias_module = getattr(solver, "set_bias_module", None)
+    if not callable(set_bias_module):
+        raise RuntimeError("attach_monte_carlo_robustness requires solver.set_bias_module(bias_module, enable=...)")
+    set_bias_module(bias_module, enable=True)
 
     # Add robustness bias (avoid duplicates)
     try:

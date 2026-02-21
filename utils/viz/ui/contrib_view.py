@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import tkinter as tk
 from tkinter import ttk
 
+from ...engineering.schema_version import schema_check
+
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNS_DIR = ROOT / "runs" / "visualizer"
@@ -201,6 +203,12 @@ class ContributionView:
         data = self._load_modules_json(run_id) or {}
         return data.get("dynamic_switch_events", []) or []
 
+    def _schema_warning(self, payload: Dict[str, Any], schema_name: str) -> str:
+        ok, msg = schema_check(payload, schema_name)
+        if ok:
+            return ""
+        return f"schema warning ({schema_name}): {msg}"
+
     def _load_contribution_report(
         self, run_id: str, artifacts: Optional[Dict[str, Any]] = None
     ) -> Tuple[str, List[Dict[str, Any]]]:
@@ -221,6 +229,9 @@ class ContributionView:
             try:
                 data = json.loads(modules_path.read_text(encoding="utf-8"))
                 lines.append(f"modules_report: {modules_path}")
+                warning = self._schema_warning(data, "module_report")
+                if warning:
+                    lines.append(warning)
                 plugins = data.get("plugins", [])
                 if plugins:
                     lines.append("")
@@ -267,6 +278,9 @@ class ContributionView:
                 data = json.loads(bias_path.read_text(encoding="utf-8"))
                 lines.append("")
                 lines.append(f"bias_report: {bias_path}")
+                warning = self._schema_warning(data, "bias_report")
+                if warning:
+                    lines.append(warning)
                 if not data.get("enabled", False):
                     lines.append("Bias: disabled or unavailable")
                 else:
@@ -367,6 +381,10 @@ class ContributionView:
         rv = right.get("schema_version", 0)
         if lv != rv:
             diffs.append(f"- schema_version: {lv} -> {rv}")
+        ln = left.get("schema_name", "")
+        rn = right.get("schema_name", "")
+        if ln != rn:
+            diffs.append(f"- schema_name: {ln} -> {rn}")
 
         def key_fmt(prefix, name, field):
             return f"{prefix}.{name}.{field}"
@@ -475,6 +493,7 @@ class ContributionView:
         if not isinstance(snap, dict):
             return {}
         out = dict(snap)
+        out.setdefault("schema_name", "")
         out.setdefault("schema_version", 0)
         out.setdefault("strategies", [])
         out.setdefault("plugins", [])

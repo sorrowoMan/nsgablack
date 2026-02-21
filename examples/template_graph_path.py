@@ -23,6 +23,12 @@ except ModuleNotFoundError:  # pragma: no cover
 
 
 class GraphRepairChain:
+    context_requires = ("num_nodes",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Normalizes num_nodes in context and delegates to graph repair chain.",)
+
     def __init__(self, num_nodes: int):
         self.num_nodes = int(num_nodes)
         self.connect = GraphConnectivityRepair()
@@ -70,7 +76,7 @@ def build_solver():
 
     adapter = SimulatedAnnealingAdapter(SAConfig(batch_size=8, initial_temperature=6.0, cooling_rate=0.98))
     solver = ComposableSolver(problem=problem, adapter=adapter, representation_pipeline=pipeline)
-    solver.max_steps = 80
+    solver.set_max_steps(80)
 
     attach_benchmark_harness(solver, output_dir="runs", run_id="template_graph_path", overwrite=True, log_every=1)
     attach_module_report(solver, output_dir="runs", run_id="template_graph_path", write_bias_markdown=True)
