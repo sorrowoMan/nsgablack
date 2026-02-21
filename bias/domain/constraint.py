@@ -27,6 +27,13 @@ class ConstraintBias(DomainBias):
 
     适用于各种带约束的优化问题。
     """
+    context_requires = ("generation",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: generation; outputs scalar bias only."
+
+
 
     def __init__(self, weight: float = 1.0, penalty_factor: float = 10.0):
         """
@@ -143,6 +150,13 @@ class FeasibilityBias(DomainBias):
 
     适用于需要严格可行性保证的问题。
     """
+    context_requires = ("problem_data",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: problem_data; outputs scalar bias only."
+
+
 
     def __init__(
         self,
@@ -200,6 +214,14 @@ class PreferenceBias(DomainBias):
 
     适用于需要考虑决策者偏好的多目标优化问题。
     """
+    context_requires = ()
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: metrics; outputs scalar bias only."
+
+
 
     def __init__(
         self,
@@ -279,6 +301,13 @@ class RuleBasedBias(DomainBias):
 
     适用于复杂的业务逻辑和专家规则集成。
     """
+    context_requires = ("generation",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: generation; outputs scalar bias only."
+
+
 
     def __init__(self, weight: float = 1.0, rules: Optional[List[Dict]] = None):
         """

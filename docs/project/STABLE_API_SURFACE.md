@@ -51,6 +51,6 @@
 
 ## 6) 明确不承诺稳定的范围
 
-- `deprecated/legacy/` 下所有内容
+- 历史 `deprecated/legacy/` 内容（目录已从仓库清理；如需追溯请查看 git 历史）
 - solver 内部字段/私有方法（除非 suite/plugin 明确依赖并写入稳定文档）
 

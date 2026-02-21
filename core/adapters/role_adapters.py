@@ -16,7 +16,14 @@ import warnings
 import numpy as np
 
 from .algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import KEY_ROLE, KEY_ROLE_ADAPTER, KEY_ROLE_INDEX, KEY_ROLE_REPORTS
+from ...utils.context.context_keys import (
+    KEY_CANDIDATE_ROLES,
+    KEY_ROLE,
+    KEY_ROLE_ADAPTER,
+    KEY_ROLE_INDEX,
+    KEY_ROLE_REPORTS,
+    KEY_STEP,
+)
 
 
 @dataclass
@@ -30,6 +37,11 @@ class RoleAdapter(AlgorithmAdapter):
     companions: Tuple[str, ...] = ()
     recommended_suite: Optional[str] = None
     strict_contract: bool = False
+    context_requires: Tuple[str, ...] = ()
+    context_provides: Tuple[str, ...] = (KEY_ROLE, KEY_ROLE_ADAPTER)
+    context_mutates: Tuple[str, ...] = ()
+    context_cache: Tuple[str, ...] = ()
+    context_notes: str = "Role wrapper: injects role metadata and delegates propose/update to inner adapter."
 
     def __init__(
         self,
@@ -138,7 +150,7 @@ class RoleAdapter(AlgorithmAdapter):
                 "best_idx": None,
                 "best_objectives": None,
                 "best_violation": None,
-                "step": context.get("step"),
+                "step": context.get(KEY_STEP),
             }
         else:
             obj = np.asarray(objectives) if objectives is not None else None
@@ -179,28 +191,9 @@ class RoleAdapter(AlgorithmAdapter):
                 "best_x": best_x,
                 "best_objectives": best_obj,
                 "best_violation": best_vio,
-                "step": context.get("step"),
+                "step": context.get(KEY_STEP),
             }
-
-        # Best-effort: expose on solver for controller/plugins.
-        try:
-            reports = getattr(solver, "role_reports", None)
-            if not isinstance(reports, dict):
-                reports = {}
-                setattr(solver, "role_reports", reports)
-            reports[self.role] = dict(self.last_report)
-        except Exception:
-            pass
-
-        # Also mirror into solver.shared_state when available.
-        try:
-            shared = getattr(solver, "shared_state", None)
-            if isinstance(shared, dict):
-                shared.setdefault(KEY_ROLE_REPORTS, {})
-                if isinstance(shared.get(KEY_ROLE_REPORTS), dict):
-                    shared[KEY_ROLE_REPORTS][self.role] = dict(self.last_report)
-        except Exception:
-            pass
+        _ = solver
 
     def get_state(self) -> Dict[str, Any]:
         inner = self.inner.get_state() if self.inner is not None else {}
@@ -233,6 +226,28 @@ class RoleAdapter(AlgorithmAdapter):
         if self.inner is not None and isinstance(state.get("inner"), dict):
             self.inner.set_state(state["inner"])
 
+    def get_context_contract(self) -> Dict[str, Any]:
+        contract = super().get_context_contract()
+        requires = list(contract.get("requires", ()) or ())
+        requires.extend(list(self.requires_context_keys or ()))
+        provides = list(contract.get("provides", ()) or ())
+        provides.extend([KEY_ROLE, KEY_ROLE_ADAPTER])
+        notes = list()
+        base_notes = contract.get("notes")
+        if base_notes:
+            notes.append(str(base_notes))
+        if self.companions:
+            notes.append("companions=" + ", ".join(str(x) for x in self.companions))
+        if self.recommended_suite:
+            notes.append(f"recommended_suite={self.recommended_suite}")
+        return {
+            "requires": requires,
+            "provides": provides,
+            "mutates": contract.get("mutates", ()) or (),
+            "cache": contract.get("cache", ()) or (),
+            "notes": " | ".join(notes) if notes else None,
+        }
+
 
 class MultiRoleControllerAdapter(AlgorithmAdapter):
     """Orchestrate multiple RoleAdapter instances.
@@ -254,8 +269,16 @@ class MultiRoleControllerAdapter(AlgorithmAdapter):
         self.roles = list(roles)
         self._last_ranges: List[Tuple[RoleAdapter, int, int]] = []
         self.last_candidate_roles: List[str] = []
+        self._runtime_projection: Dict[str, Any] = {}
+
+    context_requires = ("generation",)
+    context_provides = (KEY_ROLE, KEY_ROLE_INDEX, KEY_ROLE_REPORTS, KEY_CANDIDATE_ROLES)
+    context_mutates = (KEY_ROLE_REPORTS, KEY_CANDIDATE_ROLES)
+    context_cache = ()
+    context_notes = "Controller for RoleAdapter set: dispatches candidates and returns role-scoped feedback."
 
     def setup(self, solver: Any) -> None:
+        self._runtime_projection = {}
         for role in self.roles:
             role.setup(solver)
 
@@ -275,11 +298,8 @@ class MultiRoleControllerAdapter(AlgorithmAdapter):
             self._last_ranges.append((role, start, end))
             self.last_candidate_roles.extend([role.role] * (end - start))
 
-        # Expose mapping on solver for optional plugins/analysis.
-        try:
-            solver.last_candidate_roles = list(self.last_candidate_roles)
-        except Exception:
-            pass
+        self._runtime_projection[KEY_CANDIDATE_ROLES] = list(self.last_candidate_roles)
+        self._runtime_projection[KEY_ROLE_REPORTS] = self._collect_role_reports()
 
         return candidates
 
@@ -310,6 +330,8 @@ class MultiRoleControllerAdapter(AlgorithmAdapter):
                 violations[start:end],
                 ctx,
             )
+        self._runtime_projection[KEY_CANDIDATE_ROLES] = list(self.last_candidate_roles)
+        self._runtime_projection[KEY_ROLE_REPORTS] = self._collect_role_reports()
 
     def teardown(self, solver: Any) -> None:
         for role in self.roles:
@@ -329,3 +351,20 @@ class MultiRoleControllerAdapter(AlgorithmAdapter):
         for r in self.roles:
             if r.name in roles and isinstance(roles[r.name], dict):
                 r.set_state(roles[r.name])
+
+    def _collect_role_reports(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        for role in self.roles:
+            report = getattr(role, "last_report", None)
+            if isinstance(report, dict) and report:
+                out[str(role.role)] = dict(report)
+        return out
+
+    def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
+        _ = solver
+        return dict(self._runtime_projection)
+
+    def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
+        _ = solver
+        source = f"adapter.{self.__class__.__name__}"
+        return {str(key): source for key in self._runtime_projection.keys()}

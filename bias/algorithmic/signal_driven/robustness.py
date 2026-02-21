@@ -23,9 +23,17 @@ from ...core.base import AlgorithmicBias, OptimizationContext
 
 class RobustnessBias(AlgorithmicBias):
     """Penalize candidates with high stochastic uncertainty."""
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: metrics; outputs scalar bias only."
+
+
 
     # Soft partner contracts (informational; no hard dependency).
-    requires_metrics = {"mc_std"}
+    requires_metrics = ("mc_std",)
+    metrics_fallback = "safe_zero"
     recommended_plugins = ["MonteCarloEvaluationPlugin"]
 
     def __init__(

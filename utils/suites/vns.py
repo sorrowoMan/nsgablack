@@ -46,8 +46,7 @@ def attach_vns(
 
     cfg = config or VNSConfig(**config_kwargs)
     adapter = VNSAdapter(config=cfg)
-    if hasattr(solver, "set_adapter"):
-        solver.set_adapter(adapter)
-    else:
-        solver.adapter = adapter
+    if not hasattr(solver, "set_adapter"):
+        raise ValueError("attach_vns: solver missing set_adapter()")
+    solver.set_adapter(adapter)
     return adapter

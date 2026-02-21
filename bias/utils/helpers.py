@@ -18,7 +18,7 @@ def create_universal_bias_manager():
     from .. import (
         DiversityBias,
         ConvergenceBias,
-        SimulatedAnnealingBias,
+        PrecisionBias,
         ConstraintBias
     )
 
@@ -28,7 +28,7 @@ def create_universal_bias_manager():
     try:
         manager.add_algorithmic_bias(DiversityBias(weight=0.1))
         manager.add_algorithmic_bias(ConvergenceBias(weight=0.05))
-        manager.add_algorithmic_bias(SimulatedAnnealingBias(initial_weight=0.1))
+        manager.add_algorithmic_bias(PrecisionBias(weight=0.05))
     except Exception as e:
         print(f"Warning: Could not add standard biases: {e}")
 
@@ -60,7 +60,6 @@ def quick_bias_setup(
     from .. import (
         DiversityBias,
         ConvergenceBias,
-        SimulatedAnnealingBias,
         ConstraintBias,
         AdaptiveDiversityBias,
         PrecisionBias,
@@ -94,7 +93,7 @@ def quick_bias_setup(
 
         elif problem_type == "scheduling":
             manager.add_algorithmic_bias(DiversityBias(weight=0.15))
-            manager.add_algorithmic_bias(SimulatedAnnealingBias(initial_weight=0.2))
+            manager.add_algorithmic_bias(PrecisionBias(weight=0.15))
 
         elif problem_type == "constrained":
             if AdaptiveDiversityBias is not None:

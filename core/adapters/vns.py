@@ -30,6 +30,7 @@ class VNSConfig:
     # sigma schedule: sigma = base_sigma * (scale ** k)
     base_sigma: float = 0.2
     scale: float = 1.6
+    max_sigma: float = 10.0
 
     # accept if strictly better (with constraint penalty)
     accept_tolerance: float = 0.0
@@ -43,6 +44,14 @@ class VNSConfig:
 
 class VNSAdapter(AlgorithmAdapter):
     """VNS adapter for ComposableSolver."""
+    context_requires = ("generation",)
+    context_provides = (KEY_VNS_K, KEY_MUTATION_SIGMA)
+    context_mutates = ()
+    context_cache = ()
+    context_notes = (
+        "VNS writes neighborhood index/sigma into per-step context for mutator consumption.",
+        "Use context-aware mutator to make neighborhood switching effective.",
+    )
 
     # Soft partner contracts (informational; no hard dependency).
     #
@@ -59,12 +68,17 @@ class VNSAdapter(AlgorithmAdapter):
         self.current_x: Optional[np.ndarray] = None
         self.current_score: Optional[float] = None
         self._warned_missing_operator = False
+        self._last_context_projection: Dict[str, Any] = {}
 
     def setup(self, solver: Any) -> None:
         self.k = 0
         self.current_x = None
         self.current_score = None
         self._warn_if_pipeline_does_not_consume_context(solver)
+        self._last_context_projection = {
+            KEY_VNS_K: int(self.k),
+            KEY_MUTATION_SIGMA: float(self._current_sigma()),
+        }
 
     def _warn_if_pipeline_does_not_consume_context(self, solver: Any) -> None:
         if self._warned_missing_operator:
@@ -107,10 +121,14 @@ class VNSAdapter(AlgorithmAdapter):
         if self.current_x is None:
             self.current_x = np.asarray(solver.init_candidate(context))
 
-        sigma = float(self.cfg.base_sigma) * (float(self.cfg.scale) ** int(self.k))
+        sigma = float(self._current_sigma())
         ctx = dict(context)
         ctx[KEY_VNS_K] = int(self.k)
         ctx[KEY_MUTATION_SIGMA] = float(sigma)
+        self._last_context_projection = {
+            KEY_VNS_K: int(self.k),
+            KEY_MUTATION_SIGMA: float(sigma),
+        }
 
         out = []
         for _ in range(int(self.cfg.batch_size)):
@@ -145,6 +163,10 @@ class VNSAdapter(AlgorithmAdapter):
             self.current_score = best_score
             self.current_x = np.asarray(candidates[best_idx])
             self.k = 0
+            self._last_context_projection = {
+                KEY_VNS_K: int(self.k),
+                KEY_MUTATION_SIGMA: float(self._current_sigma()),
+            }
             return
 
         # no improvement: move to next neighborhood
@@ -156,6 +178,23 @@ class VNSAdapter(AlgorithmAdapter):
                 self.current_score = None
             else:
                 self.k = int(self.cfg.k_max)
+        self._last_context_projection = {
+            KEY_VNS_K: int(self.k),
+            KEY_MUTATION_SIGMA: float(self._current_sigma()),
+        }
+
+    def _current_sigma(self) -> float:
+        sigma = float(self.cfg.base_sigma) * (float(self.cfg.scale) ** int(self.k))
+        return min(float(self.cfg.max_sigma), sigma)
+
+    def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
+        _ = solver
+        return dict(self._last_context_projection)
+
+    def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
+        _ = solver
+        source = f"adapter.{self.__class__.__name__}"
+        return {str(k): source for k in self._last_context_projection.keys()}
 
     def _scores(self, objectives: np.ndarray, violations: np.ndarray) -> np.ndarray:
         obj = np.asarray(objectives, dtype=float)

@@ -327,12 +327,12 @@ class OptimizationMemoryOptimizer:
                 sample_interval = max(1, sample_count // (recent_count // 2))
 
                 optimized_history = []
-                # Keep all recent generations
-                optimized_history.extend(history[-recent_count:])
-
                 # Sample older generations
                 for i in range(0, len(history) - recent_count, sample_interval):
                     optimized_history.append(history[i])
+
+                # Keep all recent generations (preserve chronological order)
+                optimized_history.extend(history[-recent_count:])
 
                 self.solver.history = optimized_history
 
@@ -347,11 +347,26 @@ class OptimizationMemoryOptimizer:
 
                 # Only downgrade if precision loss is acceptable
                 if np.allclose(self.solver.population, self.solver.population.astype(np.float32)):
-                    self.solver.population = self.solver.population.astype(np.float32)
-
+                    pop_new = self.solver.population.astype(np.float32)
+                    obj_new = getattr(self.solver, "objectives", None)
                     if hasattr(self.solver, 'objectives') and self.solver.objectives.dtype == np.float64:
                         if np.allclose(self.solver.objectives, self.solver.objectives.astype(np.float32)):
-                            self.solver.objectives = self.solver.objectives.astype(np.float32)
+                            obj_new = self.solver.objectives.astype(np.float32)
+
+                    commit = getattr(self.solver, "write_population_snapshot", None)
+                    if callable(commit):
+                        try:
+                            commit(
+                                pop_new,
+                                obj_new if obj_new is not None else self.solver.objectives,
+                                getattr(self.solver, "constraint_violations", np.zeros((pop_new.shape[0],), dtype=float)),
+                            )
+                            return
+                        except Exception:
+                            pass
+
+                    # Contract-only path: skip downcast writeback for non-compliant solvers.
+                    return
 
     def clear_temporary_data(self):
         """Clear temporary data that might accumulate during optimization"""
@@ -398,10 +413,10 @@ class OptimizationMemoryOptimizer:
             'memory_usage': memory_info,
             'cache_stats': cache_stats,
             'memory_trend': memory_trend,
-            'recommendations': self._get_recommendations(memory_info, memory_trend)
+            'recommendations': self._get_recommendations(memory_info, memory_trend, cache_stats)
         }
 
-    def _get_recommendations(self, memory_info: Dict, memory_trend: Dict) -> List[str]:
+    def _get_recommendations(self, memory_info: Dict, memory_trend: Dict, cache_stats: Dict) -> List[str]:
         """Get memory optimization recommendations"""
         recommendations = []
 
@@ -413,7 +428,7 @@ class OptimizationMemoryOptimizer:
             recommendations.append("Memory usage is trending upward")
             recommendations.append("Consider more frequent cleanup")
 
-        if cache_stats['utilization'] > 0.9:
+        if float(cache_stats.get('utilization', 0.0)) > 0.9:
             recommendations.append("Cache is nearly full, consider increasing size")
 
         return recommendations

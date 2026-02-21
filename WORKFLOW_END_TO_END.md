@@ -35,18 +35,20 @@
 
 ---
 
-## 先建立“脑内地图”：4 个一级公民 + 3 个组织方式
+## 先建立"脑内地图"：5 个核心组件 + 2 个组织方式
 
-在 NSGABlack 里，最小闭环只需要 4 个一级公民：
+在 NSGABlack 里，核心闭环由 5 个组件组成：
 
 - `Solver`：运行容器与生命周期（负责调用 adapter/pipeline/bias/plugins）
 - `RepresentationPipeline`：初始化/变异/修复/编码解码（硬约束优先）
 - `BiasModule`：软约束/偏好/算法倾向（可组合、可开关）
+- `Adapter`：策略内核（怎么提案/怎么消费反馈/怎么推进搜索过程）
 - `Plugin`：能力层（并行、记录、监控、短路评估等）
 
-其它概念只是“组织方式”（帮你不漏配、好复用、好发现）：
+> 说明：如果你用 `BlackBoxSolverNSGAII`（搜索逻辑内建），不需要显式配 Adapter；如果你用 `ComposableSolver` / `BlankSolverBase`，Adapter 就是决定"怎么搜索"的核心引擎。
 
-- `Adapter`：策略内核（怎么提案/怎么消费反馈/怎么推进搜索过程）
+组织方式（帮你不漏配、好复用、好发现）：
+
 - `Suite`：权威组合（把必配组件一次装配好，避免漏配）
 - `Catalog`：可发现性（search/show/list）
 

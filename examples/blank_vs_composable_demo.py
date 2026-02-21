@@ -112,7 +112,7 @@ def build_bias():
 def run_blank():
     problem = SimpleSphereProblem()
     solver = BlankSolverBase(problem, representation_pipeline=build_pipeline(problem), bias_module=build_bias())
-    solver.max_steps = 30
+    solver.set_max_steps(30)
     plugin = GreedyStepPlugin()
     solver.add_plugin(plugin)
     solver.run()
@@ -128,7 +128,7 @@ def run_composable():
         representation_pipeline=build_pipeline(problem),
         bias_module=build_bias(),
     )
-    solver.max_steps = 30
+    solver.set_max_steps(30)
     solver.run()
     return solver.best_objective, solver.best_x
 

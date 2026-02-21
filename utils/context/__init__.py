@@ -13,8 +13,16 @@ from .context_events import ContextEvent, apply_context_event, record_context_ev
 from .context_contracts import (
     ContextContract,
     collect_solver_contracts,
+    detect_context_conflicts,
     get_component_contract,
     validate_context_contracts,
+)
+from .context_field_governance import (
+    CONTEXT_FIELD_SCHEMA_NAME,
+    CONTEXT_FIELD_SCHEMA_VERSION,
+    context_field_schema_dict,
+    is_canonical_context_key,
+    schema_meta,
 )
 from .context_schema import (
     ContextField,
@@ -37,6 +45,7 @@ __all__ = [
     "replay_context",
     "ContextContract",
     "collect_solver_contracts",
+    "detect_context_conflicts",
     "get_component_contract",
     "validate_context_contracts",
     "ContextField",
@@ -49,4 +58,9 @@ __all__ = [
     "strip_context_for_replay",
     "validate_context",
     "validate_minimal_context",
+    "CONTEXT_FIELD_SCHEMA_NAME",
+    "CONTEXT_FIELD_SCHEMA_VERSION",
+    "context_field_schema_dict",
+    "is_canonical_context_key",
+    "schema_meta",
 ]

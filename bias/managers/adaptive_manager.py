@@ -4,7 +4,8 @@
 """
 
 import numpy as np
-from typing import List, Dict, Any, Optional
+import re
+from typing import List, Dict, Any, Optional, Tuple
 from collections import deque
 from dataclasses import dataclass
 import logging
@@ -35,8 +36,11 @@ class AdaptiveAlgorithmicManager:
         """
         self.biases: Dict[str, AlgorithmicBias] = {}
         self.state_history = deque(maxlen=window_size)
+        self._best_fitness_history = deque(maxlen=window_size)
         self.adaptation_interval = adaptation_interval
         self.last_adaptation = 0
+        self.weight_cap = 1.0
+        self.max_diversity_pairs = 20000
 
         # 自适应策略配置
         self.adaptation_strategies = {
@@ -134,7 +138,7 @@ class AdaptiveAlgorithmicManager:
         changes = []
 
         # 增加探索类偏置
-        exploration_biases = ['DiversityBias', 'ExplorationBias', 'PopulationDensityBias']
+        exploration_biases = self._resolve_biases(('diversity', 'exploration', 'density'))
         for bias_name in exploration_biases:
             if bias_name in self.biases:
                 old_weight = self.biases[bias_name].weight
@@ -142,7 +146,7 @@ class AdaptiveAlgorithmicManager:
                 changes.append(f"{bias_name}: {old_weight:.3f} -> {self.biases[bias_name].weight:.3f}")
 
         # 减少开发类偏置
-        exploitation_biases = ['ConvergenceBias', 'PrecisionBias']
+        exploitation_biases = self._resolve_biases(('convergence', 'precision', 'exploit'))
         for bias_name in exploitation_biases:
             if bias_name in self.biases:
                 old_weight = self.biases[bias_name].weight
@@ -156,7 +160,7 @@ class AdaptiveAlgorithmicManager:
         changes = []
 
         # 大幅增加多样性相关偏置
-        diversity_biases = ['DiversityBias', 'ExplorationBias', 'AdaptiveDiversityBias']
+        diversity_biases = self._resolve_biases(('diversity', 'exploration'))
         for bias_name in diversity_biases:
             if bias_name in self.biases:
                 old_weight = self.biases[bias_name].weight
@@ -170,7 +174,7 @@ class AdaptiveAlgorithmicManager:
         changes = []
 
         # 增加收敛类偏置
-        convergence_biases = ['ConvergenceBias', 'PrecisionBias', 'MemoryGuidedBias']
+        convergence_biases = self._resolve_biases(('convergence', 'precision', 'memory'))
         for bias_name in convergence_biases:
             if bias_name in self.biases:
                 old_weight = self.biases[bias_name].weight
@@ -183,30 +187,71 @@ class AdaptiveAlgorithmicManager:
         """平衡探索与开发"""
         # 根据探索/开发比例动态调整
         if state.exploration_ratio < 0.3:  # 探索不足
-            exploration_biases = ['DiversityBias', 'ExplorationBias']
+            exploration_biases = self._resolve_biases(('diversity', 'exploration'))
             for bias_name in exploration_biases:
                 if bias_name in self.biases:
-                    self.biases[bias_name].weight *= 1.1
+                    self.biases[bias_name].weight = min(
+                        float(self.weight_cap),
+                        float(self.biases[bias_name].weight) * 1.1,
+                    )
 
         elif state.exploitation_ratio < 0.3:  # 开发不足
-            exploitation_biases = ['ConvergenceBias', 'PrecisionBias']
+            exploitation_biases = self._resolve_biases(('convergence', 'precision', 'exploit'))
             for bias_name in exploitation_biases:
                 if bias_name in self.biases:
-                    self.biases[bias_name].weight *= 1.1
+                    self.biases[bias_name].weight = min(
+                        float(self.weight_cap),
+                        float(self.biases[bias_name].weight) * 1.1,
+                    )
+
+
+    def _resolve_biases(self, aliases: Tuple[str, ...]) -> List[str]:
+        """Map alias tokens to currently attached bias keys (name/class fuzzy match)."""
+        tokens = tuple(str(x).strip().lower() for x in aliases if str(x).strip())
+        if not tokens:
+            return []
+        matched: List[str] = []
+        for key, bias in self.biases.items():
+            joined = " ".join(
+                [
+                    str(key),
+                    str(getattr(bias, "name", "")),
+                    str(getattr(bias, "__class__", type(bias)).__name__),
+                ]
+            ).lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", joined)
+            if any(tok in normalized for tok in tokens):
+                matched.append(str(key))
+        return matched
 
     def _compute_diversity(self, population: List) -> float:
         """计算种群多样性"""
-        if len(population) < 2:
+        n = len(population)
+        if n < 2:
             return 0.0
 
-        # 计算个体间的平均距离
-        distances = []
-        for i in range(len(population)):
-            for j in range(i + 1, len(population)):
-                dist = np.linalg.norm(np.array(population[i]) - np.array(population[j]))
-                distances.append(dist)
+        pop_array = np.asarray(population, dtype=float)
+        total_pairs = (n * (n - 1)) // 2
+        if total_pairs <= 0:
+            return 0.0
 
-        return np.mean(distances) / len(distances) if distances else 0.0
+        if total_pairs <= int(self.max_diversity_pairs):
+            distances = []
+            for i in range(n):
+                for j in range(i + 1, n):
+                    distances.append(np.linalg.norm(pop_array[i] - pop_array[j]))
+            return float(np.mean(distances)) if distances else 0.0
+
+        sample_size = int(self.max_diversity_pairs)
+        rng = np.random.default_rng()
+        sampled = []
+        for _ in range(sample_size):
+            i = int(rng.integers(0, n))
+            j = int(rng.integers(0, n - 1))
+            if j >= i:
+                j += 1
+            sampled.append(np.linalg.norm(pop_array[i] - pop_array[j]))
+        return float(np.mean(sampled)) if sampled else 0.0
 
     def _compute_convergence_rate(self, fitness_values: List) -> float:
         """计算收敛率"""
@@ -221,23 +266,21 @@ class AdaptiveAlgorithmicManager:
         return 0.0
 
     def _compute_improvement_rate(self, fitness_values: List) -> float:
-        """计算改进率"""
-        if len(self.state_history) == 0:
+        """计算相对历史最佳的正向改进率。"""
+        if not fitness_values:
             return 0.0
 
-        # 比较当前最佳适应值与历史最佳
-        current_best = min(fitness_values) if fitness_values else float('inf')
+        current_best = float(np.min(np.asarray(fitness_values, dtype=float)))
+        historical_best = None
+        if len(self._best_fitness_history) > 0:
+            historical_best = float(np.min(np.asarray(self._best_fitness_history, dtype=float)))
+        self._best_fitness_history.append(current_best)
 
-        # 从历史记录中获取之前的最佳值
-        historical_best = float('inf')
-        for state in self.state_history:
-            # 这里简化处理，实际应该存储历史最佳值
-            pass
-
-        if historical_best == float('inf'):
+        if historical_best is None or not np.isfinite(historical_best):
             return 0.0
 
-        return (historical_best - current_best) / (abs(historical_best) + 1e-6)
+        improvement = (historical_best - current_best) / (abs(historical_best) + 1e-6)
+        return float(max(0.0, improvement))
 
     def _compute_population_density(self, population: List) -> float:
         """计算种群密度"""

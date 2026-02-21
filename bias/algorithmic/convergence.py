@@ -16,6 +16,13 @@ class ConvergenceBias(AlgorithmicBias):
 
     Increases bias as optimization progresses to accelerate convergence.
     """
+    context_requires = ("generation", "population")
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Algorithmic bias: reads metrics and outputs scalar guidance."
+
 
     def __init__(self, weight: float = 0.1, early_gen: int = 10, late_gen: int = 50):
         super().__init__("convergence", weight, adaptive=True)
@@ -55,6 +62,14 @@ class AdaptiveConvergenceBias(AlgorithmicBias):
 
     Monitors improvement rate and adjusts convergence bias accordingly.
     """
+    context_requires = ()
+    requires_metrics = ("best_fitness", "elite_solutions")
+    metrics_fallback = "default"
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Algorithmic bias: reads metrics and outputs scalar guidance."
+
 
     def __init__(
         self,
@@ -120,6 +135,14 @@ class PrecisionBias(AlgorithmicBias):
 
     Encourages precise exploration in promising regions.
     """
+    context_requires = ()
+    requires_metrics = ("best_fitness", "current_fitness")
+    metrics_fallback = "default"
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Algorithmic bias: reads metrics and outputs scalar guidance."
+
 
     def __init__(self, weight: float = 0.1, precision_radius: float = 0.05):
         super().__init__("precision", weight, adaptive=True)
@@ -157,6 +180,13 @@ class LateStageConvergenceBias(AlgorithmicBias):
 
     Strongly promotes convergence in final generations.
     """
+    context_requires = ("generation",)
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Algorithmic bias: reads metrics and outputs scalar guidance."
+
 
     def __init__(
         self,
@@ -192,6 +222,13 @@ class MultiStageConvergenceBias(AlgorithmicBias):
 
     Implements different convergence strategies for different optimization phases.
     """
+    context_requires = ("generation",)
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Algorithmic bias: reads metrics and outputs scalar guidance."
+
 
     def __init__(self, weight: float = 0.15, stages: Optional[List[dict]] = None):
         super().__init__("multi_stage_convergence", weight, adaptive=True)

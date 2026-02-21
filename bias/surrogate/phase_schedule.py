@@ -8,6 +8,13 @@ from .base import SurrogateControlBias
 
 class PhaseScheduleBias(SurrogateControlBias):
     """Switch surrogate configs by phase."""
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(
         self,

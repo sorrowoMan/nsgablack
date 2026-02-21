@@ -35,11 +35,12 @@ def test_multi_strategy_controller_runs_and_broadcasts_shared_state(sample_probl
     solver.run()
 
     assert solver.best_objective is not None
-    assert hasattr(solver, "shared_state")
-    assert solver.shared_state.get("best_score") is not None
-    assert isinstance(solver.shared_state.get("strategies"), dict)
-    assert "vns" in solver.shared_state["strategies"]
-    assert "sa" in solver.shared_state["strategies"]
+    ctx = solver.get_context()
+    shared = ctx.get("shared", {}) or {}
+    assert shared.get("best_score") is not None
+    assert isinstance(shared.get("strategies"), dict)
+    assert "vns" in shared["strategies"]
+    assert "sa" in shared["strategies"]
 
 
 def test_attach_multi_strategy_suite_smoke(sample_problem):
@@ -111,9 +112,13 @@ def test_multi_strategy_controller_supports_multi_units_per_role(sample_problem)
     solver.run()
 
     assert solver.best_objective is not None
-    assert getattr(solver, "last_candidate_units", None) is not None
-    assert len(set(solver.last_candidate_units)) > 1
-    assert "units" in solver.shared_state
+    ctx = solver.get_context()
+    units = ctx.get("candidate_units")
+    assert isinstance(units, list)
+    assert len(set(units)) > 1
+    ctx = solver.get_context()
+    shared = ctx.get("shared", {}) or {}
+    assert "units" in shared
 
 
 def test_multi_strategy_phase_and_region_tasks_are_dispatched(sample_problem):
@@ -174,13 +179,17 @@ def test_multi_strategy_phase_and_region_tasks_are_dispatched(sample_problem):
     solver.max_steps = 5
     solver.run()
 
-    assert solver.shared_state.get("phase") in {"explore", "exploit"}
-    assert isinstance(solver.shared_state.get("regions"), list)
-    assert len(solver.shared_state["regions"]) == 4
-    assert getattr(solver, "last_unit_tasks", None) is not None
+    ctx = solver.get_context()
+    shared = ctx.get("shared", {}) or {}
+    assert shared.get("phase") in {"explore", "exploit"}
+    assert isinstance(shared.get("regions"), list)
+    assert len(shared["regions"]) == 4
+    ctx = solver.get_context()
+    unit_tasks = ctx.get("unit_tasks")
+    assert isinstance(unit_tasks, dict)
     # verify some task contains phase/region/seeds keys
     any_task = None
-    for _k, task in solver.last_unit_tasks.items():
+    for _k, task in unit_tasks.items():
         any_task = task
         break
     assert any_task is not None

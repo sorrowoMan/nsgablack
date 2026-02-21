@@ -30,23 +30,20 @@
 - `core/base.py` — 黑箱问题接口 [layer:core] [goal:problem]
 - `core/solver.py` — NSGA-II 内核 + 偏置注入 [layer:core] [goal:nsga2] [cap:convergence]
 - `core/config.py` — 求解器配置 schema（稳定） [layer:core] [goal:config]
-- `core/diversity.py` — 多样性初始化 + 历史去重 [layer:core] [cap:diversity] [cap:history]
-- `core/elite.py` — 精英保留 + 智能历史 [layer:core] [cap:elite] [cap:history]
-- `core/convergence.py` — 收敛检测工具 [layer:core] [cap:convergence]
-- `deprecated/legacy/core/problems.py` — 基准问题集合（已归档） [layer:legacy] [goal:benchmark]
+- `core/solver.py` 内联能力：多样性初始化 + 历史去重 [layer:core] [cap:diversity] [cap:history]
+- `core/solver.py` 内联能力：精英保留 + 智能历史 [layer:core] [cap:elite] [cap:history]
+- `core/solver.py` 内联能力：收敛检测 [layer:core] [cap:convergence]
+- ~~`deprecated/legacy/core/problems.py`~~ — 基准问题集合（目录已清理；如需追溯请查看 git 历史） [layer:legacy] [goal:benchmark]
 
 ---
 
 ## 偏置系统（Bias）
 
 - `bias/bias_module.py` — 偏置模块（奖惩 + 约束） [layer:bias] [bias:domain]
-- `bias/bias_base.py` — 偏置基类 [layer:bias] [bias:base]
-- `bias/bias_v2.py` — 新版偏置接口 [layer:bias] [bias:base]
-- `bias/core/base.py` — OptimizationContext 与偏置协议 [layer:bias] [cap:context]
+- `bias/core/base.py` — OptimizationContext 与偏置协议 / 偏置基类 [layer:bias] [cap:context] [bias:base]
 - `bias/algorithmic/` — 算法偏置库 [layer:bias] [bias:algorithmic]
 - `bias/domain/` — 业务偏置库 [layer:bias] [bias:domain]
 - `bias/surrogate/` — 代理控制偏置 [layer:bias] [bias:surrogate]
-- `bias/template_function_bias.py` — 函数偏置模板 [layer:bias] [bias:template]
 - `bias/algorithmic/template_algorithmic_bias.py` — 算法偏置模板 [layer:bias] [bias:template]
 - `bias/domain/template_domain_bias.py` — 业务偏置模板 [layer:bias] [bias:template]
 - `bias/surrogate/template_surrogate_bias.py` — 代理偏置模板 [layer:bias] [bias:template]
@@ -55,9 +52,9 @@
 
 ## 表征系统（Representation）
 
-- `utils/representation/base.py` — RepresentationPipeline [layer:representation] [goal:representation]
-- `utils/representation/continuous.py` — 连续变量 [layer:representation] [var:continuous]
-- `utils/representation/integer.py` — 整数变量 [layer:representation] [var:integer]
+- `representation/base.py` — RepresentationPipeline [layer:representation] [goal:representation]
+- `representation/continuous.py` — 连续变量 [layer:representation] [var:continuous]
+- `representation/integer.py` — 整数变量 [layer:representation] [var:integer]
 - `representation/binary.py` — 二进制变量 [layer:representation] [var:binary]
 - `representation/permutation.py` — 排列变量 [layer:representation] [var:permutation]
 - `representation/matrix.py` — 矩阵变量 [layer:representation] [var:matrix]

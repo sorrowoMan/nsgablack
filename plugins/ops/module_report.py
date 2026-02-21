@@ -17,6 +17,7 @@ import time
 
 from ..base import Plugin
 from ...utils.engineering.file_io import atomic_write_json, atomic_write_text
+from ...utils.engineering.schema_version import stamp_schema
 
 
 @dataclass
@@ -87,6 +88,7 @@ class ModuleReportPlugin(Plugin):
             "run_id": str(self.cfg.run_id),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         }
+        modules_payload = stamp_schema(modules_payload, "module_report")
         atomic_write_json(modules_path, modules_payload, ensure_ascii=False, indent=2, encoding="utf-8")
 
         bias_payload = self._collect_bias_contributions(solver)
@@ -94,6 +96,7 @@ class ModuleReportPlugin(Plugin):
             "run_id": str(self.cfg.run_id),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         }
+        bias_payload = stamp_schema(bias_payload, "bias_report")
         atomic_write_json(bias_json_path, bias_payload, ensure_ascii=False, indent=2, encoding="utf-8")
 
         if bool(self.cfg.write_bias_markdown):

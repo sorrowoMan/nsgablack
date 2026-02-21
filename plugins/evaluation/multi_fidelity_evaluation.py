@@ -89,6 +89,9 @@ class MultiFidelityEvaluationPlugin(Plugin):
             val = self.low_fidelity(X[i])
             low_obj[i] = normalize_objectives(val, num_objectives=m, name="low_fidelity.objectives")
         self.stats["low_calls"] += n
+        # Count low-fidelity calls in solver.evaluation_count so total budget
+        # accounting stays correct.  High-fidelity calls are added separately below.
+        solver.evaluation_count += n
 
         # select high-fidelity subset
         selected = self._select_indices_for_high_fidelity(low_obj)

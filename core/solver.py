@@ -1,4 +1,4 @@
-﻿import time
+import time
 import math
 import random
 import numpy as np
@@ -8,21 +8,23 @@ import os
 import logging
 from typing import Optional, Any, List
 
+from ..utils.context.context_keys import KEY_BEST_OBJECTIVE, KEY_BEST_X, KEY_CONSTRAINT_VIOLATION
+
 # ============================================================================
-# 鏍稿績瀵煎叆锛堝繀闇€锟?
+# 基础依赖
 # ============================================================================
 from .base import BlackBoxProblem
 from ..plugins import PluginManager
 
 # ============================================================================
-# 鎺ュ彛瀹氫箟锛堢敤浜庣被鍨嬫彁绀哄拰渚濊禆娉ㄥ叆锟?
+# 接口与能力探测
 # ============================================================================
 from .interfaces import (
     BiasInterface,
     RepresentationInterface,
     VisualizationInterface,
     PluginInterface,
-    # 宸ュ巶鍑芥暟
+    # 能力探测与工厂函数
     has_bias_module,
     has_representation_module,
     has_visualization_module,
@@ -35,10 +37,10 @@ from .interfaces import (
 ensure_dependencies = None
 
 # ============================================================================
-# 鍙€夋ā鍧楀鍏ワ紙寤惰繜鍔犺浇锟?
+# 可选依赖与懒加载占位
 # ============================================================================
 
-# 鍙鍖栨贩鍏ョ被
+# 可视化混入（可选）
 try:
     from ..utils.viz import SolverVisualizationMixin as _SolverVisualizationMixin
 except ImportError:
@@ -46,25 +48,25 @@ except ImportError:
         def _init_visualization(self):
             pass
 
-# 鍋忕疆妯″潡锛堝欢杩熷鍏ワ紝閫氳繃灞炴€ц闂級
+# 偏置模块类缓存
 _BiasModule = None
 
-# Numba鍔犻€燂紙寤惰繜瀵煎叆锟?
+# Numba 加速函数缓存
 _fast_is_dominated = None
 _NUMBA_AVAILABLE = False
 
-# 瀹為獙缁撴灉锛堝欢杩熷鍏ワ級
+# 实验结果类缓存
 _ExperimentResult = None
 
-# 鏃ュ織锟?
+# 模块级日志器
 logger = logging.getLogger(__name__)
 
-# 琛ㄧず绠￠亾锛堝欢杩熷鍏ワ級
+# 表示管线类缓存
 _RepresentationPipeline = None
 
 
 # ============================================================================
-# 杈呭姪鍑芥暟锛氬畨鍏ㄥ姞杞藉彲閫夋ā锟?
+# 懒加载工厂函数
 # ============================================================================
 
 def _get_bias_module():
@@ -80,7 +82,7 @@ def _get_bias_module():
 
 
 def _get_numba_helpers():
-    """寤惰繜鍔犺浇 numba 杈呭姪鍑芥暟"""
+    """懒加载 Numba 辅助函数与可用标记。"""
     global _fast_is_dominated, _NUMBA_AVAILABLE
     if _fast_is_dominated is None:
         try:
@@ -94,7 +96,7 @@ def _get_numba_helpers():
 
 
 def _get_experiment_result():
-    """寤惰繜鍔犺浇瀹為獙缁撴灉锟?"""
+    """懒加载 ExperimentResult 类。"""
     global _ExperimentResult
     if _ExperimentResult is None:
         try:
@@ -107,7 +109,7 @@ def _get_experiment_result():
 
 
 def _get_representation_pipeline():
-    """绠＄嚎"""
+    """懒加载 RepresentationPipeline 类。"""
     global _RepresentationPipeline
     if _RepresentationPipeline is None:
         try:
@@ -123,20 +125,20 @@ SolverVisualizationMixin = _SolverVisualizationMixin
 
 class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
     """
-    NSGA-II 榛戠姹傝В鍣紙鏀寔渚濊禆娉ㄥ叆锟?
+    NSGA-II 黑盒求解器（支持解耦扩展）。
 
-    鍙傛暟:
-        problem: 浼樺寲闂瀹炰緥
-        bias_module: 鍙€夌殑鍋忕疆妯″潡锛堟敮鎸佷緷璧栨敞鍏ワ級
-        representation_pipeline: 鍙€夌殑琛ㄧず绠￠亾锛堟敮鎸佷緷璧栨敞鍏ワ級
-        **kwargs: 鍏朵粬閰嶇疆鍙傛暟
+    参数:
+        problem: 黑盒优化问题实例。
+        bias_module: 可选偏置模块，用于软偏好与搜索引导。
+        representation_pipeline: 可选表示管线，负责初始化/变异/修复。
+        **kwargs: 运行参数与工程开关。
 
-    绀轰緥:
-        # 浼犵粺鐢ㄦ硶锛堝悜鍚庡吋瀹癸級
+    示例:
+        # 先构造再挂载偏置
         solver = BlackBoxSolverNSGAII(problem)
-        solver.bias_module = BiasModule()  # 涔嬪悗璁剧疆
+        solver.bias_module = BiasModule()
 
-        # 鏂扮敤娉曪紙渚濊禆娉ㄥ叆锟?
+        # 显式注入偏置模块
         from nsgablack.bias import BiasModule
         bias = BiasModule()
         solver = BlackBoxSolverNSGAII(problem, bias_module=bias)
@@ -165,7 +167,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
                 configure_logging(**log_config)
             except Exception as exc:
                 logger.warning("Logging config failed: %s", exc)
-        # 鍩烘湰閰嶇疆
+        # 基础开关
         self.enable_diversity_init = False
         self.use_history = False
         # Optional flag; prefer Suite + plugins for wiring.
@@ -175,8 +177,8 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         self.num_objectives = problem.get_num_objectives()
         self.dimension = problem.dimension
 
-        # 绾︽潫鐩稿叧锛氶€氳繃 problem.evaluate_constraints 缁熶竴璁＄畻杩濊儗锟?
-        self.constraints = []  # 淇濈暀鍗犱綅锛屽吋瀹规棫鐢ㄦ硶
+        # 约束由 problem.evaluate_constraints / constraint_utils 统一计算。
+        self.constraints = []  # 兼容旧接口的占位字段
 
         # Memory management
         self.memory_optimizer = None
@@ -203,7 +205,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         self.parallel_extra_context = None
         self.parallel_evaluator = None
 
-        # 渚濊禆妫€鏌ワ紙鍙€夛級
+        # 可选依赖检查报告
         self.dependency_report = None
         validate_dependencies = kwargs.pop('validate_dependencies', False)
         if validate_dependencies:
@@ -222,10 +224,10 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
                     logger.warning("Dependency validation failed: %s", exc)
 
         # ====================================================================
-        # 渚濊禆娉ㄥ叆锛氭敮鎸佸閮ㄤ紶鍏ョ殑妯″潡
+        # 模块句柄与功能开关
         # ====================================================================
         self._bias_module_internal: Optional[BiasInterface] = None
-        self.bias_module = bias_module  # 浣跨敤灞炴€etter澶勭悊
+        self.bias_module = bias_module  # optional bias setter
         self.enable_bias = (bias_module is not None)
         # If True, constraint violations will be ignored (set to 0) when bias is enabled.
         # Use only when constraints are fully handled by representation repair and/or bias penalties.
@@ -239,18 +241,22 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         self._representation_internal: Optional[RepresentationInterface] = None
         self.representation_pipeline = representation_pipeline
 
-        # 鏍囧噯NSGA-II鍙傛暟
+        # NSGA-II 默认参数
         self.pop_size = 80
         self.max_generations = 150
         self.crossover_rate = 0.85
         self.mutation_rate = 0.15
+        self.sbx_eta_c = 15.0
         self.initial_mutation_range = 0.8
         self.mutation_range = self.initial_mutation_range
+        self.max_pareto_solutions = 50
         self.tol = 1e-5
         self.elite_retention_prob = 0.9
         self.random_seed = None
+        self._rng = np.random.default_rng()
+        self._rng_streams = {}
 
-        # 澶氭牱鎬у弬锟?
+        # 多样性初始化参数（可由插件或配置覆盖）
         self.diversity_params = {
             'candidate_size': 500,
             'similarity_threshold': 0.05,
@@ -261,11 +267,12 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
 
         self._apply_solver_config(config_data, strict=config_strict)
         self._apply_solver_overrides(kwargs)
+        self.set_random_seed(self.random_seed)
         self.mutation_range = self.initial_mutation_range
         if self.enable_parallel_evaluation:
             self._init_parallel_evaluator()
 
-        # 杩愯鏃剁姸锟?
+        # 运行时状态
         self.population = None
         self.objectives = None
         self.pareto_solutions = None
@@ -275,15 +282,15 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         self.running = False
         self.start_time = 0
 
-        # 鎻掍欢绯荤粺锛堣兘鍔涘眰锟?
-        # - 涓嶅己鍒朵娇鐢紱榛樿涓嶅奖鍝嶇幇鏈夋祦锟?
-        # - 鎻愪緵璇勪及鐭矾鎻掓Ы锛氬厑璁告彃浠舵帴绠¤瘎浼帮紙surrogate/缂撳瓨/杩滅▼璇勪及绛夛級
+        # 插件系统（支持短路事件）
+        # - evaluate_population / evaluate_individual 可被代理模块接管
+        # - surrogate / 缓存 / 并行策略通常在插件层接入
         self.plugin_manager = PluginManager(
             short_circuit=True,
             short_circuit_events=["evaluate_population", "evaluate_individual", "initialize_population"],
         )
 
-        # 瀹屾垚鍒濆鍖栵紙鍚戝悗鍏煎锟?
+        # 其余初始化逻辑放在二阶段，避免 __init__ 过长
         self._complete_initialization()
 
     # --------------------------------------------------------------------
@@ -298,8 +305,13 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         try:
             if hasattr(plugin, "on_solver_init"):
                 plugin.on_solver_init(self)
-        except Exception:
-            pass
+        except Exception as exc:
+            strict_init = bool(getattr(plugin, "raise_on_init_error", False)) or bool(
+                getattr(plugin, "strict_init", False)
+            )
+            if strict_init:
+                raise
+            logger.warning("Plugin '%s' init failed: %s", getattr(plugin, "name", plugin.__class__.__name__), exc)
         return self
 
     def remove_plugin(self, plugin_name: str) -> None:
@@ -314,12 +326,104 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
     def get_plugin(self, plugin_name: str) -> Any:
         return self.plugin_manager.get(plugin_name)
 
+    # --------------------------------------------------------------------
+    # Control-plane wiring helpers (preferred over direct attribute writes)
+    # --------------------------------------------------------------------
+    def set_adapter(self, adapter: Any) -> None:
+        setattr(self, "adapter", adapter)
+
+    def set_bias_module(self, bias_module: Optional[BiasInterface], enable: Optional[bool] = None) -> None:
+        self.bias_module = bias_module
+        if enable is not None:
+            self.enable_bias = bool(enable)
+        elif bias_module is not None:
+            self.enable_bias = True
+
+    def set_enable_bias(self, enable: bool) -> None:
+        self.enable_bias = bool(enable)
+
+    def set_max_steps(self, max_steps: int) -> None:
+        self.max_steps = int(max_steps)
+
+    def set_solver_hyperparams(
+        self,
+        *,
+        pop_size: Optional[int] = None,
+        max_generations: Optional[int] = None,
+        mutation_rate: Optional[float] = None,
+        crossover_rate: Optional[float] = None,
+    ) -> None:
+        if pop_size is not None:
+            self.pop_size = int(pop_size)
+        if max_generations is not None:
+            self.max_generations = int(max_generations)
+        if mutation_rate is not None:
+            self.mutation_rate = float(mutation_rate)
+        if crossover_rate is not None:
+            self.crossover_rate = float(crossover_rate)
+
+    def write_population_snapshot(self, population, objectives, violations) -> bool:
+        try:
+            pop = np.asarray(population, dtype=float)
+            obj = np.asarray(objectives, dtype=float)
+            vio = np.asarray(violations, dtype=float).reshape(-1)
+        except Exception:
+            return False
+        if pop.ndim == 1:
+            pop = pop.reshape(1, -1) if pop.size > 0 else pop.reshape(0, 0)
+        if obj.ndim == 1:
+            obj = obj.reshape(-1, 1) if obj.size > 0 else obj.reshape(0, 0)
+        if obj.shape[0] != pop.shape[0] or vio.shape[0] != pop.shape[0]:
+            return False
+        self.population = pop
+        self.objectives = obj
+        self.constraint_violations = vio
+        return True
+
+    def set_random_seed(self, seed: Optional[int]) -> None:
+        self.random_seed = None if seed is None else int(seed)
+        self._rng = np.random.default_rng(self.random_seed)
+        self._rng_streams = {}
+        if self.random_seed is not None:
+            try:
+                random.seed(self.random_seed)
+            except Exception:
+                pass
+
+    def fork_rng(self, stream: str = "") -> np.random.Generator:
+        key = str(stream or "_default")
+        existing = self._rng_streams.get(key)
+        if existing is not None:
+            return existing
+        child_seed = int(self._rng.integers(0, 2**63 - 1))
+        child = np.random.default_rng(child_seed)
+        self._rng_streams[key] = child
+        return child
+
+    def get_rng_state(self):
+        return {"bit_generator_state": self._rng.bit_generator.state}
+
+    def set_rng_state(self, state) -> None:
+        if not isinstance(state, dict):
+            return
+        bit_state = state.get("bit_generator_state")
+        if bit_state is None:
+            return
+        try:
+            self._rng.bit_generator.state = bit_state
+        except Exception:
+            return
+        self._rng_streams = {}
+
     def get_context(self) -> dict:
         """Return a snapshot context for visualization/monitoring."""
+        best_x, best_obj = self._resolve_best_snapshot()
         ctx = {
             "generation": int(getattr(self, "generation", 0)),
             "population": self.population if self.population is not None else [],
             "objectives": self.objectives if self.objectives is not None else [],
+            KEY_BEST_X: best_x,
+            KEY_BEST_OBJECTIVE: best_obj,
             "constraint_violations": self.constraint_violations if self.constraint_violations is not None else [],
             "pareto_objectives": self.pareto_objectives if self.pareto_objectives is not None else [],
             "pareto_solutions": self.pareto_solutions if self.pareto_solutions is not None else {},
@@ -334,26 +438,60 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             ctx["phase_id"] = phase_id
         return ctx
 
+    def _resolve_best_snapshot(self):
+        best_x = getattr(self, "best_x", None)
+        best_obj = getattr(self, "best_objective", None)
+
+        if best_obj is None:
+            best_f = getattr(self, "best_f", None)
+            if best_f is not None:
+                try:
+                    best_obj = float(best_f)
+                except Exception:
+                    best_obj = None
+
+        if best_obj is None and self.objectives is not None:
+            try:
+                if self.num_objectives == 1:
+                    idx = int(np.argmin(self.objectives[:, 0]))
+                    best_obj = float(self.objectives[idx, 0])
+                else:
+                    scores = np.sum(self.objectives, axis=1)
+                    if self.constraint_violations is not None:
+                        vio = np.asarray(self.constraint_violations, dtype=float).reshape(-1)
+                        if vio.shape[0] == scores.shape[0]:
+                            scores = scores + vio * 1e6
+                    idx = int(np.argmin(scores))
+                    best_obj = float(scores[idx])
+                if best_x is None and self.population is not None:
+                    pop = np.asarray(self.population)
+                    if pop.ndim >= 2 and idx < pop.shape[0]:
+                        best_x = pop[idx]
+            except Exception:
+                pass
+
+        return best_x, best_obj
+
     # ========================================================================
-    # 灞炴€ц闂櫒锛氭敮鎸佸欢杩熷姞杞藉拰渚濊禆娉ㄥ叆
+    # 模块属性访问器（支持依赖注入 + 惰性创建）
     # ========================================================================
 
     @property
     def bias_module(self) -> Optional[BiasInterface]:
         """
-        鑾峰彇鍋忕疆妯″潡
+        获取当前偏置模块。
 
-        鏀寔锟?
-        1. 渚濊禆娉ㄥ叆鐨勫閮ㄦā锟?
-        2. 寤惰繜鍔犺浇鐨勫唴閮ㄦā锟?
+        规则:
+        1. 若显式注入了偏置模块，优先返回注入实例。
+        2. 若启用了偏置但未注入，则尝试惰性创建默认 BiasModule。
         """
         if self._bias_module_internal is not None:
             return self._bias_module_internal
 
-        # 寤惰繜鍔犺浇锛堝悜鍚庡吋瀹癸級
+        # 尝试惰性创建默认 BiasModule
         BiasModuleClass = _get_bias_module()
         if BiasModuleClass is not None and self.enable_bias:
-            # 鍒涘缓榛樿瀹炰緥
+            # 创建默认实例并缓存
             if not hasattr(self, '_bias_module_cached'):
                 self._bias_module_cached = BiasModuleClass()
             return self._bias_module_cached
@@ -363,30 +501,28 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
     @bias_module.setter
     def bias_module(self, value: Optional[BiasInterface]):
         """
-        璁剧疆鍋忕疆妯″潡
-
-        鏀寔渚濊禆娉ㄥ叆鍜屽悜鍚庡吋瀹癸拷?
+        设置偏置模块实例，并同步功能开关与缓存状态。
         """
         self._bias_module_internal = value
         if value is not None:
             self.enable_bias = True
-            # 娓呴櫎缂撳瓨
+            # 注入后清理旧缓存
             if hasattr(self, '_bias_module_cached'):
                 delattr(self, '_bias_module_cached')
 
     @property
     def representation_pipeline(self) -> Optional[RepresentationInterface]:
         """
-        鑾峰彇琛ㄧず绠￠亾
+        获取当前表示管线。
 
-        鏀寔锟?
-        1. 渚濊禆娉ㄥ叆鐨勫閮ㄧ锟?
-        2. 寤惰繜鍔犺浇鐨勫唴閮ㄧ锟?
+        规则:
+        1. 若显式注入了管线，优先返回注入实例。
+        2. 若未注入，则尝试惰性创建默认 RepresentationPipeline。
         """
         if self._representation_internal is not None:
             return self._representation_internal
 
-        # 寤惰繜鍔犺浇锛堝悜鍚庡吋瀹癸級
+        # 尝试惰性创建默认 RepresentationPipeline
         RepresentationPipelineClass = _get_representation_pipeline()
         if RepresentationPipelineClass is not None:
             if not hasattr(self, '_representation_cached'):
@@ -398,13 +534,11 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
     @representation_pipeline.setter
     def representation_pipeline(self, value: Optional[RepresentationInterface]):
         """
-        璁剧疆琛ㄧず绠￠亾
-
-        鏀寔渚濊禆娉ㄥ叆鍜屽悜鍚庡吋瀹癸拷?
+        设置表示管线实例，并清理惰性缓存。
         """
         self._representation_internal = value
         if value is not None:
-            # 娓呴櫎缂撳瓨
+            # 注入后清理旧缓存
             if hasattr(self, '_representation_cached'):
                 delattr(self, '_representation_cached')
 
@@ -460,7 +594,9 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             "max_generations",
             "crossover_rate",
             "mutation_rate",
+            "sbx_eta_c",
             "initial_mutation_range",
+            "max_pareto_solutions",
             "tol",
             "elite_retention_prob",
             "random_seed",
@@ -536,57 +672,53 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         )
 
     # ========================================================================
-    # 渚挎嵎鏂规硶锛氭鏌ユā鍧楀彲鐢拷?
+    # 能力探测
     # ========================================================================
 
     def has_bias_support(self) -> bool:
-        """妫€鏌ュ亸缃郴缁熸槸鍚﹀彲锟?"""
+        """是否可用偏置模块。"""
         return self.bias_module is not None
 
     def has_representation_support(self) -> bool:
-        """妫€鏌ヨ〃绀虹閬撴槸鍚﹀彲锟?"""
+        """是否可用表示管线。"""
         return self.representation_pipeline is not None
 
     def has_numba_support(self) -> bool:
-        """妫€鏌umba鍔犻€熸槸鍚﹀彲锟?"""
+        """是否可用 Numba 加速。"""
         _, numba_available = _get_numba_helpers()
         return numba_available
 
     # ========================================================================
-    # 鍏煎鎬ф柟娉曪細鏀寔鏃т唬锟?
+    # 偏置模块开关与反射
     # ========================================================================
 
     def enable_bias_module(self, enable: bool = True):
         """
-        鍚敤鎴栫鐢ㄥ亸缃ā锟?
+        启用或禁用偏置模块。
 
-        鍚戝悗鍏煎鏂规硶锟?
+        当启用但当前无实例时，尝试懒加载默认 BiasModule。
         """
         self.enable_bias = enable
         if enable and self.bias_module is None:
-            # 灏濊瘯鑷姩鍒涘缓
+            # 尝试自动创建默认实例
             BiasModuleClass = _get_bias_module()
             if BiasModuleClass is not None:
                 self._bias_module_internal = BiasModuleClass()
 
     def get_bias_module_class(self):
         """
-        鑾峰彇BiasModule绫伙紙鍚戝悗鍏煎锟?
-
-        杩斿洖:
-            BiasModule绫绘垨None
+        获取 BiasModule 类对象（若不可用则返回 None）。
         """
         return _get_bias_module()
 
     # ========================================================================
-    # 鍏朵綑鍒濆鍖栵紙淇濇寔鍘熸湁閫昏緫锟?
+    # 二阶段初始化
     # ========================================================================
     def _complete_initialization(self):
         """
-        瀹屾垚鍒濆鍖栵紙鍚戝悗鍏煎锟?
+        完成运行期状态初始化。
 
-        杩欎釜鏂规硶鍖呭惈锟?__init__ 鐨勫悗缁儴鍒嗭紝
-        淇濇寔涓庢棫浠ｇ爜鐨勫吋瀹规€э拷?
+        该步骤从 __init__ 抽离，减少构造函数复杂度并提升可读性。
         """
         self.run_count = 0
         self.evaluation_count = 0
@@ -600,7 +732,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         self.selection_trace_stride = 1
         self.selection_trace_flush_interval = 1
         self.selection_trace_buffer = []
-        # core 涓嶈礋璐ｂ€滆兘鍔涜閰嶁€濓細澶氭牱鎬у垵濮嬪寲/绮捐嫳淇濈暀/鏀舵暃妫€娴嬪簲閫氳繃 Plugin + Suite 鎺ュ叆锟?
+        # core 仅保留句柄；具体能力由 Plugin / Suite 组装。
         self.diversity_initializer = None
         self.elite_manager = None
         self.history_file = f"blackbox_{self.problem.name.replace(' ', '_')}_history.json"
@@ -688,7 +820,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
     def stop_algorithm(self, event):
         self.running = False
         self.stop_animation()
-        # 淇濆瓨姹傝В鍘嗗彶锛堝寘鍚瘡浠ｇ殑骞冲潎鐩爣鍊硷級
+        # 保存求解历史
         try:
             self.save_history()
         except Exception:
@@ -903,19 +1035,20 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             self.update_plot_dynamic()
         self.update_info_text()
 
-    # ---- 绾︽潫涓庣洰鏍囪瘎锟?----
+    # ---- 个体/种群评估 ----
     def _evaluate_individual(self, x, individual_id=None):
-        """璇勪及鍗曚釜涓綋鐨勭洰鏍囧拰绾︽潫杩濊儗搴︽爣閲忥拷?
+        """
+        评估单个个体并返回 (objectives, violation)。
 
-        鐩爣鏉ヨ嚜 problem.evaluate(x)锛岀害鏉熸潵锟?problem.evaluate_constraints(x)锟?
-        绾﹀畾 g(x) <= 0 涓哄彲琛岋紝g(x) > 0 涓鸿繚鍙嶇▼搴︼紝杩欓噷灏嗘墍鏈夋杩濊儗搴︽眰鍜岋拷?
+        - 目标值来自 problem.evaluate(x)
+        - 约束违反度 violation 基于 g(x) <= 0 规则累计
         """
         overridden = self.plugin_manager.trigger("evaluate_individual", self, x, individual_id)
         if overridden is not None:
             try:
                 obj, violation = overridden
             except Exception as exc:
-                raise ValueError("evaluate_individual 鎻掍欢杩斿洖鍊煎繀椤绘槸 (objectives, violation)") from exc
+                raise ValueError("evaluate_individual  (objectives, violation)") from exc
             obj = np.asarray(obj, dtype=float).flatten()
             return obj, float(violation)
 
@@ -944,7 +1077,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             extra=extra_context,
         )
 
-        # 搴旂敤 bias 妯″潡
+        # 偏置模块后处理
         if self.enable_bias and self.bias_module is not None:
             if self.num_objectives == 1:
                 f_biased = self.bias_module.compute_bias(x, float(obj[0]), individual_id, context=context)
@@ -952,7 +1085,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
                 if self.ignore_constraint_violation_when_bias:
                     violation = 0.0
             else:
-                # 澶氱洰鏍囷細浼樺厛涓€娆℃€ф壒閲忓簲锟?bias锛堝噺灏戦噸澶嶅紑閿€锟?
+                # 多目标优先走向量偏置接口
                 if callable(getattr(self.bias_module, "compute_bias_vector", None)):
                     obj = np.asarray(
                         self.bias_module.compute_bias_vector(x, obj, individual_id, context=context),
@@ -967,16 +1100,15 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
                 if self.ignore_constraint_violation_when_bias:
                     violation = 0.0
         else:
-            # 娌℃湁bias鏃讹紝浣跨敤鍘熷violation杩涜绾︽潫鎺掑簭
-            if cons_arr.size == 0 and "constraint_violation" in context:
-                violation = float(context["constraint_violation"])
+            # 未启用 bias 时，保留原始 violation
+            if cons_arr.size == 0 and KEY_CONSTRAINT_VIOLATION in context:
+                violation = float(context[KEY_CONSTRAINT_VIOLATION])
 
         return obj, violation
 
     def evaluate_population(self, population):
-        """璇勪及鏁翠釜绉嶇兢鐨勭洰鏍囧拰绾︽潫杩濊儗搴︼拷?
-
-        杩斿洖 (objectives, constraint_violations)锟?
+        """
+        评估种群并返回 (objectives, constraint_violations)。
         """
         if not hasattr(population, "shape"):
             try:
@@ -1009,10 +1141,10 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             try:
                 objectives, violations = overridden
             except Exception as exc:
-                raise ValueError("evaluate_population 鎻掍欢杩斿洖鍊煎繀椤绘槸 (objectives, violations)") from exc
+                raise ValueError("evaluate_population  (objectives, violations)") from exc
             objectives = np.asarray(objectives, dtype=float)
             violations = np.asarray(violations, dtype=float).ravel()
-            # 淇濇寔涓庡師鍏堜竴鑷达細鎶娾€滆瘎浼拌繃鐨勪釜浣撴暟鈥濊锟?evaluation_count锛堢湡瀹炶瘎浼版鏁拌 problem.evaluation_count锟?
+            # 插件接管评估时仍累计评估次数
             try:
                 self.evaluation_count += int(getattr(population, "shape", [len(population)])[0])
             except Exception:
@@ -1033,7 +1165,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
                         bias_module=self.bias_module,
                         return_detailed=False,
                     )
-                    # 淇濇寔涓庝覆琛岃矾寰勪竴鑷寸殑缁熻涓庤锟?
+                    # 并行评估路径同样累计评估次数
                     try:
                         self.evaluation_count += int(getattr(population, "shape", [len(population)])[0])
                     except Exception:
@@ -1076,38 +1208,38 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
                     pass
         else:
             if self.representation_pipeline is not None and self.representation_pipeline.initializer is not None:
-                # 鍏堝垵濮嬪寲涓€涓牱鏈紝妫€鏌ヨ繑鍥炵被锟?
+                # 先用一个样本推断初始化结果的 dtype
                 context = {
                     'generation': self.generation,
                     'bounds': self.var_bounds
                 }
                 sample = self.representation_pipeline.init(self.problem, context)
 
-                # 鏍规嵁Pipeline杩斿洖绫诲瀷鍒涘缓population
+                # 按样本 dtype 创建种群数组
                 if hasattr(sample, 'dtype'):
                     population_dtype = sample.dtype
                 else:
                     population_dtype = type(sample[0]) if hasattr(sample, '__getitem__') else float
 
-                # 鍒涘缓鎸囧畾绫诲瀷鐨勬暟锟?
+                # 写入首个样本
                 self.population = np.zeros((self.pop_size, self.dimension), dtype=population_dtype)
                 self.population[0] = sample
 
-                # 鍒濆鍖栧墿浣欎釜锟?
+                # 继续生成其余个体
                 for i in range(1, self.pop_size):
                     context = {'generation': self.generation, 'bounds': self.var_bounds}
                     self.population[i] = self.representation_pipeline.init(self.problem, context)
             else:
-                # 娌℃湁Pipeline鏃朵娇鐢╢loat
+                # 无 Pipeline 时回退到浮点随机初始化
                 self.population = np.zeros((self.pop_size, self.dimension))
                 if isinstance(self.var_bounds, dict):
                     for i, var in enumerate(self.variables):
                         min_val, max_val = self.var_bounds[var]
-                        self.population[:, i] = np.random.uniform(min_val, max_val, self.pop_size)
+                        self.population[:, i] = self._rng.uniform(min_val, max_val, self.pop_size)
                 else:
                     for i in range(self.dimension):
                         min_val, max_val = self.var_bounds[i]
-                        self.population[:, i] = np.random.uniform(min_val, max_val, self.pop_size)
+                        self.population[:, i] = self._rng.uniform(min_val, max_val, self.pop_size)
             if not hasattr(self.population, "shape"):
                 try:
                     self.population = np.asarray(self.population)
@@ -1121,19 +1253,19 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             pass
 
     def is_dominated_vectorized(self, obj_matrix):
-        """闈炴敮閰嶅垽瀹氾細浼樺厛浣跨敤 numba 鍔犻€熺増鏈紝澶辫触鏃跺洖閫€锟?numpy 瀹炵幇锟?"""
+        """优先使用 Numba，加速失败时回退到 NumPy。"""
         if obj_matrix.ndim == 1:
             obj = obj_matrix.reshape(-1, 1)
         else:
             obj = obj_matrix
 
-        # 浼樺厛灏濊瘯 numba 鍔犻€熷疄锟?
+        # 尝试 Numba 路径
         fast, numba = _get_numba_helpers()
         if numba and fast is not None:
             try:
                 return fast(obj)
             except Exception:
-                # 浠绘剰 numba 鐩稿叧閿欒涓€寰嬪洖閫€
+                #  numba 
                 pass
 
         pop_size = obj.shape[0]
@@ -1175,10 +1307,10 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
     def selection(self):
         parent_indices = np.zeros(self.pop_size, dtype=int)
         rank, crowding_distance, _ = self.non_dominated_sorting()
-        i = np.random.randint(0, self.pop_size, self.pop_size)
-        j = np.random.randint(0, self.pop_size, self.pop_size)
+        i = self._rng.integers(0, self.pop_size, self.pop_size)
+        j = self._rng.integers(0, self.pop_size, self.pop_size)
         mask = i == j
-        j[mask] = np.random.randint(0, self.pop_size, np.sum(mask))
+        j[mask] = self._rng.integers(0, self.pop_size, np.sum(mask))
         rank_i = rank[i]
         rank_j = rank[j]
         crowd_i = crowding_distance[i]
@@ -1194,7 +1326,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         pop_size = parents.shape[0]
         offspring = parents.copy()
 
-        # 濡傛灉Pipeline鏈塩rossover锛屼娇鐢≒ipeline鐨刢rossover
+        # 优先使用 Pipeline 提供的交叉算子
         if self.representation_pipeline is not None and self.representation_pipeline.crossover is not None:
             context = {
                 'generation': self.generation,
@@ -1203,23 +1335,32 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             for i in range(0, pop_size, 2):
                 if i + 1 >= pop_size:
                     break
-                if np.random.rand() < self.crossover_rate:
+                if self._rng.random() < self.crossover_rate:
                     child1, child2 = self.representation_pipeline.crossover.crossover(
                         parents[i], parents[i+1]
                     )
                     offspring[i] = child1
                     offspring[i+1] = child2
         else:
-            # 鍚﹀垯浣跨敤鏍囧噯SBX crossover
-            crossover_mask = np.random.rand(pop_size // 2) < self.crossover_rate
-            alpha = np.random.rand(np.sum(crossover_mask), self.dimension)
+            # Simulated Binary Crossover (SBX)
+            crossover_mask = self._rng.random(pop_size // 2) < self.crossover_rate
+            sbx_u = self._rng.random((np.sum(crossover_mask), self.dimension))
+            eta_c = max(1e-8, float(self.sbx_eta_c))
+            beta = np.where(
+                sbx_u <= 0.5,
+                (2.0 * sbx_u) ** (1.0 / (eta_c + 1.0)),
+                (1.0 / (2.0 * (1.0 - sbx_u))) ** (1.0 / (eta_c + 1.0)),
+            )
             idx = 0
             for i in range(0, pop_size, 2):
                 if i + 1 >= pop_size:
                     break
                 if crossover_mask[i // 2]:
-                    offspring[i] = alpha[idx] * parents[i] + (1 - alpha[idx]) * parents[i+1]
-                    offspring[i+1] = (1 - alpha[idx]) * parents[i] + alpha[idx] * parents[i+1]
+                    p1 = parents[i]
+                    p2 = parents[i + 1]
+                    b = beta[idx]
+                    offspring[i] = 0.5 * ((1.0 + b) * p1 + (1.0 - b) * p2)
+                    offspring[i + 1] = 0.5 * ((1.0 - b) * p1 + (1.0 + b) * p2)
                     idx += 1
 
         return offspring
@@ -1234,8 +1375,8 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
                 }
                 offspring[i] = self.representation_pipeline.mutate(offspring[i], context)
         else:
-            mutation_mask = np.random.rand(pop_size) < self.mutation_rate
-            mutation = np.random.uniform(-self.mutation_range, self.mutation_range, (pop_size, self.dimension))
+            mutation_mask = self._rng.random(pop_size) < self.mutation_rate
+            mutation = self._rng.uniform(-self.mutation_range, self.mutation_range, (pop_size, self.dimension))
             offspring[mutation_mask] += mutation[mutation_mask]
             if isinstance(self.var_bounds, dict):
                 for j, var in enumerate(self.variables):
@@ -1261,12 +1402,16 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
     def update_pareto_solutions(self):
         if self.objectives is None:
             return
-        rank, _, _ = self.non_dominated_sorting()
+        rank, crowding_distance, _ = self.non_dominated_sorting()
         pareto_indices = np.where(rank == 0)[0]
         if len(pareto_indices) > 0:
             valid_indices = pareto_indices
-            if len(valid_indices) > 50:
-                valid_indices = valid_indices[:50]
+            max_keep = max(1, int(getattr(self, "max_pareto_solutions", 50)))
+            if len(valid_indices) > max_keep:
+                pareto_crowding = np.asarray(crowding_distance[valid_indices], dtype=float)
+                # Keep boundary/diverse points first and use index as deterministic tie-breaker.
+                order = np.lexsort((valid_indices, -pareto_crowding))
+                valid_indices = valid_indices[order[:max_keep]]
             self.pareto_solutions = {
                 'individuals': self.population[valid_indices],
                 'objectives': self.objectives[valid_indices]
@@ -1366,29 +1511,24 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             pass
 
     def environmental_selection(self, combined_pop, combined_obj, combined_violations):
-        combined_rank = np.zeros(len(combined_pop), dtype=int)
-        feasible_mask = combined_violations <= 1e-10
-        combined_rank[~feasible_mask] = 1
-        if np.any(feasible_mask):
-            feasible_objs = combined_obj[feasible_mask]
-            dominated = self.is_dominated_vectorized(feasible_objs)
-            combined_rank[feasible_mask] = np.where(dominated, 1, 0)
-        combined_crowding = np.zeros(len(combined_pop))
-        for r in [0, 1]:
-            rank_mask = combined_rank == r
-            if np.any(rank_mask):
-                for obj_idx in range(self.num_objectives):
-                    sorted_idx = np.argsort(combined_obj[rank_mask, obj_idx])
-                    if len(sorted_idx) > 1:
-                        obj_range = combined_obj[rank_mask, obj_idx][sorted_idx[-1]] - combined_obj[rank_mask, obj_idx][sorted_idx[0]]
-                        if obj_range > 1e-10 and len(sorted_idx) > 2:
-                            # Safe crowding distance calculation
-                            rank_indices = np.where(rank_mask)[0]
-                            for i in range(1, len(sorted_idx) - 1):
-                                original_idx = rank_indices[sorted_idx[i]]
-                                prev_obj = combined_obj[rank_mask, obj_idx][sorted_idx[i - 1]]
-                                next_obj = combined_obj[rank_mask, obj_idx][sorted_idx[i + 1]]
-                                combined_crowding[original_idx] += (next_obj - prev_obj) / obj_range
+        from ..utils.performance.fast_non_dominated_sort import (
+            FastNonDominatedSort,
+            fast_non_dominated_sort_optimized,
+        )
+
+        fronts, combined_rank = fast_non_dominated_sort_optimized(
+            np.asarray(combined_obj, dtype=float),
+            np.asarray(combined_violations, dtype=float),
+        )
+        combined_crowding = np.zeros(len(combined_pop), dtype=float)
+        for front in fronts:
+            if not front:
+                continue
+            # Returns global-length distance array; accumulate front contribution.
+            combined_crowding += FastNonDominatedSort.calculate_crowding_distance(
+                np.asarray(combined_obj, dtype=float),
+                list(front),
+            )
         sorted_indices = np.lexsort((-combined_crowding, combined_rank))
         self._record_selection_trace(
             combined_obj,
@@ -1404,7 +1544,9 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         self.record_history()
 
     def evolve_one_generation(self):
-        self.mutation_range = self.initial_mutation_range * (1 - self.generation / self.max_generations)
+        max_g = max(1, int(self.max_generations))
+        progress = min(1.0, max(0.0, float(self.generation) / float(max_g)))
+        self.mutation_range = max(0.01, float(self.initial_mutation_range) * (1.0 - progress))
         parents = self.selection()
         offspring = self.crossover(parents)
         offspring = self.mutate(offspring)
@@ -1422,17 +1564,17 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             self._log_progress()
 
     def _generate_random_individual(self):
-        """鐢熸垚闅忔満涓綋"""
+        """按变量边界生成一个随机个体。"""
         new_individual = np.zeros(self.dimension)
         if isinstance(self.var_bounds, dict):
             var_keys = list(self.var_bounds.keys())
             for j, var in enumerate(var_keys):
                 min_val, max_val = self.var_bounds[var]
-                new_individual[j] = np.random.uniform(min_val, max_val)
+                new_individual[j] = self._rng.uniform(min_val, max_val)
         else:
             for j in range(self.dimension):
                 min_val, max_val = self.var_bounds[j]
-                new_individual[j] = np.random.uniform(min_val, max_val)
+                new_individual[j] = self._rng.uniform(min_val, max_val)
         return new_individual
 
     def animate(self, frame):
@@ -1474,11 +1616,11 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             self.run_count += 1
 
     def run(self, return_experiment=False, return_dict=False):
-        """锟?GUI 妯″紡杩愯
+        """命令行/脚本模式运行求解器（非 GUI）。
 
         Args:
-            return_experiment: 濡傛灉锟?True锛岃繑锟?ExperimentResult 瀵硅薄锛涘惁鍒欒繑鍥炲瓧锟?
-            return_dict: 濡傛灉锟?True锛岃繑鍥炵粨鏋滃瓧鍏革紱鍚﹀垯杩斿洖 (best_x, best_f)
+            return_experiment: 为 True 时，返回 ExperimentResult（若可用）。
+            return_dict: 为 True 时，返回字典结果而非 (best_x, best_f)。
         """
         # Initialize memory optimization
         if self.enable_memory_optimization and self.memory_optimizer is None:
@@ -1494,17 +1636,43 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
 
         self.running = True
         self.start_time = time.time()
-        self.evaluation_count = 0
-        if self.random_seed is None:
+        resume_loaded = bool(getattr(self, "_resume_loaded", False))
+
+        if not resume_loaded:
+            self.evaluation_count = 0
+            if self.random_seed is None:
+                try:
+                    self.random_seed = int(random.SystemRandom().randrange(0, 2**32 - 1))
+                except Exception:
+                    self.random_seed = 0
             try:
-                self.random_seed = int(np.random.randint(0, 2**32 - 1))
+                self.set_random_seed(self.random_seed)
             except Exception:
-                self.random_seed = 0
-        try:
-            np.random.seed(self.random_seed)
-            random.seed(self.random_seed)
-        except Exception:
-            pass
+                pass
+        else:
+            try:
+                self.evaluation_count = int(getattr(self, "evaluation_count", 0))
+            except Exception:
+                self.evaluation_count = 0
+            rng_state = getattr(self, "_resume_rng_state", None)
+            if isinstance(rng_state, dict):
+                np_state = rng_state.get("solver_numpy")
+                if np_state is None:
+                    np_state = rng_state.get("numpy")
+                py_state = rng_state.get("python")
+                if np_state is not None:
+                    try:
+                        self.set_rng_state(np_state)
+                    except Exception:
+                        pass
+                if py_state is not None:
+                    try:
+                        random.setstate(py_state)
+                    except Exception:
+                        pass
+
+        setattr(self, "_resume_loaded", False)
+        setattr(self, "_resume_rng_state", None)
         if self.population is None:
             self.initialize_population()
         self.update_pareto_solutions()

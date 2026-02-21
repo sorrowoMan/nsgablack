@@ -21,6 +21,12 @@ python -m nsgablack catalog show adapter.sa
 - `tools/generate_api_docs.py`：生成 API 文档
 - `utils/viz/visualizer_tk.py`：Run Inspector（运行前审查 wiring + 缺失伙伴提示）
   - 统一入口：`python -m nsgablack run_inspector --entry path/to/script.py:build_solver`
+- `tools/context_field_guard.py`：Context 字段治理守卫（检查 catalog/契约中的非 canonical key）
+  - 用法：`python tools/context_field_guard.py --strict`
+- `tools/schema_tool.py`：JSON 产物 schema 版本校验
+  - 用法：`python tools/schema_tool.py runs/ --strict`
+- `tools/release/make_v010_repro_package.py`：构建可复现发布包（docs + baseline + manifest）
+  - 用法：`python tools/release/make_v010_repro_package.py --tag v0.10.0`
 - `tools/cleanup_project.py`：清理工程杂项/归档
 - `scripts/organize_project.py`：项目结构整理脚本（如有）
 
@@ -36,7 +42,11 @@ python -m nsgablack catalog show adapter.sa
 - `utils/parallel/evaluator.py`：并行评估工具（推荐 `from nsgablack.utils.parallel import ParallelEvaluator`）
 - `utils/parallel/integration.py`：并行评估集成（保持 solver 底座纯净）
 - `representation/ParallelRepair`：可选的 repair 并行封装（修复阶段并行化）
-- `utils/engineering/logging_config.py`：日志配置（如有）
+- `utils/engineering/logging_config.py`：日志配置
+- `utils/engineering/file_io.py`：原子写入 JSON（`atomic_write_json`）
+- `utils/engineering/schema_version.py`：JSON 产物 schema 版本戳/校验（`stamp_schema` / `schema_check`）
+- `utils/context/context_contracts.py`：组件契约收集与冲突检测
+- `utils/context/context_field_governance.py`：字段治理（canonical key 校验）
 
 ---
 

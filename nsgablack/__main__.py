@@ -19,17 +19,6 @@ from pathlib import Path
 from typing import Iterable, Optional, Tuple
 
 
-
-def _safe_text(text: str) -> str:
-    # Keep ASCII-only text for console safety; prefer the English part after " / ".
-    if text is None:
-        return ""
-    if " / " in text:
-        text = text.split(" / ", 1)[-1].strip()
-    return "".join(ch for ch in text if ord(ch) < 128)
-
-
-
 _KIND_LABELS = {
     "bias": "Bias",
     "adapter": "Adapter",
@@ -38,7 +27,20 @@ _KIND_LABELS = {
     "suite": "Suite",
     "tool": "Tool",
     "example": "Example",
+    "doc": "Doc",
 }
+
+
+def _ensure_utf8_io() -> None:
+    for name in ("stdout", "stderr", "stdin"):
+        stream = getattr(sys, name, None)
+        if stream is None:
+            continue
+        try:
+            if hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 
 def _kind_label(kind: str) -> str:
@@ -75,7 +77,7 @@ def _print_entries(
         if show_tags and e.tags:
             print(" " * (key_w + 2) + f"tags: {', '.join(e.tags)}")
         if show_summary and e.summary:
-            print(" " * (key_w + 2) + f"summary: {_safe_text(e.summary)}")
+            print(" " * (key_w + 2) + f"summary: {e.summary}")
         if e.companions:
             print(" " * (key_w + 2) + f"companions: {', '.join(e.companions)}")
         print()
@@ -199,8 +201,14 @@ def _cmd_catalog_list(args: argparse.Namespace) -> int:
     from .catalog import get_catalog
 
     c = get_catalog()
-    entries = c.list(kind=args.kind, tag=args.tag)
-    label = args.kind if args.kind else "ALL"
+    entries = c.list()
+    if args.kind:
+        kind_set = {str(k).strip().lower() for k in args.kind}
+        entries = [e for e in entries if e.kind in kind_set]
+    if args.tag:
+        tag_set = {str(t).strip().lower() for t in args.tag}
+        entries = [e for e in entries if tag_set.issubset({x.lower() for x in e.tags})]
+    label = ",".join(args.kind) if args.kind else "ALL"
     print(f"Catalog list: kind={label!r}  (count={len(entries)})")
     _print_entries(
         entries,
@@ -242,6 +250,33 @@ def _cmd_catalog_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_catalog_add(args: argparse.Namespace) -> int:
+    from .catalog.quick_add import build_entry_payload, upsert_catalog_entry
+
+    payload = build_entry_payload(
+        key=args.key,
+        title=args.title,
+        kind=args.kind,
+        import_path=args.import_path,
+        summary=args.summary,
+        tags=args.tags,
+        companions=args.companions,
+        use_when=args.use_when,
+        minimal_wiring=args.minimal_wiring,
+        required_companions=args.required_companions,
+        config_keys=args.config_keys,
+        example_entry=args.example_entry,
+        context_requires=args.context_requires,
+        context_provides=args.context_provides,
+        context_mutates=args.context_mutates,
+        context_cache=args.context_cache,
+        context_notes=args.context_notes,
+    )
+    upsert_catalog_entry(Path(args.file), payload, replace=not bool(args.no_replace))
+    print(f"catalog entry upserted: {payload['key']} -> {args.file}")
+    return 0
+
+
 def _cmd_run_inspector(args: argparse.Namespace) -> int:
     from .utils.viz import launch_empty, launch_from_entry
 
@@ -270,6 +305,7 @@ def _cmd_project_doctor(args: argparse.Namespace) -> int:
     report = run_project_doctor(
         path=Path(args.path) if args.path else Path.cwd(),
         instantiate_solver=bool(args.build),
+        strict=bool(args.strict),
     )
     print(format_doctor_report(report))
     if report.error_count > 0:
@@ -313,8 +349,14 @@ def _cmd_project_catalog_list(args: argparse.Namespace) -> int:
         print("project catalog: project_registry.py not found", file=sys.stderr)
         return 2
     c = load_project_catalog(root, include_global=bool(args.global_catalog))
-    entries = c.list(kind=args.kind, tag=args.tag)
-    label = args.kind if args.kind else "ALL"
+    entries = c.list()
+    if args.kind:
+        kind_set = {str(k).strip().lower() for k in args.kind}
+        entries = [e for e in entries if e.kind in kind_set]
+    if args.tag:
+        tag_set = {str(t).strip().lower() for t in args.tag}
+        entries = [e for e in entries if tag_set.issubset({x.lower() for x in e.tags})]
+    label = ",".join(args.kind) if args.kind else "ALL"
     scope = "local+global" if args.global_catalog else "local"
     print(f"Project catalog list ({scope}): kind={label!r}  (count={len(entries)})")
     _print_entries(
@@ -399,6 +441,42 @@ def build_parser() -> argparse.ArgumentParser:
     p_show.add_argument("key", help="Entry key, e.g. adapter.vns")
     p_show.set_defaults(func=_cmd_catalog_show)
 
+    p_add = sub_cat.add_parser("add", help="Quick add/update a catalog entry in TOML")
+    p_add.add_argument("--file", default="catalog/entries.toml", help="Target TOML file path")
+    p_add.add_argument("--key", required=True, help="Entry key, e.g. bias.my_rule")
+    p_add.add_argument("--title", required=True, help="Entry title")
+    p_add.add_argument(
+        "--kind",
+        required=True,
+        choices=("adapter", "bias", "plugin", "representation", "suite", "tool", "example", "doc"),
+        help="Entry kind",
+    )
+    p_add.add_argument("--import-path", required=True, help="Import path, e.g. pkg.mod:Symbol")
+    p_add.add_argument("--summary", required=True, help="One-line summary")
+    p_add.add_argument("--tags", action="append", default=[], help="Tag(s), repeatable or comma-separated")
+    p_add.add_argument(
+        "--companions",
+        action="append",
+        default=[],
+        help="Companion keys, repeatable or comma-separated",
+    )
+    p_add.add_argument("--use-when", action="append", default=[], help="Usage scenarios, repeatable")
+    p_add.add_argument("--minimal-wiring", action="append", default=[], help="Minimal wiring lines, repeatable")
+    p_add.add_argument(
+        "--required-companions",
+        action="append",
+        default=[],
+        help="Required companions, repeatable or comma-separated",
+    )
+    p_add.add_argument("--config-keys", action="append", default=[], help="Config keys, repeatable or comma-separated")
+    p_add.add_argument("--example-entry", default="", help="Example entry, e.g. examples/demo.py:build_solver")
+    p_add.add_argument("--context-requires", action="append", default=[], help="Context requires keys, repeatable")
+    p_add.add_argument("--context-provides", action="append", default=[], help="Context provides keys, repeatable")
+    p_add.add_argument("--context-mutates", action="append", default=[], help="Context mutates keys, repeatable")
+    p_add.add_argument("--context-cache", action="append", default=[], help="Context cache keys, repeatable")
+    p_add.add_argument("--context-notes", action="append", default=[], help="Context notes, repeatable")
+    p_add.add_argument("--no-replace", action="store_true", help="Append instead of replacing existing key")
+    p_add.set_defaults(func=_cmd_catalog_add)
 
     # run_inspector
     p_inspect = sub.add_parser("run_inspector", help="Launch Run Inspector (Tk UI)")
@@ -421,7 +499,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor.add_argument(
         "--build",
         action="store_true",
-        help="Call build_solver() to validate assembly and collect contracts",
+        help="Call build_solver() to validate solver assembly and collect contracts",
     )
     p_doctor.add_argument(
         "--strict",
@@ -463,6 +541,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    _ensure_utf8_io()
     parser = build_parser()
     args = parser.parse_args(argv)
     func = getattr(args, "func", None)

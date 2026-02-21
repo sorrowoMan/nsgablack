@@ -6,6 +6,13 @@ from .base import SurrogateControlBias
 
 class ExampleSurrogateBias(SurrogateControlBias):
     """Template surrogate bias that switches configs by progress."""
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(self, name: str = "example_surrogate_bias"):
         super().__init__(name=name)

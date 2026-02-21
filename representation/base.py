@@ -5,7 +5,7 @@ Representation pipeline for encoding, repair, initialization, and mutation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional, Protocol, List, Tuple, Iterable
+from typing import Any, Optional, Protocol, List, Tuple, Iterable, ClassVar
 import contextlib
 import threading
 import numpy as np
@@ -24,13 +24,23 @@ class RepairPlugin(Protocol):
         ...
 
 
+class RepresentationComponentContract:
+    """Shared context-contract defaults for representation components."""
+
+    context_requires: ClassVar[tuple] = ()
+    context_provides: ClassVar[tuple] = ()
+    context_mutates: ClassVar[tuple] = ()
+    context_cache: ClassVar[tuple] = ()
+    context_notes: ClassVar[Optional[str]] = None
+
+
 def _parallel_repair_task(args: tuple) -> Any:
     """Top-level helper for process-based repair."""
     inner, x, context = args
     return inner.repair(x, context)
 
 
-class ParallelRepair:
+class ParallelRepair(RepresentationComponentContract):
     """Optional wrapper to run repair_batch in parallel (thread/process).
 
     Notes:
@@ -38,6 +48,11 @@ class ParallelRepair:
     - "process" requires the repair object to be picklable; otherwise it
       falls back to thread or serial execution.
     """
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Parallel wrapper delegates context semantics to wrapped repair component.",)
 
     def __init__(
         self,
@@ -125,11 +140,11 @@ class CrossoverPlugin(Protocol):
 @dataclass
 class RepresentationPipeline:
     # Optional context contract (class-level defaults)
-    context_requires: tuple = field(default_factory=tuple)
-    context_provides: tuple = field(default_factory=tuple)
-    context_mutates: tuple = field(default_factory=tuple)
-    context_cache: tuple = field(default_factory=tuple)
-    context_notes: Optional[str] = None
+    context_requires: ClassVar[tuple] = ()
+    context_provides: ClassVar[tuple] = ()
+    context_mutates: ClassVar[tuple] = ()
+    context_cache: ClassVar[tuple] = ()
+    context_notes: ClassVar[Optional[str]] = None
     encoder: Optional[EncodingPlugin] = None
     repair: Optional[RepairPlugin] = None
     initializer: Optional[InitPlugin] = None
@@ -147,14 +162,46 @@ class RepresentationPipeline:
     copy_context: bool = False
     threadsafe: bool = False
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False, compare=False)
+    _rng: np.random.Generator = field(default_factory=np.random.default_rng, init=False, repr=False, compare=False)
 
     def get_context_contract(self) -> dict:
+        requires = set(self.context_requires or ())
+        provides = set(self.context_provides or ())
+        mutates = set(self.context_mutates or ())
+        cache = set(self.context_cache or ())
+        notes: List[str] = [str(self.context_notes).strip()] if self.context_notes else []
+
+        try:
+            from ..utils.context.context_contracts import get_component_contract
+        except Exception:
+            get_component_contract = None  # type: ignore[assignment]
+
+        if callable(get_component_contract):
+            for comp_name, comp in (
+                ("initializer", self.initializer),
+                ("mutator", self.mutator),
+                ("repair", self.repair),
+                ("encoder", self.encoder),
+            ):
+                if comp is None:
+                    continue
+                contract = get_component_contract(comp)
+                if contract is None:
+                    continue
+                requires.update(contract.requires)
+                provides.update(contract.provides)
+                mutates.update(contract.mutates)
+                cache.update(contract.cache)
+                note = str(contract.notes or "").strip()
+                if note:
+                    notes.append(f"{comp_name}: {note}")
+
         return {
-            "requires": self.context_requires,
-            "provides": self.context_provides,
-            "mutates": self.context_mutates,
-            "cache": self.context_cache,
-            "notes": self.context_notes,
+            "requires": sorted(requires),
+            "provides": sorted(provides),
+            "mutates": sorted(mutates),
+            "cache": sorted(cache),
+            "notes": " | ".join(x for x in notes if x) or None,
         }
 
     def _maybe_lock(self):
@@ -307,7 +354,7 @@ class RepresentationPipeline:
             weights = np.ones_like(weights) / len(weights)
         else:
             weights = weights / weights.sum()
-        idx = np.random.choice(len(self.initializers), p=weights)
+        idx = self._rng.choice(len(self.initializers), p=weights)
         return self.initializers[idx][0]
 
     def _is_feasible(self, problem: Any, x: Any, context: Optional[dict]) -> bool:
@@ -334,8 +381,13 @@ def _bounds_to_arrays(bounds: Any, dimension: int) -> Tuple[np.ndarray, np.ndarr
     return arr[:, 0], arr[:, 1]
 
 
-class ContinuousRepresentation:
+class ContinuousRepresentation(RepresentationComponentContract):
     key = "continuous"
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Continuous encode/decode/repair relies on local bounds/constraints; no context I/O.",)
 
     def __init__(self, dimension: int, bounds: Optional[List[Tuple[float, float]]] = None):
         self.dimension = dimension
@@ -366,8 +418,13 @@ class ContinuousRepresentation:
         return repaired
 
 
-class IntegerRepresentation:
+class IntegerRepresentation(RepresentationComponentContract):
     key = "integer"
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Integer encode/decode/repair relies on local bounds/constraints; no context I/O.",)
 
     def __init__(self, dimension: int, bounds: Optional[List[Tuple[int, int]]] = None):
         self.dimension = dimension
@@ -402,12 +459,18 @@ class IntegerRepresentation:
         return repaired.astype(int)
 
 
-class PermutationRepresentation:
+class PermutationRepresentation(RepresentationComponentContract):
     key = "permutation"
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Permutation encode/decode uses local size constraints; no context I/O.",)
 
     def __init__(self, size: int):
         self.size = size
         self.dimension = size
+        self._rng = np.random.default_rng()
 
     def encode(self, x: np.ndarray) -> np.ndarray:
         arr = np.asarray(x, dtype=float).ravel()
@@ -422,10 +485,16 @@ class PermutationRepresentation:
         return _fix_permutation(arr, self.size)
 
     def generate_random(self) -> np.ndarray:
-        return np.random.permutation(self.size)
+        return self._rng.permutation(self.size)
 
 
-class MixedRepresentation:
+class MixedRepresentation(RepresentationComponentContract):
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Mixed representation dispatches to child representations; no direct context I/O.",)
+
     def __init__(self, representations: List[Any]):
         self.representations = list(representations)
         self.total_dimension = int(sum(rep.dimension for rep in self.representations))

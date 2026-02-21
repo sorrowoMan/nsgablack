@@ -31,8 +31,9 @@ def test_simulated_annealing_adapter_runs_and_cools(sample_problem):
     assert solver.best_objective is not None
     # sphere objective is >=0; we only assert it improves to a reasonable range (avoid flakiness)
     assert solver.best_objective < 20.0
-    assert hasattr(solver, "sa_temperature")
-    assert float(solver.sa_temperature) < float(cfg.initial_temperature)
+    ctx = solver.get_context()
+    assert "temperature" in ctx
+    assert float(ctx["temperature"]) < float(cfg.initial_temperature)
 
 
 def test_sa_suite_attach_smoke(sample_problem):

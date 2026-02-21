@@ -152,6 +152,13 @@ class GraphUtils:
 
 class GraphBias(DomainBias):
     """图偏置的基类"""
+    context_requires = ("problem_data",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: problem_data; outputs scalar bias only."
+
+
 
     def __init__(self, name: str, graph: GraphStructure, weight: float = 1.0):
         super().__init__(name, weight)
@@ -165,6 +172,13 @@ class GraphBias(DomainBias):
 
 class ConnectivityBias(GraphBias):
     """连通性偏置 - 鼓励生成连通的子图"""
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(self, graph: GraphStructure, weight: float = 2.0):
         super().__init__("connectivity", graph, weight)
@@ -196,6 +210,13 @@ class ConnectivityBias(GraphBias):
 
 class SparsityBias(GraphBias):
     """稀疏性偏置 - 控制子图的边的数量"""
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(self, graph: GraphStructure, target_density: float = 0.1, weight: float = 1.0):
         super().__init__("sparsity", graph, weight)
@@ -216,6 +237,13 @@ class SparsityBias(GraphBias):
 
 class DegreeDistributionBias(GraphBias):
     """度分布偏置 - 鼓励特定的度分布模式"""
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(self, graph: GraphStructure, target_degree_pattern: str = "uniform",
                  weight: float = 1.0):
@@ -265,6 +293,13 @@ class DegreeDistributionBias(GraphBias):
 
 class ShortestPathBias(GraphBias):
     """最短路径偏置 - 针对最短路径问题的专用偏置"""
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(self, graph: GraphStructure, source: int, target: int,
                  weight: float = 2.0):
@@ -319,6 +354,13 @@ class ShortestPathBias(GraphBias):
 
 class MaxFlowBias(GraphBias):
     """最大流偏置 - 针对最大流问题的专用偏置"""
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(self, graph: GraphStructure, source: int, sink: int,
                  weight: float = 2.0):
@@ -354,6 +396,13 @@ class MaxFlowBias(GraphBias):
 
 class GraphColoringBias(GraphBias):
     """图着色偏置 - 针对图着色问题的专用偏置"""
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(self, graph: GraphStructure, max_colors: int = 4,
                  weight: float = 2.0):
@@ -386,6 +435,13 @@ class GraphColoringBias(GraphBias):
 
 class CommunityDetectionBias(GraphBias):
     """社区检测偏置 - 鼓励模块化结构"""
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(self, graph: GraphStructure, expected_communities: int = 3,
                  weight: float = 1.0):

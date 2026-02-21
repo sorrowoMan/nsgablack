@@ -14,6 +14,7 @@ from abc import ABC, abstractmethod
 import time
 
 from ...plugins.base import Plugin
+from ..context.context_keys import KEY_DYNAMIC, KEY_GENERATION, KEY_PHASE_ID
 
 
 @dataclass
@@ -25,10 +26,10 @@ class DynamicSwitchConfig:
     switch_mode: str = "auto"
 
     # Store signals under this key in context
-    signal_key: str = "dynamic"
+    signal_key: str = KEY_DYNAMIC
 
     # Phase id key (also mirrored on solver.dynamic_phase_id)
-    phase_key: str = "phase_id"
+    phase_key: str = KEY_PHASE_ID
 
     # Record switch events for audit
     record_history: bool = True
@@ -56,8 +57,8 @@ class DynamicSwitchBase(Plugin, ABC):
     - how to switch (soft_switch/hard_switch)
     """
     context_requires = ()
-    context_provides = ("dynamic", "phase_id")
-    context_mutates = ("dynamic", "phase_id")
+    context_provides = (KEY_DYNAMIC, KEY_PHASE_ID)
+    context_mutates = (KEY_DYNAMIC, KEY_PHASE_ID)
     context_cache = ()
     context_notes = (
         "Builds dynamic switch context and syncs solver dynamic phase/signals/events."
@@ -146,7 +147,7 @@ class DynamicSwitchBase(Plugin, ABC):
             ctx = {}
         ctx.setdefault(self.cfg.signal_key, dict(self.last_signals))
         ctx[self.cfg.phase_key] = int(self.phase_id)
-        ctx["generation"] = int(generation)
+        ctx[KEY_GENERATION] = int(generation)
         return ctx
 
     def _decide_mode(self, solver, context: Dict[str, Any]) -> str:
@@ -165,7 +166,7 @@ class DynamicSwitchBase(Plugin, ABC):
             self.soft_switch(solver, context)
 
         self.phase_id += 1
-        self.last_switch_generation = int(context.get("generation", -1))
+        self.last_switch_generation = int(context.get(KEY_GENERATION, -1))
         self._sync_solver_state(solver)
 
         if self.cfg.record_history:
@@ -173,7 +174,7 @@ class DynamicSwitchBase(Plugin, ABC):
             self.switch_events.append(
                 {
                     "phase_id": int(self.phase_id),
-                    "generation": int(context.get("generation", -1)),
+                    "generation": int(context.get(KEY_GENERATION, -1)),
                     "mode": mode,
                     "signals": dict(self.last_signals),
                     "strategy_weights": weights,

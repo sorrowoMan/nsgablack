@@ -8,18 +8,18 @@ python -m nsgablack catalog search <关键词>
 python -m nsgablack catalog show <key>
 ```
 
-?????
-- `docs/user_guide/CONTEXT_CONTRACTS.md`?Context ???requires/provides/mutates?
+补充索引：
+- `docs/user_guide/CONTEXT_CONTRACTS.md`：Context 契约（requires/provides/mutates）
 
 
 ## 类别说明（简要）
-- **Suite**?权威组合（推荐装配方式）
-- **Adapter**?搜索策略内核（算法逻辑）
-- **Bias**?偏好/软约束（可开关、可比较）
-- **Representation**?表示/初始化/变异/修复（硬约束优先）
-- **Plugin**?运行/评估/运维能力层
-- **Tool**?工具入口/辅助组件
-- **Example**?示例与演示（非 API）
+- **Suite**：权威组合（推荐装配方式）
+- **Adapter**：搜索策略内核（算法逻辑）
+- **Bias**：偏好/软约束（可开关、可比较）
+- **Representation**：表示/初始化/变异/修复（硬约束优先）
+- **Plugin**：运行/评估/运维能力层
+- **Tool**：工具入口/辅助组件
+- **Example**：示例与演示（非 API）
 
 ## Suite 列表
 | Key | Title | Summary | Tags | Companions | Import |
@@ -57,6 +57,13 @@ python -m nsgablack catalog show <key>
 | `adapter.mas` | MASAdapter | Model-and-Search：交替建模与搜索。 / Adapter: model-and-search alternating model update + search. | adapter, core, local_search, mas, strategy, surrogate | - | `nsgablack.core.adapters:MASAdapter` |
 | `adapter.moa_star` | MOAStarAdapter | 多目标A*：Pareto标签与支配剪枝，面向多目标路径。 / Adapter: MOA* with Pareto labels and dominance pruning. | adapter, astar, core, graph, heuristic, multiobjective, pareto, strategy | - | `nsgablack.core.adapters.moa_star:MOAStarAdapter` |
 | `adapter.moead` | MOEADAdapter | MOEA/D分解内核：权重向量 + 邻域替换。 / Adapter: MOEA/D decomposition core with weight vectors and neighborhood replacement. | adapter, core, decomposition, moead, multiobjective, strategy | plugin.pareto_archive, suite.moead | `nsgablack.core.adapters:MOEADAdapter` |
+
+| `adapter.de` | DifferentialEvolutionAdapter | 差分进化适配器：变异/交叉/贪心替换。/ Adapter: Differential Evolution with greedy replacement. | adapter, core, de, differential_evolution, evolutionary, strategy | - | `nsgablack.core.adapters:DifferentialEvolutionAdapter` |
+| `adapter.gradient_descent` | GradientDescentAdapter | 梯度下降适配器：有限差分估计梯度并局部精修。/ Adapter: finite-difference gradient descent local refinement. | adapter, core, gradient, gradient_descent, local_search, strategy | - | `nsgablack.core.adapters:GradientDescentAdapter` |
+| `adapter.nsga2` | NSGA2Adapter | NSGA-II 适配器：非支配排序 + 拥挤距离选择。/ Adapter: NSGA-II with non-dominated sorting and crowding selection. | adapter, core, evolutionary, multiobjective, nsga2, strategy | - | `nsgablack.core.adapters:NSGA2Adapter` |
+| `adapter.nsga3` | NSGA3Adapter | NSGA-III 适配器：参考点引导的 niching 选择。/ Adapter: NSGA-III with reference-point niching. | adapter, core, evolutionary, multiobjective, nsga3, strategy | - | `nsgablack.core.adapters:NSGA3Adapter` |
+| `adapter.pattern_search` | PatternSearchAdapter | 模式搜索适配器：坐标方向试探与步长自适应。/ Adapter: coordinate pattern search with adaptive step size. | adapter, core, local_search, pattern_search, strategy | - | `nsgablack.core.adapters:PatternSearchAdapter` |
+| `adapter.spea2` | SPEA2Adapter | SPEA2 适配器：强度值与密度估计联合选择。/ Adapter: SPEA2 with strength and density fitness. | adapter, core, evolutionary, multiobjective, spea2, strategy | - | `nsgablack.core.adapters:SPEA2Adapter` |
 | `adapter.multi_role_controller` | MultiRoleControllerAdapter | 多角色控制器：共享上下文与预算分配，统一调度各角色。 / Adapter: multi-role controller with shared context and budget scheduling. | adapter, composition, controller, core, roles, strategy | - | `nsgablack.core.adapters.role_adapters:MultiRoleControllerAdapter` |
 | `adapter.multi_strategy` | MultiStrategyControllerAdapter | 多策略协同控制器：统一调度、共享状态与动态预算。 / Adapter: multi-strategy controller with unified scheduling/shared state/dynamic budgets. | adapter, controller, cooperation, core, multi_strategy, parallel, roles, strategy | suite.multi_strategy, plugin.pareto_archive | `nsgablack.core.adapters:MultiStrategyControllerAdapter` |
 | `adapter.role` | RoleAdapter | 角色适配器：附加角色元数据与配额，用于分工协同。 / Adapter: role wrapper with metadata and candidate quotas for cooperation. | adapter, composition, core, roles, strategy | - | `nsgablack.core.adapters.role_adapters:RoleAdapter` |
@@ -82,10 +89,6 @@ python -m nsgablack catalog show <key>
 | `bias.convergence_late_stage` | LateStageConvergenceBias | 后期收敛偏置：末期加速收敛与精修。 / Algorithmic bias: accelerate late-stage convergence. | algorithmic, bias, convergence, late_stage | - | `nsgablack.bias.algorithmic.convergence:LateStageConvergenceBias` |
 | `bias.convergence_multi_stage` | MultiStageConvergenceBias | 多阶段收敛偏置：分阶段切换探索/开发策略。 / Algorithmic bias: multi-stage convergence scheduling. | algorithmic, bias, convergence, multi_stage | - | `nsgablack.bias.algorithmic.convergence:MultiStageConvergenceBias` |
 | `bias.convergence_precision` | PrecisionBias | 精度偏置：强调局部精修与数值稳定。 / Algorithmic bias: emphasize precision and local refinement. | algorithmic, bias, convergence, precision | - | `nsgablack.bias.algorithmic.convergence:PrecisionBias` |
-| `bias.coordinate_descent` | CoordinateDescentBias | 坐标下降偏置：偏向逐坐标精修。 / Algorithmic bias: coordinate-wise refinement. | algorithmic, bias, coordinate_descent | - | `nsgablack.bias.algorithmic.pattern_search:CoordinateDescentBias` |
-| `bias.de` | DifferentialEvolutionBias | 差分进化偏置：差分变异/交叉倾向。 / Algorithmic bias: DE mutation/crossover guidance. | algorithmic, bias, de, differential_evolution, mutation, strategy | - | `nsgablack.bias.algorithmic.differential_evolution:DifferentialEvolutionBias` |
-| `bias.de_adaptive` | AdaptiveDEBias | 自适应DE偏置：动态调整F/CR或策略。 / Algorithmic bias: adaptive DE parameters/strategy. | adaptive, algorithmic, bias, de | - | `nsgablack.bias.algorithmic.differential_evolution:AdaptiveDEBias` |
-| `bias.de_multiobjective` | MultiObjectiveDEBias | 多目标DE偏置：多目标标度与选择。 / Algorithmic bias: DE for multi-objective search. | algorithmic, bias, de, multiobjective | - | `nsgablack.bias.algorithmic.differential_evolution:MultiObjectiveDEBias` |
 | `bias.diversity` | DiversityBias | 多样性偏置：维持解集分散。 / Algorithmic bias: diversity maintenance. | algorithmic, bias, diversity, exploration, niching | - | `nsgablack.bias.algorithmic.diversity:DiversityBias` |
 | `bias.diversity_adaptive` | AdaptiveDiversityBias | 自适应多样性偏置：根据状态调节多样性压力。 / Algorithmic bias: adaptively adjust diversity pressure. | adaptive, algorithmic, bias, diversity | - | `nsgablack.bias.algorithmic.diversity:AdaptiveDiversityBias` |
 | `bias.diversity_crowding` | CrowdingDistanceBias | 拥挤距离偏置：利用拥挤度喜好稀疏/边界解。 / Algorithmic bias: favor sparse/frontier solutions via crowding distance. | algorithmic, bias, crowding, diversity | - | `nsgablack.bias.algorithmic.diversity:CrowdingDistanceBias` |
@@ -97,10 +100,6 @@ python -m nsgablack catalog show <key>
 | `bias.engineering_precision` | EngineeringPrecisionBias | 工程精度偏置：精度/公差优先。 / Domain bias: precision/tolerance bias. | bias, domain, engineering, precision | - | `nsgablack.bias.specialized.engineering:EngineeringPrecisionBias` |
 | `bias.engineering_robustness` | EngineeringRobustnessBias | 工程鲁棒偏置：对扰动稳健。 / Domain bias: robustness to perturbations. | bias, domain, engineering, robustness | - | `nsgablack.bias.specialized.engineering:EngineeringRobustnessBias` |
 | `bias.feasibility` | FeasibilityBias | 可行性偏置：优先可行解/修复倾向。 / Domain bias: prioritize feasibility. | bias, domain, feasibility | - | `nsgablack.bias.domain.constraint:FeasibilityBias` |
-| `bias.gd_adam` | AdamGradientBias | Adam梯度偏置：一阶/二阶矩估计修正。 / Algorithmic bias: Adam optimizer style. | adam, algorithmic, bias, gradient_descent | - | `nsgablack.bias.algorithmic.gradient_descent:AdamGradientBias` |
-| `bias.gd_adaptive` | AdaptiveGradientDescentBias | 自适应梯度偏置：自适应学习率。 / Algorithmic bias: adaptive learning-rate GD. | adaptive, algorithmic, bias, gradient_descent | - | `nsgablack.bias.algorithmic.gradient_descent:AdaptiveGradientDescentBias` |
-| `bias.gd_momentum` | MomentumGradientDescentBias | 动量梯度偏置：加速并稳定收敛。 / Algorithmic bias: momentum gradient descent. | algorithmic, bias, gradient_descent, momentum | - | `nsgablack.bias.algorithmic.gradient_descent:MomentumGradientDescentBias` |
-| `bias.gradient_descent` | GradientDescentBias | 梯度下降偏置：沿负梯度精修。 / Algorithmic bias: gradient descent refinement. | algorithmic, bias, continuous, gd, gradient_descent | - | `nsgablack.bias.algorithmic.gradient_descent:GradientDescentBias` |
 | `bias.graph_coloring` | GraphColoringBias | 图着色偏置：减少冲突色。 / Specialized bias: graph coloring bias. | bias, coloring, graph, specialized | - | `nsgablack.bias.specialized.graph.base:GraphColoringBias` |
 | `bias.graph_coloring_constraint` | GraphColoringConstraintBias | 着色约束偏置：着色合法性约束。 / Specialized bias: coloring constraints. | bias, coloring, constraint, graph, specialized | - | `nsgablack.bias.specialized.graph.constraints:GraphColoringConstraintBias` |
 | `bias.graph_community` | CommunityDetectionBias | 社区结构偏置：增强社区划分。 / Specialized bias: community structure bias. | bias, community, graph, specialized | - | `nsgablack.bias.specialized.graph.base:CommunityDetectionBias` |
@@ -124,15 +123,6 @@ python -m nsgablack catalog show <key>
 | `bias.local_quasi_newton` | QuasiNewtonBias | 拟牛顿偏置：有限记忆/拟牛顿更新。 / Specialized bias: quasi-Newton refinement. | bias, local_search, quasi_newton, specialized | - | `nsgablack.bias.specialized.local_search:QuasiNewtonBias` |
 | `bias.local_trust_region` | TrustRegionBias | 信赖域偏置：局部可信区域内搜索。 / Specialized bias: trust-region refinement. | bias, local_search, specialized, trust_region | - | `nsgablack.bias.specialized.local_search:TrustRegionBias` |
 | `bias.manufacturing` | ManufacturingBias | 制造偏置：工艺/产线可行性倾向。 / Domain bias: manufacturing feasibility. | bias, domain, manufacturing | - | `nsgablack.bias.domain.engineering:ManufacturingBias` |
-| `bias.moead_adaptive` | AdaptiveMOEADBias | 自适应MOEA/D偏置：邻域/权重动态调整。 / Algorithmic bias: adaptive MOEA/D neighborhood/weights. | adaptive, algorithmic, bias, moead | - | `nsgablack.bias.algorithmic.moead:AdaptiveMOEADBias` |
-| `bias.moead_decomposition` | MOEADDecompositionBias | MOEA/D分解偏置：权重与邻域分解信号。 / Algorithmic bias: MOEA/D decomposition signals. | algorithmic, bias, decomposition, moead, multiobjective | - | `nsgablack.bias.algorithmic.moead:MOEADDecompositionBias` |
-| `bias.nsga2_adaptive` | AdaptiveNSGA2Bias | 自适应NSGA-II偏置：动态调整选择/变异参数。 / Algorithmic bias: adaptive NSGA-II selection/mutation. | adaptive, algorithmic, bias, nsga2 | - | `nsgablack.bias.algorithmic.nsga2:AdaptiveNSGA2Bias` |
-| `bias.nsga2_core` | NSGA2Bias | NSGA-II核心偏置：非支配排序 + 拥挤度。 / Algorithmic bias: NSGA-II ranking/crowding. | algorithmic, bias, crowding, multiobjective, nsga2 | - | `nsgablack.bias.algorithmic.nsga2:NSGA2Bias` |
-| `bias.nsga2_diversity_preserving` | DiversityPreservingNSGA2Bias | NSGA-II多样性偏置：强调拥挤度与分布。 / Algorithmic bias: NSGA-II diversity preservation. | algorithmic, bias, diversity, nsga2 | - | `nsgablack.bias.algorithmic.nsga2:DiversityPreservingNSGA2Bias` |
-| `bias.nsga3_adaptive` | AdaptiveNSGA3Bias | 自适应NSGA-III偏置：参考点自适应。 / Algorithmic bias: adaptive NSGA-III reference points. | adaptive, algorithmic, bias, nsga3 | - | `nsgablack.bias.algorithmic.nsga3:AdaptiveNSGA3Bias` |
-| `bias.nsga3_core` | NSGA3ReferencePointBias | NSGA-III参考点偏置：参考点驱动排序。 / Algorithmic bias: NSGA-III reference points. | algorithmic, bias, multiobjective, nsga3, reference_point | - | `nsgablack.bias.algorithmic.nsga3:NSGA3ReferencePointBias` |
-| `bias.pattern_search` | PatternSearchBias | 模式搜索偏置：步长/网格模式探索。 / Algorithmic bias: pattern search steps. | algorithmic, bias, derivative_free, local_search, pattern_search | - | `nsgablack.bias.algorithmic.pattern_search:PatternSearchBias` |
-| `bias.pattern_search_adaptive` | AdaptivePatternSearchBias | 自适应模式搜索偏置：动态调整步长/方向。 / Algorithmic bias: adaptive pattern search steps. | adaptive, algorithmic, bias, pattern_search | - | `nsgablack.bias.algorithmic.pattern_search:AdaptivePatternSearchBias` |
 | `bias.preference` | PreferenceBias | 偏好偏置：编码业务偏好与权重。 / Domain bias: encode preferences/weights. | bias, domain, preference | - | `nsgablack.bias.domain.constraint:PreferenceBias` |
 | `bias.production_constraint` | ProductionConstraintBias | 生产约束偏置：产线/工艺约束。 / Domain bias: production constraints. | bias, constraint, domain, production | - | `nsgablack.bias.specialized.production.scheduling:ProductionConstraintBias` |
 | `bias.production_continuity` | ProductionContinuityBias | 生产连续性偏置：减少切换/中断。 / Domain bias: production continuity. | bias, continuity, domain, production | - | `nsgablack.bias.specialized.production.scheduling:ProductionContinuityBias` |
@@ -144,14 +134,8 @@ python -m nsgablack catalog show <key>
 | `bias.risk` | RiskBias | 风险偏置：支持CVaR/最坏情况风险控制。 / Domain bias: risk-aware scoring (CVaR/worst-case). | bias, cvar, domain, risk, worst_case | - | `nsgablack.bias.domain.risk_bias:RiskBias` |
 | `bias.robustness` | RobustnessBias | 鲁棒性偏置：针对扰动的稳定性评估。 / Algorithmic bias: robustness-oriented scoring under perturbations. | bias, mc, robustness, signal_driven, algorithmic | plugin.monte_carlo_eval, suite.monte_carlo_robustness | `nsgablack.bias.algorithmic.signal_driven.robustness:RobustnessBias` |
 | `bias.rule_based` | RuleBasedBias | 规则偏置：基于规则的加权/惩罚。 / Domain bias: rule-based weighting/penalty. | bias, domain, rule | - | `nsgablack.bias.domain.constraint:RuleBasedBias` |
-| `bias.sa` | SimulatedAnnealingBias | 退火偏置：温度/接受准则引导探索。 / Algorithmic bias: SA temperature/acceptance guidance. | algorithmic, bias, local_search, sa, simulated_annealing, strategy | - | `nsgablack.bias.algorithmic.simulated_annealing:SimulatedAnnealingBias` |
-| `bias.sa_adaptive` | AdaptiveSABias | 自适应退火偏置：基于接受率调整温度。 / Algorithmic bias: adaptive SA temperature/acceptance tuning. | adaptive, algorithmic, bias, sa | - | `nsgablack.bias.algorithmic.simulated_annealing:AdaptiveSABias` |
-| `bias.sa_multiobjective` | MultiObjectiveSABias | 多目标退火偏置：多目标接受准则/标度化。 / Algorithmic bias: multi-objective SA acceptance/scalarization. | algorithmic, bias, multiobjective, sa | - | `nsgablack.bias.algorithmic.simulated_annealing:MultiObjectiveSABias` |
 | `bias.safety` | SafetyBias | 安全偏置：风险/安全约束优先。 / Domain bias: safety/risk prioritization. | bias, domain, safety | - | `nsgablack.bias.domain.engineering:SafetyBias` |
 | `bias.scheduling` | SchedulingBias | 排程偏置：任务顺序/负载平衡。 / Domain bias: scheduling preference. | bias, domain, scheduling | - | `nsgablack.bias.domain.scheduling:SchedulingBias` |
-| `bias.spea2_adaptive` | AdaptiveSPEA2Bias | 自适应SPEA2偏置：强度/密度参数调整。 / Algorithmic bias: adaptive SPEA2 parameters. | adaptive, algorithmic, bias, spea2 | - | `nsgablack.bias.algorithmic.spea2:AdaptiveSPEA2Bias` |
-| `bias.spea2_core` | SPEA2StrengthBias | SPEA2强度偏置：强度/密度评估。 / Algorithmic bias: SPEA2 strength/density. | algorithmic, bias, multiobjective, spea2, strength | - | `nsgablack.bias.algorithmic.spea2:SPEA2StrengthBias` |
-| `bias.spea2_hybrid` | HybridSPEA2NSGA2Bias | 混合SPEA2-NSGA2偏置：融合强度与拥挤度信号。 / Algorithmic bias: hybrid SPEA2+NSGA2 signals. | algorithmic, bias, hybrid, nsga2, spea2 | - | `nsgablack.bias.algorithmic.spea2:HybridSPEA2NSGA2Bias` |
 | `bias.structure_prior` | StructurePriorBias | 结构先验偏置：注入结构/对称偏好。 / Domain bias: structure/symmetry prior. | bias, domain, prior, structure, symmetry | - | `nsgablack.bias.domain.structure_prior:StructurePriorBias` |
 | `bias.surrogate_control` | SurrogateControlBias | 代理控制偏置：代理评估控制探索。 / Specialized bias: surrogate-guided control. | bias, control, specialized, surrogate | - | `nsgablack.bias.surrogate.base:SurrogateControlBias` |
 | `bias.surrogate_phase_schedule` | PhaseScheduleBias | 阶段调度偏置：分阶段切换代理/真实评估。 / Specialized bias: phase scheduling for surrogate/true eval. | bias, schedule, specialized, surrogate | - | `nsgablack.bias.surrogate.phase_schedule:PhaseScheduleBias` |

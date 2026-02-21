@@ -15,6 +15,19 @@ def test_build_usage_profile_infers_plugin_wiring():
     assert "ModuleReportPlugin" in joined
 
 
+def test_build_usage_profile_infers_adapter_control_plane_wiring():
+    entry = CatalogEntry(
+        key="adapter.demo",
+        title="DemoAdapter",
+        kind="adapter",
+        import_path="nsgablack.core.adapters:NSGA2Adapter",
+    )
+    usage = build_usage_profile(entry)
+    joined = "\n".join(usage.minimal_wiring)
+    assert "solver.set_adapter(" in joined
+    assert "NSGA2Adapter" in joined
+
+
 def test_catalog_search_usage_field_matches_use_when():
     entry = CatalogEntry(
         key="plugin.demo",

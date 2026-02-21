@@ -152,17 +152,18 @@ class FastNonDominatedSort:
 
         n = len(front)
         m = objectives.shape[1]
-        crowding_distance = np.zeros(n)
-
-        # Initialize infinite distance for boundary solutions
-        if n > 1:
-            crowding_distance[0] = np.inf
-            crowding_distance[-1] = np.inf
+        crowding_distance = np.zeros(n, dtype=float)
 
         # Calculate crowding distance for each objective
         for obj_idx in range(m):
             # Sort solutions by this objective
             sorted_indices = np.argsort([objectives[front[i]][obj_idx] for i in range(n)])
+
+            # Boundary solutions in each objective must keep infinite distance.
+            if n > 0:
+                crowding_distance[sorted_indices[0]] = np.inf
+            if n > 1:
+                crowding_distance[sorted_indices[-1]] = np.inf
 
             # Get objective range
             obj_min = objectives[front[sorted_indices[0]]][obj_idx]
@@ -172,10 +173,11 @@ class FastNonDominatedSort:
             if obj_range > 1e-10:
                 # Calculate crowding distance for interior solutions
                 for i in range(1, n - 1):
-                    if crowding_distance[i] != np.inf:  # Skip boundary solutions
+                    original_pos = sorted_indices[i]
+                    if crowding_distance[original_pos] != np.inf:  # Skip boundary solutions
                         obj_prev = objectives[front[sorted_indices[i - 1]]][obj_idx]
                         obj_next = objectives[front[sorted_indices[i + 1]]][obj_idx]
-                        crowding_distance[i] += (obj_next - obj_prev) / obj_range
+                        crowding_distance[original_pos] += (obj_next - obj_prev) / obj_range
 
         # Map back to original indices
         original_distances = np.zeros(len(objectives))

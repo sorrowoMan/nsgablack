@@ -24,6 +24,11 @@ except ModuleNotFoundError:  # pragma: no cover
 
 class SimplexRepair:
     """Project weights onto simplex (sum=1, all >=0)."""
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Simplex projection is local; no context I/O.",)
 
     def repair(self, x, context=None):
         w = np.maximum(0.0, np.asarray(x, dtype=float))
@@ -70,7 +75,7 @@ def build_solver():
     )
 
     solver = ComposableSolver(problem=problem, representation_pipeline=pipeline)
-    solver.max_steps = 80
+    solver.set_max_steps(80)
 
     attach_moead(solver, config=MOEADConfig(pop_size=40, n_neighbors=10), archive=True)
     attach_benchmark_harness(solver, output_dir="runs", run_id="template_portfolio", overwrite=True, log_every=1)

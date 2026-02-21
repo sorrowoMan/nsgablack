@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional, Sequence, List
 import numpy as np
 
 from .algorithm_adapter import AlgorithmAdapter
+from ...utils.context.context_keys import KEY_BEST_X, KEY_MAS_MODEL
 
 
 @dataclass
@@ -26,6 +27,13 @@ class MASAdapter(AlgorithmAdapter):
     This adapter expects a surrogate-like model to be provided via context
     (e.g., a plugin can inject context["mas_model"] with predict/uncertainty).
     """
+    context_requires = ("generation",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = (
+        "Optional model-assisted search: reads mas_model when available.",
+    )
 
     def __init__(
         self,
@@ -40,7 +48,7 @@ class MASAdapter(AlgorithmAdapter):
 
     def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self._center is None:
-            self._center = self._init_center(solver)
+            self._center = self._init_center(solver, context)
         center = np.asarray(self._center, dtype=float)
         n = max(1, int(self.cfg.batch_size))
         explore_n = int(round(n * float(self.cfg.exploration_ratio)))
@@ -53,7 +61,7 @@ class MASAdapter(AlgorithmAdapter):
             candidates.append(self._clip_to_bounds(cand, solver))
 
         # exploitation: use surrogate model if available
-        model = context.get("mas_model")
+        model = context.get(KEY_MAS_MODEL)
         if model is not None and exploit_n > 0:
             pool = [center + self._rng.normal(size=center.shape) * 0.5 for _ in range(exploit_n * 3)]
             pool_arr = np.stack(pool, axis=0)
@@ -81,7 +89,11 @@ class MASAdapter(AlgorithmAdapter):
         self._center = np.asarray(candidates[best_idx], dtype=float).copy()
         return None
 
-    def _init_center(self, solver: Any) -> np.ndarray:
+    def _init_center(self, solver: Any, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+        if isinstance(context, dict):
+            best_ctx = context.get(KEY_BEST_X)
+            if best_ctx is not None:
+                return np.asarray(best_ctx, dtype=float)
         if getattr(solver, "best_x", None) is not None:
             return np.asarray(solver.best_x, dtype=float)
         pipeline = getattr(solver, "representation_pipeline", None)
@@ -113,6 +125,17 @@ class MASAdapter(AlgorithmAdapter):
         if low is None or high is None:
             return x
         return np.minimum(np.maximum(x, low), high)
+
+    def get_state(self) -> Dict[str, Any]:
+        return {
+            "center": None if self._center is None else self._center.tolist(),
+        }
+
+    def set_state(self, state: Dict[str, Any]) -> None:
+        if not state:
+            return
+        center = state.get("center")
+        self._center = None if center is None else np.asarray(center, dtype=float)
 
     def _score(self, objectives: np.ndarray, violations: np.ndarray) -> np.ndarray:
         obj = np.asarray(objectives, dtype=float)

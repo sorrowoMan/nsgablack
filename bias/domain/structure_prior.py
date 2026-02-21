@@ -21,6 +21,13 @@ class StructurePriorBias(DomainBias):
     - "group": penalize variance within groups of indices
     - "custom": user provides a callable via custom_penalty
     """
+    context_requires = ("problem_data",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: problem_data; outputs scalar bias only."
+
+
 
     pairs: Optional[Sequence[Tuple[int, int]]] = None
     groups: Optional[Sequence[Sequence[int]]] = None

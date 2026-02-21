@@ -1,16 +1,16 @@
 """
-优化求解器插件系�?
+优化求解器插件系统。
 
-提供可插拔的扩展功能，包括：
+提供可插拔的扩展能力，包括：
 - 精英保留策略
 - 多样性初始化
-- 收敛检�?
+- 收敛检测
 - 内存优化
 
-设计原则�?
-1. 核心求解器保持简�?
-2. 高级特性作为插件提�?
-3. 用户按需选择和组�?
+设计原则：
+1. 核心求解器保持简洁
+2. 高级能力通过插件接入
+3. 用户按需选择与组合
 """
 
 from .base import Plugin, PluginManager
@@ -33,6 +33,7 @@ from .models.subspace_basis import SubspaceBasisPlugin, SubspaceBasisConfig
 from .storage.mysql_run_logger import MySQLRunLoggerPlugin, MySQLRunLoggerConfig
 from .system.async_event_hub import AsyncEventHubPlugin, AsyncEventHubConfig
 from .system.boundary_guard import BoundaryGuardPlugin, BoundaryGuardConfig
+from .system.checkpoint_resume import CheckpointResumePlugin, CheckpointResumeConfig
 
 __all__ = [
     'Plugin',
@@ -71,5 +72,7 @@ __all__ = [
     'AsyncEventHubConfig',
     'BoundaryGuardPlugin',
     'BoundaryGuardConfig',
+    'CheckpointResumePlugin',
+    'CheckpointResumeConfig',
 ]
 

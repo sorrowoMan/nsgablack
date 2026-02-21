@@ -65,7 +65,24 @@ $env:PYTHONPATH=".."
 python -m nsgablack catalog search plugin
 ```
 
-## 5. 参考入口
+## 5. Bias 统一 apply 规则（评估类插件必读）
+
+核心原则：**Bias 在每个候选解的评估生命周期中只 apply 一次。**
+
+对于 **不接管** `evaluate_population` 的普通插件，Bias 由求解器主循环统一 apply（NSGA-II 在 `_evaluate_individual` 内部、ComposableSolver 在 evaluate step）。
+
+对于 **接管** `evaluate_population` 的评估类插件（如 `SurrogateEvaluationPlugin`），由于 solver 的原生 bias 路径被跳过，插件自身需要在 **evaluate_population 返回前** 统一 apply 一次 bias（参见 surrogate plugin 的 Step 5）。但关键约束是：
+
+- `_true_evaluate()` 内部**不得** apply bias，只返回 raw objectives
+- 调用并行评估器时传入 `enable_bias=False, bias_module=None`
+- 训练代理模型的数据必须存储 raw objectives（未偏置）
+- Bias apply 只发生在 evaluate_population 的最后一步，且**仅此一次**
+
+这样保证无论 solver 走原生路径还是 plugin 接管路径，bias 都恰好 apply 一次，不会 double-bias。
+
+> 参考：`docs/development/DEVELOPER_CONVENTIONS.md` 第 3 节
+
+## 6. 参考入口
 
 - 端到端流程：`WORKFLOW_END_TO_END.md`
 - Catalog/Suites：`docs/user_guide/catalog.md`

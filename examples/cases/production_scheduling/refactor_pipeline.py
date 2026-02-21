@@ -26,6 +26,12 @@ _ensure_importable()
 
 from nsgablack.representation import RepresentationPipeline
 
+try:
+    from nsgablack.utils.context.context_keys import KEY_MUTATION_SIGMA, KEY_VNS_K
+except Exception:
+    KEY_MUTATION_SIGMA = "mutation_sigma"
+    KEY_VNS_K = "vns_k"
+
 
 @dataclass
 class ProductionScheduleInitializer:
@@ -35,6 +41,11 @@ class ProductionScheduleInitializer:
     max_machines_per_day: int
     min_production_per_machine: int
     max_production_per_machine: int
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Uses constructor constraints/data only; no context I/O.",)
 
     def initialize(self, problem, context=None) -> np.ndarray:
         schedule = np.zeros((self.machines, self.days), dtype=float)
@@ -70,6 +81,11 @@ class SupplyAwareInitializer:
     soft_min_ratio: float = 0.2
     min_prod_ratio: float = 0.02
     min_prod_abs: int = 100
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Supply-aware initializer reads constructor matrices; no context I/O.",)
 
     def initialize(self, problem, context=None) -> np.ndarray:
         schedule = np.zeros((self.machines, self.days), dtype=float)
@@ -181,13 +197,56 @@ class ProductionScheduleMutation:
     toggle_rate: float = 0.02
     max_production_per_machine: int = 3000
 
+    # VNS compatibility contract: VNSAdapter writes these keys into context.
+    sigma_key: str = KEY_MUTATION_SIGMA
+    k_key: str = KEY_VNS_K
+
+    # Neighborhood-depth scaling (k -> stronger perturbation).
+    k_sigma_scale: float = 0.18
+    k_rate_scale: float = 0.12
+    min_per_gene_rate: float = 0.01
+    max_per_gene_rate: float = 0.35
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = (
+        "Optionally reads mutation_sigma/vns_k from context when provided.",
+    )
+
+    def _runtime_params(self, context=None) -> tuple[float, float]:
+        sigma = float(self.sigma)
+        per_gene_rate = float(self.per_gene_rate)
+        if isinstance(context, dict):
+            raw_sigma = context.get(self.sigma_key)
+            if raw_sigma is not None:
+                try:
+                    sigma = max(1e-9, float(raw_sigma))
+                except Exception:
+                    pass
+
+            raw_k = context.get(self.k_key)
+            if raw_k is not None:
+                try:
+                    k = max(0, int(raw_k))
+                    sigma *= 1.0 + float(self.k_sigma_scale) * float(k)
+                    per_gene_rate *= 1.0 + float(self.k_rate_scale) * float(k)
+                except Exception:
+                    pass
+
+        per_gene_rate = float(np.clip(per_gene_rate, self.min_per_gene_rate, self.max_per_gene_rate))
+        return sigma, per_gene_rate
+
     def mutate(self, x: np.ndarray, context=None) -> np.ndarray:
         vec = np.array(x, dtype=float, copy=True)
         if vec.size == 0:
             return vec
-        mask = np.random.rand(vec.size) < self.per_gene_rate
+
+        sigma, per_gene_rate = self._runtime_params(context)
+
+        mask = np.random.rand(vec.size) < per_gene_rate
         if np.any(mask):
-            vec[mask] += np.random.normal(0.0, self.sigma, size=int(np.sum(mask)))
+            vec[mask] += np.random.normal(0.0, sigma, size=int(np.sum(mask)))
 
         if self.toggle_rate > 0:
             toggle_mask = np.random.rand(vec.size) < self.toggle_rate
@@ -207,6 +266,11 @@ class ProductionScheduleRepair:
     max_machines_per_day: int
     min_production_per_machine: int
     max_production_per_machine: int
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Hard-constraint repair over machine/day production matrix; no context I/O.",)
 
     def repair(self, x: np.ndarray, context=None) -> np.ndarray:
         schedule = np.array(x, dtype=float, copy=True).reshape(self.machines, self.days)
@@ -269,6 +333,11 @@ class SupplyAwareScheduleRepair:
     fragment_passes: int = 2
     continuity_swap: bool = True
     enforce_material_feasible: bool = True
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Supply/BOM-aware hard repair uses constructor matrices; no context I/O.",)
 
     def _prune_fragments(self, schedule: np.ndarray) -> np.ndarray:
         passes = max(1, int(self.fragment_passes))

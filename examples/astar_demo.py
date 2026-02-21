@@ -63,7 +63,7 @@ def build_solver():
     )
 
     solver = ComposableSolver(problem=problem, adapter=adapter, representation_pipeline=pipeline)
-    solver.max_steps = 30
+    solver.set_max_steps(30)
 
     attach_benchmark_harness(solver, output_dir="runs", run_id="astar_demo", overwrite=True, log_every=1)
     attach_module_report(solver, output_dir="runs", run_id="astar_demo", write_bias_markdown=True)

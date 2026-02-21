@@ -13,6 +13,13 @@ class SchedulingBias(DomainBias):
     """
     Scheduling bias that optimizes scheduling decisions.
     """
+    context_requires = ("problem_data",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: problem_data; outputs scalar bias only."
+
+
 
     def __init__(self, name: str = "scheduling", weight: float = 1.0):
         super().__init__(name, weight)
@@ -27,6 +34,13 @@ class ResourceConstraintBias(DomainBias):
     """
     Resource constraint bias for handling resource limitations.
     """
+    context_requires = ("problem_data",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: problem_data; outputs scalar bias only."
+
+
 
     def __init__(self, name: str = "resource_constraint", weight: float = 2.0):
         super().__init__(name, weight)
@@ -41,6 +55,13 @@ class TimeWindowBias(DomainBias):
     """
     Time window bias for scheduling with time constraints.
     """
+    context_requires = ("problem_data",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: problem_data; outputs scalar bias only."
+
+
 
     def __init__(self, name: str = "time_window", weight: float = 1.0):
         super().__init__(name, weight)

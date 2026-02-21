@@ -13,9 +13,12 @@ from typing import Any, List, Optional
 
 import numpy as np
 
+from .base import RepresentationComponentContract
+from ..utils.context.context_keys import KEY_VNS_K
+
 
 @dataclass
-class ContextSwitchMutator:
+class ContextSwitchMutator(RepresentationComponentContract):
     """Select a mutator based on a context key (e.g. VNS neighborhood index).
 
     Typical usage:
@@ -24,7 +27,14 @@ class ContextSwitchMutator:
     """
 
     mutators: List[Any]
-    k_key: str = "vns_k"
+    k_key: str = KEY_VNS_K
+    context_requires = (KEY_VNS_K,)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = (
+        "Reads neighborhood index from context and dispatches to the matching mutator.",
+    )
 
     def mutate(self, x: np.ndarray, context: Optional[dict] = None) -> np.ndarray:
         if not self.mutators:
@@ -43,4 +53,3 @@ class ContextSwitchMutator:
         if not callable(fn):
             raise TypeError(f"ContextSwitchMutator mutator[{idx}] has no callable mutate()")
         return np.asarray(fn(np.asarray(x), context))
-

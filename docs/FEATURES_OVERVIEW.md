@@ -7,9 +7,10 @@
 ## 1. 核心架构能力
 
 - **Problem 接口**：统一问题定义与评估接口（evaluate / bounds / objectives）
+- **Solver**：运行容器与生命周期（调度 Pipeline/Bias/Adapter/Plugin）
 - **RepresentationPipeline**：初始化 / 变异 / 修复 / 编码解码（硬约束优先）
 - **BiasModule**：软约束与偏好驱动（domain / algorithmic / signal-driven）
-- **Adapter**：策略内核（可替换、可组合）
+- **Adapter**：策略内核（可替换、可组合；ComposableSolver 的搜索引擎）
 - **Plugin**：能力层（并行、统计、监控、短路、归档）
 
 ---

@@ -8,6 +8,13 @@ from ..core.base import AlgorithmicBias, OptimizationContext
 
 class ExampleAlgorithmicBias(AlgorithmicBias):
     """Template algorithmic bias that rewards diversity."""
+    context_requires = ("population",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: population; outputs scalar bias only."
+
+
 
     def __init__(
         self,

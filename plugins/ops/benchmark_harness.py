@@ -17,13 +17,14 @@ from typing import Any, Dict, Optional
 import csv
 import json
 import os
-import random
 import time
 
 import numpy as np
 
 from ..base import Plugin
+from ...utils.context.context_keys import KEY_BEST_OBJECTIVE
 from ...utils.engineering.file_io import atomic_write_json
+from ...utils.engineering.schema_version import stamp_schema
 
 
 @dataclass
@@ -78,6 +79,9 @@ class BenchmarkHarnessPlugin(Plugin):
         self._fp = None
         self._writer: Optional[csv.DictWriter] = None
 
+    def __del__(self):
+        self._close_writer()
+
     # ------------------------------------------------------------------
     def on_solver_init(self, solver: Any):
         self._t0 = time.time()
@@ -85,8 +89,12 @@ class BenchmarkHarnessPlugin(Plugin):
 
         if self.cfg.seed is not None:
             seed = int(self.cfg.seed)
-            random.seed(seed)
-            np.random.seed(seed)
+            setter = getattr(solver, "set_random_seed", None)
+            if callable(setter):
+                try:
+                    setter(seed)
+                except Exception:
+                    pass
             try:
                 setattr(solver, "benchmark_seed", seed)
             except Exception:
@@ -176,43 +184,54 @@ class BenchmarkHarnessPlugin(Plugin):
         if isinstance(artifacts, dict) and artifacts:
             # Optional: other plugins can inject report paths here.
             summary["artifacts"] = dict(artifacts)
+        summary = stamp_schema(summary, "benchmark_summary")
 
         if self._summary_path is not None:
             atomic_write_json(self._summary_path, summary, ensure_ascii=True, indent=2, encoding="utf-8")
 
-        if self._fp is not None:
-            try:
-                self._fp.flush()
-                self._fp.close()
-            finally:
-                self._fp = None
+        self._close_writer()
         return None
+
+    def _close_writer(self) -> None:
+        if self._fp is None:
+            return
+        try:
+            self._fp.flush()
+            self._fp.close()
+        except Exception:
+            pass
+        finally:
+            self._fp = None
 
     # ------------------------------------------------------------------
     def _read_best_score(self, solver: Any) -> Optional[float]:
         if solver is None:
             return None
-        v = getattr(solver, "best_objective", None)
+        v = None
+        getter = getattr(solver, "get_context", None)
+        if callable(getter):
+            try:
+                ctx = getter()
+            except Exception:
+                ctx = None
+            if isinstance(ctx, dict):
+                v = ctx.get(KEY_BEST_OBJECTIVE)
+        if v is None:
+            v = getattr(solver, "best_objective", None)
         if v is not None:
             try:
                 return float(v)
             except Exception:
                 pass
-        v = getattr(solver, "shared_best_score", None)
-        if v is not None:
+        proj = self._read_adapter_projection(solver)
+        shared_proj = proj.get("shared")
+        if isinstance(shared_proj, dict) and shared_proj.get("best_score") is not None:
             try:
-                return float(v)
-            except Exception:
-                pass
-        shared = getattr(solver, "shared_state", None)
-        if isinstance(shared, dict) and shared.get("best_score") is not None:
-            try:
-                return float(shared["best_score"])
+                return float(shared_proj["best_score"])
             except Exception:
                 pass
         # last fallback: compute from current objectives (sum) if available
-        obj = getattr(solver, "objectives", None)
-        vio = getattr(solver, "constraint_violations", None)
+        _, obj, vio = self.resolve_population_snapshot(solver)
         if obj is None:
             return None
         try:
@@ -232,11 +251,15 @@ class BenchmarkHarnessPlugin(Plugin):
     def _read_phase(self, solver: Any) -> Optional[str]:
         if solver is None:
             return None
-        shared = getattr(solver, "shared_state", None)
-        if isinstance(shared, dict):
-            p = shared.get("phase")
-            if p is not None:
-                return str(p)
+        proj = self._read_adapter_projection(solver)
+        p = proj.get("phase")
+        if p is not None:
+            return str(p)
+        shared_proj = proj.get("shared")
+        if isinstance(shared_proj, dict):
+            p2 = shared_proj.get("phase")
+            if p2 is not None:
+                return str(p2)
         return None
 
     def _read_pareto_size(self, solver: Any) -> Optional[int]:
@@ -252,6 +275,19 @@ class BenchmarkHarnessPlugin(Plugin):
             return int(X.shape[0])
         except Exception:
             return None
+
+    def _read_adapter_projection(self, solver: Any) -> Dict[str, Any]:
+        adapter = getattr(solver, "adapter", None)
+        if adapter is None:
+            return {}
+        projector = getattr(adapter, "get_runtime_context_projection", None)
+        if not callable(projector):
+            return {}
+        try:
+            out = projector(solver)
+        except Exception:
+            return {}
+        return out if isinstance(out, dict) else {}
 
 
 

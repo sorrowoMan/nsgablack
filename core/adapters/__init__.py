@@ -19,6 +19,12 @@ from .trust_region_nonsmooth import TrustRegionNonSmoothAdapter, TrustRegionNonS
 from .mas import MASAdapter, MASConfig
 from .async_event_driven import AsyncEventDrivenAdapter, AsyncEventDrivenConfig, EventStrategySpec
 from .single_trajectory_adaptive import SingleTrajectoryAdaptiveAdapter, SingleTrajectoryAdaptiveConfig
+from .differential_evolution import DifferentialEvolutionAdapter, DEConfig
+from .gradient_descent import GradientDescentAdapter, GradientDescentConfig
+from .pattern_search import PatternSearchAdapter, PatternSearchConfig
+from .nsga2 import NSGA2Adapter, NSGA2Config
+from .nsga3 import NSGA3Adapter, NSGA3Config
+from .spea2 import SPEA2Adapter, SPEA2Config
 
 __all__ = [
     "AlgorithmAdapter",
@@ -54,4 +60,16 @@ __all__ = [
     "EventStrategySpec",
     "SingleTrajectoryAdaptiveAdapter",
     "SingleTrajectoryAdaptiveConfig",
+    "DifferentialEvolutionAdapter",
+    "DEConfig",
+    "GradientDescentAdapter",
+    "GradientDescentConfig",
+    "PatternSearchAdapter",
+    "PatternSearchConfig",
+    "NSGA2Adapter",
+    "NSGA2Config",
+    "NSGA3Adapter",
+    "NSGA3Config",
+    "SPEA2Adapter",
+    "SPEA2Config",
 ]

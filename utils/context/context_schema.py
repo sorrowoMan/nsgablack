@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence
@@ -6,9 +6,14 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 @dataclass(frozen=True)
 class MinimalEvaluationContext:
-    """骞惰/涓茶鍏辩敤鐨勬渶灏忚瘎浼颁笂涓嬫枃锛堝彲搴忓垪鍖栥€佸彲鎵╁睍锛夈€?
-    璁捐鐩爣锛氳 bias 鍦ㄥ苟琛岃瘎浼版椂鍙緷璧栧彲鑾峰緱鐨勬渶灏忎俊鎭€?
-    绾︽潫锛?    - 涓嶄繚璇佸寘鍚?solver 鐨勫叏灞€鐘舵€侊紙population/history 绛夛級銆?    - 濡傞渶鍏ㄥ眬淇℃伅锛屽簲鍦ㄤ富绾跨▼/涓茶璺緞鏋勯€犲畬鏁?context 骞剁鐢ㄥ苟琛屻€?    """
+    """并行/串行共用的最小评估上下文（可序列化、可扩展）。
+
+    设计目标：让 bias 在并行评估时只依赖最小可获得信息。
+
+    约束：
+    - 不保证包含 solver 全局状态（population/history 等）。
+    - 如需全局信息，应在主线程构造完整 context，避免并行路径语义漂移。
+    """
 
     generation: Optional[int]
     individual_id: int
@@ -41,7 +46,7 @@ def build_minimal_context(
     metadata: Optional[Dict[str, Any]] = None,
     extra: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """鏋勯€犳渶灏?schema 鐨?context锛屽苟鍏佽杩藉姞 extra 瀛楁銆?"""
+    """构造最小 schema 的 context，并允许追加 extra 字段。"""
     try:
         constraints_list = [float(x) for x in (constraints if constraints is not None else [])]
     except Exception:
@@ -62,7 +67,7 @@ def build_minimal_context(
 
 
 def validate_minimal_context(ctx: Mapping[str, Any]) -> None:
-    """娴呮牎楠岋細瀛楁瀛樺湪涓旂被鍨嬪彲杞崲锛堝伐绋嬪寲鎶ゆ爮锛屼笉淇濊瘉涓氬姟姝ｇ‘鎬э級銆?"""
+    """浅校验最小上下文：字段存在且类型可转换。"""
     required = ["individual_id", "constraints", "constraint_violation"]
     for k in required:
         if k not in ctx:
@@ -125,13 +130,21 @@ RUNTIME_CONTEXT_SCHEMA = ContextSchema(
         ContextField("individual", CATEGORY_CACHE, "current individual snapshot", replayable=False),
         ContextField("generation", CATEGORY_RUNTIME, "current generation/iteration"),
         ContextField("step", CATEGORY_RUNTIME, "current step (optional)"),
+        ContextField("running", CATEGORY_RUNTIME, "solver running flag (optional)"),
         ContextField("phase_id", CATEGORY_RUNTIME, "dynamic phase id (optional)"),
         ContextField("dynamic", CATEGORY_RUNTIME, "dynamic signals/state (optional)"),
+        ContextField("mutation_rate", CATEGORY_RUNTIME, "current mutation rate (optional)"),
+        ContextField("crossover_rate", CATEGORY_RUNTIME, "current crossover rate (optional)"),
         ContextField("population", CATEGORY_CACHE, "population snapshot (optional)", replayable=False),
         ContextField("objectives", CATEGORY_CACHE, "objective snapshot (optional)", replayable=False),
+        ContextField("best_x", CATEGORY_RUNTIME, "current best candidate snapshot (optional)"),
+        ContextField("best_objective", CATEGORY_RUNTIME, "current best scalar objective (optional)"),
         ContextField("constraint_violations", CATEGORY_CACHE, "violation snapshot (optional)", replayable=False),
         ContextField("pareto_solutions", CATEGORY_CACHE, "pareto solutions snapshot (optional)", replayable=False),
         ContextField("pareto_objectives", CATEGORY_CACHE, "pareto objectives snapshot (optional)", replayable=False),
+        ContextField("candidate_roles", CATEGORY_RUNTIME, "controller candidate role mapping (optional)"),
+        ContextField("candidate_units", CATEGORY_RUNTIME, "controller candidate unit mapping (optional)"),
+        ContextField("unit_tasks", CATEGORY_RUNTIME, "controller task map per unit (optional)"),
         ContextField("evaluation_count", CATEGORY_RUNTIME, "evaluation counter (optional)"),
         ContextField("metrics", CATEGORY_DERIVED, "metrics dict (optional)"),
         ContextField("history", CATEGORY_EVENT, "runtime history/log (optional)", replayable=False),
@@ -147,7 +160,7 @@ def validate_context(
     *,
     strict: bool = False,
 ) -> List[str]:
-    """鏍规嵁 schema 鏍￠獙瀛楁瀛樺湪鎬т笌绫诲瀷鎻愮ず锛堝急鏍￠獙锛岄粯璁ゅ鏉撅級銆?"""
+    """根据 schema 做弱校验，返回 warning 列表。"""
     warnings: List[str] = []
     field_map = schema.field_map()
 
@@ -172,14 +185,16 @@ def validate_context(
             continue
         if field.type_hint is None:
             continue
-        # 绫诲瀷鎻愮ず浠呯敤浜庢彁绀猴紝涓嶅己鍒舵墽琛屽叿浣撶被鍨嬪垽鏂€?        # 杩欓噷淇濇寔瀹芥澗锛岄伩鍏嶇牬鍧忕幇鏈夋ā鍧椼€?    return warnings
+        # type_hint 目前仅用于提示，不做强制类型断言。
+
+    return warnings
 
 
 def get_context_lifecycle(
     ctx: Mapping[str, Any],
     schema: ContextSchema = RUNTIME_CONTEXT_SCHEMA,
 ) -> Dict[str, str]:
-    """杩斿洖 {key: category} 鏄犲皠锛岀敤浜庢爣娉ㄥ瓧娈电敓鍛藉懆鏈熴€?"""
+    """返回 {key: category} 映射，用于标注字段生命周期。"""
     field_map = schema.field_map()
     lifecycle: Dict[str, str] = {}
     for key in ctx.keys():
@@ -192,7 +207,7 @@ def is_replayable_context(
     ctx: Mapping[str, Any],
     schema: ContextSchema = RUNTIME_CONTEXT_SCHEMA,
 ) -> bool:
-    """鍒ゆ柇 context 鏄惁浠呭寘鍚彲閲嶆斁瀛楁銆?"""
+    """判断 context 是否仅包含可重放字段。"""
     field_map = schema.field_map()
     for key in ctx.keys():
         field = field_map.get(key)
@@ -205,7 +220,7 @@ def strip_context_for_replay(
     ctx: Mapping[str, Any],
     schema: ContextSchema = RUNTIME_CONTEXT_SCHEMA,
 ) -> Dict[str, Any]:
-    """绉婚櫎涓嶅彲閲嶆斁瀛楁锛屽緱鍒板彲鐢ㄤ簬閲嶆斁鐨勬渶灏忎笂涓嬫枃銆?"""
+    """移除不可重放字段，得到用于重放的最小上下文。"""
     field_map = schema.field_map()
     out: Dict[str, Any] = {}
     for key, value in ctx.items():
@@ -213,4 +228,3 @@ def strip_context_for_replay(
         if field is None or field.replayable:
             out[key] = value
     return out
-

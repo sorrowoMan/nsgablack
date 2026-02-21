@@ -41,6 +41,15 @@ class EngineeringPrecisionBias(AlgorithmicBias):
     适用于对解精度要求极高的工程设计问题，
     如结构优化、参数调优等场景。
     """
+    context_requires = ()
+    requires_metrics = ("objective",)
+    metrics_fallback = "default"
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: metrics; outputs scalar bias only."
+
+
 
     def __init__(self, weight: float = 0.15, precision_threshold: float = 1e-6,
                  convergence_window: int = 10, adaptive_precision: bool = True):
@@ -172,6 +181,13 @@ class EngineeringConstraintBias(DomainBias):
     - 安全约束：安全系数、失效概率等
     - 制造约束：可制造性、成本限制等
     """
+    context_requires = ("generation",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: generation; outputs scalar bias only."
+
+
 
     def __init__(self, weight: float = 1.0, safety_factor: float = 1.5,
                  constraint_types: Optional[List[str]] = None):
@@ -306,6 +322,13 @@ class EngineeringRobustnessBias(AlgorithmicBias):
 
     特别适用于需要考虑不确定性的工程设计问题。
     """
+    context_requires = ("problem_data",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: problem_data; outputs scalar bias only."
+
+
 
     def __init__(self, weight: float = 0.2, perturbation_magnitude: float = 0.01,
                  sample_size: int = 20, robustness_metric: str = 'variance'):
@@ -322,6 +345,7 @@ class EngineeringRobustnessBias(AlgorithmicBias):
         self.perturbation_magnitude = perturbation_magnitude  # 扰动幅度
         self.sample_size = sample_size                        # 采样数量
         self.robustness_metric = robustness_metric            # 鲁棒性指标
+        self._rng = np.random.default_rng()
 
     def compute(self, x: np.ndarray, context: OptimizationContext) -> float:
         """
@@ -354,7 +378,7 @@ class EngineeringRobustnessBias(AlgorithmicBias):
 
         for _ in range(self.sample_size):
             # 生成扰动
-            perturbation = np.random.normal(0, self.perturbation_magnitude, x.shape)
+            perturbation = self._rng.normal(0, self.perturbation_magnitude, x.shape)
             x_perturbed = x + perturbation
 
             # 确保扰动在设计空间内

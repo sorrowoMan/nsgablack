@@ -79,6 +79,13 @@ class _Label:
 
 class MOAStarAdapter(AlgorithmAdapter):
     """Pareto A* adapter with dominance pruning per state."""
+    context_requires = ("generation",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = (
+        "Consumes context for neighbor expansion / heuristic / goal callbacks in multi-objective A*.",
+    )
 
     def __init__(
         self,
@@ -245,6 +252,8 @@ class MOAStarAdapter(AlgorithmAdapter):
             lbl = self._labels.get(lbl_id)
             if lbl is not None:
                 lbl.valid = False
+            # Purge from dict to prevent unbounded memory growth (N-04).
+            self._labels.pop(lbl_id, None)
         current = [i for i in current if i not in to_remove]
 
         self._counter += 1
@@ -380,3 +389,8 @@ class MOAStarAdapter(AlgorithmAdapter):
             "labels": int(len(self._labels)),
         }
 
+    def set_state(self, state: Dict[str, Any]) -> None:
+        if not state:
+            return
+        if "found" in state:
+            self.found = bool(state["found"])

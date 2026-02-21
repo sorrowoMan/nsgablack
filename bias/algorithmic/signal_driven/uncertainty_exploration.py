@@ -19,6 +19,13 @@ class UncertaintyExplorationBias(AlgorithmicBias):
     Consumes `surrogate_std` (or `surrogate_uncertainty`) from context.metrics.
     If missing, returns 0.0 safely.
     """
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: metrics; outputs scalar bias only."
+
+
 
     name: str = "uncertainty_exploration"
     weight: float = 0.2
@@ -27,6 +34,7 @@ class UncertaintyExplorationBias(AlgorithmicBias):
     power: float = 1.0
 
     requires_metrics = ("surrogate_std", "surrogate_uncertainty")
+    metrics_fallback = "safe_zero"
     recommended_plugins = ("plugin.surrogate_eval",)
 
     def compute(self, x: np.ndarray, context: OptimizationContext) -> float:

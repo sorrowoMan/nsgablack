@@ -15,6 +15,7 @@ import numpy as np
 from ...core.base import BlackBoxProblem
 from ...bias import BiasModule
 from ..constraints.constraint_utils import evaluate_constraints_safe, evaluate_constraints_batch_safe
+from ..context.context_keys import KEY_CONSTRAINTS, KEY_CONSTRAINT_VIOLATION, KEY_INDIVIDUAL_ID
 
 
 class BatchEvaluator:
@@ -254,9 +255,9 @@ class BatchEvaluator:
                 constraints_list = list(np.asarray(constraints[i]).flatten())
 
             context = {
-                "constraints": constraints_list,
-                "constraint_violation": float(vio_out[i]),
-                "individual_id": offset + i,
+                KEY_CONSTRAINTS: constraints_list,
+                KEY_CONSTRAINT_VIOLATION: float(vio_out[i]),
+                KEY_INDIVIDUAL_ID: offset + i,
             }
 
             if callable(getattr(bias_module, "compute_bias_vector", None)) and obj_out.shape[1] > 1:
@@ -269,9 +270,9 @@ class BatchEvaluator:
                         chunk[i], float(obj_out[i, j]), offset + i, context=context
                     )
 
-            if not constraints_list and "constraint_violation" in context:
+            if not constraints_list and KEY_CONSTRAINT_VIOLATION in context:
                 try:
-                    vio_out[i] = float(context["constraint_violation"])
+                    vio_out[i] = float(context[KEY_CONSTRAINT_VIOLATION])
                 except Exception:
                     pass
 
@@ -300,17 +301,17 @@ class BatchEvaluator:
 
             if enable_bias and bias_module is not None:
                 context = {
-                    "constraints": list(cons_arr),
-                    "constraint_violation": violation,
-                    "individual_id": i,
+                    KEY_CONSTRAINTS: list(cons_arr),
+                    KEY_CONSTRAINT_VIOLATION: violation,
+                    KEY_INDIVIDUAL_ID: i,
                 }
                 for j in range(num_objectives):
                     obj[j] = bias_module.compute_bias(
                         population[i], float(obj[j]), i, context=context
                     )
-                if cons_arr.size == 0 and "constraint_violation" in context:
+                if cons_arr.size == 0 and KEY_CONSTRAINT_VIOLATION in context:
                     try:
-                        violation = float(context["constraint_violation"])
+                        violation = float(context[KEY_CONSTRAINT_VIOLATION])
                     except Exception:
                         pass
 

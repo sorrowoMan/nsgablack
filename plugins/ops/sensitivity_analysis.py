@@ -12,12 +12,12 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional
 import json
 import os
-import random
 import time
 
 import numpy as np
 
 from ..base import Plugin
+from ...utils.context.context_keys import KEY_BEST_OBJECTIVE
 from ...utils.engineering.file_io import atomic_write_json
 
 
@@ -42,7 +42,17 @@ def _set_attr_by_path(obj: Any, path: str, value: Any) -> None:
 
 
 def _default_metric(solver: Any, result: Any) -> Dict[str, Any]:
-    best = getattr(solver, "best_objective", None)
+    best = None
+    getter = getattr(solver, "get_context", None)
+    if callable(getter):
+        try:
+            ctx = getter()
+        except Exception:
+            ctx = None
+        if isinstance(ctx, dict):
+            best = ctx.get(KEY_BEST_OBJECTIVE)
+    if best is None:
+        best = getattr(solver, "best_objective", None)
     steps = result.get("steps") if isinstance(result, dict) else None
     status = result.get("status") if isinstance(result, dict) else None
     return {"best": best, "steps": steps, "status": status}
@@ -103,15 +113,24 @@ class SensitivityAnalysisPlugin(Plugin):
         metric_fn = self.cfg.metric_fn or _default_metric
         results: List[Dict[str, Any]] = []
 
+        run_rng = np.random.default_rng(None if self.cfg.seed is None else int(self.cfg.seed))
         if self.cfg.seed is not None:
             seed = int(self.cfg.seed)
-            random.seed(seed)
-            np.random.seed(seed)
 
         for param in self.cfg.params:
             label = param.label or param.path
             for value in list(param.values):
                 solver = build_solver()
+                setter = getattr(solver, "set_random_seed", None)
+                if callable(setter):
+                    try:
+                        setter(int(run_rng.integers(0, 2**32 - 1)))
+                    except Exception:
+                        if self.cfg.seed is not None:
+                            try:
+                                setter(seed)
+                            except Exception:
+                                pass
                 _set_attr_by_path(solver, param.path, value)
 
                 # Patch BenchmarkHarness run_id to avoid overwriting.

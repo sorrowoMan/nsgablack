@@ -9,11 +9,14 @@ from typing import Optional, Any, Tuple
 
 import numpy as np
 
+from .base import RepresentationComponentContract
+from ..utils.context.context_keys import KEY_BOUNDS, KEY_PROBLEM
+
 
 def _get_bounds(problem: Any, context: Optional[dict]) -> Tuple[np.ndarray, np.ndarray]:
     bounds = None
-    if context and "bounds" in context:
-        bounds = context["bounds"]
+    if context and KEY_BOUNDS in context:
+        bounds = context[KEY_BOUNDS]
     elif hasattr(problem, "bounds"):
         bounds = problem.bounds
 
@@ -36,9 +39,17 @@ def _get_bounds(problem: Any, context: Optional[dict]) -> Tuple[np.ndarray, np.n
 
 
 @dataclass
-class IntegerInitializer:
+class IntegerInitializer(RepresentationComponentContract):
     low: Optional[int] = None
     high: Optional[int] = None
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Optionally reads context bounds when low/high are not explicitly configured.",)
+
+    def __post_init__(self) -> None:
+        self._rng = np.random.default_rng()
 
     def initialize(self, problem: Any, context: Optional[dict] = None) -> np.ndarray:
         if self.low is not None and self.high is not None:
@@ -50,23 +61,28 @@ class IntegerInitializer:
             high = np.ceil(high_f).astype(int)
 
         high = np.maximum(high, low)
-        return np.random.randint(low, high + 1)
+        return self._rng.integers(low, high + 1)
 
 
 @dataclass
-class IntegerRepair:
+class IntegerRepair(RepresentationComponentContract):
     low: Optional[int] = None
     high: Optional[int] = None
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Optionally reads bounds/problem from context to clip integer candidates.",)
 
     def repair(self, x: np.ndarray, context: Optional[dict] = None) -> np.ndarray:
         if self.low is not None and self.high is not None:
             low = self.low
             high = self.high
         else:
-            if context and "bounds" in context:
+            if context and KEY_BOUNDS in context:
                 low_f, high_f = _get_bounds(None, context)
-            elif context and "problem" in context:
-                low_f, high_f = _get_bounds(context["problem"], context)
+            elif context and KEY_PROBLEM in context:
+                low_f, high_f = _get_bounds(context[KEY_PROBLEM], context)
             else:
                 low_f = np.full(x.shape, -np.inf)
                 high_f = np.full(x.shape, np.inf)
@@ -78,23 +94,31 @@ class IntegerRepair:
 
 
 @dataclass
-class IntegerMutation:
+class IntegerMutation(RepresentationComponentContract):
     sigma: float = 0.5
     low: Optional[int] = None
     high: Optional[int] = None
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Optionally reads bounds/problem from context for bounded integer mutation.",)
+
+    def __post_init__(self) -> None:
+        self._rng = np.random.default_rng()
 
     def mutate(self, x: np.ndarray, context: Optional[dict] = None) -> np.ndarray:
-        mutated = x + np.random.normal(0.0, self.sigma, size=x.shape)
+        mutated = x + self._rng.normal(0.0, self.sigma, size=x.shape)
         if self.low is not None and self.high is not None:
             return np.clip(np.round(mutated), self.low, self.high).astype(int)
 
-        if context and "bounds" in context:
+        if context and KEY_BOUNDS in context:
             low_f, high_f = _get_bounds(None, context)
             low = np.floor(low_f)
             high = np.ceil(high_f)
             return np.clip(np.round(mutated), low, high).astype(int)
-        if context and "problem" in context:
-            low_f, high_f = _get_bounds(context["problem"], context)
+        if context and KEY_PROBLEM in context:
+            low_f, high_f = _get_bounds(context[KEY_PROBLEM], context)
             low = np.floor(low_f)
             high = np.ceil(high_f)
             return np.clip(np.round(mutated), low, high).astype(int)

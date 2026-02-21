@@ -37,6 +37,12 @@
   - 查询策略：按 run_id/step/key/source 建索引，支持快速检索与回放定位
   - 容错策略：失败重试 + 本地 WAL/临时文件兜底，避免事件丢失
 
+- 语义版本化与迁移工具（后置）
+  - 范围：run snapshot / modules report / bias report / benchmark summary
+  - 当前策略：新产物自动写入 `schema_name/schema_version`，旧历史产物先不强制迁移
+  - 计划工具：`schema_tool migrate`（批量补版本与格式迁移）
+  - 启用时机：结构收敛后再开启严格 gate（避免开发期频繁扰动）
+
 - 组合类型系统与算法 DSL（静态验证 + 解释装配）
   - 扩展 catalog：组件 provides/requires
   - 组合静态检查器：装配前验证缺失/冲突/顺序

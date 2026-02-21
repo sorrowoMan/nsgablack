@@ -24,6 +24,16 @@ class ParticleSwarmBias(AlgorithmicBias):
     - context.metrics['global_best_x'] or context.problem_data['global_best_x']
     - context.metrics['local_best_x'] or context.problem_data['local_best_x']
     """
+    context_requires = ("problem_data",)
+    requires_metrics = ("global_best_x", "local_best_x")
+    metrics_fallback = "problem_data"
+    missing_metrics_policy = "ignore"
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: metrics, problem_data; outputs scalar bias only."
+
+
 
     weight: float = 0.1
     social_weight: float = 1.5
@@ -65,6 +75,15 @@ class AdaptivePSOBias(ParticleSwarmBias):
     """
     Adaptive PSO bias that shifts weights over generations.
     """
+    context_requires = ("generation",)
+    requires_metrics = ("max_generations",)
+    metrics_fallback = "default"
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: generation, metrics; outputs scalar bias only."
+
+
 
     min_social: float = 0.5
     max_social: float = 2.0

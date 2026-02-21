@@ -7,6 +7,7 @@ from typing import Any, Dict
 import numpy as np
 
 from ..base import Plugin
+from ...utils.context.context_keys import KEY_RUNNING
 
 
 class ConvergencePlugin(Plugin):
@@ -15,10 +16,10 @@ class ConvergencePlugin(Plugin):
     is_algorithmic = True
     context_requires = ()
     context_provides = ()
-    context_mutates = ()
+    context_mutates = (KEY_RUNNING,)
     context_cache = ()
     context_notes = (
-        "Reads solver objectives/population to detect convergence; "
+        "Reads adapter/context population snapshot to detect convergence; "
         "may set solver.running=False when early-stop is enabled."
     )
 
@@ -42,8 +43,10 @@ class ConvergencePlugin(Plugin):
         self.stagnation_count = 0
         self.is_converged = False
         self.convergence_generation: int | None = None
+        self._rng = np.random.default_rng()
 
     def on_solver_init(self, solver) -> None:
+        self._rng = self.create_local_rng(solver=solver)
         self.best_fitness_history = []
         self.diversity_history = []
         self.stagnation_count = 0
@@ -64,22 +67,33 @@ class ConvergencePlugin(Plugin):
     def on_generation_start(self, generation: int) -> None:
         return None
 
+    def on_context_build(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        if self.solver is None:
+            return context
+        context[KEY_RUNNING] = bool(getattr(self.solver, "running", False))
+        return context
+
     def on_generation_end(self, generation: int) -> None:
         if self.solver is None:
             return None
 
-        if self.solver.objectives.shape[1] == 1:
-            best_fitness = float(np.min(self.solver.objectives[:, 0]))
+        population, objectives, _ = self.resolve_population_snapshot(self.solver)
+        if objectives.size == 0:
+            return None
+
+        if objectives.shape[1] == 1:
+            best_fitness = float(np.min(objectives[:, 0]))
         else:
-            best_fitness = float(np.min(np.sum(self.solver.objectives, axis=1)))
+            best_fitness = float(np.min(np.sum(objectives, axis=1)))
         self.best_fitness_history.append(best_fitness)
-        self._update_diversity(self.solver.population)
+        self._update_diversity(population)
 
         if len(self.best_fitness_history) >= self.stagnation_window:
             recent = self.best_fitness_history[-self.stagnation_window :]
             improvement = recent[0] - recent[-1]
             if abs(improvement) < self.improvement_epsilon * abs(recent[0]):
-                self.stagnation_count += self.stagnation_window
+                # Count consecutive stagnant checks instead of jumping by window size.
+                self.stagnation_count += 1
             else:
                 self.stagnation_count = 0
 
@@ -113,7 +127,7 @@ class ConvergencePlugin(Plugin):
         pop_norm = (population - pop_min) / pop_range
 
         n_samples = min(30, len(pop_norm))
-        indices = np.random.choice(len(pop_norm), n_samples, replace=False)
+        indices = self._rng.choice(len(pop_norm), n_samples, replace=False)
         samples = pop_norm[indices]
 
         distances = []

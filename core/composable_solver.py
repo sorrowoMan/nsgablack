@@ -12,6 +12,7 @@ import numpy as np
 
 from .adapters import AlgorithmAdapter, CompositeAdapter
 from .blank_solver import BlankSolverBase
+from ..utils.context.context_keys import KEY_STEP
 from ..utils.extension_contracts import normalize_candidates, stack_population
 
 
@@ -56,7 +57,7 @@ class ComposableSolver(BlankSolverBase):
             return
 
         context = self.build_context()
-        context["step"] = self.generation
+        context[KEY_STEP] = self.generation
 
         candidates = normalize_candidates(
             list(self.adapter.propose(self, context) or []),

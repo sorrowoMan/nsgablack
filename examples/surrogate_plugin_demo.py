@@ -92,13 +92,13 @@ def main() -> None:
 
     # Baseline
     base = _build_solver(enable_surrogate=False, out_dir=out_dir, run_id="baseline_true_eval")
-    base.max_steps = 35
+    base.set_max_steps(35)
     base.run()
     baseline_evals = int(getattr(base, "evaluation_count", 0) or 0)
 
     # With surrogate
     solver = _build_solver(enable_surrogate=True, out_dir=out_dir, run_id="surrogate_eval")
-    solver.max_steps = 35
+    solver.set_max_steps(35)
     solver.run()
     total_evals = int(getattr(solver, "evaluation_count", 0) or 0)
 

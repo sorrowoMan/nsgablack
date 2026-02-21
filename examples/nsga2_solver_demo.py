@@ -36,8 +36,8 @@ class BiObjectiveSphere:
 def build_solver():
     problem = BiObjectiveSphere()
     solver = BlackBoxSolverNSGAII(problem)
-    solver.pop_size = 60
-    solver.max_generations = 40
+    solver.set_solver_hyperparams(pop_size=60)
+    solver.set_solver_hyperparams(max_generations=40)
 
     attach_nsga2_engineering(
         solver,

@@ -25,6 +25,11 @@ import numpy as np
 from ...bias import BiasModule
 from ...core.base import BlackBoxProblem
 from ..constraints.constraint_utils import evaluate_constraints_safe
+from ..context.context_keys import (
+    KEY_BOUNDS,
+    KEY_CONSTRAINT_VIOLATION,
+    KEY_PROBLEM,
+)
 from ..context.context_schema import build_minimal_context
 
 Backend = Literal["process", "thread", "ray", "joblib"]
@@ -62,9 +67,9 @@ def _default_context_builder(
         extra=extra_context,
     )
     # Keep a reference for bias implementations that need the problem (thread backend only).
-    ctx["problem"] = problem
+    ctx[KEY_PROBLEM] = problem
     try:
-        ctx.setdefault("bounds", getattr(problem, "bounds", None))
+        ctx.setdefault(KEY_BOUNDS, getattr(problem, "bounds", None))
     except Exception:
         pass
     return ctx
@@ -115,8 +120,8 @@ def _evaluate_individual_task_static(
                         obj_biased.append(f_biased)
                     obj = np.asarray(obj_biased, dtype=float).reshape(-1)
 
-        if cons_arr.size == 0 and "constraint_violation" in context:
-            violation = float(context["constraint_violation"])
+        if cons_arr.size == 0 and KEY_CONSTRAINT_VIOLATION in context:
+            violation = float(context[KEY_CONSTRAINT_VIOLATION])
 
         return idx, obj, float(violation), None
     except Exception as exc:
@@ -363,9 +368,8 @@ class ParallelEvaluator:
             return results
 
         results = []
-        with executor as ex:
-            for result in ex.map(task_func, tasks, timeout=30):
-                results.append(result)
+        for result in executor.map(task_func, tasks, timeout=30):
+            results.append(result)
         return results
 
     def _evaluate_with_ray(self, tasks: List[Tuple]) -> List[Tuple]:

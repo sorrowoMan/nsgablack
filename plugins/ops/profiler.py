@@ -94,9 +94,14 @@ class ProfilerPlugin(Plugin):
             "eval_per_s": float(de) / dt if dt > 1e-12 else 0.0,
             "phase": None,
         }
-        shared = getattr(solver, "shared_state", None)
-        if isinstance(shared, dict) and shared.get("phase") is not None:
-            rec["phase"] = str(shared.get("phase"))
+        proj = self._read_adapter_projection(solver)
+        phase = proj.get("phase")
+        if phase is None:
+            shared = proj.get("shared")
+            if isinstance(shared, dict):
+                phase = shared.get("phase")
+        if phase is not None:
+            rec["phase"] = str(phase)
         self._records.append(rec)
 
         # Optional: periodic flush for long runs.
@@ -177,6 +182,19 @@ class ProfilerPlugin(Plugin):
             "per_generation": list(self._records),
             "plugins_profile": plugin_profiles,
         }
+
+    def _read_adapter_projection(self, solver: Any) -> Dict[str, Any]:
+        adapter = getattr(solver, "adapter", None)
+        if adapter is None:
+            return {}
+        projector = getattr(adapter, "get_runtime_context_projection", None)
+        if not callable(projector):
+            return {}
+        try:
+            out = projector(solver)
+        except Exception:
+            return {}
+        return out if isinstance(out, dict) else {}
 
 
 

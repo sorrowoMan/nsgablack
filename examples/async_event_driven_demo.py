@@ -68,7 +68,7 @@ def build_solver():
     )
 
     solver = ComposableSolver(problem=problem, representation_pipeline=pipeline)
-    solver.max_steps = 30
+    solver.set_max_steps(30)
 
     strategies = [
         EventStrategySpec(

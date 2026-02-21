@@ -414,7 +414,7 @@ def process(x: Optional[List[ConfigDict]]) -> Dict[str, List[float]]:
 - `utils/surrogate/`（轻量工具层）
 
 ### 阶段3: 实验和示例（低优先级）
-- `deprecated/legacy/experiments/`（历史实验脚本，已降权；新内容建议放 examples/ 或 docs/cases/）
+- ~~`deprecated/legacy/experiments/`~~（历史实验脚本，目录已清理；新内容建议放 examples/ 或 docs/cases/；如需追溯请查看 git 历史）
 
 ## 十一、检查清单
 

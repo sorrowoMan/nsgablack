@@ -58,7 +58,7 @@ def build_solver():
 
     solver = BlackBoxSolverNSGAII(problem=problem, enable_bias=True)
     solver.representation_pipeline = pipeline
-    solver.bias_module = bias
+    solver.set_bias_module(bias)
     solver.add_plugin(BenchmarkHarnessPlugin())
     return solver
 
@@ -66,9 +66,9 @@ def build_solver():
 def main():
     solver = build_solver()
     result = solver.run(max_generations=40, seed=7)
-    print("����״̬:", result.get("status"))
-    print("����Ŀ��ֵ:", result.get("best_objective"))
-    print("���Ž�:", result.get("best_solution"))
+    print("运行状态:", result.get("status"))
+    print("最优目标值:", result.get("best_objective"))
+    print("最优解:", result.get("best_solution"))
 
 
 if __name__ == "__main__":

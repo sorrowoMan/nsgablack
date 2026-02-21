@@ -15,6 +15,14 @@ from . import domain as _domain
 
 class _GenericAlgorithmicBias(AlgorithmicBias):
     """Fallback bias used when a specific algorithmic class is unavailable."""
+    context_requires = ()
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: metrics; outputs scalar bias only."
+
+
 
     def compute(self, x, context) -> float:
         return 0.0
@@ -22,6 +30,13 @@ class _GenericAlgorithmicBias(AlgorithmicBias):
 
 class _GenericDomainBias(DomainBias):
     """Fallback bias used when a specific domain class is unavailable."""
+    context_requires = ("problem_data",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: problem_data; outputs scalar bias only."
+
+
 
     def compute(self, x, context) -> float:
         return 0.0

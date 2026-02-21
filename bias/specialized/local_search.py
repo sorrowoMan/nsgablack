@@ -35,6 +35,13 @@ class GradientDescentBias(AlgorithmicBias):
 
     适用于光滑、可导的目标函数，在局部搜索阶段效果显著。
     """
+    context_requires = ("problem_data",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: problem_data; outputs scalar bias only."
+
+
 
     def __init__(self, weight: float = 0.2, learning_rate: float = 0.01,
                  momentum: float = 0.9, adaptive_lr: bool = True,
@@ -169,6 +176,14 @@ class GradientDescentBias(AlgorithmicBias):
 
 class NewtonMethodBias(AlgorithmicBias):
     """牛顿法偏置 - 使用二阶导数信息"""
+    context_requires = ()
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: metrics; outputs scalar bias only."
+
+
 
     def __init__(self, weight: float = 0.3, regularization: float = 1e-6,
                  damping: float = 0.1, use_damped_newton: bool = True,
@@ -292,6 +307,14 @@ class NewtonMethodBias(AlgorithmicBias):
 
 class LineSearchBias(AlgorithmicBias):
     """线搜索偏置 - 实现Armijo线搜索和Wolfe条件"""
+    context_requires = ()
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: metrics; outputs scalar bias only."
+
+
 
     def __init__(self, weight: float = 0.15, method: str = 'armijo',
                  alpha: float = 0.5, beta: float = 0.8, max_iter: int = 20,
@@ -410,6 +433,14 @@ class LineSearchBias(AlgorithmicBias):
 
 class TrustRegionBias(AlgorithmicBias):
     """信赖域偏置 - 自适应调整搜索区域"""
+    context_requires = ()
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: metrics; outputs scalar bias only."
+
+
 
     def __init__(self, weight: float = 0.25, initial_radius: float = 1.0,
                  eta1: float = 0.25, eta2: float = 0.75, gamma1: float = 0.5,
@@ -546,6 +577,14 @@ class TrustRegionBias(AlgorithmicBias):
 
 class NelderMeadBias(AlgorithmicBias):
     """Nelder-Mead单纯形法偏置"""
+    context_requires = ()
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: metrics; outputs scalar bias only."
+
+
 
     def __init__(self, weight: float = 0.2, simplex_size: float = 0.1,
                  reflection: float = 1.0, expansion: float = 2.0,
@@ -648,6 +687,14 @@ class NelderMeadBias(AlgorithmicBias):
 
 class QuasiNewtonBias(AlgorithmicBias):
     """拟牛顿法偏置 - BFGS和DFP"""
+    context_requires = ()
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: metrics; outputs scalar bias only."
+
+
 
     def __init__(self, weight: float = 0.25, method: str = 'bfgs',
                  initial_scale: float = 1.0):

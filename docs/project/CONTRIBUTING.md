@@ -74,7 +74,7 @@ nsgablack/
 ├── tests/          # pytest 测试（权威回归口径）
 ├── docs/           # 文档
 ├── tools/          # 工程脚本（构建索引/生成 API 文档等）
-└── deprecated/     # 历史目录（不再维护，仅保留兼容/考古）
+# deprecated/       # 已清理（如需追溯请查看 git 历史）
 ```
 
 ### 运行测试

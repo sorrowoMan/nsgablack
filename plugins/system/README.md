@@ -21,5 +21,6 @@ Guard plugins should prefer observability over silent failure.
 ## Directory Contents
 - `async_event_hub.py`
 - `boundary_guard.py`
+- `checkpoint_resume.py`
 - `memory_optimize.py`
 

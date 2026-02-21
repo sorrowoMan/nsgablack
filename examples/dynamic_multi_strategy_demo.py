@@ -149,8 +149,8 @@ def build_solver():
         representation_pipeline=pipeline,
         bias_module=bias_module,
     )
-    solver.enable_bias = True
-    solver.max_steps = 40
+    solver.set_enable_bias(True)
+    solver.set_max_steps(40)
 
     attach_benchmark_harness(
         solver,
@@ -251,8 +251,8 @@ if __name__ == "__main__":
     else:
         solver = build_solver()
         result = solver.run()
-        print("运行状�?", result["status"], "steps:", result["steps"])
+        print("运行状态:", result["status"], "steps:", result["steps"])
         if solver.best_x is not None:
-            print("最优目标�?", f"{solver.best_objective:.6f}")
+            print("最优目标值:", f"{solver.best_objective:.6f}")
             print("最优解:", solver.best_x)
 

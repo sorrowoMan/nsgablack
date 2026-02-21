@@ -68,7 +68,7 @@ def build_solver():
     )
 
     solver = ComposableSolver(problem=problem, adapter=controller, representation_pipeline=pipeline)
-    solver.max_steps = 20
+    solver.set_max_steps(20)
 
     attach_benchmark_harness(solver, output_dir="runs", run_id="role_adapters", overwrite=True, log_every=1)
     attach_module_report(solver, output_dir="runs", run_id="role_adapters", write_bias_markdown=True)

@@ -94,6 +94,13 @@ class ProductionSchedulingBiasManager:
 
 class ProductionConstraintBias(DomainBias):
     """Hard/soft constraint bias for production scheduling plans."""
+    context_requires = ("problem_data",)
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: problem_data; outputs scalar bias only."
+
+
 
     def __init__(
         self,
@@ -181,6 +188,14 @@ class ProductionConstraintBias(DomainBias):
 
 class ProductionDiversityBias(AlgorithmicBias):
     """Encourage diverse plans (avoid early convergence)."""
+    context_requires = ()
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: metrics; outputs scalar bias only."
+
+
 
     def __init__(self, weight: float = 0.1) -> None:
         super().__init__("production_diversity", weight)
@@ -193,6 +208,14 @@ class ProductionDiversityBias(AlgorithmicBias):
 
 class ProductionContinuityBias(AlgorithmicBias):
     """Encourage contiguous production blocks to reduce switching."""
+    context_requires = ()
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: metrics; outputs scalar bias only."
+
+
 
     def __init__(self, machine_ids: List[Any], days: int, weight: float = 0.2) -> None:
         super().__init__("production_continuity", weight)
@@ -216,6 +239,13 @@ class ProductionOptimizationContext(OptimizationContext):
 
 class ProductionSchedulingBias:
     """Thin wrapper compatible with older code paths."""
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "No explicit context dependency; outputs scalar bias only."
+
+
 
     def __init__(self, manager: ProductionSchedulingBiasManager) -> None:
         self.manager = manager

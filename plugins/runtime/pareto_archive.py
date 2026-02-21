@@ -67,22 +67,7 @@ class ParetoArchivePlugin(Plugin):
 
     # ------------------------------------------------------------------
     def _get_population(self, solver: Any) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        adapter = getattr(solver, "adapter", None)
-        if adapter is not None and getattr(adapter, "get_population", None) is not None:
-            try:
-                X, F, V = adapter.get_population()
-                return np.asarray(X, dtype=float), np.asarray(F, dtype=float), np.asarray(V, dtype=float).reshape(-1)
-            except Exception:
-                pass
-
-        X = np.asarray(getattr(solver, "population", np.zeros((0,))), dtype=float)
-        F = np.asarray(getattr(solver, "objectives", np.zeros((0,))), dtype=float)
-        V = np.asarray(getattr(solver, "constraint_violations", np.zeros((0,))), dtype=float).reshape(-1)
-        if X.ndim == 1:
-            X = X.reshape(0, 0) if X.size == 0 else X.reshape(1, -1)
-        if F.ndim == 1:
-            F = F.reshape(-1, 1) if F.size > 0 else F.reshape(0, 0)
-        return X, F, V
+        return self.resolve_population_snapshot(solver)
 
     def _update_archive(self, X: np.ndarray, F: np.ndarray, V: np.ndarray) -> None:
         if self.archive_X is None:
@@ -110,9 +95,9 @@ class ParetoArchivePlugin(Plugin):
         self.archive_V = self.archive_V[nd]
 
         if self.cfg.max_size is not None and self.archive_F.shape[0] > int(self.cfg.max_size):
-            # simple downsample: keep evenly spaced by index
+            # Truncate by crowding distance to preserve front diversity.
             k = int(self.cfg.max_size)
-            idx = np.linspace(0, self.archive_F.shape[0] - 1, num=k).astype(int)
+            idx = self._select_by_crowding(self.archive_F, k)
             self.archive_X = self.archive_X[idx]
             self.archive_F = self.archive_F[idx]
             self.archive_V = self.archive_V[idx]
@@ -133,4 +118,34 @@ class ParetoArchivePlugin(Plugin):
                 if np.all(fj <= fi) and np.any(fj < fi):
                     dominated[i] = True
         return ~dominated
+
+    @staticmethod
+    def _select_by_crowding(F: np.ndarray, k: int) -> np.ndarray:
+        F = np.asarray(F, dtype=float)
+        n = int(F.shape[0])
+        if k >= n:
+            return np.arange(n, dtype=int)
+        if n == 0:
+            return np.array([], dtype=int)
+        if F.ndim == 1:
+            F = F.reshape(-1, 1)
+
+        m = int(F.shape[1])
+        crowd = np.zeros(n, dtype=float)
+        for obj in range(m):
+            order = np.argsort(F[:, obj])
+            crowd[order[0]] = np.inf
+            crowd[order[-1]] = np.inf
+            fmin = float(F[order[0], obj])
+            fmax = float(F[order[-1], obj])
+            denom = fmax - fmin
+            if denom <= 1e-12:
+                continue
+            for i in range(1, n - 1):
+                prev_v = float(F[order[i - 1], obj])
+                next_v = float(F[order[i + 1], obj])
+                crowd[order[i]] += (next_v - prev_v) / denom
+
+        selected = np.argsort(-crowd)[:k]
+        return np.sort(selected.astype(int))
 

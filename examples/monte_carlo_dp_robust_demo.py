@@ -160,7 +160,7 @@ def mc_stats(problem: StochasticGridPath, path: np.ndarray, samples: int = 200) 
 
 def run_solver(problem: StochasticGridPath, adapter: AlgorithmAdapter, label: str) -> float:
     solver = ComposableSolver(problem=problem, adapter=adapter)
-    solver.max_steps = 1
+    solver.set_max_steps(1)
     solver.add_plugin(
         MonteCarloEvaluationPlugin(
             config=MonteCarloEvaluationConfig(mc_samples=64, reduce="cvar", cvar_alpha=0.2, random_seed=7)

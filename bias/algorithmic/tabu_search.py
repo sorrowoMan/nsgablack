@@ -22,6 +22,14 @@ class TabuSearchBias(AlgorithmicBias):
     Maintains a short-term tabu list of recent solutions and penalizes
     candidates that are too close to them.
     """
+    context_requires = ()
+    requires_metrics = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Reads context fields: metrics; outputs scalar bias only."
+
+
 
     weight: float = 0.15
     tabu_size: int = 30

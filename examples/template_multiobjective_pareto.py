@@ -51,7 +51,7 @@ def build_solver():
     )
 
     solver = ComposableSolver(problem=problem, representation_pipeline=pipeline)
-    solver.max_steps = 80
+    solver.set_max_steps(80)
 
     attach_moead(solver, config=MOEADConfig(pop_size=40, n_neighbors=10), archive=True)
     attach_benchmark_harness(solver, output_dir="runs", run_id="template_mo_pareto", overwrite=True, log_every=1)

@@ -14,6 +14,7 @@ import numpy as np
 from typing import Dict, List, Any, Optional, Union
 import json
 from pathlib import Path
+from collections import deque
 
 from .base import (
     BiasBase, AlgorithmicBias, DomainBias, OptimizationContext,
@@ -259,8 +260,9 @@ class DomainBiasManager(BiasManagerMixin):
 
     def __init__(self):
         super().__init__()
-        self.constraint_violation_history = []            # 约束违反历史
-        self.violation_trend = []                          # 违反趋势
+        self.constraint_violation_history = deque(maxlen=5000)  # 约束违反历史
+        self.violation_trend = deque(maxlen=5000)              # 违反趋势
+        self.total_evaluations = 0
 
     def add_domain_bias(self, bias: DomainBias) -> bool:
         """
@@ -291,6 +293,7 @@ class DomainBiasManager(BiasManagerMixin):
             总领域偏置值
         """
         total_bias = 0.0
+        self.total_evaluations += 1
         for bias in self.get_enabled_biases():
             if isinstance(bias, DomainBias):
                 bias_value = bias.compute_with_tracking(x, context)
@@ -331,11 +334,8 @@ class DomainBiasManager(BiasManagerMixin):
         if not self.constraint_violation_history:
             return 0.0
 
-        # 简化实现：违反次数 / 总评估次数
         total_violations = len(self.constraint_violation_history)
-        # 这里需要一个总评估次数的计数器
-        total_evaluations = total_violations * 10  # 简化假设
-        return total_violations / max(1, total_evaluations)
+        return total_violations / max(1, int(self.total_evaluations))
 
 
 class UniversalBiasManager:
@@ -358,7 +358,7 @@ class UniversalBiasManager:
         self.algorithmic_manager = AlgorithmicBiasManager()  # 算法偏置管理器
         self.domain_manager = DomainBiasManager()           # 领域偏置管理器
         self.total_bias_calls = 0                          # 总调用次数
-        self.bias_history = []                              # 偏置历史记录
+        self.bias_history = deque(maxlen=5000)             # 偏置历史记录
 
     def add_algorithmic_bias(self, bias: AlgorithmicBias):
         """
@@ -533,7 +533,10 @@ class UniversalBiasManager:
             bias.reset_statistics()
 
         self.total_bias_calls = 0
-        self.bias_history = []
+        self.bias_history = deque(maxlen=5000)
+        self.domain_manager.constraint_violation_history.clear()
+        self.domain_manager.violation_trend.clear()
+        self.domain_manager.total_evaluations = 0
 
     def _get_timestamp(self) -> str:
         """获取当前时间戳"""
