@@ -4,7 +4,9 @@ from nsgablack.project import init_project, run_project_doctor
 def test_init_project_creates_component_registration_guide(tmp_path):
     root = init_project(tmp_path / "demo_project")
     guide = root / "COMPONENT_REGISTRATION.md"
+    marker = root / ".nsgablack-project"
     assert guide.is_file()
+    assert marker.is_file()
     text = guide.read_text(encoding="utf-8")
     assert "Why register components" in text
     assert "project_registry.py" in text
@@ -51,6 +53,27 @@ def test_project_doctor_strict_escalates_missing_contract_to_error(tmp_path):
     assert all(d.level == "error" for d in rows)
 
 
+def test_project_doctor_strict_blocks_template_not_implemented(tmp_path):
+    bias_dir = tmp_path / "bias"
+    bias_dir.mkdir(parents=True)
+    source = (
+        "class DemoBias:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = ('demo',)\n"
+        "    def compute(self, x, context):\n"
+        "        raise NotImplementedError\n"
+    )
+    (bias_dir / "demo_bias.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "template-not-implemented"]
+    assert rows
+    assert all(d.level == "error" for d in rows)
+
+
 def test_project_doctor_strict_blocks_solver_mirror_writes(tmp_path):
     adapter_dir = tmp_path / "adapter"
     adapter_dir.mkdir(parents=True)
@@ -91,6 +114,47 @@ def test_project_doctor_non_strict_warns_solver_mirror_writes(tmp_path):
     rows = [d for d in report.diagnostics if d.code == "solver-mirror-write"]
     assert rows
     assert all(d.level == "warn" for d in rows)
+
+
+def test_project_doctor_strict_blocks_runtime_bypass_writes(tmp_path):
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir(parents=True)
+    source = (
+        "class DemoAdapter:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'ok'\n"
+        "    def update(self, solver):\n"
+        "        solver.best_objective = 1.0\n"
+    )
+    (adapter_dir / "demo_adapter.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "runtime-bypass-write"]
+    assert rows
+    assert all(d.level == "error" for d in rows)
+
+
+def test_project_doctor_strict_allows_runtime_api_calls(tmp_path):
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir(parents=True)
+    source = (
+        "class DemoAdapter:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'ok'\n"
+        "    def update(self, solver):\n"
+        "        solver.write_population_snapshot([[0.0]], [[0.0]], [0.0])\n"
+    )
+    (adapter_dir / "demo_adapter_ok.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "runtime-bypass-write"]
+    assert not rows
 
 
 def test_project_doctor_strict_blocks_plugin_direct_solver_state_access(tmp_path):

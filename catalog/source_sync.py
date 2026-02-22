@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 _CONTRACT_FIELDS: Tuple[str, ...] = (
     "context_requires",
@@ -20,6 +20,12 @@ class SourceSymbol:
     kind: str
     lineno: int
     marked: bool = False
+
+
+@dataclass(frozen=True)
+class ExpansionScope:
+    root: Path
+    scope: str  # "project" | "framework"
 
 
 def _infer_kind(class_node: ast.ClassDef) -> str:
@@ -67,6 +73,34 @@ def _marker_meta(class_node: ast.ClassDef) -> tuple[bool, str | None]:
         if name in {"component", "catalog_component", "nsgablack_component"}:
             return True, (_decorator_kw_str(deco, "kind") or None)
     return False, None
+
+
+def _is_scaffold_project_root(root: Path) -> bool:
+    req_files = ("project_registry.py", "build_solver.py")
+    req_dirs = ("problem", "pipeline", "bias", "adapter", "plugins")
+    return all((root / f).is_file() for f in req_files) and all((root / d).is_dir() for d in req_dirs)
+
+
+def _is_framework_root(root: Path) -> bool:
+    return (
+        (root / "pyproject.toml").is_file()
+        and (root / "catalog" / "entries.toml").is_file()
+        and (root / "core").is_dir()
+        and (root / "bias").is_dir()
+    )
+
+
+def detect_expansion_scope(path: Path | str) -> Optional[ExpansionScope]:
+    src = Path(path).resolve()
+    start = src if src.is_dir() else src.parent
+    for cand in [start] + list(start.parents):
+        if (cand / ".nsgablack-project").is_file() and _is_scaffold_project_root(cand):
+            return ExpansionScope(root=cand, scope="project")
+        if _is_scaffold_project_root(cand):
+            return ExpansionScope(root=cand, scope="project")
+        if _is_framework_root(cand):
+            return ExpansionScope(root=cand, scope="framework")
+    return None
 
 
 def list_source_symbols(path: Path | str, *, marked_only: bool = False) -> List[SourceSymbol]:
@@ -128,6 +162,229 @@ def read_symbol_contract(path: Path | str, symbol: str) -> Dict[str, Tuple[str, 
                     out[stmt.target.id] = _read_values(stmt.value)
         return out
     raise ValueError(f"symbol not found: {symbol}")
+
+
+def _is_placeholder_name(kind: str, class_name: str) -> bool:
+    n = class_name.strip().lower()
+    if n in {"newbias", "bias", "newplugin", "plugin", "newadapter", "adapter", "newcomponent", "component"}:
+        return True
+    if kind == "bias" and n.endswith("bias") and n.startswith("new"):
+        return True
+    if kind == "plugin" and n.endswith("plugin") and n.startswith("new"):
+        return True
+    if kind == "adapter" and n.endswith("adapter") and n.startswith("new"):
+        return True
+    return False
+
+
+def _pick_unique_class_name(raw: str, *, kind: str, current_name: str) -> str:
+    tree = ast.parse(raw)
+    existing = {n.name for n in tree.body if isinstance(n, ast.ClassDef)}
+    existing.discard(current_name)
+    kind_base = {"bias": "Bias", "plugin": "Plugin", "adapter": "Adapter"}.get(kind, "Component")
+    if current_name and not _is_placeholder_name(kind, current_name) and current_name not in existing:
+        return current_name
+    idx = 1
+    while f"{kind_base}{idx}" in existing:
+        idx += 1
+    return f"{kind_base}{idx}"
+
+
+def _is_empty_shell_class(node: ast.ClassDef) -> bool:
+    body = list(node.body)
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        body = body[1:]
+    if not body:
+        return True
+    return all(isinstance(stmt, ast.Pass) for stmt in body)
+
+
+def _import_insert_line(tree: ast.Module) -> int:
+    insert = 1
+    if (
+        tree.body
+        and isinstance(tree.body[0], ast.Expr)
+        and isinstance(tree.body[0].value, ast.Constant)
+        and isinstance(tree.body[0].value.value, str)
+    ):
+        first = tree.body[0]
+        insert = int(getattr(first, "end_lineno", first.lineno)) + 1
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and str(node.module or "") == "__future__":
+            insert = int(getattr(node, "end_lineno", node.lineno)) + 1
+            continue
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            insert = int(getattr(node, "end_lineno", node.lineno)) + 1
+            continue
+        break
+    return insert
+
+
+def _ensure_imports(raw: str, import_lines: Sequence[str]) -> str:
+    missing = [line for line in import_lines if line and line not in raw]
+    if not missing:
+        return raw
+    lines = raw.splitlines(keepends=True)
+    tree = ast.parse(raw)
+    at = _import_insert_line(tree)
+    block = "".join(f"{line}\n" for line in missing) + "\n"
+    lines.insert(max(0, at - 1), block)
+    return "".join(lines)
+
+
+def _build_template_block(kind: str, class_name: str) -> tuple[list[str], str]:
+    k = kind.strip().lower()
+    if k == "bias":
+        imports = [
+            "from nsgablack.catalog.markers import component",
+            "from nsgablack.bias.core.base import BiasBase, OptimizationContext",
+        ]
+        block = (
+            '@component(kind="bias")\n'
+            f"class {class_name}(BiasBase):\n"
+            "    # TODO(中/EN): 仅声明真实读写字段 / declare only real read-write fields.\n"
+            "    context_requires = ()\n"
+            "    context_provides = ()\n"
+            "    context_mutates = ()\n"
+            "    context_cache = ()\n"
+            '    context_notes = ("TODO(中/EN): 一句话说明 context 契约 / one-line context contract.",)\n'
+            "    requires_metrics = ()\n"
+            '    metrics_fallback = "none"\n'
+            '    missing_metrics_policy = "warn"\n'
+            "\n"
+            "    def __init__(self, weight: float = 1.0) -> None:\n"
+            "        # TODO(中/EN): 设置稳定组件名与说明 / set stable name and description.\n"
+            f'        super().__init__(name="{class_name.lower()}", weight=float(weight), description="TODO")\n'
+            "\n"
+            "    def compute(self, x, context: OptimizationContext) -> float:\n"
+            "        # TODO(中/EN): 返回标量偏好分 / return a scalar preference score.\n"
+            "        _ = x\n"
+            "        _ = context\n"
+            "        raise NotImplementedError\n"
+        )
+        return imports, block
+    if k == "plugin":
+        imports = [
+            "from nsgablack.catalog.markers import component",
+            "from nsgablack.plugins.base import Plugin",
+        ]
+        block = (
+            '@component(kind="plugin")\n'
+            f"class {class_name}(Plugin):\n"
+            "    # TODO(中/EN): 仅声明真实读写字段 / declare only real read-write fields.\n"
+            "    context_requires = ()\n"
+            "    context_provides = ()\n"
+            "    context_mutates = ()\n"
+            "    context_cache = ()\n"
+            '    context_notes = ("TODO(中/EN): 一句话说明 context 契约 / one-line context contract.",)\n'
+            "\n"
+            "    def __init__(self) -> None:\n"
+            "        # TODO(中/EN): 设置稳定插件名 / set a stable plugin name.\n"
+            f'        super().__init__(name="{class_name.lower()}")\n'
+        )
+        return imports, block
+    if k == "adapter":
+        imports = [
+            "from nsgablack.catalog.markers import component",
+            "from nsgablack.core.adapters.algorithm_adapter import AlgorithmAdapter",
+        ]
+        block = (
+            '@component(kind="adapter")\n'
+            f"class {class_name}(AlgorithmAdapter):\n"
+            "    # TODO(中/EN): 仅声明真实读写字段 / declare only real read-write fields.\n"
+            "    context_requires = ()\n"
+            "    context_provides = ()\n"
+            "    context_mutates = ()\n"
+            "    context_cache = ()\n"
+            '    context_notes = ("TODO(中/EN): 一句话说明 context 契约 / one-line context contract.",)\n'
+            "\n"
+            "    def __init__(self) -> None:\n"
+            "        # TODO(中/EN): 设置稳定适配器名 / set a stable adapter name.\n"
+            f'        super().__init__(name="{class_name.lower()}")\n'
+            "\n"
+            "    def propose(self, solver, context):\n"
+            "        # TODO(中/EN): 生成候选解 / generate candidate solutions.\n"
+            "        _ = solver\n"
+            "        _ = context\n"
+            "        raise NotImplementedError\n"
+            "\n"
+            "    def update(self, solver, candidates, objectives, violations, context):\n"
+            "        # TODO(中/EN): 用评估反馈更新状态 / update state with evaluation feedback.\n"
+            "        _ = solver\n"
+            "        _ = candidates\n"
+            "        _ = objectives\n"
+            "        _ = violations\n"
+            "        _ = context\n"
+            "        raise NotImplementedError\n"
+        )
+        return imports, block
+    raise ValueError(f"unsupported kind for template expansion: {kind}")
+
+
+def expand_marked_component_template(
+    path: Path | str,
+    symbol: str,
+    *,
+    kind: str | None = None,
+    force: bool = False,
+) -> str:
+    """
+    Expand a marked shell class to a component template in-place.
+
+    Boundary rule: only allowed under scaffold project roots or framework roots.
+    Returns the final class name.
+    """
+    file_path = Path(path).resolve()
+    scope = detect_expansion_scope(file_path)
+    if scope is None:
+        raise ValueError("template expansion is only enabled inside NSGABlack framework or scaffold projects")
+
+    raw = file_path.read_text(encoding="utf-8-sig")
+    raw = _ensure_imports(raw, ["from nsgablack.catalog.markers import component"])
+    tree = ast.parse(raw, filename=str(file_path))
+
+    class_node: ast.ClassDef | None = None
+    marker_kind: str | None = None
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == symbol:
+            class_node = node
+            marked, mk = _marker_meta(node)
+            if not marked:
+                raise ValueError(f"class '{symbol}' is not marked with @component(...)")
+            marker_kind = mk
+            break
+    if class_node is None:
+        raise ValueError(f"symbol not found: {symbol}")
+    if not force and not _is_empty_shell_class(class_node):
+        raise ValueError(f"class '{symbol}' is not an empty shell; use force=True to overwrite")
+
+    final_kind = (kind or marker_kind or _infer_kind(class_node)).strip().lower()
+    final_class_name = _pick_unique_class_name(raw, kind=final_kind, current_name=symbol)
+    imports, class_block = _build_template_block(final_kind, final_class_name)
+    raw = _ensure_imports(raw, imports)
+    lines = raw.splitlines(keepends=True)
+    tree = ast.parse(raw, filename=str(file_path))
+
+    class_node = None
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == symbol:
+            class_node = node
+            break
+    if class_node is None:
+        raise ValueError(f"symbol not found after import refresh: {symbol}")
+
+    start = min([class_node.lineno] + [int(d.lineno) for d in class_node.decorator_list])
+    end = int(getattr(class_node, "end_lineno", class_node.lineno))
+    block = class_block if class_block.endswith("\n") else class_block + "\n"
+    lines[start - 1 : end] = [block, "\n"]
+    file_path.write_text("".join(lines), encoding="utf-8")
+
+    return final_class_name
 
 
 def _format_tuple_assignment(indent: str, name: str, values: Sequence[str]) -> str:

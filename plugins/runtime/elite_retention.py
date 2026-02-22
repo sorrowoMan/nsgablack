@@ -24,10 +24,12 @@ def _evaluate_candidate_with_solver(solver, x: np.ndarray, individual_id: int) -
     legacy = getattr(solver, "_evaluate_individual", None)
     if callable(legacy):
         obj, vio = legacy(x, individual_id=individual_id)
-        try:
-            solver.evaluation_count = int(getattr(solver, "evaluation_count", 0)) + 1
-        except Exception:
-            pass
+        runtime = getattr(solver, "runtime", None)
+        if runtime is not None and hasattr(runtime, "increment_evaluation_count"):
+            try:
+                runtime.increment_evaluation_count(1)
+            except Exception:
+                pass
         return np.asarray(obj, dtype=float).reshape(-1), float(vio)
 
     raise AttributeError("solver has neither evaluate_individual() nor _evaluate_individual()")

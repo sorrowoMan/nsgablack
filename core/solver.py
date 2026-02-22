@@ -1,3 +1,10 @@
+"""Legacy solver entry (BlackBoxSolverNSGAII).
+
+Legacy: this file is kept for backward compatibility and incremental migration.
+Runtime-first: new runtime features should be added through `core.runtime.SolverRuntime`
+and control-plane/runtime hooks, not by expanding this monolith.
+"""
+
 import time
 import math
 import random
@@ -8,12 +15,13 @@ import os
 import logging
 from typing import Optional, Any, List
 
-from ..utils.context.context_keys import KEY_BEST_OBJECTIVE, KEY_BEST_X, KEY_CONSTRAINT_VIOLATION
+from ..utils.context.context_keys import KEY_CONSTRAINT_VIOLATION
 
 # ============================================================================
 # 基础依赖
 # ============================================================================
 from .base import BlackBoxProblem
+from .runtime import SolverRuntime
 from ..plugins import PluginManager
 
 # ============================================================================
@@ -281,6 +289,17 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         self.history = []
         self.running = False
         self.start_time = 0
+        self.runtime = SolverRuntime(self)
+        self._runtime_timing = {
+            "evaluate_population_s": 0.0,
+            "non_dominated_sort_s": 0.0,
+            "environmental_selection_s": 0.0,
+        }
+        self._runtime_timing_calls = {
+            "evaluate_population": 0,
+            "non_dominated_sort": 0,
+            "environmental_selection": 0,
+        }
 
         # 插件系统（支持短路事件）
         # - evaluate_population / evaluate_individual 可被代理模块接管
@@ -363,22 +382,20 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             self.crossover_rate = float(crossover_rate)
 
     def write_population_snapshot(self, population, objectives, violations) -> bool:
-        try:
-            pop = np.asarray(population, dtype=float)
-            obj = np.asarray(objectives, dtype=float)
-            vio = np.asarray(violations, dtype=float).reshape(-1)
-        except Exception:
-            return False
-        if pop.ndim == 1:
-            pop = pop.reshape(1, -1) if pop.size > 0 else pop.reshape(0, 0)
-        if obj.ndim == 1:
-            obj = obj.reshape(-1, 1) if obj.size > 0 else obj.reshape(0, 0)
-        if obj.shape[0] != pop.shape[0] or vio.shape[0] != pop.shape[0]:
-            return False
-        self.population = pop
-        self.objectives = obj
-        self.constraint_violations = vio
-        return True
+        runtime = getattr(self, "runtime", None)
+        if runtime is None:
+            self.runtime = SolverRuntime(self)
+            runtime = self.runtime
+        return bool(runtime.write_population_snapshot(population, objectives, violations))
+
+    def _add_runtime_timing(self, key: str, elapsed_s: float, *, call_key: Optional[str] = None) -> None:
+        if not isinstance(getattr(self, "_runtime_timing", None), dict):
+            self._runtime_timing = {}
+        self._runtime_timing[key] = float(self._runtime_timing.get(key, 0.0) or 0.0) + float(elapsed_s)
+        if call_key:
+            if not isinstance(getattr(self, "_runtime_timing_calls", None), dict):
+                self._runtime_timing_calls = {}
+            self._runtime_timing_calls[call_key] = int(self._runtime_timing_calls.get(call_key, 0) or 0) + 1
 
     def set_random_seed(self, seed: Optional[int]) -> None:
         self.random_seed = None if seed is None else int(seed)
@@ -417,60 +434,18 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
 
     def get_context(self) -> dict:
         """Return a snapshot context for visualization/monitoring."""
-        best_x, best_obj = self._resolve_best_snapshot()
-        ctx = {
-            "generation": int(getattr(self, "generation", 0)),
-            "population": self.population if self.population is not None else [],
-            "objectives": self.objectives if self.objectives is not None else [],
-            KEY_BEST_X: best_x,
-            KEY_BEST_OBJECTIVE: best_obj,
-            "constraint_violations": self.constraint_violations if self.constraint_violations is not None else [],
-            "pareto_objectives": self.pareto_objectives if self.pareto_objectives is not None else [],
-            "pareto_solutions": self.pareto_solutions if self.pareto_solutions is not None else {},
-            "evaluation_count": int(getattr(self, "evaluation_count", 0)),
-            "history": self.history if self.history is not None else [],
-        }
-        dynamic = getattr(self, "dynamic_signals", None)
-        if dynamic is not None:
-            ctx["dynamic"] = dynamic
-        phase_id = getattr(self, "dynamic_phase_id", None)
-        if phase_id is not None:
-            ctx["phase_id"] = phase_id
-        return ctx
+        runtime = getattr(self, "runtime", None)
+        if runtime is None:
+            self.runtime = SolverRuntime(self)
+            runtime = self.runtime
+        return dict(runtime.get_context())
 
     def _resolve_best_snapshot(self):
-        best_x = getattr(self, "best_x", None)
-        best_obj = getattr(self, "best_objective", None)
-
-        if best_obj is None:
-            best_f = getattr(self, "best_f", None)
-            if best_f is not None:
-                try:
-                    best_obj = float(best_f)
-                except Exception:
-                    best_obj = None
-
-        if best_obj is None and self.objectives is not None:
-            try:
-                if self.num_objectives == 1:
-                    idx = int(np.argmin(self.objectives[:, 0]))
-                    best_obj = float(self.objectives[idx, 0])
-                else:
-                    scores = np.sum(self.objectives, axis=1)
-                    if self.constraint_violations is not None:
-                        vio = np.asarray(self.constraint_violations, dtype=float).reshape(-1)
-                        if vio.shape[0] == scores.shape[0]:
-                            scores = scores + vio * 1e6
-                    idx = int(np.argmin(scores))
-                    best_obj = float(scores[idx])
-                if best_x is None and self.population is not None:
-                    pop = np.asarray(self.population)
-                    if pop.ndim >= 2 and idx < pop.shape[0]:
-                        best_x = pop[idx]
-            except Exception:
-                pass
-
-        return best_x, best_obj
+        runtime = getattr(self, "runtime", None)
+        if runtime is None:
+            self.runtime = SolverRuntime(self)
+            runtime = self.runtime
+        return runtime.resolve_best_snapshot()
 
     # ========================================================================
     # 模块属性访问器（支持依赖注入 + 惰性创建）
@@ -1110,6 +1085,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         """
         评估种群并返回 (objectives, constraint_violations)。
         """
+        _timing_t0 = time.perf_counter()
         if not hasattr(population, "shape"):
             try:
                 population = np.asarray(population)
@@ -1151,6 +1127,11 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
                 pass
             if self.enable_bias and self.ignore_constraint_violation_when_bias:
                 violations = np.zeros_like(np.asarray(violations, dtype=float))
+            self._add_runtime_timing(
+                "evaluate_population_s",
+                time.perf_counter() - _timing_t0,
+                call_key="evaluate_population",
+            )
             return objectives, violations
 
         if self.enable_parallel_evaluation:
@@ -1172,6 +1153,11 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
                         pass
                     if self.enable_bias and self.ignore_constraint_violation_when_bias:
                         violations = np.zeros_like(np.asarray(violations, dtype=float))
+                    self._add_runtime_timing(
+                        "evaluate_population_s",
+                        time.perf_counter() - _timing_t0,
+                        call_key="evaluate_population",
+                    )
                     return objectives, violations
                 except Exception as exc:
                     if getattr(self, "parallel_strict", False):
@@ -1192,6 +1178,11 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             constraint_violations[i] = vio
             self.evaluation_count += 1
 
+        self._add_runtime_timing(
+            "evaluate_population_s",
+            time.perf_counter() - _timing_t0,
+            call_key="evaluate_population",
+        )
         return objectives, constraint_violations
 
     def initialize_population(self):
@@ -1279,6 +1270,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
 
     def non_dominated_sorting(self):
         """Optimized non-dominated sorting using O(MN^2) algorithm"""
+        _timing_t0 = time.perf_counter()
         from ..utils.performance.fast_non_dominated_sort import (
             fast_non_dominated_sort_optimized,
             FastNonDominatedSort,
@@ -1302,6 +1294,11 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         if len(rank) < self.pop_size:
             rank = np.pad(rank, (0, self.pop_size - len(rank)), 'constant', constant_values=len(fronts))
 
+        self._add_runtime_timing(
+            "non_dominated_sort_s",
+            time.perf_counter() - _timing_t0,
+            call_key="non_dominated_sort",
+        )
         return rank[:self.pop_size], crowding_distance[:self.pop_size], fronts
 
     def selection(self):
@@ -1511,6 +1508,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             pass
 
     def environmental_selection(self, combined_pop, combined_obj, combined_violations):
+        _timing_t0 = time.perf_counter()
         from ..utils.performance.fast_non_dominated_sort import (
             FastNonDominatedSort,
             fast_non_dominated_sort_optimized,
@@ -1542,6 +1540,11 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         self.constraint_violations = combined_violations[sorted_indices[:self.pop_size]]
         self.update_pareto_solutions()
         self.record_history()
+        self._add_runtime_timing(
+            "environmental_selection_s",
+            time.perf_counter() - _timing_t0,
+            call_key="environmental_selection",
+        )
 
     def evolve_one_generation(self):
         max_g = max(1, int(self.max_generations))
@@ -1642,7 +1645,8 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             self.evaluation_count = 0
             if self.random_seed is None:
                 try:
-                    self.random_seed = int(random.SystemRandom().randrange(0, 2**32 - 1))
+                    # Respect global numpy seed for reproducible runs.
+                    self.random_seed = int(np.random.randint(0, 2**32 - 1))
                 except Exception:
                     self.random_seed = 0
             try:

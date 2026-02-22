@@ -89,9 +89,7 @@ class MultiFidelityEvaluationPlugin(Plugin):
             val = self.low_fidelity(X[i])
             low_obj[i] = normalize_objectives(val, num_objectives=m, name="low_fidelity.objectives")
         self.stats["low_calls"] += n
-        # Count low-fidelity calls in solver.evaluation_count so total budget
-        # accounting stays correct.  High-fidelity calls are added separately below.
-        solver.evaluation_count += n
+        self._increment_evaluation_count(solver, n)
 
         # select high-fidelity subset
         selected = self._select_indices_for_high_fidelity(low_obj)
@@ -104,7 +102,7 @@ class MultiFidelityEvaluationPlugin(Plugin):
                 val = solver.problem.evaluate(X[idx])
                 out_obj[idx] = normalize_objectives(val, num_objectives=m, name="high_fidelity.objectives")
             self.stats["high_calls"] += len(selected)
-            solver.evaluation_count += len(selected)
+            self._increment_evaluation_count(solver, len(selected))
 
         # apply bias with proper context (shared for both fidelity levels)
         for i in range(n):
@@ -113,6 +111,21 @@ class MultiFidelityEvaluationPlugin(Plugin):
                 out_obj[i] = solver._apply_bias(out_obj[i], X[i], i, ctx)
 
         return out_obj, violations
+
+    @staticmethod
+    def _increment_evaluation_count(solver, delta: int) -> None:
+        runtime = getattr(solver, "runtime", None)
+        if runtime is not None and hasattr(runtime, "increment_evaluation_count"):
+            try:
+                runtime.increment_evaluation_count(int(delta))
+                return
+            except Exception:
+                pass
+        try:
+            key = "evaluation_count"
+            setattr(solver, key, int(getattr(solver, key, 0) or 0) + int(delta))
+        except Exception:
+            return
 
     def _select_indices_for_high_fidelity(self, objectives: np.ndarray) -> list[int]:
         n = int(objectives.shape[0])

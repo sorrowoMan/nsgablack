@@ -7,6 +7,7 @@ from .base import BlackBoxProblem
 # 求解器（支持依赖注入）
 # ============================================================================
 from .solver import BlackBoxSolverNSGAII
+from .runtime import SolverRuntime
 from .blank_solver import BlankSolverBase
 from .adapters import AlgorithmAdapter, CompositeAdapter, RoleAdapter, MultiRoleControllerAdapter
 from .composable_solver import ComposableSolver
@@ -42,6 +43,7 @@ __all__ = [
 
     # 求解器
     'BlackBoxSolverNSGAII',
+    'SolverRuntime',
     'BlankSolverBase',
     'AlgorithmAdapter',
     'CompositeAdapter',

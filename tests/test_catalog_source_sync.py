@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from nsgablack.catalog.source_sync import (
     apply_symbol_contract,
+    expand_marked_component_template,
     list_source_symbols,
     read_symbol_contract,
 )
@@ -55,3 +56,55 @@ def test_source_sync_scan_read_and_apply(tmp_path):
     assert updated["context_cache"] == ("objectives",)
     assert updated["context_notes"] == ("tracks score history",)
 
+
+def test_expand_marked_bias_template_in_scaffold_project(tmp_path):
+    root = tmp_path / "demo_project"
+    for d in ("problem", "pipeline", "bias", "adapter", "plugins"):
+        (root / d).mkdir(parents=True)
+    (root / "project_registry.py").write_text("def get_project_entries():\n    return []\n", encoding="utf-8")
+    (root / "build_solver.py").write_text("def build_solver():\n    return None\n", encoding="utf-8")
+    (root / ".nsgablack-project").write_text("marker = nsgablack-scaffold-project\n", encoding="utf-8")
+    source = root / "bias" / "demo_bias.py"
+    source.write_text(
+        "\n".join(
+            [
+                "from nsgablack.catalog.markers import component",
+                "",
+                '@component(kind="bias")',
+                "class NewBias:",
+                "    pass",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    final_name = expand_marked_component_template(source, "NewBias")
+    assert final_name == "Bias1"
+
+    text = source.read_text(encoding="utf-8")
+    assert "class Bias1(BiasBase):" in text
+    assert "def compute(self, x, context: OptimizationContext) -> float:" in text
+
+
+def test_expand_template_rejects_outside_project_or_framework(tmp_path):
+    source = tmp_path / "demo_bias.py"
+    source.write_text(
+        "\n".join(
+            [
+                "from nsgablack.catalog.markers import component",
+                "",
+                '@component(kind="bias")',
+                "class NewBias:",
+                "    pass",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        expand_marked_component_template(source, "NewBias")
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "only enabled inside NSGABlack framework or scaffold projects" in str(exc)
