@@ -28,6 +28,7 @@ class CheckResult:
     total_entries: int
     import_failures: Tuple[CheckFailure, ...]
     context_warnings: Tuple[CheckWarning, ...]
+    context_conflict_warnings: Tuple[CheckWarning, ...]
     usage_warnings: Tuple[CheckWarning, ...]
     by_kind: Dict[str, int]
 
@@ -59,6 +60,8 @@ class CatalogIntegrityChecker:
         context_kinds: Tuple[str, ...] = ("plugin",),
         usage_kinds: Tuple[str, ...] | None = None,
         require_context_notes: bool = False,
+        check_context_conflicts: bool = False,
+        context_conflicts_waiver: Path | None = None,
     ):
         self.check_context = bool(check_context)
         self.check_usage = bool(check_usage)
@@ -69,6 +72,8 @@ class CatalogIntegrityChecker:
             else None
         )
         self.require_context_notes = bool(require_context_notes)
+        self.check_context_conflicts = bool(check_context_conflicts)
+        self.context_conflicts_waiver = context_conflicts_waiver
 
     def run(self) -> CheckResult:
         from nsgablack.catalog import get_catalog
@@ -77,8 +82,10 @@ class CatalogIntegrityChecker:
         entries = list(catalog.list())
         import_failures: List[CheckFailure] = []
         context_warnings: List[CheckWarning] = []
+        context_conflict_warnings: List[CheckWarning] = []
         usage_warnings: List[CheckWarning] = []
         by_kind: Dict[str, int] = {}
+        writers_by_context_key: Dict[str, List[str]] = {}
 
         for entry in entries:
             by_kind[entry.kind] = by_kind.get(entry.kind, 0) + 1
@@ -114,6 +121,10 @@ class CatalogIntegrityChecker:
                             message="missing context_notes (add concise semantics/side-effect notes)",
                         )
                     )
+                # Collect writers for conflict checks.
+                for ctx_name in ("context_provides", "context_mutates"):
+                    for field in self._normalize_values(getattr(entry, ctx_name, None)):
+                        writers_by_context_key.setdefault(field, []).append(entry.key)
 
             if self.check_usage and (self.usage_kinds is None or entry.kind in self.usage_kinds):
                 missing = self._missing_usage_fields(entry)
@@ -127,10 +138,28 @@ class CatalogIntegrityChecker:
                         )
                     )
 
+        if self.check_context_conflicts:
+            waived = self._load_context_conflict_waiver()
+            for field, keys in sorted(writers_by_context_key.items()):
+                distinct_keys = sorted(set(keys))
+                if len(distinct_keys) <= 1:
+                    continue
+                if field in waived:
+                    continue
+                context_conflict_warnings.append(
+                    CheckWarning(
+                        key=f"context:{field}",
+                        kind="context",
+                        import_path=",".join(distinct_keys),
+                        message=f"multiple writers for context key '{field}': {', '.join(distinct_keys)}",
+                    )
+                )
+
         return CheckResult(
             total_entries=len(entries),
             import_failures=tuple(import_failures),
             context_warnings=tuple(context_warnings),
+            context_conflict_warnings=tuple(context_conflict_warnings),
             usage_warnings=tuple(usage_warnings),
             by_kind=by_kind,
         )
@@ -187,6 +216,20 @@ class CatalogIntegrityChecker:
                 missing.append(name)
         return tuple(missing)
 
+    def _load_context_conflict_waiver(self) -> set[str]:
+        path = self.context_conflicts_waiver
+        if path is None:
+            return set()
+        if not path.exists():
+            return set()
+        out: set[str] = set()
+        for line in path.read_text(encoding="utf-8").splitlines():
+            text = line.strip()
+            if not text or text.startswith("#"):
+                continue
+            out.add(text)
+        return out
+
 
 def _ensure_repo_parent_on_sys_path() -> None:
     # tools/catalog_integrity_checker.py -> repo_root = parents[1], parent of repo = parents[2]
@@ -209,6 +252,11 @@ def _print_result(result: CheckResult) -> None:
     if result.context_warnings:
         print(f"context_warnings={len(result.context_warnings)}")
         for item in result.context_warnings:
+            print(f"[WARN] {item.key} ({item.kind}) {item.import_path}")
+            print(f"       {item.message}")
+    if result.context_conflict_warnings:
+        print(f"context_conflict_warnings={len(result.context_conflict_warnings)}")
+        for item in result.context_conflict_warnings:
             print(f"[WARN] {item.key} ({item.kind}) {item.import_path}")
             print(f"       {item.message}")
     if result.usage_warnings:
@@ -242,6 +290,22 @@ def main(argv: Iterable[str] | None = None) -> int:
         help="Require context_notes for entries selected by --context-kinds.",
     )
     parser.add_argument(
+        "--check-context-conflicts",
+        action="store_true",
+        help="Warn when one context key has multiple writers (provides/mutates).",
+    )
+    parser.add_argument(
+        "--strict-context-conflicts",
+        action="store_true",
+        help="Return non-zero when context conflict warnings exist.",
+    )
+    parser.add_argument(
+        "--context-conflicts-waiver",
+        type=str,
+        default="",
+        help="Optional waiver file (one context key per line) to ignore known multi-writer keys.",
+    )
+    parser.add_argument(
         "--check-usage",
         action="store_true",
         help="Also check usage contracts (use_when/minimal_wiring/required_companions/config_keys/example_entry).",
@@ -268,6 +332,10 @@ def main(argv: Iterable[str] | None = None) -> int:
         context_kinds=context_kinds,
         usage_kinds=usage_kinds,
         require_context_notes=bool(args.require_context_notes),
+        check_context_conflicts=bool(args.check_context_conflicts),
+        context_conflicts_waiver=Path(str(args.context_conflicts_waiver)).resolve()
+        if str(args.context_conflicts_waiver or "").strip()
+        else None,
     )
     result = checker.run()
     _print_result(result)
@@ -277,6 +345,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     if bool(args.strict_context) and result.context_warnings:
         return 1
     if bool(args.strict_usage) and result.usage_warnings:
+        return 1
+    if bool(args.strict_context_conflicts) and result.context_conflict_warnings:
         return 1
     return 0
 

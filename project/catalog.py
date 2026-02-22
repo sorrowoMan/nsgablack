@@ -13,6 +13,14 @@ from ..catalog import get_catalog
 from ..catalog.registry import Catalog, CatalogEntry
 from ..catalog.usage import enrich_usage_contracts
 
+try:  # py>=3.11
+    import tomllib as _toml
+except Exception:  # pragma: no cover - import fallback
+    try:  # py<3.11
+        import tomli as _toml  # type: ignore[import-not-found]
+    except Exception:  # pragma: no cover - optional dependency missing
+        _toml = None
+
 
 def find_project_root(start: Path | str) -> Optional[Path]:
     """Find nearest folder containing project_registry.py."""
@@ -80,12 +88,10 @@ def _load_project_toml_entries(project_root: Path) -> List[CatalogEntry]:
     toml_path = project_root / "catalog" / "entries.toml"
     if not toml_path.is_file():
         return []
-    try:
-        import tomllib  # py>=3.11
-    except Exception:
+    if _toml is None:
         return []
     try:
-        data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
+        data = _toml.loads(toml_path.read_text(encoding="utf-8"))
     except Exception:
         return []
 

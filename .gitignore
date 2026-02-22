@@ -123,6 +123,8 @@ Thumbs.db
 
 # Local runs/artifacts
 runs/
+artifacts/
+!artifacts/.gitkeep
 results/test_runs/
 deprecated/legacy/experiments/results/
 

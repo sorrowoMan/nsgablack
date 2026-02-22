@@ -1,0 +1,3 @@
+# Allowed multi-writer context keys.
+# Keep this file minimal and review changes in code review.
+metrics

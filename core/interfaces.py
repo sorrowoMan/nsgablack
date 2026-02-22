@@ -5,7 +5,10 @@ without hard dependencies.
 """
 
 from typing import Protocol, Any, Optional, List, Dict
+import logging
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class OptimizationContext(Protocol):
@@ -161,9 +164,10 @@ def has_visualization_module() -> bool:
 def has_numba() -> bool:
     """Return True if numba is available."""
     try:
-        import numba
+        import numba  # noqa: F401
         return True
-    except ImportError:
+    except Exception as exc:
+        logger.debug("Optional dependency numba unavailable; fallback to non-numba path: %s", exc)
         return False
 
 
