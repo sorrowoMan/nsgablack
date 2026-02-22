@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import hmac
 import os
 import pickle
 import random
@@ -30,6 +32,9 @@ class CheckpointResumeConfig:
     restore_plugin_state: bool = True
     restore_rng_state: bool = True
     strict: bool = False
+    hmac_env_var: str = "NSGABLACK_CHECKPOINT_HMAC_KEY"
+    unsafe_allow_unsigned: bool = False
+    trusted_roots: tuple[str, ...] = ()
 
 
 class CheckpointResumePlugin(Plugin):
@@ -48,6 +53,7 @@ class CheckpointResumePlugin(Plugin):
     """
 
     SCHEMA = "nsgablack.checkpoint.v1"
+    ENVELOPE_VERSION = "nsgablack.checkpoint.envelope.v1"
 
     def __init__(
         self,
@@ -130,10 +136,17 @@ class CheckpointResumePlugin(Plugin):
                 raise FileNotFoundError(f"checkpoint not found: {checkpoint}")
             return False
 
+        if not self._is_path_trusted(path):
+            msg = f"checkpoint path is not trusted: {path}"
+            if bool(self.cfg.strict):
+                raise PermissionError(msg)
+            return False
+
         with path.open("rb") as f:
             # SECURITY NOTE: pickle.load can execute arbitrary code.
             # Only load checkpoints from trusted sources (your own runs).
-            payload = pickle.load(f)  # nosec B301
+            loaded = pickle.load(f)  # nosec B301
+        payload = self._unwrap_and_verify_payload(loaded)
         self._restore_payload(solver=solver, payload=payload)
         self.last_loaded_path = str(path)
         self.last_loaded_generation = int(getattr(solver, "generation", 0))
@@ -167,8 +180,9 @@ class CheckpointResumePlugin(Plugin):
 
     def _atomic_write_pickle(self, path: Path, payload: Dict[str, Any]) -> None:
         tmp = path.with_suffix(path.suffix + ".tmp")
+        envelope = self._wrap_payload(payload)
         with tmp.open("wb") as f:
-            pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(envelope, f, protocol=pickle.HIGHEST_PROTOCOL)
         os.replace(tmp, path)
 
     def _apply_retention(self, checkpoint_dir: Path) -> None:
@@ -192,6 +206,86 @@ class CheckpointResumePlugin(Plugin):
             return copy.deepcopy(value)
         except Exception:
             return value
+
+    def _resolve_hmac_key(self) -> Optional[bytes]:
+        env_var = str(getattr(self.cfg, "hmac_env_var", "") or "").strip()
+        if not env_var:
+            return None
+        raw = os.environ.get(env_var)
+        if raw is None:
+            return None
+        key = raw.encode("utf-8")
+        return key if key else None
+
+    def _compute_payload_mac(self, payload: Dict[str, Any], key: bytes) -> str:
+        payload_bytes = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
+        return hmac.new(key, payload_bytes, hashlib.sha256).hexdigest()
+
+    def _wrap_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        key = self._resolve_hmac_key()
+        mac: Optional[str] = None
+        if key is not None:
+            try:
+                mac = self._compute_payload_mac(payload, key)
+            except Exception:
+                if bool(self.cfg.strict):
+                    raise
+                mac = None
+        return {
+            "_checkpoint_envelope": self.ENVELOPE_VERSION,
+            "payload": payload,
+            "hmac_sha256": mac,
+            "hmac_env_var": str(getattr(self.cfg, "hmac_env_var", "NSGABLACK_CHECKPOINT_HMAC_KEY")),
+        }
+
+    def _unwrap_and_verify_payload(self, loaded: Any) -> Dict[str, Any]:
+        if isinstance(loaded, dict) and "_checkpoint_envelope" in loaded and "payload" in loaded:
+            payload = loaded.get("payload")
+            if not isinstance(payload, dict):
+                raise ValueError("invalid checkpoint envelope: payload missing or invalid")
+            provided_mac = loaded.get("hmac_sha256")
+        elif isinstance(loaded, dict):
+            # Backward compatibility: old checkpoints had raw payload only.
+            payload = loaded
+            provided_mac = None
+        else:
+            raise ValueError("invalid checkpoint payload: unsupported type")
+
+        key = self._resolve_hmac_key()
+        if provided_mac:
+            if key is None:
+                if bool(self.cfg.strict):
+                    raise ValueError(
+                        "checkpoint contains HMAC signature but no key is configured in environment"
+                    )
+            else:
+                expected = self._compute_payload_mac(payload, key)
+                if not hmac.compare_digest(str(provided_mac), expected):
+                    raise ValueError("checkpoint HMAC verification failed")
+        elif key is not None and not bool(getattr(self.cfg, "unsafe_allow_unsigned", False)):
+            raise ValueError(
+                "unsigned checkpoint is blocked; set unsafe_allow_unsigned=True to bypass verification"
+            )
+        return payload
+
+    def _trusted_root_paths(self) -> tuple[Path, ...]:
+        out: list[Path] = [Path(self.cfg.checkpoint_dir).resolve()]
+        for raw in getattr(self.cfg, "trusted_roots", ()) or ():
+            text = str(raw).strip()
+            if not text:
+                continue
+            out.append(Path(text).resolve())
+        return tuple(out)
+
+    def _is_path_trusted(self, path: Path) -> bool:
+        candidate = Path(path).resolve()
+        for root in self._trusted_root_paths():
+            try:
+                candidate.relative_to(root)
+                return True
+            except Exception:
+                continue
+        return False
 
     def _collect_adapter_state(self, solver: Any) -> Optional[Dict[str, Any]]:
         adapter = getattr(solver, "adapter", None)
@@ -294,8 +388,29 @@ class CheckpointResumePlugin(Plugin):
 
     def _apply_solver_state(self, solver: Any, state: Dict[str, Any], resume_cursor: Optional[int]) -> None:
         generation = int(state.get("generation", getattr(solver, "generation", 0)))
-        setattr(solver, "generation", generation)
-        setattr(solver, "evaluation_count", int(state.get("evaluation_count", getattr(solver, "evaluation_count", 0))))
+        runtime = getattr(solver, "runtime", None)
+        eval_count = int(state.get("evaluation_count", getattr(solver, "evaluation_count", 0)))
+        def _set_field(field: str, value: Any) -> None:
+            setattr(solver, str(field), value)
+        if runtime is not None:
+            if hasattr(runtime, "set_generation"):
+                try:
+                    runtime.set_generation(generation)
+                except Exception:
+                    _set_field("generation", generation)
+            else:
+                _set_field("generation", generation)
+            if hasattr(runtime, "increment_evaluation_count"):
+                try:
+                    current = int(getattr(solver, "evaluation_count", 0) or 0)
+                    runtime.increment_evaluation_count(eval_count - current)
+                except Exception:
+                    _set_field("evaluation_count", eval_count)
+            else:
+                _set_field("evaluation_count", eval_count)
+        else:
+            _set_field("generation", generation)
+            _set_field("evaluation_count", eval_count)
         if (
             "population" in state
             and "objectives" in state
@@ -313,17 +428,33 @@ class CheckpointResumePlugin(Plugin):
                     if bool(self.cfg.strict):
                         raise
 
-        for key in (
-            "pareto_solutions",
-            "pareto_objectives",
-            "history",
-            "best_x",
-            "best_f",
-            "best_objective",
-            "random_seed",
-        ):
-            if key in state:
-                setattr(solver, key, state.get(key))
+        if "pareto_solutions" in state or "pareto_objectives" in state:
+            if runtime is not None and hasattr(runtime, "set_pareto_snapshot"):
+                try:
+                    runtime.set_pareto_snapshot(state.get("pareto_solutions"), state.get("pareto_objectives"))
+                except Exception:
+                    _set_field("pareto_solutions", state.get("pareto_solutions"))
+                    _set_field("pareto_objectives", state.get("pareto_objectives"))
+            else:
+                _set_field("pareto_solutions", state.get("pareto_solutions"))
+                _set_field("pareto_objectives", state.get("pareto_objectives"))
+
+        if "history" in state:
+            _set_field("history", state.get("history"))
+        if "best_x" in state or "best_objective" in state:
+            if runtime is not None and hasattr(runtime, "set_best_snapshot"):
+                try:
+                    runtime.set_best_snapshot(state.get("best_x"), state.get("best_objective"))
+                except Exception:
+                    _set_field("best_x", state.get("best_x"))
+                    _set_field("best_objective", state.get("best_objective"))
+            else:
+                _set_field("best_x", state.get("best_x"))
+                _set_field("best_objective", state.get("best_objective"))
+        if "best_f" in state:
+            _set_field("best_f", state.get("best_f"))
+        if "random_seed" in state:
+            _set_field("random_seed", state.get("random_seed"))
 
         setattr(solver, "_resume_loaded", True)
         if resume_cursor is None:
@@ -411,6 +542,9 @@ class CheckpointResumePlugin(Plugin):
             "checkpoint_dir": str(self.cfg.checkpoint_dir),
             "save_every": int(self.cfg.save_every),
             "auto_resume": bool(self.cfg.auto_resume),
+            "hmac_env_var": str(self.cfg.hmac_env_var),
+            "unsafe_allow_unsigned": bool(self.cfg.unsafe_allow_unsigned),
+            "trusted_roots": list(self.cfg.trusted_roots or ()),
             "latest_checkpoint_path": self.latest_checkpoint_path,
             "last_loaded_path": self.last_loaded_path,
             "last_saved_generation": self.last_saved_generation,

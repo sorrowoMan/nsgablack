@@ -202,7 +202,7 @@ minimal_wiring = [
   "solver.add_plugin(CheckpointResumePlugin(config=CheckpointResumeConfig(auto_resume=True)))"
 ]
 required_companions = []
-config_keys = ["checkpoint_dir", "file_prefix", "save_every", "save_on_finish", "keep_last", "auto_resume", "resume_from", "restore_plugin_state", "restore_rng_state", "strict"]
+config_keys = ["checkpoint_dir", "file_prefix", "save_every", "save_on_finish", "keep_last", "auto_resume", "resume_from", "restore_plugin_state", "restore_rng_state", "strict", "hmac_env_var", "unsafe_allow_unsigned", "trusted_roots"]
 example_entry = "build_solver.py:build_solver"
 [[entry]]
 key = "suite.checkpoint_resume"
@@ -218,7 +218,7 @@ minimal_wiring = [
   "attach_checkpoint_resume(solver, auto_resume=True, save_every=10)"
 ]
 required_companions = ["plugin.checkpoint_resume"]
-config_keys = ["checkpoint_dir", "file_prefix", "save_every", "keep_last", "auto_resume", "resume_from", "save_on_finish", "restore_plugin_state", "restore_rng_state", "strict"]
+config_keys = ["checkpoint_dir", "file_prefix", "save_every", "keep_last", "auto_resume", "resume_from", "save_on_finish", "restore_plugin_state", "restore_rng_state", "strict", "hmac_env_var", "unsafe_allow_unsigned", "trusted_roots"]
 example_entry = "build_solver.py:build_solver"
 [[entry]]
 key = "suite.dynamic_switch"

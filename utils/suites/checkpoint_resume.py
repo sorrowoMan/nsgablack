@@ -22,6 +22,9 @@ def attach_checkpoint_resume(
     restore_plugin_state: bool = True,
     restore_rng_state: bool = True,
     strict: bool = False,
+    hmac_env_var: str = "NSGABLACK_CHECKPOINT_HMAC_KEY",
+    unsafe_allow_unsigned: bool = False,
+    trusted_roots: tuple[str, ...] = (),
 ):
     if not hasattr(solver, "add_plugin"):
         raise ValueError("attach_checkpoint_resume: solver missing add_plugin()")
@@ -37,6 +40,9 @@ def attach_checkpoint_resume(
         restore_plugin_state=bool(restore_plugin_state),
         restore_rng_state=bool(restore_rng_state),
         strict=bool(strict),
+        hmac_env_var=str(hmac_env_var),
+        unsafe_allow_unsigned=bool(unsafe_allow_unsigned),
+        trusted_roots=tuple(str(x) for x in (trusted_roots or ()) if str(x).strip()),
     )
     plugin = CheckpointResumePlugin(config=cfg)
 
@@ -45,4 +51,3 @@ def attach_checkpoint_resume(
 
     solver.add_plugin(plugin)
     return plugin
-
