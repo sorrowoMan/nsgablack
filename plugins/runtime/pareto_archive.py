@@ -30,7 +30,7 @@ class ParetoArchivePlugin(Plugin):
     context_cache = ()
     context_notes = (
         "Reads solver population/objectives/violations or adapter population; "
-        "updates solver-level pareto_solutions/pareto_objectives."
+        "updates runtime pareto snapshot (pareto_solutions/pareto_objectives)."
     )
     """Maintain a global non-dominated archive."""
 
@@ -58,16 +58,29 @@ class ParetoArchivePlugin(Plugin):
             return None
 
         self._update_archive(X, F, V)
-        try:
-            setattr(solver, "pareto_solutions", None if self.archive_X is None else np.asarray(self.archive_X))
-            setattr(solver, "pareto_objectives", None if self.archive_F is None else np.asarray(self.archive_F))
-        except Exception:
-            pass
+        self._write_pareto_snapshot(solver)
         return None
 
     # ------------------------------------------------------------------
     def _get_population(self, solver: Any) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         return self.resolve_population_snapshot(solver)
+
+    def _write_pareto_snapshot(self, solver: Any) -> None:
+        runtime = getattr(solver, "runtime", None)
+        if runtime is not None and hasattr(runtime, "set_pareto_snapshot"):
+            try:
+                runtime.set_pareto_snapshot(self.archive_X, self.archive_F)
+                return
+            except Exception:
+                pass
+        try:
+            for field, value in (
+                ("pareto_solutions", None if self.archive_X is None else np.asarray(self.archive_X)),
+                ("pareto_objectives", None if self.archive_F is None else np.asarray(self.archive_F)),
+            ):
+                setattr(solver, field, value)
+        except Exception:
+            return
 
     def _update_archive(self, X: np.ndarray, F: np.ndarray, V: np.ndarray) -> None:
         if self.archive_X is None:

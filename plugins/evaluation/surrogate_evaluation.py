@@ -271,7 +271,7 @@ class SurrogateEvaluationPlugin(Plugin):
                 # 并行评估返回的 violation 更权威（可能来自 context_builder）
                 violations[:] = np.asarray(vios, dtype=float).reshape(-1)
                 self.stats["true_evals"] += int(np.asarray(X).shape[0])
-                solver.evaluation_count += int(np.asarray(X).shape[0])
+                self._increment_evaluation_count(solver, int(np.asarray(X).shape[0]))
                 return np.asarray(objs, dtype=float)
             except Exception:
                 # 并行失败时回退串行
@@ -288,5 +288,20 @@ class SurrogateEvaluationPlugin(Plugin):
             out[i] = obj
 
         self.stats["true_evals"] += n
-        solver.evaluation_count += n
+        self._increment_evaluation_count(solver, n)
         return out
+
+    @staticmethod
+    def _increment_evaluation_count(solver, delta: int) -> None:
+        runtime = getattr(solver, "runtime", None)
+        if runtime is not None and hasattr(runtime, "increment_evaluation_count"):
+            try:
+                runtime.increment_evaluation_count(int(delta))
+                return
+            except Exception:
+                pass
+        try:
+            key = "evaluation_count"
+            setattr(solver, key, int(getattr(solver, key, 0) or 0) + int(delta))
+        except Exception:
+            return

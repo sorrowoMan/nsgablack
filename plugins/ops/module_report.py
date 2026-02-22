@@ -120,6 +120,16 @@ class ModuleReportPlugin(Plugin):
             "plugins": [],
             "parallel": {},
         }
+        runtime_timing = getattr(solver, "_runtime_timing", None)
+        runtime_timing_calls = getattr(solver, "_runtime_timing_calls", None)
+        if isinstance(runtime_timing, dict):
+            payload["solver"]["runtime_timing_s"] = {
+                str(k): float(v or 0.0) for k, v in runtime_timing.items()
+            }
+        if isinstance(runtime_timing_calls, dict):
+            payload["solver"]["runtime_timing_calls"] = {
+                str(k): int(v or 0) for k, v in runtime_timing_calls.items()
+            }
 
         pipe = getattr(solver, "representation_pipeline", None)
         if pipe is not None:
