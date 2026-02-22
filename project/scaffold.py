@@ -44,15 +44,15 @@ def _readme_for_folder(name: str) -> str:
         f"""\
         # {name}
 
-        **中文说明**
-        - 目录职责：{desc}
-        - 边界要求：只放本层职责，不要在本目录隐藏跨层逻辑。
-        - 输入输出契约：
-          - 输入：数据来源、参数、读取的 context 字段
-          - 输出：返回对象、写入的 context 字段、副作用
-          - 若使用 context，建议显式声明
-            `context_requires/context_provides/context_mutates/context_cache`。
-        - 最小示例：至少保留一个可运行文件，或在此写清入口路径。
+        **??**
+        - ?????{desc}
+        - ??????????????????????
+        - I/O ???
+          - ????????????? context ??
+          - ??????????? context ??????
+          - ??? context???????
+            `context_requires/context_provides/context_mutates/context_cache`?
+        - ?????????????????????????
 
         **English**
         - Responsibility: {desc}
@@ -66,164 +66,128 @@ def _readme_for_folder(name: str) -> str:
         """
     )
 
-
 def _root_readme(project_name: str) -> str:
     return dedent(
         f"""\
         # {project_name}
 
-        **中文说明**
-        NSGABlack 本地项目骨架。
+        **????**
+        NSGABlack ???????
 
-        ## 目录结构 / Structure
-        - `problem/`: 问题定义 / problem definition
-        - `pipeline/`: 表示与硬约束 / representation + hard constraints
-        - `bias/`: 软偏好 / soft preference
-        - `adapter/`: 策略编排（可选）/ strategy orchestration (optional)
-        - `plugins/`: 工程能力（可选）/ engineering capabilities (optional)
-        - `data/`: 输入数据 / input data
-        - `assets/`: 输出产物 / outputs
+        ## ???? / Structure
+        - `problem/`: ???? / problem definition
+        - `pipeline/`: ?????? / representation + hard constraints
+        - `bias/`: ??? / soft preference
+        - `adapter/`: ????????/ strategy orchestration (optional)
+        - `plugins/`: ????????/ engineering capabilities (optional)
+        - `data/`: ???? / input data
+        - `assets/`: ???? / outputs
 
-        ## 推荐流程 / Recommended Flow
-        1. 阅读 `START_HERE.md`.
-        2. 阅读 `COMPONENT_REGISTRATION.md`.
-        3. 运行 `python -m nsgablack project doctor --path . --build`.
-        4. 用 `build_solver.py` 作为唯一装配入口。
+        ## ???? / Recommended Flow
+        1. ?? `START_HERE.md`
+        2. ?? `COMPONENT_REGISTRATION.md`
+        3. ?? `python -m nsgablack project doctor --path . --build`
+        4. ? `build_solver.py` ????????
 
-        ## 入口文件 / Entry Files
-        - `build_solver.py`: 装配 problem/pipeline/bias/strategy
-        - `project_registry.py`: 项目本地 Catalog 注册
-        - `COMPONENT_REGISTRATION.md`: 注册组件的 why/what/how
+        ## ???? / Entry Files
+        - `build_solver.py`: ?? problem/pipeline/bias/strategy
+        - `project_registry.py`: ???? Catalog ??
+        - `COMPONENT_REGISTRATION.md`: ????? why/what/how
         """
     )
-
 
 def _start_here() -> str:
     return dedent(
         """\
         # START_HERE
 
-        新项目 6 步上手（中文 + English）。
+        ??? 6 ?????? + English??
 
-        ## Step 1 - 先做体检 / Health check first
+        ## Step 1 - ???? / Health check first
         ```powershell
         python -m nsgablack project doctor --path . --build
         ```
-        - 若要新增可复用组件，先读 `COMPONENT_REGISTRATION.md`。
+        - ???????????? `COMPONENT_REGISTRATION.md`?
         - If you will add reusable components, read `COMPONENT_REGISTRATION.md` first.
 
-        ## Step 2 - 实现问题层 / Implement problem
+        ## Step 2 - ????? / Implement problem
         - File: `problem/example_problem.py`
-        - 必需 / Required:
+        - ?? / Required:
           - `evaluate(x)` returns objective vector (`numpy.ndarray`)
           - `evaluate_constraints(x)` returns violation vector (empty if no constraints)
 
-        ## Step 3 - 实现管线层 / Implement pipeline
+        ## Step 3 - ????? / Implement pipeline
         - File: `pipeline/example_pipeline.py`
-        - 硬可行性优先放在此层 / Keep hard feasibility in this layer.
+        - ?????????? / Keep hard feasibility in this layer.
 
-        ## Step 4 - 按需加偏置 / Add bias if needed
+        ## Step 4 - ????? / Add bias if needed
         - File: `bias/example_bias.py`
-        - 偏置表达偏好，不替代硬约束 / Bias encodes preference, not hard constraints.
+        - ????????????? / Bias encodes preference, not hard constraints.
 
-        ## Step 5 - 只做装配 / Assemble only
+        ## Step 5 - ???? / Assemble only
         - File: `build_solver.py`
-        - 保持 wiring，不重写框架内核 / Keep it as wiring; avoid re-implementing internals.
+        - ?? wiring???????? / Keep it as wiring; avoid re-implementing internals.
 
-        ## Step 6 - 运行与检查 / Run and inspect
+        ## Step 6 - ????? / Run and inspect
         ```powershell
         python build_solver.py
         python -m nsgablack project catalog list --path .
         ```
 
-        ## 可选 / Optional
+        ## ?? / Optional
         - Run Inspector: `python -m nsgablack run_inspector --entry build_solver.py:build_solver`
-        - 搜索时合并全局目录 / Include global catalog in search:
+        - ????????? / Include global catalog in search:
           `python -m nsgablack project catalog search vns --path . --global`
         """
     )
-
 
 def _component_registration_guide() -> str:
     return dedent(
         """\
         # COMPONENT_REGISTRATION
 
-        本文件定义项目本地组件注册契约。  
+        ????????????????
         This file defines the local project registration contract.
 
-        ## 为什么要注册 / Why register components
-        - 让组件可被 Catalog 和 Run Inspector 检索。
-        - 保持装配可复现（`build_solver.py` + 稳定 key）。
-        - 让 context 读写可审计（`context_*` 字段）。
-        - Make components discoverable, reproducible, and auditable.
+        ## ?????? / Why register components
+        - ????? Catalog ? Run Inspector ???
+        - ????????`build_solver.py` + ?? key??
+        - ? context ??????`context_*` ????
 
-        ## 注册什么 / What should be registered
-        注册可复用、可搜索、可开关的组件：  
-        Register reusable components that may be searched, toggled, or reused:
+        ## ???? / What should be registered
+        ?????????????????
         - problem builders
         - pipelines / biases / adapters / plugins
         - solver assembly entries
 
-        不要注册一次性脚本或私有调试代码。  
-        Do not register one-off helpers or private debug code.
+        ?????????????????
 
-        ## 在哪里注册 / Where to register
+        ## ????? / Where to register
         - Local project entries: `project_registry.py`
-        - 本地 key 建议简短；加载器会自动加前缀 `project.`
-        - Local keys should be short; loader auto-prefixes with `project.`
-          (example: `pipeline.example` -> `project.pipeline.example`)
+        - ?? key ?????????????? `project.`?
 
-        ## 最小契约 / Minimal entry contract
+        ## ???? / Minimal entry contract
         Each `CatalogEntry` should include:
         - `key`, `kind`, `title`, `import_path`
         - `tags`, `summary`
         - `context_requires`, `context_provides`, `context_mutates`, `context_cache`
         - `use_when`, `minimal_wiring`, `required_companions`, `config_keys`, `example_entry`
 
-        - 使用说明字段是可发现性的基础。
-        - context 字段是契约审计的基础。
-        - 若省略，框架可能推断默认值，但 CI/doctor 应视为不合规。
-        - Usage fields are mandatory for discoverability UX.
-        - Context fields are mandatory for contract auditability.
-        - If omitted, framework may infer defaults, but CI/doctor should treat this as non-compliant.
+        context ?????????? `()`?????? `context_notes`?
 
-        context 字段即使为空也显式写 `()`，并始终提供 `context_notes`。  
-        Keep context fields explicit as `()`, and always provide `context_notes`.
-
-        ## Example
-        ```python
-        CatalogEntry(
-            key="plugin.eval_cache",
-            title="Evaluation Cache Plugin",
-            kind="plugin",
-            import_path="plugins.eval_cache:EvaluationCachePlugin",
-            tags=("project", "plugin", "cache"),
-            summary="Cache repeated evaluations by deterministic key.",
-            context_requires=("context.population",),
-            context_provides=("context.cache.eval_hits",),
-            context_mutates=("context.cache.eval_store",),
-            context_cache=("context.cache.eval_store",),
-        )
-        ```
-
-        ## 校验 / Validation
-        修改注册后建议执行：  
-        Run after changing registry entries:
+        ## ?? / Validation
         ```powershell
         python -m nsgablack project doctor --path . --build --strict
         python -m nsgablack project catalog list --path .
         python tools/catalog_integrity_checker.py --check-usage --strict-usage --check-context --context-kinds plugin --require-context-notes --strict-context
         ```
 
-        ## UI 中的 Scope / Scope in UI
-        In Run Inspector Catalog tab:
-        - `Scope=project`: local project components
+        ## UI Scope
+        - `Scope=project`: local components
         - `Scope=framework`: framework built-in components
         - `Scope=all`: merged view
         """
     )
-
 
 def _problem_template() -> str:
     return dedent(
@@ -795,6 +759,7 @@ def _build_solver_template() -> str:
         import argparse
 
         from nsgablack.core.solver import BlackBoxSolverNSGAII
+        from nsgablack.plugins import ProfilerConfig, ProfilerPlugin
 
         from bias.example_bias import build_bias_module
         from pipeline.example_pipeline import build_pipeline
@@ -809,6 +774,7 @@ def _build_solver_template() -> str:
             parser.add_argument("--generations", type=int, default=60)
             parser.add_argument("--enable-bias", action="store_true")
             parser.add_argument("--enable-example-plugin", action="store_true")
+            parser.add_argument("--no-profiler", action="store_true")
             args, _ = parser.parse_known_args(argv if argv is not None else [])
 
             problem = ExampleProblem(dimension=int(args.dimension))
@@ -823,6 +789,16 @@ def _build_solver_template() -> str:
             solver.enable_progress_log = True
             solver.report_interval = max(1, solver.max_generations // 10)
             solver.set_representation_pipeline(pipeline)
+            if not bool(args.no_profiler):
+                solver.add_plugin(
+                    ProfilerPlugin(
+                        config=ProfilerConfig(
+                            output_dir="runs",
+                            run_id="scaffold_profile",
+                            overwrite=True,
+                        )
+                    )
+                )
             if bool(args.enable_example_plugin):
                 solver.add_plugin(ExampleProjectPlugin(interval=5, verbose=True))
             return solver
@@ -842,6 +818,105 @@ def _build_solver_template() -> str:
 
         if __name__ == "__main__":
             main()
+        """
+    )
+
+
+def _vscode_snippets_template() -> str:
+    return dedent(
+        """\
+        {
+          "NSGABlack Bias Template": {
+            "scope": "python",
+            "prefix": ["nbias", "@component(kind=\\"bias\\")"],
+            "body": [
+              "from nsgablack.catalog.markers import component",
+              "from nsgablack.bias.core.base import BiasBase, OptimizationContext",
+              "",
+              "@component(kind=\\"bias\\")",
+              "class ${1:Bias1}(BiasBase):",
+              "    # TODO(中/EN): 仅声明真实读写字段 / declare only real read-write fields.",
+              "    context_requires = ()",
+              "    context_provides = ()",
+              "    context_mutates = ()",
+              "    context_cache = ()",
+              "    context_notes = (\\"${2:TODO(中/EN): 一句话说明 context 契约 / one-line context contract.}\\",)",
+              "    requires_metrics = ()",
+              "    metrics_fallback = \\"none\\"",
+              "    missing_metrics_policy = \\"warn\\"",
+              "",
+              "    def __init__(self, weight: float = 1.0) -> None:",
+              "        # TODO(中/EN): 设置稳定组件名与说明 / set stable name and description.",
+              "        super().__init__(name=\\"${3:bias_name}\\", weight=float(weight), description=\\"${4:TODO}\\")",
+              "",
+              "    def compute(self, x, context: OptimizationContext) -> float:",
+              "        # TODO(中/EN): 返回标量偏好分 / return a scalar preference score.",
+              "        _ = x",
+              "        _ = context",
+              "        raise NotImplementedError"
+            ],
+            "description": "Expand NSGABlack bias component template."
+          },
+          "NSGABlack Plugin Template": {
+            "scope": "python",
+            "prefix": ["nplugin", "@component(kind=\\"plugin\\")"],
+            "body": [
+              "from nsgablack.catalog.markers import component",
+              "from nsgablack.plugins.base import Plugin",
+              "",
+              "@component(kind=\\"plugin\\")",
+              "class ${1:Plugin1}(Plugin):",
+              "    # TODO(中/EN): 仅声明真实读写字段 / declare only real read-write fields.",
+              "    context_requires = ()",
+              "    context_provides = ()",
+              "    context_mutates = ()",
+              "    context_cache = ()",
+              "    context_notes = (\\"${2:TODO(中/EN): 一句话说明 context 契约 / one-line context contract.}\\",)",
+              "",
+              "    def __init__(self) -> None:",
+              "        # TODO(中/EN): 设置稳定插件名 / set a stable plugin name.",
+              "        super().__init__(name=\\"${3:plugin_name}\\")"
+            ],
+            "description": "Expand NSGABlack plugin component template."
+          },
+          "NSGABlack Adapter Template": {
+            "scope": "python",
+            "prefix": ["nadapter", "@component(kind=\\"adapter\\")"],
+            "body": [
+              "from nsgablack.catalog.markers import component",
+              "from nsgablack.core.adapters.algorithm_adapter import AlgorithmAdapter",
+              "",
+              "@component(kind=\\"adapter\\")",
+              "class ${1:Adapter1}(AlgorithmAdapter):",
+              "    # TODO(中/EN): 仅声明真实读写字段 / declare only real read-write fields.",
+              "    context_requires = ()",
+              "    context_provides = ()",
+              "    context_mutates = ()",
+              "    context_cache = ()",
+              "    context_notes = (\\"${2:TODO(中/EN): 一句话说明 context 契约 / one-line context contract.}\\",)",
+              "",
+              "    def __init__(self) -> None:",
+              "        # TODO(中/EN): 设置稳定适配器名 / set a stable adapter name.",
+              "        super().__init__(name=\\"${3:adapter_name}\\")",
+              "",
+              "    def propose(self, solver, context):",
+              "        # TODO(中/EN): 生成候选解 / generate candidate solutions.",
+              "        _ = solver",
+              "        _ = context",
+              "        raise NotImplementedError",
+              "",
+              "    def update(self, solver, candidates, objectives, violations, context):",
+              "        # TODO(中/EN): 用评估反馈更新状态 / update state with evaluation feedback.",
+              "        _ = solver",
+              "        _ = candidates",
+              "        _ = objectives",
+              "        _ = violations",
+              "        _ = context",
+              "        raise NotImplementedError"
+            ],
+            "description": "Expand NSGABlack adapter component template."
+          }
+        }
         """
     )
 
@@ -867,6 +942,11 @@ def init_project(target_dir: Path | str, *, force: bool = False) -> Path:
             _write_file(folder / "README.md", _readme_for_folder(name), overwrite=force)
 
     _write_file(root / "README.md", _root_readme(root.name), overwrite=force)
+    _write_file(
+        root / ".nsgablack-project",
+        "marker = nsgablack-scaffold-project\n",
+        overwrite=force,
+    )
     _write_file(root / "START_HERE.md", _start_here(), overwrite=force)
     _write_file(root / "COMPONENT_REGISTRATION.md", _component_registration_guide(), overwrite=force)
     _write_file(root / "project_registry.py", _project_registry_template(), overwrite=force)
@@ -881,5 +961,7 @@ def init_project(target_dir: Path | str, *, force: bool = False) -> Path:
     _write_file(root / "adapter" / "template_adapter.py", _adapter_class_template(), overwrite=force)
     _write_file(root / "plugins" / "example_plugin.py", _plugin_template(), overwrite=force)
     _write_file(root / "plugins" / "template_plugin.py", _plugin_class_template(), overwrite=force)
+    (root / ".vscode").mkdir(parents=True, exist_ok=True)
+    _write_file(root / ".vscode" / "nsgablack.code-snippets", _vscode_snippets_template(), overwrite=force)
 
     return root

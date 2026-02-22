@@ -47,6 +47,13 @@
 - 为新功能添加测试
 - 更新相关文档
 
+### Legacy / Runtime-first（必须遵守）
+
+- `core/solver.py` 视为 **Legacy 兼容入口**，不再作为新增功能首选接入点。
+- 新运行期能力必须优先走 Runtime 路径（`core.runtime.SolverRuntime`、Adapter runtime projection、Plugin runtime hook）。
+- 禁止在新组件中直接镜像写入 `solver.population/objectives/constraint_violations/best_x/best_objective/...`。
+- `project doctor --strict` 会检查“绕过 Runtime 直接写 solver 状态”的代码并报错。
+
 ### 贡献类型
 
 我们欢迎以下类型的贡献：

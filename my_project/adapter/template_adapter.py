@@ -1,52 +1,36 @@
 # -*- coding: utf-8 -*-
-"""适配器模板：复制后改文件名和类名即可接入 propose/update 流程。"""
+"""Adapter template / 适配器模板。"""
 
 from __future__ import annotations
 
-from typing import Any, Dict, Sequence
-
-import numpy as np
-
+from nsgablack.catalog.markers import component
 from nsgablack.core.adapters.algorithm_adapter import AlgorithmAdapter
 
 
+@component(kind="adapter")
 class AdapterTemplate(AlgorithmAdapter):
-    """最小可运行适配器模板。"""
-
+    # TODO(中/EN): 仅声明真实读写字段 / declare only real read-write fields.
     context_requires = ()
     context_provides = ()
     context_mutates = ()
     context_cache = ()
-    context_notes = ("适配器模板：在 propose/update 生命周期中维护算法状态。",)
+    context_notes = ("TODO(中/EN): 一句话说明 context 契约 / one-line context contract.",)
 
-    def __init__(self, max_candidates: int = 8) -> None:
+    def __init__(self) -> None:
+        # TODO(中/EN): 设置稳定适配器名 / set a stable adapter name.
         super().__init__(name="adapter_template")
-        # 每轮最多提出多少个候选解
-        self.max_candidates = max(1, int(max_candidates))
-        self._last_population: np.ndarray | None = None
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
-        # 提案阶段：生成候选解列表
-        _ = context
-        rng = self.create_local_rng(solver)
-        dim = int(getattr(getattr(solver, "problem", None), "dimension", 1))
-        out = []
-        for _ in range(self.max_candidates):
-            out.append(rng.uniform(-1.0, 1.0, size=(dim,)))
-        return out
-
-    def update(
-        self,
-        solver: Any,
-        candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
-        context: Dict[str, Any],
-    ) -> None:
-        # 更新阶段：消费评估反馈，维护内部状态
+    def propose(self, solver, context):
+        # TODO(中/EN): 生成候选解 / generate candidate solutions.
         _ = solver
+        _ = context
+        raise NotImplementedError
+
+    def update(self, solver, candidates, objectives, violations, context):
+        # TODO(中/EN): 用评估反馈更新状态 / update state with evaluation feedback.
+        _ = solver
+        _ = candidates
         _ = objectives
         _ = violations
         _ = context
-        if candidates:
-            self._last_population = np.asarray(candidates, dtype=float)
+        raise NotImplementedError
