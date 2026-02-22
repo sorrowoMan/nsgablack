@@ -8,6 +8,14 @@ from pathlib import Path
 import pkgutil
 import re
 
+try:  # py>=3.11
+    import tomllib as _toml
+except Exception:  # pragma: no cover - import fallback
+    try:  # py<3.11
+        import tomli as _toml  # type: ignore[import-not-found]
+    except Exception:  # pragma: no cover - optional dependency missing
+        _toml = None
+
 
 @dataclass(frozen=True)
 class CatalogEntry:
@@ -2947,18 +2955,13 @@ def _load_external_entries() -> List[CatalogEntry]:
     example_entry = "examples/demo.py:build_solver"
     """
 
-    try:
-        import tomllib  # py>=3.11
-    except Exception:  # pragma: no cover
-        tomllib = None
-
     def parse_file(path: Path) -> List[CatalogEntry]:
-        if tomllib is None:
+        if _toml is None:
             return []
         if not path.exists():
             return []
         raw = path.read_bytes()
-        data = tomllib.loads(raw.decode("utf-8"))
+        data = _toml.loads(raw.decode("utf-8"))
         items = data.get("entry", [])
         out: List[CatalogEntry] = []
         for item in items:

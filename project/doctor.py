@@ -102,6 +102,18 @@ _FORBIDDEN_SOLVER_MIRROR_ATTRS = {
     "last_unit_tasks",
 }
 _PLUGIN_STATE_FIELDS = {"population", "objectives", "constraint_violations"}
+_RUNTIME_STATE_FIELDS = {
+    "population",
+    "objectives",
+    "constraint_violations",
+    "best_x",
+    "best_objective",
+    "pareto_solutions",
+    "pareto_objectives",
+    "generation",
+    "evaluation_count",
+    "history",
+}
 _SOLVER_CONTROL_FIELDS = {
     "adapter",
     "bias_module",
@@ -756,6 +768,52 @@ def _is_component_class(class_node: ast.ClassDef) -> bool:
     return False
 
 
+def _is_not_implemented_raise(node: ast.AST) -> bool:
+    if not isinstance(node, ast.Raise):
+        return False
+    exc = node.exc
+    if isinstance(exc, ast.Name):
+        return exc.id == "NotImplementedError"
+    if isinstance(exc, ast.Call):
+        func = exc.func
+        if isinstance(func, ast.Name):
+            return func.id == "NotImplementedError"
+        if isinstance(func, ast.Attribute):
+            return str(func.attr) == "NotImplementedError"
+    if isinstance(exc, ast.Attribute):
+        return str(exc.attr) == "NotImplementedError"
+    return False
+
+
+def _check_class_template_not_implemented(
+    class_node: ast.ClassDef,
+    path: Path,
+    diags: List[DoctorDiagnostic],
+    *,
+    strict: bool,
+) -> None:
+    hits: List[str] = []
+    for stmt in class_node.body:
+        if not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for n in ast.walk(stmt):
+            if _is_not_implemented_raise(n):
+                line = int(getattr(n, "lineno", getattr(stmt, "lineno", 0)) or 0)
+                hits.append(f"{stmt.name}@L{line}")
+                break
+    if not hits:
+        return
+    _add(
+        diags,
+        "error" if strict else "warn",
+        "template-not-implemented",
+        f"Class {class_node.name} has NotImplementedError placeholders (模板未完成): "
+        + ", ".join(hits[:8])
+        + (" ..." if len(hits) > 8 else ""),
+        path,
+    )
+
+
 def _check_contract_source(root: Path, diags: List[DoctorDiagnostic], *, strict: bool) -> None:
     for folder_name in _CONTRACT_CHECK_DIRS:
         folder = root / folder_name
@@ -770,6 +828,7 @@ def _check_contract_source(root: Path, diags: List[DoctorDiagnostic], *, strict:
                 _add(diags, "warn", "source-parse-failed", f"Cannot parse source file: {exc}", py_file)
                 continue
             _check_forbidden_solver_mirror_writes(tree, py_file, diags, strict=bool(strict))
+            _check_runtime_bypass_writes(tree, py_file, diags, strict=bool(strict))
             if strict and folder_name == "plugins" and py_file.name != "base.py":
                 _check_plugin_solver_state_access(tree, py_file, diags)
 
@@ -781,6 +840,7 @@ def _check_contract_source(root: Path, diags: List[DoctorDiagnostic], *, strict:
                 if not _is_component_class(class_node):
                     continue
                 _check_class_metrics_fallback_literal(class_node, py_file, diags, strict=bool(strict))
+                _check_class_template_not_implemented(class_node, py_file, diags, strict=bool(strict))
                 if not _class_has_contract(class_node):
                     _add(
                         diags,
@@ -863,6 +923,71 @@ def _is_solver_ref(node: ast.AST) -> bool:
         and isinstance(node.value, ast.Name)
         and node.value.id == "self"
         and node.attr == "solver"
+    )
+
+
+def _extract_runtime_state_field_from_target(target: ast.AST) -> str | None:
+    if isinstance(target, ast.Attribute) and _is_solver_ref(target.value):
+        attr = str(target.attr)
+        if attr in _RUNTIME_STATE_FIELDS:
+            return attr
+    if isinstance(target, ast.Subscript):
+        value = target.value
+        if isinstance(value, ast.Attribute) and _is_solver_ref(value.value):
+            attr = str(value.attr)
+            if attr in _RUNTIME_STATE_FIELDS:
+                return attr
+    return None
+
+
+def _check_runtime_bypass_writes(
+    tree: ast.AST,
+    path: Path,
+    diags: List[DoctorDiagnostic],
+    *,
+    strict: bool,
+) -> None:
+    if not strict:
+        return
+    hits: List[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                attr = _extract_runtime_state_field_from_target(target)
+                if attr is not None:
+                    hits.append((int(getattr(target, "lineno", 0) or 0), attr))
+        elif isinstance(node, ast.AugAssign):
+            attr = _extract_runtime_state_field_from_target(node.target)
+            if attr is not None:
+                hits.append((int(getattr(node.target, "lineno", 0) or 0), attr))
+        elif isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id == "setattr" and len(node.args) >= 2:
+                obj = node.args[0]
+                key = node.args[1]
+                if _is_solver_ref(obj) and isinstance(key, ast.Constant) and isinstance(key.value, str):
+                    attr = str(key.value).strip()
+                    if attr in _RUNTIME_STATE_FIELDS:
+                        hits.append((int(getattr(node, "lineno", 0) or 0), attr))
+    if not hits:
+        return
+    uniq: List[str] = []
+    seen = set()
+    for line, attr in hits:
+        key = (line, attr)
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(f"{attr}@L{line}")
+    _add(
+        diags,
+        "error",
+        "runtime-bypass-write",
+        "Direct solver runtime-state writes detected; route through Runtime APIs "
+        "(solver.runtime.*, write_population_snapshot, runtime context projection): "
+        + ", ".join(uniq[:10])
+        + (" ..." if len(uniq) > 10 else ""),
+        path,
     )
 
 
