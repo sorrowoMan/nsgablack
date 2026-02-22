@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""偏置模板：复制后改文件名和类名即可接入。"""
+"""Bias template / 偏置模板。"""
 
 from __future__ import annotations
 
@@ -8,49 +8,26 @@ import numpy as np
 from nsgablack.bias.core.base import BiasBase, OptimizationContext
 from nsgablack.catalog.markers import component
 
-class BiasTemplate(BiasBase):
-    """最小可运行偏置模板。"""
 
-    context_requires = ()
-    context_provides = ()
-    context_mutates = ()
-    context_cache = ()
-    context_notes = ("偏置模板：基于 x/context 计算一个标量偏好值。",)
-    requires_metrics = ()
-    metrics_fallback = "none"
-    missing_metrics_policy = "warn"
-
-    def __init__(self, weight: float = 1.0) -> None:
-        # weight 控制偏置强度；建议先用 1.0 再微调
-        super().__init__(name="bias_template", weight=float(weight), description="偏置模板")
-
-    def compute(self, x: np.ndarray, context: OptimizationContext) -> float:
-        # 返回值越大表示越偏好；这里默认返回 0（不施加偏好）
-        _ = context
-        _ = x
-        return 0.0
 @component(kind="bias")
-class testbias(BiasBase):
+class BiasTemplate(BiasBase):
+    # TODO(中/EN): 仅声明真实读写字段 / declare only real read-write fields.
     context_requires = ()
     context_provides = ()
     context_mutates = ()
     context_cache = ()
-    context_notes = (
-        '注册检测',
-    )
-
-
+    context_notes = ("TODO(中/EN): 一句话说明 context 契约 / one-line context contract.",)
 
     requires_metrics = ()
     metrics_fallback = "none"
     missing_metrics_policy = "warn"
 
     def __init__(self, weight: float = 1.0) -> None:
-        # weight 控制偏置强度；建议先用 1.0 再微调
-        super().__init__(name="bias_template", weight=float(weight), description="偏置模板")
+        # TODO(中/EN): 设置稳定组件名与说明 / set stable name and description.
+        super().__init__(name="bias_template", weight=float(weight), description="TODO")
 
     def compute(self, x: np.ndarray, context: OptimizationContext) -> float:
-        # 返回值越大表示越偏好；这里默认返回 0（不施加偏好）
-        _ = context
+        # TODO(中/EN): 返回标量偏好分 / return a scalar preference score.
         _ = x
-        return 0.0
+        _ = context
+        raise NotImplementedError
