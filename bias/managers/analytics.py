@@ -12,7 +12,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import logging
 
 import numpy as np
-import pandas as pd
+try:
+    import pandas as pd
+except Exception:  # optional dependency
+    pd = None
 
 try:
     import matplotlib.pyplot as plt
@@ -297,6 +300,27 @@ class BiasEffectivenessAnalyzer:
                     "overall_score": self._compute_overall_score(metrics),
                 }
             )
-        df = pd.DataFrame(data)
-        df.to_csv(filename, index=False)
+        if pd is not None:
+            df = pd.DataFrame(data)
+            df.to_csv(filename, index=False)
+        else:
+            import csv
+
+            fieldnames = [
+                "bias_name",
+                "bias_type",
+                "convergence_improvement",
+                "solution_quality_boost",
+                "diversity_score",
+                "computational_overhead",
+                "robustness_score",
+                "consistency_score",
+                "p_value",
+                "overall_score",
+            ]
+            with open(filename, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                for row in data:
+                    writer.writerow(row)
         self.logger.info("Metrics exported to %s", filename)
