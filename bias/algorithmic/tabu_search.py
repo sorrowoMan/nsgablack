@@ -47,7 +47,7 @@ class TabuSearchBias(AlgorithmicBias):
             return 0.0
 
         distances = [np.linalg.norm(x - t) for t in self._tabu_list]
-        min_dist = float(np.min(distances)) if distances else float("inf")
+        min_dist = float(np.min(distances)) if len(distances) > 0 else float("inf")
 
         self._remember(x)
 

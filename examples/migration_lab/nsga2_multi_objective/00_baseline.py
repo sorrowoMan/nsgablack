@@ -65,7 +65,7 @@ def fast_non_dominated_sort(objectives: np.ndarray) -> Tuple[List[List[int]], np
                 if dominated_count[q] == 0:
                     rank[q] = current + 1
                     nxt.append(q)
-        if nxt:
+        if len(nxt) > 0:
             fronts.append(nxt)
         current += 1
 
@@ -75,7 +75,7 @@ def fast_non_dominated_sort(objectives: np.ndarray) -> Tuple[List[List[int]], np
 def crowding_distance(objectives: np.ndarray, front: Sequence[int]) -> np.ndarray:
     n = objectives.shape[0]
     dist = np.zeros(n, dtype=float)
-    if not front:
+    if len(front) == 0:
         return dist
     if len(front) <= 2:
         for idx in front:
@@ -180,7 +180,7 @@ def run_baseline(cfg: BaselineNSGA2Config) -> Tuple[np.ndarray, np.ndarray, List
 
         if gen % 10 == 0 or gen == cfg.generations - 1:
             front0 = fronts[0] if fronts else []
-            rep = objectives[front0[0]] if front0 else np.array([np.nan, np.nan])
+            rep = objectives[front0[0]] if len(front0) > 0 else np.array([np.nan, np.nan])
             print(
                 f"[baseline-nsga2] gen={gen:03d} front0_size={len(front0)} "
                 f"rep_obj=[{float(rep[0]):.4f}, {float(rep[1]):.4f}]"
@@ -195,5 +195,5 @@ if __name__ == '__main__':
     front0 = fronts[0] if fronts else []
     print('\n[baseline-nsga2] done')
     print('[baseline-nsga2] final front0 size:', len(front0))
-    if front0:
+    if len(front0) > 0:
         print('[baseline-nsga2] first front objective sample:', obj[front0[0]])

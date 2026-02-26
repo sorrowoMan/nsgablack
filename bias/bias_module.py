@@ -11,6 +11,7 @@ from collections import OrderedDict
 from typing import Any, Callable, Dict, List, Optional
 import copy
 import logging
+import threading
 
 import numpy as np
 
@@ -56,6 +57,7 @@ class BiasModule:
 
         # Callback for cache invalidation when bias params change
         self._param_change_handler = self._on_bias_param_change
+        self._lock = threading.RLock()
 
         # Optional context contract (defaults empty for compatibility).
         self.context_requires = tuple(getattr(self, "context_requires", ()) or ())
@@ -109,6 +111,10 @@ class BiasModule:
         return bias_module
 
     def add(self, bias, weight: float = 1.0, name: Optional[str] = None) -> bool:
+        with self._lock:
+            return self._add_unlocked(bias=bias, weight=weight, name=name)
+
+    def _add_unlocked(self, bias, weight: float = 1.0, name: Optional[str] = None) -> bool:
         if isinstance(bias, dict):
             bias_type = bias.get("type", "algorithmic")
             bias_params = bias.get("params", {})
@@ -178,17 +184,18 @@ class BiasModule:
             except Exception:
                 x_bytes = None
 
-        biased_value = self._compute_bias_value(
-            x=x,
-            objective_value=objective_value,
-            individual_id=int(individual_id) if individual_id is not None else 0,
-            context=context,
-            _x_bytes=x_bytes,
-        )
+        with self._lock:
+            biased_value = self._compute_bias_value(
+                x=x,
+                objective_value=objective_value,
+                individual_id=int(individual_id) if individual_id is not None else 0,
+                context=context,
+                _x_bytes=x_bytes,
+            )
 
-        if objective_value < self.history_best_f:
-            self.history_best_f = float(objective_value)
-            self.history_best_x = np.asarray(x, dtype=float).copy()
+            if objective_value < self.history_best_f:
+                self.history_best_f = float(objective_value)
+                self.history_best_x = np.asarray(x, dtype=float).copy()
 
         return biased_value
 
@@ -215,22 +222,23 @@ class BiasModule:
             except Exception:
                 x_bytes = None
 
-        for k in range(out.size):
-            out[k] = self._compute_bias_value(
-                x=x,
-                objective_value=float(out[k]),
-                individual_id=ind_id,
-                context=context,
-                _x_bytes=x_bytes,
-            )
+        with self._lock:
+            for k in range(out.size):
+                out[k] = self._compute_bias_value(
+                    x=x,
+                    objective_value=float(out[k]),
+                    individual_id=ind_id,
+                    context=context,
+                    _x_bytes=x_bytes,
+                )
 
-        try:
-            best_obj = float(np.min(obj_arr))
-        except Exception:
-            best_obj = float(obj_arr[0]) if obj_arr.size else float("inf")
-        if best_obj < self.history_best_f:
-            self.history_best_f = best_obj
-            self.history_best_x = np.asarray(x, dtype=float).copy()
+            try:
+                best_obj = float(np.min(obj_arr))
+            except Exception:
+                best_obj = float(obj_arr[0]) if obj_arr.size else float("inf")
+            if best_obj < self.history_best_f:
+                self.history_best_f = best_obj
+                self.history_best_x = np.asarray(x, dtype=float).copy()
 
         return out
 
@@ -406,6 +414,10 @@ class BiasModule:
         return None
 
     def remove_bias(self, name: str) -> bool:
+        with self._lock:
+            return self._remove_bias_unlocked(name)
+
+    def _remove_bias_unlocked(self, name: str) -> bool:
         if hasattr(self._manager, "algorithmic_manager"):
             if self._manager.algorithmic_manager.remove_bias(name):
                 self._bump_cache_version()
@@ -461,6 +473,10 @@ class BiasModule:
         return None
 
     def clear(self):
+        with self._lock:
+            self._clear_unlocked()
+
+    def _clear_unlocked(self):
         try:
             algo_mgr = getattr(self._manager, "algorithmic_manager", None)
             dom_mgr = getattr(self._manager, "domain_manager", None)
@@ -479,9 +495,11 @@ class BiasModule:
         return f"BiasModule(biases={self.list_biases()}, enabled={self.enable})"
 
     def clear_cache(self):
-        self._bias_cache.clear()
+        with self._lock:
+            self._bias_cache.clear()
 
     def _bump_cache_version(self):
+        # caller holds lock when mutating bias/cache state
         self._bias_cache_version += 1
         self._bias_cache.clear()
 
@@ -510,7 +528,8 @@ class BiasModule:
                 self._register_bias_callbacks(bias)
 
     def _on_bias_param_change(self, bias: Any):
-        self._bump_cache_version()
+        with self._lock:
+            self._bump_cache_version()
 
 
 def proximity_reward(x: np.ndarray, best_x: np.ndarray) -> float:

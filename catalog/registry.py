@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 import importlib
 import os
 from pathlib import Path
 import pkgutil
 import re
+import ast
 
 try:  # py>=3.11
     import tomllib as _toml
@@ -40,6 +41,8 @@ class CatalogEntry:
     required_companions: Tuple[str, ...] = ()
     config_keys: Tuple[str, ...] = ()
     example_entry: str = ""
+    # Optional detail sidecar file (index/detail split).
+    detail_ref: str = ""
 
     def load(self):
         """Import and return the referenced symbol."""
@@ -55,9 +58,14 @@ class Catalog:
         self._entries = list(entries)
         self._by_key: Dict[str, CatalogEntry] = {e.key: e for e in self._entries}
         self._context_blob_cache: Dict[str, str] = {}
+        self._detail_entry_cache: Dict[str, CatalogEntry] = {}
+        self._detail_file_cache: Dict[str, Dict[str, object]] = {}
 
     def get(self, key: str) -> Optional[CatalogEntry]:
-        return self._by_key.get(key)
+        entry = self._by_key.get(key)
+        if entry is None:
+            return None
+        return self._hydrate_entry(entry)
 
     def list(self, *, kind: Optional[str] = None, tag: Optional[str] = None) -> List[CatalogEntry]:
         out = list(self._entries)
@@ -102,20 +110,23 @@ class Catalog:
                 e_tags = {t.lower() for t in e.tags}
                 if not tag_set.issubset(e_tags):
                     return False
+            target = e
+            if field in ("context", "usage") or use_context_in_all or use_usage_in_all:
+                target = self._hydrate_entry(e)
             if field == "name":
-                hay = " ".join([e.key, e.title]).lower()
+                hay = " ".join([target.key, target.title]).lower()
             elif field == "tag":
-                hay = " ".join(e.tags).lower()
+                hay = " ".join(target.tags).lower()
             elif field == "context":
-                hay = self._entry_context_blob(e)
+                hay = self._entry_context_blob(target)
             elif field == "usage":
-                hay = self._entry_usage_blob(e)
+                hay = self._entry_usage_blob(target)
             else:
-                hay = " ".join([e.key, e.title, e.kind, e.summary, " ".join(e.tags)]).lower()
+                hay = " ".join([target.key, target.title, target.kind, target.summary, " ".join(target.tags)]).lower()
                 if use_context_in_all:
-                    hay = f"{hay} {self._entry_context_blob(e)}"
+                    hay = f"{hay} {self._entry_context_blob(target)}"
                 if use_usage_in_all:
-                    hay = f"{hay} {self._entry_usage_blob(e)}"
+                    hay = f"{hay} {self._entry_usage_blob(target)}"
             return all(any(t in hay for t in group) for group in token_groups)
 
         out = [e for e in self._entries if match(e)]
@@ -142,6 +153,61 @@ class Catalog:
 
         out.sort(key=rank)
         return out[: max(0, int(limit))]
+
+    def _hydrate_entry(self, entry: CatalogEntry) -> CatalogEntry:
+        if not entry.detail_ref:
+            return entry
+        cached = self._detail_entry_cache.get(entry.key)
+        if cached is not None:
+            return cached
+        payload = self._load_detail_payload(entry.detail_ref)
+        if not payload:
+            self._detail_entry_cache[entry.key] = entry
+            return entry
+        merged = replace(
+            entry,
+            summary=str(payload.get("summary", entry.summary) or entry.summary),
+            companions=_coerce_str_tuple(payload.get("companions", entry.companions)),
+            context_requires=_coerce_str_tuple(payload.get("context_requires", entry.context_requires)),
+            context_provides=_coerce_str_tuple(payload.get("context_provides", entry.context_provides)),
+            context_mutates=_coerce_str_tuple(payload.get("context_mutates", entry.context_mutates)),
+            context_cache=_coerce_str_tuple(payload.get("context_cache", entry.context_cache)),
+            context_notes=_coerce_str_tuple(payload.get("context_notes", entry.context_notes)),
+            use_when=_coerce_str_tuple(payload.get("use_when", entry.use_when)),
+            minimal_wiring=_coerce_str_tuple(payload.get("minimal_wiring", entry.minimal_wiring)),
+            required_companions=_coerce_str_tuple(payload.get("required_companions", entry.required_companions)),
+            config_keys=_coerce_str_tuple(payload.get("config_keys", entry.config_keys)),
+            example_entry=str(payload.get("example_entry", entry.example_entry) or entry.example_entry),
+        )
+        self._detail_entry_cache[entry.key] = merged
+        self._by_key[entry.key] = merged
+        return merged
+
+    def _load_detail_payload(self, detail_ref: str) -> Dict[str, object]:
+        ref = str(detail_ref or "").strip()
+        if not ref:
+            return {}
+        cached = self._detail_file_cache.get(ref)
+        if cached is not None:
+            return cached
+        path = Path(ref)
+        if not path.exists() or not path.is_file():
+            self._detail_file_cache[ref] = {}
+            return {}
+        payload: Dict[str, object] = {}
+        if path.suffix.lower() == ".toml" and _toml is not None:
+            try:
+                data = _toml.loads(path.read_text(encoding="utf-8", errors="replace"))
+                if isinstance(data, dict):
+                    detail_block = data.get("detail")
+                    if isinstance(detail_block, dict):
+                        payload = detail_block
+                    else:
+                        payload = data
+            except Exception:
+                payload = {}
+        self._detail_file_cache[ref] = payload if isinstance(payload, dict) else {}
+        return self._detail_file_cache[ref]
 
     def _entry_context_blob(self, e: CatalogEntry) -> str:
         cached = self._context_blob_cache.get(e.key)
@@ -232,6 +298,43 @@ def _coerce_str_tuple(value: object) -> Tuple[str, ...]:
         return tuple(out)
     text = str(value).strip()
     return (text,) if text else ()
+
+
+def _parse_literal_fallback(raw: str) -> object:
+    text = str(raw).strip()
+    if not text:
+        return ""
+    try:
+        return ast.literal_eval(text)
+    except Exception:
+        pass
+    if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
+        return text[1:-1]
+    return text
+
+
+def _parse_entry_block_fallback(block: str) -> Dict[str, object]:
+    out: Dict[str, object] = {}
+    lines = block.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        i += 1
+        if not line or line.startswith("#"):
+            continue
+        m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$", line)
+        if not m:
+            continue
+        key, value = m.group(1), m.group(2).strip()
+        if value.startswith("["):
+            bracket = value.count("[") - value.count("]")
+            while bracket > 0 and i < len(lines):
+                nxt = lines[i].strip()
+                i += 1
+                value = f"{value}\n{nxt}"
+                bracket += nxt.count("[") - nxt.count("]")
+        out[key] = _parse_literal_fallback(value)
+    return out
 
 
 def _expand_token_groups(tokens: List[str]) -> List[List[str]]:
@@ -2925,92 +3028,130 @@ def _discover_python_entries() -> List[CatalogEntry]:
     return out
 
 
-def _load_external_entries() -> List[CatalogEntry]:
-    """
-    Load user/project-defined catalog entries without touching source code.
+class CatalogProvider:
+    """Catalog source provider interface."""
 
-    Supported sources (in order):
-    - `catalog/entries.toml` (next to this file; recommended for repo-local extension)
-    - `NSGABLACK_CATALOG_PATH` env var (os.pathsep-separated list of .toml files)
+    name: str = "provider"
 
-    TOML schema:
+    def load(self) -> List[CatalogEntry]:
+        raise NotImplementedError
 
-    [[entry]]
-    key = "bias.my"
-    title = "MyBias"
-    kind = "bias"
-    import_path = "nsgablack.bias.algorithmic.my:MyBias"
-    tags = ["foo", "bar"]
-    summary = "one line"
-    companions = ["plugin.xxx", "suite.yyy"]
-    context_requires = ["context.population"]
-    context_provides = ["context.report.meta"]
-    context_mutates = ["context.cache.memo"]
-    context_cache = ["context.cache.memo"]
-    context_notes = ["One-line contract notes"]
-    use_when = ["When to use this component"]
-    minimal_wiring = ["from ... import ...", "solver.add_plugin(...)"]
-    required_companions = ["suite.xxx"]
-    config_keys = ["weight", "threshold"]
-    example_entry = "examples/demo.py:build_solver"
-    """
 
-    def parse_file(path: Path) -> List[CatalogEntry]:
-        if _toml is None:
-            return []
-        if not path.exists():
-            return []
-        raw = path.read_bytes()
-        data = _toml.loads(raw.decode("utf-8"))
+def _parse_entries_from_toml(path: Path) -> List[CatalogEntry]:
+    if _toml is None or not path.exists():
+        return []
+    raw_text = path.read_text(encoding="utf-8", errors="replace")
+    items: List[object] = []
+    try:
+        data = _toml.loads(raw_text)
         items = data.get("entry", [])
-        out: List[CatalogEntry] = []
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            out.append(
-                CatalogEntry(
-                    key=str(item.get("key", "")).strip(),
-                    title=str(item.get("title", "")).strip(),
-                    kind=str(item.get("kind", "")).strip().lower(),
-                    import_path=str(item.get("import_path", "")).strip(),
-                    tags=_coerce_str_tuple(item.get("tags", ())),
-                    summary=str(item.get("summary", "")).strip(),
-                    companions=_coerce_str_tuple(item.get("companions", ())),
-                    context_requires=_coerce_str_tuple(item.get("context_requires", ())),
-                    context_provides=_coerce_str_tuple(item.get("context_provides", ())),
-                    context_mutates=_coerce_str_tuple(item.get("context_mutates", ())),
-                    context_cache=_coerce_str_tuple(item.get("context_cache", ())),
-                    context_notes=_coerce_str_tuple(item.get("context_notes", ())),
-                    use_when=_coerce_str_tuple(item.get("use_when", ())),
-                    minimal_wiring=_coerce_str_tuple(item.get("minimal_wiring", ())),
-                    required_companions=_coerce_str_tuple(item.get("required_companions", ())),
-                    config_keys=_coerce_str_tuple(item.get("config_keys", ())),
-                    example_entry=str(item.get("example_entry", "")).strip(),
-                )
+    except Exception:
+        blocks = raw_text.split("[[entry]]")
+        parsed: List[Dict[str, object]] = []
+        for block in blocks[1:]:
+            item = _parse_entry_block_fallback(block)
+            if item:
+                parsed.append(item)
+        items = parsed
+    out: List[CatalogEntry] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        detail_ref = str(item.get("detail_ref", "")).strip()
+        if not detail_ref:
+            detail_ref = str(item.get("details_file", "")).strip()
+        if detail_ref:
+            detail_path = (path.parent / detail_ref).resolve()
+            detail_ref = str(detail_path)
+        out.append(
+            CatalogEntry(
+                key=str(item.get("key", "")).strip(),
+                title=str(item.get("title", "")).strip(),
+                kind=str(item.get("kind", "")).strip().lower(),
+                import_path=str(item.get("import_path", "")).strip(),
+                tags=_coerce_str_tuple(item.get("tags", ())),
+                summary=str(item.get("summary", "")).strip(),
+                companions=_coerce_str_tuple(item.get("companions", ())),
+                context_requires=_coerce_str_tuple(item.get("context_requires", ())),
+                context_provides=_coerce_str_tuple(item.get("context_provides", ())),
+                context_mutates=_coerce_str_tuple(item.get("context_mutates", ())),
+                context_cache=_coerce_str_tuple(item.get("context_cache", ())),
+                context_notes=_coerce_str_tuple(item.get("context_notes", ())),
+                use_when=_coerce_str_tuple(item.get("use_when", ())),
+                minimal_wiring=_coerce_str_tuple(item.get("minimal_wiring", ())),
+                required_companions=_coerce_str_tuple(item.get("required_companions", ())),
+                config_keys=_coerce_str_tuple(item.get("config_keys", ())),
+                example_entry=str(item.get("example_entry", "")).strip(),
+                detail_ref=detail_ref,
             )
-        return [e for e in out if e.key and e.kind and e.import_path]
+        )
+    return [e for e in out if e.key and e.kind and e.import_path]
 
-    paths: List[Path] = []
 
-    # repo-local extension: catalog/entries.toml
-    paths.append(Path(__file__).with_name("entries.toml"))
+def _collect_toml_paths(path: Path) -> List[Path]:
+    if path.is_file():
+        return [path]
+    if path.is_dir():
+        return sorted(path.glob("*.toml"))
+    return []
 
-    # env extension: NSGABLACK_CATALOG_PATH
-    env = os.environ.get("NSGABLACK_CATALOG_PATH", "").strip()
-    if env:
+
+def _load_toml_entries(paths: Sequence[Path]) -> List[CatalogEntry]:
+    out: List[CatalogEntry] = []
+    for p in paths:
+        for toml_path in _collect_toml_paths(p):
+            try:
+                out.extend(_parse_entries_from_toml(toml_path))
+            except Exception:
+                continue
+    return out
+
+
+class BuiltinTomlProvider(CatalogProvider):
+    """
+    Builtin catalog source:
+    - catalog/entries.toml
+    - catalog/entries/*.toml
+    """
+
+    name = "builtin_toml"
+
+    def load(self) -> List[CatalogEntry]:
+        return _load_toml_entries(
+            [
+                Path(__file__).with_name("entries.toml"),
+                Path(__file__).with_name("entries"),
+            ]
+        )
+
+
+class EnvTomlProvider(CatalogProvider):
+    """External catalog from NSGABLACK_CATALOG_PATH (file or directory list)."""
+
+    name = "env_toml"
+
+    def load(self) -> List[CatalogEntry]:
+        env = os.environ.get("NSGABLACK_CATALOG_PATH", "").strip()
+        if not env:
+            return []
+        paths: List[Path] = []
         for part in env.split(os.pathsep):
             p = part.strip().strip('"')
             if p:
                 paths.append(Path(p))
+        return _load_toml_entries(paths)
 
-    entries: List[CatalogEntry] = []
-    for p in paths:
+
+def _load_external_entries() -> List[CatalogEntry]:
+    """Load entries from configured catalog providers."""
+    providers: List[CatalogProvider] = [BuiltinTomlProvider(), EnvTomlProvider()]
+    out: List[CatalogEntry] = []
+    for provider in providers:
         try:
-            entries.extend(parse_file(p))
+            out.extend(provider.load())
         except Exception:
-            # Catalog is discoverability layer; external files should never crash runtime.
             continue
-    return entries
+    return out
 
 
 def get_catalog(*, refresh: bool = False) -> Catalog:

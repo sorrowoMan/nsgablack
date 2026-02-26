@@ -22,6 +22,8 @@ doc_user_guide_optimization_strategies = "docs/user_guide/optimization_strategie
 doc_user_guide_extension_contracts = "docs/user_guide/EXTENSION_CONTRACTS.md"
 doc_user_guide_enhanced_search = "docs/user_guide/enhanced_search.md"
 doc_user_guide_db_event_logging = "docs/user_guide/DB_EVENT_LOGGING.md"
+doc_user_guide_redis_context_backend = "docs/user_guide/REDIS_CONTEXT_BACKEND.md"
+doc_user_guide_decision_replay_engine = "docs/user_guide/DECISION_REPLAY_ENGINE.md"
 doc_guides_decoupling_problem = "docs/guides/DECOUPLING_PROBLEM.md"
 doc_guides_decoupling_representation = "docs/guides/DECOUPLING_REPRESENTATION.md"
 doc_guides_decoupling_bias = "docs/guides/DECOUPLING_BIAS.md"
@@ -69,6 +71,8 @@ DOC_POINTERS = {
     "doc.user_guide.extension_contracts": doc_user_guide_extension_contracts,
     "doc.user_guide.enhanced_search": doc_user_guide_enhanced_search,
     "doc.user_guide.db_event_logging": doc_user_guide_db_event_logging,
+    "doc.user_guide.redis_context_backend": doc_user_guide_redis_context_backend,
+    "doc.user_guide.decision_replay_engine": doc_user_guide_decision_replay_engine,
     "doc.guides.decoupling_problem": doc_guides_decoupling_problem,
     "doc.guides.decoupling_representation": doc_guides_decoupling_representation,
     "doc.guides.decoupling_bias": doc_guides_decoupling_bias,

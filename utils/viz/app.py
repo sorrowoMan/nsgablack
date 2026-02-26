@@ -14,6 +14,7 @@ from ..context.context_contracts import get_component_contract
 from .ui.catalog_view import CatalogView
 from .ui.context_view import ContextView
 from .ui.contrib_view import ContributionView
+from .ui.decision_view import DecisionView
 from .ui.doctor_view import DoctorView
 from .ui.run_view import RunView
 
@@ -30,13 +31,21 @@ class WireItem:
     kind: str
 
 
+@dataclass
+class SolverLayer:
+    label: str
+    sections: List[Tuple[str, List[WireItem]]]
+    children: List["SolverLayer"]
+    path: str
+
+
 class VisualizerApp(tk.Tk):
     # View profiles are intentionally non-cumulative.
     # Each profile serves a different task focus with reduced noise.
     _MODE_TABS = {
         "Build": ("details", "catalog", "register", "context"),
-        "Run": ("run", "contribution", "trajectory", "catalog", "register"),
-        "Audit": ("details", "context", "doctor", "contribution", "register"),
+        "Run": ("run", "decision", "contribution", "trajectory", "catalog", "register"),
+        "Audit": ("details", "decision", "context", "doctor", "contribution", "register"),
     }
 
     def __init__(
@@ -58,12 +67,14 @@ class VisualizerApp(tk.Tk):
 
         self.solver = None
         self.items: List[Tuple[str, List[WireItem]]] = []
+        self.solver_layers: List[SolverLayer] = []
         self._pipeline_cache: Dict[str, Any] = {}
         self._missing_rows: List[Tuple[tk.Frame, WireItem]] = []
         self._missing_index = 0
         self._canvas = None
         self._history: List[str] = []
         self._history_details: List[str] = []
+        self._history_meta: List[Dict[str, Any]] = []
         self._last_run_id: Optional[str] = None
         self._last_artifacts: Dict[str, Any] = {}
         self._bias_row_map: Dict[str, tk.Frame] = {}
@@ -72,17 +83,25 @@ class VisualizerApp(tk.Tk):
         self._delta_keys: set[str] = set()
         self._hash_index: Dict[str, str] = {}
         self._is_running: bool = False
+        self._expand_state: Dict[str, bool] = {}
+        self._kind_filter_var = tk.StringVar(value="all")
+        self._last_render_signature: str = ""
 
         self.run_view: Optional[RunView] = None
         self.contrib_view: Optional[ContributionView] = None
         self.catalog_view: Optional[CatalogView] = None
         self.context_view: Optional[ContextView] = None
         self.doctor_view: Optional[DoctorView] = None
+        self.decision_view: Optional[DecisionView] = None
         self._entry_path_var = tk.StringVar(value="")
         self._entry_func_var = tk.StringVar(value="build_solver")
         self._entry_label_var = tk.StringVar(value="")
         self._ui_mode_var = tk.StringVar(value="Build")
         self._ui_tab_specs: List[Tuple[str, str, ttk.Frame]] = []
+        self._tab_key_by_id: Dict[str, str] = {}
+        self._active_tab_key: str = "details"
+        self._tab_dirty: Dict[str, bool] = {"context": True, "doctor": True, "decision": True}
+        self._pending_decision_run: Optional[Tuple[str, Dict[str, Any]]] = None
 
         self._build_ui()
         self.report_callback_exception = self._on_tk_callback_exception
@@ -127,6 +146,19 @@ class VisualizerApp(tk.Tk):
         # Left: scrollable sections
         left = ttk.Frame(main)
         left.pack(side="left", fill="both", expand=True)
+
+        filter_row = ttk.Frame(left)
+        filter_row.pack(fill="x", pady=(0, 6))
+        ttk.Label(filter_row, text="Kind").pack(side="left")
+        kind_combo = ttk.Combobox(
+            filter_row,
+            textvariable=self._kind_filter_var,
+            values=("all", "solver", "adapter", "pipeline", "bias", "plugin"),
+            width=12,
+            state="readonly",
+        )
+        kind_combo.pack(side="left", padx=(6, 0))
+        kind_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_kind_filter_change())
 
         canvas = tk.Canvas(left, borderwidth=0, highlightthickness=0)
         scrollbar = ttk.Scrollbar(left, orient="vertical", command=canvas.yview)
@@ -174,6 +206,7 @@ class VisualizerApp(tk.Tk):
         register_tab = ttk.Frame(notebook)
         context_tab = ttk.Frame(notebook)
         doctor_tab = ttk.Frame(notebook)
+        decision_tab = ttk.Frame(notebook)
         self._tab_details = details_tab
         self._tab_run = run_tab
         self._tab_contrib = contrib_tab
@@ -182,9 +215,11 @@ class VisualizerApp(tk.Tk):
         self._tab_register = register_tab
         self._tab_context = context_tab
         self._tab_doctor = doctor_tab
+        self._tab_decision = decision_tab
         self._ui_tab_specs = [
             ("details", "Details", details_tab),
             ("run", "Run", run_tab),
+            ("decision", "Decision", decision_tab),
             ("contribution", "Contribution", contrib_tab),
             ("trajectory", "Trajectory", traj_tab),
             ("catalog", "Catalog", catalog_tab),
@@ -218,10 +253,14 @@ class VisualizerApp(tk.Tk):
         self.contrib_view = ContributionView(self, contrib_tab, traj_tab)
         self.catalog_view = CatalogView(self, catalog_tab)
         self._build_register_tab(register_tab)
+        self.decision_view = DecisionView(self, decision_tab)
         self.context_view = ContextView(self, context_tab)
         self.doctor_view = DoctorView(self, doctor_tab)
         self.catalog = self.catalog_view.load_catalog()
+        self._tab_key_by_id = {str(frame): key for key, _label, frame in self._ui_tab_specs}
+        notebook.bind("<<NotebookTabChanged>>", self._on_notebook_tab_changed)
         self._apply_ui_mode(force=True)
+        self._on_notebook_tab_changed(None)
 
     def _build_register_tab(self, tab: ttk.Frame) -> None:
         ttk.Label(tab, text="Component Registration", font=("Segoe UI", 11, "bold")).pack(anchor="w")
@@ -295,6 +334,67 @@ class VisualizerApp(tk.Tk):
     def _on_ui_mode_change(self) -> None:
         self._apply_ui_mode()
         self._set_status(f"UI view: {self._ui_mode_var.get().strip().title()}")
+
+    def _on_notebook_tab_changed(self, _event: Any) -> None:
+        notebook = getattr(self, "_notebook", None)
+        if notebook is None:
+            return
+        try:
+            selected = notebook.select()
+        except Exception:
+            return
+        key = self._tab_key_by_id.get(str(selected), "")
+        if not key:
+            return
+        self._active_tab_key = key
+        self._refresh_tab_if_dirty(key)
+
+    def _mark_tab_dirty(self, *keys: str) -> None:
+        for key in keys:
+            if key:
+                self._tab_dirty[str(key)] = True
+
+    def _refresh_tab_if_dirty(self, key: str) -> None:
+        if not bool(self._tab_dirty.get(key, False)):
+            return
+        if key == "context":
+            if self.context_view:
+                self.context_view.request_refresh()
+            self._tab_dirty[key] = False
+            return
+        if key == "doctor":
+            if self.doctor_view:
+                self.doctor_view.refresh_state()
+            self._tab_dirty[key] = False
+            return
+        if key == "decision":
+            if self.decision_view:
+                pending = self._pending_decision_run
+                if pending is not None:
+                    run_id, artifacts = pending
+                    self.decision_view.load_from_run(run_id=run_id, artifacts=artifacts)
+                else:
+                    self.decision_view.refresh()
+            self._pending_decision_run = None
+            self._tab_dirty[key] = False
+            return
+
+    def request_context_refresh(self) -> None:
+        self._mark_tab_dirty("context")
+        if self._active_tab_key == "context":
+            self._refresh_tab_if_dirty("context")
+
+    def request_doctor_refresh(self) -> None:
+        self._mark_tab_dirty("doctor")
+        if self._active_tab_key == "doctor":
+            self._refresh_tab_if_dirty("doctor")
+
+    def request_decision_refresh(self, *, run_id: Optional[str] = None, artifacts: Optional[Dict[str, Any]] = None) -> None:
+        if run_id:
+            self._pending_decision_run = (str(run_id), dict(artifacts or {}))
+        self._mark_tab_dirty("decision")
+        if self._active_tab_key == "decision":
+            self._refresh_tab_if_dirty("decision")
 
     def _apply_entry_to_controls(self) -> None:
         if not self.entry:
@@ -430,13 +530,12 @@ class VisualizerApp(tk.Tk):
             self._refresh_catalog()
             if self.doctor_view:
                 self.doctor_view.use_default_path()
-                self.doctor_view.refresh_state()
+                self.request_doctor_refresh()
             self._set_status(f"Loaded entry: {entry}")
             self._rebuild_solver()
         except Exception as exc:
             self._set_status(f"Load failed: {exc}")
-            if self.doctor_view:
-                self.doctor_view.refresh_state()
+            self.request_doctor_refresh()
 
     def _refresh_current_entry(self) -> None:
         if self._is_running:
@@ -445,16 +544,14 @@ class VisualizerApp(tk.Tk):
         if not self.entry:
             self._set_status("No entry loaded; use Browse/Load first")
             self._refresh_catalog()
-            if self.doctor_view:
-                self.doctor_view.refresh_state()
+            self.request_doctor_refresh()
             return
         try:
             self.builder = _load_entry(self.entry)
             self._refresh_catalog()
             self._set_status("Entry reloaded")
             self._rebuild_solver()
-            if self.doctor_view:
-                self.doctor_view.refresh_state()
+            self.request_doctor_refresh()
         except Exception as exc:
             self.solver = None
             self.items = []
@@ -463,10 +560,8 @@ class VisualizerApp(tk.Tk):
             self._set_status(f"Refresh failed: {exc}")
             if self.run_view:
                 self.run_view.update_sensitivity_button()
-            if self.context_view:
-                self.context_view.refresh()
-            if self.doctor_view:
-                self.doctor_view.refresh_state()
+            self.request_context_refresh()
+            self.request_doctor_refresh()
 
     def _refresh_catalog(self) -> None:
         if self.catalog_view:
@@ -476,55 +571,70 @@ class VisualizerApp(tk.Tk):
         if self.builder is None:
             self.solver = None
             self.items = []
+            self.solver_layers = []
             for child in self.scroll_frame.winfo_children():
                 child.destroy()
             self._set_status("Empty mode: load an entry file to inspect wiring")
             if self.run_view:
                 self.run_view.update_sensitivity_button()
-            if self.context_view:
-                self.context_view.refresh()
-            if self.doctor_view:
-                self.doctor_view.refresh_state()
+            self.request_context_refresh()
+            self.request_doctor_refresh()
             return
         try:
             self.solver = self.builder()
         except Exception as exc:
             self.solver = None
             self.items = []
+            self.solver_layers = []
             for child in self.scroll_frame.winfo_children():
                 child.destroy()
             self._set_status(f"Build failed: {exc}")
             if self.run_view:
                 self.run_view.update_sensitivity_button()
-            if self.doctor_view:
-                self.doctor_view.refresh_state()
+            self.request_doctor_refresh()
             return
         self._pipeline_cache = {}
-        self.items = self._collect_items(self.solver)
-        for child in self.scroll_frame.winfo_children():
-            child.destroy()
-        self._render_items()
+        self.solver_layers = self._collect_solver_layers(self.solver)
+        self.items = self._flatten_layer_sections(self.solver_layers)
+        self._render_sections_if_needed(force=True)
         if self.run_view:
             self.run_view.update_sensitivity_button()
-        if self.context_view:
-            self.context_view.refresh()
+        self.request_context_refresh()
         if self.contrib_view:
             self.contrib_view.reload_run_choices()
         if self.run_view:
             self.run_view.status_label.config(text="Ready")
-        if self.doctor_view:
-            self.doctor_view.refresh_state()
+        self.request_doctor_refresh()
 
     def _refresh_sections(self) -> None:
         if self.solver is not None:
-            self.items = self._collect_items(self.solver)
+            self.solver_layers = self._collect_solver_layers(self.solver)
+            self.items = self._flatten_layer_sections(self.solver_layers)
+        self._render_sections_if_needed(force=False)
+        if self.run_view:
+            self.run_view.update_sensitivity_button()
+        self.request_context_refresh()
+
+    def _compute_render_signature(self) -> str:
+        parts: List[str] = [f"kind={self._kind_filter_var.get()}"]
+        for layer in self.solver_layers:
+            parts.append(f"layer={layer.path}:{layer.label}")
+            for section_title, items in layer.sections:
+                parts.append(f"section={layer.path}:{section_title}:{len(items)}")
+                for item in items:
+                    parts.append(
+                        f"item={layer.path}:{section_title}:{item.kind}:{item.label}:{int(bool(item.enabled))}"
+                    )
+        return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()
+
+    def _render_sections_if_needed(self, *, force: bool) -> None:
+        signature = self._compute_render_signature()
+        if not force and signature == self._last_render_signature:
+            return
         for child in self.scroll_frame.winfo_children():
             child.destroy()
         self._render_items()
-        if self.run_view:
-            self.run_view.update_sensitivity_button()
-        if self.context_view:
-            self.context_view.refresh()
+        self._last_render_signature = signature
 
     def _render_items(self) -> None:
         self._missing_rows = []
@@ -534,50 +644,133 @@ class VisualizerApp(tk.Tk):
             base_bg = self.scroll_frame.cget("background")
         except tk.TclError:
             base_bg = self.cget("bg")
-        for section_title, items in self.items:
-            frame = ttk.LabelFrame(self.scroll_frame, text=section_title)
-            frame.pack(fill="x", pady=6, padx=4)
-            for item in items:
-                var = tk.BooleanVar(value=bool(item.enabled))
-                missing = getattr(item, "_missing", None)
-                delta_key = getattr(item, "_delta_key", None)
+        layers = self.solver_layers or [SolverLayer(label="Solver", sections=self.items, children=[], path="L0")]
+        rendered_any = False
+        for layer in layers:
+            if not self._layer_has_match(layer):
+                continue
+            self._render_solver_layer(self.scroll_frame, layer, base_bg=base_bg, depth=0)
+            rendered_any = True
+        if not rendered_any:
+            ttk.Label(
+                self.scroll_frame,
+                text="No components for selected kind.",
+                foreground="#666",
+            ).pack(anchor="w", padx=8, pady=6)
 
-                row = tk.Frame(frame, bg=base_bg)
-                row.pack(fill="x", padx=6, pady=3)
-                if missing:
-                    self._missing_rows.append((row, item))
-                if delta_key and delta_key in self._delta_keys:
-                    row.configure(bg="#eaf2ff")
-                raw_name = getattr(item, "_raw_name", None)
-                if raw_name:
-                    self._bias_row_map[str(raw_name)] = row
+    def _render_solver_layer(self, parent: tk.Misc, layer: SolverLayer, *, base_bg: str, depth: int) -> None:
+        layer_frame = ttk.LabelFrame(parent, text=layer.label)
+        # Keep indentation stable across nested layers to avoid widening gaps.
+        layer_frame.pack(fill="x", pady=6, padx=(6, 4))
+        for section_title, items in layer.sections:
+            filtered_items = self._filter_items_by_kind(items)
+            if not filtered_items:
+                continue
+            self._render_collapsible_section(
+                layer_frame,
+                section_title,
+                filtered_items,
+                key=f"{layer.path}:{section_title}",
+                base_bg=base_bg,
+                depth=depth,
+            )
+        for child in layer.children:
+            if not self._layer_has_match(child):
+                continue
+            self._render_solver_layer(layer_frame, child, base_bg=base_bg, depth=depth + 1)
 
-                def _make_toggle(cb_item: WireItem, cb_var: tk.BooleanVar):
-                    def _cb():
-                        cb_item.enabled = bool(cb_var.get())
-                        cb_item.on_toggle(cb_item.enabled)
-                        self._refresh_sections()
-                    return _cb
+    def _render_collapsible_section(
+        self,
+        parent: tk.Misc,
+        section_title: str,
+        items: List[WireItem],
+        *,
+        key: str,
+        base_bg: str,
+        depth: int,
+    ) -> None:
+        filter_kind = str(self._kind_filter_var.get() or "all").strip().lower()
+        forced_open = filter_kind != "all"
+        open_state = True if forced_open else bool(self._expand_state.get(key, True))
+        if forced_open:
+            self._expand_state[key] = True
+        frame = ttk.Frame(parent)
+        frame.pack(fill="x", padx=(4, 4), pady=2)
+        hdr = ttk.Frame(frame)
+        hdr.pack(fill="x")
 
-                label_text = f"[{item.kind}] {item.label}" if item.kind else item.label
+        body = ttk.Frame(frame)
 
-                chk = ttk.Checkbutton(
-                    row,
-                    text=label_text,
-                    variable=var,
-                    command=_make_toggle(item, var),
-                )
-                if item.kind == "adapter" and item.detail.endswith("(fixed)"):
-                    chk.state(["disabled"])
-                chk.pack(side="left", anchor="w")
+        def _toggle() -> None:
+            current = bool(self._expand_state.get(key, True))
+            new_state = not current
+            self._expand_state[key] = new_state
+            arrow = "▾" if new_state else "▸"
+            btn.config(text=f"{arrow} {section_title}")
+            if new_state:
+                body.pack(fill="x", padx=(10, 0), pady=(2, 4))
+            else:
+                body.pack_forget()
 
-                def _make_info(cb_item: WireItem):
-                    def _info():
-                        self._show_wire_item_detail(cb_item)
-                    return _info
+        arrow = "▾" if open_state else "▸"
+        btn = ttk.Button(hdr, text=f"{arrow} {section_title}", width=30, command=_toggle)
+        btn.pack(side="left", anchor="w")
+        ttk.Label(hdr, text=f"{len(items)}", foreground="#666").pack(side="right", anchor="e")
 
-                info = ttk.Button(row, text="i", width=2, command=_make_info(item))
-                info.pack(side="right")
+        if open_state:
+            body.pack(fill="x", padx=(10, 0), pady=(2, 4))
+        for item in items:
+            self._render_wire_item_row(body, item, base_bg=base_bg)
+
+    def _render_wire_item_row(self, parent: tk.Misc, item: WireItem, *, base_bg: str) -> None:
+        var = tk.BooleanVar(value=bool(item.enabled))
+        missing = getattr(item, "_missing", None)
+        delta_key = getattr(item, "_delta_key", None)
+
+        row = tk.Frame(parent, bg=base_bg)
+        row.pack(fill="x", padx=6, pady=3)
+        if missing:
+            self._missing_rows.append((row, item))
+        if delta_key and delta_key in self._delta_keys:
+            row.configure(bg="#eaf2ff")
+        raw_name = getattr(item, "_raw_name", None)
+        if raw_name:
+            self._bias_row_map[str(raw_name)] = row
+
+        def _make_toggle(cb_item: WireItem, cb_var: tk.BooleanVar):
+            def _cb():
+                cb_item.enabled = bool(cb_var.get())
+                cb_item.on_toggle(cb_item.enabled)
+                self._refresh_sections()
+            return _cb
+
+        label_text = f"[{item.kind}] {item.label}" if item.kind else item.label
+
+        chk = ttk.Checkbutton(
+            row,
+            text=label_text,
+            variable=var,
+            command=_make_toggle(item, var),
+        )
+        if item.kind == "adapter" and item.detail.endswith("(fixed)"):
+            chk.state(["disabled"])
+        chk.pack(side="left", anchor="w")
+
+        def _make_info(cb_item: WireItem):
+            def _info():
+                self._show_wire_item_detail(cb_item)
+            return _info
+
+        info = ttk.Button(row, text="i", width=2, command=_make_info(item))
+        info.pack(side="left", padx=(6, 0))
+
+    def _on_kind_filter_change(self) -> None:
+        self._refresh_sections()
+        kind = str(self._kind_filter_var.get() or "all").strip().lower()
+        if kind == "all":
+            self._set_status("Kind filter: all")
+        else:
+            self._set_status(f"Kind filter: {kind}")
 
     def _show_wire_item_detail(self, item: WireItem) -> None:
         self.detail_title.config(text=item.label)
@@ -628,11 +821,14 @@ class VisualizerApp(tk.Tk):
         self.detail_summary.delete("1.0", "end")
         self.detail_summary.insert("1.0", detail)
         self.detail_summary.config(state="disabled")
+        if self.decision_view is not None:
+            self.decision_view.load_from_history_index(idx)
 
-    def append_history(self, msg: str, detail: str) -> None:
+    def append_history(self, msg: str, detail: str, *, meta: Optional[Dict[str, Any]] = None) -> None:
         self._history.append(msg)
         self.history_list.insert("end", msg)
         self._history_details.append(detail)
+        self._history_meta.append(meta or {})
 
     def _update_health(self, detail: str) -> None:
         health = ""
@@ -827,6 +1023,128 @@ class VisualizerApp(tk.Tk):
         if text and not text.endswith("\n"):
             text = f"{text}\n"
         return f"{text}{extra}"
+
+    def _collect_solver_layers(self, solver: Any) -> List[SolverLayer]:
+        visited: set[int] = set()
+
+        def _walk(cur_solver: Any, depth: int, path: str) -> Optional[SolverLayer]:
+            if cur_solver is None:
+                return None
+            marker = id(cur_solver)
+            if marker in visited:
+                return None
+            visited.add(marker)
+            sections = self._collect_items(cur_solver)
+            label = f"Solver L{depth}: {cur_solver.__class__.__name__}"
+            children: List[SolverLayer] = []
+            for idx, child_solver in enumerate(self._discover_child_solvers(cur_solver), start=1):
+                child_path = f"{path}.{idx}"
+                node = _walk(child_solver, depth + 1, child_path)
+                if node is not None:
+                    children.append(node)
+            return SolverLayer(label=label, sections=sections, children=children, path=path)
+
+        root = _walk(solver, 0, "L0")
+        return [root] if root is not None else []
+
+    def _filter_items_by_kind(self, items: List[WireItem]) -> List[WireItem]:
+        kind = str(self._kind_filter_var.get() or "all").strip().lower()
+        if kind == "all":
+            return items
+        return [item for item in items if str(getattr(item, "kind", "")).lower() == kind]
+
+    def _layer_has_match(self, layer: SolverLayer) -> bool:
+        for _section_title, items in layer.sections:
+            if self._filter_items_by_kind(items):
+                return True
+        return any(self._layer_has_match(child) for child in layer.children)
+
+    def _flatten_layer_sections(self, layers: List[SolverLayer]) -> List[Tuple[str, List[WireItem]]]:
+        out: List[Tuple[str, List[WireItem]]] = []
+
+        def _visit(node: SolverLayer) -> None:
+            for section_title, items in node.sections:
+                out.append((f"{node.label} / {section_title}", items))
+            for child in node.children:
+                _visit(child)
+
+        for layer in layers:
+            _visit(layer)
+        return out
+
+    def _looks_like_solver(self, obj: Any) -> bool:
+        if obj is None:
+            return False
+        if callable(obj):
+            return False
+        return bool(
+            callable(getattr(obj, "run", None))
+            and (
+                hasattr(obj, "adapter")
+                or hasattr(obj, "representation_pipeline")
+                or hasattr(obj, "plugin_manager")
+            )
+        )
+
+    def _discover_child_solvers(self, solver: Any) -> List[Any]:
+        children: List[Any] = []
+        candidate_attrs = (
+            "inner_solver",
+            "child_solver",
+            "nested_solver",
+            "sub_solver",
+            "solver",
+            "inner",
+        )
+        candidate_lists = (
+            "inner_solvers",
+            "child_solvers",
+            "nested_solvers",
+            "solvers",
+        )
+
+        def _append_candidate(obj: Any) -> None:
+            if obj is None or obj is solver:
+                return
+            if not self._looks_like_solver(obj):
+                return
+            if any(id(x) == id(obj) for x in children):
+                return
+            children.append(obj)
+
+        # direct fields on solver
+        for attr in candidate_attrs:
+            try:
+                _append_candidate(getattr(solver, attr, None))
+            except Exception:
+                continue
+        for attr in candidate_lists:
+            try:
+                values = getattr(solver, attr, None)
+            except Exception:
+                values = None
+            if isinstance(values, (list, tuple)):
+                for value in values:
+                    _append_candidate(value)
+
+        # nested references on plugins
+        plugin_mgr = getattr(solver, "plugin_manager", None)
+        plugins = plugin_mgr.list_plugins(enabled_only=False) if plugin_mgr is not None and hasattr(plugin_mgr, "list_plugins") else []
+        for plugin in plugins:
+            for attr in candidate_attrs:
+                try:
+                    _append_candidate(getattr(plugin, attr, None))
+                except Exception:
+                    continue
+            for attr in candidate_lists:
+                try:
+                    values = getattr(plugin, attr, None)
+                except Exception:
+                    values = None
+                if isinstance(values, (list, tuple)):
+                    for value in values:
+                        _append_candidate(value)
+        return children
 
     def _collect_items(self, solver: Any) -> List[Tuple[str, List[WireItem]]]:
         sections: List[Tuple[str, List[WireItem]]] = []

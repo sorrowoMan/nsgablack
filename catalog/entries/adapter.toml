@@ -1,0 +1,78 @@
+# Auto-generated from catalog/entries.toml
+# kind=adapter count=7
+[[entry]]
+key = "adapter.role"
+title = "RoleAdapter"
+kind = "adapter"
+import_path = "nsgablack.core.adapters.role_adapters:RoleAdapter"
+tags = ["adapter", "composition", "core", "roles", "strategy"]
+summary = "瑙掕壊閫傞厤鍣細闄勫姞瑙掕壊鍏冩暟鎹笌閰嶉锛岀敤浜庡垎宸ュ崗鍚屻€?/ Adapter: role wrapper with metadata and candidate quotas for cooperation."
+
+[[entry]]
+key = "adapter.multi_role_controller"
+title = "MultiRoleControllerAdapter"
+kind = "adapter"
+import_path = "nsgablack.core.adapters.role_adapters:MultiRoleControllerAdapter"
+tags = ["adapter", "composition", "controller", "core", "roles", "strategy"]
+summary = "澶氳鑹叉帶鍒跺櫒锛氬叡浜笂涓嬫枃涓庨绠楀垎閰嶏紝缁熶竴璋冨害鍚勮鑹层€?/ Adapter: multi-role controller with shared context and budget scheduling."
+
+[[entry]]
+key = "adapter.composite"
+title = "CompositeAdapter"
+kind = "adapter"
+import_path = "nsgablack.core.adapters.algorithm_adapter:CompositeAdapter"
+tags = ["adapter", "composition", "core", "strategy"]
+summary = "缁勫悎閫傞厤鍣細鍚堝苟澶氫釜閫傞厤鍣ㄥ€欓€夛紝骞跺鐞嗗啿绐併€?/ Adapter: composite adapter merging proposals and resolving conflicts."
+
+[[entry]]
+key = "adapter.astar"
+title = "AStarAdapter"
+kind = "adapter"
+import_path = "nsgablack.core.adapters.astar:AStarAdapter"
+tags = ["adapter", "astar", "core", "graph", "heuristic", "pathfinding", "strategy"]
+summary = "A*鎼滅储鍐呮牳锛氬彲閰嶇疆閭诲眳銆佸惎鍙戝紡涓庣洰鏍囧垽瀹氥€?/ Adapter: A* core with pluggable neighbors/heuristic/goal."
+
+[[entry]]
+key = "adapter.moa_star"
+title = "MOAStarAdapter"
+kind = "adapter"
+import_path = "nsgablack.core.adapters.moa_star:MOAStarAdapter"
+tags = ["adapter", "astar", "core", "graph", "heuristic", "multiobjective", "pareto", "strategy"]
+summary = "澶氱洰鏍嘇*锛歅areto鏍囩涓庢敮閰嶅壀鏋濓紝闈㈠悜澶氱洰鏍囪矾寰勩€?/ Adapter: MOA* with Pareto labels and dominance pruning."
+
+[[entry]]
+key = "adapter.async_event_driven"
+title = "AsyncEventDrivenAdapter"
+kind = "adapter"
+import_path = "nsgablack.core.adapters.async_event_driven:AsyncEventDrivenAdapter"
+tags = ["adapter", "async", "context", "controller", "event", "multi_strategy", "orchestration"]
+summary = "寮傛浜嬩欢椹卞姩鎺у埗鍣細浠ヤ簨浠堕槦鍒楃紪鎺?propose/update銆?/ Adapter: event-queue orchestration for propose/update."
+companions = ["plugin.async_event_hub", "plugin.pareto_archive", "suite.async_event_driven"]
+context_requires = ["generation"]
+context_provides = ["event_queue", "event_inflight", "event_archive", "event_history", "event_shared"]
+context_mutates = ["event_queue", "event_inflight", "event_archive", "event_history", "event_shared"]
+context_cache = ["event_history", "event_inflight"]
+context_notes = ["Queue-based controller; strategy-level updates are driven by completion events."]
+use_when = ["[\"闇€瑕佸紓姝ユ椂搴忚涔夛紙浜嬩欢娴侊級鑰岄潪浠ｉ檯鍚屾鏃?, \"甯屾湜澶氱瓥鐣ュ崗鍚屼笖淇濇寔鍙璁′簨浠跺巻鍙叉椂\"]"]
+minimal_wiring = ["from nsgablack.core.adapters import AsyncEventDrivenAdapter, AsyncEventDrivenConfig, EventStrategySpec", "solver.set_adapter(AsyncEventDrivenAdapter(strategies=[...], config=AsyncEventDrivenConfig()))"]
+required_companions = ["plugin.async_event_hub (recommended)", "plugin.pareto_archive (recommended)"]
+config_keys = ["total_batch_size", "target_queue_size", "bootstrap_events_per_strategy", "max_queue_size", "refill_events_per_completion"]
+example_entry = "examples/async_event_driven_demo.py:build_solver"
+
+[[entry]]
+key = "adapter.single_trajectory_adaptive"
+title = "SingleTrajectoryAdaptiveAdapter"
+kind = "adapter"
+import_path = "nsgablack.core.adapters.single_trajectory_adaptive:SingleTrajectoryAdaptiveAdapter"
+tags = ["adapter", "adaptive", "local_search", "single_trajectory", "strategy"]
+summary = "鍗曡建杩硅嚜閫傚簲鎼滅储锛氫竴鏉¤建杩瑰湪绾胯皟鑺傞偦鍩熷昂搴︺€?/ Adapter: single-trajectory search with online neighborhood adaptation."
+companions = ["suite.single_trajectory_adaptive", "repr.context_gaussian"]
+context_requires = ["generation"]
+context_provides = ["single_traj_state", "single_traj_sigma"]
+context_mutates = ["single_traj_state", "single_traj_sigma"]
+context_notes = ["Maintains one active trajectory; adapts mutation_sigma from success rate."]
+use_when = ["[\"闇€瑕佹瘮绉嶇兢娉曟洿杞婚噺鐨勫崟杞ㄨ抗鎼滅储鏃?, \"甯屾湜蹇€熻凯浠ｅ苟鑷姩璋冭妭灞€閮ㄦ闀挎椂\"]"]
+minimal_wiring = ["from nsgablack.core.adapters import SingleTrajectoryAdaptiveAdapter, SingleTrajectoryAdaptiveConfig", "solver.set_adapter(SingleTrajectoryAdaptiveAdapter(SingleTrajectoryAdaptiveConfig()))"]
+required_companions = ["repr.context_gaussian (recommended)"]
+config_keys = ["batch_size", "initial_sigma", "target_success_rate", "restart_patience", "accept_worse_prob"]
+example_entry = "examples/single_trajectory_adaptive_demo.py:build_solver"

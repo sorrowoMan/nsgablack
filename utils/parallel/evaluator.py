@@ -12,6 +12,7 @@ Backends
 
 from __future__ import annotations
 
+import copy
 import os
 import pickle
 import time
@@ -83,6 +84,12 @@ def _evaluate_individual_task_static(
     individual, idx, config = task_args
     enable_bias = bool(config.get("enable_bias", False))
     bias_module = config.get("bias_module", None)
+    bias_module_factory = config.get("bias_module_factory", None)
+    if enable_bias and callable(bias_module_factory):
+        try:
+            bias_module = bias_module_factory()
+        except Exception as exc:
+            return idx, np.full(1, np.inf), float("inf"), f"bias_module_factory failed: {exc!r}"
     num_objectives = int(config.get("num_objectives", 1) or 1)
 
     problem = config.get("problem", None)
@@ -153,6 +160,7 @@ class ParallelEvaluator:
         problem_factory: Optional[ProblemFactory] = None,
         context_builder: Optional[ContextBuilder] = None,
         extra_context: Optional[Dict[str, Any]] = None,
+        thread_bias_isolation: Literal["deepcopy", "disable_cache", "off"] = "deepcopy",
     ) -> None:
         self.backend: Backend = backend
         self.max_workers = int(max_workers or self._get_default_workers(backend))
@@ -168,6 +176,7 @@ class ParallelEvaluator:
         self.problem_factory = problem_factory
         self.context_builder = context_builder
         self.extra_context: Dict[str, Any] = dict(extra_context or {})
+        self.thread_bias_isolation: Literal["deepcopy", "disable_cache", "off"] = thread_bias_isolation
 
         self.stats: Dict[str, Any] = {
             "total_evaluations": 0,
@@ -259,6 +268,7 @@ class ParallelEvaluator:
         return_detailed: bool = False,
     ) -> Union[Tuple[np.ndarray, np.ndarray], Dict[str, Any]]:
         start_time = time.time()
+        restore_cache_enabled: Optional[bool] = None
 
         population = np.asarray(population)
         if population.ndim == 1:
@@ -277,6 +287,32 @@ class ParallelEvaluator:
             "context_builder": self.context_builder,
             "extra_context": dict(self.extra_context),
         }
+
+        # Thread backend isolation guard:
+        # - deepcopy: each task gets an isolated bias module clone
+        # - disable_cache: shared module but force cache off for this evaluation call
+        # - off: keep existing behavior
+        if self.backend == "thread" and bool(enable_bias) and bias_module is not None:
+            mode = str(self.thread_bias_isolation or "deepcopy").strip().lower()
+            if mode not in ("deepcopy", "disable_cache", "off"):
+                msg = (
+                    f"invalid thread_bias_isolation={self.thread_bias_isolation!r}; "
+                    "expected one of: deepcopy/disable_cache/off"
+                )
+                if self.strict:
+                    raise ValueError(msg)
+                warnings.warn(msg)
+                mode = "deepcopy"
+            if mode == "deepcopy":
+                task_config["bias_module"] = None
+                task_config["bias_module_factory"] = lambda bm=bias_module: copy.deepcopy(bm)
+            elif mode == "disable_cache":
+                if hasattr(bias_module, "cache_enabled"):
+                    try:
+                        restore_cache_enabled = bool(getattr(bias_module, "cache_enabled"))
+                        setattr(bias_module, "cache_enabled", False)
+                    except Exception:
+                        restore_cache_enabled = None
 
         if self.backend in ("process", "ray") and callable(self.problem_factory):
             task_config["problem_factory"] = self.problem_factory
@@ -321,6 +357,15 @@ class ParallelEvaluator:
             warnings.warn(f"Parallel evaluation failed; falling back to serial: {exc!r}")
             return self._evaluate_serial(population, problem, enable_bias, bias_module, return_detailed)
         finally:
+            if (
+                restore_cache_enabled is not None
+                and bias_module is not None
+                and hasattr(bias_module, "cache_enabled")
+            ):
+                try:
+                    setattr(bias_module, "cache_enabled", bool(restore_cache_enabled))
+                except Exception:
+                    pass
             if self._executor is not None and hasattr(self._executor, "shutdown"):
                 try:
                     self._executor.shutdown(wait=False)

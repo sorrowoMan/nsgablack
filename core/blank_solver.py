@@ -17,6 +17,7 @@ from .base import BlackBoxProblem
 from .interfaces import BiasInterface, RepresentationInterface, load_bias_module, load_representation_pipeline
 from ..utils.constraints.constraint_utils import evaluate_constraints_safe
 from ..utils.context.context_keys import KEY_BEST_OBJECTIVE, KEY_BEST_X
+from ..utils.context.context_store import ContextStore, create_context_store
 from ..utils.extension_contracts import (
     ContractError,
     normalize_bias_output,
@@ -43,6 +44,11 @@ class BlankSolverBase:
         bias_module: Optional[BiasInterface] = None,
         representation_pipeline: Optional[RepresentationInterface] = None,
         ignore_constraint_violation_when_bias: bool = False,
+        plugin_strict: bool = False,
+        context_store_backend: str = "memory",
+        context_store_ttl_seconds: Optional[float] = None,
+        context_store_redis_url: str = "redis://localhost:6379/0",
+        context_store_key_prefix: str = "nsgablack:context",
     ) -> None:
         self.problem = problem
         self.dimension = problem.dimension
@@ -65,6 +71,7 @@ class BlankSolverBase:
         self.plugin_manager = PluginManager(
             short_circuit=True,
             short_circuit_events=["evaluate_population", "evaluate_individual"],
+            strict=bool(plugin_strict),
         )
 
         self.population = None
@@ -80,6 +87,42 @@ class BlankSolverBase:
         self.random_seed: Optional[int] = None
         self._rng = np.random.default_rng()
         self._rng_streams: Dict[str, np.random.Generator] = {}
+        self.context_store_backend = str(context_store_backend or "memory")
+        self.context_store_ttl_seconds = context_store_ttl_seconds
+        self.context_store_redis_url = str(context_store_redis_url)
+        self.context_store_key_prefix = str(context_store_key_prefix)
+        self.context_store: ContextStore = self._build_context_store()
+
+    def _build_context_store(self) -> ContextStore:
+        try:
+            return create_context_store(
+                backend=self.context_store_backend,
+                ttl_seconds=self.context_store_ttl_seconds,
+                redis_url=self.context_store_redis_url,
+                key_prefix=self.context_store_key_prefix,
+            )
+        except Exception:
+            return create_context_store(backend="memory", ttl_seconds=self.context_store_ttl_seconds)
+
+    def set_context_store(self, store: ContextStore) -> None:
+        self.context_store = store
+
+    def set_context_store_backend(
+        self,
+        backend: str,
+        *,
+        ttl_seconds: Optional[float] = None,
+        redis_url: Optional[str] = None,
+        key_prefix: Optional[str] = None,
+    ) -> None:
+        self.context_store_backend = str(backend or "memory")
+        if ttl_seconds is not None:
+            self.context_store_ttl_seconds = ttl_seconds
+        if redis_url is not None:
+            self.context_store_redis_url = str(redis_url)
+        if key_prefix is not None:
+            self.context_store_key_prefix = str(key_prefix)
+        self.context_store = self._build_context_store()
 
     # ------------------------------------------------------------------
     # Optional dependency accessors (mirrors core solver behavior)
@@ -302,6 +345,14 @@ class BlankSolverBase:
             "constraint_violation": float(violation or 0.0),
             "individual_id": individual_id,
         }
+        try:
+            persisted = self.context_store.snapshot()
+            if persisted:
+                merged = dict(persisted)
+                merged.update(ctx)
+                ctx = merged
+        except Exception:
+            pass
         best_x, best_obj = self._resolve_best_snapshot()
         ctx[KEY_BEST_X] = best_x
         ctx[KEY_BEST_OBJECTIVE] = best_obj
@@ -319,6 +370,10 @@ class BlankSolverBase:
                 ctx = self.plugin_manager.dispatch("on_context_build", ctx) or ctx
             except Exception:
                 pass
+        try:
+            self.context_store.update(ctx, ttl_seconds=self.context_store_ttl_seconds)
+        except Exception:
+            pass
         return ctx
 
     def get_context(self) -> Dict[str, Any]:
@@ -335,6 +390,10 @@ class BlankSolverBase:
         best_x, best_obj = self._resolve_best_snapshot()
         ctx[KEY_BEST_X] = best_x
         ctx[KEY_BEST_OBJECTIVE] = best_obj
+        try:
+            self.context_store.update(ctx, ttl_seconds=self.context_store_ttl_seconds)
+        except Exception:
+            pass
         return ctx
 
     def _resolve_best_snapshot(self) -> Tuple[Optional[Any], Optional[float]]:
@@ -517,7 +576,6 @@ class BlankSolverBase:
         return None
 
     def step(self) -> None:
-        self.plugin_manager.on_step(self, self.generation)
         return None
 
     def teardown(self) -> None:
@@ -553,6 +611,8 @@ class BlankSolverBase:
                 break
             self.generation = step_idx
             self.plugin_manager.on_generation_start(self.generation)
+            # Keep on_step semantics consistent even when subclasses override step().
+            self.plugin_manager.on_step(self, self.generation)
             self.step()
             self.plugin_manager.on_generation_end(self.generation)
             executed_steps += 1

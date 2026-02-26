@@ -77,6 +77,7 @@ class CheckpointResumePlugin(Plugin):
     def on_solver_init(self, solver):
         if not bool(self.cfg.auto_resume):
             return None
+        self._assert_strict_security_ready()
         try:
             self.resume(self.cfg.resume_from)
         except Exception:
@@ -109,6 +110,7 @@ class CheckpointResumePlugin(Plugin):
         solver = self.solver
         if solver is None:
             return None
+        self._assert_strict_security_ready()
 
         ckpt_dir = Path(self.cfg.checkpoint_dir).resolve()
         ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -130,6 +132,7 @@ class CheckpointResumePlugin(Plugin):
         solver = self.solver
         if solver is None:
             return False
+        self._assert_strict_security_ready()
         path = self._resolve_checkpoint_path(checkpoint)
         if path is None:
             if bool(self.cfg.strict):
@@ -174,7 +177,7 @@ class CheckpointResumePlugin(Plugin):
             key=lambda p: (p.stat().st_mtime, p.name),
             reverse=True,
         )
-        if not candidates:
+        if len(candidates) == 0:
             return None
         return candidates[0]
 
@@ -217,6 +220,18 @@ class CheckpointResumePlugin(Plugin):
         key = raw.encode("utf-8")
         return key if key else None
 
+    def _assert_strict_security_ready(self) -> None:
+        if not bool(getattr(self.cfg, "strict", False)):
+            return
+        key = self._resolve_hmac_key()
+        if key is None:
+            env_var = str(getattr(self.cfg, "hmac_env_var", "NSGABLACK_CHECKPOINT_HMAC_KEY") or "").strip()
+            raise ValueError(
+                f"strict checkpoint mode requires HMAC key in environment variable: {env_var}"
+            )
+        if bool(getattr(self.cfg, "unsafe_allow_unsigned", False)):
+            raise ValueError("strict checkpoint mode forbids unsafe_allow_unsigned=True")
+
     def _compute_payload_mac(self, payload: Dict[str, Any], key: bytes) -> str:
         payload_bytes = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
         return hmac.new(key, payload_bytes, hashlib.sha256).hexdigest()
@@ -252,6 +267,14 @@ class CheckpointResumePlugin(Plugin):
             raise ValueError("invalid checkpoint payload: unsupported type")
 
         key = self._resolve_hmac_key()
+        if bool(getattr(self.cfg, "strict", False)):
+            if key is None:
+                env_var = str(getattr(self.cfg, "hmac_env_var", "NSGABLACK_CHECKPOINT_HMAC_KEY") or "").strip()
+                raise ValueError(
+                    f"strict checkpoint mode requires HMAC key in environment variable: {env_var}"
+                )
+            if not provided_mac:
+                raise ValueError("strict checkpoint mode requires signed checkpoint envelope")
         if provided_mac:
             if key is None:
                 if bool(self.cfg.strict):

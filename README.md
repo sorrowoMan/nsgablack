@@ -1,4 +1,5 @@
 # NSGABlack
+
 为什么复杂优化实验会“悄悄退化”，以及我如何试图让它变得可见。
 
 这是一个 **仍在快速演化中的实验性框架**。
@@ -14,6 +15,7 @@
 - 想换搜索策略/做阶段式融合：换/加 Adapter，不动问题定义
 - 容易漏配的组合：用 Suite 一键装配
 - 不知道有哪些组件：用 Catalog 搜索
+- 能够同时处理嵌套流程和多策略协同，基于架构的原生支持
 
 这套解耦带来的直接收益是：扩展更“自然”。你可以把新增功能落在最合适的层级，而不是改主循环；因此组件可复用、组合代价低、回归风险可控。
 解耦式优化实验框架（Problem / Pipeline / Bias / Adapter / Plugin）。
@@ -28,6 +30,17 @@ cd my_project
 python -m nsgablack project doctor --path . --build --strict
 python build_solver.py
 ```
+
+## Recommended Reading Order
+
+For the complete depth + breadth workflow, read in this order:
+
+1. `docs/user_guide/DEPTH_BREADTH_WORKFLOW.md`
+2. `docs/user_guide/INNER_SOLVER_BACKENDS.md`
+3. `docs/user_guide/NUMERICAL_SOLVER_PLUGINS.md`
+4. `docs/user_guide/REDIS_CONTEXT_BACKEND.md`
+5. `examples/nested_three_layer_demo.py` + `examples/nested_three_layer_demo.md`
+6. `docs/user_guide/RUN_INSPECTOR.md` (use Catalog/Context/Doctor to verify wiring)
 
 ## 核心原则
 
@@ -108,6 +121,15 @@ attach_checkpoint_resume(
 )
 ```
 
+脚手架 `build_solver.py` 可直接用 CLI 开关：
+
+```powershell
+python build_solver.py --enable-checkpoint --checkpoint-dir runs/checkpoints
+```
+
+- 默认是严格模式（签名必需）。
+- 仅在迁移历史无签名 checkpoint 时，显式加 `--trust-checkpoint`。
+
 运行前设置密钥（PowerShell）：
 
 ```powershell
@@ -123,6 +145,19 @@ unsafe_allow_unsigned=True
 
 迁移完成后恢复为 `False`。
 
+## Plugin Strict 何时开/关
+
+- 开（推荐于审计/复现/CI）：`python build_solver.py --plugin-strict`
+  - 任一插件生命周期报错立即失败，避免“静默退化”。
+- 关（推荐于探索调参）：默认关闭
+  - 插件异常仅警告并继续，便于快速迭代。
+
+## Thread 并发隔离（Bias）
+
+- CLI：`--thread-bias-isolation {deepcopy|disable_cache|off}`
+- 推荐默认：`deepcopy`（每任务独立 bias 副本，最稳）
+- 大规模性能优先可用：`disable_cache`（共享 bias，临时关缓存）
+
 ## 质量门禁（建议）
 
 ```powershell
@@ -131,3 +166,53 @@ python -m nsgablack project doctor --path . --strict
 python tools/catalog_integrity_checker.py --check-usage --strict-usage --check-context --context-kinds plugin --require-context-notes --strict-context --check-context-conflicts --strict-context-conflicts --context-conflicts-waiver tools/context_conflicts_waiver.txt
 python tools/context_field_guard.py --strict
 ```
+
+## 深度 × 广度工作流
+
+如果你要快速理解“为什么这个框架能同时处理嵌套流程和多策略协同”，按这个顺序看：
+
+1. `docs/user_guide/DEPTH_BREADTH_WORKFLOW.md`
+2. `docs/user_guide/NUMERICAL_SOLVER_PLUGINS.md`
+3. `docs/user_guide/INNER_SOLVER_BACKENDS.md`
+4. `examples/nested_three_layer_demo.py` + `examples/nested_three_layer_demo.md`
+
+核心结论：
+
+- 深度：`InnerSolverPlugin + ContractBridgePlugin + TimeoutBudgetPlugin` 打通 L1/L2/L3。
+- 广度：`Adapter + Bias + Plugin` 组合打通多策略协同。
+- 工程闭环：脚手架 -> 注册 -> 搜索 -> 装配 -> 运行 -> 审计（Run Inspector/doctor）。
+
+
+## Redis Context Backend (optional)
+
+Enable Redis as context backend (context contract/API stays the same):
+
+```python
+solver = BlackBoxSolverNSGAII(
+    problem,
+    context_store_backend="redis",
+    context_store_redis_url="redis://127.0.0.1:6379/0",
+    context_store_key_prefix="nsgablack:ctx",
+)
+```
+
+Quick verify:
+
+```powershell
+python -c "import redis; r=redis.Redis(host='127.0.0.1', port=6379, db=0); print('ping=', r.ping())"
+```
+
+Docker lifecycle (recommended):
+
+```powershell
+docker run --name nsgablack-redis -p 6379:6379 -d --restart unless-stopped redis:7
+# next time after reboot:
+docker start nsgablack-redis
+# stop when not needed:
+docker stop nsgablack-redis
+```
+
+???
+- ???????? `docker run`?
+- ??????? `docker start/stop` ?????
+- ? Redis ???????? `context_store_backend="memory"`?

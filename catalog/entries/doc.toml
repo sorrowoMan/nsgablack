@@ -1,0 +1,495 @@
+# Auto-generated from catalog/entries.toml
+# kind=doc count=36
+[[entry]]
+key = "doc.authoritative_examples"
+title = "AUTHORITATIVE_EXAMPLES"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_authoritative_examples"
+tags = ["doc", "manual", "examples", "authority"]
+summary = "\"Authoritative runnable examples and baseline references. / 鏉冨▉鍙繍琛岀ず渚嬩笌鍩虹嚎鍙傝€冦€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/AUTHORITATIVE_EXAMPLES.md"
+
+[[entry]]
+key = "doc.component_examples_index"
+title = "COMPONENT_EXAMPLES_INDEX"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_component_examples_index"
+tags = ["doc", "reference", "examples", "components"]
+summary = "\"Component-to-example mapping index. / 缁勪欢鍒扮ず渚嬬殑鏄犲皠绱㈠紩銆?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/COMPONENT_EXAMPLES_INDEX.md"
+
+[[entry]]
+key = "doc.index_manual"
+title = "INDEX_MANUAL"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_index_manual"
+tags = ["doc", "manual", "index", "navigation"]
+summary = "\"Manual index for docs and module navigation. / 鏂囨。涓庢ā鍧楀鑸€荤储寮曘€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/INDEX_MANUAL.md"
+
+[[entry]]
+key = "doc.user_guide.getting_started"
+title = "User Guide: getting_started"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_getting_started"
+tags = ["doc", "guide", "onboarding", "user_guide"]
+summary = "\"Getting started guide for first runnable workflow. / 棣栨璺戦€氬伐浣滄祦鐨勫叆闂ㄦ寚鍗椼€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/getting_started.rst"
+
+[[entry]]
+key = "doc.user_guide.project_scaffold"
+title = "User Guide: PROJECT_SCAFFOLD"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_project_scaffold"
+tags = ["doc", "guide", "project", "scaffold"]
+summary = "\"Project scaffold usage and boundary guidance. / 椤圭洰鑴氭墜鏋朵娇鐢ㄤ笌杈圭晫璇存槑銆?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/PROJECT_SCAFFOLD.md"
+
+[[entry]]
+key = "doc.user_guide.catalog"
+title = "User Guide: catalog"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_catalog"
+tags = ["doc", "guide", "catalog", "search"]
+summary = "\"Catalog search/list/show usage and patterns. / Catalog 鎼滅储銆佸垪琛ㄤ笌鏌ョ湅鐢ㄦ硶鍙婃ā寮忋€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/catalog.md"
+
+[[entry]]
+key = "doc.user_guide.context_contracts"
+title = "User Guide: CONTEXT_CONTRACTS"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_context_contracts"
+tags = ["doc", "guide", "context", "contract"]
+summary = "\"Context contract rules for components. / 缁勪欢 Context 濂戠害瑙勫垯銆?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/CONTEXT_CONTRACTS.md"
+
+[[entry]]
+key = "doc.user_guide.context_field_rules"
+title = "User Guide: CONTEXT_FIELD_RULES"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_context_field_rules"
+tags = ["doc", "guide", "context", "naming"]
+summary = "\"Context field naming and governance rules. / Context 瀛楁鍛藉悕涓庢不鐞嗚鍒欍€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/CONTEXT_FIELD_RULES.md"
+
+[[entry]]
+key = "doc.user_guide.run_inspector"
+title = "User Guide: RUN_INSPECTOR"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_run_inspector"
+tags = ["doc", "guide", "ui", "run_inspector"]
+summary = "\"Run Inspector usage and diagnostics workflow. / Run Inspector 浣跨敤涓庤瘖鏂祦绋嬨€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/RUN_INSPECTOR.md"
+
+[[entry]]
+key = "doc.user_guide.plugin_system"
+title = "User Guide: PLUGIN_SYSTEM"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_plugin_system"
+tags = ["doc", "guide", "plugin", "runtime"]
+summary = "\"Plugin lifecycle, contracts, and wiring patterns. / 鎻掍欢鐢熷懡鍛ㄦ湡銆佸绾︿笌鎺ョ嚎妯″紡銆?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/PLUGIN_SYSTEM.md"
+
+[[entry]]
+key = "doc.user_guide.plugin_selection"
+title = "User Guide: PLUGIN_SELECTION"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_plugin_selection"
+tags = ["doc", "guide", "plugin", "selection"]
+summary = "\"How to select plugin combinations by scenario. / 鎸夊満鏅€夋嫨鎻掍欢缁勫悎鐨勬柟娉曘€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/PLUGIN_SELECTION.md"
+
+[[entry]]
+key = "doc.user_guide.parallel_evaluation"
+title = "User Guide: parallel_evaluation"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_parallel_evaluation"
+tags = ["doc", "guide", "parallel", "evaluation"]
+summary = "\"Parallel evaluation setup and safeguards. / 骞惰璇勪及閰嶇疆涓庝繚鎶ょ瓥鐣ャ€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/parallel_evaluation.md"
+
+[[entry]]
+key = "doc.user_guide.surrogate_workflow"
+title = "User Guide: surrogate_workflow"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_surrogate_workflow"
+tags = ["doc", "guide", "surrogate", "workflow"]
+summary = "\"Surrogate-assisted optimization workflow. / 浠ｇ悊妯″瀷杈呭姪浼樺寲宸ヤ綔娴併€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/surrogate_workflow.md"
+
+[[entry]]
+key = "doc.user_guide.surrogate_cheatsheet"
+title = "User Guide: surrogate_cheatsheet"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_surrogate_cheatsheet"
+tags = ["doc", "cheatsheet", "surrogate", "guide"]
+summary = "\"Quick reference for surrogate configuration. / 浠ｇ悊妯″瀷閰嶇疆閫熸煡琛ㄣ€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/surrogate_cheatsheet.md"
+
+[[entry]]
+key = "doc.user_guide.signal_driven_bias"
+title = "User Guide: signal_driven_bias"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_signal_driven_bias"
+tags = ["doc", "guide", "bias", "signal_driven"]
+summary = "\"Signal-driven bias design and integration. / 淇″彿椹卞姩鍋忕疆璁捐涓庢帴鍏ャ€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/signal_driven_bias.md"
+
+[[entry]]
+key = "doc.user_guide.how_to_build_optimization"
+title = "User Guide: HOW_TO_BUILD_OPTIMIZATION"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_how_to_build_optimization"
+tags = ["doc", "guide", "workflow", "build"]
+summary = "\"Step-by-step optimization build process. / 鍒嗘鏋勫缓浼樺寲绯荤粺娴佺▼銆?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/HOW_TO_BUILD_OPTIMIZATION.md"
+
+[[entry]]
+key = "doc.user_guide.optimization_strategies"
+title = "User Guide: optimization_strategies"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_optimization_strategies"
+tags = ["doc", "guide", "strategy", "adapter"]
+summary = "\"Strategy and adapter selection reference. / 绛栫暐涓?Adapter 閫夊瀷鍙傝€冦€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/optimization_strategies.md"
+
+[[entry]]
+key = "doc.user_guide.extension_contracts"
+title = "User Guide: EXTENSION_CONTRACTS"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_extension_contracts"
+tags = ["doc", "guide", "contracts", "extension"]
+summary = "\"Extension contracts and compatibility requirements. / 鎵╁睍濂戠害涓庡吋瀹规€ц姹傘€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/EXTENSION_CONTRACTS.md"
+
+[[entry]]
+key = "doc.user_guide.enhanced_search"
+title = "User Guide: enhanced_search"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_enhanced_search"
+tags = ["doc", "guide", "search", "catalog"]
+summary = "\"Enhanced catalog search techniques. / Catalog 澧炲己鎼滅储鎶€宸с€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/enhanced_search.md"
+
+[[entry]]
+key = "doc.user_guide.db_event_logging"
+title = "User Guide: DB_EVENT_LOGGING"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_db_event_logging"
+tags = ["doc", "guide", "database", "logging"]
+summary = "\"Database event logging integration guide. / 鏁版嵁搴撲簨浠舵棩蹇楅泦鎴愭寚鍗椼€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/DB_EVENT_LOGGING.md"
+
+[[entry]]
+key = "doc.guides.decoupling_problem"
+title = "Guide: DECOUPLING_PROBLEM"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_guides_decoupling_problem"
+tags = ["doc", "guide", "decoupling", "problem"]
+summary = "\"Decouple problem semantics from runtime process. / 灏嗛棶棰樿涔変笌杩愯杩囩▼瑙ｈ€︺€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/guides/DECOUPLING_PROBLEM.md"
+
+[[entry]]
+key = "doc.guides.decoupling_representation"
+title = "Guide: DECOUPLING_REPRESENTATION"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_guides_decoupling_representation"
+tags = ["doc", "guide", "decoupling", "representation"]
+summary = "\"Representation pipeline decoupling practice. / 琛ㄧず灞備笌绠＄嚎瑙ｈ€﹀疄璺点€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/guides/DECOUPLING_REPRESENTATION.md"
+
+[[entry]]
+key = "doc.guides.decoupling_bias"
+title = "Guide: DECOUPLING_BIAS"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_guides_decoupling_bias"
+tags = ["doc", "guide", "decoupling", "bias"]
+summary = "\"Bias decoupling and preference design; explains what should stay in bias vs adapter/pipeline. / 鍋忕疆瑙ｈ€︿笌鍋忓ソ寤烘ā鎸囧崡锛岃鏄庡摢浜涢€昏緫搴旀斁鍦?bias锛屽摢浜涘簲鏀惧湪 adapter/pipeline銆?"
+use_when = ["Need to decide whether a rule is preference (bias) or process/algorithm logic.", "Need design guidance before adding new domain/algorithmic bias modules."]
+minimal_wiring = ["Open docs/guides/DECOUPLING_BIAS.md and follow section checklist.", "Align component contracts (context_requires/provides/mutates) with the guide before registration."]
+required_companions = ["doc.user_guide.context_contracts", "doc.user_guide.bias_system"]
+config_keys = ["context_requires", "context_provides", "context_mutates", "metrics_fallback"]
+example_entry = "docs/guides/DECOUPLING_BIAS.md"
+
+[[entry]]
+key = "doc.guides.decoupling_adapter"
+title = "Guide: DECOUPLING_ADAPTER"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_guides_decoupling_adapter"
+tags = ["doc", "guide", "decoupling", "adapter"]
+summary = "\"Adapter decoupling and process wiring. / Adapter 瑙ｈ€︿笌娴佺▼鎺ョ嚎銆?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/guides/DECOUPLING_ADAPTER.md"
+
+[[entry]]
+key = "doc.guides.decoupling_capabilities"
+title = "Guide: DECOUPLING_CAPABILITIES"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_guides_decoupling_capabilities"
+tags = ["doc", "guide", "decoupling", "capability"]
+summary = "\"Capability-layer decomposition methodology. / 鑳藉姏灞傚垎瑙ｆ柟娉曡銆?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/guides/DECOUPLING_CAPABILITIES.md"
+
+[[entry]]
+key = "doc.guides.production_walkthrough"
+title = "Guide: PRODUCTION_SCHEDULING_WALKTHROUGH"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_guides_production_walkthrough"
+tags = ["doc", "guide", "production", "walkthrough"]
+summary = "\"Production scheduling walkthrough (end-to-end). / 鐢熶骇鎺掔▼绔埌绔疄鎴樺瑙堛€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/guides/PRODUCTION_SCHEDULING_WALKTHROUGH.md"
+
+[[entry]]
+key = "doc.cases.production_scheduling"
+title = "Case: production_scheduling"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_cases_production_scheduling"
+tags = ["doc", "case", "production", "scheduling"]
+summary = "\"Production scheduling case documentation. / 鐢熶骇鎺掔▼妗堜緥鏂囨。銆?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/cases/production_scheduling.md"
+
+[[entry]]
+key = "doc.quickstart"
+title = "Quickstart"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_quickstart"
+tags = ["doc", "guide", "quickstart", "onboarding"]
+summary = "\"Quickstart entry for first setup and run. / 棣栨瀹夎涓庤繍琛屽揩閫熷叆鍙ｃ€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/quickstart.rst"
+
+[[entry]]
+key = "doc.readme"
+title = "Docs README"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_readme"
+tags = ["doc", "guide", "navigation"]
+summary = "\"Docs hub and navigation overview. / 鏂囨。涓績涓庡鑸€昏銆?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/README.md"
+
+[[entry]]
+key = "doc.algorithm_decomposition_hands_on"
+title = "ALGORITHM_DECOMPOSITION_HANDS_ON"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_algorithm_decomposition_hands_on"
+tags = ["doc", "tutorial", "decomposition", "hands_on"]
+summary = "\"Hands-on decomposition tutorial with practical steps. / 绠楁硶瑙ｆ瀯瀹炴搷鏁欑▼锛堝惈姝ラ锛夈€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/ALGORITHM_DECOMPOSITION_HANDS_ON.md"
+
+[[entry]]
+key = "doc.user_guide.bias_system"
+title = "User Guide: bias_system"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_bias_system"
+tags = ["doc", "guide", "bias", "system"]
+summary = "\"Bias system design and composition guide. / Bias 绯荤粺璁捐涓庣粍鍚堟寚鍗椼€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/bias_system.md"
+
+[[entry]]
+key = "doc.user_guide.bias_baby_guide"
+title = "User Guide: bias_baby_guide"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_bias_baby_guide"
+tags = ["doc", "guide", "bias", "onboarding"]
+summary = "\"Beginner-friendly bias writing walkthrough. / 鏂版墜鍙嬪ソ鐨?Bias 缂栧啓鏁欑▼銆?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/bias_baby_guide.md"
+
+[[entry]]
+key = "doc.user_guide.external_api_navigation"
+title = "User Guide: external_api_navigation"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_external_api_navigation"
+tags = ["doc", "guide", "api", "navigation"]
+summary = "\"External API navigation and lookup guide. / 澶栭儴 API 瀵艰埅涓庢绱㈡寚鍗椼€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/external_api_navigation.md"
+
+[[entry]]
+key = "doc.indexes.api_index"
+title = "Indexes: API_INDEX"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_indexes_api_index"
+tags = ["doc", "reference", "index", "api"]
+summary = "\"API index for component lookup. / 鐢ㄤ簬缁勪欢妫€绱㈢殑 API 绱㈠紩銆?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/indexes/API_INDEX.md"
+
+[[entry]]
+key = "doc.indexes.bias_index"
+title = "Indexes: BIAS_INDEX"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_indexes_bias_index"
+tags = ["doc", "reference", "index", "bias"]
+summary = "\"Bias index for bias module lookup. / Bias 妯″潡妫€绱㈢储寮曘€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/indexes/BIAS_INDEX.md"
+
+[[entry]]
+key = "doc.indexes.tools_index"
+title = "Indexes: TOOLS_INDEX"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_indexes_tools_index"
+tags = ["doc", "reference", "index", "tools"]
+summary = "\"Tools index for operational scripts. / 宸ュ叿涓庤繍缁磋剼鏈储寮曘€?"
+use_when = ["Need practical docs, manuals, or integration references during implementation."]
+minimal_wiring = ["Open the document path in example_entry."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "docs/indexes/TOOLS_INDEX.md"
+
+[[entry]]
+key = "doc.user_guide.redis_context_backend"
+title = "User Guide: REDIS_CONTEXT_BACKEND"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_redis_context_backend"
+tags = ["doc", "guide", "redis", "context_backend", "ttl"]
+summary = "Redis context backend setup, TTL policy, and troubleshooting."
+use_when = ["Need Redis-backed context sync, key-prefix isolation, and TTL audit guidance."]
+minimal_wiring = ["Open docs/user_guide/REDIS_CONTEXT_BACKEND.md."]
+required_companions = ["(none)"]
+config_keys = ["context_store_backend", "context_store_redis_url", "context_store_key_prefix", "context_store_ttl_seconds"]
+example_entry = "docs/user_guide/REDIS_CONTEXT_BACKEND.md"
+
+[[entry]]
+key = "doc.user_guide.decision_replay_engine"
+title = "User Guide: DECISION_REPLAY_ENGINE"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_decision_replay_engine"
+tags = ["doc", "guide", "decision", "replay", "audit"]
+summary = "Decision-path replay guide with reason/evidence schema and usage."
+use_when = ["Need deterministic replay of why fallback/budget/surrogate decisions happened."]
+minimal_wiring = ["Open docs/user_guide/DECISION_REPLAY_ENGINE.md."]
+required_companions = ["plugin.decision_trace"]
+config_keys = ["(none)"]
+example_entry = "docs/user_guide/DECISION_REPLAY_ENGINE.md"

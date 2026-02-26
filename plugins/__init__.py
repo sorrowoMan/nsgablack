@@ -22,12 +22,30 @@ from .runtime.adaptive_parameters import AdaptiveParametersPlugin
 from .evaluation.surrogate_evaluation import SurrogateEvaluationPlugin, SurrogateEvaluationConfig
 from .evaluation.multi_fidelity_evaluation import MultiFidelityEvaluationPlugin, MultiFidelityEvaluationConfig
 from .evaluation.monte_carlo_evaluation import MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig
+from .evaluation.newton_solver_plugin import (
+    NumericalSolverConfig,
+    NumericalSolverPlugin,
+    NewtonSolverPlugin,
+    BroydenSolverPlugin,
+)
+from .evaluation.gpu_evaluation_template import (
+    GpuEvaluationTemplateConfig,
+    GpuEvaluationTemplatePlugin,
+)
+from .evaluation.evaluation_model import EvaluationModelPlugin, EvaluationModelConfig
+from .solver_backends.inner_solver import InnerSolverPlugin, InnerSolverConfig
+from .solver_backends.backend_contract import BackendSolveRequest, BackendSolver
+from .solver_backends.ngspice_backend import NgspiceBackend, NgspiceBackendConfig
+from .solver_backends.contract_bridge import ContractBridgePlugin, BridgeRule
+from .solver_backends.timeout_budget import TimeoutBudgetPlugin, TimeoutBudgetConfig
 from .runtime.pareto_archive import ParetoArchivePlugin, ParetoArchiveConfig
 from .ops.benchmark_harness import BenchmarkHarnessPlugin, BenchmarkHarnessConfig
 from .ops.module_report import ModuleReportPlugin, ModuleReportConfig
 from .ops.profiler import ProfilerPlugin, ProfilerConfig
 from .runtime.dynamic_switch import DynamicSwitchPlugin
 from .ops.sensitivity_analysis import SensitivityAnalysisPlugin, SensitivityAnalysisConfig, SensitivityParam
+from .ops.otel_tracing import OpenTelemetryTracingPlugin, OpenTelemetryTracingConfig
+from .ops.decision_trace import DecisionTracePlugin, DecisionTraceConfig
 from .models.mas_model import MASModelPlugin, MASModelConfig
 from .models.subspace_basis import SubspaceBasisPlugin, SubspaceBasisConfig
 from .storage.mysql_run_logger import MySQLRunLoggerPlugin, MySQLRunLoggerConfig
@@ -50,6 +68,24 @@ __all__ = [
     'MultiFidelityEvaluationConfig',
     'MonteCarloEvaluationPlugin',
     'MonteCarloEvaluationConfig',
+    'NumericalSolverConfig',
+    'NumericalSolverPlugin',
+    'NewtonSolverPlugin',
+    'BroydenSolverPlugin',
+    'GpuEvaluationTemplateConfig',
+    'GpuEvaluationTemplatePlugin',
+    'EvaluationModelPlugin',
+    'EvaluationModelConfig',
+    'InnerSolverPlugin',
+    'InnerSolverConfig',
+    'BackendSolveRequest',
+    'BackendSolver',
+    'NgspiceBackend',
+    'NgspiceBackendConfig',
+    'ContractBridgePlugin',
+    'BridgeRule',
+    'TimeoutBudgetPlugin',
+    'TimeoutBudgetConfig',
     'ParetoArchivePlugin',
     'ParetoArchiveConfig',
     'BenchmarkHarnessPlugin',
@@ -62,6 +98,10 @@ __all__ = [
     'SensitivityAnalysisPlugin',
     'SensitivityAnalysisConfig',
     'SensitivityParam',
+    'OpenTelemetryTracingPlugin',
+    'OpenTelemetryTracingConfig',
+    'DecisionTracePlugin',
+    'DecisionTraceConfig',
     'MASModelPlugin',
     'MASModelConfig',
     'SubspaceBasisPlugin',

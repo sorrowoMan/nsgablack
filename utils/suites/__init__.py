@@ -18,6 +18,7 @@ from .ray_parallel import attach_ray_parallel
 from .dynamic_switch import attach_dynamic_switch
 from .async_event_driven import attach_async_event_driven
 from .single_trajectory_adaptive import attach_single_trajectory_adaptive
+from .default_plugins import attach_default_observability_plugins
 from .trust_region_local import (
     attach_trust_region_dfo,
     attach_trust_region_subspace,
@@ -37,6 +38,43 @@ from .frontier_algorithms import (
     attach_risk_cvar,
 )
 
+
+def set_plugin_strict(solver, strict: bool = True):
+    """Set plugin manager strict failure policy in one place."""
+    pm = getattr(solver, "plugin_manager", None)
+    if pm is not None:
+        try:
+            pm.strict = bool(strict)
+        except Exception:
+            pass
+    return solver
+
+
+def set_parallel_thread_bias_isolation(solver, mode: str = "deepcopy"):
+    """Set thread backend bias isolation policy in one place."""
+    mode_text = str(mode or "").strip().lower()
+    if mode_text not in {"deepcopy", "disable_cache", "off"}:
+        raise ValueError("mode must be one of: deepcopy, disable_cache, off")
+
+    if hasattr(solver, "_parallel_cfg") and isinstance(getattr(solver, "_parallel_cfg"), dict):
+        try:
+            solver._parallel_cfg["thread_bias_isolation"] = mode_text
+        except Exception:
+            pass
+
+    try:
+        setattr(solver, "parallel_thread_bias_isolation", mode_text)
+    except Exception:
+        pass
+
+    evaluator = getattr(solver, "parallel_evaluator", None)
+    if evaluator is not None and hasattr(evaluator, "thread_bias_isolation"):
+        try:
+            evaluator.thread_bias_isolation = mode_text
+        except Exception:
+            pass
+    return solver
+
 __all__ = [
     "attach_monte_carlo_robustness",
     "attach_moead",
@@ -51,6 +89,7 @@ __all__ = [
     "attach_dynamic_switch",
     "attach_async_event_driven",
     "attach_single_trajectory_adaptive",
+    "attach_default_observability_plugins",
     "attach_trust_region_dfo",
     "attach_trust_region_subspace",
     "attach_trust_region_subspace_learned",
@@ -65,4 +104,6 @@ __all__ = [
     "attach_structure_prior_mo",
     "attach_multi_fidelity_eval",
     "attach_risk_cvar",
+    "set_plugin_strict",
+    "set_parallel_thread_bias_isolation",
 ]

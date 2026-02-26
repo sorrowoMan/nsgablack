@@ -82,3 +82,22 @@ def test_e2e_scaffold_register_search_build_run_doctor(tmp_path):
         check=False,
     )
     assert doctor.returncode == 0, doctor.stdout + "\n" + doctor.stderr
+
+
+def test_project_catalog_can_load_split_kind_toml(tmp_path):
+    root = init_project(tmp_path / "split_project")
+    payload = build_entry_payload(
+        key="project.bias.split_bias",
+        title="SplitBias",
+        kind="bias",
+        import_path="bias.example_bias:BiasTemplate",
+        summary="Split catalog file regression.",
+        tags=("project", "split"),
+    )
+    target = root / "catalog" / "entries" / "bias.toml"
+    upsert_catalog_entry(target, payload, replace=True)
+
+    project_catalog = load_project_catalog(root, include_global=False)
+    hit = project_catalog.get("project.bias.split_bias")
+    assert hit is not None
+    assert hit.kind == "bias"

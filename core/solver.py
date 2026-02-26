@@ -25,14 +25,14 @@ from .runtime import SolverRuntime
 from ..plugins import PluginManager
 
 # ============================================================================
-# 接口与能力探测
+# 接口与能力探�?
 # ============================================================================
 from .interfaces import (
     BiasInterface,
     RepresentationInterface,
     VisualizationInterface,
     PluginInterface,
-    # 能力探测与工厂函数
+    # 能力探测与工厂函�?
     has_bias_module,
     has_representation_module,
     has_visualization_module,
@@ -45,7 +45,7 @@ from .interfaces import (
 ensure_dependencies = None
 
 # ============================================================================
-# 可选依赖与懒加载占位
+# 可选依赖与懒加载占�?
 # ============================================================================
 
 # 可视化混入（可选）
@@ -56,25 +56,25 @@ except ImportError:
         def _init_visualization(self):
             pass
 
-# 偏置模块类缓存
+# 偏置模块类缓�?
 _BiasModule = None
 
-# Numba 加速函数缓存
+# Numba 加速函数缓�?
 _fast_is_dominated = None
 _NUMBA_AVAILABLE = False
 
-# 实验结果类缓存
+# 实验结果类缓�?
 _ExperimentResult = None
 
 # 模块级日志器
 logger = logging.getLogger(__name__)
 
-# 表示管线类缓存
+# 表示管线类缓�?
 _RepresentationPipeline = None
 
 
 # ============================================================================
-# 懒加载工厂函数
+# 懒加载工厂函�?
 # ============================================================================
 
 def _get_bias_module():
@@ -90,7 +90,7 @@ def _get_bias_module():
 
 
 def _get_numba_helpers():
-    """懒加载 Numba 辅助函数与可用标记。"""
+    """懒加�?Numba 辅助函数与可用标记�?"""
     global _fast_is_dominated, _NUMBA_AVAILABLE
     if _fast_is_dominated is None:
         try:
@@ -104,7 +104,7 @@ def _get_numba_helpers():
 
 
 def _get_experiment_result():
-    """懒加载 ExperimentResult 类。"""
+    """懒加�?ExperimentResult 类�?"""
     global _ExperimentResult
     if _ExperimentResult is None:
         try:
@@ -117,7 +117,7 @@ def _get_experiment_result():
 
 
 def _get_representation_pipeline():
-    """懒加载 RepresentationPipeline 类。"""
+    """懒加�?RepresentationPipeline 类�?"""
     global _RepresentationPipeline
     if _RepresentationPipeline is None:
         try:
@@ -133,13 +133,13 @@ SolverVisualizationMixin = _SolverVisualizationMixin
 
 class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
     """
-    NSGA-II 黑盒求解器（支持解耦扩展）。
+    NSGA-II 黑盒求解器（支持解耦扩展）�?
 
     参数:
-        problem: 黑盒优化问题实例。
-        bias_module: 可选偏置模块，用于软偏好与搜索引导。
-        representation_pipeline: 可选表示管线，负责初始化/变异/修复。
-        **kwargs: 运行参数与工程开关。
+        problem: 黑盒优化问题实例�?
+        bias_module: 可选偏置模块，用于软偏好与搜索引导�?
+        representation_pipeline: 可选表示管线，负责初始�?变异/修复�?
+        **kwargs: 运行参数与工程开关�?
 
     示例:
         # 先构造再挂载偏置
@@ -175,7 +175,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
                 configure_logging(**log_config)
             except Exception as exc:
                 logger.warning("Logging config failed: %s", exc)
-        # 基础开关
+        # 基础开�?
         self.enable_diversity_init = False
         self.use_history = False
         # Optional flag; prefer Suite + plugins for wiring.
@@ -185,7 +185,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         self.num_objectives = problem.get_num_objectives()
         self.dimension = problem.dimension
 
-        # 约束由 problem.evaluate_constraints / constraint_utils 统一计算。
+        # 约束�?problem.evaluate_constraints / constraint_utils 统一计算�?
         self.constraints = []  # 兼容旧接口的占位字段
 
         # Memory management
@@ -208,12 +208,13 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         self.parallel_precheck = True
         self.parallel_strict = False
         self.parallel_fallback_backend = "thread"
+        self.parallel_thread_bias_isolation = "deepcopy"
         self.parallel_problem_factory = None
         self.parallel_context_builder = None
         self.parallel_extra_context = None
         self.parallel_evaluator = None
 
-        # 可选依赖检查报告
+        # 可选依赖检查报�?
         self.dependency_report = None
         validate_dependencies = kwargs.pop('validate_dependencies', False)
         if validate_dependencies:
@@ -232,7 +233,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
                     logger.warning("Dependency validation failed: %s", exc)
 
         # ====================================================================
-        # 模块句柄与功能开关
+        # 模块句柄与功能开�?
         # ====================================================================
         self._bias_module_internal: Optional[BiasInterface] = None
         self.bias_module = bias_module  # optional bias setter
@@ -264,7 +265,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         self._rng = np.random.default_rng()
         self._rng_streams = {}
 
-        # 多样性初始化参数（可由插件或配置覆盖）
+        # 多样性初始化参数（可由插件或配置覆盖�?
         self.diversity_params = {
             'candidate_size': 500,
             'similarity_threshold': 0.05,
@@ -272,6 +273,11 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             'sampling_method': 'lhs',
             'save_history': True
         }
+        # Context store backend configuration (context semantics stay unchanged).
+        self.context_store_backend = "memory"
+        self.context_store_ttl_seconds = None
+        self.context_store_redis_url = "redis://localhost:6379/0"
+        self.context_store_key_prefix = "nsgablack:context"
 
         self._apply_solver_config(config_data, strict=config_strict)
         self._apply_solver_overrides(kwargs)
@@ -280,7 +286,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         if self.enable_parallel_evaluation:
             self._init_parallel_evaluator()
 
-        # 运行时状态
+        # 运行时状�?
         self.population = None
         self.objectives = None
         self.pareto_solutions = None
@@ -289,7 +295,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         self.history = []
         self.running = False
         self.start_time = 0
-        self.runtime = SolverRuntime(self)
+        self.runtime = self._create_runtime()
         self._runtime_timing = {
             "evaluate_population_s": 0.0,
             "non_dominated_sort_s": 0.0,
@@ -381,10 +387,36 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         if crossover_rate is not None:
             self.crossover_rate = float(crossover_rate)
 
+    def set_context_store_backend(
+        self,
+        backend: str,
+        *,
+        ttl_seconds: Optional[float] = None,
+        redis_url: Optional[str] = None,
+        key_prefix: Optional[str] = None,
+    ) -> None:
+        self.context_store_backend = str(backend or "memory")
+        if ttl_seconds is not None:
+            self.context_store_ttl_seconds = ttl_seconds
+        if redis_url is not None:
+            self.context_store_redis_url = str(redis_url)
+        if key_prefix is not None:
+            self.context_store_key_prefix = str(key_prefix)
+        self.runtime = self._create_runtime()
+
+    def set_context_store(self, store: Any) -> None:
+        runtime = getattr(self, "runtime", None)
+        if runtime is None:
+            self.runtime = self._create_runtime()
+            runtime = self.runtime
+        setter = getattr(runtime, "set_context_store", None)
+        if callable(setter):
+            setter(store)
+
     def write_population_snapshot(self, population, objectives, violations) -> bool:
         runtime = getattr(self, "runtime", None)
         if runtime is None:
-            self.runtime = SolverRuntime(self)
+            self.runtime = self._create_runtime()
             runtime = self.runtime
         return bool(runtime.write_population_snapshot(population, objectives, violations))
 
@@ -436,37 +468,37 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         """Return a snapshot context for visualization/monitoring."""
         runtime = getattr(self, "runtime", None)
         if runtime is None:
-            self.runtime = SolverRuntime(self)
+            self.runtime = self._create_runtime()
             runtime = self.runtime
         return dict(runtime.get_context())
 
     def _resolve_best_snapshot(self):
         runtime = getattr(self, "runtime", None)
         if runtime is None:
-            self.runtime = SolverRuntime(self)
+            self.runtime = self._create_runtime()
             runtime = self.runtime
         return runtime.resolve_best_snapshot()
 
     # ========================================================================
-    # 模块属性访问器（支持依赖注入 + 惰性创建）
+    # 模块属性访问器（支持依赖注�?+ 惰性创建）
     # ========================================================================
 
     @property
     def bias_module(self) -> Optional[BiasInterface]:
         """
-        获取当前偏置模块。
+        获取当前偏置模块�?
 
         规则:
-        1. 若显式注入了偏置模块，优先返回注入实例。
-        2. 若启用了偏置但未注入，则尝试惰性创建默认 BiasModule。
+        1. 若显式注入了偏置模块，优先返回注入实例�?
+        2. 若启用了偏置但未注入，则尝试惰性创建默�?BiasModule�?
         """
         if self._bias_module_internal is not None:
             return self._bias_module_internal
 
-        # 尝试惰性创建默认 BiasModule
+        # 尝试惰性创建默�?BiasModule
         BiasModuleClass = _get_bias_module()
         if BiasModuleClass is not None and self.enable_bias:
-            # 创建默认实例并缓存
+            # 创建默认实例并缓�?
             if not hasattr(self, '_bias_module_cached'):
                 self._bias_module_cached = BiasModuleClass()
             return self._bias_module_cached
@@ -476,7 +508,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
     @bias_module.setter
     def bias_module(self, value: Optional[BiasInterface]):
         """
-        设置偏置模块实例，并同步功能开关与缓存状态。
+        设置偏置模块实例，并同步功能开关与缓存状态�?
         """
         self._bias_module_internal = value
         if value is not None:
@@ -488,16 +520,16 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
     @property
     def representation_pipeline(self) -> Optional[RepresentationInterface]:
         """
-        获取当前表示管线。
+        获取当前表示管线�?
 
         规则:
-        1. 若显式注入了管线，优先返回注入实例。
-        2. 若未注入，则尝试惰性创建默认 RepresentationPipeline。
+        1. 若显式注入了管线，优先返回注入实例�?
+        2. 若未注入，则尝试惰性创建默�?RepresentationPipeline�?
         """
         if self._representation_internal is not None:
             return self._representation_internal
 
-        # 尝试惰性创建默认 RepresentationPipeline
+        # 尝试惰性创建默�?RepresentationPipeline
         RepresentationPipelineClass = _get_representation_pipeline()
         if RepresentationPipelineClass is not None:
             if not hasattr(self, '_representation_cached'):
@@ -509,7 +541,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
     @representation_pipeline.setter
     def representation_pipeline(self, value: Optional[RepresentationInterface]):
         """
-        设置表示管线实例，并清理惰性缓存。
+        设置表示管线实例，并清理惰性缓存�?
         """
         self._representation_internal = value
         if value is not None:
@@ -587,9 +619,14 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             "parallel_precheck",
             "parallel_strict",
             "parallel_fallback_backend",
+            "parallel_thread_bias_isolation",
             "parallel_problem_factory",
             "parallel_context_builder",
             "parallel_extra_context",
+            "context_store_backend",
+            "context_store_ttl_seconds",
+            "context_store_redis_url",
+            "context_store_key_prefix",
         }
         if "parallel" in overrides:
             self.enable_parallel_evaluation = bool(overrides.get("parallel"))
@@ -603,6 +640,19 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
                 self.diversity_params = merge_dicts(self.diversity_params, value)
             else:
                 setattr(self, key, value)
+
+    def _create_runtime(self) -> SolverRuntime:
+        try:
+            return SolverRuntime(
+                self,
+                context_store_backend=self.context_store_backend,
+                context_store_ttl_seconds=self.context_store_ttl_seconds,
+                context_store_redis_url=self.context_store_redis_url,
+                context_store_key_prefix=self.context_store_key_prefix,
+            )
+        except Exception as exc:
+            logger.warning("Context store init failed, fallback to in-memory: %s", exc)
+            return SolverRuntime(self, context_store_backend="memory")
 
     def _init_parallel_evaluator(self) -> None:
         if self.parallel_evaluator is not None:
@@ -623,6 +673,9 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
                     self.parallel_evaluator.precheck = bool(self.parallel_precheck)
                     self.parallel_evaluator.strict = bool(self.parallel_strict)
                     self.parallel_evaluator.fallback_backend = self.parallel_fallback_backend
+                    self.parallel_evaluator.thread_bias_isolation = str(
+                        self.parallel_thread_bias_isolation
+                    )
                     self.parallel_evaluator.problem_factory = self.parallel_problem_factory
                     self.parallel_evaluator.context_builder = self.parallel_context_builder
                     self.parallel_evaluator.extra_context = dict(self.parallel_extra_context or {})
@@ -641,6 +694,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             precheck=self.parallel_precheck,
             strict=self.parallel_strict,
             fallback_backend=self.parallel_fallback_backend,
+            thread_bias_isolation=str(self.parallel_thread_bias_isolation),
             problem_factory=self.parallel_problem_factory,
             context_builder=self.parallel_context_builder,
             extra_context=self.parallel_extra_context,
@@ -651,15 +705,15 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
     # ========================================================================
 
     def has_bias_support(self) -> bool:
-        """是否可用偏置模块。"""
+        """是否可用偏置模块�?"""
         return self.bias_module is not None
 
     def has_representation_support(self) -> bool:
-        """是否可用表示管线。"""
+        """是否可用表示管线�?"""
         return self.representation_pipeline is not None
 
     def has_numba_support(self) -> bool:
-        """是否可用 Numba 加速。"""
+        """是否可用 Numba 加速�?"""
         _, numba_available = _get_numba_helpers()
         return numba_available
 
@@ -669,9 +723,9 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
 
     def enable_bias_module(self, enable: bool = True):
         """
-        启用或禁用偏置模块。
+        启用或禁用偏置模块�?
 
-        当启用但当前无实例时，尝试懒加载默认 BiasModule。
+        当启用但当前无实例时，尝试懒加载默认 BiasModule�?
         """
         self.enable_bias = enable
         if enable and self.bias_module is None:
@@ -682,7 +736,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
 
     def get_bias_module_class(self):
         """
-        获取 BiasModule 类对象（若不可用则返回 None）。
+        获取 BiasModule 类对象（若不可用则返�?None）�?
         """
         return _get_bias_module()
 
@@ -691,9 +745,9 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
     # ========================================================================
     def _complete_initialization(self):
         """
-        完成运行期状态初始化。
+        完成运行期状态初始化�?
 
-        该步骤从 __init__ 抽离，减少构造函数复杂度并提升可读性。
+        该步骤从 __init__ 抽离，减少构造函数复杂度并提升可读性�?
         """
         self.run_count = 0
         self.evaluation_count = 0
@@ -707,7 +761,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         self.selection_trace_stride = 1
         self.selection_trace_flush_interval = 1
         self.selection_trace_buffer = []
-        # core 仅保留句柄；具体能力由 Plugin / Suite 组装。
+        # core 仅保留句柄；具体能力�?Plugin / Suite 组装�?
         self.diversity_initializer = None
         self.elite_manager = None
         self.history_file = f"blackbox_{self.problem.name.replace(' ', '_')}_history.json"
@@ -1013,10 +1067,10 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
     # ---- 个体/种群评估 ----
     def _evaluate_individual(self, x, individual_id=None):
         """
-        评估单个个体并返回 (objectives, violation)。
+        评估单个个体并返�?(objectives, violation)�?
 
-        - 目标值来自 problem.evaluate(x)
-        - 约束违反度 violation 基于 g(x) <= 0 规则累计
+        - 目标值来�?problem.evaluate(x)
+        - 约束违反�?violation 基于 g(x) <= 0 规则累计
         """
         overridden = self.plugin_manager.trigger("evaluate_individual", self, x, individual_id)
         if overridden is not None:
@@ -1052,7 +1106,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             extra=extra_context,
         )
 
-        # 偏置模块后处理
+        # 偏置模块后处�?
         if self.enable_bias and self.bias_module is not None:
             if self.num_objectives == 1:
                 f_biased = self.bias_module.compute_bias(x, float(obj[0]), individual_id, context=context)
@@ -1075,7 +1129,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
                 if self.ignore_constraint_violation_when_bias:
                     violation = 0.0
         else:
-            # 未启用 bias 时，保留原始 violation
+            # 未启�?bias 时，保留原始 violation
             if cons_arr.size == 0 and KEY_CONSTRAINT_VIOLATION in context:
                 violation = float(context[KEY_CONSTRAINT_VIOLATION])
 
@@ -1083,7 +1137,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
 
     def evaluate_population(self, population):
         """
-        评估种群并返回 (objectives, constraint_violations)。
+        评估种群并返�?(objectives, constraint_violations)�?
         """
         _timing_t0 = time.perf_counter()
         if not hasattr(population, "shape"):
@@ -1199,14 +1253,14 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
                     pass
         else:
             if self.representation_pipeline is not None and self.representation_pipeline.initializer is not None:
-                # 先用一个样本推断初始化结果的 dtype
+                # 先用一个样本推断初始化结果�?dtype
                 context = {
                     'generation': self.generation,
                     'bounds': self.var_bounds
                 }
                 sample = self.representation_pipeline.init(self.problem, context)
 
-                # 按样本 dtype 创建种群数组
+                # 按样�?dtype 创建种群数组
                 if hasattr(sample, 'dtype'):
                     population_dtype = sample.dtype
                 else:
@@ -1221,7 +1275,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
                     context = {'generation': self.generation, 'bounds': self.var_bounds}
                     self.population[i] = self.representation_pipeline.init(self.problem, context)
             else:
-                # 无 Pipeline 时回退到浮点随机初始化
+                # �?Pipeline 时回退到浮点随机初始化
                 self.population = np.zeros((self.pop_size, self.dimension))
                 if isinstance(self.var_bounds, dict):
                     for i, var in enumerate(self.variables):
@@ -1244,7 +1298,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             pass
 
     def is_dominated_vectorized(self, obj_matrix):
-        """优先使用 Numba，加速失败时回退到 NumPy。"""
+        """优先使用 Numba，加速失败时回退�?NumPy�?"""
         if obj_matrix.ndim == 1:
             obj = obj_matrix.reshape(-1, 1)
         else:
@@ -1323,7 +1377,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         pop_size = parents.shape[0]
         offspring = parents.copy()
 
-        # 优先使用 Pipeline 提供的交叉算子
+        # 优先使用 Pipeline 提供的交叉算�?
         if self.representation_pipeline is not None and self.representation_pipeline.crossover is not None:
             context = {
                 'generation': self.generation,
@@ -1520,7 +1574,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         )
         combined_crowding = np.zeros(len(combined_pop), dtype=float)
         for front in fronts:
-            if not front:
+            if len(front) == 0:
                 continue
             # Returns global-length distance array; accumulate front contribution.
             combined_crowding += FastNonDominatedSort.calculate_crowding_distance(
@@ -1567,7 +1621,7 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             self._log_progress()
 
     def _generate_random_individual(self):
-        """按变量边界生成一个随机个体。"""
+        """按变量边界生成一个随机个体�?"""
         new_individual = np.zeros(self.dimension)
         if isinstance(self.var_bounds, dict):
             var_keys = list(self.var_bounds.keys())
@@ -1619,11 +1673,11 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
             self.run_count += 1
 
     def run(self, return_experiment=False, return_dict=False):
-        """命令行/脚本模式运行求解器（非 GUI）。
+        """命令�?脚本模式运行求解器（�?GUI）�?
 
         Args:
-            return_experiment: 为 True 时，返回 ExperimentResult（若可用）。
-            return_dict: 为 True 时，返回字典结果而非 (best_x, best_f)。
+            return_experiment: �?True 时，返回 ExperimentResult（若可用）�?
+            return_dict: �?True 时，返回字典结果而非 (best_x, best_f)�?
         """
         # Initialize memory optimization
         if self.enable_memory_optimization and self.memory_optimizer is None:
@@ -1768,5 +1822,4 @@ class BlackBoxSolverNSGAII(_SolverVisualizationMixin):
         scores = np.sum(self.objectives, axis=1)
         idx = int(np.argmin(scores))
         return self.population[idx], self.objectives[idx]
-
 

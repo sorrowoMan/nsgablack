@@ -130,3 +130,7 @@ def async_event_driven_demo() -> str:
 
 def single_trajectory_adaptive_demo() -> str:
     return _path("single_trajectory_adaptive_demo.py")
+
+
+def gpu_ray_mysql_stack_demo() -> str:
+    return _path("gpu_ray_mysql_stack_demo.py")

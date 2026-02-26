@@ -249,11 +249,18 @@ class Plugin(ABC):
 class PluginManager:
     """Manage plugin registration, lifecycle callbacks, and dispatch."""
 
-    def __init__(self, short_circuit: bool = False, short_circuit_events: Optional[list] = None):
+    def __init__(
+        self,
+        short_circuit: bool = False,
+        short_circuit_events: Optional[list] = None,
+        *,
+        strict: bool = False,
+    ):
         self.plugins = []
         self.plugin_map = {}  # name -> plugin
         self.short_circuit = short_circuit
         self.short_circuit_events = set(short_circuit_events or [])
+        self.strict = bool(strict)
         self._solver = None
         self._context_build_writers: Dict[str, str] = {}
 
@@ -355,6 +362,10 @@ class PluginManager:
                             stacklevel=2,
                         )
                 except Exception as e:
+                    if self.strict:
+                        raise RuntimeError(
+                            f"Plugin '{plugin.name}' failed in event '{event_name}': {e}"
+                        ) from e
                     print(
                         f"[WARNING] Plugin {plugin.name} failed to handle {event_name}: {e}\n"
                         f"{traceback.format_exc()}"
@@ -387,6 +398,10 @@ class PluginManager:
                 try:
                     result = handler(*args, **kwargs)
                 except Exception as exc:
+                    if self.strict:
+                        raise RuntimeError(
+                            f"Plugin '{plugin.name}' dispatch failed on event '{event_name}': {exc}"
+                        ) from exc
                     warnings.warn(
                         (
                             f"Plugin '{plugin.name}' dispatch failed on event '{event_name}': {exc}\n"

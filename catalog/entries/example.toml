@@ -1,0 +1,44 @@
+# Auto-generated from catalog/entries.toml
+# kind=example count=3
+[[entry]]
+key = "example.async_event_driven"
+title = "async_event_driven_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:async_event_driven_demo"
+tags = ["adapter", "async", "demo", "event", "multi_strategy"]
+summary = "绀轰緥锛氬紓姝ヤ簨浠堕┍鍔ㄥ崗鍚屼紭鍖栥€?/ Example: async event-driven cooperative optimization."
+companions = ["adapter.async_event_driven", "suite.async_event_driven"]
+use_when = ["闇€瑕佹渶灏忓彲杩愯鏍蜂緥浠ョ悊瑙ｄ簨浠堕槦鍒楃紪鎺掓椂"]
+minimal_wiring = ["python examples/async_event_driven_demo.py", "python examples/async_event_driven_demo.py --ui"]
+required_companions = ["suite.async_event_driven"]
+config_keys = ["--ui"]
+example_entry = "examples/async_event_driven_demo.py:build_solver"
+
+[[entry]]
+key = "example.single_trajectory_adaptive"
+title = "single_trajectory_adaptive_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:single_trajectory_adaptive_demo"
+tags = ["adaptive", "demo", "single_trajectory", "strategy"]
+summary = "绀轰緥锛氬崟杞ㄨ抗鑷€傚簲鎼滅储銆?/ Example: single-trajectory adaptive search."
+companions = ["adapter.single_trajectory_adaptive", "suite.single_trajectory_adaptive"]
+use_when = ["[\"闇€瑕佹渶灏忕ず渚嬬悊瑙ｅ崟杞ㄨ抗鍦ㄧ嚎璋冨弬鎼滅储鏃?]"]
+minimal_wiring = ["python examples/single_trajectory_adaptive_demo.py", "python examples/single_trajectory_adaptive_demo.py --ui"]
+required_companions = ["suite.single_trajectory_adaptive"]
+config_keys = ["--ui"]
+example_entry = "examples/single_trajectory_adaptive_demo.py:build_solver"
+
+[[entry]]
+key = "example.gpu_ray_mysql_stack"
+title = "gpu_ray_mysql_stack_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:gpu_ray_mysql_stack_demo"
+tags = ["example", "gpu", "ray", "mysql", "distributed", "plugin_stack"]
+summary = "Integrated stack demo: GPU evaluation template + Ray distributed + MySQL run logger. / 一体示例：GPU评估模板 + Ray分布式 + MySQL落库。"
+companions = ["plugin.gpu_eval_template", "suite.ray_parallel", "plugin.mysql_run_logger"]
+context_notes = ["Demonstrates safe fallback when GPU backend is unavailable."]
+use_when = ["Need one file showing end-to-end wiring of compute backend + distributed + storage."]
+minimal_wiring = ["python examples/gpu_ray_mysql_stack_demo.py --enable-ray --enable-mysql"]
+required_companions = ["Ray runtime (optional)", "MySQL server (optional)"]
+config_keys = ["--gpu-backend", "--gpu-device", "--enable-ray", "--enable-mysql", "--max-workers"]
+example_entry = "docs/user_guide/GPU_RAY_MYSQL_STACK_DEMO.md"

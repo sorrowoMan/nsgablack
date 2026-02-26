@@ -26,12 +26,22 @@ class ComposableSolver(BlankSolverBase):
         bias_module=None,
         representation_pipeline=None,
         ignore_constraint_violation_when_bias: bool = False,
+        plugin_strict: bool = False,
+        context_store_backend: str = "memory",
+        context_store_ttl_seconds: Optional[float] = None,
+        context_store_redis_url: str = "redis://localhost:6379/0",
+        context_store_key_prefix: str = "nsgablack:context",
     ) -> None:
         super().__init__(
             problem=problem,
             bias_module=bias_module,
             representation_pipeline=representation_pipeline,
             ignore_constraint_violation_when_bias=ignore_constraint_violation_when_bias,
+            plugin_strict=bool(plugin_strict),
+            context_store_backend=context_store_backend,
+            context_store_ttl_seconds=context_store_ttl_seconds,
+            context_store_redis_url=context_store_redis_url,
+            context_store_key_prefix=context_store_key_prefix,
         )
         self.adapter: Optional[AlgorithmAdapter] = adapter
         self.best_x: Optional[np.ndarray] = None
@@ -59,14 +69,15 @@ class ComposableSolver(BlankSolverBase):
         context = self.build_context()
         context[KEY_STEP] = self.generation
 
+        proposed = self.adapter.coerce_candidates(self.adapter.propose(self, context))
         candidates = normalize_candidates(
-            list(self.adapter.propose(self, context) or []),
+            proposed,
             dimension=self.dimension,
             owner=getattr(self.adapter, "name", "adapter"),
         )
         # If a representation pipeline is attached, enforce a repair pass so
         # all adapter-produced candidates go through the main pipeline.
-        if candidates and self.representation_pipeline is not None:
+        if len(candidates) > 0 and self.representation_pipeline is not None:
             repair = getattr(self.representation_pipeline, "repair", None)
             if repair is not None:
                 if hasattr(self.representation_pipeline, "repair_batch"):
@@ -74,7 +85,14 @@ class ComposableSolver(BlankSolverBase):
                     candidates = self.representation_pipeline.repair_batch(candidates, contexts=contexts)
                 else:
                     candidates = [self.repair_candidate(cand, context) for cand in candidates]
-        if not candidates:
+        if candidates is None:
+            return
+        try:
+            candidate_count = len(candidates)
+        except Exception:
+            candidates = [candidates]  # type: ignore[list-item]
+            candidate_count = 1
+        if candidate_count <= 0:
             return
 
         self.population = stack_population(candidates, name="ComposableSolver.population")

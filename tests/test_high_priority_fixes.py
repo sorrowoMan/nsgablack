@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from nsgablack.core.adapters.differential_evolution import DEConfig, DifferentialEvolutionAdapter
 from nsgablack.plugins.evaluation.monte_carlo_evaluation import (
@@ -125,3 +126,77 @@ def test_mysql_run_logger_resolves_run_id_from_plugin_configs():
     solver = _Solver()
     rid = plugin._resolve_run_id(solver=solver, result={}, artifacts={})
     assert rid == "bench_001"
+
+
+def test_mysql_run_logger_connection_error_is_not_masked(monkeypatch):
+    import builtins
+    import types
+
+    plugin = MySQLRunLoggerPlugin()
+    real_import = builtins.__import__
+
+    fake_pymysql = types.SimpleNamespace(
+        connect=lambda **kwargs: (_ for _ in ()).throw(ValueError("unknown database"))
+    )
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "mysql.connector":
+            raise ModuleNotFoundError(name)
+        if name == "pymysql":
+            return fake_pymysql
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    with pytest.raises(ValueError, match="unknown database"):
+        plugin._get_connection()
+
+
+def test_mysql_run_logger_raises_driver_error_only_when_drivers_missing(monkeypatch):
+    import builtins
+
+    plugin = MySQLRunLoggerPlugin()
+    real_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name in {"mysql.connector", "pymysql"}:
+            raise ModuleNotFoundError(name)
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    with pytest.raises(RuntimeError, match="requires mysql-connector-python or pymysql"):
+        plugin._get_connection()
+
+
+def test_mysql_run_logger_to_jsonable_handles_ndarray():
+    plugin = MySQLRunLoggerPlugin()
+    payload = {
+        "best_objective": np.array(1.23),
+        "best_x": np.array([1.0, 2.0, 3.0], dtype=float),
+        "nested": {"arr": np.array([[1, 2], [3, 4]], dtype=int)},
+    }
+    out = plugin._to_jsonable(payload)
+    assert isinstance(out["best_objective"], float)
+    assert out["best_x"] == [1.0, 2.0, 3.0]
+    assert out["nested"]["arr"] == [[1, 2], [3, 4]]
+
+
+def test_mysql_run_logger_print_latest_summary(capsys):
+    class _Cursor:
+        def execute(self, query, params=None):
+            _ = (query, params)
+
+        def fetchone(self):
+            return (7, "rid_001", "completed", 40, 12.34, "2026-02-24 10:00:00")
+
+        def close(self):
+            return None
+
+    class _Conn:
+        def cursor(self):
+            return _Cursor()
+
+    plugin = MySQLRunLoggerPlugin()
+    plugin._print_latest_summary(_Conn(), inserted_id=7)
+    out = capsys.readouterr().out
+    assert "[mysql-run]" in out
+    assert "run_id=rid_001" in out

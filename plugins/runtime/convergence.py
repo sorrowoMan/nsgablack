@@ -135,7 +135,7 @@ class ConvergencePlugin(Plugin):
             for j in range(i + 1, n_samples):
                 distances.append(float(np.linalg.norm(samples[i] - samples[j])))
 
-        diversity = float(np.mean(distances)) if distances else 0.0
+        diversity = float(np.mean(distances)) if len(distances) > 0 else 0.0
         self.diversity_history.append(diversity)
         return None
 

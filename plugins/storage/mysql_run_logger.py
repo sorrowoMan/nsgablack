@@ -24,6 +24,7 @@ class MySQLRunLoggerConfig:
     database: str = "nsgablack"
     table: str = "nsgablack_runs"
     connect_timeout: int = 10
+    print_latest_summary: bool = True
 
 
 class MySQLRunLoggerPlugin(Plugin):
@@ -51,10 +52,14 @@ class MySQLRunLoggerPlugin(Plugin):
         self.cfg = config or MySQLRunLoggerConfig()
 
     def _get_connection(self):
-        # Try mysql-connector first, fallback to pymysql.
+        # Prefer mysql-connector; fallback to pymysql only when driver import is missing.
         try:
             import mysql.connector as mysql_connector  # type: ignore
+        except Exception:
+            mysql_connector = None
 
+        if mysql_connector is not None:
+            # Connection/config errors should surface as-is (e.g. unknown database).
             return mysql_connector.connect(
                 host=self.cfg.host,
                 port=int(self.cfg.port),
@@ -63,22 +68,23 @@ class MySQLRunLoggerPlugin(Plugin):
                 database=self.cfg.database,
                 connection_timeout=int(self.cfg.connect_timeout),
             )
-        except Exception:
-            try:
-                import pymysql  # type: ignore
 
-                return pymysql.connect(
-                    host=self.cfg.host,
-                    port=int(self.cfg.port),
-                    user=self.cfg.user,
-                    password=self.cfg.password,
-                    database=self.cfg.database,
-                    connect_timeout=int(self.cfg.connect_timeout),
-                )
-            except Exception as exc:
-                raise RuntimeError(
-                    "MySQLRunLoggerPlugin requires mysql-connector-python or pymysql."
-                ) from exc
+        try:
+            import pymysql  # type: ignore
+        except Exception as exc:
+            raise RuntimeError(
+                "MySQLRunLoggerPlugin requires mysql-connector-python or pymysql."
+            ) from exc
+
+        # Connection/config errors should surface as-is.
+        return pymysql.connect(
+            host=self.cfg.host,
+            port=int(self.cfg.port),
+            user=self.cfg.user,
+            password=self.cfg.password,
+            database=self.cfg.database,
+            connect_timeout=int(self.cfg.connect_timeout),
+        )
 
     def _ensure_table(self, conn) -> None:
         table = self.cfg.table
@@ -119,6 +125,11 @@ CREATE TABLE IF NOT EXISTS `{table}` (
             "best_objective": self._resolve_context_value(solver, KEY_BEST_OBJECTIVE, "best_objective"),
             "best_x": self._resolve_context_value(solver, KEY_BEST_X, "best_x"),
         }
+        payload_jsonable = self._to_jsonable(payload)
+        result_jsonable = self._to_jsonable(result if isinstance(result, dict) else None)
+        best_obj_value = payload_jsonable.get("best_objective")
+        if isinstance(best_obj_value, (list, dict)):
+            best_obj_value = None
 
         run_id = self._resolve_run_id(solver, result, artifacts)
 
@@ -135,21 +146,81 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     str(run_id) if run_id is not None else None,
                     payload.get("status"),
                     payload.get("steps"),
-                    payload.get("best_objective"),
+                    best_obj_value,
                     str(modules_path) if modules_path else None,
                     str(bias_path) if bias_path else None,
-                    json.dumps(payload, ensure_ascii=False),
-                    json.dumps(result, ensure_ascii=False) if isinstance(result, dict) else None,
+                    json.dumps(payload_jsonable, ensure_ascii=False),
+                    json.dumps(result_jsonable, ensure_ascii=False),
                 ),
             )
+            inserted_id = getattr(cur, "lastrowid", None)
             conn.commit()
             cur.close()
+            if bool(self.cfg.print_latest_summary):
+                self._print_latest_summary(conn, inserted_id)
         finally:
             try:
                 conn.close()
             except Exception:
                 pass
         return None
+
+    def _print_latest_summary(self, conn, inserted_id: Any = None) -> None:
+        query = (
+            f"SELECT id, run_id, status, steps, best_objective, created_at "
+            f"FROM `{self.cfg.table}` WHERE id=%s"
+            if inserted_id
+            else f"SELECT id, run_id, status, steps, best_objective, created_at "
+                 f"FROM `{self.cfg.table}` ORDER BY id DESC LIMIT 1"
+        )
+        cur = conn.cursor()
+        try:
+            if inserted_id:
+                cur.execute(query, (inserted_id,))
+            else:
+                cur.execute(query)
+            row = cur.fetchone()
+            if not row:
+                return
+            if isinstance(row, dict):
+                rid = row.get("run_id")
+                status = row.get("status")
+                steps = row.get("steps")
+                best = row.get("best_objective")
+                created_at = row.get("created_at")
+                db_id = row.get("id")
+            else:
+                db_id, rid, status, steps, best, created_at = row[:6]
+            print(
+                "[mysql-run] "
+                f"id={db_id} run_id={rid} status={status} "
+                f"steps={steps} best_objective={best} created_at={created_at}"
+            )
+        finally:
+            try:
+                cur.close()
+            except Exception:
+                pass
+
+    def _to_jsonable(self, value: Any) -> Any:
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, dict):
+            return {str(k): self._to_jsonable(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [self._to_jsonable(v) for v in value]
+        # numpy/pandas style scalars and arrays
+        if hasattr(value, "item") and callable(getattr(value, "item", None)):
+            try:
+                return self._to_jsonable(value.item())
+            except Exception:
+                pass
+        if hasattr(value, "tolist") and callable(getattr(value, "tolist", None)):
+            try:
+                return self._to_jsonable(value.tolist())
+            except Exception:
+                pass
+        return str(value)
 
     def _resolve_context_value(self, solver: Any, key: str, attr_fallback: str) -> Any:
         getter = getattr(solver, "get_context", None)

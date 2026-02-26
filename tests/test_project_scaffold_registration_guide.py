@@ -490,3 +490,105 @@ def test_project_doctor_does_not_flag_normal_bias_as_process_like(tmp_path):
 
     report = run_project_doctor(root, instantiate_solver=True, strict=True)
     assert not [d for d in report.diagnostics if d.code == "algorithm-as-bias"]
+
+
+def test_project_doctor_strict_blocks_redis_key_prefix_without_project_token(tmp_path):
+    root = init_project(tmp_path / "redis_guard_project")
+    (root / "build_solver.py").write_text(
+        "from types import SimpleNamespace\n"
+        "\n"
+        "def build_solver():\n"
+        "    return SimpleNamespace(\n"
+        "        representation_pipeline=None,\n"
+        "        bias_module=None,\n"
+        "        adapter=None,\n"
+        "        plugin_manager=None,\n"
+        "        context_store_backend='redis',\n"
+        "        context_store_key_prefix='ctx',\n"
+        "        context_store_ttl_seconds=120,\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+    report = run_project_doctor(root, instantiate_solver=True, strict=True)
+    codes = {d.code for d in report.diagnostics if d.level == "error"}
+    assert "redis-key-prefix-too-short" in codes
+    assert "redis-key-prefix-missing-project-name" in codes
+
+
+def test_project_doctor_warns_when_redis_ttl_policy_is_implicit(tmp_path):
+    root = init_project(tmp_path / "redis_ttl_policy_project")
+    (root / "build_solver.py").write_text(
+        "from types import SimpleNamespace\n"
+        "\n"
+        "def build_solver():\n"
+        "    return SimpleNamespace(\n"
+        "        representation_pipeline=None,\n"
+        "        bias_module=None,\n"
+        "        adapter=None,\n"
+        "        plugin_manager=None,\n"
+        "        context_store_backend='redis',\n"
+        "        context_store_key_prefix='nsgablack:redis_ttl_policy_project',\n"
+        "        context_store_ttl_seconds=None,\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+    report = run_project_doctor(root, instantiate_solver=True, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "redis-ttl-policy-implicit"]
+    assert rows
+    assert all(d.level == "warn" for d in rows)
+
+
+def test_project_doctor_strict_blocks_framework_component_missing_catalog_entry(tmp_path):
+    root = init_project(tmp_path / "framework_catalog_guard_project")
+    (root / "build_solver.py").write_text(
+        "from types import SimpleNamespace\n"
+        "\n"
+        "class MissingFrameworkAdapter:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = ('demo',)\n"
+        "MissingFrameworkAdapter.__module__ = 'nsgablack.core.adapters.__missing__'\n"
+        "\n"
+        "def build_solver():\n"
+        "    return SimpleNamespace(\n"
+        "        representation_pipeline=None,\n"
+        "        bias_module=None,\n"
+        "        adapter=MissingFrameworkAdapter(),\n"
+        "        plugin_manager=None,\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+    report = run_project_doctor(root, instantiate_solver=True, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "framework-component-not-in-catalog"]
+    assert rows
+    assert all(d.level == "error" for d in rows)
+
+
+def test_project_doctor_reports_unregistered_project_components_as_info(tmp_path):
+    root = init_project(tmp_path / "project_unregistered_component_info")
+    (root / "build_solver.py").write_text(
+        "from types import SimpleNamespace\n"
+        "\n"
+        "class LocalAdapter:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = ('demo',)\n"
+        "LocalAdapter.__module__ = 'my_project.adapter.local_adapter'\n"
+        "\n"
+        "def build_solver():\n"
+        "    return SimpleNamespace(\n"
+        "        representation_pipeline=None,\n"
+        "        bias_module=None,\n"
+        "        adapter=LocalAdapter(),\n"
+        "        plugin_manager=None,\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+    report = run_project_doctor(root, instantiate_solver=True, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "project-component-unregistered"]
+    assert rows
+    assert all(d.level == "info" for d in rows)

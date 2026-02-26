@@ -6,6 +6,8 @@ Attaches CheckpointResumePlugin for crash recovery and run continuation.
 
 from __future__ import annotations
 
+from typing import Optional
+
 from ...plugins import CheckpointResumeConfig, CheckpointResumePlugin
 
 
@@ -24,10 +26,18 @@ def attach_checkpoint_resume(
     strict: bool = False,
     hmac_env_var: str = "NSGABLACK_CHECKPOINT_HMAC_KEY",
     unsafe_allow_unsigned: bool = False,
+    trust_checkpoint: Optional[bool] = None,
     trusted_roots: tuple[str, ...] = (),
 ):
     if not hasattr(solver, "add_plugin"):
         raise ValueError("attach_checkpoint_resume: solver missing add_plugin()")
+
+    resolved_unsafe_allow_unsigned = bool(unsafe_allow_unsigned)
+    if trust_checkpoint is not None:
+        # trust_checkpoint=True means explicitly allow unsigned checkpoints.
+        resolved_unsafe_allow_unsigned = bool(trust_checkpoint)
+    if bool(strict) and resolved_unsafe_allow_unsigned:
+        raise ValueError("strict=True forbids trust_checkpoint=True (unsigned checkpoints are disallowed).")
 
     cfg = CheckpointResumeConfig(
         checkpoint_dir=str(checkpoint_dir),
@@ -41,7 +51,7 @@ def attach_checkpoint_resume(
         restore_rng_state=bool(restore_rng_state),
         strict=bool(strict),
         hmac_env_var=str(hmac_env_var),
-        unsafe_allow_unsigned=bool(unsafe_allow_unsigned),
+        unsafe_allow_unsigned=resolved_unsafe_allow_unsigned,
         trusted_roots=tuple(str(x) for x in (trusted_roots or ()) if str(x).strip()),
     )
     plugin = CheckpointResumePlugin(config=cfg)
