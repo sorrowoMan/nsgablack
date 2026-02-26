@@ -212,7 +212,10 @@ docker start nsgablack-redis
 docker stop nsgablack-redis
 ```
 
-???
-- ???????? `docker run`?
-- ??????? `docker start/stop` ?????
-- ? Redis ???????? `context_store_backend="memory"`?
+常见问题：
+- 第一次使用要不要执行 `docker run`？
+  - 要。首次需要创建容器；之后通常只需 `docker start/stop`。
+- 关闭 Docker 会不会清空 Redis 数据？
+  - 不会。`docker start/stop` 只控制启停，不会删除容器。
+- 不启用 Redis 可以吗？
+  - 可以。将 `context_store_backend="memory"` 即可回到内存后端。
