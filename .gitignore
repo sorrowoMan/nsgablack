@@ -128,6 +128,14 @@ artifacts/
 results/test_runs/
 deprecated/legacy/experiments/results/
 
+# Example-generated optimization artifacts (keep local, do not version)
+examples/cases/integrated_result_*.xlsx
+examples/cases/integrated_result_*.summary.json
+examples/cases/integrated_result_pareto_*/
+examples/cases/production_scheduling/SUPPLY_adjusted_from_l1_*.xlsx
+examples/cases/production_scheduling/SUPPLY_all_to_day1.xlsx
+examples/cases/production_scheduling/Adjusted_Supply_Plan_Optimized_*.xlsx
+
 # Local documents
 *.docx
 # Project organization
