@@ -65,7 +65,7 @@ class DiversityInitPlugin(Plugin):
             for j in range(i + 1, n_samples):
                 distances.append(float(np.linalg.norm(samples[i] - samples[j])))
 
-        return float(np.mean(distances)) if distances else 0.0
+        return float(np.mean(distances)) if len(distances) > 0 else 0.0
 
     def is_similar(self, individual: np.ndarray, existing_population: np.ndarray) -> bool:
         if len(existing_population) == 0:

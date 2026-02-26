@@ -932,7 +932,7 @@ class SupplyAwareScheduleRepair:
                             continue
                         if np.any(over_mask[req]):
                             candidates.append(m)
-                    if not candidates:
+                    if len(candidates) == 0:
                         candidates = list(active)
                     drop = min(candidates, key=lambda m: priority[m])
                     active.remove(drop)

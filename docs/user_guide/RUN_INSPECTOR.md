@@ -31,8 +31,8 @@ python -m nsgablack run_inspector --empty --workspace .
 - `Refresh`：代码改动后重新读取当前 entry
 - `View`：一键切换工作视图（单击按钮即可）
   - `Build(装配)`：Details / Catalog / Context（找组件与字段对齐）
-  - `Run(实验)`：Run / Contribution / Trajectory / Catalog（执行与对比）
-  - `Audit(审计)`：Details / Context / Doctor / Contribution（排障与治理）
+  - `Run(实验)`：Run / Decision / Contribution / Trajectory / Catalog（执行、回放与对比）
+  - `Audit(审计)`：Details / Decision / Context / Doctor / Contribution（排障与治理）
   - 注意：三种视图是**分工视图，不是层层累加**
 
 ---
@@ -50,6 +50,7 @@ python -m nsgablack run_inspector --empty --workspace .
 右侧：**功能面板（Tabs）**
 - Details：单个组件详情 + Health
 - Run：运行控制 + Run ID
+- Decision：决策路径回放（why/when）
 - Contribution：模块贡献、对比、结构 hash 图谱
 - Trajectory：策略权重轨迹（dynamic_switch）
 - Catalog：组件搜索入口
@@ -208,3 +209,22 @@ Run Inspector 不是“好看 UI”，而是：
 
 如果你能在运行前确认结构正确，运行后确认结构差异，
 你的实验就不再是“凭感觉调参”，而是 **可解释的结构实验**。
+
+---
+
+## 13. 推荐阅读顺序（完整学习路径）
+
+建议按下面顺序看，避免“只会点 UI，不理解结构”：
+
+1. `docs/user_guide/DEPTH_BREADTH_WORKFLOW.md`
+   - 先建立框架总图：深度（嵌套层级）+ 广度（多策略协同）。
+2. `docs/user_guide/INNER_SOLVER_BACKENDS.md`
+   - 再理解内层编排：`InnerSolverPlugin` / `ContractBridgePlugin` / `TimeoutBudgetPlugin`。
+3. `docs/user_guide/NUMERICAL_SOLVER_PLUGINS.md`
+   - 再看数值求解：`NewtonSolverPlugin` / `BroydenSolverPlugin`。
+4. `docs/user_guide/REDIS_CONTEXT_BACKEND.md`
+   - 理解 context 后端切换：memory / redis、TTL、容器工作流与常见错误。
+5. `examples/nested_three_layer_demo.py` + `examples/nested_three_layer_demo.md`
+   - 最后跑通三层示例（L1 -> L2 -> L3，bridge 直写回 L1）。
+6. 回到本页（Run Inspector）
+   - 用 Catalog/Context/Doctor 验证你的装配是否与契约一致。

@@ -553,7 +553,7 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
                 KEY_TASK: dict(task),
             }
 
-            proposed = list(unit.adapter.propose(solver, ctx) or [])
+            proposed = self.coerce_candidates(unit.adapter.propose(solver, ctx))
             if not proposed:
                 continue
 
@@ -839,7 +839,7 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
                 continue
             scores.append(float(ema))
             names.append(name)
-        if not scores:
+        if len(scores) == 0:
             return
 
         scores_arr = np.asarray(scores, dtype=float)

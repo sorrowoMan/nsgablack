@@ -123,7 +123,7 @@ class AdaptiveConvergenceBias(AlgorithmicBias):
         """Calculate convergence value based on position relative to elite solutions."""
         # Simple implementation: reward proximity to best solutions
         best_solutions = context.metrics.get('elite_solutions', [])
-        if best_solutions:
+        if len(best_solutions) > 0:
             min_distance = min(np.linalg.norm(x - elite) for elite in best_solutions)
             return 1.0 / (1.0 + min_distance)
         return 0.0

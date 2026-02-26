@@ -32,6 +32,8 @@
 - DB 事件日志升级路径（可选高级能力）
   - 分层目标：资产层（run/report）→ 事件层（context_events 可回放）
   - 三表落地：runs / snapshots / context_events（参考 `docs/user_guide/DB_EVENT_LOGGING.md`）
+  - 当前结论：短期不接数据库；先维持 TOML 分片（`entries/<kind>.toml`）+ provider 多源 + 索引/详情按需加载
+  - 触发条件：多人并发编辑、跨项目统一检索、审计追溯成为刚需时再升级 DB
   - 接入策略：默认不强制；当进入多人协作/批量实验阶段再启用
   - 写入策略：内存缓冲 + 批量 flush（N 条 / T 秒 / generation_end）+ 后台线程异步落库
   - 查询策略：按 run_id/step/key/source 建索引，支持快速检索与回放定位

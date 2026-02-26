@@ -4,9 +4,11 @@ import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 import tkinter as tk
 from tkinter import ttk
+import numpy as np
 
 from ...engineering.schema_version import stamp_schema
 from ...context.context_keys import KEY_BEST_OBJECTIVE, KEY_BEST_X
@@ -98,6 +100,26 @@ class RunView:
                 return ctx.get(KEY_BEST_OBJECTIVE), ctx.get(KEY_BEST_X)
         return getattr(solver, "best_objective", None), getattr(solver, "best_x", None)
 
+    @staticmethod
+    def _format_best_x(value: Any) -> str:
+        try:
+            arr = np.asarray(value, dtype=float).reshape(-1)
+            if arr.size == 0:
+                return "best_x: []"
+            head = ", ".join(f"{float(v):.4g}" for v in arr[:8])
+            if arr.size > 8:
+                head = f"{head}, ..."
+            return (
+                f"best_x: len={int(arr.size)} "
+                f"min={float(np.min(arr)):.6g} max={float(np.max(arr)):.6g} "
+                f"head=[{head}]"
+            )
+        except Exception:
+            text = str(value)
+            if len(text) > 280:
+                text = text[:280] + "..."
+            return f"best_x: {text}"
+
     def snapshot(self, run_id: str) -> dict:
         solver = self.app.solver
         adapter = getattr(solver, "adapter", None)
@@ -120,6 +142,7 @@ class RunView:
             },
             "biases": [],
             "plugins": [],
+            "context_store": self._context_store_snapshot(solver),
         }
 
         if bias_module is not None:
@@ -209,9 +232,49 @@ class RunView:
             "strategies": sort_items(snap.get("strategies", []), ["name", "enabled", "weight"]),
             "biases": sort_items(snap.get("biases", []), ["name", "enabled"]),
             "plugins": sort_items(snap.get("plugins", []), ["name", "enabled"]),
+            "context_store": snap.get("context_store", {}),
         }
         raw = json.dumps(data, sort_keys=True, separators=(",", ":"))
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+    def _mask_redis_url(self, value: Any) -> Optional[str]:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        try:
+            parts = urlsplit(raw)
+        except Exception:
+            return raw
+        if not parts.scheme:
+            return raw
+        hostname = parts.hostname or ""
+        netloc = hostname
+        if parts.port:
+            netloc = f"{netloc}:{parts.port}"
+        if parts.username:
+            netloc = f"{parts.username}:***@{netloc}"
+        return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+    def _context_store_snapshot(self, solver: Any) -> Dict[str, Any]:
+        if solver is None:
+            return {}
+        backend = str(getattr(solver, "context_store_backend", "") or "").strip() or None
+        ttl = getattr(solver, "context_store_ttl_seconds", None)
+        redis_url = getattr(solver, "context_store_redis_url", None)
+        key_prefix = getattr(solver, "context_store_key_prefix", None)
+        runtime = getattr(solver, "runtime", None)
+        if backend is None and runtime is not None:
+            store = getattr(runtime, "context_store", None)
+            if store is not None:
+                cls_name = store.__class__.__name__.lower()
+                backend = "redis" if "redis" in cls_name else "memory"
+        out = {
+            "backend": backend,
+            "ttl_seconds": ttl,
+            "key_prefix": str(key_prefix) if key_prefix is not None else None,
+            "redis_url": self._mask_redis_url(redis_url),
+        }
+        return out
 
     def _refresh_hash_index(self) -> None:
         if self.app._hash_index:
@@ -296,7 +359,7 @@ class RunView:
                     msg = f"{msg} best={best_obj:.6f}"
                 print(f"[ui] {msg}")
                 if best_x is not None:
-                    print(f"[ui] best_x={best_x}")
+                    print(f"[ui] {self._format_best_x(best_x)}")
             except Exception as exc:
                 msg = f"Failed: {exc}"
             def _finish():
@@ -325,13 +388,17 @@ class RunView:
                 if artifacts:
                     detail_lines.append(f"artifacts: {artifacts}")
                 if best_x is not None:
-                    detail_lines.append(f"best_x: {best_x}")
-                self.app.append_history(hist, "\n".join(detail_lines))
+                    detail_lines.append(self._format_best_x(best_x))
+                self.app.append_history(
+                    hist,
+                    "\n".join(detail_lines),
+                    meta={"run_id": run_id, "artifacts": dict(artifacts or {})},
+                )
                 if self.app.contrib_view:
                     self.app.contrib_view.add_run_choice(run_id)
                     self.app.contrib_view.refresh_contribution()
-                if getattr(self.app, "context_view", None):
-                    self.app.context_view.refresh()
+                self.app.request_decision_refresh(run_id=run_id, artifacts=artifacts)
+                self.app.request_context_refresh()
                 if self.app.close_on_finish_var.get():
                     self.app.destroy()
             self.app.after(0, _finish)
@@ -346,8 +413,7 @@ class RunView:
         self.app._refresh_sections()
         if self.app.contrib_view:
             self.app.contrib_view.refresh_contribution()
-        if getattr(self.app, "context_view", None):
-            self.app.context_view.refresh()
+        self.app.request_context_refresh()
         self.status_label.config(text="UI refreshed")
 
     def on_sensitivity(self) -> None:

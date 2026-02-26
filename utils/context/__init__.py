@@ -36,6 +36,12 @@ from .context_schema import (
     validate_context,
     validate_minimal_context,
 )
+from .context_store import (
+    ContextStore,
+    InMemoryContextStore,
+    RedisContextStore,
+    create_context_store,
+)
 
 __all__ = [
     "context_keys",
@@ -63,4 +69,8 @@ __all__ = [
     "context_field_schema_dict",
     "is_canonical_context_key",
     "schema_meta",
+    "ContextStore",
+    "InMemoryContextStore",
+    "RedisContextStore",
+    "create_context_store",
 ]

@@ -54,6 +54,29 @@
 - 禁止在新组件中直接镜像写入 `solver.population/objectives/constraint_violations/best_x/best_objective/...`。
 - `project doctor --strict` 会检查“绕过 Runtime 直接写 solver 状态”的代码并报错。
 
+### Catalog 注册边界（必须遵守）
+
+- 框架级组件（`nsgablack.*`）必须进入全局 Catalog。
+  - 为什么：框架级能力面向全项目复用，必须保证“可发现（search）+ 可审计（doctor/inspector）+ 可复现（统一入口）”。
+  - 约束：`project doctor --build --strict` 下，框架级未注册会报错并阻断。
+- 项目级组件（非 `nsgablack.*`）可不注册。
+  - 为什么：项目内快速试验允许先实现后整理，避免早期过度治理影响迭代速度。
+  - 行为：doctor 会输出 `project-component-unregistered` 信息并列出未注册组件，不阻断。
+
+### 示例/测试契约规范（必须遵守）
+
+- 示例文件（`examples/`）和测试中的可复用组件（adapter/pipeline/bias/plugin）也必须显式声明契约字段：
+  - `context_requires`
+  - `context_provides`
+  - `context_mutates`
+  - `context_cache`
+  - `context_notes`
+- `bias` 类还应显式声明：
+  - `requires_metrics`
+  - `metrics_fallback`
+  - `missing_metrics_policy`
+- 原则：示例和测试是“标准用法展示”，不能用“省略契约”的写法误导后续开发。
+
 ### 贡献类型
 
 我们欢迎以下类型的贡献：

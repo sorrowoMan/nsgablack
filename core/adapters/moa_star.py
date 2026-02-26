@@ -176,7 +176,10 @@ class MOAStarAdapter(AlgorithmAdapter):
 
             expanded += 1
 
-            for child in self.neighbors(label.state, context) or []:
+            neighbors = self.neighbors(label.state, context)
+            if neighbors is None:
+                neighbors = []
+            for child in neighbors:
                 if len(candidates) >= int(self.cfg.max_candidates_per_step):
                     break
                 child_arr = np.asarray(child)
@@ -199,7 +202,14 @@ class MOAStarAdapter(AlgorithmAdapter):
         violations: np.ndarray,
         context: Dict[str, Any],
     ) -> None:
-        if not candidates:
+        if candidates is None:
+            return
+        try:
+            candidate_count = len(candidates)
+        except Exception:
+            candidates = [candidates]  # type: ignore[list-item]
+            candidate_count = 1
+        if candidate_count <= 0:
             return
 
         obj = np.asarray(objectives, dtype=float)

@@ -219,9 +219,10 @@ class CatalogView:
                 pcat = load_project_catalog(root, include_global=False)
                 project_entries = pcat.list()
                 merged_entries.extend(project_entries)
+                project_key_map = self._collect_project_catalog_key_map(root)
                 project_catalog_file = root / "catalog" / "entries.toml"
                 for pe in project_entries:
-                    project_catalog_by_key[pe.key] = project_catalog_file
+                    project_catalog_by_key[pe.key] = project_key_map.get(pe.key, project_catalog_file)
             except Exception:
                 continue
 
@@ -236,10 +237,14 @@ class CatalogView:
 
         self.app._catalog_obj = cat
         self._project_catalog_by_key = project_catalog_by_key
+        framework_catalog = Path(__file__).resolve().parents[3] / "catalog" / "entries.toml"
         out = {}
         for e in cat.list():
             scope = scope_from_key(e.key)
             usage = build_usage_profile(e)
+            framework_kind_catalog = self._catalog_file_for_kind(e.kind, framework_catalog)
+            fallback_catalog = framework_kind_catalog if framework_kind_catalog.exists() else framework_catalog
+            source_catalog = str(self._project_catalog_by_key.get(e.key, fallback_catalog))
             out[e.key] = {
                 "key": e.key,
                 "scope": scope,
@@ -247,6 +252,9 @@ class CatalogView:
                 "title": e.title,
                 "import_path": e.import_path,
                 "summary": e.summary,
+                "detail_ref": str(getattr(e, "detail_ref", "") or ""),
+                "lazy_detail": bool(getattr(e, "detail_ref", "")),
+                "source_catalog": source_catalog,
                 "project_catalog_file": str(self._project_catalog_by_key.get(e.key, "")),
                 "tags": list(e.tags),
                 "companions": list(e.companions),
@@ -369,6 +377,50 @@ class CatalogView:
         root = here.parents[3]
         return root / "catalog" / "entries.toml"
 
+    def _catalog_file_for_kind(self, kind: str, base_file: Optional[Path] = None) -> Path:
+        base = Path(base_file or self._default_catalog_file())
+        k = str(kind or "").strip().lower() or "misc"
+        if base.is_dir():
+            return base / "entries" / f"{k}.toml"
+        if base.name == "entries.toml":
+            return base.parent / "entries" / f"{k}.toml"
+        if base.parent.name == "entries" and base.suffix.lower() == ".toml":
+            return base.parent / f"{k}.toml"
+        return base
+
+    def _project_catalog_file_for_kind(self, kind: str) -> Optional[Path]:
+        root = self._detect_project_root()
+        if root is None:
+            return None
+        return self._catalog_file_for_kind(kind, root / "catalog" / "entries.toml")
+
+    def _collect_project_catalog_key_map(self, root: Path) -> Dict[str, Path]:
+        out: Dict[str, Path] = {}
+        try:
+            from nsgablack.catalog.registry import _parse_entries_from_toml
+        except Exception:
+            return out
+        files: list[Path] = []
+        legacy = root / "catalog" / "entries.toml"
+        if legacy.is_file():
+            files.append(legacy)
+        split_dir = root / "catalog" / "entries"
+        if split_dir.is_dir():
+            files.extend(sorted(split_dir.glob("*.toml")))
+        for fp in files:
+            try:
+                rows = _parse_entries_from_toml(fp)
+            except Exception:
+                continue
+            for row in rows:
+                key = str(getattr(row, "key", "") or "").strip()
+                if not key:
+                    continue
+                out[key] = fp
+                if not key.startswith("project."):
+                    out[f"project.{key}"] = fp
+        return out
+
     def open_register_dialog(self) -> None:
         dialog = tk.Toplevel(self.tab)
         dialog.title("Catalog Entry Registration")
@@ -384,7 +436,7 @@ class CatalogView:
             "context_notes",
         )
         vars_map = {
-            "file": tk.StringVar(value=str(self._default_catalog_file())),
+            "file": tk.StringVar(value=str(self._catalog_file_for_kind("bias", self._default_catalog_file()))),
             "source_file": tk.StringVar(value=""),
             "source_symbol": tk.StringVar(value=""),
             "key": tk.StringVar(value=""),
@@ -405,6 +457,8 @@ class CatalogView:
             "context_cache": tk.StringVar(value=""),
             "context_notes": tk.StringVar(value=""),
         }
+        target_mode_var = tk.StringVar(value="Target mode: Auto by kind")
+        _auto_target_state = {"value": str(Path(vars_map["file"].get()).resolve())}
         symbol_kind_map: Dict[str, str] = {}
         symbol_display_map: Dict[str, str] = {}
         write_code_on_save_var = tk.BooleanVar(value=True)
@@ -432,6 +486,32 @@ class CatalogView:
         ttk.Label(file_row, text="Catalog file", width=18).pack(side="left")
         ttk.Entry(file_row, textvariable=vars_map["file"], width=66).pack(side="left", fill="x", expand=True)
 
+        def _refresh_target_mode_hint() -> None:
+            raw = vars_map["file"].get().strip()
+            if not raw:
+                target_mode_var.set("Target mode: Custom")
+                return
+            try:
+                now = str(Path(raw).resolve())
+            except Exception:
+                now = str(raw)
+            target_mode_var.set(
+                "Target mode: Auto by kind"
+                if now == str(_auto_target_state["value"])
+                else "Target mode: Custom target"
+            )
+
+        def _set_auto_target(path: Path) -> None:
+            try:
+                resolved = path.resolve()
+            except Exception:
+                resolved = Path(path)
+            _auto_target_state["value"] = str(resolved)
+            vars_map["file"].set(str(path))
+            target_mode_var.set("Target mode: Auto by kind")
+
+        vars_map["file"].trace_add("write", lambda *_: _refresh_target_mode_hint())
+
         def _browse_file() -> None:
             chosen = filedialog.asksaveasfilename(
                 title="Select catalog entries TOML",
@@ -444,6 +524,7 @@ class CatalogView:
                 vars_map["file"].set(chosen)
 
         ttk.Button(file_row, text="Browse", command=_browse_file).pack(side="left", padx=(6, 0))
+        ttk.Label(source_tab, textvariable=target_mode_var, foreground="#666").pack(anchor="w", padx=10, pady=(0, 4))
 
         source_row = ttk.Frame(source_tab)
         source_row.pack(fill="x", padx=10, pady=3)
@@ -576,6 +657,7 @@ class CatalogView:
             kind = symbol_kind_map.get(symbol, vars_map["kind"].get().strip())
             if kind in {"adapter", "bias", "plugin", "representation", "suite", "tool", "example", "doc"}:
                 vars_map["kind"].set(kind)
+                _retarget_file_for_kind()
             if not vars_map["key"].get().strip():
                 vars_map["key"].set(_infer_key(symbol, vars_map["kind"].get().strip() or "tool", source_file))
             if not vars_map["title"].get().strip():
@@ -632,6 +714,13 @@ class CatalogView:
             values=("adapter", "bias", "plugin", "representation", "suite", "tool", "example", "doc"),
         )
         kind_combo.pack(side="left", padx=(0, 6))
+
+        def _retarget_file_for_kind() -> None:
+            kind_now = vars_map["kind"].get().strip().lower()
+            current = Path(vars_map["file"].get().strip() or self._default_catalog_file())
+            _set_auto_target(self._catalog_file_for_kind(kind_now, current))
+
+        kind_combo.bind("<<ComboboxSelected>>", lambda _e: _retarget_file_for_kind())
         _add_row(identity_tab, "import_path", "import_path")
         _add_row(identity_tab, "summary", "summary")
 
@@ -684,6 +773,8 @@ class CatalogView:
             import_path = vars_map["import_path"].get().strip()
             summary = vars_map["summary"].get().strip()
             target_file = Path(vars_map["file"].get().strip())
+            target_file = self._catalog_file_for_kind(kind, target_file)
+            _set_auto_target(target_file)
 
             project_catalog = self._project_catalog_file()
             framework_catalog = self._default_catalog_file()
@@ -698,18 +789,28 @@ class CatalogView:
                             source_project_root = cand
                             break
             if source_project_root is not None:
-                source_project_catalog = source_project_root / "catalog" / "entries.toml"
+                source_project_catalog = self._catalog_file_for_kind(
+                    kind, source_project_root / "catalog" / "entries.toml"
+                )
                 try:
-                    target_is_framework = target_file.resolve() == framework_catalog.resolve()
+                    framework_kind_catalog = self._catalog_file_for_kind(kind, framework_catalog)
+                    target_is_framework = target_file.resolve() in {
+                        framework_catalog.resolve(),
+                        framework_kind_catalog.resolve(),
+                    }
                 except Exception:
                     target_is_framework = False
                 if target_is_framework:
                     target_file = source_project_catalog
-                    vars_map["file"].set(str(source_project_catalog))
+                    _set_auto_target(source_project_catalog)
 
             if project_catalog is not None:
                 try:
-                    is_project_catalog = target_file.resolve() == project_catalog.resolve()
+                    project_kind_catalog = self._catalog_file_for_kind(kind, project_catalog)
+                    is_project_catalog = target_file.resolve() in {
+                        project_catalog.resolve(),
+                        project_kind_catalog.resolve(),
+                    }
                 except Exception:
                     is_project_catalog = False
                 if (
@@ -836,7 +937,7 @@ class CatalogView:
 
     def _lookup_info(self, entry_key: str) -> Dict[str, Any]:
         info = self.app.catalog.get(str(entry_key), {})
-        if info:
+        if info and not bool(info.get("lazy_detail", False)):
             return info
         if self.app._catalog_obj is None:
             return {}
@@ -846,6 +947,10 @@ class CatalogView:
         from nsgablack.catalog import build_usage_profile
 
         usage = build_usage_profile(entry)
+        framework_catalog = Path(__file__).resolve().parents[3] / "catalog" / "entries.toml"
+        framework_kind_catalog = self._catalog_file_for_kind(entry.kind, framework_catalog)
+        fallback_catalog = framework_kind_catalog if framework_kind_catalog.exists() else framework_catalog
+        source_catalog = str(self._project_catalog_by_key.get(entry.key, fallback_catalog))
         return {
             "key": entry.key,
             "scope": scope_from_key(entry.key),
@@ -853,6 +958,9 @@ class CatalogView:
             "title": entry.title,
             "import_path": entry.import_path,
             "summary": entry.summary,
+            "detail_ref": str(getattr(entry, "detail_ref", "") or ""),
+            "lazy_detail": False,
+            "source_catalog": source_catalog,
             "companions": list(entry.companions),
             "context_requires": list(getattr(entry, "context_requires", ()) or ()),
             "context_provides": list(getattr(entry, "context_provides", ()) or ()),
@@ -901,7 +1009,8 @@ class CatalogView:
         key = values[0] if values else ""
         info = self._lookup_info(str(key))
         summary = str(info.get("summary", "") or "")
-        source_catalog = str(info.get("project_catalog_file", "") or "").strip()
+        source_catalog = str(info.get("source_catalog", "") or "").strip()
+        import_path = str(info.get("import_path", "") or "").strip()
         companions = info.get("companions") or []
         contracts = self._format_contracts(info)
         usage = self._format_usage(info)
@@ -909,7 +1018,8 @@ class CatalogView:
         kind = str(info.get("kind", "") or "")
 
         source_line = f"\nsource_catalog: {source_catalog}" if source_catalog else ""
-        summary_card = f"key: {key}\nscope: {scope}\nkind: {kind}{source_line}\n\n{summary}".strip()
+        import_line = f"\nimport_path: {import_path}" if import_path else ""
+        summary_card = f"key: {key}\nscope: {scope}\nkind: {kind}{import_line}{source_line}\n\n{summary}".strip()
         companions_card = "\n".join(f"- {c}" for c in companions) if companions else "(none)"
         example_entry = str(info.get("example_entry", "") or "").strip()
 
@@ -945,6 +1055,7 @@ class CatalogView:
             return
         info = self._lookup_info(key)
         scope = str(info.get("scope", scope_from_key(key))).strip().lower()
+        kind = str(info.get("kind", "") or "").strip().lower()
         if scope != "project":
             messagebox.showerror(
                 "Delete blocked",
@@ -982,6 +1093,12 @@ class CatalogView:
             from nsgablack.catalog.quick_add import remove_catalog_entry
 
             removed = remove_catalog_entry(project_catalog, key)
+            if (not removed) and kind:
+                kind_file = self._catalog_file_for_kind(kind, project_catalog)
+                if kind_file != project_catalog and kind_file.exists():
+                    removed = remove_catalog_entry(kind_file, key)
+                    if removed:
+                        project_catalog = kind_file
         except Exception as exc:
             messagebox.showerror("Delete failed", f"Cannot delete entry:\n{exc}", parent=self.tab.winfo_toplevel())
             return

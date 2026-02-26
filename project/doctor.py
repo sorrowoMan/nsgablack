@@ -7,12 +7,14 @@ import ast
 import importlib
 import importlib.util
 import inspect
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Sequence
 
 from .catalog import find_project_root, load_project_entries
+from ..catalog import get_catalog
 
 
 @dataclass(frozen=True)
@@ -151,6 +153,8 @@ _PROCESS_LIKE_BIAS_MODULE_PREFIXES = {
     "nsgablack.bias.algorithmic.simulated_annealing",
     "nsgablack.bias.algorithmic.spea2",
 }
+_MIN_REDIS_KEY_PREFIX_LEN = 8
+_MIN_REDIS_TTL_SECONDS = 30.0
 
 
 def _add(diags: List[DoctorDiagnostic], level: str, code: str, msg: str, path: Path | None = None) -> None:
@@ -333,6 +337,20 @@ def _check_build_solver(root: Path, diags: List[DoctorDiagnostic], *, instantiat
         return
 
     _add(diags, "info", "build-solver-instantiated", f"build_solver() returned: {solver.__class__.__name__}", build_file)
+    _check_context_store_policy(
+        root=root,
+        solver=solver,
+        build_file=build_file,
+        diags=diags,
+        strict=bool(strict),
+    )
+    _check_component_catalog_registration(
+        root=root,
+        solver=solver,
+        build_file=build_file,
+        diags=diags,
+        strict=bool(strict),
+    )
 
     try:
         from ..utils.context.context_contracts import (
@@ -404,6 +422,102 @@ def _check_build_solver(root: Path, diags: List[DoctorDiagnostic], *, instantiat
         )
     except Exception as exc:
         _add(diags, "warn", "algorithm-as-bias-check-failed", f"Process-level bias check failed: {exc}", build_file)
+
+
+def _normalize_token(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def _check_context_store_policy(
+    *,
+    root: Path,
+    solver: object,
+    build_file: Path,
+    diags: List[DoctorDiagnostic],
+    strict: bool,
+) -> None:
+    backend = str(getattr(solver, "context_store_backend", "") or "").strip().lower()
+    if not backend:
+        runtime = getattr(solver, "runtime", None)
+        store = getattr(runtime, "context_store", None)
+        if store is not None:
+            cls_name = store.__class__.__name__.lower()
+            backend = "redis" if "redis" in cls_name else "memory"
+    if backend != "redis":
+        return
+
+    level = "error" if strict else "warn"
+
+    key_prefix = str(getattr(solver, "context_store_key_prefix", "") or "").strip()
+    if not key_prefix:
+        _add(
+            diags,
+            level,
+            "redis-key-prefix-missing",
+            "Redis context backend requires non-empty context_store_key_prefix.",
+            build_file,
+        )
+    else:
+        if len(key_prefix) < _MIN_REDIS_KEY_PREFIX_LEN:
+            _add(
+                diags,
+                level,
+                "redis-key-prefix-too-short",
+                (
+                    f"context_store_key_prefix is too short ({len(key_prefix)}); "
+                    f"recommended >= {_MIN_REDIS_KEY_PREFIX_LEN} chars."
+                ),
+                build_file,
+            )
+        root_token = _normalize_token(root.name)
+        prefix_token = _normalize_token(key_prefix)
+        if root_token and root_token not in prefix_token:
+            _add(
+                diags,
+                level,
+                "redis-key-prefix-missing-project-name",
+                (
+                    "context_store_key_prefix should contain project name token "
+                    f"('{root.name}') to avoid cross-project key pollution."
+                ),
+                build_file,
+            )
+
+    ttl = getattr(solver, "context_store_ttl_seconds", None)
+    if ttl is None:
+        _add(
+            diags,
+            "warn",
+            "redis-ttl-policy-implicit",
+            (
+                "Redis TTL policy is implicit (context_store_ttl_seconds=None). "
+                "Set an explicit value (seconds) or 0 for no-expire strategy."
+            ),
+            build_file,
+        )
+        return
+    try:
+        ttl_value = float(ttl)
+    except Exception:
+        _add(
+            diags,
+            level,
+            "redis-ttl-invalid",
+            f"context_store_ttl_seconds must be numeric or None; got: {ttl!r}",
+            build_file,
+        )
+        return
+    if 0.0 < ttl_value < _MIN_REDIS_TTL_SECONDS:
+        _add(
+            diags,
+            "warn",
+            "redis-ttl-too-small",
+            (
+                f"context_store_ttl_seconds={ttl_value:g}s may expire keys too early; "
+                f"recommended >= {_MIN_REDIS_TTL_SECONDS:g}s."
+            ),
+            build_file,
+        )
 
 
 def _collect_solver_components(solver: object) -> List[tuple[str, object]]:
@@ -505,6 +619,80 @@ def _check_process_like_bias_usage(
         ),
         build_file,
     )
+
+
+def _component_import_path(obj: object) -> str:
+    cls = getattr(obj, "__class__", None)
+    if cls is None:
+        return ""
+    module = str(getattr(cls, "__module__", "") or "").strip()
+    name = str(getattr(cls, "__name__", "") or "").strip()
+    if not module or not name:
+        return ""
+    return f"{module}:{name}"
+
+
+def _check_component_catalog_registration(
+    *,
+    root: Path,
+    solver: object,
+    build_file: Path,
+    diags: List[DoctorDiagnostic],
+    strict: bool,
+) -> None:
+    try:
+        framework_entries = list(get_catalog().list())
+    except Exception as exc:
+        _add(diags, "warn", "catalog-check-failed", f"Global catalog load failed: {exc}", build_file)
+        return
+
+    framework_paths = {str(getattr(e, "import_path", "") or "") for e in framework_entries}
+    local_paths: set[str] = set()
+    try:
+        # Keep loading to ensure project registry itself is healthy when present.
+        local_entries = list(load_project_entries(root))
+        local_paths = {str(getattr(e, "import_path", "") or "") for e in local_entries}
+    except Exception:
+        # Project registry may be intentionally absent outside scaffold projects.
+        local_paths = set()
+
+    missing_framework: List[str] = []
+    unregistered_project: List[str] = []
+    for comp_name, comp_obj in _collect_solver_components(solver) + _collect_bias_instances(solver):
+        import_path = _component_import_path(comp_obj)
+        if not import_path:
+            continue
+        if import_path.startswith("nsgablack."):
+            if import_path not in framework_paths:
+                missing_framework.append(f"{comp_name} -> {import_path}")
+        else:
+            if import_path not in local_paths:
+                unregistered_project.append(f"{comp_name} -> {import_path}")
+
+    if missing_framework:
+        _add(
+            diags,
+            "error" if strict else "warn",
+            "framework-component-not-in-catalog",
+            (
+                "Framework components used by build_solver are missing in global catalog: "
+                + ", ".join(missing_framework[:10])
+                + (" ..." if len(missing_framework) > 10 else "")
+            ),
+            build_file,
+        )
+    if unregistered_project:
+        _add(
+            diags,
+            "info",
+            "project-component-unregistered",
+            (
+                "Detected project components not registered in project catalog: "
+                + ", ".join(unregistered_project[:10])
+                + (" ..." if len(unregistered_project) > 10 else "")
+            ),
+            build_file,
+        )
 
 
 def _check_adapter_layer_purity(root: Path, diags: List[DoctorDiagnostic], strict: bool) -> None:

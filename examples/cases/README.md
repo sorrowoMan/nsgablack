@@ -7,3 +7,4 @@
 Purpose: runnable real-world case demos.
 Boundary: demo only.
 Example: production scheduling case.
+Example: supply_adjustment_nested (outer optimization + inner evaluation model).

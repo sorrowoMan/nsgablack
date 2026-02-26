@@ -118,6 +118,17 @@ class AlgorithmAdapter(ABC):
         _ = self.validate_population_snapshot(population, objectives, violations)
         return False
 
+    @staticmethod
+    def coerce_candidates(value: Any) -> List[Any]:
+        """Normalize propose() output without relying on ambiguous truthiness."""
+        if value is None:
+            return []
+        if isinstance(value, np.ndarray):
+            if value.ndim <= 1:
+                return [value]
+            return [np.asarray(row) for row in value]
+        return list(value)
+
     def get_context_contract(self) -> Dict[str, Any]:
         requires = list(getattr(self, "context_requires", ()) or ())
         provides = list(getattr(self, "context_provides", ()) or ())
@@ -193,7 +204,7 @@ class CompositeAdapter(AlgorithmAdapter):
         self._last_ranges = []
         for adapter in self.adapters:
             start = len(candidates)
-            proposed = list(adapter.propose(solver, context) or [])
+            proposed = self.coerce_candidates(adapter.propose(solver, context))
             candidates.extend(proposed)
             end = len(candidates)
             self._last_ranges.append((adapter, start, end))

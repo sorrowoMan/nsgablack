@@ -104,7 +104,7 @@ class RoleAdapter(AlgorithmAdapter):
         ctx = dict(context)
         ctx[KEY_ROLE] = self.role
         ctx[KEY_ROLE_ADAPTER] = self.name
-        proposed = list(self.inner.propose(solver, ctx) or [])
+        proposed = self.coerce_candidates(self.inner.propose(solver, ctx))
         if self.max_candidates is not None:
             proposed = proposed[: int(self.max_candidates)]
         return proposed
@@ -292,7 +292,7 @@ class MultiRoleControllerAdapter(AlgorithmAdapter):
             ctx = dict(context)
             ctx[KEY_ROLE] = role.role
             ctx[KEY_ROLE_INDEX] = idx
-            proposed = list(role.propose(solver, ctx) or [])
+            proposed = self.coerce_candidates(role.propose(solver, ctx))
             candidates.extend(proposed)
             end = len(candidates)
             self._last_ranges.append((role, start, end))

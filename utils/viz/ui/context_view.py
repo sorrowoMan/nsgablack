@@ -157,20 +157,27 @@ class ContextView:
         self._runtime_writers, self._component_contracts = runtime_writers, contracts
         self._missing_requires_by_component = self._collect_missing_requires(solver, ctx)
 
-        for child in self.tree.get_children():
-            self.tree.delete(child)
         lifecycle = get_context_lifecycle(ctx)
         keys = set(str(k) for k in ctx.keys())
         if self.show_declared_var.get():
             keys.update(declared_writers.keys())
             keys.update(declared_readers.keys())
+        row_payloads: Dict[str, Tuple[str, str, str, str, str]] = {}
         for key in sorted(keys):
             in_ctx = key in ctx
             category = lifecycle.get(key, "custom") if in_ctx else "declared"
             replayable = "-" if category == "declared" else ("no" if category == "cache" else "yes")
             if self.only_replayable_var.get() and replayable != "yes":
                 continue
-            self.tree.insert("", "end", values=(key, category, replayable, self._fmt_list(declared_writers.get(key, [])), runtime_writers.get(key, "(none)" if in_ctx else "(not in current context)")))
+            iid = f"key::{key}"
+            row_payloads[iid] = (
+                key,
+                category,
+                replayable,
+                self._fmt_list(declared_writers.get(key, [])),
+                runtime_writers.get(key, "(none)" if in_ctx else "(not in current context)"),
+            )
+        self._reconcile_key_rows(row_payloads)
 
         self.replayable_var.set(f"Replayable: {'yes' if is_replayable_context(ctx) else 'no'}")
         counts: Dict[str, int] = {}
@@ -183,6 +190,20 @@ class ContextView:
         self.alignment_var.set("Contract alignment: OK" if miss_comp == 0 else f"Contract alignment: MISSING ({miss_comp} components / {miss_fields} fields)")
         self._set_error("")
         self._set_selected_key(self._selected_key)
+
+    def _reconcile_key_rows(self, row_payloads: Dict[str, Tuple[str, str, str, str, str]]) -> None:
+        existing = set(self.tree.get_children(""))
+        expected = set(row_payloads.keys())
+        for iid in sorted(existing - expected):
+            self.tree.delete(iid)
+        for iid, values in row_payloads.items():
+            if self.tree.exists(iid):
+                current = tuple(self.tree.item(iid).get("values") or ())
+                if current != values:
+                    self.tree.item(iid, values=values)
+                self.tree.move(iid, "", "end")
+            else:
+                self.tree.insert("", "end", iid=iid, values=values)
 
     def show_replay_keys(self) -> None:
         solver = getattr(self.app, "solver", None)

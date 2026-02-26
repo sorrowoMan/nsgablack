@@ -170,7 +170,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             local_ctx["strategy"] = strategy_name
             local_ctx["step"] = int(self._step)
 
-            proposed = list(spec.adapter.propose(solver, local_ctx) or [])
+            proposed = self.coerce_candidates(spec.adapter.propose(solver, local_ctx))
             if not proposed:
                 proposed = [solver.init_candidate(local_ctx)]
 

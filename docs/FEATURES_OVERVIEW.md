@@ -24,6 +24,26 @@
 
 ---
 
+## 2.1 深度（嵌套）与广度（协同）工作流
+
+- **深度（Depth）**：支持 L1/L2/L3 嵌套评估链路
+  - `InnerSolverPlugin`：外层评估触发内层求解
+  - `ContractBridgePlugin`：内层字段桥接回目标层 context（可 L3 直写 L1）
+  - `TimeoutBudgetPlugin`：内层预算门禁（调用次数/总耗时）
+  - `NewtonSolverPlugin` / `BroydenSolverPlugin`：内层数值求解工具
+- **广度（Breadth）**：支持同层多策略并行协作
+  - `MultiStrategyControllerAdapter` + role adapters
+  - Bias 组合（业务偏好 + 算法偏好）
+  - Plugin 组合（缓存/容错/报告/审计）
+
+推荐阅读：
+- `docs/user_guide/DEPTH_BREADTH_WORKFLOW.md`
+- `docs/user_guide/INNER_SOLVER_BACKENDS.md`
+- `docs/user_guide/NUMERICAL_SOLVER_PLUGINS.md`
+- `examples/nested_three_layer_demo.py`
+
+---
+
 ## 3. 运行前/运行中/运行后闭环
 
 - **Run Inspector（Tk）**：运行前审查 wiring，开关偏置/管线/插件
@@ -77,6 +97,8 @@
 - 端到端 workflow 示例
 - 鲁棒性评估示例（MonteCarlo + DP）
 - 生产调度案例
+- GPU + Ray + MySQL 一体示例：`examples/gpu_ray_mysql_stack_demo.py`
+  - 说明文档：`docs/user_guide/GPU_RAY_MYSQL_STACK_DEMO.md`
 
 ---
 
@@ -88,6 +110,10 @@
 - Catalog：
   - `python -m nsgablack catalog search <query>`
   - `python -m nsgablack catalog show <key>`
+
+补充入口（深度/广度）：
+- 三层示例说明：`examples/nested_three_layer_demo.md`
+- Run Inspector 指南：`docs/user_guide/RUN_INSPECTOR.md`
 
 ---
 

@@ -66,7 +66,7 @@ class DiversityBias(AlgorithmicBias):
         # 计算与种群中其他个体的最小距离
         distances = self._calculate_distances(x, context.population)
 
-        if distances:
+        if len(distances) > 0:
             min_dist = min(distances)
             # 距离越大，多样性越好
             diversity_value = min_dist
@@ -219,7 +219,7 @@ class AdaptiveDiversityBias(AlgorithmicBias):
             最小距离
         """
         distances = [np.linalg.norm(x - other) for other in population if not np.array_equal(x, other)]
-        return min(distances) if distances else 0.0
+        return min(distances) if len(distances) > 0 else 0.0
 
 
 class NicheDiversityBias(AlgorithmicBias):

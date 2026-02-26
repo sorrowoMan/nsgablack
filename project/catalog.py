@@ -10,7 +10,7 @@ import importlib.util
 import sys
 
 from ..catalog import get_catalog
-from ..catalog.registry import Catalog, CatalogEntry
+from ..catalog.registry import Catalog, CatalogEntry, _parse_entries_from_toml
 from ..catalog.usage import enrich_usage_contracts
 
 try:  # py>=3.11
@@ -82,47 +82,26 @@ def _normalize_project_entries(entries: Iterable[CatalogEntry]) -> List[CatalogE
 
 def _load_project_toml_entries(project_root: Path) -> List[CatalogEntry]:
     """
-    Load project-local entries from <project_root>/catalog/entries.toml.
+    Load project-local entries from:
+    - <project_root>/catalog/entries.toml
+    - <project_root>/catalog/entries/*.toml
+
     This is used by UI register flow and merged with project_registry entries.
     """
-    toml_path = project_root / "catalog" / "entries.toml"
-    if not toml_path.is_file():
-        return []
     if _toml is None:
         return []
-    try:
-        data = _toml.loads(toml_path.read_text(encoding="utf-8"))
-    except Exception:
-        return []
-
     out: List[CatalogEntry] = []
-    for item in data.get("entry", []):
-        if not isinstance(item, dict):
-            continue
+    catalog_dir = project_root / "catalog"
+    paths: List[Path] = []
+    legacy = catalog_dir / "entries.toml"
+    if legacy.is_file():
+        paths.append(legacy)
+    entries_dir = catalog_dir / "entries"
+    if entries_dir.is_dir():
+        paths.extend(sorted(entries_dir.glob("*.toml")))
+    for path in paths:
         try:
-            out.append(
-                CatalogEntry(
-                    key=str(item.get("key", "")).strip(),
-                    title=str(item.get("title", "")).strip(),
-                    kind=str(item.get("kind", "")).strip().lower(),
-                    import_path=str(item.get("import_path", "")).strip(),
-                    tags=tuple(str(x).strip() for x in item.get("tags", ()) if str(x).strip()),
-                    summary=str(item.get("summary", "")).strip(),
-                    companions=tuple(str(x).strip() for x in item.get("companions", ()) if str(x).strip()),
-                    context_requires=tuple(str(x).strip() for x in item.get("context_requires", ()) if str(x).strip()),
-                    context_provides=tuple(str(x).strip() for x in item.get("context_provides", ()) if str(x).strip()),
-                    context_mutates=tuple(str(x).strip() for x in item.get("context_mutates", ()) if str(x).strip()),
-                    context_cache=tuple(str(x).strip() for x in item.get("context_cache", ()) if str(x).strip()),
-                    context_notes=tuple(str(x).strip() for x in item.get("context_notes", ()) if str(x).strip()),
-                    use_when=tuple(str(x).strip() for x in item.get("use_when", ()) if str(x).strip()),
-                    minimal_wiring=tuple(str(x).strip() for x in item.get("minimal_wiring", ()) if str(x).strip()),
-                    required_companions=tuple(
-                        str(x).strip() for x in item.get("required_companions", ()) if str(x).strip()
-                    ),
-                    config_keys=tuple(str(x).strip() for x in item.get("config_keys", ()) if str(x).strip()),
-                    example_entry=str(item.get("example_entry", "")).strip(),
-                )
-            )
+            out.extend(_parse_entries_from_toml(path))
         except Exception:
             continue
     return [e for e in out if e.key and e.kind and e.import_path]

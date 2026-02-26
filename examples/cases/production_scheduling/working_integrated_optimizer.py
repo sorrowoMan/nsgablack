@@ -7,13 +7,22 @@ This script is a real-world application of NSGABlack's decomposition:
 - BiasModule: soft preferences and engineering guidance (optional).
 - Solver/Adapter: choose either the stable NSGA-II base, or a composable
   multi-strategy controller ("multi-agent" as cooperating strategies).
+
+
+  
+python examples/cases/production_scheduling/working_integrated_optimizer.py `
+  --parallel --parallel-backend thread --parallel-workers 12 `
+  --parallel-thread-bias-isolation disable_cache  
+
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import random
+import re
 import sys
 import time
 from pathlib import Path
@@ -43,17 +52,12 @@ from nsgablack.core.adapters import (  # noqa: E402
     VNSAdapter,
     VNSConfig,
 )
-from nsgablack.plugins import (  # noqa: E402
-    ParetoArchivePlugin,
-    BenchmarkHarnessPlugin,
-    BenchmarkHarnessConfig,
-    ModuleReportPlugin,
-    ModuleReportConfig,
-    ProfilerPlugin,
-    ProfilerConfig,
-)
+from nsgablack.plugins import ParetoArchivePlugin  # noqa: E402
+from nsgablack.utils.suites import attach_default_observability_plugins  # noqa: E402
 from nsgablack.utils.parallel import with_parallel_evaluation  # noqa: E402
 from nsgablack.utils.viz import launch_from_builder  # noqa: E402
+from nsgablack.utils.context.context_keys import KEY_STEP  # noqa: E402
+from nsgablack.utils.extension_contracts import normalize_candidates, stack_population  # noqa: E402
 
 from refactor_bias import build_production_bias_module
 from refactor_data import load_production_data
@@ -62,6 +66,120 @@ from refactor_problem import ProductionConstraints, ProductionSchedulingProblem
 
 
 _PROBLEM_FACTORY_CACHE = {}
+
+
+def _project_schedule_material_feasible(problem, schedule: np.ndarray) -> np.ndarray:
+    """Hard projection: enforce day-by-day material feasibility (shortage == 0)."""
+    sched = np.asarray(schedule, dtype=float).copy()
+    sched = np.clip(sched, 0.0, float(problem.constraints.max_production_per_machine))
+    machines, days = sched.shape
+    if machines != int(problem.machines) or days != int(problem.days):
+        return sched
+    bom = np.asarray(problem.data.bom_matrix, dtype=float)
+    supply = np.asarray(problem.data.supply_matrix, dtype=float)
+    current_stock = np.zeros(int(problem.materials), dtype=float)
+    for day in range(days):
+        current_stock += supply[:, day]
+        day_prod = sched[:, day].copy()
+        order = np.argsort(-day_prod)  # keep larger planned outputs first
+        for m in order:
+            prod = float(day_prod[m])
+            if prod <= 0.0:
+                continue
+            req = bom[m, :]
+            idx = req > 0
+            if not np.any(idx):
+                continue
+            feasible = float(np.min(current_stock[idx] / np.maximum(req[idx], 1e-12)))
+            if feasible < prod:
+                day_prod[m] = max(0.0, feasible)
+            consume = req * float(day_prod[m])
+            current_stock = np.maximum(0.0, current_stock - consume)
+        sched[:, day] = day_prod
+    return sched
+
+
+def _project_candidate_material_feasible(problem, x: np.ndarray) -> np.ndarray:
+    schedule = problem.decode_schedule(np.asarray(x, dtype=float))
+    projected = _project_schedule_material_feasible(problem, schedule)
+    return projected.reshape(-1)
+
+
+class StrictFeasibleProductionSolver(ComposableSolver):
+    """Composable solver with hard material-feasible filtering before adapter update."""
+
+    def __init__(self, *args, strict_constraint_tol: float = 1e-9, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.strict_constraint_tol = float(strict_constraint_tol)
+
+    def step(self) -> None:
+        if self.adapter is None:
+            return
+        context = self.build_context()
+        context[KEY_STEP] = self.generation
+        proposed = self.adapter.coerce_candidates(self.adapter.propose(self, context))
+        candidates = normalize_candidates(
+            proposed,
+            dimension=self.dimension,
+            owner=getattr(self.adapter, "name", "adapter"),
+        )
+        if len(candidates) > 0 and self.representation_pipeline is not None:
+            repair = getattr(self.representation_pipeline, "repair", None)
+            if repair is not None:
+                if hasattr(self.representation_pipeline, "repair_batch"):
+                    contexts = [context] * len(candidates)
+                    candidates = self.representation_pipeline.repair_batch(candidates, contexts=contexts)
+                else:
+                    candidates = [self.repair_candidate(cand, context) for cand in candidates]
+        if candidates is None:
+            return
+        try:
+            candidate_count = len(candidates)
+        except Exception:
+            candidates = [candidates]  # type: ignore[list-item]
+            candidate_count = 1
+        if candidate_count <= 0:
+            return
+
+        # Step-2: strict projection after repair to ensure material feasibility.
+        candidates = [_project_candidate_material_feasible(self.problem, np.asarray(c, dtype=float)) for c in candidates]
+
+        population_all = stack_population(candidates, name="StrictFeasibleProductionSolver.population")
+        objectives_all, violations_all = self.evaluate_population(population_all)
+
+        # Step-1: hard filter infeasible candidates (all constraints).
+        selected_mask = np.ones(len(population_all), dtype=bool)
+        if violations_all is not None and len(violations_all) == len(population_all):
+            try:
+                vio = np.asarray(violations_all, dtype=float).reshape(len(population_all), -1)
+                finite_mask = np.all(np.isfinite(vio), axis=1)
+                feasible_mask = np.all(vio <= float(self.strict_constraint_tol), axis=1)
+                selected_mask = finite_mask & feasible_mask
+            except Exception:
+                selected_mask = np.ones(len(population_all), dtype=bool)
+        if np.any(selected_mask):
+            self.population = np.asarray(population_all[selected_mask], dtype=float)
+            self.objectives = np.asarray(objectives_all[selected_mask], dtype=float)
+            self.constraint_violations = np.asarray(violations_all[selected_mask], dtype=float)
+            strict_fallback = False
+        else:
+            self.population = population_all
+            self.objectives = objectives_all
+            self.constraint_violations = violations_all
+            strict_fallback = True
+
+        self.last_step_summary = self._summarize_step(self.objectives, self.constraint_violations)
+        self.last_step_summary["num_candidates_raw"] = int(len(population_all))
+        self.last_step_summary["num_candidates_feasible"] = int(len(self.population))
+        self.last_step_summary["strict_feasible_fallback"] = bool(strict_fallback)
+        self._update_best(self.population, self.objectives, self.constraint_violations)
+        self.adapter.update(
+            self,
+            self.population,
+            self.objectives,
+            self.constraint_violations,
+            context,
+        )
 
 
 class ProductionProblemFactory:
@@ -213,12 +331,117 @@ class ConsoleProgressPlugin:
                 if best is None:
                     print(f"[step {generation:04d}] elapsed={elapsed:8.1f}s  last_step={dt:6.2f}s  candidates={n}")
                 else:
+                    best_total_output = None
+                    best_constraint_violation = None
+                    try:
+                        bx = getattr(solver, "best_x", None)
+                        problem = getattr(solver, "problem", None)
+                        if bx is not None and problem is not None and hasattr(problem, "evaluate"):
+                            obj = np.asarray(problem.evaluate(np.asarray(bx, dtype=float)), dtype=float).reshape(-1)
+                            if obj.size >= 1 and np.isfinite(obj[0]):
+                                best_total_output = float(-obj[0])
+                            if hasattr(problem, "evaluate_constraints"):
+                                cons = np.asarray(problem.evaluate_constraints(np.asarray(bx, dtype=float)), dtype=float).reshape(-1)
+                                if cons.size == 0:
+                                    best_constraint_violation = 0.0
+                                else:
+                                    finite = cons[np.isfinite(cons)]
+                                    if finite.size > 0:
+                                        best_constraint_violation = float(np.max(np.maximum(0.0, finite)))
+                    except Exception:
+                        best_total_output = None
+                        best_constraint_violation = None
+
+                    out_str = (
+                        f"{best_total_output:.6g}" if isinstance(best_total_output, (float, int)) else "n/a"
+                    )
+                    vio_str = (
+                        f"{best_constraint_violation:.6g}"
+                        if isinstance(best_constraint_violation, (float, int))
+                        else "n/a"
+                    )
                     print(
                         f"[step {generation:04d}] elapsed={elapsed:8.1f}s  last_step={dt:6.2f}s  "
-                        f"candidates={n}  best_score={best:.6g}"
+                        f"candidates={n}  best_score={best:.6g}  "
+                        f"best_total_output={out_str}  best_constraint_violation={vio_str}"
                     )
 
         self._plugin = _Impl(report_every=report_every)
+
+    def __getattr__(self, name):
+        return getattr(self._plugin, name)
+
+
+class ProductionExportPlugin:
+    """Export best schedules and Pareto batch at solver finish (UI/CLI consistent)."""
+
+    def __init__(self, problem, args) -> None:
+        from nsgablack.plugins import Plugin
+
+        class _Impl(Plugin):
+            context_requires = ()
+            context_provides = ()
+            context_mutates = ()
+            context_cache = ()
+            context_notes = (
+                "Exports production schedules at run end; does not mutate solver context.",
+            )
+
+            def __init__(self, problem, args):
+                super().__init__(name="production_export")
+                self.problem = problem
+                self.args = args
+
+            def on_solver_finish(self, _result):
+                if bool(getattr(self.args, "no_export", False)):
+                    return
+                solver = getattr(self, "solver", None)
+                if solver is None:
+                    return
+                individuals, objectives = _extract_pareto(solver)
+                if individuals is None or objectives is None:
+                    return
+                choices = _choose_pareto_solutions(self.problem, individuals, objectives)
+                base_export = Path(self.args.export) if getattr(self.args, "export", None) else None
+                supply_path = getattr(getattr(self.problem, "data", None), "supply_path", None)
+                supply_tag = _supply_tag_from_path(supply_path)
+                for label, chosen, _obj in choices:
+                    schedule = self.problem.decode_schedule(chosen)
+                    schedule = _project_schedule_material_feasible(self.problem, schedule)
+                    export_path = _resolve_export_path(base_export, label, supply_tag=supply_tag)
+                    _export_schedule(export_path, schedule)
+                    cons = self.problem.evaluate_constraints(schedule.reshape(-1))
+                    cons_arr = np.asarray(cons, dtype=float).reshape(-1)
+                    is_feasible = bool(np.all(cons_arr <= 1e-9))
+                    total_output = float(np.sum(schedule))
+                    _write_export_summary(
+                        export_path=export_path,
+                        label=label,
+                        supply_path=(str(supply_path) if supply_path is not None else "(unknown)"),
+                        feasible=is_feasible,
+                        constraints=cons_arr.tolist(),
+                        total_output=total_output,
+                        days=int(schedule.shape[1]),
+                    )
+                    print(
+                        f"[export] saved {label}: {export_path} "
+                        f"feasible={is_feasible} total_output={total_output:.6g} "
+                        f"supply={supply_path if supply_path is not None else '(unknown)'}"
+                    )
+                limit = int(getattr(self.args, "pareto_export", -1))
+                if limit != 0:
+                    exported = _export_pareto_batch(
+                        self.problem,
+                        individuals,
+                        objectives,
+                        base_export,
+                        mode=str(getattr(self.args, "pareto_export_mode", "crowding")),
+                        limit=limit,
+                    )
+                    if exported:
+                        print(f"[export] Pareto batch exported: {exported}")
+
+        self._plugin = _Impl(problem, args)
 
     def __getattr__(self, name):
         return getattr(self._plugin, name)
@@ -296,7 +519,7 @@ def _resolve_pareto_export_root(base: Optional[Path]) -> Path:
     if base is None:
         base_dir = Path(__file__).resolve().parents[1]
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        root = base_dir / f"生产调度结果_pareto_{ts}"
+        root = base_dir / f"integrated_result_pareto_{ts}"
     elif base.suffix:
         root = base.with_name(f"{base.stem}_pareto")
     else:
@@ -343,11 +566,13 @@ def _export_pareto_batch(
     for rank, idx in enumerate(selected, start=1):
         label = f"pareto{rank:02d}"
         schedule = problem.decode_schedule(individuals[idx])
+        schedule = _project_schedule_material_feasible(problem, schedule)
+        obj_vals = problem.evaluate(schedule.reshape(-1))
         summary = problem.summarize_schedule(schedule)
         export_path = export_root / f"{label}{ext}"
         _export_schedule(export_path, schedule)
         row = {"label": label, "file": str(export_path)}
-        for j, value in enumerate(objectives[idx]):
+        for j, value in enumerate(obj_vals):
             row[f"obj{j}"] = float(value)
         row.update(summary)
         rows.append(row)
@@ -361,7 +586,7 @@ def _export_pareto_batch(
     return len(rows)
 
 
-def _default_export_path(prefix: str = "生产调度结果", label: Optional[str] = None) -> Path:
+def _default_export_path(prefix: str = "integrated_result", label: Optional[str] = None) -> Path:
     base_dir = Path(__file__).resolve().parents[1]
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     if label:
@@ -369,12 +594,56 @@ def _default_export_path(prefix: str = "生产调度结果", label: Optional[str
     return base_dir / f"{prefix}_{ts}.xlsx"
 
 
-def _resolve_export_path(base: Optional[Path], label: str) -> Path:
+def _resolve_export_path(base: Optional[Path], label: str, supply_tag: Optional[str] = None) -> Path:
+    suffix = f"_{supply_tag}" if supply_tag else ""
     if base is None:
-        return _default_export_path(label=label)
+        p = _default_export_path(label=label)
+        if suffix:
+            return p.with_name(f"{p.stem}{suffix}{p.suffix}")
+        return p
     if base.suffix:
-        return base.with_name(f"{base.stem}_{label}{base.suffix}")
-    return base / _default_export_path(label=label).name
+        return base.with_name(f"{base.stem}_{label}{suffix}{base.suffix}")
+    p = _default_export_path(label=label)
+    name = f"{p.stem}{suffix}{p.suffix}" if suffix else p.name
+    return base / name
+
+
+def _supply_tag_from_path(path: Optional[Path | str]) -> Optional[str]:
+    if path is None:
+        return None
+    try:
+        stem = Path(path).stem
+    except Exception:
+        return None
+    # Keep filename safe and short to avoid unwieldy paths.
+    tag = re.sub(r"[^A-Za-z0-9_-]+", "_", str(stem)).strip("_")
+    if not tag:
+        return None
+    return f"src-{tag[:28]}"
+
+
+def _write_export_summary(
+    *,
+    export_path: Path,
+    label: str,
+    supply_path: str,
+    feasible: bool,
+    constraints: list[float],
+    total_output: float,
+    days: int,
+) -> None:
+    summary_path = export_path.with_suffix(".summary.json")
+    payload = {
+        "label": str(label),
+        "export_file": str(export_path),
+        "supply_path": str(supply_path),
+        "feasible": bool(feasible),
+        "constraints": [float(x) for x in constraints],
+        "max_violation": float(max([0.0] + [max(0.0, float(v)) for v in constraints])),
+        "total_output": float(total_output),
+        "days": int(days),
+    }
+    summary_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _export_schedule(path: Path, schedule: np.ndarray) -> None:
@@ -386,15 +655,15 @@ def _export_schedule(path: Path, schedule: np.ndarray) -> None:
 
     data = {
         "Day_Index": list(range(days)),
-        "Date": [f"?{day}?" for day in range(days)],
+        "Date": [f"Day{day + 1}" for day in range(days)],
     }
     for m in range(machines):
-        data[f"机种{m}"] = schedule[m, :].tolist()
+        data[f"Machine{m}"] = schedule[m, :].tolist()
 
     df = pd.DataFrame(data)
     if path.suffix.lower() == ".xlsx":
         # Keep a stable sheet name for downstream visualization scripts.
-        df.to_excel(path, index=False, sheet_name="生产计划")
+        df.to_excel(path, index=False, sheet_name="production_plan")
     else:
         df.to_csv(path, index=False)
 
@@ -574,7 +843,8 @@ def build_multi_agent_solver(problem, args):
 
     controller = MultiStrategyControllerAdapter(roles=roles, config=cfg)
 
-    SolverClass = with_parallel_evaluation(ComposableSolver)
+    base_solver_cls = ComposableSolver if bool(getattr(args, "allow_infeasible_update", False)) else StrictFeasibleProductionSolver
+    SolverClass = with_parallel_evaluation(base_solver_cls)
     factory = (
         _build_problem_factory(args)
         if args.parallel and args.parallel_backend in ("process", "ray")
@@ -592,6 +862,7 @@ def build_multi_agent_solver(problem, args):
         parallel_verbose=bool(args.parallel_verbose),
         parallel_precheck=not bool(args.parallel_no_precheck),
         parallel_strict=bool(args.parallel_strict),
+        parallel_thread_bias_isolation=str(args.parallel_thread_bias_isolation),
         parallel_problem_factory=factory,
     )
     if not bool(getattr(args, "no_run_logs", False)):
@@ -600,41 +871,25 @@ def build_multi_agent_solver(problem, args):
         run_id = str(args.run_id) if getattr(args, "run_id", None) else datetime.now().strftime("%Y%m%d_%H%M%S")
         run_dir = run_dir.expanduser().resolve()
         run_dir.mkdir(parents=True, exist_ok=True)
-        solver.add_plugin(
-            BenchmarkHarnessPlugin(
-                config=BenchmarkHarnessConfig(
-                    output_dir=str(run_dir),
-                    run_id=str(run_id),
-                    seed=None if args.seed is None else int(args.seed),
-                    log_every=int(getattr(args, "log_every", 1) or 1),
-                    flush_every=10,
-                    overwrite=True,
-                )
-            )
+        attach_default_observability_plugins(
+            solver,
+            output_dir=str(run_dir),
+            run_id=str(run_id),
+            overwrite=True,
+            enable_pareto_archive=False,
+            enable_benchmark=True,
+            benchmark_log_every=int(getattr(args, "log_every", 1) or 1),
+            benchmark_flush_every=10,
+            enable_module_report=True,
+            write_bias_markdown=not bool(getattr(args, "no_bias_md", False)),
+            enable_profiler=not bool(getattr(args, "no_profile", False)),
+            enable_decision_trace=not bool(getattr(args, "no_decision_trace", False)),
+            decision_trace_flush_every=max(1, int(getattr(args, "decision_trace_flush_every", 1))),
         )
-        solver.add_plugin(
-            ModuleReportPlugin(
-                config=ModuleReportConfig(
-                    output_dir=str(run_dir),
-                    run_id=str(run_id),
-                    write_bias_markdown=not bool(getattr(args, "no_bias_md", False)),
-                )
-            )
-        )
-        if not bool(getattr(args, "no_profile", False)):
-            solver.add_plugin(
-                ProfilerPlugin(
-                    config=ProfilerConfig(
-                        output_dir=str(run_dir),
-                        run_id=str(run_id),
-                        overwrite=True,
-                        flush_every=0,
-                    )
-                )
-            )
         print(f"[run] logs_dir={run_dir} run_id={run_id}")
     solver.add_plugin(ParetoArchivePlugin())
     solver.add_plugin(ConsoleProgressPlugin(report_every=args.report_every))
+    solver.add_plugin(ProductionExportPlugin(problem, args))
     solver.set_max_steps(int(args.generations))
     return solver
 
@@ -651,31 +906,8 @@ def run_multi_agent(problem, args):
     individuals, objectives = _extract_pareto(solver)
     print(f"Pareto size: {0 if individuals is None else len(individuals)}")
     choices = _choose_pareto_solutions(problem, individuals, objectives) if individuals is not None else []
-    if choices and (not bool(getattr(args, "no_export", False))):
-        base_export = Path(args.export) if args.export else None
-        for label, chosen, obj in choices:
-            schedule = problem.decode_schedule(chosen)
-            summary = problem.summarize_schedule(schedule)
-            print(f"Best ({'lowest penalty' if label == 'penalty' else 'highest production'}):")
-            print(f"  objectives: {obj}")
-            for key, value in summary.items():
-                print(f"  {key}: {value:.4f}")
-            export_path = _resolve_export_path(base_export, label)
-            _export_schedule(export_path, schedule)
-            print(f"Saved schedule to: {export_path}")
-
-    if (not bool(getattr(args, "no_export", False))) and args.pareto_export != 0 and individuals is not None:
-        base_export = Path(args.export) if args.export else None
-        exported = _export_pareto_batch(
-            problem,
-            individuals,
-            objectives,
-            base_export,
-            mode=args.pareto_export_mode,
-            limit=args.pareto_export,
-        )
-        if exported:
-            print(f"Exported {exported} Pareto schedules.")
+    if choices:
+        print(f"Selected key Pareto candidates: {len(choices)} (export handled by production_export plugin)")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -690,7 +922,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-machines", type=int, default=8)
     parser.add_argument("--min-machines", type=int, default=5)
     parser.add_argument("--min-prod", type=int, default=50)
-    parser.add_argument("--max-prod", type=int, default=3000)
+    parser.add_argument("--max-prod", type=int, default=10000)
     parser.add_argument("--shortage-unit-penalty", type=float, default=1.0)
     parser.add_argument(
         "--penalty-objective",
@@ -704,7 +936,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Scale for penalty objective when enabled.",
     )
     parser.add_argument("--pop-size", type=int, default=200)
-    parser.add_argument("--generations", type=int, default=50)
+    parser.add_argument("--generations", type=int, default=30)
     parser.add_argument("--crossover-rate", type=float, default=0.85)
     parser.add_argument("--mutation-rate", type=float, default=0.15)
     parser.add_argument("--report-every", type=int, default=10)
@@ -714,6 +946,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-bias-md", action="store_true", help="Disable writing bias.md in module report.")
     parser.add_argument("--no-run-logs", action="store_true", help="Disable automatic benchmark/module reports.")
     parser.add_argument("--no-profile", action="store_true", help="Disable ProfilerPlugin output in run logs.")
+    parser.add_argument(
+        "--no-decision-trace",
+        action="store_true",
+        help="Disable DecisionTracePlugin output in run logs.",
+    )
+    parser.add_argument(
+        "--decision-trace-flush-every",
+        type=int,
+        default=1,
+        help="Decision trace summary flush interval (generations).",
+    )
     parser.add_argument("--no-export", action="store_true", help="Disable exporting schedules (no Excel/CSV output).")
     parser.add_argument("--comm-interval", type=int, default=5)
     parser.add_argument("--adapt-interval", type=int, default=20)
@@ -723,7 +966,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="moead",
         help="Explorer role adapter: moead (default) or random search.",
     )
-    parser.add_argument("--vns-batch-size", type=int, default=96, help="VNS candidates per step.")
+    parser.add_argument("--vns-batch-size", type=int, default=48, help="VNS candidates per step.")
     parser.add_argument("--vns-k-max", type=int, default=4, help="VNS neighborhood depth.")
     parser.add_argument("--vns-base-sigma", type=float, default=0.2, help="VNS initial mutation sigma.")
     parser.add_argument(
@@ -732,7 +975,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="vns",
         help="Exploiter role adapter: vns (default) or local search.",
     )
-    parser.add_argument("--moead-pop-size", type=int, default=96, help="MOEA/D subproblem population size.")
+    parser.add_argument("--moead-pop-size", type=int, default=48, help="MOEA/D subproblem population size.")
     parser.add_argument("--moead-neighborhood", type=int, default=20, help="MOEA/D neighborhood size.")
     parser.add_argument("--moead-delta", type=float, default=0.9, help="MOEA/D neighbor sampling probability.")
     parser.add_argument("--moead-nr", type=int, default=2, help="MOEA/D max replacements per offspring.")
@@ -752,6 +995,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable picklability precheck/fallback for process backend.",
     )
     parser.add_argument("--parallel-strict", action="store_true", help="Strict mode: do not fallback on parallel errors.")
+    parser.add_argument(
+        "--parallel-thread-bias-isolation",
+        choices=["deepcopy", "disable_cache", "off"],
+        default="deepcopy",
+        help="Thread backend bias isolation strategy (deepcopy recommended).",
+    )
+    parser.add_argument(
+        "--allow-infeasible-update",
+        action="store_true",
+        help="Disable strict material-feasible candidate filtering before adapter update.",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--no-bias", action="store_true")
     parser.add_argument(
@@ -854,6 +1108,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _build_solver_from_args(args) -> ComposableSolver:
+    if int(getattr(args, "days", 31)) != 31:
+        print(f"[run] override --days={args.days} ignored; enforcing 31-day window (day0..30).")
+    args.days = 31
     problem = _build_problem(args)
     return build_multi_agent_solver(problem, args)
 
@@ -891,11 +1148,15 @@ def main(args=None):
         # Leave some cores for OS / IO; cap to avoid excessive memory pressure.
         args.parallel_workers = max(4, min(cpu - 2, 12))
 
+    if int(getattr(args, "days", 31)) != 31:
+        print(f"[run] override --days={args.days} ignored; enforcing 31-day window (day0..30).")
+    args.days = 31
     print(
         "[run] solver=multi-agent "
         f"parallel={bool(args.parallel)} backend={args.parallel_backend} workers={args.parallel_workers} "
-        f"generations={args.generations} pop_size={args.pop_size}"
+        f"generations={args.generations} pop_size={args.pop_size} days=31"
     )
+    print("[run] production_window=day0..30 (inclusive)")
     if bool(args.parallel) and args.parallel_backend == "process":
         print("[run] Note: first parallel step may be slow on Windows due to process spawn + warmup.")
     if bool(args.parallel) and args.parallel_backend == "ray":

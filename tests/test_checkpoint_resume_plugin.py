@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 
 def _build_composable_solver(sample_problem):
     from nsgablack.core.adapters import SAConfig, SimulatedAnnealingAdapter
@@ -258,3 +260,77 @@ def test_checkpoint_resume_allows_unsigned_when_explicitly_unsafe(sample_problem
         assert plugin_b.resume("latest") is True
     finally:
         os.environ.pop("NSGABLACK_CHECKPOINT_HMAC_KEY", None)
+
+
+def test_checkpoint_strict_requires_hmac_and_forbids_unsafe(sample_problem, tmp_path: Path):
+    from nsgablack.core.solver import BlackBoxSolverNSGAII
+    from nsgablack.plugins import CheckpointResumeConfig, CheckpointResumePlugin
+
+    checkpoint_dir = tmp_path / "strict_ckpt"
+    os.environ.pop("NSGABLACK_CHECKPOINT_HMAC_KEY", None)
+
+    solver = BlackBoxSolverNSGAII(sample_problem)
+    solver.pop_size = 8
+    solver.max_generations = 1
+    solver.enable_progress_log = False
+    plugin = CheckpointResumePlugin(
+        config=CheckpointResumeConfig(
+            checkpoint_dir=str(checkpoint_dir),
+            strict=True,
+            unsafe_allow_unsigned=False,
+        )
+    )
+    solver.add_plugin(plugin)
+    try:
+        plugin.save_checkpoint(reason="manual")
+    except ValueError as exc:
+        assert "strict checkpoint mode requires HMAC key" in str(exc)
+    else:
+        raise AssertionError("strict checkpoint save must require HMAC key")
+
+    os.environ["NSGABLACK_CHECKPOINT_HMAC_KEY"] = "unit-test-hmac-key"
+    try:
+        plugin_unsafe = CheckpointResumePlugin(
+            config=CheckpointResumeConfig(
+                checkpoint_dir=str(checkpoint_dir),
+                strict=True,
+                unsafe_allow_unsigned=True,
+            )
+        )
+        plugin_unsafe.attach(solver)
+        try:
+            plugin_unsafe.save_checkpoint(reason="manual")
+        except ValueError as exc:
+            assert "forbids unsafe_allow_unsigned=True" in str(exc)
+        else:
+            raise AssertionError("strict checkpoint must forbid unsafe_allow_unsigned=True")
+    finally:
+        os.environ.pop("NSGABLACK_CHECKPOINT_HMAC_KEY", None)
+
+
+def test_attach_checkpoint_resume_trust_checkpoint_maps_to_unsafe(sample_problem, tmp_path: Path):
+    from nsgablack.core.solver import BlackBoxSolverNSGAII
+    from nsgablack.utils.suites import attach_checkpoint_resume
+
+    solver = BlackBoxSolverNSGAII(sample_problem)
+    plugin = attach_checkpoint_resume(
+        solver,
+        checkpoint_dir=str(tmp_path / "suite_ckpt"),
+        strict=False,
+        trust_checkpoint=True,
+    )
+    assert bool(plugin.cfg.unsafe_allow_unsigned) is True
+
+
+def test_attach_checkpoint_resume_strict_conflicts_with_trust_checkpoint(sample_problem, tmp_path: Path):
+    from nsgablack.core.solver import BlackBoxSolverNSGAII
+    from nsgablack.utils.suites import attach_checkpoint_resume
+
+    solver = BlackBoxSolverNSGAII(sample_problem)
+    with pytest.raises(ValueError):
+        attach_checkpoint_resume(
+            solver,
+            checkpoint_dir=str(tmp_path / "suite_ckpt_conflict"),
+            strict=True,
+            trust_checkpoint=True,
+        )

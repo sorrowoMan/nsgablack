@@ -179,7 +179,7 @@ class GraphDegreeRepair(RepresentationComponentContract):
         for i in range(n):
             while degrees[i] < self.min_degree:
                 candidates = [j for j in range(n) if j != i and adj[i, j] == 0]
-                if not candidates:
+                if len(candidates) == 0:
                     break
                 j = int(self._rng.choice(candidates))
                 adj[i, j] = 1

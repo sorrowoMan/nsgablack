@@ -80,7 +80,7 @@ class NSGA3Adapter(NSGA2Adapter):
         while len(selected_local) < remain and available:
             niche = int(np.argmin(niche_count))
             candidates = [i for i in available if assoc[i] == niche]
-            if not candidates:
+            if len(candidates) == 0:
                 niche_count[niche] = np.iinfo(np.int32).max
                 continue
             if niche_count[niche] == 0:

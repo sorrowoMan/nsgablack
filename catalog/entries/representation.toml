@@ -1,0 +1,14 @@
+# Auto-generated from catalog/entries.toml
+# kind=representation count=1
+[[entry]]
+key = "representation.parallel_repair"
+title = "ParallelRepair"
+kind = "representation"
+import_path = "nsgablack.representation:ParallelRepair"
+tags = ["parallel", "pipeline", "repair"]
+summary = "表示组件：ParallelRepair。 / Representation: ParallelRepair."
+use_when = ["Need to wire representation initializer/mutator/repair behavior."]
+minimal_wiring = ["from nsgablack.representation import ParallelRepair", "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate."]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog search parallel_repair --kind example"

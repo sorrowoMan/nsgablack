@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 
 from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.utils.suites import attach_default_observability_plugins
 
 from bias.example_bias import build_bias_module
 from pipeline.example_pipeline import build_pipeline
@@ -21,6 +23,10 @@ def build_solver(argv: list[str] | None = None) -> BlackBoxSolverNSGAII:
     parser.add_argument("--enable-bias", action="store_true")
     parser.add_argument("--disable-heartbeat-plugin", action="store_true")
     parser.add_argument("--heartbeat-interval", type=int, default=10)
+    parser.add_argument("--run-id", type=str, default=None)
+    parser.add_argument("--run-dir", type=str, default="runs")
+    parser.add_argument("--no-decision-trace", action="store_true")
+    parser.add_argument("--no-profiler", action="store_true")
     args, _ = parser.parse_known_args(argv if argv is not None else [])
 
     problem = ExampleProblem(dimension=int(args.dimension))
@@ -35,6 +41,17 @@ def build_solver(argv: list[str] | None = None) -> BlackBoxSolverNSGAII:
     solver.enable_progress_log = True
     solver.report_interval = max(1, solver.max_generations // 10)
     solver.set_representation_pipeline(pipeline)
+    run_id = str(args.run_id) if args.run_id else datetime.now().strftime("%Y%m%d_%H%M%S")
+    attach_default_observability_plugins(
+        solver,
+        output_dir=str(args.run_dir),
+        run_id=run_id,
+        enable_pareto_archive=True,
+        enable_benchmark=True,
+        enable_module_report=True,
+        enable_profiler=not bool(args.no_profiler),
+        enable_decision_trace=not bool(args.no_decision_trace),
+    )
     if not bool(args.disable_heartbeat_plugin):
         solver.add_plugin(
             GenerationHeartbeatPlugin(

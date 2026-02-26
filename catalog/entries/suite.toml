@@ -1,0 +1,51 @@
+# Auto-generated from catalog/entries.toml
+# kind=suite count=4
+[[entry]]
+key = "suite.async_event_driven"
+title = "attach_async_event_driven"
+kind = "suite"
+import_path = "nsgablack.utils.suites:attach_async_event_driven"
+tags = ["async", "authority", "bundle", "event", "suite"]
+summary = "鏉冨▉瑁呴厤锛氬紓姝ヤ簨浠堕┍鍔ㄩ€傞厤鍣?+ 浜嬩欢涓灑 + 褰掓。銆?/ Authority wiring: async event adapter + event hub + archive."
+companions = ["adapter.async_event_driven", "plugin.async_event_hub", "plugin.pareto_archive"]
+use_when = ["[\"鎯冲揩閫熷惎鐢ㄤ簨浠堕┍鍔ㄧ紪鎺掑苟甯︿笂甯哥敤杩愯鎻掍欢鏃?]"]
+minimal_wiring = ["from nsgablack.utils.suites import attach_async_event_driven", "attach_async_event_driven(solver, strategies=[...])"]
+required_companions = ["adapter.async_event_driven"]
+config_keys = ["attach_async_hub", "attach_pareto_archive", "config", "async_hub_config"]
+example_entry = "examples/async_event_driven_demo.py:build_solver"
+
+[[entry]]
+key = "suite.single_trajectory_adaptive"
+title = "attach_single_trajectory_adaptive"
+kind = "suite"
+import_path = "nsgablack.utils.suites:attach_single_trajectory_adaptive"
+tags = ["adaptive", "authority", "bundle", "single_trajectory", "suite"]
+summary = "鏉冨▉瑁呴厤锛氬崟杞ㄨ抗鑷€傚簲鎼滅储閫傞厤鍣ㄣ€?/ Authority wiring: single-trajectory adaptive search adapter."
+companions = ["adapter.single_trajectory_adaptive"]
+use_when = ["甯屾湜蹇€熷惎鐢ㄥ崟杞ㄨ抗鑷€傚簲鎼滅储涓斾繚鎸佹爣鍑嗚閰嶆柟寮忔椂"]
+minimal_wiring = ["from nsgablack.utils.suites import attach_single_trajectory_adaptive", "attach_single_trajectory_adaptive(solver)"]
+required_companions = ["adapter.single_trajectory_adaptive"]
+config_keys = ["config"]
+example_entry = "examples/single_trajectory_adaptive_demo.py:build_solver"
+
+[[entry]]
+key = "suite.checkpoint_resume"
+title = "attach_checkpoint_resume"
+kind = "suite"
+import_path = "nsgablack.utils.suites:attach_checkpoint_resume"
+tags = ["authority", "bundle", "checkpoint", "recovery", "resume", "suite"]
+summary = "鏉冨▉瑁呴厤锛氭帴鍏?checkpoint/resume 鎻掍欢銆?/ Authority wiring: attach checkpoint/resume plugin."
+companions = ["plugin.checkpoint_resume"]
+use_when = ["甯屾湜蹇€熷惎鐢ㄧǔ瀹氱画璺戣兘鍔涘苟鍑忓皯鑴氭墜鏋朵唬鐮佹椂"]
+minimal_wiring = ["from nsgablack.utils.suites import attach_checkpoint_resume", "attach_checkpoint_resume(solver, auto_resume=True, save_every=10)"]
+required_companions = ["plugin.checkpoint_resume"]
+config_keys = ["checkpoint_dir", "file_prefix", "save_every", "keep_last", "auto_resume", "resume_from", "save_on_finish", "restore_plugin_state", "restore_rng_state", "strict", "hmac_env_var", "unsafe_allow_unsigned", "trusted_roots"]
+example_entry = "build_solver.py:build_solver"
+
+[[entry]]
+key = "suite.dynamic_switch"
+title = "attach_dynamic_switch"
+kind = "suite"
+import_path = "nsgablack.utils.suites.dynamic_switch:attach_dynamic_switch"
+tags = ["authority", "bundle", "dynamic", "suite", "switch"]
+summary = "鏉冨▉瑁呴厤锛氬姩鎬佸垏鎹㈡彃浠讹紝鐢ㄤ簬杩愯鏃剁瓥鐣?鏉冮噸鍒囨崲銆?/ Authority wiring: dynamic switch plugin for runtime strategy/weight switching."

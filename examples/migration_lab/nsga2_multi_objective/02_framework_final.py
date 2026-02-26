@@ -103,12 +103,12 @@ def run_framework(cfg: FrameworkNSGA2Config) -> None:
         return
 
     fronts, _ = FastNonDominatedSort.sort(objectives, violations)
-    front0 = fronts[0] if fronts else []
+    front0 = fronts[0] if len(fronts) > 0 else []
 
     print('[framework-nsga2] status:', result.get('status'))
     print('[framework-nsga2] steps:', result.get('steps'))
     print('[framework-nsga2] final front0 size:', len(front0))
-    if front0:
+    if len(front0) > 0:
         sample = objectives[int(front0[0])]
         print(f"[framework-nsga2] front sample objective: [{float(sample[0]):.4f}, {float(sample[1]):.4f}]")
 

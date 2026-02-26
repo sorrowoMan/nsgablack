@@ -87,3 +87,27 @@ python -m nsgablack catalog search plugin
 - 端到端流程：`WORKFLOW_END_TO_END.md`
 - Catalog/Suites：`docs/user_guide/catalog.md`
 - 解耦导读：`docs/guides/DECOUPLING_CAPABILITIES.md`
+
+## 7. OpenTelemetry tracing 插件（可选）
+
+用于把关键运行路径变成 trace span（`evaluate` / `adapter` / `plugin event`），快速定位慢点和失败链路。
+
+```python
+from nsgablack.plugins import OpenTelemetryTracingPlugin, OpenTelemetryTracingConfig
+
+solver.add_plugin(
+    OpenTelemetryTracingPlugin(
+        config=OpenTelemetryTracingConfig(
+            service_name="nsgablack-exp",
+            console_export=True,              # 本地调试
+            otlp_http_endpoint="",            # 例如 http://127.0.0.1:4318/v1/traces
+        )
+    )
+)
+```
+
+可检索：
+
+```powershell
+python -m nsgablack catalog show plugin.otel_tracing
+```

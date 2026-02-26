@@ -171,8 +171,8 @@ def build_solver():
     def should_switch(solver, context):
         # estimate diversity from population if available
         diversity = 0.0
-        pop = context.get("population") or []
-        if pop:
+        pop = context.get("population")
+        if pop is not None and len(pop) > 0:
             try:
                 arr = np.asarray(pop, dtype=float)
                 diversity = float(np.mean(np.std(arr, axis=0)))

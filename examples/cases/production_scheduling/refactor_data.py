@@ -43,18 +43,27 @@ DEFAULT_MACHINE_WEIGHTS = np.array(
 
 DEFAULT_BOM_CANDIDATES = (
     # Recommended canonical names (Windows-friendly)
+    "machine_material_mapping.csv",
     "BOM.csv",
     "BOM.xlsx",
     # Optional alternates / historical names
-    "machine_material_mapping.csv",
     "machine_material_mapping.xlsx",
 )
 
 DEFAULT_SUPPLY_CANDIDATES = (
     # Recommended canonical names (Windows-friendly)
+     "SUPPLY_adjusted_from_l1_20260226_174006.xlsx",
     "SUPPLY.xlsx",
-    # Optional alternates / historical names
+    "SUPPLY_adjusted_from_l1_20260226_174006.xlsx",
+    "SUPPLY_adjusted_from_l1_20260226_155747.xlsx",
+    "SUPPLY_adjusted_from_l1_20260226_153518.xlsx",
+    "SUPPLY_adjusted_from_l1_20260225_173227.xlsx",
+    
     "Adjusted_Supply_Plan_Rescheduled copy 4.xlsx",
+    "SUPPLY_adjusted_from_l1_20260225_173227.xlsx",
+    
+    # Optional alternates / historical names
+    
     "Adjusted_Supply_Plan_Optimized_20260107_212045.xlsx",
     "Adjusted_Supply_Plan_Optimized_20260107_021442.xlsx",
     "Adjusted_Supply_Plan_Enhanced.xlsx",
@@ -117,22 +126,43 @@ def _normalize_id(value: object, max_count: int) -> Optional[int]:
         idx = int(value)
     except Exception:
         return None
-    if 0 <= idx < max_count:
-        return idx
+    # Prefer 1-based IDs first (common in BOM/SUPPLY tables), then fallback to 0-based.
     if 1 <= idx <= max_count:
         return idx - 1
+    if 0 <= idx < max_count:
+        return idx
     return None
 
 
+def _normalize_id_with_base(value: object, max_count: int, base: int) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        idx = int(value)
+    except Exception:
+        return None
+    if base == 0:
+        return idx if 0 <= idx < max_count else None
+    return (idx - 1) if 1 <= idx <= max_count else None
+
+
 def load_bom_matrix(path: Path, machines: int, materials: int) -> np.ndarray:
+    import pandas as pd
+
     df = _read_table(path)
     bom_matrix = np.zeros((machines, materials), dtype=bool)
+    # Detect ID base per column to avoid mixed-table off-by-one shifts.
+    # BOM in this project often uses machine=0-based, material=1-based.
+    machine_vals = pd.to_numeric(df.iloc[:, 0], errors="coerce").dropna().astype(int)
+    material_vals = pd.to_numeric(df.iloc[:, 1], errors="coerce").dropna().astype(int)
+    machine_base = 0 if (machine_vals == 0).any() else 1
+    material_base = 0 if (material_vals == 0).any() else 1
 
     for row in df.itertuples(index=False):
         if len(row) < 2:
             continue
-        machine_id = _normalize_id(row[0], machines)
-        material_id = _normalize_id(row[1], materials)
+        machine_id = _normalize_id_with_base(row[0], machines, machine_base)
+        material_id = _normalize_id_with_base(row[1], materials, material_base)
         if machine_id is None or material_id is None:
             continue
 
@@ -179,7 +209,7 @@ def load_production_data(
     machine_weights: Optional[Sequence[float]] = None,
     machines: int = 22,
     materials: int = 156,
-    days: int = 30,
+    days: int = 31,
     fallback: bool = True,
 ) -> ProductionData:
     if base_dir is None:

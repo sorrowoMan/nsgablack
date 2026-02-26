@@ -240,7 +240,7 @@ class AdaptiveAlgorithmicManager:
             for i in range(n):
                 for j in range(i + 1, n):
                     distances.append(np.linalg.norm(pop_array[i] - pop_array[j]))
-            return float(np.mean(distances)) if distances else 0.0
+            return float(np.mean(distances)) if len(distances) > 0 else 0.0
 
         sample_size = int(self.max_diversity_pairs)
         rng = np.random.default_rng()

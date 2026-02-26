@@ -1,0 +1,16 @@
+{
+  "label": "production",
+  "export_file": "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\cases\\integrated_result_production_20260226_184023_src-SUPPLY_adjusted_from_l1_2026.xlsx",
+  "supply_path": "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\cases\\production_scheduling\\SUPPLY_adjusted_from_l1_20260226_174006.xlsx",
+  "feasible": true,
+  "constraints": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "max_violation": 0.0,
+  "total_output": 77841.28,
+  "days": 31
+}

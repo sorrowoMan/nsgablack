@@ -190,7 +190,7 @@ class FeasibilityBias(DomainBias):
         # 从上下文获取约束违反信息
         constraint_violations = context.problem_data.get('constraint_violations', [])
 
-        if not constraint_violations:
+        if len(constraint_violations) == 0:
             return 0.0  # 无约束时自动可行
 
         total_violation = sum(max(0, v) for v in constraint_violations)

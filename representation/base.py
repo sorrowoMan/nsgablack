@@ -10,6 +10,7 @@ import contextlib
 import threading
 import numpy as np
 
+from ..utils.context.context_keys import KEY_METRICS
 
 class EncodingPlugin(Protocol):
     def encode(self, x: Any, context: Optional[dict] = None) -> Any:
@@ -63,6 +64,9 @@ class ParallelRepair(RepresentationComponentContract):
         min_batch_size: int = 16,
         chunk_size: Optional[int] = None,
         verbose: bool = False,
+        strict: bool = False,
+        report_errors_to_context: bool = False,
+        error_report_key: str = "parallel_repair_errors",
     ) -> None:
         self.inner = inner
         self.backend = str(backend or "thread")
@@ -70,6 +74,26 @@ class ParallelRepair(RepresentationComponentContract):
         self.min_batch_size = int(min_batch_size)
         self.chunk_size = chunk_size
         self.verbose = bool(verbose)
+        self.strict = bool(strict)
+        self.last_batch_errors: list[dict] = []
+        self.report_errors_to_context = bool(report_errors_to_context)
+        self.error_report_key = str(error_report_key or "parallel_repair_errors")
+
+    def _report_error(self, context: Optional[dict], record: dict) -> None:
+        if not self.report_errors_to_context or not isinstance(context, dict):
+            return
+        try:
+            metrics = context.get(KEY_METRICS)
+            if not isinstance(metrics, dict):
+                metrics = {}
+                context[KEY_METRICS] = metrics
+            bucket = metrics.get(self.error_report_key)
+            if not isinstance(bucket, list):
+                bucket = []
+                metrics[self.error_report_key] = bucket
+            bucket.append(dict(record))
+        except Exception:
+            return
 
     def repair(self, x: Any, context: Optional[dict] = None) -> Any:
         return self.inner.repair(x, context)
@@ -89,6 +113,7 @@ class ParallelRepair(RepresentationComponentContract):
             if len(contexts_list) != n:
                 contexts_list = (contexts_list + [None] * n)[:n]
 
+        self.last_batch_errors = []
         if n < max(1, self.min_batch_size) or int(self.max_workers or 0) == 1:
             return [self.repair(items[i], contexts_list[i]) for i in range(n)]
 
@@ -116,8 +141,37 @@ class ParallelRepair(RepresentationComponentContract):
 
             with ThreadPoolExecutor(max_workers=self.max_workers) as ex:
                 futures = [ex.submit(self.repair, items[i], contexts_list[i]) for i in range(n)]
-                return [f.result() for f in futures]
-        except Exception:
+                out: list[Any] = [None] * n
+                failed_indices: list[int] = []
+                for idx, fut in enumerate(futures):
+                    try:
+                        out[idx] = fut.result()
+                    except Exception as exc:
+                        failed_indices.append(idx)
+                        rec = {"index": int(idx), "phase": "parallel", "error": f"{type(exc).__name__}: {exc}"}
+                        self.last_batch_errors.append(rec)
+                        self._report_error(contexts_list[idx], rec)
+                if not failed_indices:
+                    return out
+                if self.strict:
+                    first = self.last_batch_errors[0]["error"] if self.last_batch_errors else "parallel repair failed"
+                    raise RuntimeError(f"ParallelRepair strict failure: {first}")
+                for idx in failed_indices:
+                    try:
+                        out[idx] = self.repair(items[idx], contexts_list[idx])
+                    except Exception as exc:
+                        rec = {"index": int(idx), "phase": "serial_fallback", "error": f"{type(exc).__name__}: {exc}"}
+                        self.last_batch_errors.append(rec)
+                        self._report_error(contexts_list[idx], rec)
+                        raise
+                return out
+        except Exception as exc:
+            if self.strict:
+                raise
+            rec = {"index": -1, "phase": "batch_fallback", "error": f"{type(exc).__name__}: {exc}"}
+            self.last_batch_errors.append(rec)
+            for ctx in contexts_list:
+                self._report_error(ctx, rec)
             # Fallback: serial repair
             return [self.repair(items[i], contexts_list[i]) for i in range(n)]
 

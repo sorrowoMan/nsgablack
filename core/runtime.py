@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
@@ -16,13 +16,35 @@ from ..utils.context.context_keys import (
     KEY_PARETO_SOLUTIONS,
     KEY_POPULATION,
 )
+from ..utils.context.context_store import ContextStore, create_context_store
 
 
 class SolverRuntime:
     """Runtime state hub for solver snapshots (runtime-first access path)."""
 
-    def __init__(self, solver: Any) -> None:
+    def __init__(
+        self,
+        solver: Any,
+        context_store: Optional[ContextStore] = None,
+        *,
+        context_store_backend: str = "memory",
+        context_store_ttl_seconds: Optional[float] = None,
+        context_store_redis_url: str = "redis://localhost:6379/0",
+        context_store_key_prefix: str = "nsgablack:context",
+    ) -> None:
         self.solver = solver
+        if context_store is not None:
+            self.context_store = context_store
+        else:
+            self.context_store = create_context_store(
+                backend=context_store_backend,
+                ttl_seconds=context_store_ttl_seconds,
+                redis_url=context_store_redis_url,
+                key_prefix=context_store_key_prefix,
+            )
+
+    def set_context_store(self, store: ContextStore) -> None:
+        self.context_store = store
 
     def write_population_snapshot(self, population: Any, objectives: Any, violations: Any) -> bool:
         try:
@@ -129,4 +151,8 @@ class SolverRuntime:
         phase_id = getattr(self.solver, "dynamic_phase_id", None)
         if phase_id is not None:
             ctx["phase_id"] = phase_id
+        try:
+            self.context_store.update(ctx)
+        except Exception:
+            pass
         return ctx

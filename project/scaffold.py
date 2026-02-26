@@ -479,7 +479,7 @@ def _adapter_class_template() -> str:
                 _ = objectives
                 _ = violations
                 _ = context
-                if candidates:
+                if candidates is not None and len(candidates) > 0:
                     self._last_population = np.asarray(candidates, dtype=float)
         """
     )
@@ -757,9 +757,11 @@ def _build_solver_template() -> str:
         from __future__ import annotations
 
         import argparse
+        from datetime import datetime
 
         from nsgablack.core.solver import BlackBoxSolverNSGAII
-        from nsgablack.plugins import ProfilerConfig, ProfilerPlugin
+        from nsgablack.utils.suites import attach_checkpoint_resume
+        from nsgablack.utils.suites import attach_default_observability_plugins
 
         from bias.example_bias import build_bias_module
         from pipeline.example_pipeline import build_pipeline
@@ -775,6 +777,23 @@ def _build_solver_template() -> str:
             parser.add_argument("--enable-bias", action="store_true")
             parser.add_argument("--enable-example-plugin", action="store_true")
             parser.add_argument("--no-profiler", action="store_true")
+            parser.add_argument("--no-decision-trace", action="store_true")
+            parser.add_argument("--run-dir", default="runs")
+            parser.add_argument("--run-id", default=None)
+            parser.add_argument("--plugin-strict", action="store_true")
+            parser.add_argument(
+                "--thread-bias-isolation",
+                choices=["deepcopy", "disable_cache", "off"],
+                default="deepcopy",
+                help="Thread backend bias isolation policy when parallel evaluation is enabled.",
+            )
+            parser.add_argument("--enable-checkpoint", action="store_true")
+            parser.add_argument("--checkpoint-dir", default="runs/checkpoints")
+            parser.add_argument(
+                "--trust-checkpoint",
+                action="store_true",
+                help="Explicitly trust unsigned checkpoints for resume (not allowed with strict mode).",
+            )
             args, _ = parser.parse_known_args(argv if argv is not None else [])
 
             problem = ExampleProblem(dimension=int(args.dimension))
@@ -789,18 +808,33 @@ def _build_solver_template() -> str:
             solver.enable_progress_log = True
             solver.report_interval = max(1, solver.max_generations // 10)
             solver.set_representation_pipeline(pipeline)
-            if not bool(args.no_profiler):
-                solver.add_plugin(
-                    ProfilerPlugin(
-                        config=ProfilerConfig(
-                            output_dir="runs",
-                            run_id="scaffold_profile",
-                            overwrite=True,
-                        )
-                    )
-                )
+            solver.parallel_thread_bias_isolation = str(args.thread_bias_isolation)
+            run_id = str(args.run_id) if args.run_id else datetime.now().strftime("%Y%m%d_%H%M%S")
+            attach_default_observability_plugins(
+                solver,
+                output_dir=str(args.run_dir),
+                run_id=run_id,
+                enable_pareto_archive=True,
+                enable_benchmark=True,
+                enable_module_report=True,
+                enable_profiler=not bool(args.no_profiler),
+                enable_decision_trace=not bool(args.no_decision_trace),
+            )
+            if hasattr(solver, "plugin_manager") and getattr(solver, "plugin_manager", None) is not None:
+                try:
+                    solver.plugin_manager.strict = bool(args.plugin_strict)
+                except Exception:
+                    pass
             if bool(args.enable_example_plugin):
                 solver.add_plugin(ExampleProjectPlugin(interval=5, verbose=True))
+            if bool(args.enable_checkpoint):
+                attach_checkpoint_resume(
+                    solver,
+                    checkpoint_dir=str(args.checkpoint_dir),
+                    auto_resume=True,
+                    strict=not bool(args.trust_checkpoint),
+                    trust_checkpoint=bool(args.trust_checkpoint),
+                )
             return solver
 
 
