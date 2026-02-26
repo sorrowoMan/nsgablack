@@ -86,7 +86,26 @@ class NumericalSolverPlugin(Plugin):
         x0: np.ndarray,
         jacobian: Optional[JacobianFn] = None,
     ) -> NumericalSolveResult:
-        raise NotImplementedError
+        kwargs: Dict[str, Any] = {"tol": float(self.cfg.tol)}
+        if jacobian is not None:
+            kwargs["jac"] = jacobian
+        out = optimize.root(
+            residual,
+            np.asarray(x0, dtype=float).reshape(-1),
+            method="hybr",
+            options={"maxfev": int(self.cfg.max_iter)},
+            **kwargs,
+        )
+        solution = np.asarray(out.x, dtype=float).reshape(-1)
+        residual_val = np.asarray(residual(solution), dtype=float).reshape(-1)
+        return NumericalSolveResult(
+            solution=solution,
+            residual_norm=float(np.linalg.norm(residual_val)),
+            iterations=int(getattr(out, "nfev", 0)),
+            success=bool(getattr(out, "success", False)),
+            method="root_hybr",
+            message=str(getattr(out, "message", "")),
+        )
 
     def _extract_system(
         self,
@@ -247,6 +266,11 @@ class NumericalSolverPlugin(Plugin):
 
 class NewtonSolverPlugin(NumericalSolverPlugin):
     """Newton-style nonlinear solver plugin using scipy.optimize.root (hybr)."""
+    context_requires = NumericalSolverPlugin.context_requires
+    context_provides = NumericalSolverPlugin.context_provides
+    context_mutates = NumericalSolverPlugin.context_mutates
+    context_cache = NumericalSolverPlugin.context_cache
+    context_notes = NumericalSolverPlugin.context_notes
 
     def __init__(self, name: str = "newton_solver", *, config: Optional[NumericalSolverConfig] = None) -> None:
         super().__init__(name=name, config=config, priority=60)
@@ -275,6 +299,11 @@ class NewtonSolverPlugin(NumericalSolverPlugin):
 
 class BroydenSolverPlugin(NumericalSolverPlugin):
     """Broyden nonlinear solver plugin using scipy.optimize.broyden1."""
+    context_requires = NumericalSolverPlugin.context_requires
+    context_provides = NumericalSolverPlugin.context_provides
+    context_mutates = NumericalSolverPlugin.context_mutates
+    context_cache = NumericalSolverPlugin.context_cache
+    context_notes = NumericalSolverPlugin.context_notes
 
     def __init__(self, name: str = "broyden_solver", *, config: Optional[NumericalSolverConfig] = None) -> None:
         super().__init__(name=name, config=config, priority=55)

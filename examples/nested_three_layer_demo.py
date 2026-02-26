@@ -126,8 +126,8 @@ class RandomSearchAdapter(AlgorithmAdapter):
 
 def build_solver() -> ComposableSolver:
     solver = ComposableSolver(problem=NestedOuterProblem(), adapter=RandomSearchAdapter())
-    solver.pop_size = 10
-    solver.max_steps = 20
+    solver.set_solver_hyperparams(pop_size=10)
+    solver.set_max_steps(20)
 
     # Guard inner execution budget (L2 layer).
     solver.add_plugin(
@@ -172,4 +172,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
