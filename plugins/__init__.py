@@ -22,10 +22,14 @@ from .runtime.adaptive_parameters import AdaptiveParametersPlugin
 from .evaluation.surrogate_evaluation import SurrogateEvaluationPlugin, SurrogateEvaluationConfig
 from .evaluation.multi_fidelity_evaluation import MultiFidelityEvaluationPlugin, MultiFidelityEvaluationConfig
 from .evaluation.monte_carlo_evaluation import MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig
-from .evaluation.newton_solver_plugin import (
+from .evaluation.numerical_solver_base import (
     NumericalSolverConfig,
     NumericalSolverPlugin,
+)
+from .evaluation.newton_solver_plugin import (
     NewtonSolverPlugin,
+)
+from .evaluation.broyden_solver_plugin import (
     BroydenSolverPlugin,
 )
 from .evaluation.gpu_evaluation_template import (
