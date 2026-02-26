@@ -94,7 +94,7 @@ def build_solver(args: argparse.Namespace):
         parallel_problem_factory=problem_factory,
     )
     solver.set_max_steps(int(args.steps))
-    solver.pop_size = int(args.pop_size)
+    solver.set_solver_hyperparams(pop_size=int(args.pop_size))
 
     run_id = f"gpu_ray_mysql_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     solver.add_plugin(BenchmarkHarnessPlugin(config=BenchmarkHarnessConfig(output_dir="runs", run_id=run_id)))

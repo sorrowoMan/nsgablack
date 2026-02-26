@@ -252,7 +252,7 @@ def _build_solver(args):
     )
     solver.set_representation_pipeline(l0_pipeline)
     # Keep crossover conservative in binary space to reduce noisy floating intermediates.
-    solver.crossover_rate = 0.35
+    solver.set_solver_hyperparams(crossover_rate=0.35)
     attach_default_observability_plugins(
         solver,
         output_dir=str(run_dir),

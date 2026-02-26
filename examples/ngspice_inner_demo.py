@@ -45,8 +45,8 @@ class FixedAdapter(AlgorithmAdapter):
 
 def build_solver() -> ComposableSolver:
     solver = ComposableSolver(problem=NgspiceOuterProblem(), adapter=FixedAdapter())
-    solver.max_steps = 1
-    solver.pop_size = 1
+    solver.set_max_steps(1)
+    solver.set_solver_hyperparams(pop_size=1)
     solver.add_plugin(
         InnerSolverPlugin(
             config=InnerSolverConfig(
