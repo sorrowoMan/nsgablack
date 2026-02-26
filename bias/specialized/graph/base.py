@@ -20,7 +20,10 @@ import numpy as np
 from typing import List, Dict, Tuple, Optional, Union, Any
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-import networkx as nx
+try:
+    import networkx as nx
+except Exception:  # optional dependency
+    nx = None
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import shortest_path, minimum_spanning_tree
 
