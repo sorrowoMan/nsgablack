@@ -4,13 +4,17 @@
 """
 
 import numpy as np
-import pandas as pd
+try:
+    import pandas as pd
+except Exception:  # optional dependency
+    pd = None
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field
 from collections import defaultdict
 import json
 import os
 import logging
+from datetime import datetime
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler, LabelEncoder
@@ -192,7 +196,7 @@ class MetaLearningBiasSelector:
         # 添加问题数据
         problem_data = {
             'features': problem_features,
-            'timestamp': pd.Timestamp.now().isoformat()
+            'timestamp': (pd.Timestamp.now().isoformat() if pd is not None else datetime.now().isoformat())
         }
         self.problem_database.append(problem_data)
 
