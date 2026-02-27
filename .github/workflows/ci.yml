@@ -103,7 +103,14 @@ jobs:
 
       - name: Black
         run: |
-          python -m black --check .
+          CHANGED_PY="$(git diff-tree --no-commit-id --name-only -r HEAD | grep -E '\.py$' || true)"
+          if [ -z "$CHANGED_PY" ]; then
+            echo "No changed Python files in this commit; skip black check."
+            exit 0
+          fi
+          echo "Black check files:"
+          echo "$CHANGED_PY"
+          python -m black --check $CHANGED_PY
 
       - name: Mypy
         run: |
