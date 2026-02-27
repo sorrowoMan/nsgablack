@@ -14,13 +14,17 @@ from collections import defaultdict
 import json
 import os
 import logging
+import pickle
 from datetime import datetime
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import mean_squared_error, r2_score
-import joblib
+try:
+    import joblib
+except Exception:  # optional dependency
+    joblib = None
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -698,10 +702,20 @@ class MetaLearningBiasSelector:
     def _save_models(self):
         """保存训练好的模型"""
         try:
-            joblib.dump(self.models['random_forest'], f"{self.model_save_path}_rf.pkl")
-            joblib.dump(self.models['gradient_boost'], f"{self.model_save_path}_gb.pkl")
-            joblib.dump(self.models['neural_network'], f"{self.model_save_path}_nn.pkl")
-            joblib.dump(self.scaler, f"{self.model_save_path}_scaler.pkl")
+            if joblib is not None:
+                joblib.dump(self.models['random_forest'], f"{self.model_save_path}_rf.pkl")
+                joblib.dump(self.models['gradient_boost'], f"{self.model_save_path}_gb.pkl")
+                joblib.dump(self.models['neural_network'], f"{self.model_save_path}_nn.pkl")
+                joblib.dump(self.scaler, f"{self.model_save_path}_scaler.pkl")
+            else:
+                with open(f"{self.model_save_path}_rf.pkl", "wb") as f:
+                    pickle.dump(self.models['random_forest'], f, protocol=pickle.HIGHEST_PROTOCOL)
+                with open(f"{self.model_save_path}_gb.pkl", "wb") as f:
+                    pickle.dump(self.models['gradient_boost'], f, protocol=pickle.HIGHEST_PROTOCOL)
+                with open(f"{self.model_save_path}_nn.pkl", "wb") as f:
+                    pickle.dump(self.models['neural_network'], f, protocol=pickle.HIGHEST_PROTOCOL)
+                with open(f"{self.model_save_path}_scaler.pkl", "wb") as f:
+                    pickle.dump(self.scaler, f, protocol=pickle.HIGHEST_PROTOCOL)
             self.logger.info("Models saved successfully")
         except Exception as e:
             self.logger.error(f"Error saving models: {e}")
@@ -709,10 +723,20 @@ class MetaLearningBiasSelector:
     def load_models(self) -> bool:
         """加载训练好的模型"""
         try:
-            self.models['random_forest'] = joblib.load(f"{self.model_save_path}_rf.pkl")
-            self.models['gradient_boost'] = joblib.load(f"{self.model_save_path}_gb.pkl")
-            self.models['neural_network'] = joblib.load(f"{self.model_save_path}_nn.pkl")
-            self.scaler = joblib.load(f"{self.model_save_path}_scaler.pkl")
+            if joblib is not None:
+                self.models['random_forest'] = joblib.load(f"{self.model_save_path}_rf.pkl")
+                self.models['gradient_boost'] = joblib.load(f"{self.model_save_path}_gb.pkl")
+                self.models['neural_network'] = joblib.load(f"{self.model_save_path}_nn.pkl")
+                self.scaler = joblib.load(f"{self.model_save_path}_scaler.pkl")
+            else:
+                with open(f"{self.model_save_path}_rf.pkl", "rb") as f:
+                    self.models['random_forest'] = pickle.load(f)
+                with open(f"{self.model_save_path}_gb.pkl", "rb") as f:
+                    self.models['gradient_boost'] = pickle.load(f)
+                with open(f"{self.model_save_path}_nn.pkl", "rb") as f:
+                    self.models['neural_network'] = pickle.load(f)
+                with open(f"{self.model_save_path}_scaler.pkl", "rb") as f:
+                    self.scaler = pickle.load(f)
             self.logger.info("Models loaded successfully")
             return True
         except Exception as e:
