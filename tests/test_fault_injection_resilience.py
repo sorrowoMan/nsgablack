@@ -57,7 +57,11 @@ def test_checkpoint_auto_resume_missing_file_is_tolerated_when_not_strict(sample
     assert int(result["generation"]) == solver.max_generations
 
 
-def test_checkpoint_auto_resume_missing_file_fails_fast_when_strict(sample_problem, tmp_path: Path):
+def test_checkpoint_auto_resume_missing_file_fails_fast_when_strict(
+    sample_problem, tmp_path: Path, monkeypatch
+):
+    # strict checkpoint mode now requires an explicit HMAC key.
+    monkeypatch.setenv("NSGABLACK_CHECKPOINT_HMAC_KEY", "test-key")
     solver = _make_solver(sample_problem)
     plugin = CheckpointResumePlugin(
         config=CheckpointResumeConfig(

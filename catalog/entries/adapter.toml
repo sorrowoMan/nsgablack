@@ -76,3 +76,16 @@ minimal_wiring = ["from nsgablack.core.adapters import SingleTrajectoryAdaptiveA
 required_companions = ["repr.context_gaussian (recommended)"]
 config_keys = ["batch_size", "initial_sigma", "target_success_rate", "restart_patience", "accept_worse_prob"]
 example_entry = "examples/single_trajectory_adaptive_demo.py:build_solver"
+
+[[entry]]
+key = "adapter.multi_strategy"
+title = "MultiStrategyControllerAdapter"
+kind = "adapter"
+import_path = "nsgablack.core.adapters.multi_strategy:MultiStrategyControllerAdapter"
+tags = ["adapter", "controller", "multi_strategy", "orchestration", "strategy"]
+summary = "Adapter: multi-strategy controller for composing multiple strategy units in one optimization loop."
+use_when = ["Need to orchestrate multiple strategy units with shared state and adaptive weighting."]
+minimal_wiring = ["from nsgablack.core.adapters.multi_strategy import MultiStrategyControllerAdapter", "solver.set_adapter(MultiStrategyControllerAdapter(strategies=[...]))"]
+required_companions = ["plugin.pareto_archive (recommended)", "plugin.decision_trace (recommended)"]
+config_keys = ["phase", "strategy_weights", "selection_policy", "update_interval"]
+example_entry = "examples/cases/production_scheduling/working_integrated_optimizer.py:build_solver"

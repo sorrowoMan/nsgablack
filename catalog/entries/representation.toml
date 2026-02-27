@@ -12,3 +12,16 @@ minimal_wiring = ["from nsgablack.representation import ParallelRepair", "Attach
 required_companions = ["(none)"]
 config_keys = ["(none)"]
 example_entry = "python -m nsgablack catalog search parallel_repair --kind example"
+
+[[entry]]
+key = "representation.pipeline"
+title = "RepresentationPipeline"
+kind = "representation"
+import_path = "nsgablack.representation.base:RepresentationPipeline"
+tags = ["pipeline", "representation", "runtime", "composition"]
+summary = "Representation: pipeline container for initializer/mutator/repair wiring and execution."
+use_when = ["Need a unified representation execution chain for initialize, mutate, and repair stages."]
+minimal_wiring = ["from nsgablack.representation.base import RepresentationPipeline", "solver.representation_pipeline = RepresentationPipeline(...)"]
+required_companions = ["representation.parallel_repair (optional)"]
+config_keys = ["initializer", "mutator", "repair", "strict_mode"]
+example_entry = "examples/cases/production_scheduling/working_integrated_optimizer.py:build_solver"
