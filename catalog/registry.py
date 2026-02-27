@@ -13,7 +13,7 @@ try:  # py>=3.11
     import tomllib as _toml
 except Exception:  # pragma: no cover - import fallback
     try:  # py<3.11
-        import tomli as _toml  # type: ignore[import-not-found]
+        import tomli as _toml
     except Exception:  # pragma: no cover - optional dependency missing
         _toml = None
 
@@ -3041,10 +3041,12 @@ def _parse_entries_from_toml(path: Path) -> List[CatalogEntry]:
     if _toml is None or not path.exists():
         return []
     raw_text = path.read_text(encoding="utf-8", errors="replace")
-    items: List[object] = []
+    items: List[Dict[str, object]] = []
     try:
         data = _toml.loads(raw_text)
-        items = data.get("entry", [])
+        loaded = data.get("entry", [])
+        if isinstance(loaded, list):
+            items = [it for it in loaded if isinstance(it, dict)]
     except Exception:
         blocks = raw_text.split("[[entry]]")
         parsed: List[Dict[str, object]] = []
@@ -3055,8 +3057,6 @@ def _parse_entries_from_toml(path: Path) -> List[CatalogEntry]:
         items = parsed
     out: List[CatalogEntry] = []
     for item in items:
-        if not isinstance(item, dict):
-            continue
         detail_ref = str(item.get("detail_ref", "")).strip()
         if not detail_ref:
             detail_ref = str(item.get("details_file", "")).strip()

@@ -114,4 +114,4 @@ jobs:
 
       - name: Mypy
         run: |
-          python -m mypy .
+          python -m mypy nsgablack

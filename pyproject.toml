@@ -59,6 +59,7 @@ dev = [
     "black>=22.0.0",
     "flake8>=4.0.0",
     "mypy>=0.910",
+    "types-PyYAML>=6.0.12.20241230",
     "sphinx>=4.0.0",
     "sphinx-rtd-theme>=1.0.0",
     "myst-parser>=1.0.0",
@@ -106,7 +107,7 @@ extend-exclude = '''
 '''
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 # 渐进式类型检查：先不强制要求所有函数都有类型提示
