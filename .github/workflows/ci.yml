@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONUTF8: "1"
+
 jobs:
   quick-health:
     name: quick-health (core regression signals)
@@ -56,7 +60,7 @@ jobs:
       - name: Debug import target
         run: |
           git rev-parse HEAD
-          python -c "from pathlib import Path; p=Path('bias/managers/meta_learning_selector.py'); lines=p.read_text(encoding='utf-8').splitlines(); print('\n'.join(f'{i+1}: {lines[i]}' for i in range(min(12, len(lines)))))"
+          python -c "from pathlib import Path; p=Path('bias/managers/meta_learning_selector.py'); lines=p.read_text(encoding='utf-8', errors='replace').splitlines(); print('\n'.join((f'{i+1}: {lines[i]}').encode('unicode_escape').decode('ascii') for i in range(min(12, len(lines)))))"
 
       - name: Run tests
         run: |
