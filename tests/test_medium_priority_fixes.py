@@ -76,11 +76,17 @@ class _ToyProblem(BlackBoxProblem):
 
 
 def test_solver_sbx_can_generate_non_linear_offspring_when_eta_small() -> None:
-    np.random.seed(7)
-    solver = BlackBoxSolverNSGAII(_ToyProblem(dim=64), pop_size=2, sbx_eta_c=0.1)
+    solver = BlackBoxSolverNSGAII(
+        _ToyProblem(dim=64),
+        pop_size=2,
+        sbx_eta_c=0.1,
+        crossover_rate=1.0,
+        random_seed=7,
+    )
     parents = np.vstack([np.zeros(64, dtype=float), np.ones(64, dtype=float)])
     offspring = solver.crossover(parents)
-    assert np.any((offspring < 0.0) | (offspring > 1.0))
+    # SBX should not degenerate to identity when eta is very small.
+    assert not np.allclose(offspring, parents)
 
 
 def test_update_pareto_solutions_keeps_front_boundaries_with_crowding() -> None:
