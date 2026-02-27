@@ -714,3 +714,16 @@ minimal_wiring = ["from nsgablack.bias.specialized.production.scheduling import 
 required_companions = ["(none)"]
 config_keys = ["(none)"]
 example_entry = "python -m nsgablack catalog search production_scheduling --kind example"
+
+[[entry]]
+key = "bias.module"
+title = "BiasModule"
+kind = "bias"
+import_path = "nsgablack.bias.bias_module:BiasModule"
+tags = ["bias", "container", "core", "runtime"]
+summary = "Bias: runtime bias container that aggregates bias components and computes total bias score."
+use_when = ["Need a single bias aggregation module to host multiple bias components in solver runtime."]
+minimal_wiring = ["from nsgablack.bias.bias_module import BiasModule", "solver.set_bias_module(BiasModule())"]
+required_companions = ["(none)"]
+config_keys = ["enable_cache", "max_history", "strict_mode"]
+example_entry = "examples/cases/production_scheduling/working_integrated_optimizer.py:build_solver"
