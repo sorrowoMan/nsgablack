@@ -29,6 +29,7 @@ jobs:
           python -m nsgablack project doctor --path . --strict
           python tools/catalog_integrity_checker.py --check-usage --strict-usage --check-context --context-kinds plugin --require-context-notes --strict-context --check-context-conflicts --strict-context-conflicts --context-conflicts-waiver tools/context_conflicts_waiver.txt
           python tools/context_field_guard.py --strict
+          python tools/optional_dependency_guard.py
 
   test:
     name: pytest (${{ matrix.os }}, py${{ matrix.python }})
