@@ -52,6 +52,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .[dev]
 
+      - name: Debug import target
+        run: |
+          git rev-parse HEAD
+          python -c "from pathlib import Path; p=Path('bias/managers/meta_learning_selector.py'); lines=p.read_text(encoding='utf-8').splitlines(); print('\n'.join(f'{i+1}: {lines[i]}' for i in range(min(12, len(lines)))))"
+
       - name: Run tests
         run: |
           python -m pytest
