@@ -114,6 +114,13 @@ class MultiFidelityEvaluationPlugin(Plugin):
 
     @staticmethod
     def _increment_evaluation_count(solver, delta: int) -> None:
+        direct = getattr(solver, "increment_evaluation_count", None)
+        if callable(direct):
+            try:
+                direct(int(delta))
+                return
+            except Exception:
+                pass
         runtime = getattr(solver, "runtime", None)
         if runtime is not None and hasattr(runtime, "increment_evaluation_count"):
             try:

@@ -66,6 +66,13 @@ class ParetoArchivePlugin(Plugin):
         return self.resolve_population_snapshot(solver)
 
     def _write_pareto_snapshot(self, solver: Any) -> None:
+        setter = getattr(solver, "set_pareto_snapshot", None)
+        if callable(setter):
+            try:
+                setter(self.archive_X, self.archive_F)
+                return
+            except Exception:
+                pass
         runtime = getattr(solver, "runtime", None)
         if runtime is not None and hasattr(runtime, "set_pareto_snapshot"):
             try:

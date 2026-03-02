@@ -374,6 +374,76 @@ class SolverBase:
     def set_max_steps(self, max_steps: int) -> None:
         self.max_steps = int(max_steps)
 
+    def set_generation(self, generation: int) -> int:
+        value = int(generation)
+        self.generation = value
+        return value
+
+    def increment_evaluation_count(self, delta: int = 1) -> int:
+        try:
+            step = int(delta)
+        except Exception as exc:
+            report_soft_error(
+                component="SolverBase",
+                event="increment_evaluation_count_cast",
+                exc=exc,
+                logger=logger,
+                context_store=self.context_store,
+                strict=False,
+                level="debug",
+            )
+            step = 0
+        current = int(getattr(self, "evaluation_count", 0) or 0) + step
+        self.evaluation_count = current
+        return current
+
+    def set_best_snapshot(self, best_x: Any, best_objective: Any) -> None:
+        self.best_x = best_x
+        try:
+            self.best_objective = None if best_objective is None else float(best_objective)
+        except Exception as exc:
+            report_soft_error(
+                component="SolverBase",
+                event="set_best_snapshot_cast",
+                exc=exc,
+                logger=logger,
+                context_store=self.context_store,
+                strict=False,
+                level="debug",
+            )
+            self.best_objective = best_objective
+
+    def set_pareto_snapshot(self, solutions: Any, objectives: Any) -> None:
+        try:
+            self.pareto_solutions = None if solutions is None else np.asarray(solutions)
+        except Exception as exc:
+            report_soft_error(
+                component="SolverBase",
+                event="set_pareto_snapshot_solutions_cast",
+                exc=exc,
+                logger=logger,
+                context_store=self.context_store,
+                strict=False,
+                level="debug",
+            )
+            self.pareto_solutions = solutions
+        try:
+            self.pareto_objectives = None if objectives is None else np.asarray(objectives)
+        except Exception as exc:
+            report_soft_error(
+                component="SolverBase",
+                event="set_pareto_snapshot_objectives_cast",
+                exc=exc,
+                logger=logger,
+                context_store=self.context_store,
+                strict=False,
+                level="debug",
+            )
+            self.pareto_objectives = objectives
+
+    def resolve_best_snapshot(self) -> Tuple[Optional[Any], Optional[float]]:
+        return self._resolve_best_snapshot()
+
     def set_solver_hyperparams(
         self,
         *,
