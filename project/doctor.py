@@ -264,6 +264,16 @@ def _handler_body_is_swallow(body: List[ast.stmt]) -> bool:
 
 
 def _check_broad_exception_swallow(root: Path, diags: List[DoctorDiagnostic], *, strict: bool) -> None:
+    if not _looks_like_scaffold_project(root):
+        _add(
+            diags,
+            "info",
+            "broad-except-skip",
+            "Skip broad-exception swallow scan outside scaffold project roots.",
+            root,
+        )
+        return
+
     for py_file in root.rglob("*.py"):
         if py_file.name.startswith("__"):
             continue
