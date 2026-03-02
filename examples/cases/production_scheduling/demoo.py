@@ -11,7 +11,7 @@ def _pick_first_existing_font(candidates: Iterable[str]) -> str | None:
     for name in candidates:
         try:
             path = fm.findfont(fm.FontProperties(family=name), fallback_to_default=False)
-        except Exception:
+        except (TypeError, ValueError, RuntimeError, OSError):
             continue
         if path and Path(path).exists():
             return name

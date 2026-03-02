@@ -14,7 +14,7 @@ def _ensure_importable() -> None:
     try:
         import nsgablack  # noqa: F401
         return
-    except Exception:
+    except ImportError:
         pass
     repo_root = Path(__file__).resolve().parents[1]
     if str(repo_root) not in sys.path:
@@ -44,12 +44,12 @@ def _constraints_value(constraints, key: str) -> Optional[float]:
     # `constraints` is a sequence (typically list[float]) from evaluate_constraints_safe(...)
     try:
         idx = int(CONSTRAINT_INDEX[key])
-    except Exception:
+    except (KeyError, TypeError, ValueError):
         return None
     try:
         if constraints is not None and len(constraints) > idx:
             return float(constraints[idx])
-    except Exception:
+    except (TypeError, ValueError):
         return None
     return None
 
@@ -63,7 +63,7 @@ class _PenaltyFromConstraints:
         try:
             if constraints is not None and len(constraints) > self.idx:
                 return {"penalty": float(constraints[self.idx])}
-        except Exception:
+        except (TypeError, ValueError):
             pass
         # If constraints are missing, treat as 0 (do not block the run).
         return {"penalty": 0.0}

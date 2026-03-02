@@ -15,7 +15,7 @@ def _ensure_importable() -> None:
     try:
         import nsgablack  # noqa: F401
         return
-    except Exception:
+    except ImportError:
         pass
     repo_root = Path(__file__).resolve().parents[1]
     if str(repo_root) not in sys.path:
@@ -28,7 +28,7 @@ from nsgablack.representation import RepresentationPipeline
 
 try:
     from nsgablack.utils.context.context_keys import KEY_MUTATION_SIGMA, KEY_VNS_K
-except Exception:
+except (ImportError, AttributeError):
     KEY_MUTATION_SIGMA = "mutation_sigma"
     KEY_VNS_K = "vns_k"
 
@@ -222,7 +222,7 @@ class ProductionScheduleMutation:
             if raw_sigma is not None:
                 try:
                     sigma = max(1e-9, float(raw_sigma))
-                except Exception:
+                except (TypeError, ValueError):
                     pass
 
             raw_k = context.get(self.k_key)
@@ -231,7 +231,7 @@ class ProductionScheduleMutation:
                     k = max(0, int(raw_k))
                     sigma *= 1.0 + float(self.k_sigma_scale) * float(k)
                     per_gene_rate *= 1.0 + float(self.k_rate_scale) * float(k)
-                except Exception:
+                except (TypeError, ValueError):
                     pass
 
         per_gene_rate = float(np.clip(per_gene_rate, self.min_per_gene_rate, self.max_per_gene_rate))

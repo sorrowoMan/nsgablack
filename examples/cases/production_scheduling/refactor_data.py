@@ -124,7 +124,7 @@ def _normalize_id(value: object, max_count: int) -> Optional[int]:
         return None
     try:
         idx = int(value)
-    except Exception:
+    except (TypeError, ValueError):
         return None
     # Prefer 1-based IDs first (common in BOM/SUPPLY tables), then fallback to 0-based.
     if 1 <= idx <= max_count:
@@ -139,7 +139,7 @@ def _normalize_id_with_base(value: object, max_count: int, base: int) -> Optiona
         return None
     try:
         idx = int(value)
-    except Exception:
+    except (TypeError, ValueError):
         return None
     if base == 0:
         return idx if 0 <= idx < max_count else None

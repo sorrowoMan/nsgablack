@@ -613,7 +613,7 @@ def _supply_tag_from_path(path: Optional[Path | str]) -> Optional[str]:
         return None
     try:
         stem = Path(path).stem
-    except Exception:
+    except (TypeError, ValueError):
         return None
     # Keep filename safe and short to avoid unwieldy paths.
     tag = re.sub(r"[^A-Za-z0-9_-]+", "_", str(stem)).strip("_")
