@@ -4,6 +4,7 @@ from nsgablack.project import run_project_doctor
 
 
 def test_doctor_flags_broad_except_swallow_in_core_as_error(tmp_path):
+    (tmp_path / "build_solver.py").write_text("def build_solver():\n    return None\n", encoding="utf-8")
     core_dir = tmp_path / "core"
     core_dir.mkdir(parents=True)
     (core_dir / "demo.py").write_text(
@@ -22,6 +23,7 @@ def test_doctor_flags_broad_except_swallow_in_core_as_error(tmp_path):
 
 
 def test_doctor_flags_broad_except_swallow_in_non_core_as_warn(tmp_path):
+    (tmp_path / "build_solver.py").write_text("def build_solver():\n    return None\n", encoding="utf-8")
     plugin_dir = tmp_path / "plugins"
     plugin_dir.mkdir(parents=True)
     (plugin_dir / "demo.py").write_text(
@@ -37,4 +39,3 @@ def test_doctor_flags_broad_except_swallow_in_non_core_as_warn(tmp_path):
     rows = [d for d in report.diagnostics if d.code == "broad-except-swallow"]
     assert rows
     assert all(d.level == "warn" for d in rows)
-
