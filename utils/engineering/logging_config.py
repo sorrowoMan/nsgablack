@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -21,6 +22,16 @@ class JsonFormatter(logging.Formatter):
         if record.exc_info:
             payload["exc_info"] = self.formatException(record.exc_info)
         return json.dumps(payload, ensure_ascii=False)
+
+
+def _ensure_utf8_stream(stream: object) -> object:
+    reconfigure = getattr(stream, "reconfigure", None)
+    if callable(reconfigure):
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    return stream
 
 
 def configure_logging(
@@ -43,7 +54,7 @@ def configure_logging(
         if log_file:
             handler = logging.FileHandler(log_file, encoding="utf-8")
         else:
-            handler = logging.StreamHandler()
+            handler = logging.StreamHandler(stream=_ensure_utf8_stream(sys.stderr))
 
         formatter = JsonFormatter() if json_format else logging.Formatter(
             "%(asctime)s | %(levelname)s | %(name)s | %(message)s"

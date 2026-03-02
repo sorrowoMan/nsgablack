@@ -10,6 +10,8 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Any, Callable, Dict, List, Optional
 import copy
+import hashlib
+import json
 import logging
 import threading
 
@@ -22,11 +24,17 @@ from ..utils.context.context_keys import (
     KEY_CONSTRAINT_VIOLATION,
     KEY_GENERATION,
     KEY_HISTORY,
+    KEY_HISTORY_REF,
     KEY_INDIVIDUAL_ID,
     KEY_METRICS,
     KEY_POPULATION,
+    KEY_POPULATION_REF,
     KEY_PROBLEM_DATA,
+    KEY_SNAPSHOT_KEY,
+    KEY_BIAS_CACHE_FINGERPRINT,
 )
+from ..utils.context.context_store import ContextStore
+from ..utils.context.snapshot_store import SnapshotStore
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +47,15 @@ class BiasModule:
     context_cache = ()
     context_notes = "Bias facade: aggregates algorithmic/domain bias contracts."
 
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        cache_backend: str = "memory",
+        cache_ttl_seconds: Optional[float] = 3600.0,
+        cache_key_prefix: str = "bias_cache",
+        cache_context_keys: Optional[List[str]] = None,
+        cache_include_generation: bool = True,
+    ):
         self._manager = UniversalBiasManager()
 
         # Runtime cache
@@ -48,6 +64,15 @@ class BiasModule:
         self.cache_max_items = 128
         self._bias_cache: "OrderedDict[Any, float]" = OrderedDict()
         self._bias_cache_version = 0
+        self.cache_backend = str(cache_backend or "memory").strip().lower()
+        self.cache_ttl_seconds = cache_ttl_seconds
+        self.cache_key_prefix = str(cache_key_prefix or "bias_cache").strip()
+        self.cache_context_keys = tuple(cache_context_keys or ())
+        self.cache_include_generation = bool(cache_include_generation)
+        self._cache_context_store: Optional[ContextStore] = None
+        self._snapshot_store: Optional[SnapshotStore] = None
+        self._snapshot_cache_key: Optional[str] = None
+        self._snapshot_cache_payload: Optional[Dict[str, Any]] = None
 
         # Track best
         self.enable = True
@@ -102,6 +127,33 @@ class BiasModule:
             "cache": sorted(cache),
             "notes": note_text or None,
         }
+
+    def set_context_store(self, store: Optional[ContextStore]) -> None:
+        """Attach a context store for context-backed cache."""
+        if store is None:
+            return
+        if store is self._cache_context_store:
+            return
+        self._cache_context_store = store
+
+    def set_snapshot_store(self, store: Optional[SnapshotStore]) -> None:
+        """Attach a snapshot store for large context artifacts."""
+        if store is None:
+            return
+        if store is self._snapshot_store:
+            return
+        self._snapshot_store = store
+        self._snapshot_cache_key = None
+        self._snapshot_cache_payload = None
+
+    def set_cache_backend(self, backend: str) -> None:
+        self.cache_backend = str(backend or "memory").strip().lower()
+
+    def set_cache_context_keys(self, keys: Optional[List[str]]) -> None:
+        self.cache_context_keys = tuple(keys or ())
+
+    def set_cache_include_generation(self, include: bool) -> None:
+        self.cache_include_generation = bool(include)
 
     @classmethod
     def from_universal_manager(cls, manager: UniversalBiasManager) -> "BiasModule":
@@ -281,16 +333,15 @@ class BiasModule:
         cache_key = None
         if self.cache_enabled:
             try:
-                cache_key = (
-                    individual_id,
-                    float(objective_value),
-                    _x_bytes if _x_bytes is not None else np.asarray(x).tobytes(),
-                    context.get(KEY_GENERATION, 0),
-                    self._bias_cache_version,
+                cache_key = self._build_cache_key(
+                    x=x,
+                    objective_value=objective_value,
+                    individual_id=individual_id,
+                    context=context,
+                    x_bytes=_x_bytes,
                 )
-                cached = self._bias_cache.get(cache_key)
+                cached = self._cache_get(cache_key)
                 if cached is not None:
-                    self._bias_cache.move_to_end(cache_key)
                     return cached
             except Exception as exc:
                 logger.warning("Bias cache key creation failed; bypass cache: %s", exc)
@@ -310,11 +361,159 @@ class BiasModule:
         biased_value = objective_value + total_bias
 
         if cache_key is not None:
-            if len(self._bias_cache) >= self.cache_max_items:
-                self._bias_cache.popitem(last=False)
-            self._bias_cache[cache_key] = biased_value
+            self._cache_set(cache_key, biased_value)
 
         return biased_value
+
+    def _cache_get(self, key: Any) -> Optional[float]:
+        if not self.cache_enabled:
+            return None
+        if self.cache_backend == "context_store" and self._cache_context_store is not None:
+            try:
+                return self._cache_context_store.get(str(key), default=None)
+            except Exception:
+                return None
+        cached = self._bias_cache.get(key)
+        if cached is not None:
+            self._bias_cache.move_to_end(key)
+        return cached
+
+    def _cache_set(self, key: Any, value: float) -> None:
+        if not self.cache_enabled:
+            return
+        if self.cache_backend == "context_store" and self._cache_context_store is not None:
+            try:
+                ttl = self.cache_ttl_seconds
+                self._cache_context_store.set(str(key), float(value), ttl_seconds=ttl)
+            except Exception:
+                return
+            return
+        if len(self._bias_cache) >= self.cache_max_items:
+            self._bias_cache.popitem(last=False)
+        self._bias_cache[key] = float(value)
+
+    def _build_cache_key(
+        self,
+        *,
+        x: np.ndarray,
+        objective_value: float,
+        individual_id: int,
+        context: Dict[str, Any],
+        x_bytes: Optional[bytes],
+    ) -> Any:
+        bias_name = str(getattr(self, "_name", "BiasModule"))
+        version = int(self._bias_cache_version)
+        generation = int(context.get(KEY_GENERATION, 0)) if self.cache_include_generation else None
+        ctx_fp = self._build_context_fingerprint(context)
+        x_hash = self._hash_bytes(x_bytes if x_bytes is not None else np.asarray(x).tobytes())
+        obj = float(objective_value)
+
+        if self.cache_backend == "context_store":
+            parts = [
+                f"{self.cache_key_prefix}:{bias_name}",
+                f"v={version}",
+                f"id={int(individual_id)}",
+                f"obj={repr(obj)}",
+                f"x={x_hash}",
+                f"ctx={ctx_fp}",
+            ]
+            if generation is not None:
+                parts.insert(5, f"gen={generation}")
+            return ":".join(parts)
+
+        if generation is None:
+            return (
+                bias_name,
+                version,
+                int(individual_id),
+                obj,
+                x_hash,
+                ctx_fp,
+            )
+        return (
+            bias_name,
+            version,
+            int(individual_id),
+            obj,
+            x_hash,
+            generation,
+            ctx_fp,
+        )
+
+    def _build_context_fingerprint(self, context: Optional[Dict[str, Any]]) -> str:
+        if not isinstance(context, dict):
+            return ""
+        if KEY_BIAS_CACHE_FINGERPRINT in context:
+            try:
+                return str(context.get(KEY_BIAS_CACHE_FINGERPRINT) or "")
+            except Exception:
+                return ""
+        keys = tuple(self.cache_context_keys or ())
+        if not keys:
+            return ""
+        payload = {str(k): context.get(k) for k in keys}
+        return self._stable_hash(payload)
+
+    @staticmethod
+    def _hash_bytes(data: bytes) -> str:
+        return hashlib.sha256(data).hexdigest()
+
+    @classmethod
+    def _stable_hash(cls, value: Any) -> str:
+        try:
+            payload = json.dumps(cls._normalize_value(value), sort_keys=True, separators=(",", ":"))
+        except Exception:
+            try:
+                payload = repr(value)
+            except Exception:
+                payload = f"<{type(value).__name__}>"
+        return hashlib.sha256(payload.encode("utf-8", errors="ignore")).hexdigest()
+
+    @classmethod
+    def _normalize_value(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, bytes):
+            return {"__bytes__": hashlib.sha256(value).hexdigest(), "len": len(value)}
+        if isinstance(value, np.ndarray):
+            return {
+                "__ndarray__": True,
+                "dtype": str(value.dtype),
+                "shape": list(value.shape),
+                "hash": cls._hash_bytes(value.tobytes()),
+            }
+        if isinstance(value, (list, tuple)):
+            return [cls._normalize_value(v) for v in value]
+        if isinstance(value, dict):
+            return {str(k): cls._normalize_value(v) for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))}
+        return repr(value)
+
+    def _resolve_snapshot_payload(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        store = self._snapshot_store
+        if store is None:
+            return {}
+        key = None
+        try:
+            key = context.get(KEY_POPULATION_REF) or context.get(KEY_SNAPSHOT_KEY) or context.get(KEY_HISTORY_REF)
+        except Exception:
+            key = None
+        if not key:
+            return {}
+        key_text = str(key)
+        if key_text == self._snapshot_cache_key and self._snapshot_cache_payload is not None:
+            return dict(self._snapshot_cache_payload)
+        try:
+            record = store.read(key_text)
+        except Exception:
+            record = None
+        if record is None:
+            return {}
+        payload = dict(record.data)
+        self._snapshot_cache_key = key_text
+        self._snapshot_cache_payload = payload
+        return payload
 
     def _get_or_update_context(
         self,
@@ -326,6 +525,8 @@ class BiasModule:
         extra_metrics = context.get(KEY_METRICS, {})
         if not isinstance(extra_metrics, dict):
             extra_metrics = {}
+
+        snapshot_payload = self._resolve_snapshot_payload(context)
 
         if self._context_cache is None:
             try:
@@ -347,9 +548,9 @@ class BiasModule:
                 self._context_cache = OptimizationContext(
                     generation=context.get(KEY_GENERATION, 0),
                     individual=x,
-                    population=context.get(KEY_POPULATION, []),
+                    population=snapshot_payload.get(KEY_POPULATION, []),
                     metrics=metrics,
-                    history=context.get(KEY_HISTORY, []),
+                    history=snapshot_payload.get(KEY_HISTORY, []),
                     problem_data=problem_data,
                 )
             except Exception:
@@ -359,7 +560,7 @@ class BiasModule:
             ctx = copy.copy(self._context_cache)
             setattr(ctx, "generation", context.get(KEY_GENERATION, 0))
             setattr(ctx, "individual", x)
-            setattr(ctx, "population", context.get(KEY_POPULATION, []))
+            setattr(ctx, "population", snapshot_payload.get(KEY_POPULATION, []))
             metrics = {
                 "objective_value": objective_value,
                 KEY_INDIVIDUAL_ID: individual_id,
@@ -368,7 +569,7 @@ class BiasModule:
             metrics.update(extra_metrics)
             setattr(ctx, "metrics", metrics)
             try:
-                setattr(ctx, "history", context.get(KEY_HISTORY, []))
+                setattr(ctx, "history", snapshot_payload.get(KEY_HISTORY, []))
                 problem_data = context.get(KEY_PROBLEM_DATA, {})
                 if not isinstance(problem_data, dict):
                     problem_data = {}
@@ -496,7 +697,7 @@ class BiasModule:
 
     def clear_cache(self):
         with self._lock:
-            self._bias_cache.clear()
+            self._bump_cache_version()
 
     def _bump_cache_version(self):
         # caller holds lock when mutating bias/cache state

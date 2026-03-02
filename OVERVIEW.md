@@ -1,67 +1,35 @@
-# NSGABlack 概览（Overview）
+# NSGABlack Overview
 
-**一句话**：NSGABlack 不是“又一个优化算法库”，而是把优化实验的结构拆清楚、让可复现和可审计变成默认的工程化框架。
+一句话：`NSGABlack` 不是“再来一个算法库”，而是把优化系统拆成可组合、可诊断、可复现的工程框架。
 
-## 你会遇到的真实问题（也是本框架要解决的）
+## 你会遇到的问题
+- 结果看起来不错，但很难复现和解释“为什么有效”。
+- 新策略接入后牵一发而动全身，对比口径不一致。
+- 约束、偏好、算法逻辑混在一起，维护成本越来越高。
 
-- 结果看起来不错，但**无法复现**、无法解释“为什么好”。
-- 新算法改起来牵一发动全身，**实验口径不一致**，对比没意义。
-- 约束/偏好/策略混在一起，**改一点就坏**，长期无法维护。
-- 你知道“应该更严谨”，但**工程成本太高**，被迫妥协。
+## 核心结构
+- `Problem`：目标与约束定义。
+- `SolverBase`：求解器控制面（生命周期、stop/step、plugin hook、context/snapshot）。
+- `ComposableSolver`：通用执行器（由 `Adapter.propose/update` 驱动）。
+- `EvolutionSolver`：官方进化求解器预置（基于 adapter 体系）。
+- `RepresentationPipeline`：初始化/变异/修复（硬约束优先放这里）。
+- `BiasModule`：软偏好与策略偏置。
+- `Plugin`：观测、回放、导出、并行、checkpoint 等运行能力。
+- `Catalog + Suite`：组件可发现与权威装配。
 
-NSGABlack 的目标不是让你“更快跑出结果”，而是让你**更快建立可迭代、可对比、可复现的实验体系**。
+## Context + Snapshot 分层
+- `ContextStore`：小字段、契约字段、组件协作字段。
+- `SnapshotStore`：大对象载体（population/objectives/violations/pareto/history/trace）。
+- `Context` 只放引用（`*_ref` / `snapshot_key`），大对象通过快照读写。
 
-## 这套框架做了什么（核心结构）
-
-把优化拆成 5 个核心组件：
-
-- **Problem**：问题本体（目标/约束/评估）
-- **Solver**：运行容器与生命周期（调度 Pipeline/Bias/Adapter/Plugin）
-- **RepresentationPipeline**：表示/初始化/变异/修复（硬约束在这里）
-- **BiasModule**：偏好与软约束（可开关、可比较）
-- **Adapter**：搜索策略内核（算法逻辑，ComposableSolver 体系的搜索引擎；BlackBoxSolverNSGAII 已内建搜索逻辑）
-
-工程生态（覆盖运行、复现、可视化与资产沉淀）：
-
-- **Plugin**：并行、记录、统计、回放、可视化等运行能力
-- **Suite**：权威组合（把必配伙伴组件一键装配）
-- **Catalog**：可搜索、可发现、可复用的组件索引
-- **Tool / Utils**：运行入口、分析工具、可视化 UI 与工程辅助
-- **Benchmark / Harness**：统一实验口径、批量实验与复现输出
-
-## 30 秒入口（最小可运行）
-
+## 快速入口
 ```powershell
 python -m pip install -e .
 python examples/end_to_end_workflow_demo.py
 ```
 
-你可以从：
+建议阅读顺序：
+- `START_HERE.md`
+- `WORKFLOW_END_TO_END.md`
+- `docs/FEATURES_OVERVIEW.md`
 
-- `WORKFLOW_END_TO_END.md`（手把手落地真实问题）
-- `START_HERE.md`（开发者路线）
-- `docs/FEATURES_OVERVIEW.md`（一页功能总览）
-
-## 为什么它不同
-
-- **可审计**：运行前审查配置，运行中可追溯结构差异。
-- **可复现**：统一输出口径 + 结构快照 + 标准化实验流程。
-- **可迭代**：新想法落在恰当层级，不再改“主循环”。
-- **可组合**：算法像积木一样拼接，而不是写一次性脚本。
-
-## 适合谁 / 不适合谁
-
-适合：
-- 做优化研究、做工业优化落地、需要严谨对比与复现的人。
-
-不适合：
-- 只想快速跑通、追求“黑盒调参出结果”的场景。
-
-## 你可能关心的边界
-
-- 它不替代你的业务建模，但会让你的建模更清晰。
-- 它不会让一次实验更简单，但会让**长期迭代成本显著下降**。
-
----
-
-如需快速了解：从 `README.md` 的“快速开始”部分开始。

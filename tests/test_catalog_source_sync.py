@@ -15,7 +15,7 @@ def test_source_sync_scan_read_and_apply(tmp_path):
             [
                 "class DemoBias:",
                 '    \"\"\"demo bias\"\"\"',
-                "    context_requires = ('population',)",
+                "    context_requires = ('population_ref',)",
                 "    context_provides = ()",
                 "    def compute(self, x, context):",
                 "        return 0.0",
@@ -34,7 +34,7 @@ def test_source_sync_scan_read_and_apply(tmp_path):
     assert by_name["DemoPlugin"].kind == "plugin"
 
     contract = read_symbol_contract(source, "DemoBias")
-    assert contract["context_requires"] == ("population",)
+    assert contract["context_requires"] == ("population_ref",)
     assert contract["context_provides"] == ()
     assert contract["context_mutates"] == ()
 
@@ -44,16 +44,16 @@ def test_source_sync_scan_read_and_apply(tmp_path):
         {
             "context_requires": ("generation",),
             "context_provides": ("bias_score",),
-            "context_mutates": ("population",),
-            "context_cache": ("objectives",),
+            "context_mutates": ("population_ref",),
+            "context_cache": ("objectives_ref",),
             "context_notes": ("tracks score history",),
         },
     )
     updated = read_symbol_contract(source, "DemoBias")
     assert updated["context_requires"] == ("generation",)
     assert updated["context_provides"] == ("bias_score",)
-    assert updated["context_mutates"] == ("population",)
-    assert updated["context_cache"] == ("objectives",)
+    assert updated["context_mutates"] == ("population_ref",)
+    assert updated["context_cache"] == ("objectives_ref",)
     assert updated["context_notes"] == ("tracks score history",)
 
 

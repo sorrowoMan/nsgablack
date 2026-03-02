@@ -11,6 +11,21 @@
 - Context 页异常从“仅控制台”升级为“UI 内可见错误提示 + 状态栏提示”。
 - 增加 Context 流程最小回归测试（选择字段 -> 小窗刷新 -> 双击跳转）。
 
+## 2026-02-28
+
+- Run/Audit 视图新增 `Sequence` 卡片，用于查看交互顺序图（去重后的组件调用序列）。
+- Run 完成后自动刷新 Sequence 卡片；History 选中时联动加载 Sequence。
+- 新增 `SequenceGraphPlugin` 输出 `runs/<run_id>.sequence_graph.json` 供 UI 读取。
+- Sequence 卡片新增 `Trie` 子标签，用前缀树视图展示共享路径与分支结构。
+- Sequence 卡片新增 `Trace` 子标签，可查看带 `start/end/thread/task/span/parent` 的时序明细。
+- Trace 子标签新增 `By Thread/Task` 聚合视图，便于快速定位并发热点与异常分组。
+
+## 2026-03-01
+
+- Run/Audit 视图新增 `Repro` 卡片，支持 `Load Last / Load File / Compare Current / Run By Bundle`。
+- 每次 Run 结束后自动导出 `runs/<run_id>.repro_bundle.json`（schema: `repro_bundle` v1）。
+- Repro 比对结果输出 `BLOCKER/WARN/INFO`，用于区分“不可重跑”与“可重跑但有漂移”。
+
 ## 维护规则
 
 - 每次 UI 行为变更，至少追加一条变更日志。

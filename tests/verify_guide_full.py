@@ -368,10 +368,10 @@ print("第五步：基础求解（无 Pipeline/Bias）")
 print("=" * 70)
 
 try:
-    from nsgablack.core.solver import BlackBoxSolverNSGAII
+    from nsgablack.core.evolution_solver import EvolutionSolver
 
     # 创建求解器
-    solver_baseline = BlackBoxSolverNSGAII(problem)
+    solver_baseline = EvolutionSolver(problem)
     solver_baseline.pop_size = 50
     solver_baseline.max_generations = 20  # 较少迭代加快测试
 
@@ -408,7 +408,7 @@ print("=" * 70)
 
 try:
     # 创建新的求解器
-    solver_with_pipeline = BlackBoxSolverNSGAII(problem)
+    solver_with_pipeline = EvolutionSolver(problem)
     solver_with_pipeline.pop_size = 50
     solver_with_pipeline.max_generations = 20
 
@@ -452,7 +452,7 @@ print("=" * 70)
 
 try:
     # 创建新的求解器
-    solver_full = BlackBoxSolverNSGAII(problem)
+    solver_full = EvolutionSolver(problem)
     solver_full.pop_size = 50
     solver_full.max_generations = 20
 

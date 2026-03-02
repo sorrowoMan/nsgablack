@@ -1,7 +1,7 @@
 ﻿# Context 字段命名与新增规则
 
 > context_field_schema_name: context_field_schema  
-> context_field_schema_version: 1
+> context_field_schema_version: 2
 
 本规范用于约束 Context 字段治理，避免同义字段漂移、隐式写入和不可审计状态。
 
@@ -27,6 +27,15 @@
 - `cache`：性能缓存，不保证可重放
 - `custom`：临时/扩展字段（后续应收敛）
 
+## 3.1 Context vs Snapshot 决策表（必须）
+
+| 数据类型 | 放置位置 | 典型例子 | 说明 |
+|---|---|---|---|
+| 小字段、控制信号、契约依赖 | Context | `generation`、`phase_id`、`snapshot_key`、`population_ref` | 组件协作与可审计主通道 |
+| 大对象、频繁读写数组 | SnapshotStore | `population`、`objectives`、`constraint_violations`、`pareto_*` | 不直接塞入 Context，避免膨胀和后端压力 |
+| 需要跨组件共享的大对象 | Context 放引用 + Snapshot 放实体 | `population_ref -> snapshot_key` | Context 只传指针，读取走 `read_snapshot()` |
+| 组件私有临时变量 | 组件内部 | 局部缓存、单次中间值 | 不写 Context，不写 Snapshot |
+
 ## 4. 组件契约规则（必须）
 
 所有涉及字段读写的组件都要显式声明：
@@ -38,6 +47,19 @@
 - `context_notes`
 
 `doctor --strict` 与 Run Inspector 会据此审计。
+
+最低模板要求（建议直接复制）：
+
+```python
+class MyComponent:
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Explain what/why for context interactions.",)
+```
+
+其中 `context_requires/context_provides/context_mutates` 是核心三字段，必须明确写出（可以为空元组）。
 
 ## 5. 写入来源规则（必须）
 
@@ -76,6 +98,6 @@ This document defines hard governance rules for Context key lifecycle and compat
 ## Versioning
 
 - `context_field_schema_name = context_field_schema`
-- `context_field_schema_version = 1`
+- `context_field_schema_version = 2`
 
 When semantics break compatibility, bump schema version and provide migration guidance.

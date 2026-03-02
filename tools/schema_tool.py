@@ -29,6 +29,10 @@ def _infer_schema_name(path: Path) -> Optional[str]:
         return "bias_report"
     if name.endswith(".summary.json"):
         return "benchmark_summary"
+    if name.endswith(".sequence_graph.json"):
+        return "sequence_graph"
+    if name.endswith(".repro_bundle.json"):
+        return "repro_bundle"
     if path.parent.name == "visualizer" and name.endswith(".json"):
         return "run_inspector_snapshot"
     return None

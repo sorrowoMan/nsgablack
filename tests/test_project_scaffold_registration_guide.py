@@ -28,6 +28,7 @@ def test_project_doctor_skips_scaffold_checks_for_non_scaffold_folder(tmp_path):
     codes = {d.code for d in report.diagnostics}
     assert "structure-skip" in codes
     assert "registry-skip" in codes
+    assert "doctor-common-misuse-hints" in codes
 
 
 def test_project_doctor_parses_utf8_sig_python_source(tmp_path):
@@ -51,6 +52,23 @@ def test_project_doctor_strict_escalates_missing_contract_to_error(tmp_path):
     rows = [d for d in report.diagnostics if d.code == "class-contract-missing"]
     assert rows
     assert all(d.level == "error" for d in rows)
+
+
+def test_project_doctor_warns_when_core_contract_keys_missing(tmp_path):
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir(parents=True)
+    source = (
+        "class DemoAdapter:\n"
+        "    context_notes = ('demo',)\n"
+        "    def propose(self, solver, context):\n"
+        "        return []\n"
+    )
+    (adapter_dir / "demo_adapter.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "class-contract-core-missing"]
+    assert rows
+    assert all(d.level == "warn" for d in rows)
 
 
 def test_project_doctor_strict_blocks_template_not_implemented(tmp_path):
@@ -592,3 +610,139 @@ def test_project_doctor_reports_unregistered_project_components_as_info(tmp_path
     rows = [d for d in report.diagnostics if d.code == "project-component-unregistered"]
     assert rows
     assert all(d.level == "info" for d in rows)
+
+
+def test_project_doctor_warns_unknown_contract_keys(tmp_path):
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir(parents=True)
+    source = (
+        "class DemoAdapter:\n"
+        "    context_requires = ('phase_id', 'unknown_feature_flag')\n"
+        "    context_provides = ('metrics.custom_score',)\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'ok'\n"
+    )
+    (adapter_dir / "demo_adapter.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "contract-key-unknown"]
+    assert rows
+    assert all(d.level == "warn" for d in rows)
+    assert any("unknown_feature_flag" in d.message for d in rows)
+
+
+def test_project_doctor_warns_contract_impl_mismatch(tmp_path):
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir(parents=True)
+    source = (
+        "class DemoAdapter:\n"
+        "    context_requires = ('generation',)\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'ok'\n"
+        "    def run(self, context):\n"
+        "        _ = context['phase_id']\n"
+        "        context['dynamic'] = {'a': 1}\n"
+        "        return _\n"
+    )
+    (adapter_dir / "demo_adapter.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "contract-impl-mismatch"]
+    assert rows
+    assert all(d.level == "warn" for d in rows)
+    assert any("phase_id" in d.message for d in rows)
+    assert any("dynamic" in d.message for d in rows)
+
+
+def test_project_doctor_warns_large_object_context_write(tmp_path):
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir(parents=True)
+    source = (
+        "class DemoAdapter:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ('population',)\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'ok'\n"
+        "    def run(self, context):\n"
+        "        context['population'] = [[1.0, 2.0]]\n"
+    )
+    (adapter_dir / "demo_adapter.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "context-large-object-write"]
+    assert rows
+    assert all(d.level == "warn" for d in rows)
+
+
+def test_project_doctor_warns_snapshot_ref_unreadable(tmp_path):
+    root = init_project(tmp_path / "snapshot_ref_consistency_project")
+    (root / "build_solver.py").write_text(
+        "class DemoSolver:\n"
+        "    def __init__(self):\n"
+        "        self.population = [[0.0, 1.0]]\n"
+        "        self.objectives = [[1.0]]\n"
+        "        self.constraint_violations = [0.0]\n"
+        "    def get_context(self):\n"
+        "        return {\n"
+        "            'snapshot_key': 'snap-ok',\n"
+        "            'population_ref': 'snap-missing',\n"
+        "            'objectives_ref': 'snap-ok',\n"
+        "            'constraint_violations_ref': 'snap-ok',\n"
+        "        }\n"
+        "    def read_snapshot(self, key):\n"
+        "        if key == 'snap-ok':\n"
+        "            return {\n"
+        "                'population': [[0.0, 1.0]],\n"
+        "                'objectives': [[1.0]],\n"
+        "                'constraint_violations': [0.0],\n"
+        "            }\n"
+        "        return None\n"
+        "\n"
+        "def build_solver():\n"
+        "    return DemoSolver()\n",
+        encoding="utf-8",
+    )
+
+    report = run_project_doctor(root, instantiate_solver=True, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "snapshot-ref-consistency"]
+    assert rows
+    assert any(d.level == "error" for d in rows)
+
+
+def test_project_doctor_warns_snapshot_payload_shape_mismatch(tmp_path):
+    root = init_project(tmp_path / "snapshot_payload_integrity_project")
+    (root / "build_solver.py").write_text(
+        "class DemoSolver:\n"
+        "    def __init__(self):\n"
+        "        self.population = [[0.0, 1.0], [2.0, 3.0]]\n"
+        "        self.objectives = [[1.0], [2.0]]\n"
+        "        self.constraint_violations = [0.0, 0.0]\n"
+        "    def get_context(self):\n"
+        "        return {\n"
+        "            'snapshot_key': 'snap-bad',\n"
+        "            'population_ref': 'snap-bad',\n"
+        "            'objectives_ref': 'snap-bad',\n"
+        "            'constraint_violations_ref': 'snap-bad',\n"
+        "        }\n"
+        "    def read_snapshot(self, key):\n"
+        "        if key != 'snap-bad':\n"
+        "            return None\n"
+        "        return {\n"
+        "            'population': [[0.0, 1.0]],\n"
+        "            'objectives': [[1.0], [2.0]],\n"
+        "            'constraint_violations': [0.0],\n"
+        "        }\n"
+        "\n"
+        "def build_solver():\n"
+        "    return DemoSolver()\n",
+        encoding="utf-8",
+    )
+
+    report = run_project_doctor(root, instantiate_solver=True, strict=False)
+    rows = [d for d in report.diagnostics if d.code == "snapshot-payload-integrity"]
+    assert rows
+    assert all(d.level == "warn" for d in rows)

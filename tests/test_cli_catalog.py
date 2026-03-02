@@ -33,7 +33,7 @@ def test_cli_catalog_add_upsert(tmp_path, capsys):
             "--tags",
             "bias,demo",
             "--context-requires",
-            "population,generation",
+            "population_ref,generation",
             "--context-provides",
             "bias_score",
         ]
@@ -46,5 +46,5 @@ def test_cli_catalog_add_upsert(tmp_path, capsys):
     assert "use_when = [" in text
     assert "minimal_wiring = [" in text
     assert "example_entry = " in text
-    assert "context_requires = ['population', 'generation']" in text
+    assert "context_requires = ['population_ref', 'generation']" in text
     assert "context_provides = ['bias_score']" in text

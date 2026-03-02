@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.plugins import CheckpointResumeConfig, CheckpointResumePlugin, Plugin
 
 
@@ -23,7 +23,7 @@ class _ExplodingPlugin(Plugin):
 
 
 def _make_solver(sample_problem):
-    solver = BlackBoxSolverNSGAII(sample_problem)
+    solver = EvolutionSolver(sample_problem)
     solver.pop_size = 12
     solver.max_generations = 4
     solver.enable_progress_log = False

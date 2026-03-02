@@ -417,17 +417,17 @@ def _default_entries() -> List[CatalogEntry]:
         # --- Solvers (bases) ---
         CatalogEntry(
             key="solver.nsga2",
-            title="BlackBoxSolverNSGAII",
+            title="EvolutionSolver",
             kind="tool",
-            import_path="nsgablack.core.solver:BlackBoxSolverNSGAII",
+            import_path="nsgablack.core.evolution_solver:EvolutionSolver",
             tags=('evolutionary', 'nsga2', 'solver'),
-            summary="\u5de5\u5177\uff1aBlackBoxSolverNSGAII\u3002 / Tool: BlackBoxSolverNSGAII.",
+            summary="\u5de5\u5177\uff1aEvolutionSolver\u3002 / Tool: EvolutionSolver.",
             use_when=(
                 'Need this utility/tool in workflow assembly or diagnostics.',
             ),
             minimal_wiring=(
-                'from nsgablack.core.solver import BlackBoxSolverNSGAII',
-                'BlackBoxSolverNSGAII()',
+                'from nsgablack.core.evolution_solver import EvolutionSolver',
+                'EvolutionSolver()',
             ),
             required_companions=(
                 '(none)',
@@ -439,17 +439,17 @@ def _default_entries() -> List[CatalogEntry]:
         ),
         CatalogEntry(
             key="solver.blank",
-            title="BlankSolverBase",
+            title="SolverBase",
             kind="tool",
-            import_path="nsgablack.core.blank_solver:BlankSolverBase",
+            import_path="nsgablack.core.blank_solver:SolverBase",
             tags=('base', 'blank', 'solver'),
-            summary="\u5de5\u5177\uff1aBlankSolverBase\u3002 / Tool: BlankSolverBase.",
+            summary="\u5de5\u5177\uff1aSolverBase\u3002 / Tool: SolverBase.",
             use_when=(
                 'Need this utility/tool in workflow assembly or diagnostics.',
             ),
             minimal_wiring=(
-                'from nsgablack.core.blank_solver import BlankSolverBase',
-                'BlankSolverBase()',
+                'from nsgablack.core.blank_solver import SolverBase',
+                'SolverBase()',
             ),
             required_companions=(
                 '(none)',

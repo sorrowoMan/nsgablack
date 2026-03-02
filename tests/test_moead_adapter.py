@@ -47,9 +47,11 @@ def test_moead_adapter_runs_and_updates_archive():
     assert getattr(solver, "pareto_objectives", None) is not None
     assert np.asarray(solver.pareto_objectives).ndim == 2
     assert np.asarray(solver.pareto_objectives).shape[1] == 2
-    # Adapter-owned population is exposed via runtime context projection.
+    # Adapter-owned population is exposed via snapshot refs.
     ctx = solver.get_context()
-    assert np.asarray(ctx.get("population", np.zeros((0, 0))), dtype=float).shape[0] == 40
+    assert "snapshot_key" in ctx
+    data = solver.read_snapshot(ctx.get("snapshot_key")) or {}
+    assert np.asarray(data.get("population", np.zeros((0, 0))), dtype=float).shape[0] == 40
 
 
 def test_moead_adapter_rejects_legacy_nsga_loop_solver():

@@ -70,7 +70,7 @@ class MyProblem(BlackBoxProblem):
 
 ### 这段代码如何与框架匹配
 
-- `BlackBoxSolverNSGAII.run()` 会反复调用 `problem.evaluate(x)`
+- `EvolutionSolver.run()` 会反复调用 `problem.evaluate(x)`
 - 若定义了约束，会读 `evaluate_constraints(x)`
 - Inspector 的问题卡片会显示这个类
 
@@ -295,7 +295,7 @@ problem = MyProblem(dimension=8)
 pipeline = build_pipeline()
 bias_module = build_bias_module(enable_bias=True)
 
-solver = BlackBoxSolverNSGAII(problem, bias_module=bias_module)
+solver = EvolutionSolver(problem, bias_module=bias_module)
 solver.set_representation_pipeline(pipeline)
 solver.add_plugin(MyPlugin(interval=5))
 ```

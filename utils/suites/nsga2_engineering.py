@@ -19,7 +19,7 @@ def attach_nsga2_engineering(
     convergence_early_stop: bool = False,
 ) -> Any:
     """
-    Attach a conservative set of plugins to a `BlackBoxSolverNSGAII`.
+    Attach a conservative set of plugins to a `EvolutionSolver`.
 
     Notes
     - This suite intentionally does *not* change representation/bias choices.

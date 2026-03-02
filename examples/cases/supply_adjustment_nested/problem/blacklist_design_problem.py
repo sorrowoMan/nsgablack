@@ -8,7 +8,7 @@ from typing import Callable
 import numpy as np
 
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 
 from evaluation import ProductionInnerEvalConfig, ProductionInnerEvaluationModel
 from problem.supply_event_shift_problem import SupplyEventShiftProblem
@@ -90,7 +90,7 @@ class BlacklistDesignProblem(BlackBoxProblem):
         )
 
         self._cache: dict[tuple[int, ...], tuple[np.ndarray, dict]] = {}
-        self._baseline_output: float = self._compute_baseline_output()
+        self._baseline_output: float | None = None
 
     @staticmethod
     def _build_relation_graph(bom_bool: np.ndarray) -> list[set[int]]:
@@ -184,7 +184,7 @@ class BlacklistDesignProblem(BlackBoxProblem):
             material_blacklist=blacklist_ids,
             max_moved_events=self.eval_cfg.max_moved_events,
         )
-        solver = BlackBoxSolverNSGAII(
+        solver = EvolutionSolver(
             problem,
             pop_size=int(self.eval_cfg.outer_pop_size),
             max_generations=int(self.eval_cfg.outer_generations),
@@ -211,7 +211,13 @@ class BlacklistDesignProblem(BlackBoxProblem):
         )
         return float(max(output, 1e-9))
 
+    def _ensure_baseline_output(self) -> float:
+        if self._baseline_output is None:
+            self._baseline_output = self._compute_baseline_output()
+        return float(self._baseline_output)
+
     def evaluate(self, x: np.ndarray) -> np.ndarray:
+        baseline_output = self._ensure_baseline_output()
         blacklist = self._decode_blacklist_ids(x)
         key = tuple(blacklist)
         hit = self._cache.get(key)
@@ -219,7 +225,7 @@ class BlacklistDesignProblem(BlackBoxProblem):
             return np.array(hit[0], dtype=float)
 
         runtime, best_output = self._run_l1(blacklist)
-        quality_gap = max(0.0, (self._baseline_output - best_output) / max(self._baseline_output, 1e-9))
+        quality_gap = max(0.0, (baseline_output - best_output) / max(baseline_output, 1e-9))
         size_ratio = float(len(blacklist)) / max(1.0, float(self.base_supply.shape[0]))
         obj = np.array([runtime, quality_gap, size_ratio], dtype=float)
         self._cache[key] = (obj, {"runtime": runtime, "best_output": best_output, "quality_gap": quality_gap})
@@ -244,6 +250,7 @@ class BlacklistDesignProblem(BlackBoxProblem):
         return obj
 
     def evaluate_constraints(self, x: np.ndarray) -> np.ndarray:
+        _ = self._ensure_baseline_output()
         blacklist = self._decode_blacklist_ids(x)
         key = tuple(blacklist)
         hit = self._cache.get(key)

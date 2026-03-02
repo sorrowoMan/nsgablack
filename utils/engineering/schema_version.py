@@ -10,6 +10,8 @@ SCHEMA_VERSIONS: Dict[str, int] = {
     "module_report": 1,
     "bias_report": 1,
     "benchmark_summary": 1,
+    "sequence_graph": 2,
+    "repro_bundle": 1,
 }
 
 

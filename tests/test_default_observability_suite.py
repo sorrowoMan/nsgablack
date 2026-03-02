@@ -1,7 +1,7 @@
 import numpy as np
 
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.utils.suites import attach_default_observability_plugins
 
 
@@ -15,7 +15,7 @@ class _ToyProblem(BlackBoxProblem):
 
 
 def test_attach_default_observability_plugins_idempotent():
-    solver = BlackBoxSolverNSGAII(_ToyProblem())
+    solver = EvolutionSolver(_ToyProblem())
     attach_default_observability_plugins(
         solver,
         output_dir="runs",
@@ -35,4 +35,5 @@ def test_attach_default_observability_plugins_idempotent():
     assert "benchmark_harness" in names
     assert "module_report" in names
     assert "decision_trace" in names
+    assert "sequence_graph" in names
     assert names.count("decision_trace") == 1

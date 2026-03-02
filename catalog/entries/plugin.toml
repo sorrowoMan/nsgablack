@@ -1,5 +1,5 @@
 # Auto-generated from catalog/entries.toml
-# kind=plugin count=26
+# kind=plugin count=27
 [[entry]]
 key = "plugin.dynamic_switch"
 title = "DynamicSwitchPlugin"
@@ -401,8 +401,8 @@ tags = ["ops", "audit", "replay", "decision", "plugin"]
 summary = "Deterministic decision-path trace and replay artifacts (JSONL + summary)."
 companions = ["plugin.module_report", "plugin.profiler", "plugin.otel_tracing"]
 context_requires = ["generation"]
-context_provides = ["decision_trace"]
-context_mutates = ["decision_trace"]
+context_provides = ["decision_trace_ref"]
+context_mutates = ["decision_trace_ref"]
 context_cache = []
 context_notes = ["Record decision events with reason_code/inputs/thresholds/evidence/outcome for replay."]
 use_when = ["Need to explain why fallback/budget/surrogate decisions happened at specific generations."]
@@ -410,3 +410,22 @@ minimal_wiring = ["from nsgablack.plugins import DecisionTracePlugin, DecisionTr
 required_companions = ["(none)"]
 config_keys = ["output_dir", "run_id", "overwrite", "flush_every", "capture_evaluate", "capture_adapter", "capture_plugin_events", "include_context_events"]
 example_entry = "examples/decision_trace_demo.py:build_solver"
+
+[[entry]]
+key = "plugin.sequence_graph"
+title = "SequenceGraphPlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.ops.sequence_graph:SequenceGraphPlugin"
+tags = ["ops", "audit", "sequence", "graph", "timeline", "plugin"]
+summary = "Record unique component interaction orders and write sequence-graph artifacts."
+companions = ["plugin.decision_trace", "plugin.module_report"]
+context_requires = []
+context_provides = ["sequence_graph_ref"]
+context_mutates = ["sequence_graph_ref"]
+context_cache = []
+context_notes = ["Captures order-only interaction sequences (values ignored) and outputs a compact JSON graph."]
+use_when = ["Need to verify component interaction order, detect short-circuit paths, or audit orchestration flow."]
+minimal_wiring = ["from nsgablack.plugins import SequenceGraphPlugin, SequenceGraphConfig", "solver.add_plugin(SequenceGraphPlugin(config=SequenceGraphConfig(output_dir='runs', run_id='demo')))"]
+required_companions = ["(none)"]
+config_keys = ["output_dir", "run_id", "overwrite", "flush_every", "boundary_groups", "ignore_patterns", "max_sequence_length", "max_sequences", "capture_adapter", "capture_evaluate_population", "capture_evaluate_individual", "capture_plugin_events", "trace_mode", "trace_sample_rate", "trace_max_events", "trace_seed"]
+example_entry = "examples/sequence_graph_demo.py:build_solver"

@@ -31,7 +31,7 @@ from _bootstrap import ensure_nsgablack_importable  # noqa: E402
 
 ensure_nsgablack_importable(Path(__file__))
 
-from nsgablack.core.solver import BlackBoxSolverNSGAII  # noqa: E402
+from nsgablack.core.evolution_solver import EvolutionSolver  # noqa: E402
 from nsgablack.plugins import Plugin  # noqa: E402
 from nsgablack.utils.parallel import with_parallel_evaluation  # noqa: E402
 from nsgablack.utils.suites import attach_default_observability_plugins  # noqa: E402
@@ -281,7 +281,7 @@ def _build_solver_from_args(args):
     else:
         print(f"[constraint] max_moved_events<={int(args.max_moved_events)} (hard cap enabled)")
 
-    SolverCls = with_parallel_evaluation(BlackBoxSolverNSGAII)
+    SolverCls = with_parallel_evaluation(EvolutionSolver)
     solver = SolverCls(
         problem,
         pop_size=int(args.pop_size),

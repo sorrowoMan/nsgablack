@@ -16,6 +16,8 @@ from ...utils.context.context_keys import (
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_OBJECTIVES,
     KEY_POPULATION,
+    KEY_POPULATION_REF,
+    KEY_SNAPSHOT_KEY,
 )
 from ...utils.performance.fast_non_dominated_sort import FastNonDominatedSort
 
@@ -30,7 +32,7 @@ class NSGA2Config:
 
 class NSGA2Adapter(AlgorithmAdapter):
     context_requires = ()
-    context_provides = (KEY_POPULATION, KEY_OBJECTIVES, KEY_CONSTRAINT_VIOLATIONS, KEY_BEST_X, KEY_BEST_OBJECTIVE)
+    context_provides = (KEY_BEST_X, KEY_BEST_OBJECTIVE)
     context_mutates = ()
     context_cache = ()
     context_notes = "Population-based NSGA-II adapter with propose/update loop."
@@ -67,7 +69,7 @@ class NSGA2Adapter(AlgorithmAdapter):
             j = self._tournament_pick()
             p1 = np.asarray(self.population[i], dtype=float)
             p2 = np.asarray(self.population[j], dtype=float)
-            child = self._crossover(p1, p2)
+            child = self._crossover(solver, p1, p2, context)
             child = np.asarray(solver.mutate_candidate(child, context), dtype=float)
             child = np.asarray(solver.repair_candidate(child, context), dtype=float)
             out.append(child)
@@ -117,6 +119,15 @@ class NSGA2Adapter(AlgorithmAdapter):
         self._sync_runtime_projection()
         return True
 
+    def get_population(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        if self.population is None or self.objectives is None or self.violations is None:
+            return np.zeros((0, 0), dtype=float), np.zeros((0, 0), dtype=float), np.zeros((0,), dtype=float)
+        return (
+            np.asarray(self.population, dtype=float),
+            np.asarray(self.objectives, dtype=float),
+            np.asarray(self.violations, dtype=float).reshape(-1),
+        )
+
     def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
         _ = solver
         return dict(self._runtime_projection)
@@ -149,13 +160,29 @@ class NSGA2Adapter(AlgorithmAdapter):
         if self.population is not None and self.population.shape[0] > 0:
             return
 
-        pop = context.get(KEY_POPULATION)
-        obj = context.get(KEY_OBJECTIVES)
-        vio = context.get(KEY_CONSTRAINT_VIOLATIONS)
+        pop = None
+        obj = None
+        vio = None
+        reader = getattr(solver, "read_snapshot", None)
+        if callable(reader):
+            try:
+                key = context.get(KEY_POPULATION_REF) or context.get(KEY_SNAPSHOT_KEY)
+            except Exception:
+                key = None
+            try:
+                payload = reader(key) if key else reader()
+            except Exception:
+                payload = None
+            data = payload.data if hasattr(payload, "data") else payload
+            if isinstance(data, dict):
+                pop = data.get(KEY_POPULATION)
+                obj = data.get(KEY_OBJECTIVES)
+                vio = data.get(KEY_CONSTRAINT_VIOLATIONS)
+
         if pop is None:
             pop = getattr(solver, "population", None)
-            obj = getattr(solver, "objectives", obj)
-            vio = getattr(solver, "constraint_violations", vio)
+            obj = getattr(solver, "objectives", None)
+            vio = getattr(solver, "constraint_violations", None)
         if pop is not None:
             pop_arr = np.asarray(pop, dtype=float)
             if pop_arr.ndim == 2 and pop_arr.shape[0] > 0:
@@ -204,9 +231,18 @@ class NSGA2Adapter(AlgorithmAdapter):
         c_j = self._crowding[j] if self._crowding.size == n else 0.0
         return int(i if c_i >= c_j else j)
 
-    def _crossover(self, p1: np.ndarray, p2: np.ndarray) -> np.ndarray:
+    def _crossover(self, solver: Any, p1: np.ndarray, p2: np.ndarray, context: Dict[str, Any]) -> np.ndarray:
         if self._rng.random() > float(self.cfg.crossover_rate):
             return np.array(p1, copy=True)
+        pipeline = getattr(solver, "representation_pipeline", None)
+        crossover = getattr(pipeline, "crossover", None) if pipeline is not None else None
+        if crossover is not None and hasattr(crossover, "crossover"):
+            try:
+                c1, c2 = crossover.crossover(p1, p2, context)
+            except TypeError:
+                c1, c2 = crossover.crossover(p1, p2)
+            pick_second = bool(self._rng.random() < 0.5)
+            return np.asarray(c2 if pick_second else c1, dtype=float)
         alpha = self._rng.random(p1.shape[0])
         return np.asarray((alpha * p1) + ((1.0 - alpha) * p2), dtype=float)
 
@@ -226,12 +262,6 @@ class NSGA2Adapter(AlgorithmAdapter):
 
     def _sync_runtime_projection(self) -> None:
         projection: Dict[str, Any] = {}
-        if self.population is not None:
-            projection[KEY_POPULATION] = self.population.copy()
-        if self.objectives is not None:
-            projection[KEY_OBJECTIVES] = self.objectives.copy()
-        if self.violations is not None:
-            projection[KEY_CONSTRAINT_VIOLATIONS] = self.violations.copy()
         if self.population is not None and self.objectives is not None and self.violations is not None and self.population.shape[0] > 0:
             score = self._objective_scores(self.objectives, self.violations)
             best_idx = int(np.argmin(score))

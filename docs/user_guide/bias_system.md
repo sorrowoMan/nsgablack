@@ -41,7 +41,7 @@ evaluate(x) = f(x) + algorithmic_bias(x) + domain_bias(x)
 ```python
 from nsgablack.bias import UniversalBiasManager, OptimizationContext
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 
 # 创建问题
 problem = YourProblem()
@@ -59,8 +59,8 @@ constraint_bias.add_constraint(your_constraint_function, constraint_type='hard')
 bias_manager.domain_manager.add_bias(constraint_bias)
 
 # 挂到求解器
-from nsgablack.core.solver import BlackBoxSolverNSGAII
-solver = BlackBoxSolverNSGAII(problem)
+from nsgablack.core.evolution_solver import EvolutionSolver
+solver = EvolutionSolver(problem)
 solver.enable_bias = True
 solver.bias_module = bias_manager  # UniversalBiasManager 兼容 BiasModule 接口
 result = solver.run()
@@ -355,7 +355,7 @@ bias_manager = quick_engineering_bias(
 )
 
 # 挂到求解器
-solver = BlackBoxSolverNSGAII(problem)
+solver = EvolutionSolver(problem)
 solver.enable_bias = True
 solver.bias_module = bias_manager
 ```
@@ -562,30 +562,34 @@ class MultiStageBias:
 ### 3. **偏置效果分析**
 
 ```python
-def analyze_bias_effectiveness(bias_manager, evaluation_history):
-    """分析偏置效果"""
+def analyze_bias_effectiveness(bias_manager, evaluation_history, solver):
+    """分析偏置效果（通过快照引用取回 population）"""
 
     # 计算偏置贡献
     bias_contributions = []
     for record in evaluation_history:
+        snapshot_key = record.get("population_ref") or record.get("snapshot_key")
+        snapshot = solver.read_snapshot(snapshot_key) or {}
+        population = snapshot.get("population", [])
+
         context = OptimizationContext(
-            generation=record['generation'],
-            individual=record['individual'],
-            population=record['population']
+            generation=record["generation"],
+            individual=record["individual"],
+            population=population,
         )
 
         alg_bias = bias_manager.algorithmic_manager.compute_algorithmic_bias(
-            record['individual'], context
+            record["individual"], context
         )
         domain_bias = bias_manager.domain_manager.compute_domain_bias(
-            record['individual'], context
+            record["individual"], context
         )
 
         bias_contributions.append({
-            'generation': record['generation'],
-            'algorithmic_bias': alg_bias,
-            'domain_bias': domain_bias,
-            'total_bias': alg_bias + domain_bias
+            "generation": record["generation"],
+            "algorithmic_bias": alg_bias,
+            "domain_bias": domain_bias,
+            "total_bias": alg_bias + domain_bias,
         })
 
     return bias_contributions

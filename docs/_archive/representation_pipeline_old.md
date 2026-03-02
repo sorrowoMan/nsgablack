@@ -210,7 +210,7 @@ class RepresentationPipeline:
 
 ```python
 # core/solver.py
-class BlackBoxSolverNSGAII:
+class EvolutionSolver:
     def __init__(self, problem):
         ...
         self.representation_pipeline: RepresentationPipeline = None
@@ -254,7 +254,7 @@ pipeline = RepresentationPipeline(
 )
 
 # 使用
-solver = BlackBoxSolverNSGAII(problem)
+solver = EvolutionSolver(problem)
 solver.set_representation_pipeline(pipeline)
 result = solver.run()
 ```
@@ -397,7 +397,7 @@ pipeline = RepresentationPipeline(
 
 ```python
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.representation import RepresentationPipeline
 from nsgablack.representation.integer import IntegerInitializer, IntegerMutation
 
@@ -418,7 +418,7 @@ pipeline = RepresentationPipeline(
 
 # 求解
 problem = IntegerProblem()
-solver = BlackBoxSolverNSGAII(problem)
+solver = EvolutionSolver(problem)
 solver.set_representation_pipeline(pipeline)
 result = solver.run()
 ```
@@ -450,7 +450,7 @@ pipeline = RepresentationPipeline(
 )
 
 # 求解
-solver = BlackBoxSolverNSGAII(problem)
+solver = EvolutionSolver(problem)
 solver.set_representation_pipeline(pipeline)
 result = solver.run()
 ```
@@ -551,7 +551,7 @@ bias = ConstraintBias(
 )
 
 # 求解器：组合使用
-solver = BlackBoxSolverNSGAII(problem)
+solver = EvolutionSolver(problem)
 solver.set_representation_pipeline(pipeline)
 solver.bias_module = bias
 result = solver.run()

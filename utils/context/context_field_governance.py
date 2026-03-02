@@ -7,7 +7,7 @@ from .context_keys import CANONICAL_CONTEXT_KEYS, normalize_context_key
 
 
 CONTEXT_FIELD_SCHEMA_NAME = "context_field_schema"
-CONTEXT_FIELD_SCHEMA_VERSION = 1
+CONTEXT_FIELD_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)

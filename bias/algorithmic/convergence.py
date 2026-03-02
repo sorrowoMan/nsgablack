@@ -16,7 +16,7 @@ class ConvergenceBias(AlgorithmicBias):
 
     Increases bias as optimization progresses to accelerate convergence.
     """
-    context_requires = ("generation", "population")
+    context_requires = ("generation", "population_ref")
     requires_metrics = ()
     context_provides = ()
     context_mutates = ()

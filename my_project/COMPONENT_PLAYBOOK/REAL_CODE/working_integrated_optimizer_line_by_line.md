@@ -409,7 +409,7 @@
 402 | def _extract_pareto(solver_or_result) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]: || 定义函数 `_extract_pareto`。
 403 |     """ || 文档字符串开始：说明模块或函数意图。
 404 |     Normalize Pareto outputs from either: || 文档字符串内容。
-405 |     - BlackBoxSolverNSGAII result dict || 文档字符串内容。
+405 |     - EvolutionSolver result dict || 文档字符串内容。
 406 |     - ComposableSolver + ParetoArchivePlugin (solver.pareto_*) || 文档字符串内容。
 407 |     """ || 文档字符串结束。
 408 |     if isinstance(solver_or_result, dict): || 条件分支。

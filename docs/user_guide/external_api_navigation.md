@@ -18,9 +18,9 @@ Note:
 from nsgablack import get_catalog  # discoverability entrypoint
 
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.core.composable_solver import ComposableSolver
-from nsgablack.core.blank_solver import BlankSolverBase
+from nsgablack.core.blank_solver import SolverBase
 from nsgablack.representation import RepresentationPipeline
 from nsgablack.bias import BiasModule
 from nsgablack.utils.parallel import ParallelEvaluator
@@ -30,7 +30,7 @@ from nsgablack.utils.parallel import ParallelEvaluator
 
 Regular multi-objective:
 
-- Solver: `BlackBoxSolverNSGAII`
+- Solver: `EvolutionSolver`
 - With: `RepresentationPipeline` (hard feasibility) + `BiasModule` (soft guidance)
 
 Algorithm decomposition / fusion:
@@ -41,7 +41,7 @@ Algorithm decomposition / fusion:
 
 Custom workflow / non-evolutionary prototype:
 
-- Solver base: `BlankSolverBase`
+- Solver base: `SolverBase`
 - Orchestration: `plugins/*`
 
 Expensive black-box evaluation (cache / surrogate / short-circuit):

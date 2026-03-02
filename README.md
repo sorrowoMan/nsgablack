@@ -51,12 +51,20 @@ For the complete depth + breadth workflow, read in this order:
 - Plugin：工程能力（日志、评估短路、报告、恢复等）。
 - Runtime-first：新功能优先走 Runtime/context 契约，不直接写 solver 运行态字段。
 
+## 当前架构（v2）
+
+- 控制面：`SolverRuntime` + `ContextStore`，承载生命周期与小字段信号
+- 数据面：`SnapshotStore` 专职大对象快照（population/objectives/violations/pareto/history/trace）
+- 组件交互：Context 只放 refs，小对象与信号；大对象统一走快照读写
+- 统一读写口：`solver.read_snapshot()` / `Plugin.resolve_population_snapshot()` / `Plugin.commit_population_snapshot()`
+
 ## 常用入口
 
 - `QUICKSTART.md`：安装与最小闭环。
 - `START_HERE.md`：工作流入口地图。
 - `WORKFLOW_END_TO_END.md`：端到端实践流程。
 - `docs/user_guide/RUN_INSPECTOR.md`：Run Inspector 用法。
+- Sequence 卡片包含三个子标签：`List`（序列列表）、`Trie`（前缀树分支视图）、`Trace`（并发时序明细，默认关闭）。
 - `docs/user_guide/CONTEXT_CONTRACTS.md`：context 契约说明。
 - `docs/user_guide/EXAMPLE_IO_CONTRACTS.md`：权威示例输入/输出契约。
 
@@ -182,13 +190,12 @@ python tools/context_field_guard.py --strict
 - 广度：`Adapter + Bias + Plugin` 组合打通多策略协同。
 - 工程闭环：脚手架 -> 注册 -> 搜索 -> 装配 -> 运行 -> 审计（Run Inspector/doctor）。
 
-
 ## Redis Context Backend (optional)
 
 Enable Redis as context backend (context contract/API stays the same):
 
 ```python
-solver = BlackBoxSolverNSGAII(
+solver = EvolutionSolver(
     problem,
     context_store_backend="redis",
     context_store_redis_url="redis://127.0.0.1:6379/0",
@@ -211,11 +218,3 @@ docker start nsgablack-redis
 # stop when not needed:
 docker stop nsgablack-redis
 ```
-
-常见问题：
-- 第一次使用要不要执行 `docker run`？
-  - 要。首次需要创建容器；之后通常只需 `docker start/stop`。
-- 关闭 Docker 会不会清空 Redis 数据？
-  - 不会。`docker start/stop` 只控制启停，不会删除容器。
-- 不启用 Redis 可以吗？
-  - 可以。将 `context_store_backend="memory"` 即可回到内存后端。

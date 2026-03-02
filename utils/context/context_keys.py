@@ -112,6 +112,8 @@ KEY_METRICS_IMPLICIT_SUCCESS = "metrics.implicit_success"
 KEY_METRICS_INNER_ELAPSED_MS = "metrics.inner_elapsed_ms"
 KEY_METRICS_INNER_STATUS = "metrics.inner_status"
 KEY_METRICS_INNER_CALLS = "metrics.inner_calls"
+KEY_METRICS_SOFT_ERROR_COUNT = "metrics.soft_error_count"
+KEY_METRICS_SOFT_ERROR_LAST = "metrics.soft_error_last"
 
 # Context meta
 KEY_EVALUATION_COUNT = "evaluation_count"
@@ -125,6 +127,19 @@ KEY_CONTEXT_CACHE = "context_cache"
 KEY_DECISION_TRACE = "decision_trace"
 KEY_CHECKPOINT_LATEST_PATH = "checkpoint.latest_path"
 KEY_CHECKPOINT_LAST_LOADED_PATH = "checkpoint.last_loaded_path"
+KEY_BIAS_CACHE_FINGERPRINT = "bias_cache_fingerprint"
+KEY_SNAPSHOT_KEY = "snapshot_key"
+KEY_SNAPSHOT_BACKEND = "snapshot_backend"
+KEY_SNAPSHOT_SCHEMA = "snapshot_schema"
+KEY_SNAPSHOT_META = "snapshot_meta"
+KEY_POPULATION_REF = "population_ref"
+KEY_OBJECTIVES_REF = "objectives_ref"
+KEY_CONSTRAINT_VIOLATIONS_REF = "constraint_violations_ref"
+KEY_PARETO_SOLUTIONS_REF = "pareto_solutions_ref"
+KEY_PARETO_OBJECTIVES_REF = "pareto_objectives_ref"
+KEY_HISTORY_REF = "history_ref"
+KEY_DECISION_TRACE_REF = "decision_trace_ref"
+KEY_SEQUENCE_GRAPH_REF = "sequence_graph_ref"
 
 CANONICAL_CONTEXT_KEYS = {
     KEY_TEMPERATURE,
@@ -205,6 +220,8 @@ CANONICAL_CONTEXT_KEYS = {
     KEY_METRICS_INNER_ELAPSED_MS,
     KEY_METRICS_INNER_STATUS,
     KEY_METRICS_INNER_CALLS,
+    KEY_METRICS_SOFT_ERROR_COUNT,
+    KEY_METRICS_SOFT_ERROR_LAST,
     KEY_EVALUATION_COUNT,
     KEY_PARETO_SOLUTIONS,
     KEY_PARETO_OBJECTIVES,
@@ -216,6 +233,19 @@ CANONICAL_CONTEXT_KEYS = {
     KEY_DECISION_TRACE,
     KEY_CHECKPOINT_LATEST_PATH,
     KEY_CHECKPOINT_LAST_LOADED_PATH,
+    KEY_BIAS_CACHE_FINGERPRINT,
+    KEY_SNAPSHOT_KEY,
+    KEY_SNAPSHOT_BACKEND,
+    KEY_SNAPSHOT_SCHEMA,
+    KEY_SNAPSHOT_META,
+    KEY_POPULATION_REF,
+    KEY_OBJECTIVES_REF,
+    KEY_CONSTRAINT_VIOLATIONS_REF,
+    KEY_PARETO_SOLUTIONS_REF,
+    KEY_PARETO_OBJECTIVES_REF,
+    KEY_HISTORY_REF,
+    KEY_DECISION_TRACE_REF,
+    KEY_SEQUENCE_GRAPH_REF,
 }
 
 _ALIASES: Dict[str, str] = {
@@ -239,6 +269,19 @@ _ALIASES: Dict[str, str] = {
     "adapterbestscore": KEY_ADAPTER_BEST_SCORE,
     "eventqueue": KEY_EVENT_QUEUE,
     "eventinflight": KEY_EVENT_INFLIGHT,
+    "biascachefingerprint": KEY_BIAS_CACHE_FINGERPRINT,
+    "snapshotkey": KEY_SNAPSHOT_KEY,
+    "snapshotbackend": KEY_SNAPSHOT_BACKEND,
+    "snapshotschema": KEY_SNAPSHOT_SCHEMA,
+    "snapshotmeta": KEY_SNAPSHOT_META,
+    "populationref": KEY_POPULATION_REF,
+    "objectivesref": KEY_OBJECTIVES_REF,
+    "constraintviolationsref": KEY_CONSTRAINT_VIOLATIONS_REF,
+    "paretosolutionsref": KEY_PARETO_SOLUTIONS_REF,
+    "paretoobjectivesref": KEY_PARETO_OBJECTIVES_REF,
+    "historyref": KEY_HISTORY_REF,
+    "decisiontraceref": KEY_DECISION_TRACE_REF,
+    "sequencegraphref": KEY_SEQUENCE_GRAPH_REF,
 }
 
 

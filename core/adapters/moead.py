@@ -17,12 +17,9 @@ import numpy as np
 
 from .algorithm_adapter import AlgorithmAdapter
 from ...utils.context.context_keys import (
-    KEY_CONSTRAINT_VIOLATIONS,
     KEY_MOEAD_NEIGHBOR_MODE,
     KEY_MOEAD_SUBPROBLEM,
     KEY_MOEAD_WEIGHT,
-    KEY_OBJECTIVES,
-    KEY_POPULATION,
 )
 
 
@@ -61,9 +58,6 @@ class MOEADAdapter(AlgorithmAdapter):
     """MOEA/D adapter for ComposableSolver."""
     context_requires = ("generation",)
     context_provides = (
-        KEY_POPULATION,
-        KEY_OBJECTIVES,
-        KEY_CONSTRAINT_VIOLATIONS,
         KEY_MOEAD_SUBPROBLEM,
         KEY_MOEAD_WEIGHT,
         KEY_MOEAD_NEIGHBOR_MODE,
@@ -137,6 +131,7 @@ class MOEADAdapter(AlgorithmAdapter):
         self._pending_indices = []
         self._pending_modes = []
         self._refresh_runtime_projection()
+        self._sync_population_snapshot(solver)
 
         # Optional: warn if user did not attach any archive/recording plugin.
         self._warn_if_no_archive_plugin(solver)
@@ -232,6 +227,7 @@ class MOEADAdapter(AlgorithmAdapter):
                     replaced += 1
 
         self._refresh_runtime_projection()
+        self._sync_population_snapshot(solver)
 
     def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
         _ = solver
@@ -296,18 +292,23 @@ class MOEADAdapter(AlgorithmAdapter):
 
     def _refresh_runtime_projection(self) -> None:
         projection = dict(self._last_context_projection)
-        if self.pop_X is not None:
-            projection[KEY_POPULATION] = np.asarray(self.pop_X, dtype=float)
-        if self.pop_F is not None:
-            projection[KEY_OBJECTIVES] = np.asarray(self.pop_F, dtype=float)
-        if self.pop_V is not None:
-            projection[KEY_CONSTRAINT_VIOLATIONS] = np.asarray(self.pop_V, dtype=float).reshape(-1)
         if self._pending_indices and self.weights is not None:
             batch_indices = np.asarray(self._pending_indices, dtype=int)
             projection[KEY_MOEAD_SUBPROBLEM] = batch_indices
             projection[KEY_MOEAD_WEIGHT] = np.asarray(self.weights[batch_indices], dtype=float)
             projection[KEY_MOEAD_NEIGHBOR_MODE] = list(self._pending_modes)
         self._last_context_projection = projection
+
+    def _sync_population_snapshot(self, solver: Any) -> None:
+        writer = getattr(solver, "write_population_snapshot", None)
+        if not callable(writer):
+            return
+        if self.pop_X is None or self.pop_F is None or self.pop_V is None:
+            return
+        try:
+            writer(self.pop_X, self.pop_F, self.pop_V)
+        except Exception:
+            return
 
     def _recompute_ideal(self) -> None:
         if self.pop_F is None or self.pop_F.size == 0:

@@ -191,7 +191,7 @@ def test_solver_integration():
     print("=" * 60)
 
     try:
-        from nsgablack.core.solver import BlackBoxSolverNSGAII
+        from nsgablack.core.evolution_solver import EvolutionSolver
         from nsgablack.core.base import BlackBoxProblem
         from nsgablack.bias import BiasModule, DiversityBias
 
@@ -204,7 +204,7 @@ def test_solver_integration():
 
         # 创建问题和求解器
         problem = TestProblem()
-        solver = BlackBoxSolverNSGAII(problem)
+        solver = EvolutionSolver(problem)
         solver.pop_size = 20
         solver.max_generations = 10
 

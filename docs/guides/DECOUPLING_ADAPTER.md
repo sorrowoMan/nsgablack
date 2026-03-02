@@ -143,3 +143,34 @@ update(evaluations) -> state
 - `docs/guides/DECOUPLING_BIAS.md`
 - `docs/guides/DECOUPLING_CAPABILITIES.md`
 
+---
+
+## 10) 关于 `best_x` 的“标量化”提醒
+
+`ComposableSolver` 默认会用一个**简单标量**来选 `best_x`（用于摘要/日志）：
+
+- `score = sum(objectives) + violation * 1e6`
+
+这**不是算法的核心裁决**，只是给出一个“可读代表点”。当多目标尺度差异很大时，
+这个默认标量可能会偏向某个目标，让 `best_x` 代表性变弱。
+
+因此框架提供一个**可选的 scalarizer**（你可以不改任何代码，只有在需要更稳摘要时才用）：
+
+```python
+from nsgablack.core.composable_solver import ComposableSolver
+
+def weighted_sum(objectives, violations, idx):
+    # objectives: (N, M), violations: (N,)
+    # 示例：对第0/1目标设权重，保留约束惩罚
+    f = objectives[idx]
+    vio = 0.0 if violations is None else float(violations[idx])
+    return 0.7 * float(f[0]) + 0.3 * float(f[1]) + vio * 1e6
+
+solver = ComposableSolver(problem=problem, adapter=adapter)
+solver.objective_scalarizer = weighted_sum
+```
+
+**建议**：
+- 如果你主要看 Pareto，则不要过度依赖 `best_x`（它只是摘要点）
+- 如果你确实需要单点代表，才启用自定义 scalarizer
+

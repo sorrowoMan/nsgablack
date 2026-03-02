@@ -83,4 +83,5 @@ solver.plugin_manager.register(MyRunSummaryPlugin(out_dir="runs/plugin_reports")
 - 插件是工程增强，不是算法主流程
 - 运行态读取尽量走 `solver.get_runtime_context_projection()`
 - 不要直接写 `solver.population/objectives/constraint_violations`
+- 读写大对象走 `solver.read_snapshot()` / `Plugin.resolve_population_snapshot()` / `Plugin.commit_population_snapshot()`
 - 失败要有可读信息，不要裸 `except: pass`

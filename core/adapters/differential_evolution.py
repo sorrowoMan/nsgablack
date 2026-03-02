@@ -22,6 +22,8 @@ from ...utils.context.context_keys import (
     KEY_GENERATION,
     KEY_OBJECTIVES,
     KEY_POPULATION,
+    KEY_POPULATION_REF,
+    KEY_SNAPSHOT_KEY,
     KEY_STRATEGY_ID,
 )
 
@@ -148,6 +150,15 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         self._sync_runtime_projection({})
         return True
 
+    def get_population(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        if self.population is None or self.objectives is None or self.violations is None:
+            return np.zeros((0, 0), dtype=float), np.zeros((0, 0), dtype=float), np.zeros((0,), dtype=float)
+        return (
+            np.asarray(self.population, dtype=float),
+            np.asarray(self.objectives, dtype=float),
+            np.asarray(self.violations, dtype=float).reshape(-1),
+        )
+
     def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
         _ = solver
         return dict(self._runtime_projection)
@@ -180,13 +191,29 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         if self.population is not None and self.population.shape[0] > 0:
             return
 
-        pop = context.get(KEY_POPULATION)
-        obj = context.get(KEY_OBJECTIVES)
-        vio = context.get(KEY_CONSTRAINT_VIOLATIONS)
+        pop = None
+        obj = None
+        vio = None
+        reader = getattr(solver, "read_snapshot", None)
+        if callable(reader):
+            try:
+                key = context.get(KEY_POPULATION_REF) or context.get(KEY_SNAPSHOT_KEY)
+            except Exception:
+                key = None
+            try:
+                payload = reader(key) if key else reader()
+            except Exception:
+                payload = None
+            data = payload.data if hasattr(payload, "data") else payload
+            if isinstance(data, dict):
+                pop = data.get(KEY_POPULATION)
+                obj = data.get(KEY_OBJECTIVES)
+                vio = data.get(KEY_CONSTRAINT_VIOLATIONS)
+
         if pop is None:
             pop = getattr(solver, "population", None)
-            obj = getattr(solver, "objectives", obj)
-            vio = getattr(solver, "constraint_violations", vio)
+            obj = getattr(solver, "objectives", None)
+            vio = getattr(solver, "constraint_violations", None)
         if pop is not None:
             pop_arr = np.asarray(pop, dtype=float)
             if pop_arr.ndim == 2 and pop_arr.shape[0] > 0:

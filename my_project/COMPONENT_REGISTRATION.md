@@ -51,7 +51,7 @@ CatalogEntry(
     import_path="plugins.eval_cache:EvaluationCachePlugin",
     tags=("project", "plugin", "cache"),
     summary="Cache repeated evaluations by deterministic key.",
-    context_requires=("context.population",),
+    context_requires=("population_ref",),
     context_provides=("context.cache.eval_hits",),
     context_mutates=("context.cache.eval_store",),
     context_cache=("context.cache.eval_store",),

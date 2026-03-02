@@ -121,7 +121,7 @@ def test_field_window_refresh_populates_provider_consumer_rows() -> None:
     view._runtime_writers = {"generation": "solver.core (builtin)"}
     view._component_contracts = {
         "adapter.unit.explorer#0:MOEADAdapter": {
-            "requires": ["population"],
+            "requires": ["population_ref"],
             "provides": ["generation"],
             "mutates": [],
             "cache": [],
@@ -163,7 +163,7 @@ def test_context_select_open_window_and_jump_details_flow() -> None:
     view._runtime_writers = {"generation": "solver.core (builtin)"}
     view._component_contracts = {
         "adapter.unit.explorer#0:MOEADAdapter": {
-            "requires": ["population"],
+            "requires": ["population_ref"],
             "provides": ["generation"],
             "mutates": [],
             "cache": [],

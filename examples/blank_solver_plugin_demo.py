@@ -1,6 +1,6 @@
-"""BlankSolverBase + 偏置/管线/插件 的最小可运行示例。
+"""SolverBase + 偏置/管线/插件 的最小可运行示例。
 
-目标：展示 BlankSolverBase 在保持核心求解循环简洁的同时，
+目标：展示 SolverBase 在保持核心求解循环简洁的同时，
 可以自然接入表示管线、偏置模块与插件能力。
 """
 
@@ -8,7 +8,7 @@ import numpy as np
 
 try:
     from nsgablack.core.base import BlackBoxProblem
-    from nsgablack.core.blank_solver import BlankSolverBase
+    from nsgablack.core.blank_solver import SolverBase
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
     from nsgablack.bias import BiasModule, ConvergenceBias
@@ -19,7 +19,7 @@ except ModuleNotFoundError:  # pragma: no cover - convenience for direct script 
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from nsgablack.core.base import BlackBoxProblem
-    from nsgablack.core.blank_solver import BlankSolverBase
+    from nsgablack.core.blank_solver import SolverBase
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
     from nsgablack.bias import BiasModule, ConvergenceBias
@@ -108,7 +108,7 @@ def build_solver():
     bias = BiasModule()
     bias.add(ConvergenceBias(weight=0.2, early_gen=5, late_gen=25))
 
-    solver = BlankSolverBase(problem, bias_module=bias, representation_pipeline=pipeline)
+    solver = SolverBase(problem, bias_module=bias, representation_pipeline=pipeline)
     solver.set_max_steps(40)
     solver.add_plugin(RandomWalkPlugin(buffer_size=20))
     return solver

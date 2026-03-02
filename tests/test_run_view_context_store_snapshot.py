@@ -40,3 +40,18 @@ def test_structure_hash_changes_when_context_store_changes() -> None:
     left = RunView._structure_hash(view, base)
     right = RunView._structure_hash(view, changed)
     assert left != right
+
+
+def test_parse_seed_override_accepts_empty_and_int() -> None:
+    assert RunView._parse_seed_override("") is None
+    assert RunView._parse_seed_override("  ") is None
+    assert RunView._parse_seed_override("42") == 42
+    assert RunView._parse_seed_override(" -7 ") == -7
+
+
+def test_parse_seed_override_rejects_non_int() -> None:
+    try:
+        RunView._parse_seed_override("abc")
+    except ValueError:
+        return
+    raise AssertionError("expected ValueError for non-int seed override")

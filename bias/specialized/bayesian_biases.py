@@ -37,13 +37,13 @@ BayesianOptimizer = SimpleBayesianOptimizer
 
 class BayesianGuidanceBias(AlgorithmicBias):
     """Bayesian guidance bias for exploration/exploitation direction."""
-    context_requires = ("dynamic", "generation", "individual", "population")
+    context_requires = ("dynamic", "generation", "individual", "population_ref")
     requires_metrics = ("objective",)
     metrics_fallback = "safe_zero"
     context_provides = ()
     context_mutates = ()
     context_cache = ()
-    context_notes = "Reads context fields: dynamic, generation, individual, metrics, population; outputs scalar bias only."
+    context_notes = "Reads context fields: dynamic, generation, individual, metrics, population_ref; outputs scalar bias only."
 
 
 
@@ -304,11 +304,11 @@ class BayesianGuidanceBias(AlgorithmicBias):
 
 class BayesianExplorationBias(AlgorithmicBias):
     """Bayesian exploration bias using uncertainty estimates."""
-    context_requires = ("generation", "population")
+    context_requires = ("generation", "population_ref")
     context_provides = ()
     context_mutates = ()
     context_cache = ()
-    context_notes = "Reads context fields: generation, population; outputs scalar bias only."
+    context_notes = "Reads context fields: generation, population_ref; outputs scalar bias only."
 
 
 

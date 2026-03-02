@@ -5,7 +5,7 @@ import numpy as np
 from nsgablack.core.adapters.moead import MOEADAdapter, MOEADConfig
 from nsgablack.core.adapters.vns import VNSAdapter, VNSConfig
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.plugins.models.mas_model import MASModelConfig, MASModelPlugin
 from nsgablack.plugins.runtime.convergence import ConvergencePlugin
 from nsgablack.plugins.runtime.pareto_archive import ParetoArchiveConfig, ParetoArchivePlugin
@@ -76,7 +76,7 @@ class _ToyProblem(BlackBoxProblem):
 
 
 def test_solver_sbx_can_generate_non_linear_offspring_when_eta_small() -> None:
-    solver = BlackBoxSolverNSGAII(
+    solver = EvolutionSolver(
         _ToyProblem(dim=64),
         pop_size=2,
         sbx_eta_c=0.1,
@@ -90,7 +90,7 @@ def test_solver_sbx_can_generate_non_linear_offspring_when_eta_small() -> None:
 
 
 def test_update_pareto_solutions_keeps_front_boundaries_with_crowding() -> None:
-    solver = BlackBoxSolverNSGAII(_ToyProblem(), pop_size=60, max_pareto_solutions=50)
+    solver = EvolutionSolver(_ToyProblem(), pop_size=60, max_pareto_solutions=50)
     xs = np.linspace(0.0, 59.0, 60)
     solver.population = np.column_stack([xs, xs])
     solver.objectives = np.column_stack([xs, 59.0 - xs])

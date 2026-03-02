@@ -1,7 +1,7 @@
 """
 测试核心求解器（Core Solver）
 
-测试BlackBoxSolverNSGAII的基本功能。
+测试EvolutionSolver的基本功能。
 """
 import pytest
 import numpy as np
@@ -11,7 +11,7 @@ from pathlib import Path
 # 添加项目根目录到路径
 
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 
 
 class SimpleSphere(BlackBoxProblem):
@@ -84,7 +84,7 @@ class TestSolverInitialization:
 
     def test_solver_creation(self, sample_problem):
         """测试求解器创建。"""
-        solver = BlackBoxSolverNSGAII(sample_problem)
+        solver = EvolutionSolver(sample_problem)
 
         assert solver.problem == sample_problem
         assert solver.dimension == sample_problem.dimension
@@ -92,7 +92,7 @@ class TestSolverInitialization:
 
     def test_solver_default_params(self, sample_problem):
         """测试求解器默认参数。"""
-        solver = BlackBoxSolverNSGAII(sample_problem)
+        solver = EvolutionSolver(sample_problem)
 
         # 检查默认参数
         assert hasattr(solver, 'pop_size')
@@ -105,7 +105,7 @@ class TestSolverBasicOperations:
 
     def test_initialize_population(self, sample_problem):
         """测试种群初始化。"""
-        solver = BlackBoxSolverNSGAII(sample_problem)
+        solver = EvolutionSolver(sample_problem)
         solver.initialize_population()
 
         # 检查种群大小
@@ -121,7 +121,7 @@ class TestSolverBasicOperations:
 
     def test_evaluate_population(self, sample_problem):
         """测试种群评估。"""
-        solver = BlackBoxSolverNSGAII(sample_problem)
+        solver = EvolutionSolver(sample_problem)
         solver.initialize_population()
 
         # 评估种群
@@ -137,7 +137,7 @@ class TestSolverOptimization:
     def test_simple_optimization(self):
         """测试简单优化问题。"""
         problem = SimpleSphere(dimension=2)
-        solver = BlackBoxSolverNSGAII(problem)
+        solver = EvolutionSolver(problem)
         solver.max_generations = 10
         solver.pop_size = 20
 
@@ -154,7 +154,7 @@ class TestSolverOptimization:
     def test_rastrigin_optimization(self):
         """测试Rastrigin优化问题。"""
         problem = SimpleRastrigin(dimension=2)
-        solver = BlackBoxSolverNSGAII(problem)
+        solver = EvolutionSolver(problem)
         solver.max_generations = 20
         solver.pop_size = 50
 
@@ -187,7 +187,7 @@ class TestSolverWithBias:
         bias.add(CallableBias(name="far_from_origin", func=far_from_origin_penalty, weight=2.0, mode="penalty"))
 
         # 创建求解器
-        solver = BlackBoxSolverNSGAII(sample_problem)
+        solver = EvolutionSolver(sample_problem)
         solver.max_generations = 10
 
         # 运行优化
@@ -210,7 +210,7 @@ class TestSolverWithBias:
 
         bias.add(conv_bias, weight=0.5)
 
-        solver = BlackBoxSolverNSGAII(problem)
+        solver = EvolutionSolver(problem)
         solver.max_generations = 15
 
         best_x, best_f = solver.run()
@@ -228,13 +228,13 @@ class TestSolverReproducibility:
 
         # 第一次运行
         np.random.seed(42)
-        solver1 = BlackBoxSolverNSGAII(problem)
+        solver1 = EvolutionSolver(problem)
         solver1.max_generations = 5
         best_x1, best_f1 = solver1.run()
 
         # 第二次运行（相同种子）
         np.random.seed(42)
-        solver2 = BlackBoxSolverNSGAII(problem)
+        solver2 = EvolutionSolver(problem)
         solver2.max_generations = 5
         best_x2, best_f2 = solver2.run()
 
@@ -254,7 +254,7 @@ class TestSolverIntegration:
         results = []
         for i in range(3):
             np.random.seed(i)
-            solver = BlackBoxSolverNSGAII(problem)
+            solver = EvolutionSolver(problem)
             solver.max_generations = 10
             best_x, best_f = solver.run()
             results.append((best_x, best_f))
@@ -270,7 +270,7 @@ class TestSolverIntegration:
         dimension = 10
         problem = SimpleSphere(dimension=dimension)
 
-        solver = BlackBoxSolverNSGAII(problem)
+        solver = EvolutionSolver(problem)
         solver.max_generations = 20
         solver.pop_size = 100
 

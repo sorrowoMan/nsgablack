@@ -12,6 +12,7 @@ import numpy as np
 
 from ...engineering.schema_version import stamp_schema
 from ...context.context_keys import KEY_BEST_OBJECTIVE, KEY_BEST_X
+from ...runtime.repro_bundle import build_repro_bundle, write_repro_bundle
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -29,6 +30,9 @@ class RunView:
         self.app.run_id_var = tk.StringVar()
         ttk.Label(self.tab, text="Run ID (output file name)", foreground="#666").pack(anchor="w", pady=(4, 0))
         ttk.Entry(self.tab, textvariable=self.app.run_id_var).pack(fill="x", pady=(6, 6))
+        self.app.run_seed_var = tk.StringVar(value="")
+        ttk.Label(self.tab, text="Seed Override (optional)", foreground="#666").pack(anchor="w", pady=(2, 0))
+        ttk.Entry(self.tab, textvariable=self.app.run_seed_var).pack(fill="x", pady=(4, 6))
         btn_row = ttk.Frame(self.tab)
         btn_row.pack(fill="x")
         ttk.Button(btn_row, text="Refresh", command=self.on_refresh_ui).pack(
@@ -143,6 +147,7 @@ class RunView:
             "biases": [],
             "plugins": [],
             "context_store": self._context_store_snapshot(solver),
+            "snapshot_store": self._snapshot_store_snapshot(solver),
         }
 
         if bias_module is not None:
@@ -233,6 +238,7 @@ class RunView:
             "biases": sort_items(snap.get("biases", []), ["name", "enabled"]),
             "plugins": sort_items(snap.get("plugins", []), ["name", "enabled"]),
             "context_store": snap.get("context_store", {}),
+            "snapshot_store": snap.get("snapshot_store", {}),
         }
         raw = json.dumps(data, sort_keys=True, separators=(",", ":"))
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()
@@ -276,6 +282,22 @@ class RunView:
         }
         return out
 
+    def _snapshot_store_snapshot(self, solver: Any) -> Dict[str, Any]:
+        if solver is None:
+            return {}
+        backend = str(getattr(solver, "snapshot_store_backend", "") or "").strip() or None
+        ttl = getattr(solver, "snapshot_store_ttl_seconds", None)
+        redis_url = getattr(solver, "snapshot_store_redis_url", None)
+        key_prefix = getattr(solver, "snapshot_store_key_prefix", None)
+        out = {
+            "backend": backend,
+            "ttl_seconds": ttl,
+            "key_prefix": str(key_prefix) if key_prefix is not None else None,
+            "redis_url": self._mask_redis_url(redis_url),
+            "schema": getattr(solver, "snapshot_schema", None),
+        }
+        return out
+
     def _refresh_hash_index(self) -> None:
         if self.app._hash_index:
             return
@@ -291,12 +313,26 @@ class RunView:
             if h and rid:
                 self.app._hash_index[str(h)] = str(rid)
 
+    @staticmethod
+    def _parse_seed_override(value: Any) -> Optional[int]:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        return int(raw)
+
     def on_run(self) -> None:
         if getattr(self.app, "_is_running", False):
             self.status_label.config(text="Run already in progress")
             return
         if self.app.solver is None:
             self.status_label.config(text="No solver")
+            return
+        seed_var = getattr(self.app, "run_seed_var", None)
+        seed_text = seed_var.get() if seed_var is not None and hasattr(seed_var, "get") else ""
+        try:
+            seed_override = self._parse_seed_override(seed_text)
+        except Exception:
+            self.status_label.config(text="Invalid seed override (must be int or empty)")
             return
         run_id = self.app.run_id_var.get().strip() or time.strftime("%Y%m%d_%H%M%S")
         self.app.run_id_var.set(run_id)
@@ -313,6 +349,11 @@ class RunView:
             best_obj = None
             best_x = None
             artifacts: Dict[str, Any] = {}
+            started_at = time.time()
+            finished_at = started_at
+            repro_bundle_path = None
+            structure_hash = ""
+            equiv_run = None
             try:
                 RUNS_DIR.mkdir(parents=True, exist_ok=True)
                 snap = self.snapshot(run_id)
@@ -346,11 +387,41 @@ class RunView:
                     self.app.solver._ui_snapshot_path = snapshot_path
                 except Exception:
                     pass
+                if seed_override is not None:
+                    set_seed = getattr(self.app.solver, "set_random_seed", None)
+                    if callable(set_seed):
+                        try:
+                            set_seed(int(seed_override))
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            self.app.solver.random_seed = int(seed_override)
+                        except Exception:
+                            pass
                 result = self.app.solver.run()
+                finished_at = time.time()
                 status = result.get("status") if isinstance(result, dict) else "done"
                 if isinstance(result, dict):
                     steps = result.get("steps")
                     artifacts = result.get("artifacts", {}) if isinstance(result.get("artifacts", {}), dict) else {}
+                try:
+                    bundle = build_repro_bundle(
+                        run_id=str(run_id),
+                        solver=self.app.solver,
+                        entrypoint=str(self.app.entry or ""),
+                        workspace=self.app.workspace or Path.cwd(),
+                        run_snapshot=snap,
+                        artifacts=artifacts,
+                        started_at=started_at,
+                        finished_at=finished_at,
+                    )
+                    repro_path = write_repro_bundle(bundle, output_dir="runs", run_id=str(run_id))
+                    repro_bundle_path = str(repro_path)
+                    artifacts = dict(artifacts or {})
+                    artifacts["repro_bundle_json"] = str(repro_path)
+                except Exception as repro_exc:
+                    print(f"[ui] repro bundle export failed: {repro_exc}")
                 best_obj, best_x = self._read_best_from_context()
                 msg = f"Done: {run_id} ({status})"
                 if steps is not None:
@@ -378,6 +449,8 @@ class RunView:
                     f"status: {status}",
                     f"steps: {steps}",
                     f"best: {best_obj}",
+                    f"seed_override: {seed_override}",
+                    f"effective_seed: {getattr(self.app.solver, 'random_seed', None)}",
                     f"strategies: {', '.join(enabled_strategies) if enabled_strategies else 'none'}",
                     f"plugins: {', '.join(enabled_plugins) if enabled_plugins else 'none'}",
                     f"snapshot: {snapshot_path}",
@@ -385,6 +458,8 @@ class RunView:
                     f"structure_hash_short: {structure_hash[:8] if structure_hash else ''}",
                     f"equivalent_to: {equiv_run if equiv_run else 'none'}",
                 ]
+                if repro_bundle_path:
+                    detail_lines.append(f"repro_bundle: {repro_bundle_path}")
                 if artifacts:
                     detail_lines.append(f"artifacts: {artifacts}")
                 if best_x is not None:
@@ -398,6 +473,8 @@ class RunView:
                     self.app.contrib_view.add_run_choice(run_id)
                     self.app.contrib_view.refresh_contribution()
                 self.app.request_decision_refresh(run_id=run_id, artifacts=artifacts)
+                self.app.request_sequence_refresh(run_id=run_id, artifacts=artifacts)
+                self.app.request_repro_refresh(run_id=run_id, artifacts=artifacts)
                 self.app.request_context_refresh()
                 if self.app.close_on_finish_var.get():
                     self.app.destroy()
@@ -414,6 +491,8 @@ class RunView:
         if self.app.contrib_view:
             self.app.contrib_view.refresh_contribution()
         self.app.request_context_refresh()
+        self.app.request_sequence_refresh()
+        self.app.request_repro_refresh()
         self.status_label.config(text="UI refreshed")
 
     def on_sensitivity(self) -> None:

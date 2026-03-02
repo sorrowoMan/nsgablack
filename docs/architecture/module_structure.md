@@ -1,76 +1,48 @@
-﻿# NSGABlack 目录结构（对齐当前架构）
+# NSGABlack 目录结构（当前架构）
 
-本页用于回答“每个文件夹主要装什么”。它以**当前代码为准**，并明确 Core / Experimental / Legacy 的边界。
+本页用于回答“每个目录负责什么”，并明确核心边界。
 
-更强的边界说明见：
-- `docs/CORE_STABILITY.md`
-
----
-
-## 1) 顶层结构（简化版）
-
-```
+## 1. 顶层结构
+```text
 nsgablack/
-├── core/                 # 求解器底座 + Adapter 体系（核心承诺）
-├── representation/       # 表示管线与算子（核心承诺）
-├── bias/                 # 偏置系统（核心承诺）
-├── plugins/              # 插件系统（能力扩展层）
-├── utils/                # 工具/套件/护栏（核心承诺）
-├── catalog/              # 可发现性层（where is X?）
-├── examples/             # 2~3 个权威现代示例（事实标准）
-# deprecated/legacy/       # 已从仓库清理（如需追溯请查看 git 历史）
+├── core/                 # 求解器底座 + adapter 体系
+├── representation/       # 表示管线与算子
+├── bias/                 # 偏置系统
+├── plugins/              # 运行能力扩展
+├── utils/                # 工程工具、suites、context/snapshot
+├── catalog/              # 组件索引与可发现性
+├── docs/                 # 文档
+└── examples/             # 示例
 ```
 
----
+## 2. Core 边界
 
-## 2) Core（稳定承诺）
+### 2.1 Solver 层
+- `core/blank_solver.py`：`SolverBase`
+  只负责控制面：生命周期、stop/step、plugin hook、context/snapshot 读写。
+- `core/composable_solver.py`：`ComposableSolver`
+  通用执行器，算法通过 adapter 注入。
+- `core/evolution_solver.py`：`EvolutionSolver`
+  官方进化求解器预置（基于 adapter 体系）。
 
-### 2.1 `core/`（求解器底座与策略内核）
+注意：`core/solver.py` 已删除（断兼容）。
 
-- `core/solver.py`：`BlackBoxSolverNSGAII`（NSGA-II 底座）
-- `core/blank_solver.py`：`BlankSolverBase`（空白底座，流程由 Plugin/子类驱动）
-- `core/composable_solver.py`：`ComposableSolver`（Adapter 驱动底座）
-- `core/adapters/`：算法策略内核（VNS/MOEA-D/SA/角色控制等）
+### 2.2 Adapter 层
+- `core/adapters/`
+  放算法流程实现（NSGA2/VNS/MOEAD/SA/多策略控制等）。
 
-### 2.2 `representation/`（表示与算子）
+## 3. Representation / Bias / Plugin
+- `representation/`：初始化、变异、修复、编码解码。
+- `bias/`：算法偏置与领域偏置，独立模块化。
+- `plugins/`：checkpoint、trace、report、并行、导出等运行能力。
 
-- `representation/base.py`：`RepresentationPipeline`（initializer/mutator/repair/encoder 等）
-- `representation/*`：连续/整数/二进制/排列/图/矩阵 等算子
-- `representation/context_mutators.py`：按 context 切换/调参的 mutator wrapper（例如 VNS/SA 的“阶段信号”）
+## 4. Context 与 Snapshot
+- `utils/context/context_store.py`：小字段存储（契约字段、协作字段）。
+- `utils/context/snapshot_store.py`：大对象存储（population/objectives/violations 等）。
+- 约定：`Context` 放引用，`Snapshot` 放大对象。
 
-### 2.3 `bias/`（偏置系统）
+## 5. 工程层
+- `utils/suites/`：权威组合装配入口（减少漏配）。
+- `utils/engineering/`：配置、schema、日志、实验结果等。
+- `catalog/`：统一索引与搜索入口。
 
-- `bias/core/`：偏置基类、管理器、上下文协议
-- `bias/algorithmic/`：算法偏置（策略倾向、调度、软约束）
-- `bias/domain/`：领域偏置（业务规则）
-
-### 2.4 `plugins/`（能力扩展层 — 顶层目录）
-
-- `plugins/base.py`：插件基类 `Plugin`、`PluginManager`、State Governance（`resolve_population_snapshot`/`commit_population_snapshot`）
-- `plugins/evaluation/`：评估类插件（surrogate 短路、多保真、Monte Carlo 等）
-- `plugins/system/`：系统类插件（checkpoint/resume 等）
-- `plugins/runtime/`：运行时插件（动态策略切换等）
-- `plugins/ops/`：分析类插件（敏感性分析等）
-- `plugins/models/`：模型类插件（MAS、子空间基等）
-
-### 2.5 `utils/`（横切能力与基础设施）
-
-- `utils/suites/`：权威组合（attach_* 一键装配，避免漏配）
-- `utils/parallel/evaluator.py`：并行评估工具（推荐 import：`from nsgablack.utils.parallel import ParallelEvaluator`）
-- `utils/extension_contracts.py`：扩展点契约护栏（可执行约定）
-- `utils/engineering/`：工程基础设施（`schema_version` / `file_io` / `config_loader` / `experiment`）
-- `utils/context/`：Context 治理（`context_keys` / `context_schema` / `context_contracts` / `context_field_governance`）
-
----
-
-## 3) Experimental（实验探索）
-
-早期 experimental 目录已清理。新想法推荐先以 `Plugin/Suite` 形式落地（能力层），稳定后再进入 Core。
-
-稳定后再迁入 Core，并补齐：suite + catalog + tests。
-
----
-
-## 4) Legacy（历史归档）
-
-早期 deprecated/legacy 目录已清理。如需追溯，请查看 git 历史。

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from nsgablack.core import BlackBoxProblem, BlackBoxSolverNSGAII
+from nsgablack.core import BlackBoxProblem, EvolutionSolver
 from nsgablack.core.interfaces import has_bias_module, has_numba
 
 
@@ -35,7 +35,7 @@ class MockBiasModule:
 
 def test_core_import_and_basic_solver_creation():
     problem = SimpleTestProblem()
-    solver = BlackBoxSolverNSGAII(problem)
+    solver = EvolutionSolver(problem)
     solver.pop_size = 20
     solver.max_generations = 5
     assert solver.dimension == 2
@@ -46,7 +46,7 @@ def test_core_import_and_basic_solver_creation():
 def test_dependency_injection_and_backward_compatibility():
     problem = SimpleTestProblem()
     mock_bias = MockBiasModule()
-    solver = BlackBoxSolverNSGAII(problem, bias_module=mock_bias)
+    solver = EvolutionSolver(problem, bias_module=mock_bias)
     assert solver.bias_module is not None
     assert solver.has_bias_support()
 
@@ -57,7 +57,7 @@ def test_dependency_injection_and_backward_compatibility():
 
 def test_interface_and_lazy_loading_checks():
     problem = SimpleTestProblem()
-    solver = BlackBoxSolverNSGAII(problem)
+    solver = EvolutionSolver(problem)
     # function returns bool and does not raise
     assert isinstance(has_bias_module(), bool)
     assert isinstance(has_numba(), bool)
@@ -67,7 +67,7 @@ def test_interface_and_lazy_loading_checks():
 
 def test_solver_runs_small_problem():
     problem = SimpleTestProblem()
-    solver = BlackBoxSolverNSGAII(problem)
+    solver = EvolutionSolver(problem)
     solver.pop_size = 16
     solver.max_generations = 3
     best_x, best_f = solver.run(return_dict=False)
