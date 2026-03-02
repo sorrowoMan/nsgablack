@@ -8,7 +8,7 @@ This document describes the *current* recommended architecture for:
 
 ## 1) Baseline: NSGA-II
 
-- Use `core/solver.py` (`BlackBoxSolverNSGAII`) when you want a classic baseline.
+- Use `core/solver.py` (`EvolutionSolver`) when you want a classic baseline.
 - Keep feasibility in `RepresentationPipeline` as much as possible.
 
 ## 2) Bias: guidance, not control flow

@@ -14,6 +14,8 @@ from ...plugins import (
     ParetoArchivePlugin,
     ProfilerConfig,
     ProfilerPlugin,
+    SequenceGraphConfig,
+    SequenceGraphPlugin,
 )
 
 
@@ -42,6 +44,12 @@ def attach_default_observability_plugins(
     enable_profiler: bool = True,
     enable_decision_trace: bool = True,
     decision_trace_flush_every: int = 1,
+    enable_sequence_graph: bool = True,
+    sequence_graph_flush_every: int = 1,
+    sequence_graph_trace_mode: str = "off",
+    sequence_graph_trace_sample_rate: float = 0.02,
+    sequence_graph_trace_max_events: int = 20000,
+    sequence_graph_trace_seed: int | None = None,
 ) -> Any:
     """Attach a low-conflict default plugin set, skipping already registered names."""
 
@@ -96,5 +104,20 @@ def attach_default_observability_plugins(
             )
         )
 
-    return solver
+    if enable_sequence_graph and not _plugin_exists(solver, "sequence_graph"):
+        solver.add_plugin(
+            SequenceGraphPlugin(
+                config=SequenceGraphConfig(
+                    output_dir=str(output_dir),
+                    run_id=str(run_id),
+                    overwrite=bool(overwrite),
+                    flush_every=max(1, int(sequence_graph_flush_every)),
+                    trace_mode=str(sequence_graph_trace_mode),
+                    trace_sample_rate=float(sequence_graph_trace_sample_rate),
+                    trace_max_events=max(1, int(sequence_graph_trace_max_events)),
+                    trace_seed=sequence_graph_trace_seed,
+                )
+            )
+        )
 
+    return solver

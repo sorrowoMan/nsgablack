@@ -1,5 +1,5 @@
 # Auto-generated from catalog/entries.toml
-# kind=representation count=1
+# kind=representation count=4
 [[entry]]
 key = "representation.parallel_repair"
 title = "ParallelRepair"
@@ -12,6 +12,32 @@ minimal_wiring = ["from nsgablack.representation import ParallelRepair", "Attach
 required_companions = ["(none)"]
 config_keys = ["(none)"]
 example_entry = "python -m nsgablack catalog search parallel_repair --kind example"
+
+[[entry]]
+key = "representation.sbx_crossover"
+title = "SBXCrossover"
+kind = "representation"
+import_path = "nsgablack.representation.continuous:SBXCrossover"
+tags = ["representation", "crossover", "sbx", "continuous", "bounds", "nsga2"]
+summary = "Representation: simulated binary crossover (SBX)."
+use_when = ["Need SBX crossover for continuous variables in representation pipeline."]
+minimal_wiring = ["from nsgablack.representation import SBXCrossover", "Attach this component into RepresentationPipeline as crossover."]
+required_companions = ["(none)"]
+config_keys = ["eta_c", "low", "high"]
+example_entry = "python -m nsgablack catalog search sbx_crossover --kind example"
+
+[[entry]]
+key = "representation.polynomial_mutation"
+title = "PolynomialMutation"
+kind = "representation"
+import_path = "nsgablack.representation.continuous:PolynomialMutation"
+tags = ["representation", "mutation", "polynomial", "continuous", "bounds", "nsga2"]
+summary = "Representation: polynomial mutation for continuous variables."
+use_when = ["Need polynomial mutation for continuous variables in representation pipeline."]
+minimal_wiring = ["from nsgablack.representation import PolynomialMutation", "Attach this component into RepresentationPipeline as mutator."]
+required_companions = ["(none)"]
+config_keys = ["eta_m", "mutation_rate", "low", "high"]
+example_entry = "python -m nsgablack catalog search polynomial_mutation --kind example"
 
 [[entry]]
 key = "representation.pipeline"

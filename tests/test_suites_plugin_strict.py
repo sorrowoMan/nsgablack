@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 def test_set_plugin_strict_helper():
-    from nsgablack.core.blank_solver import BlankSolverBase
+    from nsgablack.core.blank_solver import SolverBase
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.utils.suites import set_plugin_strict
 
@@ -13,14 +13,14 @@ def test_set_plugin_strict_helper():
         def evaluate(self, x):
             return float(x[0] ** 2)
 
-    solver = BlankSolverBase(problem=_P())
+    solver = SolverBase(problem=_P())
     assert bool(getattr(solver.plugin_manager, "strict", False)) is False
     set_plugin_strict(solver, True)
     assert bool(getattr(solver.plugin_manager, "strict", False)) is True
 
 
 def test_set_parallel_thread_bias_isolation_helper():
-    from nsgablack.core.blank_solver import BlankSolverBase
+    from nsgablack.core.blank_solver import SolverBase
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.utils.parallel import with_parallel_evaluation
     from nsgablack.utils.suites import set_parallel_thread_bias_isolation
@@ -32,7 +32,7 @@ def test_set_parallel_thread_bias_isolation_helper():
         def evaluate(self, x):
             return float(x[0] ** 2)
 
-    ParallelBlank = with_parallel_evaluation(BlankSolverBase)
+    ParallelBlank = with_parallel_evaluation(SolverBase)
     solver = ParallelBlank(problem=_P(), enable_parallel=True, parallel_backend="thread")
 
     set_parallel_thread_bias_isolation(solver, "disable_cache")

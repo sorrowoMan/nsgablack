@@ -10,8 +10,8 @@
 
 | 操作 | 方法 | 含义 |
 |------|------|------|
-| **读种群** | `resolve_population_snapshot(solver)` | 只读快照，三级 fallback：adapter → solver.population → 空数组 |
-| **写种群** | `commit_population_snapshot(solver, pop, obj)` | 回写到 adapter（优先）和 solver |
+| **读种群** | `solver.read_snapshot()` / `Plugin.resolve_population_snapshot(solver)` | 快照优先：snapshot store → adapter → solver |
+| **写种群** | `Plugin.commit_population_snapshot(solver, pop, obj, vio)` | 回写到 adapter（优先）和 solver |
 
 ### 为什么
 
@@ -23,10 +23,10 @@
 
 ```python
 # ✅ 正确：通过治理函数读写
-from nsgablack.core.base import resolve_population_snapshot, commit_population_snapshot
-
-pop = resolve_population_snapshot(solver)           # 读
-commit_population_snapshot(solver, new_pop, new_obj) # 写
+data = solver.read_snapshot() or {}
+pop = data.get("population", [])           # 读
+obj = data.get("objectives", [])
+vio = data.get("constraint_violations", [])
 
 # ❌ 错误：直接写 solver 内部数组
 solver.population = new_pop        # Doctor --strict 会报 solver-mirror-write
@@ -169,3 +169,65 @@ results = evaluator.evaluate(
 - [ ] 种群读写走 `resolve/commit_population_snapshot`
 - [ ] 声明了 `context_requires` / `context_provides` / `context_mutates`
 - [ ] `python -m nsgablack project doctor --strict` 通过
+
+
+---
+
+## 4. Run Inspector 与 `build_solver()` 约定
+
+Run Inspector 的 `Load` 会显式调用 `build_solver()` 完成 wiring。  
+因此 `build_solver()` 必须是“轻量装配函数”，重计算必须延迟到 `run()` / `evaluate()` 阶段。
+
+### 必须遵守
+
+- `build_solver()` 只做装配：创建 `problem / pipeline / adapter / plugins` 并连接关系。
+- 不在 `build_solver()` 里执行基线求解、批量评估、数据导出、模型训练等重任务。
+- 将重任务放到 `run()`、`evaluate()`、`on_generation_start()` 或显式的 lazy 初始化函数里。
+- 如需基线结果，采用 `_ensure_baseline_output()` 之类的惰性方法按需计算。
+
+### 为什么
+
+- 避免 UI `Load` 时卡住或误触发真实求解。
+- 保证“检查 wiring”和“执行实验”两个动作分离，便于排错和复现。
+
+### 反例
+
+- 在 `__init__` 或 `build_solver()` 内直接调用 solver 的 `run()`。
+- 在装配阶段进行大文件 IO 或全量评估计算。
+
+### 推荐写法
+
+```python
+class MyProblem(BlackBoxProblem):
+    def __init__(...):
+        self._baseline = None
+
+    def _ensure_baseline(self):
+        if self._baseline is None:
+            self._baseline = self._compute_baseline()
+        return self._baseline
+
+    def evaluate(self, x):
+        baseline = self._ensure_baseline()
+        ...
+```
+
+---
+
+## 5. Core Contract Template (Required)
+
+For every new adapter/pipeline/bias/plugin component, declare context contracts explicitly.
+
+```python
+class MyComponent:
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Explain the context interaction intent.",)
+```
+
+Notes:
+- `context_requires/context_provides/context_mutates` are the core fields.
+- If a field is not used, keep it as an empty tuple `()`.
+- Avoid implicit context I/O in implementation without contract declaration.

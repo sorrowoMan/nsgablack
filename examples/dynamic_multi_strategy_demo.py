@@ -171,7 +171,20 @@ def build_solver():
     def should_switch(solver, context):
         # estimate diversity from population if available
         diversity = 0.0
-        pop = context.get("population")
+        data = None
+        reader = getattr(solver, "read_snapshot", None)
+        if callable(reader):
+            try:
+                key = context.get("population_ref") or context.get("snapshot_key")
+            except Exception:
+                key = None
+            try:
+                data = reader(key) if key else reader()
+            except Exception:
+                data = None
+        if data is None:
+            data = {}
+        pop = data.get("population")
         if pop is not None and len(pop) > 0:
             try:
                 arr = np.asarray(pop, dtype=float)

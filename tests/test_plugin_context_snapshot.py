@@ -37,21 +37,14 @@ def test_resolve_population_snapshot_prefers_adapter_get_population() -> None:
     assert float(f[0, 0]) == 10.0
 
 
-def test_resolve_population_snapshot_uses_adapter_projection_when_no_get_population() -> None:
-    class _Adapter:
-        def get_runtime_context_projection(self, solver):
-            _ = solver
+def test_resolve_population_snapshot_prefers_solver_snapshot() -> None:
+    class _Solver:
+        def read_snapshot(self, _key=None):
             return {
                 KEY_POPULATION: np.array([[5.0, 6.0]], dtype=float),
                 KEY_OBJECTIVES: np.array([[7.0]], dtype=float),
                 KEY_CONSTRAINT_VIOLATIONS: np.array([0.0], dtype=float),
             }
-
-    class _Solver:
-        adapter = _Adapter()
-        population = np.zeros((0, 0), dtype=float)
-        objectives = np.zeros((0, 0), dtype=float)
-        constraint_violations = np.zeros((0,), dtype=float)
 
     plugin = _DummyPlugin()
     x, f, v = plugin.resolve_population_snapshot(_Solver())
@@ -59,6 +52,20 @@ def test_resolve_population_snapshot_uses_adapter_projection_when_no_get_populat
     assert f.shape == (1, 1)
     assert v.shape == (1,)
     assert float(x[0, 0]) == 5.0
+
+
+def test_resolve_population_snapshot_falls_back_to_solver_state() -> None:
+    class _Solver:
+        population = np.array([[2.0, 3.0]], dtype=float)
+        objectives = np.array([[4.0]], dtype=float)
+        constraint_violations = np.array([0.0], dtype=float)
+
+    plugin = _DummyPlugin()
+    x, f, v = plugin.resolve_population_snapshot(_Solver())
+    assert x.shape == (1, 2)
+    assert f.shape == (1, 1)
+    assert v.shape == (1,)
+    assert float(x[0, 0]) == 2.0
 
 
 def test_commit_population_snapshot_uses_adapter_setter() -> None:

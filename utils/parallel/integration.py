@@ -1,10 +1,10 @@
 """Lightweight parallel evaluation integration for solver classes.
 
-This keeps solver bases (BlankSolverBase / ComposableSolver) unchanged.
+This keeps solver bases (SolverBase / ComposableSolver) unchanged.
 Users can opt-in by wrapping a solver class:
 
     from nsgablack.utils.parallel import with_parallel_evaluation
-    ParallelBlank = with_parallel_evaluation(BlankSolverBase)
+    ParallelBlank = with_parallel_evaluation(SolverBase)
     solver = ParallelBlank(problem, enable_parallel=True, parallel_backend="thread")
 """
 

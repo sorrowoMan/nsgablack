@@ -5,7 +5,7 @@ This workflow keeps solver bases pure. Surrogate logic is injected as a plugin.
 ## Inputs
 
 - A real problem: `BlackBoxProblem.evaluate(x)` (ground truth)
-- A solver: `ComposableSolver` or `BlackBoxSolverNSGAII`
+- A solver: `ComposableSolver` or `EvolutionSolver`
 - A representation: `RepresentationPipeline` (feasibility first)
 - Optional biases: `BiasModule`
 

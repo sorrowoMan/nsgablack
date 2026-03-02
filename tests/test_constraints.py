@@ -1,7 +1,7 @@
 import numpy as np
 
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 
 
 class BrokenConstraintProblem(BlackBoxProblem):
@@ -18,7 +18,7 @@ class BrokenConstraintProblem(BlackBoxProblem):
 
 def test_constraint_failures_are_handled():
     problem = BrokenConstraintProblem()
-    solver = BlackBoxSolverNSGAII(problem)
+    solver = EvolutionSolver(problem)
     solver.pop_size = 4
     solver.initialize_population()
     assert np.isinf(solver.constraint_violations).all()

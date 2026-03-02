@@ -1,5 +1,5 @@
 """
-Composable solver built on BlankSolverBase.
+Composable solver built on SolverBase.
 
 This solver delegates the optimization logic to AlgorithmAdapter instances.
 """
@@ -11,12 +11,12 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 import numpy as np
 
 from .adapters import AlgorithmAdapter, CompositeAdapter
-from .blank_solver import BlankSolverBase
+from .blank_solver import SolverBase
 from ..utils.context.context_keys import KEY_STEP
 from ..utils.extension_contracts import normalize_candidates, stack_population
 
 
-class ComposableSolver(BlankSolverBase):
+class ComposableSolver(SolverBase):
     """Solver wrapper that executes adapter-driven optimization loops."""
 
     def __init__(
@@ -27,10 +27,21 @@ class ComposableSolver(BlankSolverBase):
         representation_pipeline=None,
         ignore_constraint_violation_when_bias: bool = False,
         plugin_strict: bool = False,
+        snapshot_strict: bool = False,
         context_store_backend: str = "memory",
         context_store_ttl_seconds: Optional[float] = None,
         context_store_redis_url: str = "redis://localhost:6379/0",
         context_store_key_prefix: str = "nsgablack:context",
+        snapshot_store_backend: str = "memory",
+        snapshot_store_ttl_seconds: Optional[float] = None,
+        snapshot_store_redis_url: str = "redis://localhost:6379/0",
+        snapshot_store_key_prefix: str = "nsgablack:snapshot",
+        snapshot_store_dir: Optional[str] = None,
+        snapshot_store_serializer: str = "safe",
+        snapshot_store_hmac_env_var: str = "NSGABLACK_SNAPSHOT_HMAC_KEY",
+        snapshot_store_unsafe_allow_unsigned: bool = False,
+        snapshot_store_max_payload_bytes: int = 8_388_608,
+        snapshot_schema: str = "population_snapshot_v1",
     ) -> None:
         super().__init__(
             problem=problem,
@@ -38,15 +49,29 @@ class ComposableSolver(BlankSolverBase):
             representation_pipeline=representation_pipeline,
             ignore_constraint_violation_when_bias=ignore_constraint_violation_when_bias,
             plugin_strict=bool(plugin_strict),
+            snapshot_strict=bool(snapshot_strict),
             context_store_backend=context_store_backend,
             context_store_ttl_seconds=context_store_ttl_seconds,
             context_store_redis_url=context_store_redis_url,
             context_store_key_prefix=context_store_key_prefix,
+            snapshot_store_backend=snapshot_store_backend,
+            snapshot_store_ttl_seconds=snapshot_store_ttl_seconds,
+            snapshot_store_redis_url=snapshot_store_redis_url,
+            snapshot_store_key_prefix=snapshot_store_key_prefix,
+            snapshot_store_dir=snapshot_store_dir,
+            snapshot_store_serializer=snapshot_store_serializer,
+            snapshot_store_hmac_env_var=snapshot_store_hmac_env_var,
+            snapshot_store_unsafe_allow_unsigned=snapshot_store_unsafe_allow_unsigned,
+            snapshot_store_max_payload_bytes=snapshot_store_max_payload_bytes,
+            snapshot_schema=snapshot_schema,
         )
         self.adapter: Optional[AlgorithmAdapter] = adapter
         self.best_x: Optional[np.ndarray] = None
         self.best_objective: Optional[float] = None
         self.last_step_summary: Dict[str, Any] = {}
+        # Optional scalarizer for multi-objective summaries (best_x/summary only).
+        # Signature: fn(objectives: np.ndarray, violations: np.ndarray, idx: int) -> float
+        self.objective_scalarizer = None
 
     def set_adapter(self, adapter: AlgorithmAdapter) -> None:
         self.adapter = adapter
@@ -110,9 +135,16 @@ class ComposableSolver(BlankSolverBase):
 
     def select_best(self, objectives: np.ndarray, violations: np.ndarray) -> int:
         scores = []
+        scalarizer = self.objective_scalarizer
         for idx, obj in enumerate(objectives):
             vio = violations[idx] if violations is not None else 0.0
-            score = float(vio) * 1e6 + float(np.sum(obj))
+            if callable(scalarizer):
+                try:
+                    score = float(scalarizer(objectives, violations, idx))
+                except Exception:
+                    score = float(vio) * 1e6 + float(np.sum(obj))
+            else:
+                score = float(vio) * 1e6 + float(np.sum(obj))
             scores.append(score)
         return int(np.argmin(scores)) if scores else 0
 

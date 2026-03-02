@@ -24,7 +24,7 @@ docker run --name nsgablack-redis -p 6379:6379 -d --restart unless-stopped redis
 Project config:
 
 ```python
-solver = BlackBoxSolverNSGAII(
+solver = EvolutionSolver(
     problem,
     context_store_backend="redis",
     context_store_redis_url="redis://127.0.0.1:6379/0",

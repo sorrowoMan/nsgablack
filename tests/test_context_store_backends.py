@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.core.blank_solver import BlankSolverBase
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.blank_solver import SolverBase
+from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.utils.context.context_store import (
     InMemoryContextStore,
     create_context_store,
@@ -32,7 +32,7 @@ def test_inmemory_context_store_ttl_expires() -> None:
 
 
 def test_blank_solver_context_store_roundtrip() -> None:
-    solver = BlankSolverBase(problem=_Sphere(), context_store_backend="memory")
+    solver = SolverBase(problem=_Sphere(), context_store_backend="memory")
     solver.context_store.set("project.signal", 123.0)
     ctx = solver.build_context()
     assert ctx["project.signal"] == 123.0
@@ -49,7 +49,7 @@ def test_create_context_store_rejects_unknown_backend() -> None:
 
 
 def test_solver_runtime_uses_configured_context_store_backend_memory() -> None:
-    solver = BlackBoxSolverNSGAII(_Sphere(), context_store_backend="memory")
+    solver = EvolutionSolver(_Sphere(), context_store_backend="memory")
     solver.runtime.context_store.set("k", "v")
     ctx = solver.get_context()
     assert solver.runtime.context_store.get("k") == "v"

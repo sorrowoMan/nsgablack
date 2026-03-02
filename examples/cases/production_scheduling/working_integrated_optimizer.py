@@ -671,7 +671,7 @@ def _export_schedule(path: Path, schedule: np.ndarray) -> None:
 def _extract_pareto(solver_or_result) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
     """
     Normalize Pareto outputs from either:
-    - BlackBoxSolverNSGAII result dict
+    - EvolutionSolver result dict
     - ComposableSolver + ParetoArchivePlugin (solver.pareto_*)
     """
     if isinstance(solver_or_result, dict):
@@ -1006,7 +1006,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable strict material-feasible candidate filtering before adapter update.",
     )
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed. Default: None (use runtime random seed).",
+    )
     parser.add_argument("--no-bias", action="store_true")
     parser.add_argument(
         "--no-pipeline",

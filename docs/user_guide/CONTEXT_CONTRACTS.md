@@ -43,7 +43,7 @@
 - 协同调度：`candidate_roles`、`candidate_units`、`unit_tasks`
 - 运行状态：`running`、`evaluation_count`
 - 参数自适应：`mutation_rate`、`crossover_rate`
-- 快照字段：`individual`、`metadata`、`pareto_solutions`、`pareto_objectives`
+- 快照字段：`individual`、`metadata`、`snapshot_key`、`population_ref`、`pareto_solutions_ref`、`pareto_objectives_ref`、`sequence_graph_ref`
 
 治理规则：
 
@@ -59,7 +59,7 @@
 
 - Adapter：通常通过 `get_runtime_context_projection()` 投影运行字段
 - Plugin：推荐在 `on_context_build()` 写入可观察字段
-- Solver：提供核心基础字段（如 `population/objectives/constraint_violations`）
+- Solver：提供快照引用字段（如 `snapshot_key`、`population_ref/objectives_ref/constraint_violations_ref`）
 
 因此：
 
@@ -113,8 +113,8 @@ class MyAdaptivePlugin(Plugin):
 
 Context 契约之上，还有一层更底层的状态治理规则——它约束的是 **population / objectives / constraint_violations 的读写路径**：
 
-- **读取**：统一使用 `resolve_population_snapshot(solver, context)`（3 级 fallback：context → solver → 空）
-- **写入**：统一使用 `commit_population_snapshot(solver, context, ...)`（adapter-first：有 adapter 时只写 context，无 adapter 时同步写 solver）
+- **读取**：统一使用 `resolve_population_snapshot(solver)` 或 `solver.read_snapshot()`（快照引用 → store）
+- **写入**：统一使用 `commit_population_snapshot(solver, ...)`（adapter-first：有 adapter 时写 adapter，无 adapter 时同步写 solver）
 - **禁止**：Plugin / Adapter 不得直接写 `solver.population = ...` 等镜像字段（Doctor `--strict` 会检查 `solver-mirror-write` 和 `plugin-direct-solver-state-access`）
 
 > 参考：`docs/development/DEVELOPER_CONVENTIONS.md` 第 1 节「State Governance」

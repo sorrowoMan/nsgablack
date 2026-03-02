@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.representation import RepresentationPipeline, UniformInitializer, GaussianMutation, ProjectionRepair
 from nsgablack.bias import BiasModule, DynamicPenaltyBias
 from nsgablack.plugins import BenchmarkHarnessPlugin
@@ -56,7 +56,7 @@ def build_solver():
         )
     )
 
-    solver = BlackBoxSolverNSGAII(problem=problem, enable_bias=True)
+    solver = EvolutionSolver(problem=problem, enable_bias=True)
     solver.representation_pipeline = pipeline
     solver.set_bias_module(bias)
     solver.add_plugin(BenchmarkHarnessPlugin())

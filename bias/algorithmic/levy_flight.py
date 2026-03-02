@@ -18,13 +18,13 @@ class LevyFlightBias(AlgorithmicBias):
     """
     Levy flight-inspired bias based on distance from population center.
     """
-    context_requires = ("generation", "population")
+    context_requires = ("generation", "population_ref")
     requires_metrics = ("max_generations",)
     metrics_fallback = "default"
     context_provides = ()
     context_mutates = ()
     context_cache = ()
-    context_notes = "Reads context fields: generation, metrics, population; outputs scalar bias only."
+    context_notes = "Reads context fields: generation, metrics, population_ref; outputs scalar bias only."
 
 
 

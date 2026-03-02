@@ -54,7 +54,7 @@ class MyProblem(BlackBoxProblem):
 
 这段代码和框架匹配点：
 
-- `BlackBoxSolverNSGAII` 会调用 `problem.evaluate(x)`
+- `EvolutionSolver` 会调用 `problem.evaluate(x)`
 - 有约束场景下会读取 `evaluate_constraints(x)`
 
 ---
@@ -250,7 +250,7 @@ problem = MyProblem(dimension=8)
 pipeline = build_pipeline()
 bias_module = build_bias_module(enable_bias=True)
 
-solver = BlackBoxSolverNSGAII(problem, bias_module=bias_module)
+solver = EvolutionSolver(problem, bias_module=bias_module)
 solver.set_representation_pipeline(pipeline)
 solver.add_plugin(MyPlugin(interval=5))
 ```

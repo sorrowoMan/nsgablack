@@ -26,7 +26,7 @@ class DiversityBias(AlgorithmicBias):
 
     适用场景：多模态优化、需要全局搜索的问题
     """
-    context_requires = ("population",)
+    context_requires = ("population_ref",)
     requires_metrics = ()
     context_provides = ()
     context_mutates = ()
@@ -125,7 +125,7 @@ class AdaptiveDiversityBias(AlgorithmicBias):
 
     适用于动态变化的优化问题和需要平衡多样性的场景。
     """
-    context_requires = ("population",)
+    context_requires = ("population_ref",)
     requires_metrics = ()
     context_provides = ()
     context_mutates = ()
@@ -326,7 +326,7 @@ class CrowdingDistanceBias(AlgorithmicBias):
 
     适用于多目标优化和需要均匀分布解的问题。
     """
-    context_requires = ("population",)
+    context_requires = ("population_ref",)
     requires_metrics = ()
     context_provides = ()
     context_mutates = ()
@@ -396,7 +396,7 @@ class SharingFunctionBias(AlgorithmicBias):
 
     适用于需要精确控制相似度的问题。
     """
-    context_requires = ("population",)
+    context_requires = ("population_ref",)
     requires_metrics = ()
     context_provides = ()
     context_mutates = ()

@@ -105,11 +105,11 @@
 #### **模板1：昂贵工程仿真**
 
 ```python
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.experimental.solvers import run_surrogate_assisted
 
 # 方法1：NSGA-II + 并行评估
-solver = BlackBoxSolverNSGAII(problem)
+solver = EvolutionSolver(problem)
 solver.pop_size = 50
 solver.max_generations = 100
 solver.enable_parallel(
@@ -151,10 +151,10 @@ result = run_headless_single_objective(
 #### **模板3：多目标约束优化**
 
 ```python
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.bias import BiasModule
 
-solver = BlackBoxSolverNSGAII(problem)
+solver = EvolutionSolver(problem)
 solver.pop_size = 80
 solver.max_generations = 150
 
@@ -261,7 +261,7 @@ class MechanicalPart(BlackBoxProblem):
         return [stress - max_stress]  # 应力约束
 
 # 配置优化器
-solver = BlackBoxSolverNSGAII(problem)
+solver = EvolutionSolver(problem)
 solver.pop_size = 100
 solver.max_generations = 200
 
@@ -424,7 +424,7 @@ for generation in range(max_generations):
 # 超昂贵仿真的完整流程
 from nsgablack.utils.manifold_reduction import apply_pca_reduction
 from nsgablack.experimental.solvers import run_surrogate_assisted
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 
 # 步骤1：降维（如果高维）
 if problem.dimension > 20:
@@ -440,7 +440,7 @@ surrogate_result = run_surrogate_assisted(
 )
 
 # 步骤3：基于代理结果初始化NSGA-II
-solver = BlackBoxSolverNSGAII(problem_reduced)
+solver = EvolutionSolver(problem_reduced)
 solver.pop_size = 100
 solver.max_generations = 100
 

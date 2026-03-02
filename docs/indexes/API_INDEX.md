@@ -8,11 +8,11 @@ Use this as the definitive map for import paths and stable entrypoints.
 ## 1) Core solver entrypoints
 
 - `core/solver.py`
-  - `BlackBoxSolverNSGAII`
+  - `EvolutionSolver`
 - `core/composable_solver.py`
   - `ComposableSolver`
 - `core/blank_solver.py`
-  - `BlankSolverBase`
+  - `SolverBase`
 
 ## 2) Problem / interfaces
 

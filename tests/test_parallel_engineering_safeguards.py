@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.utils.parallel.evaluator import ParallelEvaluator
 
 
@@ -25,11 +25,11 @@ def test_parallel_process_precheck_falls_back_to_thread_when_unpicklable():
         dtype=float,
     )
 
-    serial = BlackBoxSolverNSGAII(problem)
+    serial = EvolutionSolver(problem)
     obj_s, vio_s = serial.evaluate_population(population)
 
     with pytest.warns(UserWarning):
-        parallel = BlackBoxSolverNSGAII(
+        parallel = EvolutionSolver(
             problem,
             parallel=True,
             parallel_backend="process",
@@ -62,7 +62,7 @@ def test_parallel_process_precheck_strict_raises_when_unpicklable():
         dtype=float,
     )
 
-    parallel = BlackBoxSolverNSGAII(
+    parallel = EvolutionSolver(
         problem,
         parallel=True,
         parallel_backend="process",

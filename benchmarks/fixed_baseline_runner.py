@@ -11,7 +11,7 @@ from typing import Dict, List
 import numpy as np
 
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.utils.engineering.file_io import atomic_write_json
 from nsgablack.utils.engineering.schema_version import stamp_schema
 
@@ -64,7 +64,7 @@ def _resolve_best_score(result: Dict[str, object]) -> float:
 def run_scenario(scenario: BaselineScenario, *, seed: int) -> Dict[str, float]:
     np.random.seed(int(seed))
 
-    solver = BlackBoxSolverNSGAII(SphereProblem(scenario.dimension))
+    solver = EvolutionSolver(SphereProblem(scenario.dimension))
     solver.pop_size = int(scenario.pop_size)
     solver.max_generations = int(scenario.generations)
     solver.crossover_rate = 0.85

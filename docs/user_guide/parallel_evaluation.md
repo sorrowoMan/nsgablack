@@ -33,7 +33,7 @@
 
 ```python
 from nsgablack.utils.parallel import ParallelEvaluator
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 
 # 创建问题
 problem = MyProblem()
@@ -54,9 +54,9 @@ objectives, violations = evaluator.evaluate_population(population, problem)
 
 ```python
 from nsgablack.utils.parallel import with_parallel_evaluation
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 
-solver = BlackBoxSolverNSGAII(problem, pop_size=100, max_generations=200)
+solver = EvolutionSolver(problem, pop_size=100, max_generations=200)
 
 with with_parallel_evaluation(
     solver,
@@ -145,7 +145,7 @@ evaluator = SmartEvaluatorSelector.select_evaluator(
 ```python
 from nsgablack.utils.parallel import with_parallel_evaluation
 
-solver = BlackBoxSolverNSGAII(problem)
+solver = EvolutionSolver(problem)
 with with_parallel_evaluation(solver, backend="process", max_workers=4):
     result = solver.run()
 ```
@@ -154,7 +154,7 @@ with with_parallel_evaluation(solver, backend="process", max_workers=4):
 
 ```python
 # 第一步：添加并行选项
-class MySolver(BlackBoxSolverNSGAII):
+class MySolver(EvolutionSolver):
     def __init__(self, problem, enable_parallel=False):
         super().__init__(problem)
         if enable_parallel:
@@ -248,7 +248,7 @@ objectives, violations = evaluator.evaluate_population(
 ```python
 from nsgablack.utils.parallel import with_parallel_evaluation
 
-solver = BlackBoxSolverNSGAII(problem)
+solver = EvolutionSolver(problem)
 with with_parallel_evaluation(solver, auto_configure=True):
     result = solver.run()
 ```

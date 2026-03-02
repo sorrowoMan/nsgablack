@@ -6,7 +6,7 @@
 - 用来对齐后续新能力（参数命名 / context keys / 组合方式）
 - 任何重构/回归都应该保证这些示例仍能运行
 
-## 1) BlankSolverBase：底座 + 插件驱动的最小闭环
+## 1) SolverBase：底座 + 插件驱动的最小闭环
 
 - 文件：`examples/blank_solver_plugin_demo.py`
 - 目的：证明“底座尽量纯净 + 插件做装配”能跑通，并且可以自然接入 Pipeline/Bias/Plugins

@@ -15,6 +15,8 @@ from .continuous import (
     ProjectionRepair,
     GaussianMutation,
     ContextGaussianMutation,
+    PolynomialMutation,
+    SBXCrossover,
     UniformInitializer,
 )
 from .integer import IntegerInitializer, IntegerMutation, IntegerRepair
@@ -55,6 +57,8 @@ __all__ = [
     "ProjectionRepair",
     "GaussianMutation",
     "ContextGaussianMutation",
+    "PolynomialMutation",
+    "SBXCrossover",
     "UniformInitializer",
     "IntegerInitializer",
     "IntegerMutation",

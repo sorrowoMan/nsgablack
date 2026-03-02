@@ -61,16 +61,16 @@ def test_upsert_writes_context_contract_fields(tmp_path):
         kind="adapter",
         import_path="nsgablack.core.adapters.vns:VNSAdapter",
         summary="adapter demo",
-        context_requires=("population", "generation"),
+        context_requires=("population_ref", "generation"),
         context_provides=("vns_k",),
-        context_mutates=("population",),
-        context_cache=("objectives",),
+        context_mutates=("population_ref",),
+        context_cache=("objectives_ref",),
         context_notes=("writes vns diagnostics",),
     )
     upsert_catalog_entry(target, payload, replace=True)
     text = target.read_text(encoding="utf-8")
-    assert "context_requires = ['population', 'generation']" in text
+    assert "context_requires = ['population_ref', 'generation']" in text
     assert "context_provides = ['vns_k']" in text
-    assert "context_mutates = ['population']" in text
-    assert "context_cache = ['objectives']" in text
+    assert "context_mutates = ['population_ref']" in text
+    assert "context_cache = ['objectives_ref']" in text
     assert "context_notes = ['writes vns diagnostics']" in text

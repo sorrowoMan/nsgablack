@@ -28,6 +28,7 @@ The format is based on Keep a Changelog, and this project aims to follow SemVer.
 - UniversalBias / DomainBias bias_history 改为 bounded deque + 真实违反率 (M-15/M-16)。
 - UI 热重载改为 hash+invalidate (M-13)。ContextView 缓存改为 weakref (M-14)。
 - memory_manager 历史采样恢复时序 (M-12)。
+- **BREAKING**: Context no longer carries large arrays (`population/objectives/constraint_violations`). Added SnapshotStore + snapshot refs (`snapshot_key`, `population_ref`, etc), bumped context field schema to v2.
 
 ### Deprecated
 - (fill in as you cut releases)

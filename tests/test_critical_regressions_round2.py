@@ -7,7 +7,7 @@ from nsgablack.bias.managers.adaptive_manager import AdaptiveAlgorithmicManager
 from nsgablack.bias.managers.analytics import BiasEffectivenessMetrics
 from nsgablack.bias.managers.meta_learning_selector import MetaLearningBiasSelector, ProblemFeatures
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.utils.performance.fast_non_dominated_sort import FastNonDominatedSort
 from nsgablack.utils.performance.memory_manager import OptimizationMemoryOptimizer
 
@@ -22,7 +22,7 @@ class _ToyMOProblem(BlackBoxProblem):
 
 
 def test_environmental_selection_uses_full_front_ranking() -> None:
-    solver = BlackBoxSolverNSGAII(_ToyMOProblem())
+    solver = EvolutionSolver(_ToyMOProblem())
     solver.pop_size = 5
 
     combined_pop = np.array(

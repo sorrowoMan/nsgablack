@@ -102,7 +102,7 @@ class SurrogateEvaluationPlugin(Plugin):
         n_obj = int(getattr(solver, "num_objectives", 1) or 1)
         self._surrogate = VectorSurrogate(num_objectives=n_obj, model_type=self.model_type)  # type: ignore[arg-type]
 
-    # ---- short-circuit hook: BlankSolverBase.evaluate_population(...) ----
+    # ---- short-circuit hook: SolverBase.evaluate_population(...) ----
     def evaluate_population(self, solver, population: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         if self._surrogate is None:
             raise RuntimeError("SurrogateEvaluationPlugin not initialized (missing on_solver_init call)")

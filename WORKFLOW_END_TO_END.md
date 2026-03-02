@@ -45,7 +45,7 @@
 - `Adapter`：策略内核（怎么提案/怎么消费反馈/怎么推进搜索过程）
 - `Plugin`：能力层（并行、记录、监控、短路评估等）
 
-> 说明：如果你用 `BlackBoxSolverNSGAII`（搜索逻辑内建），不需要显式配 Adapter；如果你用 `ComposableSolver` / `BlankSolverBase`，Adapter 就是决定"怎么搜索"的核心引擎。
+> 说明：如果你用 `EvolutionSolver`（搜索逻辑内建），不需要显式配 Adapter；如果你用 `ComposableSolver` / `SolverBase`，Adapter 就是决定"怎么搜索"的核心引擎。
 
 组织方式（帮你不漏配、好复用、好发现）：
 
@@ -277,6 +277,19 @@ Adapter 只回答一个问题：
 > 框架做法：Adapter 负责策略内核，组合走多策略协同或阶段式串联  
 > 为什么更好：每个策略的贡献可拆解、可消融、可对比
 
+顺手提醒一个**容易被忽略但很关键**的点：`best_x` 是“摘要代表点”，不是 Pareto 的裁决点。  
+默认标量是：`sum(objectives) + violation * 1e6`。当多目标尺度差异大时，这个代表点可能不够稳。
+你可以在需要时设置 **scalarizer**（只影响摘要，不影响算法本身）：
+
+```python
+def weighted_sum(objectives, violations, idx):
+    f = objectives[idx]
+    vio = 0.0 if violations is None else float(violations[idx])
+    return 0.7 * float(f[0]) + 0.3 * float(f[1]) + vio * 1e6
+
+solver.objective_scalarizer = weighted_sum
+```
+
 ### 多策略协同（你会越来越常用）
 
 **先澄清概念**：这里不是“多智能体”叙事，而是**多策略提案者 + 统一评估/归档/调度**。  
@@ -308,6 +321,84 @@ Adapter 只回答一个问题：
 > 先把协同当“调度工程”，不是“算法融合”。
 
 ---
+
+## 4.1) 进阶：内层嵌套求解器（评估函数本身就是一个完整求解器）
+
+到这里，给你一个更具体的情景：
+
+你在做一个 EDA/供应链/生产调度类问题。  
+你照着前面的流程，把外层优化先跑起来了。  
+然后你开始写 `evaluate(x)`，结果发现它**太复杂**：  
+你必须先跑一个“内置求解器”才能得到评估结果。  
+比如你在做 EDA，`evaluate(x)` 里其实要解一个物理隐函数，  
+最终不得不用牛顿法/数值迭代才能算出目标值。  
+也就是说，`evaluate(x)` 本身就变成了一个“内层求解过程”。
+
+你先按直觉把它塞进 `evaluate(x)`，结果跑起来后出现几个症状：
+
+- 并行一开，评估互相抢资源，速度慢还不稳定  
+- 你想复现实验，发现内层逻辑没有证据链可追溯  
+- 你改了内层细节，外层结果忽上忽下，根本说不清为什么
+
+这时候你会犹豫：
+
+> “那我是不是不应该把这一坨东西塞进 evaluate 里？”
+
+框架的回答是：**是的，你应该把内层求解器单独抽出来**。  
+正确做法是把这个“内置求解器”**升级成完整的内层闭环**，  
+让它拥有自己的 Problem / Pipeline / Bias / Adapter / Plugin，  
+并且允许它再嵌套、更内层、再回写。  
+这样你就同时保住了：可审计、可复现、可并行。
+
+这一步如果直接塞进 `evaluate()`，你很快会遇到三个问题：  
+1) 评估不可审计：内层细节无法记录、无法复盘  
+2) 评估不可并行：内层共享资源，进程/线程互相干扰  
+3) 评估不可解释：改一点内层逻辑，外层结果乱跳
+
+### 先把心智模型搭起来（你先理解这个，后面就顺了）
+
+```
+L1（外层优化）：只负责选 x
+  ↓
+L2（内层评估）：也是一个 Solver 闭环
+  ↓
+L3（更内层）：数值求解 / 约束修复 / 子问题
+  ↓
+ContractBridge：允许 L3 结果回写到 L1/L2 的 context
+```
+
+你只要记住三句话：
+
+1) **内层不是 evaluate 的私货，而是可审计的求解层**  
+2) **每一层都完整自洽**（Problem / Pipeline / Bias / Adapter / Plugin 全都有）  
+3) **L3 可以直接写回 L1**（桥接插件已经支持）
+
+### 你会怎么做（手把手路径）
+
+**第 1 步：先把 L2 当成一个独立 solver 搭起来**  
+（它自己能跑通，有 Pipeline、有 Bias、有 Adapter）
+
+**第 2 步：用 `InnerSolverPlugin` 把 L2 挂到 L1 的评估链路里**
+
+**第 3 步：如果还要更深层（L3），就在 L2 里再挂一个 InnerSolver**
+
+**第 4 步：用 `ContractBridgePlugin` 把 L3/L2 的关键结果写回 L1**
+
+
+### 参考实现（直接对照看）
+
+- 三层嵌套示例：`examples/nested_three_layer_demo.py`  
+  - L1 调 L2，L2 调 L3，桥接直写回 L1
+- 三层 + 多策略 UI 示例：`examples/inner_three_layer_multi_strategy_ui_demo.py`
+- 实际工程案例：`examples/cases/supply_adjustment_nested/`  
+  - 外层做供应调整，内层跑生产评估（完整闭环）
+- 另一个三层工程案例：`examples/cases/supply_adjustment_nested/working_blacklist_optimizer.py`  
+  - L0 → L1 → L2 的嵌套结构，适合看“内层再套内层”的完整链路
+
+> 这就是“内层求解器”的核心：不是把复杂度藏进 evaluate，  
+> 而是把复杂度拆成可解释、可追溯、可嵌套的层。
+
+--- 
 
 ## 5) 加能力层（Plugins）：把“工程能力”外置
 

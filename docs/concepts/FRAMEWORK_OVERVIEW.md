@@ -4,6 +4,13 @@
 
 因此本页收敛为指向，避免重复维护：
 
+## 当前架构要点（v2）
+
+- Context 只放小字段与快照引用（`snapshot_key` / `population_ref` 等）
+- 大对象统一走 `SnapshotStore`（内存/Redis/文件后端可切）
+- 统一入口：`solver.read_snapshot()` / `Plugin.resolve_population_snapshot()` / `Plugin.commit_population_snapshot()`
+- 详细说明见 `docs/architecture/README.md`
+
 ## 推荐阅读顺序
 
 1) 手把手落地一个真实问题（入口主线）

@@ -29,9 +29,9 @@ def test_composable_solver_exposes_best_context_keys(sample_problem) -> None:
 
 
 def test_nsga2_solver_exposes_best_context_keys(sample_problem) -> None:
-    from nsgablack.core.solver import BlackBoxSolverNSGAII
+    from nsgablack.core.evolution_solver import EvolutionSolver
 
-    solver = BlackBoxSolverNSGAII(sample_problem)
+    solver = EvolutionSolver(sample_problem)
     solver.pop_size = 12
     solver.max_generations = 3
     solver.enable_progress_log = False

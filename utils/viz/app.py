@@ -2,6 +2,7 @@ import argparse
 import hashlib
 import importlib.util
 import re
+import sys
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,10 +17,24 @@ from .ui.context_view import ContextView
 from .ui.contrib_view import ContributionView
 from .ui.decision_view import DecisionView
 from .ui.doctor_view import DoctorView
+from .ui.repro_view import ReproView
 from .ui.run_view import RunView
+from .ui.sequence_view import SequenceView
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _ensure_utf8_stdio() -> None:
+    for stream in (getattr(sys, "stdout", None), getattr(sys, "stderr", None)):
+        if stream is None:
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
 
 
 @dataclass
@@ -44,8 +59,8 @@ class VisualizerApp(tk.Tk):
     # Each profile serves a different task focus with reduced noise.
     _MODE_TABS = {
         "Build": ("details", "catalog", "register", "context"),
-        "Run": ("run", "decision", "contribution", "trajectory", "catalog", "register"),
-        "Audit": ("details", "decision", "context", "doctor", "contribution", "register"),
+        "Run": ("run", "decision", "sequence", "repro", "contribution", "trajectory", "catalog", "register"),
+        "Audit": ("details", "decision", "sequence", "repro", "context", "doctor", "contribution", "register"),
     }
 
     def __init__(
@@ -93,6 +108,8 @@ class VisualizerApp(tk.Tk):
         self.context_view: Optional[ContextView] = None
         self.doctor_view: Optional[DoctorView] = None
         self.decision_view: Optional[DecisionView] = None
+        self.sequence_view: Optional[SequenceView] = None
+        self.repro_view: Optional[ReproView] = None
         self._entry_path_var = tk.StringVar(value="")
         self._entry_func_var = tk.StringVar(value="build_solver")
         self._entry_label_var = tk.StringVar(value="")
@@ -100,8 +117,10 @@ class VisualizerApp(tk.Tk):
         self._ui_tab_specs: List[Tuple[str, str, ttk.Frame]] = []
         self._tab_key_by_id: Dict[str, str] = {}
         self._active_tab_key: str = "details"
-        self._tab_dirty: Dict[str, bool] = {"context": True, "doctor": True, "decision": True}
+        self._tab_dirty: Dict[str, bool] = {"context": True, "doctor": True, "decision": True, "sequence": True, "repro": True}
         self._pending_decision_run: Optional[Tuple[str, Dict[str, Any]]] = None
+        self._pending_sequence_run: Optional[Tuple[str, Dict[str, Any]]] = None
+        self._pending_repro_run: Optional[Tuple[str, Dict[str, Any]]] = None
 
         self._build_ui()
         self.report_callback_exception = self._on_tk_callback_exception
@@ -207,6 +226,8 @@ class VisualizerApp(tk.Tk):
         context_tab = ttk.Frame(notebook)
         doctor_tab = ttk.Frame(notebook)
         decision_tab = ttk.Frame(notebook)
+        sequence_tab = ttk.Frame(notebook)
+        repro_tab = ttk.Frame(notebook)
         self._tab_details = details_tab
         self._tab_run = run_tab
         self._tab_contrib = contrib_tab
@@ -216,10 +237,14 @@ class VisualizerApp(tk.Tk):
         self._tab_context = context_tab
         self._tab_doctor = doctor_tab
         self._tab_decision = decision_tab
+        self._tab_sequence = sequence_tab
+        self._tab_repro = repro_tab
         self._ui_tab_specs = [
             ("details", "Details", details_tab),
             ("run", "Run", run_tab),
             ("decision", "Decision", decision_tab),
+            ("sequence", "Sequence", sequence_tab),
+            ("repro", "Repro", repro_tab),
             ("contribution", "Contribution", contrib_tab),
             ("trajectory", "Trajectory", traj_tab),
             ("catalog", "Catalog", catalog_tab),
@@ -254,6 +279,8 @@ class VisualizerApp(tk.Tk):
         self.catalog_view = CatalogView(self, catalog_tab)
         self._build_register_tab(register_tab)
         self.decision_view = DecisionView(self, decision_tab)
+        self.sequence_view = SequenceView(self, sequence_tab)
+        self.repro_view = ReproView(self, repro_tab)
         self.context_view = ContextView(self, context_tab)
         self.doctor_view = DoctorView(self, doctor_tab)
         self.catalog = self.catalog_view.load_catalog()
@@ -378,6 +405,28 @@ class VisualizerApp(tk.Tk):
             self._pending_decision_run = None
             self._tab_dirty[key] = False
             return
+        if key == "sequence":
+            if self.sequence_view:
+                pending = self._pending_sequence_run
+                if pending is not None:
+                    run_id, artifacts = pending
+                    self.sequence_view.load_from_run(run_id=run_id, artifacts=artifacts)
+                else:
+                    self.sequence_view.refresh()
+            self._pending_sequence_run = None
+            self._tab_dirty[key] = False
+            return
+        if key == "repro":
+            if self.repro_view:
+                pending = self._pending_repro_run
+                if pending is not None:
+                    run_id, artifacts = pending
+                    self.repro_view.load_from_run(run_id=run_id, artifacts=artifacts)
+                else:
+                    self.repro_view.load_last_run()
+            self._pending_repro_run = None
+            self._tab_dirty[key] = False
+            return
 
     def request_context_refresh(self) -> None:
         self._mark_tab_dirty("context")
@@ -395,6 +444,20 @@ class VisualizerApp(tk.Tk):
         self._mark_tab_dirty("decision")
         if self._active_tab_key == "decision":
             self._refresh_tab_if_dirty("decision")
+
+    def request_sequence_refresh(self, *, run_id: Optional[str] = None, artifacts: Optional[Dict[str, Any]] = None) -> None:
+        if run_id:
+            self._pending_sequence_run = (str(run_id), dict(artifacts or {}))
+        self._mark_tab_dirty("sequence")
+        if self._active_tab_key == "sequence":
+            self._refresh_tab_if_dirty("sequence")
+
+    def request_repro_refresh(self, *, run_id: Optional[str] = None, artifacts: Optional[Dict[str, Any]] = None) -> None:
+        if run_id:
+            self._pending_repro_run = (str(run_id), dict(artifacts or {}))
+        self._mark_tab_dirty("repro")
+        if self._active_tab_key == "repro":
+            self._refresh_tab_if_dirty("repro")
 
     def _apply_entry_to_controls(self) -> None:
         if not self.entry:
@@ -578,6 +641,7 @@ class VisualizerApp(tk.Tk):
             if self.run_view:
                 self.run_view.update_sensitivity_button()
             self.request_context_refresh()
+            self.request_repro_refresh()
             self.request_doctor_refresh()
             return
         try:
@@ -600,6 +664,7 @@ class VisualizerApp(tk.Tk):
         if self.run_view:
             self.run_view.update_sensitivity_button()
         self.request_context_refresh()
+        self.request_repro_refresh()
         if self.contrib_view:
             self.contrib_view.reload_run_choices()
         if self.run_view:
@@ -614,6 +679,7 @@ class VisualizerApp(tk.Tk):
         if self.run_view:
             self.run_view.update_sensitivity_button()
         self.request_context_refresh()
+        self.request_repro_refresh()
 
     def _compute_render_signature(self) -> str:
         parts: List[str] = [f"kind={self._kind_filter_var.get()}"]
@@ -823,6 +889,10 @@ class VisualizerApp(tk.Tk):
         self.detail_summary.config(state="disabled")
         if self.decision_view is not None:
             self.decision_view.load_from_history_index(idx)
+        if self.sequence_view is not None:
+            self.sequence_view.load_from_history_index(idx)
+        if self.repro_view is not None:
+            self.repro_view.load_from_history_index(idx)
 
     def append_history(self, msg: str, detail: str, *, meta: Optional[Dict[str, Any]] = None) -> None:
         self._history.append(msg)
@@ -1533,6 +1603,7 @@ def _load_entry(entry: str) -> Callable[[], Any]:
     return _builder
 def launch_from_builder(builder: Callable[[], Any], *, entry_label: str = "<in-code>") -> int:
     """Launch UI directly from a build_solver() callable."""
+    _ensure_utf8_stdio()
     app = VisualizerApp(builder, entry=entry_label)
     app.mainloop()
     return 0
@@ -1540,6 +1611,7 @@ def launch_from_builder(builder: Callable[[], Any], *, entry_label: str = "<in-c
 
 def launch_from_entry(entry: str) -> int:
     """Launch UI from a 'path.py:build_solver' entry string."""
+    _ensure_utf8_stdio()
     builder = _load_entry(entry)
     app = VisualizerApp(builder, entry=entry)
     app.mainloop()
@@ -1548,6 +1620,7 @@ def launch_from_entry(entry: str) -> int:
 
 def launch_empty(*, workspace: Optional[str] = None) -> int:
     """Launch UI without preloaded solver entry."""
+    _ensure_utf8_stdio()
     ws = Path(workspace).resolve() if workspace else Path.cwd()
     app = VisualizerApp(None, entry="", workspace=ws)
     app.mainloop()

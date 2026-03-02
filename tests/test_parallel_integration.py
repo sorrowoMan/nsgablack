@@ -1,7 +1,7 @@
 import numpy as np
 
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 
 
 class TinySphere(BlackBoxProblem):
@@ -24,10 +24,10 @@ def test_parallel_evaluation_matches_serial():
         dtype=float,
     )
 
-    serial = BlackBoxSolverNSGAII(problem)
+    serial = EvolutionSolver(problem)
     obj_s, vio_s = serial.evaluate_population(population)
 
-    parallel = BlackBoxSolverNSGAII(
+    parallel = EvolutionSolver(
         problem,
         parallel=True,
         parallel_backend="thread",

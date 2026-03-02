@@ -20,6 +20,9 @@ python utils/viz/visualizer_tk.py --entry examples/dynamic_multi_strategy_demo.p
 - `--entry` 指向你的 `build_solver()` 函数。
 - 运行后，会读取当前 solver wiring，并展示可开关的组件。
 
+Run Inspector 的 Load 会直接调用 `build_solver()` 构建 wiring。
+为避免 UI 加载触发重计算，`build_solver()` 必须只做装配，重任务延迟到 `run()` / `evaluate()`。
+
 空启动模式（先用 Catalog 搜索，再 Load 文件）：
 
 ```bash
@@ -31,8 +34,8 @@ python -m nsgablack run_inspector --empty --workspace .
 - `Refresh`：代码改动后重新读取当前 entry
 - `View`：一键切换工作视图（单击按钮即可）
   - `Build(装配)`：Details / Catalog / Context（找组件与字段对齐）
-  - `Run(实验)`：Run / Decision / Contribution / Trajectory / Catalog（执行、回放与对比）
-  - `Audit(审计)`：Details / Decision / Context / Doctor / Contribution（排障与治理）
+  - `Run(实验)`：Run / Decision / Sequence / Repro / Contribution / Trajectory / Catalog（执行、回放、复现与对比）
+  - `Audit(审计)`：Details / Decision / Sequence / Repro / Context / Doctor / Contribution（排障与治理）
   - 注意：三种视图是**分工视图，不是层层累加**
 
 ---
@@ -51,6 +54,8 @@ python -m nsgablack run_inspector --empty --workspace .
 - Details：单个组件详情 + Health
 - Run：运行控制 + Run ID
 - Decision：决策路径回放（why/when）
+- Sequence：交互顺序图（序列去重，只看结构，不看数值）
+- Repro：复现包加载/对比/按包重跑
 - Contribution：模块贡献、对比、结构 hash 图谱
 - Trajectory：策略权重轨迹（dynamic_switch）
 - Catalog：组件搜索入口
@@ -82,7 +87,12 @@ python -m nsgablack run_inspector --empty --workspace .
 - 默认：时间戳
 - 也可手动输入，用于区分实验
 
-### 4.2 Snapshot（结构快照）
+### 4.2 Seed Override（可选）
+- Run 页支持输入 `Seed Override`（可留空）
+- 留空：沿用 solver 当前 seed 策略（例如 `seed=None` 的随机模式）
+- 填整数：在点击 Run 时先调用 `solver.set_random_seed(seed)` 再开始运行
+
+### 4.3 Snapshot（结构快照）
 每次运行会写入：
 ```
 runs/visualizer/<run_id>.json
@@ -120,7 +130,23 @@ Contribution 页新增：
 
 ---
 
-## 7. Bias 贡献与趋势
+## 7. 交互顺序图（Sequence）
+
+Sequence 页展示“组件交互顺序图”，只关注 **调用顺序**，不关心数值输出。
+
+- 去重逻辑：相同顺序只累计 `count`
+- 典型用途：发现短路路径、分支路径、插件抢占导致的流程偏移
+- 输出文件：`runs/<run_id>.sequence_graph.json`
+- 子标签：`List`（序列列表）、`Trie`（前缀树视图）、`Trace`（并发时序明细）
+- Trace 模式：`off/sample/full`（默认 `off`），建议测试/诊断时开启
+- Trace 内部视图：`Events`（逐事件）与 `By Thread/Task`（线程/任务聚合）
+
+前置条件：
+- 启用 `SequenceGraphPlugin`（默认 observability suite 已包含）
+
+---
+
+## 8. Bias 贡献与趋势
 
 Contribution 页还会显示：
 - 每个 bias 的 total / count / avg
@@ -131,7 +157,7 @@ Contribution 页还会显示：
 
 ---
 
-## 8. 策略权重轨迹（Trajectory）
+## 9. 策略权重轨迹（Trajectory）
 
 如果启用了 `dynamic_switch`：
 - Trajectory 页会绘制权重变化曲线
@@ -143,7 +169,7 @@ Contribution 页还会显示：
 
 ---
 
-## 9. Catalog 搜索（可发现性）
+## 10. Catalog 搜索（可发现性）
 
 Catalog 页：
 - 支持关键词搜索
@@ -164,7 +190,7 @@ Catalog 页：
 
 ---
 
-## 10. Context 字段治理（本轮重点）
+## 11. Context 字段治理（本轮重点）
 
 Context 页现在按 canonical key 做统一显示与联动。重点字段包括：
 
@@ -186,7 +212,7 @@ Context 页现在按 canonical key 做统一显示与联动。重点字段包括
 
 ---
 
-## 11. 常见问题
+## 12. 常见问题
 
 **Q1：为什么结构哈希为空？**
 - 旧快照可能没有 `structure_hash`，现在会自动计算
@@ -201,7 +227,7 @@ Context 页现在按 canonical key 做统一显示与联动。重点字段包括
 
 ---
 
-## 12. 最重要的正确理解
+## 13. 最重要的正确理解
 
 Run Inspector 不是“好看 UI”，而是：
 
@@ -212,7 +238,7 @@ Run Inspector 不是“好看 UI”，而是：
 
 ---
 
-## 13. 推荐阅读顺序（完整学习路径）
+## 14. 推荐阅读顺序（完整学习路径）
 
 建议按下面顺序看，避免“只会点 UI，不理解结构”：
 

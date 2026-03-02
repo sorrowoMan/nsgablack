@@ -30,7 +30,7 @@ from _bootstrap import ensure_nsgablack_importable  # noqa: E402
 
 ensure_nsgablack_importable(Path(__file__))
 
-from nsgablack.core.solver import BlackBoxSolverNSGAII  # noqa: E402
+from nsgablack.core.evolution_solver import EvolutionSolver  # noqa: E402
 from nsgablack.representation.base import RepresentationPipeline  # noqa: E402
 from nsgablack.representation.binary import BinaryInitializer, BinaryRepair, BitFlipMutation  # noqa: E402
 from nsgablack.utils.suites import attach_default_observability_plugins  # noqa: E402
@@ -239,7 +239,7 @@ def _build_solver(args):
     else:
         print(f"[constraint] max_moved_events<={int(args.max_moved_events)} (hard cap enabled)")
 
-    solver = BlackBoxSolverNSGAII(
+    solver = EvolutionSolver(
         problem,
         pop_size=int(args.l0_pop_size),
         max_generations=int(args.l0_generations),
@@ -365,7 +365,7 @@ def _run_final_l1_and_export(*, solver, args) -> None:
         material_blacklist=blacklist_ids,
         max_moved_events=(None if int(args.max_moved_events) <= 0 else int(args.max_moved_events)),
     )
-    s = BlackBoxSolverNSGAII(
+    s = EvolutionSolver(
         p,
         pop_size=int(max(4, args.final_l1_pop_size)),
         max_generations=int(max(1, args.final_l1_generations)),

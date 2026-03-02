@@ -22,6 +22,30 @@ required_companions = ['(none)']
 config_keys = ['(none)']
 example_entry = 'python -m nsgablack catalog search parallel_repair --kind example'
 [[entry]]
+key = "representation.sbx_crossover"
+title = "SBXCrossover"
+kind = "representation"
+import_path = "nsgablack.representation.continuous:SBXCrossover"
+tags = ["representation", "crossover", "sbx", "continuous", "bounds", "nsga2"]
+summary = "Representation: simulated binary crossover (SBX)."
+use_when = ["Need SBX crossover for continuous variables in representation pipeline."]
+minimal_wiring = ["from nsgablack.representation import SBXCrossover", "Attach this component into RepresentationPipeline as crossover."]
+required_companions = ["(none)"]
+config_keys = ["eta_c", "low", "high"]
+example_entry = "python -m nsgablack catalog search sbx_crossover --kind example"
+[[entry]]
+key = "representation.polynomial_mutation"
+title = "PolynomialMutation"
+kind = "representation"
+import_path = "nsgablack.representation.continuous:PolynomialMutation"
+tags = ["representation", "mutation", "polynomial", "continuous", "bounds", "nsga2"]
+summary = "Representation: polynomial mutation for continuous variables."
+use_when = ["Need polynomial mutation for continuous variables in representation pipeline."]
+minimal_wiring = ["from nsgablack.representation import PolynomialMutation", "Attach this component into RepresentationPipeline as mutator."]
+required_companions = ["(none)"]
+config_keys = ["eta_m", "mutation_rate", "low", "high"]
+example_entry = "python -m nsgablack catalog search polynomial_mutation --kind example"
+[[entry]]
 key = "adapter.role"
 title = "RoleAdapter"
 kind = "adapter"
@@ -1819,6 +1843,19 @@ config_keys = ["context_store_backend", "context_store_redis_url", "context_stor
 example_entry = "docs/user_guide/REDIS_CONTEXT_BACKEND.md"
 
 [[entry]]
+key = "doc.user_guide.redis_context_snapshot_workflow"
+title = "User Guide: REDIS_CONTEXT_SNAPSHOT_WORKFLOW"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_redis_context_snapshot_workflow"
+tags = ["doc", "guide", "redis", "context", "snapshot", "workflow"]
+summary = "ContextStore vs SnapshotStore with Redis: contracts, key flow, TTL, and troubleshooting. / Redis 下 ContextStore 与 SnapshotStore 的契约、键流转、TTL 与排障。"
+use_when = ["Need to design or debug mixed Redis workflows for context small fields and snapshot large objects."]
+minimal_wiring = ["Open docs/user_guide/REDIS_CONTEXT_SNAPSHOT_WORKFLOW.md."]
+required_companions = ["doc.user_guide.redis_context_backend", "doc.user_guide.context_contracts"]
+config_keys = ["context_store_backend", "context_store_redis_url", "context_store_key_prefix", "context_store_ttl_seconds", "snapshot_store_backend", "snapshot_store_redis_url", "snapshot_store_key_prefix", "snapshot_store_ttl_seconds"]
+example_entry = "docs/user_guide/REDIS_CONTEXT_SNAPSHOT_WORKFLOW.md"
+
+[[entry]]
 key = "plugin.otel_tracing"
 title = "OpenTelemetryTracingPlugin"
 kind = "plugin"
@@ -1846,8 +1883,8 @@ tags = ["ops", "audit", "replay", "decision", "plugin"]
 summary = "Deterministic decision-path trace and replay artifacts (JSONL + summary)."
 companions = ["plugin.module_report", "plugin.profiler", "plugin.otel_tracing"]
 context_requires = ["generation"]
-context_provides = ["decision_trace"]
-context_mutates = ["decision_trace"]
+context_provides = ["decision_trace_ref"]
+context_mutates = ["decision_trace_ref"]
 context_cache = []
 context_notes = ["Record decision events with reason_code/inputs/thresholds/evidence/outcome for replay."]
 use_when = ["Need to explain why fallback/budget/surrogate decisions happened at specific generations."]
@@ -1855,6 +1892,25 @@ minimal_wiring = ["from nsgablack.plugins import DecisionTracePlugin, DecisionTr
 required_companions = ["(none)"]
 config_keys = ["output_dir", "run_id", "overwrite", "flush_every", "capture_evaluate", "capture_adapter", "capture_plugin_events", "include_context_events"]
 example_entry = "examples/decision_trace_demo.py:build_solver"
+
+[[entry]]
+key = "plugin.sequence_graph"
+title = "SequenceGraphPlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.ops.sequence_graph:SequenceGraphPlugin"
+tags = ["ops", "audit", "sequence", "graph", "timeline", "plugin"]
+summary = "Record unique component interaction orders and write sequence-graph artifacts."
+companions = ["plugin.decision_trace", "plugin.module_report"]
+context_requires = []
+context_provides = ["sequence_graph_ref"]
+context_mutates = ["sequence_graph_ref"]
+context_cache = []
+context_notes = ["Captures order-only interaction sequences (values ignored) and outputs a compact JSON graph."]
+use_when = ["Need to verify component interaction order, detect short-circuit paths, or audit orchestration flow."]
+minimal_wiring = ["from nsgablack.plugins import SequenceGraphPlugin, SequenceGraphConfig", "solver.add_plugin(SequenceGraphPlugin(config=SequenceGraphConfig(output_dir='runs', run_id='demo')))"]
+required_companions = ["(none)"]
+config_keys = ["output_dir", "run_id", "overwrite", "flush_every", "boundary_groups", "ignore_patterns", "max_sequence_length", "max_sequences", "capture_adapter", "capture_evaluate_population", "capture_evaluate_individual", "capture_plugin_events", "trace_mode", "trace_sample_rate", "trace_max_events", "trace_seed"]
+example_entry = "examples/sequence_graph_demo.py:build_solver"
 
 [[entry]]
 key = "doc.user_guide.decision_replay_engine"

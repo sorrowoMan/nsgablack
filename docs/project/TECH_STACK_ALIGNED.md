@@ -386,7 +386,7 @@ Solver 初始化阶段：
 - `on_generation_end(generation)`：BenchmarkHarness 在这里写一行 CSV（见 `plugins/ops/benchmark_harness.py`）
 
 空白求解器/自定义循环阶段：
-- `on_step(solver, generation)`：给 BlankSolverBase 这类“外部循环”提供的每步回调
+- `on_step(solver, generation)`：给 SolverBase 这类“外部循环”提供的每步回调
 
 结束阶段：
 - `on_solver_finish(result: dict)`：求解器结束时触发；适合写 summary/导出报告
@@ -491,10 +491,10 @@ bias.md（可选）：`{output_dir}/{run_id}.bias.md`
 
 - 包装方式：
 ```python
-from nsgablack.core.blank_solver import BlankSolverBase
+from nsgablack.core.blank_solver import SolverBase
 from nsgablack.utils.parallel import with_parallel_evaluation
 
-ParallelBlank = with_parallel_evaluation(BlankSolverBase)
+ParallelBlank = with_parallel_evaluation(SolverBase)
 solver = ParallelBlank(problem, enable_parallel=True, parallel_backend="process", parallel_max_workers=12)
 ```
 - 设计取舍：

@@ -29,8 +29,8 @@
 - `evaluate_constraints()` 可选；硬约束更推荐放在管线修复，软约束放偏置。
 
 ### 2) 求解器层（Solver Bases）
-- 标准求解器：`BlackBoxSolverNSGAII`（固定流程）。
-- 空白底座：`BlankSolverBase`（不提供流程，完全由插件/子类实现）。
+- 标准求解器：`EvolutionSolver`（固定流程）。
+- 空白底座：`SolverBase`（不提供流程，完全由插件/子类实现）。
 - 可组合求解器：`ComposableSolver`（流程由 Adapter 驱动，评估/调度由底座统一处理）。
 
 ### 3) 表示层（Representation Pipeline）
@@ -43,7 +43,7 @@
 
 ### 5) 插件层（Plugins）
 - 负责流程外能力：日志、监控、早停、阶段切换、调度协作。
-- 对 `BlankSolverBase` 可直接驱动流程（`on_step`）。
+- 对 `SolverBase` 可直接驱动流程（`on_step`）。
 
 ### 6) 算法适配层（Algorithm Adapter）
 - 只处理“提出候选 + 消化反馈”。
@@ -53,8 +53,8 @@
 
 1. 定义问题（`BlackBoxProblem`）。
 2. 选择底座：
-   - 固定流程：`BlackBoxSolverNSGAII`
-   - 特殊流程：`BlankSolverBase`
+   - 固定流程：`EvolutionSolver`
+   - 特殊流程：`SolverBase`
    - 可组合算法：`ComposableSolver`
 3. 装配模块：
    - 表示管线（编码/初始化/修复）
@@ -69,7 +69,7 @@
 - 软约束/偏好 → 偏置
 - 流程控制（接受准则/阶段切换） → Adapter 或插件
 - 可复用算法逻辑 → Adapter
-- 一次性特殊流程 → BlankSolverBase + 插件
+- 一次性特殊流程 → SolverBase + 插件
 
 ## 为什么这样设计
 
@@ -93,6 +93,6 @@
 
 - 解耦与可组合提高了复用能力，但理解成本更高。
 - 适配器和插件提供了两条路线：
-  - 简单直观 → BlankSolverBase + 插件
+  - 简单直观 → SolverBase + 插件
   - 工程化复用 → ComposableSolver + Adapter
 

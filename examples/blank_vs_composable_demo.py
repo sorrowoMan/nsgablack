@@ -1,7 +1,7 @@
-﻿"""BlankSolverBase vs ComposableSolver demo.
+﻿"""SolverBase vs ComposableSolver demo.
 
 Compare two ways to express a greedy search loop:
-- BlankSolverBase: algorithm loop in a plugin
+- SolverBase: algorithm loop in a plugin
 - ComposableSolver + Adapter: loop as reusable strategy
 """
 
@@ -9,7 +9,7 @@ import numpy as np
 
 try:
     from nsgablack.core.base import BlackBoxProblem
-    from nsgablack.core.blank_solver import BlankSolverBase
+    from nsgablack.core.blank_solver import SolverBase
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.core.adapters import AlgorithmAdapter
     from nsgablack.representation import RepresentationPipeline
@@ -22,7 +22,7 @@ except ModuleNotFoundError:  # pragma: no cover - convenience for direct script 
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from nsgablack.core.base import BlackBoxProblem
-    from nsgablack.core.blank_solver import BlankSolverBase
+    from nsgablack.core.blank_solver import SolverBase
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.core.adapters import AlgorithmAdapter
     from nsgablack.representation import RepresentationPipeline
@@ -47,7 +47,7 @@ class SimpleSphereProblem(BlackBoxProblem):
 
 
 class GreedyStepPlugin(Plugin):
-    """BlankSolverBase: implement algorithm loop in a plugin."""
+    """SolverBase: implement algorithm loop in a plugin."""
 
     def __init__(self, name="greedy_plugin"):
         super().__init__(name=name)
@@ -111,7 +111,7 @@ def build_bias():
 
 def run_blank():
     problem = SimpleSphereProblem()
-    solver = BlankSolverBase(problem, representation_pipeline=build_pipeline(problem), bias_module=build_bias())
+    solver = SolverBase(problem, representation_pipeline=build_pipeline(problem), bias_module=build_bias())
     solver.set_max_steps(30)
     plugin = GreedyStepPlugin()
     solver.add_plugin(plugin)
@@ -135,7 +135,7 @@ def run_composable():
 
 if __name__ == "__main__":
     best_f_blank, best_x_blank = run_blank()
-    print("[BlankSolverBase] best_f:", f"{best_f_blank:.6f}", "best_x:", best_x_blank)
+    print("[SolverBase] best_f:", f"{best_f_blank:.6f}", "best_x:", best_x_blank)
 
     best_f_comp, best_x_comp = run_composable()
     print("[ComposableSolver] best_f:", f"{best_f_comp:.6f}", "best_x:", best_x_comp)

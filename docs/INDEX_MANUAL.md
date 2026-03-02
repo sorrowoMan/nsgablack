@@ -182,9 +182,9 @@ python -m nsgablack catalog show <key>
 ## Tool 列表
 | Key | Title | Summary | Tags | Companions | Import |
 |---|---|---|---|---|---|
-| `solver.blank` | BlankSolverBase | 工具：BlankSolverBase。 / Tool: BlankSolverBase. | base, blank, solver | - | `nsgablack.core.blank_solver:BlankSolverBase` |
+| `solver.blank` | SolverBase | 工具：SolverBase。 / Tool: SolverBase. | base, blank, solver | - | `nsgablack.core.blank_solver:SolverBase` |
 | `solver.composable` | ComposableSolver | 工具：ComposableSolver。 / Tool: ComposableSolver. | adapter, composition, solver | - | `nsgablack.core.composable_solver:ComposableSolver` |
-| `solver.nsga2` | BlackBoxSolverNSGAII | 工具：BlackBoxSolverNSGAII。 / Tool: BlackBoxSolverNSGAII. | evolutionary, nsga2, solver | - | `nsgablack.core.solver:BlackBoxSolverNSGAII` |
+| `solver.nsga2` | EvolutionSolver | 工具：EvolutionSolver。 / Tool: EvolutionSolver. | evolutionary, nsga2, solver | - | `nsgablack.core.evolution_solver:EvolutionSolver` |
 | `tool.context_keys` | Context Keys | 工具：Context Keys。 / Tool: Context Keys. | context, keys, schema, tool | - | `nsgablack.utils.context:context_keys` |
 | `tool.context_schema` | MinimalEvaluationContext | 工具：MinimalEvaluationContext。 / Tool: MinimalEvaluationContext. | context, parallel, schema, tool | tool.context_keys | `nsgablack.utils.context:MinimalEvaluationContext` |
 | `tool.dynamic_cli_signal` | CLISignalProvider | 工具：CLISignalProvider。 / Tool: CLISignalProvider. | cli, dynamic, signal, tool | - | `nsgablack.utils.dynamic:CLISignalProvider` |

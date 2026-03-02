@@ -68,8 +68,8 @@
 
 Core（推荐）
 
-- `core/solver.py` — NSGA-II 底座（`BlackBoxSolverNSGAII`）[layer:core] [goal:nsga2]
-- `core/blank_solver.py` — 空白底座（`BlankSolverBase`）[layer:core] [goal:custom_workflow]
+- `core/solver.py` — NSGA-II 底座（`EvolutionSolver`）[layer:core] [goal:nsga2]
+- `core/blank_solver.py` — 空白底座（`SolverBase`）[layer:core] [goal:custom_workflow]
 - `core/composable_solver.py` — Adapter 驱动底座（`ComposableSolver`）[layer:core] [goal:composition]
 - `core/adapters/` — 策略内核（VNS/MOEA-D/SA/角色控制等）[layer:core] [goal:adapter]
 - `utils/suites/` — 权威组合（attach_* 一键装配）[layer:utils] [goal:suite]

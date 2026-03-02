@@ -11,7 +11,8 @@
 
 **每个字段都有一个生命周期分类，区分后可以精确控制序列化和 replay 行为。**
 
-`cache` 类字段（如 population/objectives）是大数组快照，序列化时应丢弃。
+`cache` 类字段（如 legacy population/objectives）是大数组快照，序列化时应丢弃。
+现在大对象不再直接进 context，而是写入 SnapshotStore，再通过 `snapshot_key / population_ref` 之类的引用访问。
 
 - 用 `strip_context_for_replay()` 丢弃 **cache 类字段**
 - 用 `replay_context(base, events)` 重建
@@ -44,9 +45,9 @@ input / runtime / derived / cache / output / event
 | input | 问题/场景的静态输入 | bounds / constraints / metadata |
 | runtime | 运行时动态状态 | generation / step / phase_id |
 | derived | 计算得出的中间量 | metrics / convergence_rate |
-| cache | 可丢弃快照（不进 replay/序列化） | population / objectives |
-| output | 最终产出 | pareto_solutions |
-| event | 事件流记录 | history / context_events |
+| cache | 可丢弃快照（不进 replay/序列化） | legacy population / objectives |
+| output | 最终产出/引用 | snapshot_key / population_ref / pareto_solutions_ref / sequence_graph_ref |
+| event | 事件流记录 | history_ref / context_events |
 
 ---
 
@@ -91,14 +92,14 @@ replayed = replay_context(strip_context_for_replay(ctx), ctx.get("context_events
 
 ## State Governance 与 Context 的关系
 
-Context 内的 `population` / `objectives` 字段属于 `cache` 分类。
-读写这些字段应通过 State Governance 函数，而不是直接操作 context：
+Context 内的 `population` / `objectives` 字段属于 legacy `cache` 分类（已弃用）。
+读写大对象应通过 SnapshotStore + State Governance 函数，而不是直接操作 context：
 
 ```python
-from nsgablack.core.base import resolve_population_snapshot, commit_population_snapshot
-
-pop = resolve_population_snapshot(solver)             # 读（三级 fallback）
-commit_population_snapshot(solver, new_pop, new_obj)  # 写（adapter-first）
+data = solver.read_snapshot() or {}
+pop = data.get("population", [])
+obj = data.get("objectives", [])
+vio = data.get("constraint_violations", [])
 ```
 
 详见 `docs/development/DEVELOPER_CONVENTIONS.md`。

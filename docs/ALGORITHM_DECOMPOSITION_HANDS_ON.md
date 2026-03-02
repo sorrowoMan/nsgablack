@@ -1,342 +1,278 @@
-﻿# ALGORITHM_DECOMPOSITION_HANDS_ON: 我在你旁边教你拆算法，从 0 到 1 接入
+﻿# ALGORITHM_DECOMPOSITION_HANDS_ON: 手把手教你把一个问题接入框架
 
-这是一篇“手把手”的文档。
-它不是模板，而是你在旁边，我一步步带你拆算法的过程。
-你会看到：
-- 我会提醒你常见的错误
-- 我会解释“为什么那样做会出问题”
-- 我会给你具体拆解路径和操作步骤
+这篇文档是“跟着做就能跑起来”的版本。  
+目标不是讲概念，而是回答这几个实际问题：
 
-它的密度会接近 `WORKFLOW_END_TO_END.md`。
-你读完应该能做到：
-**拿到任何算法 → 判断拆哪层 → 接入框架 → 验证有效**。
+1. 一个问题进入框架后，到底要做什么。
+2. 每一层应该放什么，不应该放什么。
+3. 运行后会产出什么，以及怎么验证。
+4. 出问题时先查哪里。
 
----
+如果你只有 20 分钟，请先看：
 
-## 0. 先把“拆解的脑内地图”放好
-
-拆解不是为了好看，而是为了控制变量。
-你真正要做的不是“写出算法”，而是“知道自己改了什么”。
-
-所以你需要一张脑内地图：
-
-- Pipeline：解怎么生成、怎么修复、怎么保证硬约束
-- Bias：你对解的倾向和偏好
-- Adapter：搜索过程本身（提案/接受/更新）
-- Plugin：统计、监控、并行、外部信号
-
-只要你记住这四件事，你就不会迷路。
+- `START_HERE.md`
+- `WORKFLOW_END_TO_END.md`
+- `docs/user_guide/RUN_INSPECTOR.md`
 
 ---
 
-## 1. 你最容易犯的三类错误（先说清楚）
+## 0. 先定“你要交付什么”
 
-### 错误 1：把偏置写进算法
+不要一上来就写算法。先定交付物：
 
-你会很自然地这样写：
+1. 可运行的求解入口（`build_solver()` + 可执行脚本）
+2. 可审计的组件接线（Catalog/Doctor 可识别）
+3. 可解释的运行产物（run 快照、报告、序列/时序）
+4. 可复现的实验条件（参数、种子、版本）
 
-- 在 SA 里写“安全惩罚”
-- 在 VNS 里写“可行性奖励”
-
-这样做的问题：
-- 你以后换算法要抄一遍
-- 你无法区分“算法变好”还是“偏好变了”
-
-更好的做法：
-- 把偏好变成 Bias
-- 算法只负责搜索过程
-
-### 错误 2：把修复写进算法
-
-你会觉得“修复就是算法的一部分”，于是：
-- 在算法循环里 repair
-- 在 evaluate 里夹杂修复
-
-问题是：
-- 修复逻辑被绑死在算法里
-- 每换一个算法就重写一次
-
-更好的做法：
-- 把修复写进 Pipeline
-- 所有算法共用硬约束管线
-
-### 错误 3：把统计写进算法
-
-你会觉得“顺手 print 一下曲线、写个 csv 也没事”，
-但这会让你：
-- 并行时崩溃
-- 算法被 I/O 污染
-- 复用难度陡增
-
-更好的做法：
-- 统计、日志、可视化交给 Plugin
+如果你能稳定产出这四个，框架就算接入成功。
 
 ---
 
-## 2. 拆解的第一步：先“看清算法在干什么”
+## 1. 脑内地图：六层结构（你现在最需要记住这个）
 
-当你拿到一个算法，先不要写代码。
-先用一句话描述它的本质动作：
+1. `Problem`：目标与约束定义。
+2. `Pipeline`：初始化、变异、修复（硬约束）。
+3. `Adapter`：搜索流程（`propose/update`）。
+4. `Bias`：软偏好（奖励/惩罚/方向性）。
+5. `Plugin`：工程能力（日志、报告、追踪、并行、恢复）。
+6. `Data Plane`：`Context` + `Snapshot`。
 
-- SA：温度驱动的接受/拒绝
-- A*：估价驱动的节点扩展
-- Trust-Region：局部模型驱动的邻域搜索
+放错层会直接带来维护灾难。下面是最常见的错法：
 
-把这句话写下来，你就能判断它是 Adapter 还是 Bias 或 Pipeline。
-
-如果你不知道，把算法核心动作拆成 3 个动词：
-- propose
-- update
-- accept
-
-这三件事不变的，大概率是 Adapter。
+- 把修复写进 Adapter。
+- 把偏好写进 evaluate 或算法循环。
+- 把统计 I/O 写进核心搜索代码。
+- 把大对象塞进 Context。
 
 ---
 
-## 3. 例子一：模拟退火 SA —— 典型的 Adapter 化
+## 2. 一次完整接入的标准步骤（按顺序做，不跳步）
 
-### 3.1 你可能会这样做（但不推荐）
+### 2.1 初始化项目骨架
 
-很多人第一次写 SA，会在里面塞三件事：
-- 修复逻辑
-- 约束惩罚
-- 日志输出
+```powershell
+python -m nsgablack project init my_project
+cd my_project
+python -m nsgablack project doctor --path . --build --strict
+```
 
-这样看似省事，但代价是：
-- 你很难替换 SA
-- 你无法对比 SA 与 VNS
+先过 `doctor --build --strict`，再写业务代码。
 
-### 3.2 正确拆解方式
+### 2.2 定义 Problem（只做语义，不做流程）
 
-SA 只关心“接受准则”，所以是 Adapter。
+你至少要明确：
 
-**拆法**：
-- Adapter：SimulatedAnnealingAdapter
-- Pipeline：负责可行性生成与修复
-- Bias：可选（探索/收敛倾向）
-- Plugin：可选（温度/接受率曲线）
+- 决策变量维度与边界。
+- `evaluate(x)` 的目标值定义。
+- `evaluate_constraints(x)` 的硬约束定义。
 
-### 3.3 实操步骤（接入流程）
+注意：
 
-1) 先写问题的 evaluate
-2) 把修复逻辑放进 Pipeline
-3) 装配 SA Adapter
-4) 接 BenchmarkHarness 输出口径
-5) 用 Run Inspector 检查组件是否齐全
+- `evaluate` 不要做修复。
+- `evaluate` 不要夹杂偏好惩罚。
+- `evaluate` 不要做外部 I/O。
 
-### 3.4 验证方式
+### 2.3 搭 Pipeline（硬约束只放这里）
 
-- 只换 Adapter（SA → VNS），其余不变，看结果是否可对比
-- 关闭 Bias，看 SA 是否仍能跑
+至少实现三件事：
 
-这样你就能明确“变好是算法还是偏好”。
+- `initializer`：初始解生成。
+- `mutator`：邻域/扰动。
+- `repair`：合法域修复。
 
----
+原则：
 
-## 4. 例子二：图论/路径规划（A* / Beam）
+- 同一问题的硬约束修复只写一份，所有 Adapter 共用。
 
-### 4.1 误区：把 A* 当万能
+### 2.4 选择 Adapter（搜索过程只放这里）
 
-A* 在理论地图上很好用。
-但现实路径规划的问题不是搜索，而是约束：
-- 禁飞区
-- 转弯半径
-- 动态障碍
-- 时间窗
+先选一个你能解释清楚的 Adapter：
 
-A* 本身不会处理这些。
+- NSGA2 / SA / VNS / Multi-Strategy 等。
 
-### 4.2 正确拆解
+Adapter 只做流程决策，不负责业务偏好与修复细节。
 
-- Adapter：A* / Beam（负责扩展策略）
-- Pipeline：约束生成 + 修复
-- Bias：安全优先（可选）
-- Plugin：节点扩展统计
+### 2.5 挂 Bias（软偏好，不动硬约束）
 
-### 4.3 实操步骤
+如果你有“更偏向某类解”的需求，用 Bias 表达。  
+不要把偏好散落在 Adapter 和 evaluate 里。
 
-1) 先把路径表示写进 Pipeline
-2) 把约束修复放进 repair
-3) A* 只负责节点扩展
-4) 所有扩展出的候选必须走 Pipeline 统一修复
+### 2.6 挂 Plugin（可观测 + 可审计）
 
-### 4.4 这样拆的收益
+建议默认挂：
 
-- A* 变成可复用的“策略内核”
-- 约束逻辑只写一次
-- 复杂路径规划终于可落地
+- benchmark/module_report/decision_trace/sequence_graph
+
+这样你后续排障有证据链，不靠猜。
+
+### 2.7 组装 `build_solver()`（只做装配）
+
+`build_solver()` 里只做 wiring，不做重计算。  
+特别是 UI 场景，`Load` 会调用 `build_solver()`。
+
+重任务应该延迟到：
+
+- `run()`
+- 首次 `evaluate()`
 
 ---
 
-## 5. 例子三：纯偏置化（真实可用的做法）
+## 3. 运行前检查：你应该看哪些信号
 
-这里用框架里**已经存在**、且经常被用到的偏置模式举例：
-**CallableBias + penalty/reward 规则**。
+### 3.1 Contract / Catalog 检查
 
-它的本质是：你不改搜索过程，只是把“偏好/惩罚”显式化。
-这就是最标准的偏置化。
+```powershell
+python -m nsgablack project doctor --path . --strict
+python -m nsgablack catalog search <keyword>
+```
 
-### 5.1 你可能会做的错事
+你要确认：
 
-- 把惩罚写进 evaluate
-- 或把惩罚写进 SA / NSGA2
+- 组件已注册且可加载。
+- 关键字段契约明确（requires/provides/mutates）。
 
-这样做的结果是：
-- 你换算法就要重写惩罚
-- 你没法单独验证惩罚是否有效
+### 3.2 Run Inspector 检查
 
-### 5.2 正确拆解（框架真实已有做法）
+```powershell
+python -m nsgablack run_inspector --entry build_solver.py:build_solver
+```
 
-- Bias：CallableBias（mode="penalty" 或 "reward"）
-- Adapter：保持原样
-- Pipeline：保持原样
+你要重点看：
 
-如果你需要范例，可以直接参考：
-`docs/user_guide/bias_baby_guide.md` 里的 penalty 示例。
-
-### 5.3 实操步骤
-
-1) 先用原算法跑一遍（无惩罚）
-2) 加一个 CallableBias（penalty）
-3) 比较可行性比例、目标值是否变化
-
-### 5.4 你会得到的收益
-
-- 惩罚逻辑可复用
-- 你能清楚看到“惩罚带来的变化”
+- 接线是否齐全。
+- Health 是否有 WARN。
+- Context 字段提供方/消费方是否一致。
 
 ---
 
-## 6. 例子四：纯管线化（真实可用的做法）
+## 4. 运行后你会得到什么（产物分层）
 
-这里用框架里**已经存在**的管线修复例子：
-**ClipRepair / 生产调度的 Repair**。
+### 4.1 控制面小字段：Context
 
-很多“约束优化算法”其实没有改变搜索策略，
-只是把解修回合法域。
-这就是 Pipeline 的工作。
+适合放：
 
-### 6.1 你可能会做的错事
+- 小状态、信号、引用键、契约字段。
 
-- 在每次迭代里写“投影/裁剪”
-- 把修复逻辑写在算法内部
+不适合放：
 
-这样做的问题是：
-- 你每换一个算法，都要重写修复
-- 你无法保证所有策略走同一套硬约束逻辑
+- `population/objectives/violations` 这类大对象。
 
-### 6.2 正确拆解（框架真实已有做法）
+### 4.2 数据面大对象：Snapshot
 
-- Pipeline.repair：ClipRepair（或生产调度中的 Repair）
-- Pipeline.init：可行性初始化（如果有）
-- Adapter：保持原样
+适合放：
 
-例子可参考：
-`examples/trust_region_dfo_demo.py`（ClipRepair）  
-`examples/cases/production_scheduling/refactor_pipeline.py`（复杂修复）
+- 大体量与高频读写数据。
 
-### 6.3 实操步骤
+读取方式：
 
-1) 把修复函数写进 repair
-2) 所有算法统一走 Pipeline
-3) 记录 repair 触发率
+- `solver.read_snapshot()`
+- `Plugin.resolve_population_snapshot()`
 
-### 6.4 验证
+写回方式：
 
-- repair 触发率是否下降？（说明 init/mutate 更友好）
-- 修复后目标值是否更稳定？
+- `Plugin.commit_population_snapshot()`
+
+### 4.3 观测产物
+
+你应能看到：
+
+- run 快照（组件接线与结构）
+- module/benchmark 报告
+- decision trace
+- sequence graph（`List/Trie/Trace`）
 
 ---
 
-## 7. 例子五：复杂 DFO（信赖域 + 代理模型 + 可信区间）
+## 5. 为什么要 `Context` 和 `Snapshot` 分层
 
-### 7.1 误区
+1. 性能：Context 小字段高频，Snapshot 大对象专门优化。
+2. 清晰：契约通信与数据载体分离，边界明确。
+3. 复现：Snapshot 按 key 回读，更容易做回放与审计。
+4. 协作：团队只通过契约键交互，不直接耦合内部状态。
 
-把模型拟合、信赖域更新、采样策略全部写进一个大循环。
-最终无法维护，也无法复用。
+一句话：
 
-### 7.2 正确拆解
-
-- Adapter：TrustRegionDFO / Subspace
-- Plugin：MASModelPlugin（代理模型拟合）
-- Bias：不确定性驱动偏置
-- Pipeline：约束修复
-
-### 7.3 实操步骤
-
-1) 先用 TrustRegionDFO Adapter 跑通
-2) 再挂 MASModelPlugin（增加代理模型）
-3) 最后加 Bias（不确定性偏置）
-4) 每加一步跑一次对比
-
-### 7.4 验证
-
-- 关闭 Plugin，算法是否还能跑
-- Bias 打开后，探索/收敛是否变化
-- 子空间学习是否提升收敛速度
+- `Context` 管“谁要什么信号”。
+- `Snapshot` 管“真实大数据放哪里”。
 
 ---
 
-## 8. 例子六：多策略协同（复杂拆解）
+## 6. 最容易踩的坑（按严重度）
 
-### 8.1 误区
+1. `build_solver()` 里做重计算，导致 UI Load 卡死。
+2. 插件直接写 `solver.population` 等镜像字段。
+3. 把惩罚写进 Adapter，导致“换算法就重写”。
+4. 把修复写进 evaluate，导致口径漂移。
+5. 有 `snapshot_key` 但后端数据已过期，读取失败。
 
-把协同写成“并行跑多个算法”。
-这样只能得到“堆叠”，无法解释因果。
+对应排查入口：
 
-### 8.2 正确拆解
-
-- Adapter：MultiStrategyControllerAdapter
-- Plugin：ParetoArchive / BenchmarkHarness
-- Bias：各策略独立挂
-- Pipeline：主管线统一
-
-### 8.3 实操步骤
-
-1) 先用两个策略协同（比如 SA + VNS）
-2) 挂共享归档
-3) 用 ModuleReport 看策略贡献
-
-### 8.4 验证
-
-- 各策略是否真的共享状态
-- 是否有策略绕过主管线
+- `Doctor --strict`
+- Run Inspector 的 `Context/Doctor/Sequence/Trace`
+- run 产物中的 schema/version 与 key 引用
 
 ---
 
-## 9. 拆解后的“强制验证问题”
+## 7. 一套你可以直接照抄的接入节奏
 
-你每拆一个算法，都建议回答：
+1. 先只接 `Problem + Pipeline + 一个 Adapter`，不加 Bias。
+2. 跑通并记录 baseline。
+3. 再逐个加 Bias，每次只加一个。
+4. 最后加 Plugin 观测套件，固定输出口径。
+5. 用 Inspector 比较结构差异，确认“只改了你计划改的部分”。
 
-1) 它在组件层面是什么？
-2) 解决了什么具体问题？
-3) 固定其他组件能否单独验证？
-4) 参数敏感度如何？
-5) 哪些问题类型有效？哪些无效？
-6) 与现有组件相比优势在哪？
-7) 计算开销是否值得？
+这个节奏的核心价值：
 
-如果你能回答，说明拆解是有效的。
+- 你能回答“变好到底是谁带来的”。
 
 ---
 
-## 10. 当你真的不知道怎么拆时
+## 8. 进阶：什么时候考虑数据资产化
 
-记住四句话：
+当你出现这些信号，就该进入数据治理阶段：
 
-- 生成/修复解 → Pipeline
-- 偏好倾向 → Bias
-- 搜索过程 → Adapter
-- 统计监控 → Plugin
+- run 数量明显增多，结果难追踪。
+- 团队共享实验结论时频繁“对不上版本”。
+- 复现实验需要人工拼文件。
 
-这就是最稳的拆解原则。
+这时你再引入：
+
+- Artifact Manifest
+- schema version + migration
+- 元数据索引与血缘关系
+
+不要过早重工程，也不要过晚补治理。
 
 ---
 
-## 11. 最后再说一句
+## 9. 你每次接入都要回答的 10 个问题
 
-你不是在写一个算法。
-你是在设计一个“可复现、可对比、可进化”的实验系统。
+1. 这个问题的硬约束在哪里定义并修复？
+2. 这个算法核心动作属于哪个层？
+3. 偏好是否与算法流程解耦？
+4. 大对象是否都通过 Snapshot 流转？
+5. Context 字段是否都是 canonical key？
+6. `build_solver()` 是否只做 wiring？
+7. 运行后是否有完整观测证据链？
+8. 是否能在不改其他层的前提下替换 Adapter？
+9. 是否能在固定 Adapter 时单独验证 Bias 效果？
+10. 你的改动是否能被 Inspector/Doctor 清楚解释？
 
-拆解不是为了多写代码，而是为了让你能清楚地说：
-**“我到底改了什么，所以结果才变了。”**
+能稳定答出这 10 条，你就不是“会跑框架”，而是“会用框架做研究”。
+
+---
+
+## 10. 参考阅读顺序
+
+1. `START_HERE.md`
+2. `WORKFLOW_END_TO_END.md`
+3. `docs/user_guide/CONTEXT_CONTRACTS.md`
+4. `docs/user_guide/REDIS_CONTEXT_SNAPSHOT_WORKFLOW.md`
+5. `docs/user_guide/RUN_INSPECTOR.md`
+6. `docs/guides/DECOUPLING_*.md`
+
+最后一句：
+
+你不是在“接入一个算法”，你是在构建“可复现、可比较、可演进”的实验系统。  
+只要你坚持层次边界，框架会越用越顺。

@@ -26,8 +26,8 @@ combinations low-friction, and regressions easier to control.
 
 ### Core conventions (must follow)
 
-- **State Governance**: read via `resolve_population_snapshot()`, write via
-  `commit_population_snapshot()`. Never assign `solver.population` directly.
+- **State Governance**: read via `solver.read_snapshot()` / `resolve_population_snapshot()`,
+  write via `commit_population_snapshot()`. Never assign `solver.population` directly.
 - **Instance-level RNG**: all randomness via `self._rng = np.random.default_rng()`.
   Never use `np.random.*` global functions.
 - **Bias unified apply**: `_true_evaluate()` must NOT apply bias. Bias is

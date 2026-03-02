@@ -1,7 +1,7 @@
 import numpy as np
 
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.core.blank_solver import BlankSolverBase
+from nsgablack.core.blank_solver import SolverBase
 from nsgablack.core.composable_solver import ComposableSolver
 from nsgablack.core.adapters import AlgorithmAdapter
 from nsgablack.utils.parallel import with_parallel_evaluation
@@ -30,10 +30,10 @@ def test_parallel_wrapper_blank_matches_serial():
         dtype=float,
     )
 
-    serial = BlankSolverBase(problem)
+    serial = SolverBase(problem)
     obj_s, vio_s = serial.evaluate_population(population)
 
-    ParallelBlank = with_parallel_evaluation(BlankSolverBase)
+    ParallelBlank = with_parallel_evaluation(SolverBase)
     parallel = ParallelBlank(problem, parallel=True, parallel_backend="thread", parallel_max_workers=2)
     obj_p, vio_p = parallel.evaluate_population(population)
 

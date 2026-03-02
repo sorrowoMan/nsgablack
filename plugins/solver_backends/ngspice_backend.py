@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import locale
 from typing import Any, Callable, Dict, Mapping, Optional
 
 import numpy as np
@@ -15,6 +16,28 @@ from .backend_contract import BackendSolveRequest
 
 NetlistBuilder = Callable[[BackendSolveRequest], str]
 ResultParser = Callable[[BackendSolveRequest, Path], Mapping[str, Any]]
+
+
+def _decode_subprocess_bytes(data: bytes | bytearray | None) -> str:
+    raw = bytes(data or b"")
+    if not raw:
+        return ""
+    candidates = []
+    pref = locale.getpreferredencoding(False)
+    if pref:
+        candidates.append(str(pref))
+    candidates.extend(["utf-8", "gbk", "cp936"])
+    seen = set()
+    for enc in candidates:
+        key = str(enc).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            return raw.decode(enc)
+        except Exception:
+            continue
+    return raw.decode("utf-8", errors="replace")
 
 
 @dataclass
@@ -106,7 +129,7 @@ class NgspiceBackend:
                     cmd,
                     cwd=str(tmp),
                     capture_output=True,
-                    text=True,
+                    text=False,
                     timeout=timeout_s,
                     check=False,
                 )
@@ -114,7 +137,7 @@ class NgspiceBackend:
                 raise TimeoutError(f"ngspice timeout after {self.cfg.timeout_ms} ms") from exc
 
             if proc.returncode != 0:
-                stderr = (proc.stderr or "").strip()
+                stderr = _decode_subprocess_bytes(proc.stderr).strip()
                 raise RuntimeError(f"ngspice failed returncode={proc.returncode}: {stderr[:300]}")
 
             if callable(self.result_parser):
@@ -140,4 +163,3 @@ class NgspiceBackend:
                     },
                 }
             return parsed
-

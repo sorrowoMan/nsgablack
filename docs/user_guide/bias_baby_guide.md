@@ -9,10 +9,10 @@
 
 | 你想做什么 | 选哪类偏置 | 写在哪里 | 谁会用 |
 | --- | --- | --- | --- |
-| 直接改目标值（奖励/惩罚） | 函数式偏置 `BiasModule` | 任意脚本/模块 | `BlackBoxSolverNSGAII` |
+| 直接改目标值（奖励/惩罚） | 函数式偏置 `BiasModule` | 任意脚本/模块 | `EvolutionSolver` |
 | 需要上下文/更复杂逻辑 | 类偏置 `AlgorithmicBias/DomainBias` | `bias/algorithmic` 或 `bias/domain` | 偏置管理器或自定义流程 |
 | 让算法“变成偏置” | 算法偏置（本质还是类偏置或函数偏置） | 同上 | 同上 |
-| 减少真实评估次数（代理评估/短路） | 代理评估插件 `SurrogateEvaluationPlugin` | `plugins` | `ComposableSolver` / `BlankSolverBase` |
+| 减少真实评估次数（代理评估/短路） | 代理评估插件 `SurrogateEvaluationPlugin` | `plugins` | `ComposableSolver` / `SolverBase` |
 
 ---
 
@@ -83,6 +83,9 @@ class DiversityBias(AlgorithmicBias):
         d = np.mean(np.linalg.norm(pop - x, axis=1))
         return -d  # 负号=奖励多样性
 ```
+
+注意：`context.population` 由 SnapshotStore 通过 `population_ref/snapshot_key` 解析填充。  
+如果你在自定义流程中手动构造 context，需要提供快照引用或直接传入 population。
 
 ### 示例 2：业务偏置（更偏业务规则）
 

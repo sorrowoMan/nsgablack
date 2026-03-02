@@ -26,3 +26,10 @@ def test_schema_tool_checks_known_json_patterns(tmp_path: Path):
     assert checked == 1
     assert not issues
 
+
+def test_schema_tool_checks_repro_bundle_pattern(tmp_path: Path):
+    p = tmp_path / "demo.repro_bundle.json"
+    p.write_text('{"schema_name":"repro_bundle","schema_version":1}', encoding="utf-8")
+    checked, issues = check_files([tmp_path])
+    assert checked == 1
+    assert not issues

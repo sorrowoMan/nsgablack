@@ -170,7 +170,7 @@ Pipeline  Bias  Pipeline  Pipeline
 **设计思路**：将编码、交叉、变异都视为"表示"问题
 
 ```python
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.representation import ContinuousRepresentation
 
 # 将编码、交叉、变异集中在表示管线中
@@ -186,7 +186,7 @@ pipeline = ContinuousRepresentation(
 
 # 使用标准 NSGA-II 求解器
 # 内置了类似锦标赛的选择机制和精英保留
-solver = BlackBoxSolverNSGAII(
+solver = EvolutionSolver(
     problem=problem,
     representation_pipeline=pipeline,
     population_size=100,
@@ -226,7 +226,7 @@ GA 组件                →  NSGABlack 模块
 **设计思路**：将选择操作从算法流程中抽离，变成可插拔的偏置
 
 ```python
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.bias import BiasBase
 from nsgablack.representation import ContinuousRepresentation
 
@@ -273,7 +273,7 @@ pipeline = ContinuousRepresentation(
     mutation_type='polynomial'
 )
 
-solver = BlackBoxSolverNSGAII(
+solver = EvolutionSolver(
     problem=problem,
     representation_pipeline=pipeline,
     bias_modules=[TournamentSelectionBias(tournament_size=3)],
@@ -528,7 +528,7 @@ solver = ComposableSolver(
 **设计思路**：利用空白求解器的沙盒环境，通过插件完全控制算法流程
 
 ```python
-from nsgablack.core.blank_solver import BlankSolverBase
+from nsgablack.core.blank_solver import SolverBase
 from nsgablack.utils.plugins.base import BasePlugin
 import random
 
@@ -611,7 +611,7 @@ class GAPlugin(BasePlugin):
         pass
 
 # 使用空白求解器
-solver = BlankSolverBase(
+solver = SolverBase(
     problem=problem,
     population_size=100,
     plugins=[GAPlugin(
@@ -628,7 +628,7 @@ result = solver.run(max_steps=100)
 GA 组件                →  NSGABlack 模块
 ─────────────────────────────────────────
 所有 GA 组件           →  GAPlugin（单一插件）
-算法流程控制           →  BlankSolverBase 提供基础设施
+算法流程控制           →  SolverBase 提供基础设施
 ```
 
 **优点**：
@@ -660,7 +660,7 @@ GA 组件                →  NSGABlack 模块
 **设计思路**：将遗传算法的各个组件拆散，放到它们最应该属于的模块中
 
 ```python
-from nsgablack.core.solver import BlackBoxSolverNSGAII
+from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.representation import ContinuousRepresentation
 from nsgablack.bias import BiasBase
 from nsgablack.utils.plugins.base import BasePlugin
@@ -734,7 +734,7 @@ class ElitismPlugin(BasePlugin):
         solver.population = sorted_pop
 
 # 4. 组装系统
-solver = BlackBoxSolverNSGAII(
+solver = EvolutionSolver(
     problem=problem,
     representation_pipeline=pipeline,
     bias_modules=[TournamentSelectionBias(tournament_size=3)],
@@ -787,7 +787,7 @@ from nsgablack.bias.algorithmic import (
 )
 
 # Memetic = GA + 局部搜索，通过偏置权重表达比例
-solver = BlackBoxSolverNSGAII(
+solver = EvolutionSolver(
     problem=problem,
     bias_modules=[
         NSGAIIBias(weight=0.7),        # 70% 全局探索
@@ -897,7 +897,7 @@ class PhasedMemeticPlugin(BasePlugin):
                 improved = local_search(ind)
                 ind.decision_vector = improved.decision_vector
 
-solver = BlackBoxSolverNSGAII(
+solver = EvolutionSolver(
     problem=problem,
     plugins=[PhasedMemeticPlugin()]
 )
@@ -918,7 +918,7 @@ solver = BlackBoxSolverNSGAII(
 ### 拆法 D：完全自定义（最自由）
 
 ```python
-solver = BlankSolverBase(
+solver = SolverBase(
     problem=problem,
     plugins=[CustomMAPlugin()]  # 完全自主控制流程
 )
@@ -1003,7 +1003,7 @@ class GA:
 **NSGABlack（声明式）**：
 ```python
 # 只需要声明"想要什么"
-solver = BlackBoxSolverNSGAII(
+solver = EvolutionSolver(
     problem=problem,
     representation_pipeline=ContinuousRepresentation(
         crossover_type='sbx',      # 我想要 SBX 交叉
@@ -1089,7 +1089,7 @@ for encoding in encodings:
         for crossover in crossovers:
             for mutation in mutations:
                 for ls in local_searches:
-                    solver = BlackBoxSolverNSGAII(
+                    solver = EvolutionSolver(
                         problem=tsp,
                         representation_pipeline=encoding,
                         bias_modules=[selection, ls],
@@ -1194,7 +1194,7 @@ solver.bias_modules.append(CarbonEmissionBias(carbon_factor=0.5))
 
 **A**: 可以！实际上，混合模式往往是最优选择：
 ```python
-solver = BlackBoxSolverNSGAII(
+solver = EvolutionSolver(
     problem=problem,
     representation_pipeline=pipeline,      # Pipeline: 编码相关
     bias_modules=[bias1, bias2],           # Bias: 策略相关

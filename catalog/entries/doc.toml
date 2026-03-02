@@ -1,5 +1,5 @@
 # Auto-generated from catalog/entries.toml
-# kind=doc count=36
+# kind=doc count=37
 [[entry]]
 key = "doc.authoritative_examples"
 title = "AUTHORITATIVE_EXAMPLES"
@@ -480,6 +480,19 @@ minimal_wiring = ["Open docs/user_guide/REDIS_CONTEXT_BACKEND.md."]
 required_companions = ["(none)"]
 config_keys = ["context_store_backend", "context_store_redis_url", "context_store_key_prefix", "context_store_ttl_seconds"]
 example_entry = "docs/user_guide/REDIS_CONTEXT_BACKEND.md"
+
+[[entry]]
+key = "doc.user_guide.redis_context_snapshot_workflow"
+title = "User Guide: REDIS_CONTEXT_SNAPSHOT_WORKFLOW"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_user_guide_redis_context_snapshot_workflow"
+tags = ["doc", "guide", "redis", "context", "snapshot", "workflow"]
+summary = "ContextStore vs SnapshotStore with Redis: contracts, key flow, TTL, and troubleshooting. / Redis 下 ContextStore 与 SnapshotStore 的契约、键流转、TTL 与排障。"
+use_when = ["Need to design or debug mixed Redis workflows for context small fields and snapshot large objects."]
+minimal_wiring = ["Open docs/user_guide/REDIS_CONTEXT_SNAPSHOT_WORKFLOW.md."]
+required_companions = ["doc.user_guide.redis_context_backend", "doc.user_guide.context_contracts"]
+config_keys = ["context_store_backend", "context_store_redis_url", "context_store_key_prefix", "context_store_ttl_seconds", "snapshot_store_backend", "snapshot_store_redis_url", "snapshot_store_key_prefix", "snapshot_store_ttl_seconds"]
+example_entry = "docs/user_guide/REDIS_CONTEXT_SNAPSHOT_WORKFLOW.md"
 
 [[entry]]
 key = "doc.user_guide.decision_replay_engine"

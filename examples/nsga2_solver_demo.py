@@ -3,7 +3,7 @@
 import numpy as np
 
 try:
-    from nsgablack.core.solver import BlackBoxSolverNSGAII
+    from nsgablack.core.evolution_solver import EvolutionSolver
     from nsgablack.utils.suites import attach_nsga2_engineering
     from nsgablack.plugins import BenchmarkHarnessPlugin, ModuleReportPlugin
 except ModuleNotFoundError:  # pragma: no cover
@@ -11,7 +11,7 @@ except ModuleNotFoundError:  # pragma: no cover
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from nsgablack.core.solver import BlackBoxSolverNSGAII
+    from nsgablack.core.evolution_solver import EvolutionSolver
     from nsgablack.utils.suites import attach_nsga2_engineering
     from nsgablack.plugins import BenchmarkHarnessPlugin, ModuleReportPlugin
 
@@ -35,7 +35,7 @@ class BiObjectiveSphere:
 
 def build_solver():
     problem = BiObjectiveSphere()
-    solver = BlackBoxSolverNSGAII(problem)
+    solver = EvolutionSolver(problem)
     solver.set_solver_hyperparams(pop_size=60)
     solver.set_solver_hyperparams(max_generations=40)
 

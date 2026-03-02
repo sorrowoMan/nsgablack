@@ -11,9 +11,9 @@ def test_scope_from_key_framework_default():
 
 def test_context_role_match_requires():
     info = {
-        "context_requires": ["population", "generation"],
-        "context_provides": ["pareto_solutions"],
-        "context_mutates": ["population"],
+        "context_requires": ["population_ref", "generation"],
+        "context_provides": ["pareto_solutions_ref"],
+        "context_mutates": ["population_ref"],
     }
     assert context_role_match(info, "generation", "requires")
     assert not context_role_match(info, "generation", "providers")
@@ -22,8 +22,8 @@ def test_context_role_match_requires():
 def test_context_role_match_providers_include_mutates():
     info = {
         "context_requires": [],
-        "context_provides": ["pareto_solutions"],
-        "context_mutates": ["population"],
+        "context_provides": ["pareto_solutions_ref"],
+        "context_mutates": ["population_ref"],
     }
-    assert context_role_match(info, "population", "providers")
-    assert context_role_match(info, "pareto_solutions", "providers")
+    assert context_role_match(info, "population_ref", "providers")
+    assert context_role_match(info, "pareto_solutions_ref", "providers")

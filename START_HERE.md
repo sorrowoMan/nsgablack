@@ -13,12 +13,18 @@ python build_solver.py
 
 ## 2) 最小工作流
 
-1. `problem/`：实现问题定义（`evaluate` / `evaluate_constraints`）。
-2. `pipeline/`：实现 initializer/mutator/repair（硬约束优先放这里）。
-3. `bias/`：表达软偏好（非硬约束）。
-4. `adapter/`：实现 propose/update 流程。
-5. `plugins/`：添加工程能力（日志、缓存、恢复、报告）。
-6. `build_solver.py`：只做装配，不重复实现框架内核。
+1. `problem/`：实现问题定义（`evaluate` / `evaluate_constraints`）。  
+2. `pipeline/`：实现 initializer/mutator/repair（硬约束优先放这里）。  
+3. `bias/`：表达软偏好（非硬约束）。  
+4. `adapter/`：实现 propose/update 流程。  
+5. `plugins/`：添加工程能力（日志、缓存、恢复、报告）。  
+6. `build_solver.py`：只做装配，不重复实现框架内核。  
+
+## 2.1) 当前架构要点（v2）
+
+- Context 只放小字段与快照引用（`snapshot_key` / `population_ref` 等）
+- 大对象走 `SnapshotStore`（内存/Redis/文件后端可切）
+- 统一入口：`solver.read_snapshot()` / `Plugin.resolve_population_snapshot()` / `Plugin.commit_population_snapshot()`
 
 ## 3) Catalog 使用
 
@@ -34,6 +40,11 @@ python -m nsgablack project catalog search context_requires --field context --pa
 - 备选：`project_registry.py`
 
 ## 4) Run Inspector
+
+Run Inspector 的 `Load` 会调用 `build_solver()` 来构建 wiring。
+`build_solver()` 必须只做装配，重计算延迟到 `run()` / `evaluate()` 首次调用，避免 UI Load 触发耗时任务。
+`Sequence` 卡片包含 `List`、`Trie`、`Trace` 子标签：`List` 看去重序列，`Trie` 看共享前缀与分支，`Trace` 看并发时序明细（默认关闭）。
+
 
 ```powershell
 python -m nsgablack run_inspector --entry build_solver.py:build_solver
@@ -136,7 +147,7 @@ python -m nsgablack project doctor --path . --strict
 Enable Redis as context backend (context contract/API stays the same):
 
 ```python
-solver = BlackBoxSolverNSGAII(
+solver = EvolutionSolver(
     problem,
     context_store_backend="redis",
     context_store_redis_url="redis://127.0.0.1:6379/0",

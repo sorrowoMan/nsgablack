@@ -11,7 +11,7 @@ import time
 
 from ..base import Plugin
 from ...utils.context.context_events import record_context_event
-from ...utils.context.context_keys import KEY_CONTEXT_EVENTS
+from ...utils.context.context_keys import KEY_CONTEXT_EVENTS, KEY_DECISION_TRACE_REF
 from ...utils.engineering.file_io import atomic_write_text
 from ...utils.runtime.decision_trace import append_decision_jsonl, build_decision_event
 
@@ -31,8 +31,8 @@ class DecisionTraceConfig:
 
 class DecisionTracePlugin(Plugin):
     context_requires = ("generation",)
-    context_provides = ("decision_trace",)
-    context_mutates = ("decision_trace",)
+    context_provides = ("decision_trace_ref",)
+    context_mutates = ("decision_trace_ref",)
     context_cache = ()
     context_notes = (
         "Records deterministic decision events with reason/evidence for replay and audit.",
@@ -136,20 +136,18 @@ class DecisionTracePlugin(Plugin):
         if bool(self.cfg.include_context_events) and solver is not None:
             ctx = getattr(solver, "context", None)
             if isinstance(ctx, dict):
-                record_context_event(
-                    ctx,
-                    kind="append",
-                    key="decision_trace",
-                    value=event,
-                    source=f"plugin.{self.name}",
-                    generation=generation,
-                    step=step,
-                    events_key=KEY_CONTEXT_EVENTS,
-                )
-                # Keep bounded mirror in context to avoid unbounded memory usage.
-                arr = ctx.setdefault("decision_trace", [])
-                if isinstance(arr, list) and len(arr) > int(self.cfg.max_context_events_mirror):
-                    del arr[: len(arr) - int(self.cfg.max_context_events_mirror)]
+                if self._jsonl_path is not None:
+                    ctx[KEY_DECISION_TRACE_REF] = str(self._jsonl_path)
+                    record_context_event(
+                        ctx,
+                        kind="set",
+                        key=KEY_DECISION_TRACE_REF,
+                        value=str(self._jsonl_path),
+                        source=f"plugin.{self.name}",
+                        generation=generation,
+                        step=step,
+                        events_key=KEY_CONTEXT_EVENTS,
+                    )
         return event
 
     def _wrap_method(

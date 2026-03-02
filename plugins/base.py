@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC
 import copy
+import logging
 import time
 import traceback
 import warnings
@@ -15,7 +16,12 @@ from ..utils.context.context_keys import (
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_OBJECTIVES,
     KEY_POPULATION,
+    KEY_POPULATION_REF,
+    KEY_SNAPSHOT_KEY,
 )
+from ..utils.engineering.error_policy import report_soft_error
+
+logger = logging.getLogger(__name__)
 
 
 class Plugin(ABC):
@@ -70,8 +76,16 @@ class Plugin(ABC):
                     rng = fork(self.name)
                     if isinstance(rng, np.random.Generator):
                         return rng
-                except Exception:
-                    pass
+                except Exception as exc:
+                    report_soft_error(
+                        component="Plugin",
+                        event="create_local_rng",
+                        exc=exc,
+                        logger=logger,
+                        context_store=None,
+                        strict=False,
+                        level="debug",
+                    )
         return np.random.default_rng()
 
     def attach(self, solver):
@@ -123,20 +137,104 @@ class Plugin(ABC):
             return None
         try:
             return {"config": dict(self.config)}
-        except Exception:
+        except Exception as exc:
+            report_soft_error(
+                component="Plugin",
+                event="get_report_config_copy",
+                exc=exc,
+                logger=logger,
+                context_store=None,
+                strict=False,
+                level="debug",
+            )
             return {"config": {}}
 
     def resolve_population_snapshot(self, solver=None):
-        """Return (population, objectives, violations) with adapter-first fallback order.
+        """Return (population, objectives, violations) with snapshot-first fallback order.
 
         Priority:
-        1) adapter.get_population()
-        2) adapter runtime context projection
+        1) solver.read_snapshot() (snapshot store)
+        2) adapter.get_population()
         3) solver.{population, objectives, constraint_violations}
         """
         target = solver if solver is not None else self.solver
         if target is None:
             return np.zeros((0, 0), dtype=float), np.zeros((0, 0), dtype=float), np.zeros((0,), dtype=float)
+
+        reader = getattr(target, "read_snapshot", None)
+        if callable(reader):
+            payload = None
+            try:
+                payload = reader()
+            except Exception as exc:
+                report_soft_error(
+                    component="Plugin",
+                    event="resolve_population_snapshot.reader_default",
+                    exc=exc,
+                    logger=logger,
+                    context_store=None,
+                    strict=False,
+                    level="debug",
+                )
+                payload = None
+            if payload is None:
+                getter = getattr(target, "get_context", None)
+                if callable(getter):
+                    try:
+                        ctx = getter()
+                    except Exception as exc:
+                        report_soft_error(
+                            component="Plugin",
+                            event="resolve_population_snapshot.get_context",
+                            exc=exc,
+                            logger=logger,
+                            context_store=None,
+                            strict=False,
+                            level="debug",
+                        )
+                        ctx = None
+                    if isinstance(ctx, dict):
+                        key = ctx.get(KEY_POPULATION_REF) or ctx.get(KEY_SNAPSHOT_KEY)
+                        if key:
+                            try:
+                                payload = reader(key)
+                            except Exception as exc:
+                                report_soft_error(
+                                    component="Plugin",
+                                    event="resolve_population_snapshot.reader_with_key",
+                                    exc=exc,
+                                    logger=logger,
+                                    context_store=None,
+                                    strict=False,
+                                    level="debug",
+                                )
+                                payload = None
+            if payload is not None:
+                data = payload.data if hasattr(payload, "data") else payload
+                if isinstance(data, dict):
+                    try:
+                        x = np.asarray(data.get(KEY_POPULATION, np.zeros((0, 0))), dtype=float)
+                        f = np.asarray(data.get(KEY_OBJECTIVES, np.zeros((0, 0))), dtype=float)
+                        v = np.asarray(
+                            data.get(KEY_CONSTRAINT_VIOLATIONS, np.zeros((0,))),
+                            dtype=float,
+                        ).reshape(-1)
+                        if x.ndim == 1:
+                            x = x.reshape(1, -1) if x.size > 0 else x.reshape(0, 0)
+                        if f.ndim == 1:
+                            f = f.reshape(-1, 1) if f.size > 0 else f.reshape(0, 0)
+                        if x.size > 0 or f.size > 0:
+                            return x, f, v
+                    except Exception as exc:
+                        report_soft_error(
+                            component="Plugin",
+                            event="resolve_population_snapshot.payload_cast",
+                            exc=exc,
+                            logger=logger,
+                            context_store=None,
+                            strict=False,
+                            level="debug",
+                        )
 
         adapter = getattr(target, "adapter", None)
         if adapter is not None:
@@ -152,31 +250,16 @@ class Plugin(ABC):
                     if f_arr.ndim == 1:
                         f_arr = f_arr.reshape(-1, 1) if f_arr.size > 0 else f_arr.reshape(0, 0)
                     return x_arr, f_arr, v_arr
-                except Exception:
-                    pass
-            projector = getattr(adapter, "get_runtime_context_projection", None)
-            if callable(projector):
-                try:
-                    projection = projector(target)
-                except Exception:
-                    projection = None
-                if isinstance(projection, dict):
-                    try:
-                        x = np.asarray(projection.get(KEY_POPULATION, np.zeros((0, 0))), dtype=float)
-                        f = np.asarray(projection.get(KEY_OBJECTIVES, np.zeros((0, 0))), dtype=float)
-                        v = np.asarray(
-                            projection.get(KEY_CONSTRAINT_VIOLATIONS, np.zeros((0,))),
-                            dtype=float,
-                        ).reshape(-1)
-                        if x.ndim == 1:
-                            x = x.reshape(1, -1) if x.size > 0 else x.reshape(0, 0)
-                        if f.ndim == 1:
-                            f = f.reshape(-1, 1) if f.size > 0 else f.reshape(0, 0)
-                        if x.size > 0 or f.size > 0:
-                            return x, f, v
-                    except Exception:
-                        pass
-
+                except Exception as exc:
+                    report_soft_error(
+                        component="Plugin",
+                        event="resolve_population_snapshot.adapter_get_population",
+                        exc=exc,
+                        logger=logger,
+                        context_store=None,
+                        strict=False,
+                        level="debug",
+                    )
         x = np.asarray(getattr(target, "population", np.zeros((0, 0))), dtype=float)
         f = np.asarray(getattr(target, "objectives", np.zeros((0, 0))), dtype=float)
         v = np.asarray(getattr(target, "constraint_violations", np.zeros((0,))), dtype=float).reshape(-1)
@@ -207,7 +290,16 @@ class Plugin(ABC):
             x_arr = np.asarray(population, dtype=float)
             f_arr = np.asarray(objectives, dtype=float)
             v_arr = np.asarray(violations, dtype=float).reshape(-1)
-        except Exception:
+        except Exception as exc:
+            report_soft_error(
+                component="Plugin",
+                event="commit_population_snapshot.cast",
+                exc=exc,
+                logger=logger,
+                context_store=None,
+                strict=False,
+                level="debug",
+            )
             return False
 
         if x_arr.ndim == 1:
@@ -226,9 +318,27 @@ class Plugin(ABC):
                 except TypeError:
                     try:
                         handled = setter(target, x_arr, f_arr, v_arr)
-                    except Exception:
+                    except Exception as exc:
+                        report_soft_error(
+                            component="Plugin",
+                            event=f"commit_population_snapshot.{method_name}.call_with_solver",
+                            exc=exc,
+                            logger=logger,
+                            context_store=None,
+                            strict=False,
+                            level="debug",
+                        )
                         handled = False
-                except Exception:
+                except Exception as exc:
+                    report_soft_error(
+                        component="Plugin",
+                        event=f"commit_population_snapshot.{method_name}",
+                        exc=exc,
+                        logger=logger,
+                        context_store=None,
+                        strict=False,
+                        level="debug",
+                    )
                     handled = False
                 if handled is not False:
                     return True
@@ -237,7 +347,16 @@ class Plugin(ABC):
         if callable(writer):
             try:
                 return bool(writer(x_arr, f_arr, v_arr))
-            except Exception:
+            except Exception as exc:
+                report_soft_error(
+                    component="Plugin",
+                    event="commit_population_snapshot.writer",
+                    exc=exc,
+                    logger=logger,
+                    context_store=None,
+                    strict=False,
+                    level="debug",
+                )
                 return False
         return False
 
@@ -263,6 +382,28 @@ class PluginManager:
         self.strict = bool(strict)
         self._solver = None
         self._context_build_writers: Dict[str, str] = {}
+        self.event_hook = None
+
+    def set_event_hook(self, hook) -> None:
+        """Register a lightweight instrumentation hook for plugin events."""
+        self.event_hook = hook
+
+    def _emit_event_hook(self, payload: Dict[str, Any]) -> None:
+        hook = self.event_hook
+        if callable(hook):
+            try:
+                hook(payload)
+            except Exception as exc:
+                report_soft_error(
+                    component="PluginManager",
+                    event="event_hook",
+                    exc=exc,
+                    logger=logger,
+                    context_store=None,
+                    strict=False,
+                    level="debug",
+                )
+                return
 
     @staticmethod
     def _safe_values_differ(a: Any, b: Any) -> bool:
@@ -274,7 +415,16 @@ class PluginManager:
                 return bool(neq)
             # numpy arrays / pandas objects may return vectorized result
             return True
-        except Exception:
+        except Exception as exc:
+            report_soft_error(
+                component="PluginManager",
+                event="safe_values_differ",
+                exc=exc,
+                logger=logger,
+                context_store=None,
+                strict=False,
+                level="debug",
+            )
             return True
 
     def _collect_changed_keys(self, before: Mapping[str, Any], after: Mapping[str, Any]) -> list[str]:
@@ -349,6 +499,18 @@ class PluginManager:
                             prof["events"] = events
                         events[event_name] = float(events.get(event_name, 0.0) or 0.0) + dt
 
+                    self._emit_event_hook(
+                        {
+                            "mode": "trigger",
+                            "event_name": str(event_name),
+                            "plugin_name": str(plugin.name),
+                            "plugin_class": plugin.__class__.__name__,
+                            "plugin": plugin,
+                            "status": "ok",
+                            "has_result": result is not None,
+                        }
+                    )
+
                     if should_short_circuit and result is not None:
                         return result
                     if (not should_short_circuit) and result is not None:
@@ -362,6 +524,17 @@ class PluginManager:
                             stacklevel=2,
                         )
                 except Exception as e:
+                    self._emit_event_hook(
+                        {
+                            "mode": "trigger",
+                            "event_name": str(event_name),
+                            "plugin_name": str(plugin.name),
+                            "plugin_class": plugin.__class__.__name__,
+                            "plugin": plugin,
+                            "status": "error",
+                            "error_type": e.__class__.__name__,
+                        }
+                    )
                     if self.strict:
                         raise RuntimeError(
                             f"Plugin '{plugin.name}' failed in event '{event_name}': {e}"
@@ -393,11 +566,31 @@ class PluginManager:
                 if is_context_build:
                     try:
                         before_ctx = copy.deepcopy(args[0])
-                    except Exception:
+                    except Exception as exc:
+                        report_soft_error(
+                            component="PluginManager",
+                            event="dispatch.deepcopy_context",
+                            exc=exc,
+                            logger=logger,
+                            context_store=None,
+                            strict=False,
+                            level="debug",
+                        )
                         before_ctx = dict(args[0])
                 try:
                     result = handler(*args, **kwargs)
                 except Exception as exc:
+                    self._emit_event_hook(
+                        {
+                            "mode": "dispatch",
+                            "event_name": str(event_name),
+                            "plugin_name": str(plugin.name),
+                            "plugin_class": plugin.__class__.__name__,
+                            "plugin": plugin,
+                            "status": "error",
+                            "error_type": exc.__class__.__name__,
+                        }
+                    )
                     if self.strict:
                         raise RuntimeError(
                             f"Plugin '{plugin.name}' dispatch failed on event '{event_name}': {exc}"
@@ -411,6 +604,17 @@ class PluginManager:
                         stacklevel=2,
                     )
                     continue
+                self._emit_event_hook(
+                    {
+                        "mode": "dispatch",
+                        "event_name": str(event_name),
+                        "plugin_name": str(plugin.name),
+                        "plugin_class": plugin.__class__.__name__,
+                        "plugin": plugin,
+                        "status": "ok",
+                        "has_result": result is not None,
+                    }
+                )
 
                 if is_context_build and before_ctx is not None:
                     after_ctx = result if isinstance(result, dict) else args[0]
@@ -428,8 +632,16 @@ class PluginManager:
             if self._solver is not None:
                 try:
                     setattr(self._solver, "_context_build_writers", dict(context_writers))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    report_soft_error(
+                        component="PluginManager",
+                        event="dispatch.set_context_build_writers",
+                        exc=exc,
+                        logger=logger,
+                        context_store=None,
+                        strict=False,
+                        level="debug",
+                    )
         return out
 
     def on_solver_init(self, solver):
@@ -438,8 +650,16 @@ class PluginManager:
         self._context_build_writers = {}
         try:
             setattr(solver, "_context_build_writers", {})
-        except Exception:
-            pass
+        except Exception as exc:
+            report_soft_error(
+                component="PluginManager",
+                event="on_solver_init.set_context_build_writers",
+                exc=exc,
+                logger=logger,
+                context_store=None,
+                strict=False,
+                level="debug",
+            )
         for plugin in self.plugins:
             if plugin.enabled:
                 plugin.attach(solver)

@@ -8,6 +8,7 @@
 
 - **Problem 接口**：统一问题定义与评估接口（evaluate / bounds / objectives）
 - **Solver**：运行容器与生命周期（调度 Pipeline/Bias/Adapter/Plugin）
+- **ContextStore / SnapshotStore**：小字段走 Context，大对象走快照引用（可内存/Redis/文件后端）
 - **RepresentationPipeline**：初始化 / 变异 / 修复 / 编码解码（硬约束优先）
 - **BiasModule**：软约束与偏好驱动（domain / algorithmic / signal-driven）
 - **Adapter**：策略内核（可替换、可组合；ComposableSolver 的搜索引擎）
@@ -50,6 +51,7 @@
 - **ModuleReport**：输出模块清单与偏置贡献报告
 - **BenchmarkHarness**：统一实验口径（progress.csv / summary.json）
 - **快照审计**：UI snapshot 写入报告，便于复盘配置
+- **SequenceGraph**：交互顺序图（去重序列），用于发现短路/分支路径
 - **Run Inspector 说明书**：`docs/user_guide/RUN_INSPECTOR.md`
 
 ---
@@ -163,10 +165,12 @@
 
 ### Solver 入口（两大主入口）
 
-- 传统 NSGA-II：`core/solver.py` → `BlackBoxSolverNSGAII`  
+- 传统 NSGA-II：`core/solver.py` → `EvolutionSolver`  
 - 组合求解器：`core/composable_solver.py` → `ComposableSolver`  
   - `adapter` 可替换、支持多策略协同  
   - 默认会调用 pipeline repair（若设置）
+  - `best_x` 为**摘要代表点**：默认标量 `sum(objectives) + violation * 1e6`  
+    - 若多目标尺度差异大，可设置 `solver.objective_scalarizer` 自定义标量化规则
 
 ### Adapter（策略内核）
 

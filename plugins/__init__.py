@@ -50,6 +50,7 @@ from .runtime.dynamic_switch import DynamicSwitchPlugin
 from .ops.sensitivity_analysis import SensitivityAnalysisPlugin, SensitivityAnalysisConfig, SensitivityParam
 from .ops.otel_tracing import OpenTelemetryTracingPlugin, OpenTelemetryTracingConfig
 from .ops.decision_trace import DecisionTracePlugin, DecisionTraceConfig
+from .ops.sequence_graph import SequenceGraphPlugin, SequenceGraphConfig
 from .models.mas_model import MASModelPlugin, MASModelConfig
 from .models.subspace_basis import SubspaceBasisPlugin, SubspaceBasisConfig
 from .storage.mysql_run_logger import MySQLRunLoggerPlugin, MySQLRunLoggerConfig
@@ -106,6 +107,8 @@ __all__ = [
     'OpenTelemetryTracingConfig',
     'DecisionTracePlugin',
     'DecisionTraceConfig',
+    'SequenceGraphPlugin',
+    'SequenceGraphConfig',
     'MASModelPlugin',
     'MASModelConfig',
     'SubspaceBasisPlugin',

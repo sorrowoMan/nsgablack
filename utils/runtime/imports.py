@@ -168,11 +168,15 @@ def import_plotly():
 # Standardized module imports
 def import_core():
     """Import core modules."""
-    from ..core.base import BlackBoxProblem
-    from ..core.solver import BlackBoxSolverNSGAII
+    from ...core.base import BlackBoxProblem
+    from ...core.blank_solver import SolverBase
+    from ...core.evolution_solver import EvolutionSolver
+    from ...core.composable_solver import ComposableSolver
     return {
         'BlackBoxProblem': BlackBoxProblem,
-        'BlackBoxSolverNSGAII': BlackBoxSolverNSGAII,
+        'SolverBase': SolverBase,
+        'ComposableSolver': ComposableSolver,
+        'EvolutionSolver': EvolutionSolver,
     }
 
 
@@ -181,7 +185,7 @@ def import_bias():
     bias_modules: Dict[str, Any] = {}
 
     try:
-        from .. import bias as bias_pkg
+        from ... import bias as bias_pkg
     except ImportError:
         return bias_modules
 
@@ -202,7 +206,7 @@ def import_bias():
             bias_modules[name] = getattr(bias_pkg, name)
 
     try:
-        from ..bias.library import BiasFactory, BiasComposer
+        from ...bias.library import BiasFactory, BiasComposer
         bias_modules['BiasFactory'] = BiasFactory
         bias_modules['BiasComposer'] = BiasComposer
     except ImportError:
@@ -213,8 +217,8 @@ def import_bias():
 
 def import_utils():
     """Import utility modules."""
-    from ..utils.viz import SolverVisualizationMixin
-    from ..utils.parallel import ParallelEvaluator
+    from ..viz import SolverVisualizationMixin
+    from ..parallel import ParallelEvaluator
 
     return {
         'SolverVisualizationMixin': SolverVisualizationMixin,

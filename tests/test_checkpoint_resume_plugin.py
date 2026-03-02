@@ -91,12 +91,12 @@ def test_checkpoint_retention_keeps_last_n(sample_problem, tmp_path: Path):
 
 
 def test_checkpoint_resume_nsga2_solver(sample_problem, tmp_path: Path):
-    from nsgablack.core.solver import BlackBoxSolverNSGAII
+    from nsgablack.core.evolution_solver import EvolutionSolver
     from nsgablack.plugins import CheckpointResumeConfig, CheckpointResumePlugin
 
     checkpoint_dir = tmp_path / "nsga_ckpt"
 
-    solver_a = BlackBoxSolverNSGAII(sample_problem)
+    solver_a = EvolutionSolver(sample_problem)
     solver_a.pop_size = 12
     solver_a.max_generations = 4
     solver_a.enable_progress_log = False
@@ -113,7 +113,7 @@ def test_checkpoint_resume_nsga2_solver(sample_problem, tmp_path: Path):
     result_a = solver_a.run(return_dict=True)
     assert int(result_a["generation"]) == 4
 
-    solver_b = BlackBoxSolverNSGAII(sample_problem)
+    solver_b = EvolutionSolver(sample_problem)
     solver_b.pop_size = 12
     solver_b.max_generations = 6
     solver_b.enable_progress_log = False
@@ -138,13 +138,13 @@ def test_checkpoint_resume_nsga2_solver(sample_problem, tmp_path: Path):
 
 
 def test_checkpoint_resume_hmac_roundtrip(sample_problem, tmp_path: Path):
-    from nsgablack.core.solver import BlackBoxSolverNSGAII
+    from nsgablack.core.evolution_solver import EvolutionSolver
     from nsgablack.plugins import CheckpointResumeConfig, CheckpointResumePlugin
 
     checkpoint_dir = tmp_path / "hmac_ckpt"
     os.environ["NSGABLACK_CHECKPOINT_HMAC_KEY"] = "unit-test-hmac-key"
     try:
-        solver_a = BlackBoxSolverNSGAII(sample_problem)
+        solver_a = EvolutionSolver(sample_problem)
         solver_a.pop_size = 8
         solver_a.max_generations = 2
         solver_a.enable_progress_log = False
@@ -161,7 +161,7 @@ def test_checkpoint_resume_hmac_roundtrip(sample_problem, tmp_path: Path):
         solver_a.run()
         assert plugin_a.latest_checkpoint_path is not None
 
-        solver_b = BlackBoxSolverNSGAII(sample_problem)
+        solver_b = EvolutionSolver(sample_problem)
         solver_b.pop_size = 8
         solver_b.max_generations = 3
         solver_b.enable_progress_log = False
@@ -178,13 +178,13 @@ def test_checkpoint_resume_hmac_roundtrip(sample_problem, tmp_path: Path):
 
 
 def test_checkpoint_resume_blocks_unsigned_when_hmac_key_present(sample_problem, tmp_path: Path):
-    from nsgablack.core.solver import BlackBoxSolverNSGAII
+    from nsgablack.core.evolution_solver import EvolutionSolver
     from nsgablack.plugins import CheckpointResumeConfig, CheckpointResumePlugin
 
     checkpoint_dir = tmp_path / "unsigned_ckpt"
     os.environ.pop("NSGABLACK_CHECKPOINT_HMAC_KEY", None)
 
-    solver_a = BlackBoxSolverNSGAII(sample_problem)
+    solver_a = EvolutionSolver(sample_problem)
     solver_a.pop_size = 8
     solver_a.max_generations = 2
     solver_a.enable_progress_log = False
@@ -200,7 +200,7 @@ def test_checkpoint_resume_blocks_unsigned_when_hmac_key_present(sample_problem,
 
     os.environ["NSGABLACK_CHECKPOINT_HMAC_KEY"] = "unit-test-hmac-key"
     try:
-        solver_b = BlackBoxSolverNSGAII(sample_problem)
+        solver_b = EvolutionSolver(sample_problem)
         solver_b.pop_size = 8
         solver_b.max_generations = 3
         solver_b.enable_progress_log = False
@@ -223,13 +223,13 @@ def test_checkpoint_resume_blocks_unsigned_when_hmac_key_present(sample_problem,
 
 
 def test_checkpoint_resume_allows_unsigned_when_explicitly_unsafe(sample_problem, tmp_path: Path):
-    from nsgablack.core.solver import BlackBoxSolverNSGAII
+    from nsgablack.core.evolution_solver import EvolutionSolver
     from nsgablack.plugins import CheckpointResumeConfig, CheckpointResumePlugin
 
     checkpoint_dir = tmp_path / "unsafe_unsigned_ckpt"
     os.environ.pop("NSGABLACK_CHECKPOINT_HMAC_KEY", None)
 
-    solver_a = BlackBoxSolverNSGAII(sample_problem)
+    solver_a = EvolutionSolver(sample_problem)
     solver_a.pop_size = 8
     solver_a.max_generations = 2
     solver_a.enable_progress_log = False
@@ -245,7 +245,7 @@ def test_checkpoint_resume_allows_unsigned_when_explicitly_unsafe(sample_problem
 
     os.environ["NSGABLACK_CHECKPOINT_HMAC_KEY"] = "unit-test-hmac-key"
     try:
-        solver_b = BlackBoxSolverNSGAII(sample_problem)
+        solver_b = EvolutionSolver(sample_problem)
         solver_b.pop_size = 8
         solver_b.max_generations = 3
         solver_b.enable_progress_log = False
@@ -263,13 +263,13 @@ def test_checkpoint_resume_allows_unsigned_when_explicitly_unsafe(sample_problem
 
 
 def test_checkpoint_strict_requires_hmac_and_forbids_unsafe(sample_problem, tmp_path: Path):
-    from nsgablack.core.solver import BlackBoxSolverNSGAII
+    from nsgablack.core.evolution_solver import EvolutionSolver
     from nsgablack.plugins import CheckpointResumeConfig, CheckpointResumePlugin
 
     checkpoint_dir = tmp_path / "strict_ckpt"
     os.environ.pop("NSGABLACK_CHECKPOINT_HMAC_KEY", None)
 
-    solver = BlackBoxSolverNSGAII(sample_problem)
+    solver = EvolutionSolver(sample_problem)
     solver.pop_size = 8
     solver.max_generations = 1
     solver.enable_progress_log = False
@@ -309,10 +309,10 @@ def test_checkpoint_strict_requires_hmac_and_forbids_unsafe(sample_problem, tmp_
 
 
 def test_attach_checkpoint_resume_trust_checkpoint_maps_to_unsafe(sample_problem, tmp_path: Path):
-    from nsgablack.core.solver import BlackBoxSolverNSGAII
+    from nsgablack.core.evolution_solver import EvolutionSolver
     from nsgablack.utils.suites import attach_checkpoint_resume
 
-    solver = BlackBoxSolverNSGAII(sample_problem)
+    solver = EvolutionSolver(sample_problem)
     plugin = attach_checkpoint_resume(
         solver,
         checkpoint_dir=str(tmp_path / "suite_ckpt"),
@@ -323,10 +323,10 @@ def test_attach_checkpoint_resume_trust_checkpoint_maps_to_unsafe(sample_problem
 
 
 def test_attach_checkpoint_resume_strict_conflicts_with_trust_checkpoint(sample_problem, tmp_path: Path):
-    from nsgablack.core.solver import BlackBoxSolverNSGAII
+    from nsgablack.core.evolution_solver import EvolutionSolver
     from nsgablack.utils.suites import attach_checkpoint_resume
 
-    solver = BlackBoxSolverNSGAII(sample_problem)
+    solver = EvolutionSolver(sample_problem)
     with pytest.raises(ValueError):
         attach_checkpoint_resume(
             solver,

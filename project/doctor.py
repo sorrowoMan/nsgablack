@@ -15,6 +15,25 @@ from typing import Iterable, List, Sequence
 
 from .catalog import find_project_root, load_project_entries
 from ..catalog import get_catalog
+from ..utils.context.context_keys import (
+    CANONICAL_CONTEXT_KEYS,
+    KEY_CONSTRAINT_VIOLATIONS,
+    KEY_CONSTRAINT_VIOLATIONS_REF,
+    KEY_DECISION_TRACE,
+    KEY_DECISION_TRACE_REF,
+    KEY_HISTORY,
+    KEY_HISTORY_REF,
+    KEY_OBJECTIVES,
+    KEY_OBJECTIVES_REF,
+    KEY_PARETO_OBJECTIVES,
+    KEY_PARETO_OBJECTIVES_REF,
+    KEY_PARETO_SOLUTIONS,
+    KEY_PARETO_SOLUTIONS_REF,
+    KEY_POPULATION,
+    KEY_POPULATION_REF,
+    KEY_SNAPSHOT_KEY,
+    normalize_context_key,
+)
 
 
 @dataclass(frozen=True)
@@ -60,6 +79,31 @@ _CONTRACT_KEYS = {
     "runtime_mutates",
     "runtime_cache",
 }
+_CONTRACT_KEY_VALUE_ATTR_GROUPS = {
+    "requires": {"context_requires", "requires_context_keys", "runtime_requires"},
+    "provides": {"context_provides", "provides_context_keys", "runtime_provides"},
+    "mutates": {"context_mutates", "mutates_context_keys", "runtime_mutates"},
+    "cache": {"context_cache", "cache_context_keys", "runtime_cache"},
+}
+_CONTRACT_DYNAMIC_FIELDS = {
+    "requires": "requires",
+    "provides": "provides",
+    "mutates": "mutates",
+    "cache": "cache",
+    "context_requires": "requires",
+    "context_provides": "provides",
+    "context_mutates": "mutates",
+    "context_cache": "cache",
+    "requires_context_keys": "requires",
+    "provides_context_keys": "provides",
+    "mutates_context_keys": "mutates",
+    "cache_context_keys": "cache",
+    "runtime_requires": "requires",
+    "runtime_provides": "provides",
+    "runtime_mutates": "mutates",
+    "runtime_cache": "cache",
+}
+_CORE_CONTRACT_KEYS = {"context_requires", "context_provides", "context_mutates"}
 _USAGE_KEYS = {"use_when", "minimal_wiring", "required_companions", "config_keys", "example_entry"}
 _CONTEXT_ENTRY_KEYS = {"context_requires", "context_provides", "context_mutates", "context_cache", "context_notes"}
 _CONTRACT_CHECK_DIRS = ("pipeline", "bias", "adapter", "plugins")
@@ -104,6 +148,34 @@ _FORBIDDEN_SOLVER_MIRROR_ATTRS = {
     "last_unit_tasks",
 }
 _PLUGIN_STATE_FIELDS = {"population", "objectives", "constraint_violations"}
+_CONTEXT_LARGE_OBJECT_KEYS = {
+    KEY_POPULATION,
+    KEY_OBJECTIVES,
+    KEY_CONSTRAINT_VIOLATIONS,
+    KEY_PARETO_SOLUTIONS,
+    KEY_PARETO_OBJECTIVES,
+    KEY_HISTORY,
+    KEY_DECISION_TRACE,
+}
+_CONTEXT_VAR_NAMES = {"context", "ctx"}
+_SNAPSHOT_REF_KEYS = (
+    KEY_POPULATION_REF,
+    KEY_OBJECTIVES_REF,
+    KEY_CONSTRAINT_VIOLATIONS_REF,
+    KEY_PARETO_SOLUTIONS_REF,
+    KEY_PARETO_OBJECTIVES_REF,
+    KEY_HISTORY_REF,
+    KEY_DECISION_TRACE_REF,
+)
+_SNAPSHOT_PAYLOAD_REF_MAP = (
+    (KEY_POPULATION, KEY_POPULATION_REF),
+    (KEY_OBJECTIVES, KEY_OBJECTIVES_REF),
+    (KEY_CONSTRAINT_VIOLATIONS, KEY_CONSTRAINT_VIOLATIONS_REF),
+    (KEY_PARETO_SOLUTIONS, KEY_PARETO_SOLUTIONS_REF),
+    (KEY_PARETO_OBJECTIVES, KEY_PARETO_OBJECTIVES_REF),
+    (KEY_HISTORY, KEY_HISTORY_REF),
+    (KEY_DECISION_TRACE, KEY_DECISION_TRACE_REF),
+)
 _RUNTIME_STATE_FIELDS = {
     "population",
     "objectives",
@@ -155,6 +227,7 @@ _PROCESS_LIKE_BIAS_MODULE_PREFIXES = {
 }
 _MIN_REDIS_KEY_PREFIX_LEN = 8
 _MIN_REDIS_TTL_SECONDS = 30.0
+_SAFE_SNAPSHOT_SERIALIZER = "safe"
 
 
 def _add(diags: List[DoctorDiagnostic], level: str, code: str, msg: str, path: Path | None = None) -> None:
@@ -166,6 +239,68 @@ def _add(diags: List[DoctorDiagnostic], level: str, code: str, msg: str, path: P
             path=str(path) if path is not None else None,
         )
     )
+
+
+def _is_broad_exception_type(node: ast.AST | None) -> bool:
+    if node is None:
+        return True
+    if isinstance(node, ast.Name):
+        return node.id in {"Exception", "BaseException"}
+    if isinstance(node, ast.Tuple):
+        return any(_is_broad_exception_type(item) for item in node.elts)
+    return False
+
+
+def _handler_body_is_swallow(body: List[ast.stmt]) -> bool:
+    if not body:
+        return False
+    for stmt in body:
+        if isinstance(stmt, (ast.Pass, ast.Continue, ast.Break)):
+            continue
+        if isinstance(stmt, ast.Return):
+            continue
+        return False
+    return True
+
+
+def _check_broad_exception_swallow(root: Path, diags: List[DoctorDiagnostic], *, strict: bool) -> None:
+    for py_file in root.rglob("*.py"):
+        if py_file.name.startswith("__"):
+            continue
+        if py_file.name in {"build_solver.py", "project_registry.py"}:
+            continue
+        if any(part in {".venv", "venv", "__pycache__", ".git"} for part in py_file.parts):
+            continue
+        try:
+            tree = ast.parse(py_file.read_text(encoding="utf-8", errors="ignore"), filename=str(py_file))
+        except Exception:
+            continue
+        try:
+            rel = py_file.relative_to(root)
+        except Exception:
+            rel = py_file
+        is_core_path = len(rel.parts) > 0 and rel.parts[0] == "core"
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Try):
+                continue
+            for handler in node.handlers:
+                if not _is_broad_exception_type(handler.type):
+                    continue
+                if not _handler_body_is_swallow(list(handler.body or [])):
+                    continue
+                line = int(getattr(handler, "lineno", 0) or 0)
+                code = "broad-except-swallow-core" if is_core_path else "broad-except-swallow"
+                level = "error" if is_core_path or strict else "warn"
+                _add(
+                    diags,
+                    level,
+                    code,
+                    (
+                        "Broad exception swallow detected (except Exception with pass/return/continue/break only). "
+                        f"Replace with report_soft_error/logging or strict escalation at line {line}."
+                    ),
+                    py_file,
+                )
 
 
 def _load_module_from_file(module_name: str, file_path: Path):
@@ -344,6 +479,19 @@ def _check_build_solver(root: Path, diags: List[DoctorDiagnostic], *, instantiat
         diags=diags,
         strict=bool(strict),
     )
+    _check_snapshot_store_policy(
+        root=root,
+        solver=solver,
+        build_file=build_file,
+        diags=diags,
+        strict=bool(strict),
+    )
+    _check_snapshot_refs(
+        solver=solver,
+        build_file=build_file,
+        diags=diags,
+        strict=bool(strict),
+    )
     _check_component_catalog_registration(
         root=root,
         solver=solver,
@@ -516,6 +664,330 @@ def _check_context_store_policy(
                 f"context_store_ttl_seconds={ttl_value:g}s may expire keys too early; "
                 f"recommended >= {_MIN_REDIS_TTL_SECONDS:g}s."
             ),
+            build_file,
+        )
+
+
+def _check_snapshot_store_policy(
+    *,
+    root: Path,
+    solver: object,
+    build_file: Path,
+    diags: List[DoctorDiagnostic],
+    strict: bool,
+) -> None:
+    backend = str(getattr(solver, "snapshot_store_backend", "") or "").strip().lower()
+    if not backend:
+        runtime = getattr(solver, "runtime", None)
+        store = getattr(runtime, "snapshot_store", None)
+        if store is not None:
+            cls_name = store.__class__.__name__.lower()
+            if "redis" in cls_name:
+                backend = "redis"
+            elif "file" in cls_name:
+                backend = "file"
+            else:
+                backend = "memory"
+    if backend != "redis":
+        return
+
+    level = "error" if strict else "warn"
+    key_prefix = str(getattr(solver, "snapshot_store_key_prefix", "") or "").strip()
+    if not key_prefix:
+        _add(
+            diags,
+            level,
+            "snapshot-redis-key-prefix-missing",
+            "Redis snapshot backend requires non-empty snapshot_store_key_prefix.",
+            build_file,
+        )
+    elif len(key_prefix) < _MIN_REDIS_KEY_PREFIX_LEN:
+        _add(
+            diags,
+            level,
+            "snapshot-redis-key-prefix-too-short",
+            (
+                f"snapshot_store_key_prefix is too short ({len(key_prefix)}); "
+                f"recommended >= {_MIN_REDIS_KEY_PREFIX_LEN} chars."
+            ),
+            build_file,
+        )
+
+    serializer = str(getattr(solver, "snapshot_store_serializer", _SAFE_SNAPSHOT_SERIALIZER) or "").strip().lower()
+    if serializer not in {"safe", "pickle_signed", "pickle_unsafe"}:
+        _add(
+            diags,
+            level,
+            "snapshot-redis-serializer-unknown",
+            f"Unknown snapshot_store_serializer: {serializer!r}.",
+            build_file,
+        )
+    elif serializer == "pickle_unsafe":
+        _add(
+            diags,
+            level,
+            "snapshot-redis-pickle-unsafe",
+            (
+                "snapshot_store_serializer=pickle_unsafe allows unsafe deserialization. "
+                "Use serializer='safe' (recommended) or 'pickle_signed' with HMAC."
+            ),
+            build_file,
+        )
+    elif serializer == "pickle_signed":
+        env_var = str(getattr(solver, "snapshot_store_hmac_env_var", "NSGABLACK_SNAPSHOT_HMAC_KEY") or "").strip()
+        if not env_var:
+            _add(
+                diags,
+                level,
+                "snapshot-redis-pickle-signed-missing-key",
+                "snapshot_store_hmac_env_var is empty while serializer=pickle_signed.",
+                build_file,
+            )
+
+    ttl = getattr(solver, "snapshot_store_ttl_seconds", None)
+    if ttl is None:
+        _add(
+            diags,
+            "warn",
+            "snapshot-redis-ttl-policy-implicit",
+            (
+                "Redis snapshot TTL policy is implicit (snapshot_store_ttl_seconds=None). "
+                "Set explicit TTL or 0 for no-expire strategy."
+            ),
+            build_file,
+        )
+        return
+    try:
+        ttl_value = float(ttl)
+    except Exception:
+        _add(
+            diags,
+            level,
+            "snapshot-redis-ttl-invalid",
+            f"snapshot_store_ttl_seconds must be numeric or None; got: {ttl!r}",
+            build_file,
+        )
+        return
+    if 0.0 < ttl_value < _MIN_REDIS_TTL_SECONDS:
+        _add(
+            diags,
+            "warn",
+            "snapshot-redis-ttl-too-small",
+            (
+                f"snapshot_store_ttl_seconds={ttl_value:g}s may expire snapshots too early; "
+                f"recommended >= {_MIN_REDIS_TTL_SECONDS:g}s."
+            ),
+            build_file,
+        )
+
+
+def _safe_first_dim(value: object) -> int | None:
+    if value is None:
+        return None
+    shape = getattr(value, "shape", None)
+    if shape is not None:
+        try:
+            if len(shape) >= 1:
+                return int(shape[0])
+        except Exception:
+            pass
+    try:
+        return int(len(value))  # type: ignore[arg-type]
+    except Exception:
+        return None
+
+
+def _check_snapshot_refs(
+    *,
+    solver: object,
+    build_file: Path,
+    diags: List[DoctorDiagnostic],
+    strict: bool,
+) -> None:
+    getter = getattr(solver, "get_context", None)
+    if not callable(getter):
+        return
+    try:
+        ctx = getter()
+    except Exception as exc:
+        _add(
+            diags,
+            "warn",
+            "context-read-failed",
+            f"Failed to read runtime context for snapshot checks: {exc}",
+            build_file,
+        )
+        return
+    if not isinstance(ctx, dict):
+        return
+
+    level = "error" if strict else "warn"
+    snap_key_raw = ctx.get(KEY_SNAPSHOT_KEY)
+    snap_key = str(snap_key_raw).strip() if snap_key_raw is not None else ""
+
+    ref_values: dict[str, str] = {}
+    for key in _SNAPSHOT_REF_KEYS:
+        if key not in ctx:
+            continue
+        try:
+            val = ctx.get(key)
+        except Exception:
+            val = None
+        if val is None or str(val).strip() == "":
+            _add(
+                diags,
+                level,
+                "snapshot-ref-empty",
+                f"Context key '{key}' is empty; snapshot refs must be non-empty.",
+                build_file,
+            )
+            continue
+        ref_values[key] = str(val).strip()
+
+    if ref_values and not snap_key:
+        _add(
+            diags,
+            level,
+            "snapshot-ref-consistency",
+            "Context has snapshot refs but snapshot_key is missing/empty.",
+            build_file,
+        )
+
+    has_state = any(
+        getattr(solver, attr, None) is not None
+        for attr in ("population", "objectives", "constraint_violations")
+    )
+    if has_state and not snap_key:
+        _add(
+            diags,
+            level,
+            "snapshot-ref-missing",
+            "Solver has population/objectives/violations but context has no snapshot_key. "
+            "Ensure SnapshotStore writes are enabled.",
+            build_file,
+        )
+
+    reader = getattr(solver, "read_snapshot", None)
+    read_cache: dict[str, object] = {}
+    read_errors: dict[str, str] = {}
+
+    def _read_snapshot_cached(key: str) -> tuple[object | None, str | None]:
+        if key in read_cache:
+            return read_cache[key], None
+        if key in read_errors:
+            return None, read_errors[key]
+        if not callable(reader):
+            return None, None
+        try:
+            payload = reader(key)
+        except Exception as exc:  # pragma: no cover - defensive
+            read_errors[key] = str(exc)
+            return None, read_errors[key]
+        read_cache[key] = payload
+        return payload, None
+
+    if snap_key and ref_values:
+        mismatched = [f"{k}={v}" for k, v in sorted(ref_values.items()) if v != snap_key]
+        if mismatched:
+            _add(
+                diags,
+                "warn",
+                "snapshot-ref-consistency",
+                "Snapshot refs differ from snapshot_key (verify intentional split refs): "
+                + ", ".join(mismatched[:8])
+                + (" ..." if len(mismatched) > 8 else ""),
+                build_file,
+            )
+
+    if callable(reader):
+        for ref_key, ref_value in sorted(ref_values.items()):
+            payload, read_err = _read_snapshot_cached(ref_value)
+            if read_err is not None:
+                _add(
+                    diags,
+                    level,
+                    "snapshot-ref-consistency",
+                    f"read_snapshot failed for context ref {ref_key}='{ref_value}': {read_err}",
+                    build_file,
+                )
+                continue
+            if payload is None:
+                _add(
+                    diags,
+                    level,
+                    "snapshot-ref-consistency",
+                    f"Context ref {ref_key}='{ref_value}' has no readable snapshot payload.",
+                    build_file,
+                )
+
+    if not snap_key:
+        return
+
+    payload, read_err = _read_snapshot_cached(snap_key)
+    if read_err is not None:
+        _add(
+            diags,
+            level,
+            "snapshot-read-failed",
+            f"snapshot_key present but read_snapshot failed: {read_err}",
+            build_file,
+        )
+        return
+    if payload is None:
+        _add(
+            diags,
+            level,
+            "snapshot-missing",
+            "snapshot_key present but snapshot_store returned None.",
+            build_file,
+        )
+        return
+    if not isinstance(payload, dict):
+        _add(
+            diags,
+            level,
+            "snapshot-payload-integrity",
+            f"snapshot_key payload should be dict-like; got {type(payload).__name__}.",
+            build_file,
+        )
+        return
+
+    expected_keys: set[str] = set()
+    if has_state:
+        expected_keys.update((KEY_POPULATION, KEY_OBJECTIVES, KEY_CONSTRAINT_VIOLATIONS))
+    for payload_key, ref_key in _SNAPSHOT_PAYLOAD_REF_MAP:
+        if ref_key in ref_values:
+            expected_keys.add(payload_key)
+
+    missing_payload = sorted(k for k in expected_keys if k not in payload)
+    if missing_payload:
+        _add(
+            diags,
+            level,
+            "snapshot-payload-integrity",
+            "snapshot payload missing required keys: "
+            + ", ".join(missing_payload[:10])
+            + (" ..." if len(missing_payload) > 10 else ""),
+            build_file,
+        )
+
+    pop_rows = _safe_first_dim(payload.get(KEY_POPULATION))
+    obj_rows = _safe_first_dim(payload.get(KEY_OBJECTIVES))
+    vio_rows = _safe_first_dim(payload.get(KEY_CONSTRAINT_VIOLATIONS))
+
+    shape_issues: List[str] = []
+    if pop_rows is not None and obj_rows is not None and pop_rows != obj_rows:
+        shape_issues.append(f"population({pop_rows}) != objectives({obj_rows})")
+    if pop_rows is not None and vio_rows is not None and pop_rows != vio_rows:
+        shape_issues.append(f"population({pop_rows}) != constraint_violations({vio_rows})")
+    if pop_rows is None and obj_rows is not None and vio_rows is not None and obj_rows != vio_rows:
+        shape_issues.append(f"objectives({obj_rows}) != constraint_violations({vio_rows})")
+    if shape_issues:
+        _add(
+            diags,
+            level,
+            "snapshot-payload-integrity",
+            "snapshot payload shape mismatch: " + "; ".join(shape_issues[:6]),
             build_file,
         )
 
@@ -880,6 +1352,242 @@ def _class_has_contract(class_node: ast.ClassDef) -> bool:
     return False
 
 
+def _class_missing_core_contract_fields(class_node: ast.ClassDef) -> List[str]:
+    # get_context_contract() can provide dynamic contracts; skip static key requirement.
+    for node in class_node.body:
+        if isinstance(node, ast.FunctionDef) and node.name == "get_context_contract":
+            return []
+
+    present: set[str] = set()
+    for node in class_node.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id in _CORE_CONTRACT_KEYS:
+                    present.add(str(target.id))
+        elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name) and node.target.id in _CORE_CONTRACT_KEYS:
+                present.add(str(node.target.id))
+    missing = sorted(_CORE_CONTRACT_KEYS - present)
+    return missing
+
+
+def _extract_literal_string_values(node: ast.expr) -> List[str]:
+    try:
+        value = ast.literal_eval(node)
+    except Exception:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, (list, tuple, set)):
+        out: List[str] = []
+        for item in value:
+            if not isinstance(item, str):
+                continue
+            text = item.strip()
+            if text:
+                out.append(text)
+        return out
+    return []
+
+
+def _iter_declared_contract_literals(class_node: ast.ClassDef) -> List[tuple[str, str]]:
+    rows: List[tuple[str, str]] = []
+    value_attrs = {item for values in _CONTRACT_KEY_VALUE_ATTR_GROUPS.values() for item in values}
+
+    for node in class_node.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id in value_attrs:
+                    for item in _extract_literal_string_values(node.value):
+                        rows.append((str(target.id), item))
+        elif isinstance(node, ast.AnnAssign):
+            if (
+                isinstance(node.target, ast.Name)
+                and node.target.id in value_attrs
+                and node.value is not None
+            ):
+                for item in _extract_literal_string_values(node.value):
+                    rows.append((str(node.target.id), item))
+        elif isinstance(node, ast.FunctionDef) and node.name == "get_context_contract":
+            for sub in ast.walk(node):
+                if not isinstance(sub, ast.Return) or not isinstance(sub.value, ast.Dict):
+                    continue
+                for key_node, value_node in zip(sub.value.keys, sub.value.values):
+                    if key_node is None:
+                        continue
+                    key_name = _literal_str_value(key_node)
+                    if key_name is None:
+                        continue
+                    group = _CONTRACT_DYNAMIC_FIELDS.get(key_name.strip())
+                    if group is None:
+                        continue
+                    for item in _extract_literal_string_values(value_node):
+                        rows.append((key_name.strip(), item))
+    return rows
+
+
+def _collect_declared_contract_keys(class_node: ast.ClassDef) -> dict[str, set[str]]:
+    declared = {"requires": set(), "provides": set(), "mutates": set(), "cache": set()}
+    for field_name, value in _iter_declared_contract_literals(class_node):
+        group = _CONTRACT_DYNAMIC_FIELDS.get(field_name)
+        if group is None:
+            continue
+        key = normalize_context_key(value)
+        if key:
+            declared[group].add(key)
+    return declared
+
+
+def _is_known_context_key(key: str) -> bool:
+    text = str(key).strip().lower()
+    if not text:
+        return False
+    if text in CANONICAL_CONTEXT_KEYS:
+        return True
+    if text.startswith("metrics."):
+        return True
+    return False
+
+
+def _is_declared_key_covered(key: str, declared: set[str]) -> bool:
+    text = str(key).strip().lower()
+    if not text:
+        return False
+    if text in declared:
+        return True
+    if text.startswith("metrics.") and "metrics" in declared:
+        return True
+    return False
+
+
+def _collect_context_aliases(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+    aliases: set[str] = set()
+    for arg in list(func_node.args.args) + list(func_node.args.kwonlyargs):
+        if arg.arg in _CONTEXT_VAR_NAMES:
+            aliases.add(str(arg.arg))
+    if func_node.args.vararg is not None and func_node.args.vararg.arg in _CONTEXT_VAR_NAMES:
+        aliases.add(str(func_node.args.vararg.arg))
+    if func_node.args.kwarg is not None and func_node.args.kwarg.arg in _CONTEXT_VAR_NAMES:
+        aliases.add(str(func_node.args.kwarg.arg))
+
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(func_node):
+            if isinstance(node, ast.Assign) and len(node.targets) == 1:
+                target = node.targets[0]
+                if isinstance(target, ast.Name) and isinstance(node.value, ast.Name):
+                    if node.value.id in aliases and target.id not in aliases:
+                        aliases.add(str(target.id))
+                        changed = True
+            elif isinstance(node, ast.AnnAssign):
+                if isinstance(node.target, ast.Name) and isinstance(node.value, ast.Name):
+                    if node.value.id in aliases and node.target.id not in aliases:
+                        aliases.add(str(node.target.id))
+                        changed = True
+    return aliases
+
+
+def _extract_context_subscript_key(node: ast.Subscript, aliases: set[str]) -> str | None:
+    if not isinstance(node.value, ast.Name):
+        return None
+    if node.value.id not in aliases:
+        return None
+    key_text = _literal_str_value(node.slice)  # py3.9+ keeps slice directly
+    if key_text is None:
+        return None
+    normalized = normalize_context_key(key_text)
+    return normalized or None
+
+
+def _extract_call_key(call_node: ast.Call, arg_index: int = 0) -> str | None:
+    if len(call_node.args) <= arg_index:
+        return None
+    key_text = _literal_str_value(call_node.args[arg_index])
+    if key_text is None:
+        return None
+    normalized = normalize_context_key(key_text)
+    return normalized or None
+
+
+def _collect_target_context_writes(target: ast.expr, aliases: set[str], writes: set[str]) -> None:
+    if isinstance(target, ast.Subscript):
+        key = _extract_context_subscript_key(target, aliases)
+        if key is not None:
+            writes.add(key)
+        return
+    if isinstance(target, (ast.Tuple, ast.List)):
+        for elt in target.elts:
+            _collect_target_context_writes(elt, aliases, writes)
+
+
+def _extract_context_reads_writes(class_node: ast.ClassDef) -> tuple[set[str], set[str]]:
+    reads: set[str] = set()
+    writes: set[str] = set()
+
+    for node in class_node.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name == "get_context_contract":
+            continue
+        aliases = _collect_context_aliases(node)
+        if not aliases:
+            continue
+
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Assign):
+                for target in sub.targets:
+                    _collect_target_context_writes(target, aliases, writes)
+            elif isinstance(sub, ast.AnnAssign):
+                _collect_target_context_writes(sub.target, aliases, writes)
+            elif isinstance(sub, ast.AugAssign):
+                _collect_target_context_writes(sub.target, aliases, writes)
+            elif isinstance(sub, ast.Delete):
+                for target in sub.targets:
+                    _collect_target_context_writes(target, aliases, writes)
+            elif isinstance(sub, ast.Subscript):
+                if isinstance(sub.ctx, ast.Load):
+                    key = _extract_context_subscript_key(sub, aliases)
+                    if key is not None:
+                        reads.add(key)
+            elif isinstance(sub, ast.Call):
+                func = sub.func
+                if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+                    if func.value.id not in aliases:
+                        continue
+                    method = str(func.attr)
+                    if method in {"get", "__getitem__"}:
+                        key = _extract_call_key(sub, 0)
+                        if key is not None:
+                            reads.add(key)
+                    elif method in {"pop", "setdefault", "__setitem__", "__delitem__"}:
+                        key = _extract_call_key(sub, 0)
+                        if key is not None:
+                            reads.add(key)
+                            writes.add(key)
+                    elif method == "update":
+                        if sub.args:
+                            first = sub.args[0]
+                            if isinstance(first, ast.Dict):
+                                for key_node in first.keys:
+                                    if key_node is None:
+                                        continue
+                                    key_text = _literal_str_value(key_node)
+                                    if key_text is None:
+                                        continue
+                                    key = normalize_context_key(key_text)
+                                    if key:
+                                        writes.add(key)
+                        for kw in sub.keywords:
+                            if kw.arg is None:
+                                continue
+                            key = normalize_context_key(str(kw.arg))
+                            if key:
+                                writes.add(key)
+    return reads, writes
+
+
 def _iter_class_attr_values(class_node: ast.ClassDef, attr_name: str) -> List[ast.expr]:
     out: List[ast.expr] = []
     for node in class_node.body:
@@ -995,11 +1703,97 @@ def _check_class_template_not_implemented(
         diags,
         "error" if strict else "warn",
         "template-not-implemented",
-        f"Class {class_node.name} has NotImplementedError placeholders (模板未完成): "
+        f"Class {class_node.name} has NotImplementedError placeholders (template incomplete): "
         + ", ".join(hits[:8])
         + (" ..." if len(hits) > 8 else ""),
         path,
     )
+
+
+def _check_class_contract_key_known(
+    class_node: ast.ClassDef,
+    path: Path,
+    diags: List[DoctorDiagnostic],
+) -> None:
+    unknown: List[str] = []
+    for _, key_text in _iter_declared_contract_literals(class_node):
+        key = normalize_context_key(key_text)
+        if not key:
+            continue
+        if _is_known_context_key(key):
+            continue
+        unknown.append(key)
+    if not unknown:
+        return
+    uniq = sorted(set(unknown))
+    _add(
+        diags,
+        "warn",
+        "contract-key-unknown",
+        (
+            f"Class {class_node.name} declares non-canonical context keys: "
+            + ", ".join(uniq[:12])
+            + (" ..." if len(uniq) > 12 else "")
+            + " (add to context_keys.py or use metrics.* namespace)."
+        ),
+        path,
+    )
+
+
+def _check_class_contract_impl_alignment(
+    class_node: ast.ClassDef,
+    path: Path,
+    diags: List[DoctorDiagnostic],
+) -> None:
+    declared = _collect_declared_contract_keys(class_node)
+    reads, writes = _extract_context_reads_writes(class_node)
+    if not reads and not writes:
+        return
+
+    declared_read = set(declared["requires"]) | set(declared["provides"]) | set(declared["mutates"]) | set(
+        declared["cache"]
+    )
+    declared_write = set(declared["provides"]) | set(declared["mutates"])
+
+    undeclared_reads = sorted(k for k in reads if not _is_declared_key_covered(k, declared_read))
+    undeclared_writes = sorted(k for k in writes if not _is_declared_key_covered(k, declared_write))
+
+    if undeclared_reads or undeclared_writes:
+        parts: List[str] = []
+        if undeclared_reads:
+            parts.append(
+                "reads not declared: "
+                + ", ".join(undeclared_reads[:10])
+                + (" ..." if len(undeclared_reads) > 10 else "")
+            )
+        if undeclared_writes:
+            parts.append(
+                "writes not declared in provides/mutates: "
+                + ", ".join(undeclared_writes[:10])
+                + (" ..." if len(undeclared_writes) > 10 else "")
+            )
+        _add(
+            diags,
+            "warn",
+            "contract-impl-mismatch",
+            f"Class {class_node.name} contract/implementation mismatch: " + " | ".join(parts),
+            path,
+        )
+
+    large_writes = sorted(k for k in writes if k in _CONTEXT_LARGE_OBJECT_KEYS)
+    if large_writes:
+        _add(
+            diags,
+            "warn",
+            "context-large-object-write",
+            (
+                f"Class {class_node.name} writes large objects into context directly: "
+                + ", ".join(large_writes[:8])
+                + (" ..." if len(large_writes) > 8 else "")
+                + ". Use SnapshotStore refs instead."
+            ),
+            path,
+        )
 
 
 def _check_contract_source(root: Path, diags: List[DoctorDiagnostic], *, strict: bool) -> None:
@@ -1029,6 +1823,8 @@ def _check_contract_source(root: Path, diags: List[DoctorDiagnostic], *, strict:
                     continue
                 _check_class_metrics_fallback_literal(class_node, py_file, diags, strict=bool(strict))
                 _check_class_template_not_implemented(class_node, py_file, diags, strict=bool(strict))
+                _check_class_contract_key_known(class_node, py_file, diags)
+                _check_class_contract_impl_alignment(class_node, py_file, diags)
                 if not _class_has_contract(class_node):
                     _add(
                         diags,
@@ -1037,6 +1833,19 @@ def _check_contract_source(root: Path, diags: List[DoctorDiagnostic], *, strict:
                         f"Class {class_node.name} has no explicit context contract fields",
                         py_file,
                     )
+                else:
+                    missing_core = _class_missing_core_contract_fields(class_node)
+                    if missing_core:
+                        _add(
+                            diags,
+                            "warn",
+                            "class-contract-core-missing",
+                            (
+                                f"Class {class_node.name} should declare core contract keys: "
+                                f"{', '.join(sorted(_CORE_CONTRACT_KEYS))}; missing: {', '.join(missing_core)}"
+                            ),
+                            py_file,
+                        )
 
 
 class _SolverMirrorWriteVisitor(ast.NodeVisitor):
@@ -1370,7 +2179,23 @@ def run_project_doctor(
     _check_contract_source(root, diags, strict=bool(strict))
     _check_adapter_layer_purity(root, diags, strict=bool(strict))
     _check_examples_suites_solver_control_writes(root, diags, strict=bool(strict))
+    _check_broad_exception_swallow(root, diags, strict=bool(strict))
+    _add_common_misuse_hints(root, diags)
     return DoctorReport(project_root=root, diagnostics=tuple(diags))
+
+
+def _add_common_misuse_hints(root: Path, diags: List[DoctorDiagnostic]) -> None:
+    _add(
+        diags,
+        "info",
+        "doctor-common-misuse-hints",
+        (
+            "Common misuse hints: do not read/write solver population/objectives/constraint_violations directly; "
+            "use resolve_population_snapshot()/commit_population_snapshot()/solver.read_snapshot(). "
+            "Keep large objects in SnapshotStore and only references in Context."
+        ),
+        root,
+    )
 
 
 def format_doctor_report(report: DoctorReport) -> str:

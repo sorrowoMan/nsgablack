@@ -759,7 +759,7 @@ def _build_solver_template() -> str:
         import argparse
         from datetime import datetime
 
-        from nsgablack.core.solver import BlackBoxSolverNSGAII
+        from nsgablack.core.evolution_solver import EvolutionSolver
         from nsgablack.utils.suites import attach_checkpoint_resume
         from nsgablack.utils.suites import attach_default_observability_plugins
 
@@ -769,7 +769,7 @@ def _build_solver_template() -> str:
         from problem.example_problem import ExampleProblem
 
 
-        def build_solver(argv: list[str] | None = None) -> BlackBoxSolverNSGAII:
+        def build_solver(argv: list[str] | None = None) -> EvolutionSolver:
             parser = argparse.ArgumentParser(add_help=False)
             parser.add_argument("--dimension", type=int, default=8)
             parser.add_argument("--pop-size", type=int, default=80)
@@ -800,7 +800,7 @@ def _build_solver_template() -> str:
             pipeline = build_pipeline()
             bias_module = build_bias_module(enable_bias=bool(args.enable_bias))
 
-            solver = BlackBoxSolverNSGAII(problem, bias_module=bias_module)
+            solver = EvolutionSolver(problem, bias_module=bias_module)
             solver.pop_size = int(args.pop_size)
             solver.max_generations = int(args.generations)
             solver.mutation_rate = 0.2
