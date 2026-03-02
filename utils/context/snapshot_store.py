@@ -22,9 +22,31 @@ import hmac
 
 import numpy as np
 
-from ..engineering.error_policy import report_soft_error
-
 logger = logging.getLogger(__name__)
+
+
+def _report_soft_error(**kwargs: Any) -> None:
+    """Lazy import to avoid context<->engineering circular imports."""
+    try:
+        from ..engineering.error_policy import report_soft_error as _report
+    except ImportError:
+        exc = kwargs.get("exc")
+        if kwargs.get("strict") and isinstance(exc, Exception):
+            raise exc
+        component = str(kwargs.get("component", "snapshot_store"))
+        event = str(kwargs.get("event", "unknown"))
+        if isinstance(exc, Exception):
+            logger.warning(
+                "[soft-error:fallback] %s.%s: %s: %s",
+                component,
+                event,
+                exc.__class__.__name__,
+                str(exc),
+            )
+        else:
+            logger.warning("[soft-error:fallback] %s.%s", component, event)
+        return
+    _report(**kwargs)
 
 
 @dataclass(frozen=True)
@@ -229,7 +251,7 @@ class RedisSnapshotStore(SnapshotStore):
                     try:
                         arr = arr.astype(dtype)
                     except Exception as exc:
-                        report_soft_error(
+                        _report_soft_error(
                             component="SnapshotStore",
                             event="redis_safe_ndarray_cast",
                             exc=exc,
@@ -284,7 +306,7 @@ class RedisSnapshotStore(SnapshotStore):
             try:
                 decoded = json.loads(raw.decode("utf-8"))
             except Exception as exc:
-                report_soft_error(
+                _report_soft_error(
                     component="SnapshotStore",
                     event="redis_safe_json_decode",
                     exc=exc,
@@ -305,7 +327,7 @@ class RedisSnapshotStore(SnapshotStore):
         try:
             decoded = pickle.loads(raw)
         except Exception as exc:
-            report_soft_error(
+            _report_soft_error(
                 component="SnapshotStore",
                 event="redis_pickle_decode",
                 exc=exc,
@@ -324,7 +346,7 @@ class RedisSnapshotStore(SnapshotStore):
         # Legacy payload (no envelope) is treated as unsigned pickle.
         if "_snapshot_envelope" not in decoded:
             if self.serializer == "pickle_signed" and not self.unsafe_allow_unsigned:
-                report_soft_error(
+                _report_soft_error(
                     component="SnapshotStore",
                     event="redis_pickle_unsigned_blocked",
                     exc=ValueError("unsigned legacy pickle snapshot blocked"),
@@ -340,7 +362,7 @@ class RedisSnapshotStore(SnapshotStore):
         if self.serializer == "pickle_signed":
             key = self._resolve_hmac_key()
             if key is None:
-                report_soft_error(
+                _report_soft_error(
                     component="SnapshotStore",
                     event="redis_pickle_signed_missing_key",
                     exc=ValueError("missing snapshot HMAC key"),
@@ -351,7 +373,7 @@ class RedisSnapshotStore(SnapshotStore):
                 return None
             if serializer != "pickle_signed":
                 if not self.unsafe_allow_unsigned:
-                    report_soft_error(
+                    _report_soft_error(
                         component="SnapshotStore",
                         event="redis_pickle_signed_unsigned_payload",
                         exc=ValueError("unsigned snapshot blocked"),
@@ -367,7 +389,7 @@ class RedisSnapshotStore(SnapshotStore):
                     hashlib.sha256,
                 ).hexdigest()
                 if not hmac.compare_digest(str(mac or ""), expected):
-                    report_soft_error(
+                    _report_soft_error(
                         component="SnapshotStore",
                         event="redis_pickle_signed_hmac_mismatch",
                         exc=ValueError("snapshot HMAC verification failed"),
@@ -404,7 +426,7 @@ class RedisSnapshotStore(SnapshotStore):
                     f"snapshot payload too large: {len(raw)} bytes > {int(self.max_payload_bytes)} bytes"
                 )
         except Exception as exc:
-            report_soft_error(
+            _report_soft_error(
                 component="SnapshotStore",
                 event="redis_write_serialize",
                 exc=exc,
@@ -506,7 +528,7 @@ class FileSnapshotStore(SnapshotStore):
             try:
                 arr = np.asarray(value)
             except Exception as exc:
-                report_soft_error(
+                _report_soft_error(
                     component="SnapshotStore",
                     event="file_coerce_array",
                     exc=exc,
@@ -562,7 +584,7 @@ class FileSnapshotStore(SnapshotStore):
                 try:
                     paths["extras"].unlink()
                 except Exception as exc:
-                    report_soft_error(
+                    _report_soft_error(
                         component="SnapshotStore",
                         event="file_write_cleanup_extras",
                         exc=exc,
@@ -603,7 +625,7 @@ class FileSnapshotStore(SnapshotStore):
         try:
             return json.loads(paths["meta"].read_text(encoding="utf-8"))
         except Exception as exc:
-            report_soft_error(
+            _report_soft_error(
                 component="SnapshotStore",
                 event="file_read_meta",
                 exc=exc,
@@ -620,7 +642,7 @@ class FileSnapshotStore(SnapshotStore):
         try:
             return float(expires_at) <= time.time()
         except Exception as exc:
-            report_soft_error(
+            _report_soft_error(
                 component="SnapshotStore",
                 event="file_expiry_parse",
                 exc=exc,
@@ -646,7 +668,7 @@ class FileSnapshotStore(SnapshotStore):
                     for k in payload.files:
                         data[str(k)] = np.asarray(payload[k])
             except Exception as exc:
-                report_soft_error(
+                _report_soft_error(
                     component="SnapshotStore",
                     event="file_read_npz",
                     exc=exc,
@@ -661,7 +683,7 @@ class FileSnapshotStore(SnapshotStore):
                 if isinstance(extras, dict):
                     data.update(extras)
             except Exception as exc:
-                report_soft_error(
+                _report_soft_error(
                     component="SnapshotStore",
                     event="file_read_extras_pickle",
                     exc=exc,
@@ -686,7 +708,7 @@ class FileSnapshotStore(SnapshotStore):
                 try:
                     p.unlink()
                 except Exception as exc:
-                    report_soft_error(
+                    _report_soft_error(
                         component="SnapshotStore",
                         event="file_delete",
                         exc=exc,
