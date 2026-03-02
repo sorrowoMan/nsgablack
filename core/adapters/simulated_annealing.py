@@ -44,6 +44,9 @@ class SAConfig:
     # objective aggregation for multi-objective fallback scoring
     objective_aggregation: str = "sum"  # "sum" or "first"
 
+    # Optional RNG seed for reproducible Metropolis acceptance.
+    random_seed: Optional[int] = None
+
 
 class SimulatedAnnealingAdapter(AlgorithmAdapter):
     """Simulated annealing adapter for ComposableSolver."""
@@ -69,13 +72,20 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
         self.current_score: Optional[float] = None
         self._warned_missing_operator = False
         self._last_runtime_projection: Dict[str, Any] = {}
-        self._rng = np.random.default_rng()
+        self._rng = self._build_rng()
+
+    def _build_rng(self) -> np.random.Generator:
+        if self.cfg.random_seed is not None:
+            return np.random.default_rng(int(self.cfg.random_seed))
+        # Derive seed from numpy global RNG state so np.random.seed(...) controls SA reproducibility.
+        return np.random.default_rng(int(np.random.randint(0, 2**31 - 1)))
 
     def setup(self, solver: Any) -> None:
         self.t0 = float(self.cfg.initial_temperature)
         self.temperature = float(self.cfg.initial_temperature)
         self.current_x = None
         self.current_score = None
+        self._rng = self._build_rng()
         self._warn_if_pipeline_has_no_mutator(solver)
         self._last_runtime_projection = {}
 

@@ -15,7 +15,7 @@ def _ensure_importable() -> None:
     try:
         import nsgablack  # noqa: F401
         return
-    except Exception:
+    except ImportError:
         pass
     repo_root = Path(__file__).resolve().parents[1]
     if str(repo_root) not in sys.path:
