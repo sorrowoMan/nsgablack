@@ -415,21 +415,33 @@ class CheckpointResumePlugin(Plugin):
         eval_count = int(state.get("evaluation_count", getattr(solver, "evaluation_count", 0)))
         def _set_field(field: str, value: Any) -> None:
             setattr(solver, str(field), value)
-        if runtime is not None:
-            if hasattr(runtime, "set_generation"):
-                try:
-                    runtime.set_generation(generation)
-                except Exception:
-                    _set_field("generation", generation)
-            else:
+
+        set_generation = getattr(solver, "set_generation", None)
+        if callable(set_generation):
+            try:
+                set_generation(generation)
+            except Exception:
                 _set_field("generation", generation)
-            if hasattr(runtime, "increment_evaluation_count"):
-                try:
-                    current = int(getattr(solver, "evaluation_count", 0) or 0)
-                    runtime.increment_evaluation_count(eval_count - current)
-                except Exception:
-                    _set_field("evaluation_count", eval_count)
-            else:
+        elif runtime is not None and hasattr(runtime, "set_generation"):
+            try:
+                runtime.set_generation(generation)
+            except Exception:
+                _set_field("generation", generation)
+        else:
+            _set_field("generation", generation)
+
+        increment_eval = getattr(solver, "increment_evaluation_count", None)
+        if callable(increment_eval):
+            try:
+                current = int(getattr(solver, "evaluation_count", 0) or 0)
+                increment_eval(eval_count - current)
+            except Exception:
+                _set_field("evaluation_count", eval_count)
+        elif runtime is not None and hasattr(runtime, "increment_evaluation_count"):
+            try:
+                current = int(getattr(solver, "evaluation_count", 0) or 0)
+                runtime.increment_evaluation_count(eval_count - current)
+            except Exception:
                 _set_field("evaluation_count", eval_count)
         else:
             _set_field("generation", generation)
@@ -452,7 +464,14 @@ class CheckpointResumePlugin(Plugin):
                         raise
 
         if "pareto_solutions" in state or "pareto_objectives" in state:
-            if runtime is not None and hasattr(runtime, "set_pareto_snapshot"):
+            set_pareto = getattr(solver, "set_pareto_snapshot", None)
+            if callable(set_pareto):
+                try:
+                    set_pareto(state.get("pareto_solutions"), state.get("pareto_objectives"))
+                except Exception:
+                    _set_field("pareto_solutions", state.get("pareto_solutions"))
+                    _set_field("pareto_objectives", state.get("pareto_objectives"))
+            elif runtime is not None and hasattr(runtime, "set_pareto_snapshot"):
                 try:
                     runtime.set_pareto_snapshot(state.get("pareto_solutions"), state.get("pareto_objectives"))
                 except Exception:
@@ -465,7 +484,14 @@ class CheckpointResumePlugin(Plugin):
         if "history" in state:
             _set_field("history", state.get("history"))
         if "best_x" in state or "best_objective" in state:
-            if runtime is not None and hasattr(runtime, "set_best_snapshot"):
+            set_best = getattr(solver, "set_best_snapshot", None)
+            if callable(set_best):
+                try:
+                    set_best(state.get("best_x"), state.get("best_objective"))
+                except Exception:
+                    _set_field("best_x", state.get("best_x"))
+                    _set_field("best_objective", state.get("best_objective"))
+            elif runtime is not None and hasattr(runtime, "set_best_snapshot"):
                 try:
                     runtime.set_best_snapshot(state.get("best_x"), state.get("best_objective"))
                 except Exception:
