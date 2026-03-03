@@ -59,6 +59,8 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
     context_notes = (
         "Maintains one active trajectory and adaptively updates mutation scale.",
     )
+    state_recovery_level = "L1"
+    state_recovery_notes = "Restores trajectory incumbent/best state and adaptive sigma history."
 
     def __init__(
         self,

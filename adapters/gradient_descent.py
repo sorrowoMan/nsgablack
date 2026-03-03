@@ -30,6 +30,8 @@ class GradientDescentAdapter(AlgorithmAdapter):
     context_mutates = ()
     context_cache = ()
     context_notes = "Finite-difference local search; emits current step size in context."
+    state_recovery_level = "L1"
+    state_recovery_notes = "Restores current point/score and learning rate; finite-difference probe cache is recomputed."
 
     def __init__(self, config: Optional[GradientDescentConfig] = None, name: str = "gradient_descent", priority: int = 0) -> None:
         super().__init__(name=name, priority=priority)

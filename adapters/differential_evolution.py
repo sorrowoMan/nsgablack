@@ -49,6 +49,8 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         "DE adapter maintains internal population state and performs greedy replacement.",
         "Population write-back is exposed through set_population().",
     )
+    state_recovery_level = "L2"
+    state_recovery_notes = "Restores internal population/objectives/violations for deterministic continuation."
 
     def __init__(self, config: Optional[DEConfig] = None, name: str = "de", priority: int = 0) -> None:
         super().__init__(name=name, priority=priority)

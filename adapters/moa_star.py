@@ -86,6 +86,8 @@ class MOAStarAdapter(AlgorithmAdapter):
     context_notes = (
         "Consumes context for neighbor expansion / heuristic / goal callbacks in multi-objective A*.",
     )
+    state_recovery_level = "L0"
+    state_recovery_notes = "Checkpoint restores summary only; label/open structures are not reconstructed."
 
     def __init__(
         self,

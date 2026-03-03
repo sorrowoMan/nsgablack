@@ -57,6 +57,8 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
     context_notes = (
         "SA writes temperature and optional sigma into context for mutator scheduling.",
     )
+    state_recovery_level = "L1"
+    state_recovery_notes = "Restores annealing temperature and incumbent state; random stream continues from solver RNG state."
 
     # Soft partner contracts: SA communicates temperature and (optionally)
     # mutation scale via context. Representation mutator may consume these keys.

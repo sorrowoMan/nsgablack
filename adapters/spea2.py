@@ -19,7 +19,13 @@ class SPEA2Config(NSGA2Config):
 
 
 class SPEA2Adapter(NSGA2Adapter):
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
     context_notes = "SPEA2 adapter using strength + density fitness for environmental selection."
+    state_recovery_level = "L2"
+    state_recovery_notes = "Inherits NSGA-II population snapshot roundtrip and SPEA2 selection parameters."
 
     def __init__(self, config: Optional[SPEA2Config] = None, name: str = "spea2", priority: int = 0) -> None:
         super().__init__(config=(config or SPEA2Config()), name=name, priority=priority)
@@ -85,4 +91,3 @@ class SPEA2Adapter(NSGA2Adapter):
         bb = np.sum(b * b, axis=1, keepdims=True).T
         sq = np.maximum(aa + bb - (2.0 * (a @ b.T)), 0.0)
         return np.sqrt(sq)
-

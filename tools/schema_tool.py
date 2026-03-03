@@ -38,24 +38,39 @@ def _infer_schema_name(path: Path) -> Optional[str]:
     return None
 
 
-def _iter_json_files(roots: Iterable[Path]) -> Iterable[Path]:
+def _is_historical_root(path: Path) -> bool:
+    parts = tuple(path.parts)
+    if any(part == "runs" for part in parts):
+        return True
+    for idx in range(len(parts) - 1):
+        if parts[idx] == "examples" and parts[idx + 1] == "cases":
+            return True
+    return False
+
+
+def _iter_json_files(roots: Iterable[Path], *, include_runs: bool = False) -> Iterable[Path]:
     for root in roots:
         if root.is_file() and root.suffix.lower() == ".json":
+            if (not include_runs) and _is_historical_root(root):
+                continue
             yield root
             continue
         if not root.exists():
             continue
+        root_is_historical = _is_historical_root(root)
         for path in root.rglob("*.json"):
             if path.is_file():
+                if (not include_runs) and (not root_is_historical) and _is_historical_root(path):
+                    continue
                 yield path
 
 
-def check_files(paths: Iterable[Path]) -> Tuple[int, List[SchemaIssue]]:
+def check_files(paths: Iterable[Path], *, include_runs: bool = False) -> Tuple[int, List[SchemaIssue]]:
     from nsgablack.utils.engineering.schema_version import schema_check
 
     checked = 0
     issues: List[SchemaIssue] = []
-    for path in _iter_json_files(paths):
+    for path in _iter_json_files(paths, include_runs=bool(include_runs)):
         schema_name = _infer_schema_name(path)
         if not schema_name:
             continue
@@ -79,8 +94,13 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument(
         "paths",
         nargs="*",
-        default=["runs"],
-        help="Files/directories to scan (default: runs).",
+        default=["."],
+        help="Files/directories to scan (default: project root, excluding runs/ unless --include-runs).",
+    )
+    parser.add_argument(
+        "--include-runs",
+        action="store_true",
+        help="Include JSON files under runs/ when scanning project roots.",
     )
     parser.add_argument(
         "--strict",
@@ -91,7 +111,7 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     _ensure_repo_parent_on_sys_path()
     roots = [Path(p).resolve() for p in args.paths]
-    checked, issues = check_files(roots)
+    checked, issues = check_files(roots, include_runs=bool(args.include_runs))
 
     print(f"schema_files_checked={checked}")
     print(f"schema_issues={len(issues)}")

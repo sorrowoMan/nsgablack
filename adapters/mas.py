@@ -34,6 +34,8 @@ class MASAdapter(AlgorithmAdapter):
     context_notes = (
         "Optional model-assisted search: reads mas_model when available.",
     )
+    state_recovery_level = "L1"
+    state_recovery_notes = "Restores adaptive center; surrogate/model cache is expected from context providers."
 
     def __init__(
         self,
