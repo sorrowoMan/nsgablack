@@ -38,6 +38,20 @@
 - `Bias`：软偏好和倾向，不替代硬约束。
 - `Plugin`：并行、观测、checkpoint、报告等工程能力。
 
+### 三类 Solver 语义（这块最容易绕）
+
+- `SolverBase`（`core/blank_solver.py`）  
+  我把它当“控制底座”：生命周期、控制面 API、context/snapshot 通道都在这里。  
+  它默认不内置具体优化策略，`step()` 只是留给子类和组件扩展的挂点。
+
+- `ComposableSolver`（`core/composable_solver.py`）  
+  我把它当“step 编排器”：每一步都走统一流程 `propose -> evaluate -> update`。  
+  适合要换 adapter、叠插件、做组合策略的场景。
+
+- `EvolutionSolver`（`core/evolution_solver.py`）  
+  我把它当“种群代际求解器”：以 population/generation 为核心节奏。  
+  适合进化式启发算法（不只 NSGA-II），保留代际语义和种群运算直觉。
+
 ### 数据分层
 
 - `ContextStore`：小字段、运行信号、引用。
