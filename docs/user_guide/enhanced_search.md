@@ -4,7 +4,7 @@
 
 对应组件：
 
-- 控制器：`core/adapters/multi_strategy.py` (`MultiStrategyControllerAdapter`)
+- 控制器：`adapters/multi_strategy.py` (`MultiStrategyControllerAdapter`)
 - 权威装配：`utils/suites/multi_strategy.py` (`attach_multi_strategy_coop`)
 - 共享事实（可选）：`plugin.pareto_archive`（Suite 默认会挂）
 
@@ -20,7 +20,7 @@
 
 ```python
 from nsgablack.core.composable_solver import ComposableSolver
-from nsgablack.core.adapters import (
+from nsgablack.adapters import (
     MultiStrategyConfig,
     MultiStrategyControllerAdapter,
     RoleSpec,

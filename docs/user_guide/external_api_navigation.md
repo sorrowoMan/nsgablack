@@ -36,7 +36,7 @@ Regular multi-objective:
 Algorithm decomposition / fusion:
 
 - Solver: `ComposableSolver`
-- Strategy: `core/adapters/*` (Adapter.propose/update)
+- Strategy: `adapters/*` (Adapter.propose/update)
 - Wiring: `utils/suites/*` (authoritative combinations)
 
 Custom workflow / non-evolutionary prototype:
@@ -50,8 +50,8 @@ Expensive black-box evaluation (cache / surrogate / short-circuit):
 
 Multi-strategy cooperation (roles + many units + shared facts):
 
-- Controller: `core/adapters/multi_strategy.py`
-- Role wrapper: `core/adapters/role_adapters.py`
+- Controller: `adapters/multi_strategy.py`
+- Role wrapper: `adapters/role_adapters.py`
 - Suite: `utils/suites/multi_strategy.py`
 
 Unified experiment protocol (fair comparisons):

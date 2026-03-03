@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from .algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import (
+from ..utils.context.context_keys import (
     KEY_EVENT_ARCHIVE,
     KEY_EVENT_HISTORY,
     KEY_EVENT_INFLIGHT,

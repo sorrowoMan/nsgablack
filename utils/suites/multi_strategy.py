@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Optional, Sequence
 
-from ...core.adapters import (
+from ...adapters import (
     AlgorithmAdapter,
     MultiStrategyConfig,
     MultiStrategyControllerAdapter,

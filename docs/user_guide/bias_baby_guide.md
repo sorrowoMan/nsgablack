@@ -140,7 +140,7 @@ manager.add_algorithmic_bias(DiversityBias("diversity", weight=0.2))
 import numpy as np
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.core.composable_solver import ComposableSolver
-from nsgablack.core.adapters import AlgorithmAdapter
+from nsgablack.adapters import AlgorithmAdapter
 from nsgablack.utils.plugins import SurrogateEvaluationPlugin, SurrogateEvaluationConfig
 
 class MyProblem(BlackBoxProblem):

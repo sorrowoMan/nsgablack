@@ -4,7 +4,7 @@ from nsgablack.utils.context.context_keys import KEY_BEST_OBJECTIVE, KEY_BEST_X
 
 
 def test_composable_solver_exposes_best_context_keys(sample_problem) -> None:
-    from nsgablack.core.adapters import SAConfig, SimulatedAnnealingAdapter
+    from nsgablack.adapters import SAConfig, SimulatedAnnealingAdapter
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import ClipRepair, ContextGaussianMutation, UniformInitializer

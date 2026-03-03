@@ -28,7 +28,7 @@ nsgablack/
 注意：`core/solver.py` 已删除（断兼容）。
 
 ### 2.2 Adapter 层
-- `core/adapters/`
+- `adapters/`
   放算法流程实现（NSGA2/VNS/MOEAD/SA/多策略控制等）。
 
 ## 3. Representation / Bias / Plugin

@@ -3,7 +3,7 @@
 下面给一份 TSP 可直接用的 adapter 结构（过程控制在 adapter，非 bias）。
 
 ```python
-from nsgablack.core.adapters.algorithm_adapter import AlgorithmAdapter  # adapter 基类
+from nsgablack.adapters.algorithm_adapter import AlgorithmAdapter  # adapter 基类
 import numpy as np  # 数值工具
 
 

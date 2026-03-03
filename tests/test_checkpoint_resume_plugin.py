@@ -7,7 +7,7 @@ import pytest
 
 
 def _build_composable_solver(sample_problem):
-    from nsgablack.core.adapters import SAConfig, SimulatedAnnealingAdapter
+    from nsgablack.adapters import SAConfig, SimulatedAnnealingAdapter
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import ClipRepair, ContextGaussianMutation, UniformInitializer

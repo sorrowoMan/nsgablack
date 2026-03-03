@@ -22,7 +22,7 @@
 - `ContextStore`（小字段）与 `SnapshotStore`（大对象）的职责分离是当前架构的关键优势。
 - `Catalog + Contract + Doctor + Run Inspector` 构成了较完整的工程闭环（发现、装配、诊断、观测、复现）。
 - 主要技术债不在算法抽象，而在：
-  - `legacy solver` 与新 runtime-first 路径并存导致心智负担；
+  - `legacy solver` 与新 solver-control-first 路径并存导致心智负担；
   - 部分路径“宽异常吞掉”影响可观测性；
   - 文档/编码一致性存在工程噪音。
 
@@ -31,7 +31,7 @@
 - The split between `ContextStore` (small contract fields) and `SnapshotStore` (large artifacts) is a major architectural strength.
 - `Catalog + Contract + Doctor + Run Inspector` provides a strong engineering loop (discover, wire, diagnose, observe, reproduce).
 - Main debt is not algorithm abstraction; it is:
-  - coexistence of legacy solver and runtime-first path,
+  - coexistence of legacy solver and solver-control-first path,
   - broad exception swallowing in some paths reducing observability,
   - documentation/encoding consistency noise.
 
@@ -83,7 +83,7 @@
 ## 3) 架构与模块边界 / Architecture and Module Boundaries
 
 ### 3.1 控制面（Control Plane）
-- `core/runtime.py` -> `SolverRuntime`
+- `core/blank_solver.py` -> `SolverBase` control-plane methods
 - 负责生命周期、状态组织、context 构建、snapshot 持久化入口。
 
 ### 3.2 数据面（Data Plane）
@@ -110,7 +110,7 @@
 
 ### 4.1 关键设计模式 / Key Design Patterns
 - Strategy:
-  - Adapter 抽象和多策略组合（`core/adapters/algorithm_adapter.py`）
+  - Adapter 抽象和多策略组合（`adapters/algorithm_adapter.py`）
 - Facade:
   - `BiasModule` 封装 manager、缓存、上下文绑定（`bias/bias_module.py`）
 - Event Bus / Hook:
@@ -172,8 +172,8 @@
 
 ## 6) 主要风险与技术债 / Main Risks and Technical Debt
 
-1. 双路径并存（legacy + runtime-first）
-- 现象 / Symptom: `core/solver.py` 与 `core/blank_solver.py`/`core/runtime.py` 同时承载核心语义。
+1. 双路径并存（legacy + solver-control-first）
+- 现象 / Symptom: `core/solver.py` 与 `core/blank_solver.py` 同时承载核心语义。
 - 风险 / Risk: 新能力落点不统一，团队贡献容易分叉。
 
 2. 部分宽异常处理
@@ -193,9 +193,9 @@
 ## 7) 优先级建议 / Priority Recommendations
 
 ### P0（短期，建议立即执行） / P0 (Immediate)
-1. 统一 runtime-first 规范落点  
-CN: 新增能力默认落在 `SolverBase + SolverRuntime`，legacy 路径仅做兼容。  
-EN: Default new capabilities to runtime-first path; keep legacy path compatibility-only.
+1. 统一 solver-control-first 规范落点  
+CN: 新增能力默认落在 `SolverBase` 控制面与 context/snapshot 契约，legacy 路径仅做兼容。  
+EN: Default new capabilities to solver-control-first path; keep legacy path compatibility-only.
 
 2. 清理文档编码与术语一致性  
 CN: 先修核心入口文档（`README.md`, `START_HERE.md`, `docs/architecture/*`）。  

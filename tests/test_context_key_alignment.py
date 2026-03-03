@@ -7,7 +7,7 @@ from nsgablack.utils.context.context_keys import CANONICAL_CONTEXT_KEYS, normali
 
 
 ROOTS = (
-    Path("core/adapters"),
+    Path("adapters"),
     Path("plugins"),
     Path("representation"),
     Path("bias"),

@@ -4,7 +4,7 @@ from pathlib import Path
 
 def test_benchmark_harness_writes_csv_and_summary(sample_problem, tmp_path: Path):
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import SimulatedAnnealingAdapter, SAConfig
+    from nsgablack.adapters import SimulatedAnnealingAdapter, SAConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
     from nsgablack.utils.suites import attach_benchmark_harness

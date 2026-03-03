@@ -37,4 +37,4 @@
 
 - 表示与算子索引：`docs/indexes/REPRESENTATION_INDEX.md`
 - 表示实现：`representation/`
-- VNS 相关：`core/adapters/vns.py`、`representation/`（ContextSwitchMutator 等）
+- VNS 相关：`adapters/vns.py`、`representation/`（ContextSwitchMutator 等）

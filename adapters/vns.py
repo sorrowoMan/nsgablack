@@ -16,7 +16,7 @@ import numpy as np
 from .algorithm_adapter import AlgorithmAdapter
 import warnings
 
-from ...utils.context.context_keys import KEY_MUTATION_SIGMA, KEY_VNS_K
+from ..utils.context.context_keys import KEY_MUTATION_SIGMA, KEY_VNS_K
 
 
 @dataclass

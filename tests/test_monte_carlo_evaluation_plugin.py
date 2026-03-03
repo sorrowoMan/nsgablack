@@ -4,7 +4,7 @@ import numpy as np
 def test_monte_carlo_evaluation_plugin_averages_noise():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import AlgorithmAdapter
+    from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.plugins import MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig
 
     class NoisySphere(BlackBoxProblem):

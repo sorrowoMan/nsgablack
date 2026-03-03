@@ -8,19 +8,52 @@
 
 算法解构的优化生态框架：把“问题/表示/偏好/策略/工程能力”解耦，让你能更快、更稳地把新点子落地到真实问题上。
 
-你可以把它当成一套工程化的优化搭积木：
+如果你和我一样，做优化项目时最怕的是这些情况：
 
-- 新业务约束/偏好来了：加 Bias，不动算法
-- 评估太慢/要并行/要统一输出口径：加 Plugin，不动算法
-- 想换搜索策略/做阶段式融合：换/加 Adapter，不动问题定义
-- 容易漏配的组合：用 Suite 一键装配
-- 不知道有哪些组件：用 Catalog 搜索
-- 能够同时处理嵌套流程和多策略协同，基于架构的原生支持
+- 代码能跑，但每次结果都像“玄学”。
+- 想加并行、日志、checkpoint，最后把算法主循环写乱。
+- 改了很多东西，却说不清到底是哪一层带来了变化。
 
-这套解耦带来的直接收益是：扩展更“自然”。你可以把新增功能落在最合适的层级，而不是改主循环；因此组件可复用、组合代价低、回归风险可控。
-解耦式优化实验框架（Problem / Pipeline / Bias / Adapter / Plugin）。
+我做 NSGABlack 的目的很直接：
 
-## 快速开始
+> 让优化项目从“脚本堆叠”变成“可分层、可治理、可复现”的工程系统。
+
+---
+
+## 你先知道这三件事
+
+1. 这不是只比“算法数量”的框架，它更重视“工程可控性”。
+2. 你不用一次学完全部概念，先跑通一个最小闭环就行。
+3. 跑通后再迭代 Adapter、Bias、Plugin，效率会明显提高。
+
+---
+
+## 我怎么理解这套架构
+
+### 组件分工
+
+- `Solver`：调度和控制面，只负责“组织流程”。
+- `Adapter`：搜索策略内核，只负责“怎么搜索”。
+- `Pipeline`：初始化、变异、修复，优先承载硬约束。
+- `Bias`：软偏好和倾向，不替代硬约束。
+- `Plugin`：并行、观测、checkpoint、报告等工程能力。
+
+### 数据分层
+
+- `ContextStore`：小字段、运行信号、引用。
+- `SnapshotStore`：population/objectives/violations 等大对象。
+
+### 统一读写入口
+
+- `solver.read_snapshot()`
+- `Plugin.resolve_population_snapshot()`
+- `Plugin.commit_population_snapshot()`
+
+---
+
+## 2 分钟跑通
+
+先不要想“最优解”，先拿到一次可控运行。
 
 ```powershell
 python -m pip install -U pip
@@ -31,190 +64,80 @@ python -m nsgablack project doctor --path . --build --strict
 python build_solver.py
 ```
 
-## Recommended Reading Order
+我建议你跑完后立刻检查：
 
-For the complete depth + breadth workflow, read in this order:
+1. `build_solver.py` 能否稳定实例化 solver。
+2. `doctor --build --strict` 是否没有 error。
+3. 能否完整跑完一轮并拿到可读输出。
 
-1. `docs/user_guide/DEPTH_BREADTH_WORKFLOW.md`
-2. `docs/user_guide/INNER_SOLVER_BACKENDS.md`
-3. `docs/user_guide/NUMERICAL_SOLVER_PLUGINS.md`
-4. `docs/user_guide/REDIS_CONTEXT_BACKEND.md`
-5. `examples/nested_three_layer_demo.py` + `examples/nested_three_layer_demo.md`
-6. `docs/user_guide/RUN_INSPECTOR.md` (use Catalog/Context/Doctor to verify wiring)
+---
 
-## 核心原则
+## 按这条顺序迭代
 
-- Problem：定义目标与约束。
-- Pipeline：表示与硬约束修复（initializer/mutator/repair）。
-- Bias：软偏好，不替代硬约束。
-- Adapter：搜索流程内核（propose/update）。
-- Plugin：工程能力（日志、评估短路、报告、恢复等）。
-- Runtime-first：新功能优先走 Runtime/context 契约，不直接写 solver 运行态字段。
+这是我自己长期验证过最稳的顺序：
 
-## 当前架构（v2）
+1. 先定 `Problem`（定义你到底在优化什么）。
+2. 再定 `Pipeline`（先保证可行解链路）。
+3. 再挂 `Adapter`（先单策略跑通）。
+4. 再加 `Bias`（做可解释偏好）。
+5. 最后加 `Plugin`（工程能力外置）。
 
-- 控制面：`SolverRuntime` + `ContextStore`，承载生命周期与小字段信号
-- 数据面：`SnapshotStore` 专职大对象快照（population/objectives/violations/pareto/history/trace）
-- 组件交互：Context 只放 refs，小对象与信号；大对象统一走快照读写
-- 统一读写口：`solver.read_snapshot()` / `Plugin.resolve_population_snapshot()` / `Plugin.commit_population_snapshot()`
+这个顺序的价值是：你每轮都能清楚归因，不会“多处同时变更导致不可解释”。
 
-## 常用入口
+---
 
-- `QUICKSTART.md`：安装与最小闭环。
-- `START_HERE.md`：工作流入口地图。
-- `WORKFLOW_END_TO_END.md`：端到端实践流程。
-- `docs/user_guide/RUN_INSPECTOR.md`：Run Inspector 用法。
-- Sequence 卡片包含三个子标签：`List`（序列列表）、`Trie`（前缀树分支视图）、`Trace`（并发时序明细，默认关闭）。
-- `docs/user_guide/CONTEXT_CONTRACTS.md`：context 契约说明。
-- `docs/user_guide/EXAMPLE_IO_CONTRACTS.md`：权威示例输入/输出契约。
+## 我强烈建议你守住的三条规则
 
-## Catalog 与搜索
+1. 组件状态写入统一走 `solver.*` 控制面。
+2. 不要直接写 `solver.population/objectives/constraint_violations/...`。
+3. 大对象不进 context，context 只存小字段和 refs。
+
+---
+
+## 三条主线（你可以拿它当日常检查表）
+
+### 工作流
+
+`Problem -> Pipeline -> Adapter -> Bias -> Plugin -> Run -> Doctor/Test`
+
+### 数据流
+
+- 大对象走 snapshot
+- 小字段走 context
+- 访问统一走标准接口
+
+### 组件流
+
+- Solver 调度
+- Adapter 搜索
+- Pipeline 可行化
+- Bias 偏好
+- Plugin 能力
+
+---
+
+## 常用命令（我每天都在用）
 
 ```powershell
 python -m nsgablack catalog search vns
 python -m nsgablack catalog show suite.multi_strategy
-python -m nsgablack catalog search context_requires --field context --kind plugin
-```
-
-项目级搜索：
-
-```powershell
-python -m nsgablack project catalog search context_mutates --field context --path . --global
-```
-
-## Strict 快速排障
-
-```powershell
 python -m nsgablack project doctor --path . --strict
+python -m pytest -q
 ```
 
-高频错误码：
+---
 
-- `runtime-bypass-write`
-- `class-contract-missing`
-- `contracts-not-explicit`
-- `template-not-implemented`
-- `plugin-direct-solver-state-access`
-- `solver-mirror-write`
-- `metrics-provider-missing`
-- `metrics-fallback-invalid`
-- `metrics-fallback-nonliteral`
-- `algorithm-as-bias`
+## 文档阅读顺序（按投入产出比）
 
-启动类错误先修：
+1. `START_HERE.md`
+2. `WORKFLOW_END_TO_END.md`
+3. `docs/architecture/README.md`
+4. `docs/user_guide/RUN_INSPECTOR.md`
+5. `docs/user_guide/DEPTH_BREADTH_WORKFLOW.md`
 
-- `build-solver-import-failed`
-- `build-solver-missing`
-- `build-solver-instantiate-failed`
+---
 
-## 平台依赖
+## 最后一句
 
-- Run Inspector 需要 Tk GUI。
-- Python 3.10 自动使用 `tomli` 作为 TOML fallback。
-- 可选依赖（如 numba）失败会自动降级，不应阻断导入。
-
-## Checkpoint HMAC（安全恢复）
-
-在装配中启用：
-
-```python
-from nsgablack.utils.suites import attach_checkpoint_resume
-
-attach_checkpoint_resume(
-    solver,
-    checkpoint_dir="runs/checkpoints",
-    auto_resume=True,
-    hmac_env_var="NSGABLACK_CHECKPOINT_HMAC_KEY",
-    unsafe_allow_unsigned=False,
-)
-```
-
-脚手架 `build_solver.py` 可直接用 CLI 开关：
-
-```powershell
-python build_solver.py --enable-checkpoint --checkpoint-dir runs/checkpoints
-```
-
-- 默认是严格模式（签名必需）。
-- 仅在迁移历史无签名 checkpoint 时，显式加 `--trust-checkpoint`。
-
-运行前设置密钥（PowerShell）：
-
-```powershell
-$env:NSGABLACK_CHECKPOINT_HMAC_KEY = "replace-with-strong-secret"
-python build_solver.py
-```
-
-仅迁移历史无签名 checkpoint 时临时开启：
-
-```python
-unsafe_allow_unsigned=True
-```
-
-迁移完成后恢复为 `False`。
-
-## Plugin Strict 何时开/关
-
-- 开（推荐于审计/复现/CI）：`python build_solver.py --plugin-strict`
-  - 任一插件生命周期报错立即失败，避免“静默退化”。
-- 关（推荐于探索调参）：默认关闭
-  - 插件异常仅警告并继续，便于快速迭代。
-
-## Thread 并发隔离（Bias）
-
-- CLI：`--thread-bias-isolation {deepcopy|disable_cache|off}`
-- 推荐默认：`deepcopy`（每任务独立 bias 副本，最稳）
-- 大规模性能优先可用：`disable_cache`（共享 bias，临时关缓存）
-
-## 质量门禁（建议）
-
-```powershell
-python -m pytest -q tests/test_refactoring.py tests/test_tomli_fallback.py tests/test_optional_numba_probe.py
-python -m nsgablack project doctor --path . --strict
-python tools/catalog_integrity_checker.py --check-usage --strict-usage --check-context --context-kinds plugin --require-context-notes --strict-context --check-context-conflicts --strict-context-conflicts --context-conflicts-waiver tools/context_conflicts_waiver.txt
-python tools/context_field_guard.py --strict
-```
-
-## 深度 × 广度工作流
-
-如果你要快速理解“为什么这个框架能同时处理嵌套流程和多策略协同”，按这个顺序看：
-
-1. `docs/user_guide/DEPTH_BREADTH_WORKFLOW.md`
-2. `docs/user_guide/NUMERICAL_SOLVER_PLUGINS.md`
-3. `docs/user_guide/INNER_SOLVER_BACKENDS.md`
-4. `examples/nested_three_layer_demo.py` + `examples/nested_three_layer_demo.md`
-
-核心结论：
-
-- 深度：`InnerSolverPlugin + ContractBridgePlugin + TimeoutBudgetPlugin` 打通 L1/L2/L3。
-- 广度：`Adapter + Bias + Plugin` 组合打通多策略协同。
-- 工程闭环：脚手架 -> 注册 -> 搜索 -> 装配 -> 运行 -> 审计（Run Inspector/doctor）。
-
-## Redis Context Backend (optional)
-
-Enable Redis as context backend (context contract/API stays the same):
-
-```python
-solver = EvolutionSolver(
-    problem,
-    context_store_backend="redis",
-    context_store_redis_url="redis://127.0.0.1:6379/0",
-    context_store_key_prefix="nsgablack:ctx",
-)
-```
-
-Quick verify:
-
-```powershell
-python -c "import redis; r=redis.Redis(host='127.0.0.1', port=6379, db=0); print('ping=', r.ping())"
-```
-
-Docker lifecycle (recommended):
-
-```powershell
-docker run --name nsgablack-redis -p 6379:6379 -d --restart unless-stopped redis:7
-# next time after reboot:
-docker start nsgablack-redis
-# stop when not needed:
-docker stop nsgablack-redis
-```
+如果你现在感觉“概念很多”，完全正常。
+你先把最小闭环跑通，我再陪你往下拆到多策略协同、深层嵌套、能力治理那一层。

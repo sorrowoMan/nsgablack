@@ -38,10 +38,10 @@
 
 原则：策略/控制器优先走 adapter；core solver 尽量保持生命周期稳定。
 
-- `adapter.vns` -> `nsgablack.core.adapters:VNSAdapter`
-- `adapter.sa` -> `nsgablack.core.adapters:SimulatedAnnealingAdapter`
-- `adapter.moead` -> `nsgablack.core.adapters:MOEADAdapter`
-- `adapter.multi_strategy` -> `nsgablack.core.adapters:MultiStrategyControllerAdapter`
+- `adapter.vns` -> `nsgablack.adapters:VNSAdapter`
+- `adapter.sa` -> `nsgablack.adapters:SimulatedAnnealingAdapter`
+- `adapter.moead` -> `nsgablack.adapters:MOEADAdapter`
+- `adapter.multi_strategy` -> `nsgablack.adapters:MultiStrategyControllerAdapter`
 
 ## 5) 工程工具（Tools）
 

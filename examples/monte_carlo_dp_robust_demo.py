@@ -35,7 +35,7 @@ _ensure_importable()
 
 from nsgablack.core.base import BlackBoxProblem  # noqa: E402
 from nsgablack.core.composable_solver import ComposableSolver  # noqa: E402
-from nsgablack.core.adapters.algorithm_adapter import AlgorithmAdapter  # noqa: E402
+from nsgablack.adapters.algorithm_adapter import AlgorithmAdapter  # noqa: E402
 from nsgablack.plugins import (  # noqa: E402
     MonteCarloEvaluationPlugin,
     MonteCarloEvaluationConfig,

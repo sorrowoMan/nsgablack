@@ -2,7 +2,7 @@
 Algorithmic bias library (scalar preference biases only).
 
 Process-level algorithm mechanisms should be implemented as adapters
-under ``nsgablack.core.adapters``.
+under ``nsgablack.adapters``.
 """
 
 from .diversity import (

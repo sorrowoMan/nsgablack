@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from nsgablack.core.composable_solver import ComposableSolver
-from nsgablack.core.adapters import TrustRegionDFOAdapter
+from nsgablack.adapters import TrustRegionDFOAdapter
 from nsgablack.representation import RepresentationPipeline, UniformInitializer, GaussianMutation, ClipRepair
 from nsgablack.bias import BiasModule, RiskBias
 from nsgablack.plugins import BenchmarkHarnessPlugin, ModuleReportPlugin, MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig

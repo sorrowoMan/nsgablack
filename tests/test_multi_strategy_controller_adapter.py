@@ -3,7 +3,7 @@ import numpy as np
 
 def test_multi_strategy_controller_runs_and_broadcasts_shared_state(sample_problem):
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import (
+    from nsgablack.adapters import (
         StrategySpec,
         MultiStrategyConfig,
         MultiStrategyControllerAdapter,
@@ -45,7 +45,7 @@ def test_multi_strategy_controller_runs_and_broadcasts_shared_state(sample_probl
 
 def test_attach_multi_strategy_suite_smoke(sample_problem):
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import StrategySpec, VNSAdapter, VNSConfig, SimulatedAnnealingAdapter, SAConfig
+    from nsgablack.adapters import StrategySpec, VNSAdapter, VNSConfig, SimulatedAnnealingAdapter, SAConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
     from nsgablack.utils.suites import attach_multi_strategy_coop
@@ -72,7 +72,7 @@ def test_attach_multi_strategy_suite_smoke(sample_problem):
 
 def test_multi_strategy_controller_supports_multi_units_per_role(sample_problem):
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import (
+    from nsgablack.adapters import (
         RoleSpec,
         MultiStrategyConfig,
         MultiStrategyControllerAdapter,
@@ -123,14 +123,14 @@ def test_multi_strategy_controller_supports_multi_units_per_role(sample_problem)
 
 def test_multi_strategy_phase_and_region_tasks_are_dispatched(sample_problem):
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import RoleSpec, MultiStrategyConfig, MultiStrategyControllerAdapter
+    from nsgablack.adapters import RoleSpec, MultiStrategyConfig, MultiStrategyControllerAdapter
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
     import numpy as np
 
     class RecorderAdapter:
         def __init__(self, name: str):
-            from nsgablack.core.adapters import AlgorithmAdapter
+            from nsgablack.adapters import AlgorithmAdapter
 
             class _A(AlgorithmAdapter):
                 def __init__(self, outer, nm):

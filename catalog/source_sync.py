@@ -291,7 +291,7 @@ def _build_template_block(kind: str, class_name: str) -> tuple[list[str], str]:
     if k == "adapter":
         imports = [
             "from nsgablack.catalog.markers import component",
-            "from nsgablack.core.adapters.algorithm_adapter import AlgorithmAdapter",
+            "from nsgablack.adapters.algorithm_adapter import AlgorithmAdapter",
         ]
         block = (
             '@component(kind="adapter")\n'

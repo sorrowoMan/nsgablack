@@ -1990,8 +1990,8 @@ def _check_runtime_bypass_writes(
         diags,
         "error",
         "runtime-bypass-write",
-        "Direct solver runtime-state writes detected; route through Runtime APIs "
-        "(solver.runtime.*, write_population_snapshot, runtime context projection): "
+        "Direct solver runtime-state writes detected; route through solver control-plane APIs "
+        "(solver.set_*, increment_evaluation_count, write_population_snapshot, context/snapshot projection): "
         + ", ".join(uniq[:10])
         + (" ..." if len(uniq) > 10 else ""),
         path,

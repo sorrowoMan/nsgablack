@@ -4,7 +4,7 @@ import numpy as np
 def test_newton_implicit_backend_plugin_short_circuits_evaluate_individual():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import AlgorithmAdapter
+    from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.plugins import NumericalSolverConfig, NewtonSolverPlugin
 
     class ImplicitProblem(BlackBoxProblem):

@@ -7,7 +7,7 @@ try:
     from nsgablack.catalog import get_catalog
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import SimulatedAnnealingAdapter, SAConfig
+    from nsgablack.adapters import SimulatedAnnealingAdapter, SAConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
 except ModuleNotFoundError:  # pragma: no cover
@@ -18,7 +18,7 @@ except ModuleNotFoundError:  # pragma: no cover
     from nsgablack.catalog import get_catalog
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import SimulatedAnnealingAdapter, SAConfig
+    from nsgablack.adapters import SimulatedAnnealingAdapter, SAConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
 

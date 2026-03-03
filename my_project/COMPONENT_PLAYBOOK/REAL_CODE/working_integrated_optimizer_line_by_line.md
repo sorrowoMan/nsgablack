@@ -40,7 +40,7 @@
 033 | ensure_nsgablack_importable(Path(__file__)) || 执行 nsgablack 可导入校验。
 034 | 
 035 | from nsgablack.core.composable_solver import ComposableSolver  # noqa: E402 || from 导入：按命名空间引入对象。
-036 | from nsgablack.core.adapters import (  # noqa: E402 || from 导入：按命名空间引入对象。
+036 | from nsgablack.adapters import (  # noqa: E402 || from 导入：按命名空间引入对象。
 037 |     AlgorithmAdapter, || 执行语句。
 038 |     MOEADAdapter, || 执行语句。
 039 |     MOEADConfig, || 执行语句。

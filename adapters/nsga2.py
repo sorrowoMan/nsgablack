@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from .algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import (
+from ..utils.context.context_keys import (
     KEY_BEST_OBJECTIVE,
     KEY_BEST_X,
     KEY_CONSTRAINT_VIOLATIONS,
@@ -19,7 +19,7 @@ from ...utils.context.context_keys import (
     KEY_POPULATION_REF,
     KEY_SNAPSHOT_KEY,
 )
-from ...utils.performance.fast_non_dominated_sort import FastNonDominatedSort
+from ..utils.performance.fast_non_dominated_sort import FastNonDominatedSort
 
 
 @dataclass

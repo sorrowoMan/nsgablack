@@ -39,7 +39,7 @@ _ensure_importable()
 
 from nsgablack.core.base import BlackBoxProblem  # noqa: E402
 from nsgablack.core.composable_solver import ComposableSolver  # noqa: E402
-from nsgablack.core.adapters import AlgorithmAdapter  # noqa: E402
+from nsgablack.adapters import AlgorithmAdapter  # noqa: E402
 from nsgablack.plugins import (  # noqa: E402
     BridgeRule,
     ContractBridgePlugin,

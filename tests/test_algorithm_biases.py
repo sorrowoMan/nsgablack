@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from nsgablack.core.adapters import (
+from nsgablack.adapters import (
     DEConfig,
     DifferentialEvolutionAdapter,
     GradientDescentAdapter,

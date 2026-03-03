@@ -3,7 +3,7 @@
 这份文档原本用于“从旧结构收敛到新结构”的整理。当前仓库已经完成核心迁移：
 
 - 旧 `solvers/` / experimental / deprecated/legacy 已从仓库清理（降低维护成本；如需追溯请查看 git 历史）
-- 核心求解器与组合逻辑收敛到 `core/` + `core/adapters/`
+- 核心求解器与组合逻辑收敛到 `core/` + `adapters/`
 - 代理/并行/实验口径/协同调度等能力：建议走 Plugin/Suite（能力层），不污染 solver 底座
 
 如果你要理解“当前每个目录装什么”，直接看：

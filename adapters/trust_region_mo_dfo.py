@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional, Sequence
 import numpy as np
 
 from .trust_region_base import TrustRegionBaseAdapter
-from ...utils.context.context_keys import KEY_MO_WEIGHTS
+from ..utils.context.context_keys import KEY_MO_WEIGHTS
 
 
 @dataclass

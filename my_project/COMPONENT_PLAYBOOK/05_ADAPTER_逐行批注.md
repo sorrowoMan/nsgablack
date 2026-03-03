@@ -13,7 +13,7 @@ from __future__ import annotations  # 现代注解
 
 import numpy as np  # 数值计算
 
-from nsgablack.core.adapters.algorithm_adapter import AlgorithmAdapter  # 适配器基类
+from nsgablack.adapters.algorithm_adapter import AlgorithmAdapter  # 适配器基类
 from nsgablack.utils.context.context_keys import (  # 统一 context key
     KEY_POPULATION,
     KEY_OBJECTIVES,

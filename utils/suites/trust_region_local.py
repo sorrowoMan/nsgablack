@@ -8,7 +8,7 @@ from typing import Optional
 
 from ...plugins import BenchmarkHarnessPlugin, ModuleReportPlugin
 from ...plugins import MASModelPlugin
-from ...core.adapters import (
+from ...adapters import (
     TrustRegionDFOAdapter,
     TrustRegionSubspaceAdapter,
     TrustRegionNonSmoothAdapter,

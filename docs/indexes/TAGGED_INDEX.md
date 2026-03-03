@@ -71,7 +71,7 @@ Core（推荐）
 - `core/solver.py` — NSGA-II 底座（`EvolutionSolver`）[layer:core] [goal:nsga2]
 - `core/blank_solver.py` — 空白底座（`SolverBase`）[layer:core] [goal:custom_workflow]
 - `core/composable_solver.py` — Adapter 驱动底座（`ComposableSolver`）[layer:core] [goal:composition]
-- `core/adapters/` — 策略内核（VNS/MOEA-D/SA/角色控制等）[layer:core] [goal:adapter]
+- `adapters/` — 策略内核（VNS/MOEA-D/SA/角色控制等）[layer:core] [goal:adapter]
 - `utils/suites/` — 权威组合（attach_* 一键装配）[layer:utils] [goal:suite]
 
 历史/实验目录已清理（降低维护成本）。如需追溯请查看 git 历史。
@@ -80,8 +80,8 @@ Core（推荐）
 
 ## 多策略并行协同（Multi-Strategy Cooperation / Core）
 
-- `core/adapters/multi_strategy.py` — 多策略主协调 adapter（phase/regions/seeds/共享事实）[layer:core] [goal:multi_strategy]
-- `core/adapters/role_adapters.py` — 角色/策略包装（用于给子 adapter 打标签与护栏）[layer:core] [goal:role_adapter]
+- `adapters/multi_strategy.py` — 多策略主协调 adapter（phase/regions/seeds/共享事实）[layer:core] [goal:multi_strategy]
+- `adapters/role_adapters.py` — 角色/策略包装（用于给子 adapter 打标签与护栏）[layer:core] [goal:role_adapter]
 - `utils/suites/multi_strategy.py` — 权威组合：`attach_multi_strategy_coop` [layer:utils] [goal:suite]
 
 ---

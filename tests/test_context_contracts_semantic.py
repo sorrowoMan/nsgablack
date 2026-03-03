@@ -3,8 +3,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from nsgablack.core.adapters.algorithm_adapter import AlgorithmAdapter
-from nsgablack.core.adapters.multi_strategy import MultiStrategyControllerAdapter, StrategySpec
+from nsgablack.adapters.algorithm_adapter import AlgorithmAdapter
+from nsgablack.adapters.multi_strategy import MultiStrategyControllerAdapter, StrategySpec
 from nsgablack.utils.context.context_contracts import collect_solver_contracts, get_component_contract
 from nsgablack.utils.context.context_keys import KEY_MUTATION_SIGMA, KEY_VNS_K
 

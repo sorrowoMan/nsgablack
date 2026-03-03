@@ -3,7 +3,7 @@ import numpy as np
 
 def test_simulated_annealing_adapter_runs_and_cools(sample_problem):
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import SAConfig, SimulatedAnnealingAdapter
+    from nsgablack.adapters import SAConfig, SimulatedAnnealingAdapter
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
 

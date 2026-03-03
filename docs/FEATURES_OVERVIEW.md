@@ -175,7 +175,7 @@
 ### Adapter（策略内核）
 
 - 典型接口：`setup(solver)` / `propose(solver, context)` / `update(...)`  
-- 多策略协同：`core/adapters/multi_strategy.py`（Strategy/Adapter 的编排框架）  
+- 多策略协同：`adapters/multi_strategy.py`（Strategy/Adapter 的编排框架）  
   - `StrategySpec(name, adapter, weight, enabled=True)`  
   - `MultiStrategyConfig(total_batch_size, adapt_weights, phase_schedule, ...)`
 

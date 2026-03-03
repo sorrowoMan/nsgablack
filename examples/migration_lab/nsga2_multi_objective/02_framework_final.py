@@ -25,7 +25,7 @@ _ensure_repo_importable(Path(__file__))
 
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.core.composable_solver import ComposableSolver
-from nsgablack.core.adapters import NSGA2Adapter, NSGA2Config
+from nsgablack.adapters import NSGA2Adapter, NSGA2Config
 from nsgablack.representation import RepresentationPipeline
 from nsgablack.representation.continuous import ClipRepair, GaussianMutation, UniformInitializer
 from nsgablack.utils.performance.fast_non_dominated_sort import FastNonDominatedSort

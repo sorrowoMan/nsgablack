@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional, Sequence, Tuple, List
 import numpy as np
 
 from .algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import KEY_BEST_X
+from ..utils.context.context_keys import KEY_BEST_X
 
 
 class TrustRegionBaseAdapter(AlgorithmAdapter):

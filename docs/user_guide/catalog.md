@@ -70,7 +70,7 @@ python -m nsgablack catalog reload
 key = "adapter.my_algo"
 title = "MyAlgoAdapter"
 kind = "adapter"
-import_path = "nsgablack.core.adapters.my_algo:MyAlgoAdapter"
+import_path = "nsgablack.adapters.my_algo:MyAlgoAdapter"
 tags = ["my_algo", "hybrid"]
 summary = "自定义策略内核。"
 companions = ["plugin.pareto_archive", "suite.benchmark_harness"]

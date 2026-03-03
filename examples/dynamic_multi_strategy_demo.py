@@ -12,7 +12,7 @@ import numpy as np
 try:
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import (
+    from nsgablack.adapters import (
         MultiStrategyControllerAdapter,
         MultiStrategyConfig,
         StrategySpec,
@@ -35,7 +35,7 @@ except ModuleNotFoundError:  # pragma: no cover - convenience for direct script 
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import (
+    from nsgablack.adapters import (
         MultiStrategyControllerAdapter,
         MultiStrategyConfig,
         StrategySpec,

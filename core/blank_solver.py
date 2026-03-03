@@ -8,7 +8,6 @@ enforcing any specific optimization loop.
 from __future__ import annotations
 
 import logging
-import time
 import random
 from typing import Any, Dict, Optional, Tuple
 
@@ -23,10 +22,29 @@ from .interfaces import (
     load_bias_module,
     load_representation_pipeline,
 )
-from ..utils.constraints.constraint_utils import evaluate_constraints_safe
+from .solver_helpers import (
+    apply_bias_module,
+    build_context_store_or_memory,
+    build_solver_context,
+    build_snapshot_store_or_memory,
+    build_snapshot_payload,
+    build_snapshot_refs,
+    collect_runtime_context_projection,
+    ensure_snapshot_readable,
+    evaluate_individual_with_plugins_and_bias,
+    evaluate_population_with_plugins_and_bias,
+    get_solver_context_view,
+    increment_evaluation_counter,
+    resolve_best_snapshot_fields,
+    run_solver_loop,
+    sample_random_candidate,
+    set_best_snapshot_fields,
+    set_generation_value,
+    set_pareto_snapshot_fields,
+    snapshot_meta,
+    strip_large_context_fields,
+)
 from ..utils.context.context_keys import (
-    KEY_BEST_OBJECTIVE,
-    KEY_BEST_X,
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_CONSTRAINT_VIOLATIONS_REF,
     KEY_DECISION_TRACE,
@@ -42,19 +60,15 @@ from ..utils.context.context_keys import (
     KEY_POPULATION,
     KEY_POPULATION_REF,
     KEY_SNAPSHOT_BACKEND,
-    KEY_SNAPSHOT_KEY,
     KEY_SNAPSHOT_META,
     KEY_SNAPSHOT_SCHEMA,
 )
-from ..utils.context.context_store import ContextStore, create_context_store
-from ..utils.context.snapshot_store import SnapshotStore, create_snapshot_store, make_snapshot_key
+from ..utils.context.context_store import ContextStore
+from ..utils.context.snapshot_store import SnapshotStore, make_snapshot_key
 from ..utils.engineering.error_policy import report_soft_error
 from ..utils.extension_contracts import (
-    ContractError,
     normalize_bias_output,
     normalize_candidate,
-    normalize_objectives,
-    normalize_violation,
     stack_population,
 )
 from ..plugins import PluginManager
@@ -154,48 +168,31 @@ class SolverBase:
         self._snapshot_generation = None
 
     def _build_context_store(self) -> ContextStore:
-        try:
-            return create_context_store(
-                backend=self.context_store_backend,
-                ttl_seconds=self.context_store_ttl_seconds,
-                redis_url=self.context_store_redis_url,
-                key_prefix=self.context_store_key_prefix,
-            )
-        except Exception as exc:
-            report_soft_error(
-                component="SolverBase",
-                event="build_context_store",
-                exc=exc,
-                logger=logger,
-                context_store=None,
-                strict=False,
-            )
-            return create_context_store(backend="memory", ttl_seconds=self.context_store_ttl_seconds)
+        return build_context_store_or_memory(
+            backend=self.context_store_backend,
+            ttl_seconds=self.context_store_ttl_seconds,
+            redis_url=self.context_store_redis_url,
+            key_prefix=self.context_store_key_prefix,
+            report_soft_error_fn=report_soft_error,
+            logger=logger,
+        )
 
     def _build_snapshot_store(self) -> SnapshotStore:
         base_dir = self.snapshot_store_dir or "runs/snapshots"
-        try:
-            return create_snapshot_store(
-                backend=self.snapshot_store_backend,
-                ttl_seconds=self.snapshot_store_ttl_seconds,
-                redis_url=self.snapshot_store_redis_url,
-                key_prefix=self.snapshot_store_key_prefix,
-                base_dir=base_dir,
-                serializer=self.snapshot_store_serializer,
-                hmac_env_var=self.snapshot_store_hmac_env_var,
-                unsafe_allow_unsigned=self.snapshot_store_unsafe_allow_unsigned,
-                max_payload_bytes=self.snapshot_store_max_payload_bytes,
-            )
-        except Exception as exc:
-            report_soft_error(
-                component="SolverBase",
-                event="build_snapshot_store",
-                exc=exc,
-                logger=logger,
-                context_store=self.context_store,
-                strict=False,
-            )
-            return create_snapshot_store(backend="memory", ttl_seconds=self.snapshot_store_ttl_seconds)
+        return build_snapshot_store_or_memory(
+            backend=self.snapshot_store_backend,
+            ttl_seconds=self.snapshot_store_ttl_seconds,
+            redis_url=self.snapshot_store_redis_url,
+            key_prefix=self.snapshot_store_key_prefix,
+            base_dir=base_dir,
+            serializer=self.snapshot_store_serializer,
+            hmac_env_var=self.snapshot_store_hmac_env_var,
+            unsafe_allow_unsigned=self.snapshot_store_unsafe_allow_unsigned,
+            max_payload_bytes=self.snapshot_store_max_payload_bytes,
+            context_store=self.context_store,
+            report_soft_error_fn=report_soft_error,
+            logger=logger,
+        )
 
     def set_context_store(self, store: ContextStore) -> None:
         self.context_store = store
@@ -375,71 +372,33 @@ class SolverBase:
         self.max_steps = int(max_steps)
 
     def set_generation(self, generation: int) -> int:
-        value = int(generation)
-        self.generation = value
-        return value
+        return set_generation_value(self, generation)
 
     def increment_evaluation_count(self, delta: int = 1) -> int:
-        try:
-            step = int(delta)
-        except Exception as exc:
-            report_soft_error(
-                component="SolverBase",
-                event="increment_evaluation_count_cast",
-                exc=exc,
-                logger=logger,
-                context_store=self.context_store,
-                strict=False,
-                level="debug",
-            )
-            step = 0
-        current = int(getattr(self, "evaluation_count", 0) or 0) + step
-        self.evaluation_count = current
-        return current
+        return increment_evaluation_counter(
+            self,
+            delta,
+            report_soft_error_fn=report_soft_error,
+            logger=logger,
+        )
 
     def set_best_snapshot(self, best_x: Any, best_objective: Any) -> None:
-        self.best_x = best_x
-        try:
-            self.best_objective = None if best_objective is None else float(best_objective)
-        except Exception as exc:
-            report_soft_error(
-                component="SolverBase",
-                event="set_best_snapshot_cast",
-                exc=exc,
-                logger=logger,
-                context_store=self.context_store,
-                strict=False,
-                level="debug",
-            )
-            self.best_objective = best_objective
+        set_best_snapshot_fields(
+            self,
+            best_x,
+            best_objective,
+            report_soft_error_fn=report_soft_error,
+            logger=logger,
+        )
 
     def set_pareto_snapshot(self, solutions: Any, objectives: Any) -> None:
-        try:
-            self.pareto_solutions = None if solutions is None else np.asarray(solutions)
-        except Exception as exc:
-            report_soft_error(
-                component="SolverBase",
-                event="set_pareto_snapshot_solutions_cast",
-                exc=exc,
-                logger=logger,
-                context_store=self.context_store,
-                strict=False,
-                level="debug",
-            )
-            self.pareto_solutions = solutions
-        try:
-            self.pareto_objectives = None if objectives is None else np.asarray(objectives)
-        except Exception as exc:
-            report_soft_error(
-                component="SolverBase",
-                event="set_pareto_snapshot_objectives_cast",
-                exc=exc,
-                logger=logger,
-                context_store=self.context_store,
-                strict=False,
-                level="debug",
-            )
-            self.pareto_objectives = objectives
+        set_pareto_snapshot_fields(
+            self,
+            solutions,
+            objectives,
+            report_soft_error_fn=report_soft_error,
+            logger=logger,
+        )
 
     def resolve_best_snapshot(self) -> Tuple[Optional[Any], Optional[float]]:
         return self._resolve_best_snapshot()
@@ -572,19 +531,14 @@ class SolverBase:
         pareto_objectives: Optional[np.ndarray] = None,
         complete: bool = True,
     ) -> Dict[str, Any]:
-        meta: Dict[str, Any] = {"complete": bool(complete)}
-        if population is not None:
-            meta["population_shape"] = list(np.asarray(population).shape)
-            meta["population_size"] = int(np.asarray(population).shape[0]) if np.asarray(population).ndim >= 1 else 0
-        if objectives is not None:
-            meta["objectives_shape"] = list(np.asarray(objectives).shape)
-        if violations is not None:
-            meta["violations_shape"] = list(np.asarray(violations).shape)
-        if pareto_solutions is not None:
-            meta["pareto_solutions_shape"] = list(np.asarray(pareto_solutions).shape)
-        if pareto_objectives is not None:
-            meta["pareto_objectives_shape"] = list(np.asarray(pareto_objectives).shape)
-        return meta
+        return snapshot_meta(
+            population,
+            objectives,
+            violations,
+            pareto_solutions=pareto_solutions,
+            pareto_objectives=pareto_objectives,
+            complete=complete,
+        )
 
     def _prepare_snapshot_payload(
         self,
@@ -597,46 +551,15 @@ class SolverBase:
         history: Optional[Any] = None,
         decision_trace: Optional[Any] = None,
     ) -> Dict[str, Any]:
-        data: Dict[str, Any] = {}
-
-        pop_arr = None
-        if population is not None:
-            pop_arr = np.asarray(population, dtype=float)
-            if pop_arr.ndim == 1:
-                pop_arr = pop_arr.reshape(1, -1) if pop_arr.size > 0 else pop_arr.reshape(0, 0)
-            data[KEY_POPULATION] = pop_arr
-
-        obj_arr = None
-        if objectives is not None:
-            obj_arr = np.asarray(objectives, dtype=float)
-            if obj_arr.ndim == 1:
-                obj_arr = obj_arr.reshape(-1, 1) if obj_arr.size > 0 else obj_arr.reshape(0, 0)
-            data[KEY_OBJECTIVES] = obj_arr
-        elif pop_arr is not None:
-            data[KEY_OBJECTIVES] = np.zeros((int(pop_arr.shape[0]), 0), dtype=float)
-
-        vio_arr = None
-        if violations is not None:
-            vio_arr = np.asarray(violations, dtype=float).reshape(-1)
-            data[KEY_CONSTRAINT_VIOLATIONS] = vio_arr
-        elif pop_arr is not None:
-            data[KEY_CONSTRAINT_VIOLATIONS] = np.zeros((int(pop_arr.shape[0]),), dtype=float)
-
-        if pareto_solutions is not None:
-            try:
-                data[KEY_PARETO_SOLUTIONS] = np.asarray(pareto_solutions, dtype=float)
-            except Exception:
-                data[KEY_PARETO_SOLUTIONS] = pareto_solutions
-        if pareto_objectives is not None:
-            try:
-                data[KEY_PARETO_OBJECTIVES] = np.asarray(pareto_objectives, dtype=float)
-            except Exception:
-                data[KEY_PARETO_OBJECTIVES] = pareto_objectives
-        if history is not None:
-            data[KEY_HISTORY] = history
-        if decision_trace is not None:
-            data[KEY_DECISION_TRACE] = decision_trace
-        return data
+        return build_snapshot_payload(
+            population,
+            objectives,
+            violations,
+            pareto_solutions=pareto_solutions,
+            pareto_objectives=pareto_objectives,
+            history=history,
+            decision_trace=decision_trace,
+        )
 
     def _persist_snapshot(
         self,
@@ -752,17 +675,7 @@ class SolverBase:
         return dict(record.data)
 
     def _strip_large_context(self, ctx: Dict[str, Any]) -> None:
-        for key in (
-            KEY_POPULATION,
-            KEY_OBJECTIVES,
-            KEY_CONSTRAINT_VIOLATIONS,
-            KEY_PARETO_SOLUTIONS,
-            KEY_PARETO_OBJECTIVES,
-            KEY_HISTORY,
-            KEY_DECISION_TRACE,
-        ):
-            if key in ctx:
-                ctx.pop(key, None)
+        strip_large_context_fields(ctx)
 
     def _purge_large_context_store(self) -> None:
         store = getattr(self, "context_store", None)
@@ -815,21 +728,18 @@ class SolverBase:
                 handle = self._latest_snapshot_handle
         if handle is None:
             return
-        ctx[KEY_SNAPSHOT_KEY] = handle.key
-        ctx[KEY_SNAPSHOT_BACKEND] = handle.backend
-        ctx[KEY_SNAPSHOT_SCHEMA] = handle.schema
-        ctx[KEY_SNAPSHOT_META] = dict(handle.meta or {})
-        ctx[KEY_POPULATION_REF] = handle.key
-        ctx[KEY_OBJECTIVES_REF] = handle.key
-        ctx[KEY_CONSTRAINT_VIOLATIONS_REF] = handle.key
-        if getattr(self, "pareto_solutions", None) is not None:
-            ctx[KEY_PARETO_SOLUTIONS_REF] = handle.key
-        if getattr(self, "pareto_objectives", None) is not None:
-            ctx[KEY_PARETO_OBJECTIVES_REF] = handle.key
-        if getattr(self, "history", None) is not None:
-            ctx[KEY_HISTORY_REF] = handle.key
-        if getattr(self, "decision_trace", None) is not None:
-            ctx[KEY_DECISION_TRACE_REF] = handle.key
+        ctx.update(
+            build_snapshot_refs(
+                key=str(handle.key),
+                backend=str(handle.backend),
+                schema=str(handle.schema),
+                meta=dict(handle.meta or {}),
+                has_pareto_solutions=getattr(self, "pareto_solutions", None) is not None,
+                has_pareto_objectives=getattr(self, "pareto_objectives", None) is not None,
+                has_history=getattr(self, "history", None) is not None,
+                has_decision_trace=getattr(self, "decision_trace", None) is not None,
+            )
+        )
 
     def set_random_seed(self, seed: Optional[int]) -> None:
         self.random_seed = None if seed is None else int(seed)
@@ -893,308 +803,46 @@ class SolverBase:
         violation: Optional[float] = None,
         individual: Optional[np.ndarray] = None,
     ) -> Dict[str, Any]:
-        ctx = {
-            "problem": self.problem,
-            "generation": self.generation,
-            "constraints": (constraints.tolist() if constraints is not None else []),
-            "constraint_violation": float(violation or 0.0),
-            "individual_id": individual_id,
-        }
-        try:
-            persisted = self.context_store.snapshot()
-            if persisted:
-                merged = dict(persisted)
-                merged.update(ctx)
-                ctx = merged
-        except Exception as exc:
-            report_soft_error(
-                component="SolverBase",
-                event="context_store_snapshot",
-                exc=exc,
-                logger=logger,
-                context_store=self.context_store,
-                strict=False,
-                level="debug",
-            )
-        self._strip_large_context(ctx)
-        best_x, best_obj = self._resolve_best_snapshot()
-        ctx[KEY_BEST_X] = best_x
-        ctx[KEY_BEST_OBJECTIVE] = best_obj
-        if individual is not None:
-            ctx["individual"] = individual
-        dynamic = getattr(self, "dynamic_signals", None)
-        if dynamic is not None:
-            ctx["dynamic"] = dynamic
-        phase_id = getattr(self, "dynamic_phase_id", None)
-        if phase_id is not None:
-            ctx["phase_id"] = phase_id
-        # allow plugins to inject extra context fields
-        if getattr(self, "plugin_manager", None) is not None:
-            try:
-                ctx = self.plugin_manager.dispatch("on_context_build", ctx) or ctx
-            except Exception as exc:
-                report_soft_error(
-                    component="SolverBase",
-                    event="plugin_dispatch_on_context_build",
-                    exc=exc,
-                    logger=logger,
-                    context_store=self.context_store,
-                    strict=bool(getattr(self.plugin_manager, "strict", False)),
-                )
-        self._strip_large_context(ctx)
-        self._attach_snapshot_refs(ctx, allow_write=True)
-        try:
-            self.context_store.update(ctx, ttl_seconds=self.context_store_ttl_seconds)
-        except Exception as exc:
-            report_soft_error(
-                component="SolverBase",
-                event="context_store_update_build_context",
-                exc=exc,
-                logger=logger,
-                context_store=self.context_store,
-                strict=False,
-                level="debug",
-            )
-        self._purge_large_context_store()
-        return ctx
+        return build_solver_context(
+            self,
+            individual_id=individual_id,
+            constraints=constraints,
+            violation=violation,
+            individual=individual,
+            report_soft_error_fn=report_soft_error,
+            logger=logger,
+        )
 
     def get_context(self) -> Dict[str, Any]:
         """Return a snapshot context for visualization/monitoring."""
-        ctx = self.build_context()
-        ctx["evaluation_count"] = int(getattr(self, "evaluation_count", 0))
-        for key, value in self._collect_runtime_context_projection().items():
-            if value is None:
-                continue
-            ctx[key] = value
-        best_x, best_obj = self._resolve_best_snapshot()
-        ctx[KEY_BEST_X] = best_x
-        ctx[KEY_BEST_OBJECTIVE] = best_obj
-        self._strip_large_context(ctx)
-        self._attach_snapshot_refs(ctx, allow_write=True)
-        if self.snapshot_strict:
-            self._ensure_snapshot_readable(ctx)
-        try:
-            self.context_store.update(ctx, ttl_seconds=self.context_store_ttl_seconds)
-        except Exception as exc:
-            report_soft_error(
-                component="SolverBase",
-                event="context_store_update_get_context",
-                exc=exc,
-                logger=logger,
-                context_store=self.context_store,
-                strict=False,
-                level="debug",
-            )
-        self._purge_large_context_store()
-        return ctx
+        return get_solver_context_view(
+            self,
+            report_soft_error_fn=report_soft_error,
+            logger=logger,
+        )
 
     def _ensure_snapshot_readable(self, ctx: Dict[str, Any]) -> None:
-        key = ctx.get(KEY_SNAPSHOT_KEY)
-        if key is None or str(key).strip() == "":
-            has_state = any(
-                getattr(self, attr, None) is not None
-                for attr in ("population", "objectives", "constraint_violations")
-            )
-            if has_state:
-                raise RuntimeError("snapshot_key missing while solver has population/objectives/violations")
-            return
-        payload = self.read_snapshot(str(key))
-        if payload is None:
-            raise RuntimeError("snapshot_key present but snapshot_store returned None")
+        ensure_snapshot_readable(self, ctx)
 
     def _resolve_best_snapshot(self) -> Tuple[Optional[Any], Optional[float]]:
-        best_x = getattr(self, "best_x", None)
-        best_obj = getattr(self, "best_objective", None)
-
-        if best_obj is None:
-            best_f = getattr(self, "best_f", None)
-            if best_f is not None:
-                try:
-                    best_obj = float(best_f)
-                except Exception:
-                    best_obj = None
-
-        if best_obj is None and self.objectives is not None:
-            try:
-                obj = np.asarray(self.objectives, dtype=float)
-                if obj.size > 0:
-                    if obj.ndim == 1:
-                        best_obj = float(np.min(obj))
-                    else:
-                        scores = np.sum(obj, axis=1)
-                        if self.constraint_violations is not None:
-                            vio = np.asarray(self.constraint_violations, dtype=float).reshape(-1)
-                            if vio.shape[0] == scores.shape[0]:
-                                scores = scores + vio * 1e6
-                        best_idx = int(np.argmin(scores))
-                        best_obj = float(scores[best_idx])
-                        if best_x is None and self.population is not None:
-                            pop = np.asarray(self.population)
-                            if pop.ndim >= 2 and best_idx < pop.shape[0]:
-                                best_x = pop[best_idx]
-            except Exception as exc:
-                report_soft_error(
-                    component="SolverBase",
-                    event="resolve_best_snapshot",
-                    exc=exc,
-                    logger=logger,
-                    context_store=self.context_store,
-                    strict=False,
-                    level="debug",
-                )
-
-        return best_x, best_obj
+        return resolve_best_snapshot_fields(
+            self,
+            report_soft_error_fn=report_soft_error,
+            logger=logger,
+        )
 
     def _collect_runtime_context_projection(self) -> Dict[str, Any]:
-        out: Dict[str, Any] = {}
-        projection_writers: Dict[str, str] = {}
-
-        adapter = getattr(self, "adapter", None)
-        if adapter is not None:
-            projector = getattr(adapter, "get_runtime_context_projection", None)
-            source_getter = getattr(adapter, "get_runtime_context_projection_sources", None)
-            if callable(projector):
-                try:
-                    proj = projector(self)
-                except Exception as exc:
-                    report_soft_error(
-                        component="SolverBase",
-                        event="adapter_runtime_projection",
-                        exc=exc,
-                        logger=logger,
-                        context_store=self.context_store,
-                        strict=False,
-                        level="debug",
-                    )
-                    proj = None
-                try:
-                    proj_sources = source_getter(self) if callable(source_getter) else {}
-                except Exception as exc:
-                    report_soft_error(
-                        component="SolverBase",
-                        event="adapter_runtime_projection_sources",
-                        exc=exc,
-                        logger=logger,
-                        context_store=self.context_store,
-                        strict=False,
-                        level="debug",
-                    )
-                    proj_sources = {}
-                if not isinstance(proj_sources, dict):
-                    proj_sources = {}
-                if isinstance(proj, dict):
-                    for key, value in proj.items():
-                        if key is None or value is None:
-                            continue
-                        key_str = str(key)
-                        out[key_str] = value
-                        source = proj_sources.get(key_str)
-                        if source:
-                            projection_writers[key_str] = str(source)
-                        else:
-                            projection_writers[key_str] = f"adapter.{adapter.__class__.__name__}"
-
-        setattr(self, "_runtime_projection_writers", projection_writers)
-        return out
+        return collect_runtime_context_projection(
+            self,
+            report_soft_error_fn=report_soft_error,
+            logger=logger,
+        )
 
     def evaluate_individual(self, x: np.ndarray, individual_id: Optional[int] = None) -> Tuple[np.ndarray, float]:
-        overridden = self.plugin_manager.trigger("evaluate_individual", self, x, individual_id)
-        if overridden is not None:
-            try:
-                obj, vio = overridden
-            except Exception as exc:  # pragma: no cover
-                raise ContractError("evaluate_individual plugin return must be (objectives, violation)") from exc
-            obj = normalize_objectives(obj, num_objectives=self.num_objectives, name="plugin.evaluate_individual.objectives")
-            vio = normalize_violation(vio, name="plugin.evaluate_individual.violation")
-            self.evaluation_count += 1
-            return obj, vio
-
-        x = normalize_candidate(x, dimension=self.dimension, name="evaluate_individual.x")
-        val = self.problem.evaluate(x)
-        obj = normalize_objectives(val, num_objectives=self.num_objectives, name="problem.evaluate")
-        cons_arr, violation = evaluate_constraints_safe(self.problem, x)
-        try:
-            violation = normalize_violation(violation, name="constraint_violation")
-        except ContractError:
-            if not np.isinf(float(violation)):
-                raise
-            violation = float(violation)
-        context = self.build_context(
-            individual_id=individual_id,
-            constraints=cons_arr,
-            violation=violation,
-            individual=x,
-        )
-
-        if self.enable_bias and self.bias_module is not None:
-            obj = self._apply_bias(obj, x, individual_id, context)
-            if self.ignore_constraint_violation_when_bias:
-                violation = 0.0
-
-        self.evaluation_count += 1
-        return obj, violation
+        return evaluate_individual_with_plugins_and_bias(self, x, individual_id)
 
     def evaluate_population(self, population: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        overridden = self.plugin_manager.trigger("evaluate_population", self, population)
-        if overridden is not None:
-            try:
-                objectives, violations = overridden
-            except Exception as exc:  # pragma: no cover
-                raise ContractError("evaluate_population plugin return must be (objectives, violations)") from exc
-            objectives = np.asarray(objectives, dtype=float)
-            violations = np.asarray(violations, dtype=float).ravel()
-            if objectives.ndim != 2 or objectives.shape[1] != self.num_objectives:
-                raise ContractError(
-                    f"plugin.evaluate_population.objectives shape mismatch: got {tuple(objectives.shape)} expected (N, {self.num_objectives})"
-                )
-            if violations.shape[0] != objectives.shape[0]:
-                raise ContractError(
-                    f"plugin.evaluate_population.violations length mismatch: got {int(violations.shape[0])} expected {int(objectives.shape[0])}"
-                )
-            return objectives, violations
-
-        if population is None:
-            raise ContractError("evaluate_population.population cannot be empty")
-        population = np.asarray(population)
-        if population.ndim == 1:
-            population = population.reshape(1, -1)
-        if population.ndim != 2 or population.shape[1] != self.dimension:
-            raise ContractError(
-                f"evaluate_population.population shape mismatch: got {tuple(population.shape)} expected (N, {self.dimension})"
-            )
-        pop_size = int(population.shape[0])
-        self._persist_snapshot(
-            population=population,
-            objectives=None,
-            violations=None,
-            include_pareto=True,
-            include_history=True,
-            include_decision_trace=True,
-            complete=False,
-        )
-        objectives = np.zeros((pop_size, self.num_objectives))
-        violations = np.zeros(pop_size, dtype=float)
-
-        for i in range(pop_size):
-            obj, vio = self.evaluate_individual(population[i], individual_id=i)
-            if obj.size == self.num_objectives:
-                objectives[i] = obj
-            elif obj.size > self.num_objectives:
-                objectives[i] = obj[: self.num_objectives]
-            else:
-                objectives[i, : obj.size] = obj
-            violations[i] = vio
-
-        self._persist_snapshot(
-            population=population,
-            objectives=objectives,
-            violations=violations,
-            include_pareto=True,
-            include_history=True,
-            include_decision_trace=True,
-            complete=True,
-        )
-        return objectives, violations
+        return evaluate_population_with_plugins_and_bias(self, population)
 
     def _apply_bias(
         self,
@@ -1203,51 +851,16 @@ class SolverBase:
         individual_id: Optional[int],
         context: Dict[str, Any],
     ) -> np.ndarray:
-        bias_module = self.bias_module
-        if bias_module is None:
-            return obj
-        setter = getattr(bias_module, "set_context_store", None)
-        if callable(setter):
-            try:
-                setter(self.context_store)
-            except Exception as exc:
-                report_soft_error(
-                    component="SolverBase",
-                    event="bias_set_context_store",
-                    exc=exc,
-                    logger=logger,
-                    context_store=self.context_store,
-                    strict=False,
-                    level="debug",
-                )
-        snapshot_setter = getattr(bias_module, "set_snapshot_store", None)
-        if callable(snapshot_setter):
-            try:
-                snapshot_setter(self.snapshot_store)
-            except Exception as exc:
-                report_soft_error(
-                    component="SolverBase",
-                    event="bias_set_snapshot_store",
-                    exc=exc,
-                    logger=logger,
-                    context_store=self.context_store,
-                    strict=False,
-                    level="debug",
-                )
-        if hasattr(bias_module, "compute_bias"):
-            if obj.size == 1:
-                biased = bias_module.compute_bias(x, float(obj[0]), individual_id, context=context)
-                return np.array([normalize_bias_output(biased, name="bias.compute_bias")], dtype=float)
-            out = []
-            for i in range(obj.size):
-                out.append(
-                    normalize_bias_output(
-                        bias_module.compute_bias(x, float(obj[i]), individual_id, context=context),
-                        name="bias.compute_bias",
-                    )
-                )
-            return np.asarray(out, dtype=float)
-        return obj
+        return apply_bias_module(
+            self,
+            obj,
+            x,
+            individual_id,
+            context,
+            report_soft_error_fn=report_soft_error,
+            logger=logger,
+            normalize_bias_output_fn=normalize_bias_output,
+        )
 
     # ------------------------------------------------------------------
     # Minimal runtime loop (override step() for custom logic)
@@ -1265,68 +878,15 @@ class SolverBase:
         return None
 
     def run(self, max_steps: Optional[int] = None) -> Dict[str, Any]:
-        steps = int(max_steps if max_steps is not None else self.max_steps)
-        self.running = True
-        self.stop_requested = False
-        self.start_time = time.time()
-
-        self.plugin_manager.on_solver_init(self)
-        self.setup()
-
-        resume_loaded = bool(getattr(self, "_resume_loaded", False))
-        if resume_loaded:
-            start_step = int(getattr(self, "_resume_cursor", getattr(self, "generation", 0)))
-            start_step = max(0, start_step)
-            try:
-                self.evaluation_count = int(getattr(self, "evaluation_count", 0))
-            except Exception:
-                self.evaluation_count = 0
-        else:
-            start_step = 0
-            self.generation = 0
-            self.evaluation_count = 0
-        setattr(self, "_resume_loaded", False)
-        setattr(self, "_resume_cursor", 0)
-
-        executed_steps = 0
-        for step_idx in range(start_step, steps):
-            if self.stop_requested:
-                break
-            self.generation = step_idx
-            self.plugin_manager.on_generation_start(self.generation)
-            # Keep on_step semantics consistent even when subclasses override step().
-            self.plugin_manager.on_step(self, self.generation)
-            self.step()
-            self.plugin_manager.on_generation_end(self.generation)
-            executed_steps += 1
-
-        self.teardown()
-        elapsed = time.time() - self.start_time
-        if executed_steps > 0:
-            total_steps = int(self.generation + 1)
-        else:
-            total_steps = int(start_step)
-        result = {
-            "status": "stopped" if self.stop_requested else "completed",
-            "steps": total_steps,
-            "steps_executed": int(executed_steps),
-            "resume_from": int(start_step) if resume_loaded else 0,
-            "elapsed_sec": elapsed,
-        }
-        self.plugin_manager.on_solver_finish(result)
-        self.running = False
-        return result
+        return run_solver_loop(self, max_steps=max_steps)
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
     def _random_candidate(self) -> np.ndarray:
-        if isinstance(self.var_bounds, dict):
-            var_names = list(getattr(self.problem, "variables", self.var_bounds.keys()))
-            lows = np.array([self.var_bounds[n][0] for n in var_names], dtype=float)
-            highs = np.array([self.var_bounds[n][1] for n in var_names], dtype=float)
-        else:
-            bounds = np.asarray(self.var_bounds, dtype=float)
-            lows = bounds[:, 0]
-            highs = bounds[:, 1]
-        return self._rng.uniform(lows, highs, size=self.dimension)
+        return sample_random_candidate(
+            problem=self.problem,
+            var_bounds=self.var_bounds,
+            dimension=self.dimension,
+            rng=self._rng,
+        )

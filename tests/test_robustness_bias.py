@@ -4,7 +4,7 @@ import numpy as np
 def test_robustness_bias_penalizes_high_mc_std():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import AlgorithmAdapter
+    from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.bias import BiasModule, RobustnessBias
     from nsgablack.plugins import MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig
 
@@ -82,7 +82,7 @@ def test_robustness_bias_is_noop_without_mc_stats():
 def test_suite_attach_monte_carlo_robustness_runs():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import AlgorithmAdapter
+    from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.utils.suites import attach_monte_carlo_robustness
 
     class NoisySphere(BlackBoxProblem):

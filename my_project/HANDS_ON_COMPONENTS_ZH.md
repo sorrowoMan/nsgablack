@@ -204,7 +204,7 @@ class MyPlugin(Plugin):
 from __future__ import annotations
 from typing import Any, Dict, Sequence
 import numpy as np
-from nsgablack.core.adapters.algorithm_adapter import AlgorithmAdapter
+from nsgablack.adapters.algorithm_adapter import AlgorithmAdapter
 
 
 class MyAdapter(AlgorithmAdapter):

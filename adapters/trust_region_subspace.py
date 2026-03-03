@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 
 from .trust_region_base import TrustRegionBaseAdapter
-from ...utils.context.context_keys import KEY_SUBSPACE_BASIS
+from ..utils.context.context_keys import KEY_SUBSPACE_BASIS
 
 
 @dataclass

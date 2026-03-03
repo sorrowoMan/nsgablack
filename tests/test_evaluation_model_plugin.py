@@ -4,7 +4,7 @@ import numpy as np
 
 
 def test_evaluation_model_plugin_outer_and_inner():
-    from nsgablack.core.adapters import AlgorithmAdapter
+    from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.plugins import (

@@ -5,7 +5,7 @@ import numpy as np
 try:
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import TrustRegionNonSmoothAdapter, TrustRegionNonSmoothConfig
+    from nsgablack.adapters import TrustRegionNonSmoothAdapter, TrustRegionNonSmoothConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
     from nsgablack.utils.suites import attach_benchmark_harness
@@ -16,7 +16,7 @@ except ModuleNotFoundError:  # pragma: no cover
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import TrustRegionNonSmoothAdapter, TrustRegionNonSmoothConfig
+    from nsgablack.adapters import TrustRegionNonSmoothAdapter, TrustRegionNonSmoothConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
     from nsgablack.utils.suites import attach_benchmark_harness

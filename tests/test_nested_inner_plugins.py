@@ -4,7 +4,7 @@ import numpy as np
 def test_inner_solver_and_bridge_plugins_write_layer_context():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import AlgorithmAdapter
+    from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.plugins import BridgeRule, ContractBridgePlugin, InnerSolverConfig, InnerSolverPlugin
 
     class OuterProblem(BlackBoxProblem):
@@ -53,7 +53,7 @@ def test_inner_solver_and_bridge_plugins_write_layer_context():
 def test_inner_timeout_budget_blocks_calls():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import AlgorithmAdapter
+    from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.plugins import (
         InnerSolverConfig,
         InnerSolverPlugin,

@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional, Sequence, List
 import numpy as np
 
 from .algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import KEY_BEST_X, KEY_MAS_MODEL
+from ..utils.context.context_keys import KEY_BEST_X, KEY_MAS_MODEL
 
 
 @dataclass

@@ -4,7 +4,7 @@ from pathlib import Path
 
 def test_module_report_writes_reports_and_injects_artifacts(sample_problem, sample_bias, tmp_path: Path):
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import SimulatedAnnealingAdapter, SAConfig
+    from nsgablack.adapters import SimulatedAnnealingAdapter, SAConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
     from nsgablack.utils.suites import attach_benchmark_harness, attach_module_report

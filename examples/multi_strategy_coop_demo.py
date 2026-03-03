@@ -13,7 +13,7 @@ import numpy as np
 try:
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import (
+    from nsgablack.adapters import (
         StrategySpec,
         VNSAdapter,
         VNSConfig,
@@ -30,7 +30,7 @@ except ModuleNotFoundError:  # pragma: no cover
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import (
+    from nsgablack.adapters import (
         StrategySpec,
         VNSAdapter,
         VNSConfig,

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from nsgablack.core.adapters import AlgorithmAdapter
-from nsgablack.core.adapters.multi_strategy import (
+from nsgablack.adapters import AlgorithmAdapter
+from nsgablack.adapters.multi_strategy import (
     MultiStrategyConfig,
     MultiStrategyControllerAdapter,
     StrategySpec,

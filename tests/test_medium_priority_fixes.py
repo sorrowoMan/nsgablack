@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from nsgablack.core.adapters.moead import MOEADAdapter, MOEADConfig
-from nsgablack.core.adapters.vns import VNSAdapter, VNSConfig
+from nsgablack.adapters.moead import MOEADAdapter, MOEADConfig
+from nsgablack.adapters.vns import VNSAdapter, VNSConfig
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.plugins.models.mas_model import MASModelConfig, MASModelPlugin

@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 from .nsga2 import NSGA2Adapter, NSGA2Config
-from ...utils.context.context_keys import KEY_MO_WEIGHTS
+from ..utils.context.context_keys import KEY_MO_WEIGHTS
 
 
 @dataclass
@@ -53,7 +53,7 @@ class NSGA3Adapter(NSGA2Adapter):
         return np.asarray(keep, dtype=int)
 
     def _sort_fronts(self, objectives: np.ndarray, violations: np.ndarray):
-        from ...utils.performance.fast_non_dominated_sort import FastNonDominatedSort
+        from ..utils.performance.fast_non_dominated_sort import FastNonDominatedSort
 
         return FastNonDominatedSort.sort(objectives, violations)
 

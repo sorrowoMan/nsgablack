@@ -52,7 +52,7 @@ Use this as the definitive map for import paths and stable entrypoints.
 
 ## 5) Adapter system (ComposableSolver)
 
-- `core/adapters/__init__.py`
+- `adapters/__init__.py`
   - `AlgorithmAdapter`, `CompositeAdapter`
   - `RoleAdapter`, `MultiRoleControllerAdapter`
   - `VNSAdapter`, `VNSConfig`
@@ -65,9 +65,9 @@ Use this as the definitive map for import paths and stable entrypoints.
   - `TrustRegionMODFOAdapter`, `TrustRegionMODFOConfig`
   - `TrustRegionSubspaceAdapter`, `TrustRegionSubspaceConfig`
   - `TrustRegionNonSmoothAdapter`, `TrustRegionNonSmoothConfig`
-  - `TrustRegionBaseAdapter` (shared trust-region base in `core/adapters/trust_region_base.py`)
-  - `SingleTrajectoryAdaptiveAdapter` (in `core/adapters/single_trajectory_adaptive.py`)
-  - `AsyncEventDrivenAdapter` (in `core/adapters/async_event_driven.py`)
+  - `TrustRegionBaseAdapter` (shared trust-region base in `adapters/trust_region_base.py`)
+  - `SingleTrajectoryAdaptiveAdapter` (in `adapters/single_trajectory_adaptive.py`)
+  - `AsyncEventDrivenAdapter` (in `adapters/async_event_driven.py`)
   - `MASAdapter`, `MASConfig`
 
 ## 6) Plugins (capabilities)
