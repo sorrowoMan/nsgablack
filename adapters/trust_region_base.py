@@ -4,6 +4,7 @@ Shared base for trust-region adapters.
 
 from __future__ import annotations
 
+from abc import abstractmethod
 from typing import Any, Dict, Optional, Sequence, Tuple, List
 
 import numpy as np
@@ -20,6 +21,13 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
     - candidate propose loop
     - state roundtrip
     """
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Shared trust-region base class; concrete adapters define sampling and scoring."
+    state_recovery_level = "L1"
+    state_recovery_notes = "Restores center/radius/best score and subclass extra state."
 
     def __init__(
         self,
@@ -180,9 +188,11 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
         _ = state
 
     # Required in subclasses
+    @abstractmethod
     def _sample_delta(self, solver: Any, context: Dict[str, Any]) -> np.ndarray:
         raise NotImplementedError
 
+    @abstractmethod
     def _score(
         self,
         solver: Any,

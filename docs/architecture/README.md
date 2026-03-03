@@ -1,5 +1,7 @@
 # Architecture Overview
 
+补充文档：`ADAPTER_CONTRACT_CARDS.md`（全量 adapter 契约卡与恢复等级）。
+
 这份文档只回答一件事：  
 **现在这套框架里，谁做什么，谁通过谁做什么。**
 

@@ -106,7 +106,8 @@ _CONTRACT_DYNAMIC_FIELDS = {
 _CORE_CONTRACT_KEYS = {"context_requires", "context_provides", "context_mutates"}
 _USAGE_KEYS = {"use_when", "minimal_wiring", "required_companions", "config_keys", "example_entry"}
 _CONTEXT_ENTRY_KEYS = {"context_requires", "context_provides", "context_mutates", "context_cache", "context_notes"}
-_CONTRACT_CHECK_DIRS = ("pipeline", "bias", "adapter", "plugins")
+_CONTRACT_CHECK_DIRS = ("pipeline", "representation", "bias", "adapter", "adapters", "plugins")
+_STATE_RECOVERY_LEVELS = {"L0", "L1", "L2"}
 _COMPONENT_NAME_SUFFIXES = (
     "Adapter",
     "Plugin",
@@ -1663,6 +1664,11 @@ def _base_name(node: ast.expr) -> str:
 def _is_component_class(class_node: ast.ClassDef) -> bool:
     if class_node.name.startswith("_"):
         return False
+    if class_node.name.endswith(("Config", "Spec")):
+        return False
+    for base in class_node.bases:
+        if _base_name(base) == "Protocol":
+            return False
     if class_node.name.endswith(_COMPONENT_NAME_SUFFIXES):
         return True
     for base in class_node.bases:
@@ -1691,6 +1697,15 @@ def _is_not_implemented_raise(node: ast.AST) -> bool:
     return False
 
 
+def _has_abstractmethod_decorator(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    for deco in node.decorator_list:
+        if isinstance(deco, ast.Name) and deco.id == "abstractmethod":
+            return True
+        if isinstance(deco, ast.Attribute) and deco.attr == "abstractmethod":
+            return True
+    return False
+
+
 def _check_class_template_not_implemented(
     class_node: ast.ClassDef,
     path: Path,
@@ -1701,6 +1716,8 @@ def _check_class_template_not_implemented(
     hits: List[str] = []
     for stmt in class_node.body:
         if not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if _has_abstractmethod_decorator(stmt):
             continue
         for n in ast.walk(stmt):
             if _is_not_implemented_raise(n):
@@ -1806,6 +1823,79 @@ def _check_class_contract_impl_alignment(
         )
 
 
+def _class_defines_method(class_node: ast.ClassDef, name: str) -> bool:
+    for node in class_node.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+            return True
+    return False
+
+
+def _check_class_state_recovery_declaration(
+    class_node: ast.ClassDef,
+    path: Path,
+    diags: List[DoctorDiagnostic],
+    *,
+    strict: bool,
+) -> None:
+    has_get_state = _class_defines_method(class_node, "get_state")
+    has_set_state = _class_defines_method(class_node, "set_state")
+    if not (has_get_state or has_set_state):
+        return
+
+    if has_get_state != has_set_state:
+        _add(
+            diags,
+            "error" if strict else "warn",
+            "state-roundtrip-asymmetric",
+            (
+                f"Class {class_node.name} should define symmetric get_state()/set_state() "
+                "for checkpoint roundtrip."
+            ),
+            path,
+        )
+
+    values = _iter_class_attr_values(class_node, "state_recovery_level")
+    if not values:
+        _add(
+            diags,
+            "error" if strict else "warn",
+            "state-recovery-level-missing",
+            (
+                f"Class {class_node.name} defines state roundtrip but does not declare "
+                "state_recovery_level (L0/L1/L2)."
+            ),
+            path,
+        )
+        return
+
+    for value_node in values:
+        literal = _literal_str_value(value_node)
+        if literal is None:
+            _add(
+                diags,
+                "error" if strict else "warn",
+                "state-recovery-level-invalid",
+                (
+                    f"Class {class_node.name} state_recovery_level must be a string literal "
+                    "(L0/L1/L2)."
+                ),
+                path,
+            )
+            continue
+        level = literal.strip().upper()
+        if level not in _STATE_RECOVERY_LEVELS:
+            _add(
+                diags,
+                "error" if strict else "warn",
+                "state-recovery-level-invalid",
+                (
+                    f"Class {class_node.name} has invalid state_recovery_level='{literal}' "
+                    f"(allowed: {', '.join(sorted(_STATE_RECOVERY_LEVELS))})."
+                ),
+                path,
+            )
+
+
 def _check_contract_source(root: Path, diags: List[DoctorDiagnostic], *, strict: bool) -> None:
     for folder_name in _CONTRACT_CHECK_DIRS:
         folder = root / folder_name
@@ -1820,6 +1910,7 @@ def _check_contract_source(root: Path, diags: List[DoctorDiagnostic], *, strict:
                 _add(diags, "warn", "source-parse-failed", f"Cannot parse source file: {exc}", py_file)
                 continue
             _check_forbidden_solver_mirror_writes(tree, py_file, diags, strict=bool(strict))
+            _check_runtime_private_calls(tree, py_file, diags, strict=bool(strict))
             _check_runtime_bypass_writes(tree, py_file, diags, strict=bool(strict))
             if strict and folder_name == "plugins" and py_file.name != "base.py":
                 _check_plugin_solver_state_access(tree, py_file, diags)
@@ -1835,6 +1926,7 @@ def _check_contract_source(root: Path, diags: List[DoctorDiagnostic], *, strict:
                 _check_class_template_not_implemented(class_node, py_file, diags, strict=bool(strict))
                 _check_class_contract_key_known(class_node, py_file, diags)
                 _check_class_contract_impl_alignment(class_node, py_file, diags)
+                _check_class_state_recovery_declaration(class_node, py_file, diags, strict=bool(strict))
                 if not _class_has_contract(class_node):
                     _add(
                         diags,
@@ -1914,7 +2006,7 @@ def _check_forbidden_solver_mirror_writes(
         diags,
         "error" if strict else "warn",
         "solver-mirror-write",
-        "Forbidden solver mirror writes found (use runtime context projection instead): "
+        "Forbidden solver mirror writes found (use solver control-plane projection instead): "
         + ", ".join(uniq[:8])
         + (" ..." if len(uniq) > 8 else ""),
         path,
@@ -1945,6 +2037,57 @@ def _extract_runtime_state_field_from_target(target: ast.AST) -> str | None:
             if attr in _RUNTIME_STATE_FIELDS:
                 return attr
     return None
+
+
+def _extract_runtime_private_call_name(call_node: ast.Call) -> str | None:
+    func = call_node.func
+    if not isinstance(func, ast.Attribute):
+        return None
+    method = str(func.attr)
+    if not method.startswith("_"):
+        return None
+    owner = func.value
+    if isinstance(owner, ast.Attribute) and owner.attr == "runtime" and _is_solver_ref(owner.value):
+        return method
+    return None
+
+
+def _check_runtime_private_calls(
+    tree: ast.AST,
+    path: Path,
+    diags: List[DoctorDiagnostic],
+    *,
+    strict: bool,
+) -> None:
+    hits: List[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        method = _extract_runtime_private_call_name(node)
+        if method is not None:
+            hits.append((int(getattr(node, "lineno", 0) or 0), method))
+    if not hits:
+        return
+    uniq: List[str] = []
+    seen = set()
+    for line, method in hits:
+        key = (line, method)
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(f"{method}@L{line}")
+    _add(
+        diags,
+        "error" if strict else "warn",
+        "runtime-private-call",
+        (
+            "Private runtime calls detected (solver.runtime._*). "
+            "Use public solver control-plane APIs instead: "
+            + ", ".join(uniq[:10])
+            + (" ..." if len(uniq) > 10 else "")
+        ),
+        path,
+    )
 
 
 def _check_runtime_bypass_writes(

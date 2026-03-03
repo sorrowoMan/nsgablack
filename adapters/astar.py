@@ -78,6 +78,8 @@ class AStarAdapter(AlgorithmAdapter):
     context_notes = (
         "Consumes context for neighbor expansion / heuristic / goal callbacks.",
     )
+    state_recovery_level = "L0"
+    state_recovery_notes = "Checkpoint restores summary only (best/found), not full open/closed frontier."
 
     def __init__(
         self,

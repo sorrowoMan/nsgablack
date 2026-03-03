@@ -24,12 +24,32 @@ _HINT_RULES: Dict[str, tuple[str, str, str]] = {
     "solver-mirror-write": (
         "Direct solver mirror write",
         "Runtime",
-        "Replace direct writes with runtime context projection APIs.",
+        "Replace direct writes with solver control-plane projection APIs.",
     ),
     "runtime-bypass-write": (
         "Runtime state bypass write",
         "Runtime",
         "Write through runtime APIs or snapshot projection helpers only.",
+    ),
+    "runtime-private-call": (
+        "Private runtime call",
+        "Runtime",
+        "Do not call solver.runtime._* methods directly; use public solver control-plane APIs.",
+    ),
+    "state-roundtrip-asymmetric": (
+        "Asymmetric state roundtrip",
+        "Checkpoint",
+        "Define symmetric get_state()/set_state() to support checkpoint restore.",
+    ),
+    "state-recovery-level-missing": (
+        "Missing recovery level",
+        "Checkpoint",
+        "Declare state_recovery_level using L0/L1/L2 on stateful components.",
+    ),
+    "state-recovery-level-invalid": (
+        "Invalid recovery level",
+        "Checkpoint",
+        "Use one of: L0 / L1 / L2.",
     ),
     "plugin-direct-solver-state-access": (
         "Plugin direct solver state access",

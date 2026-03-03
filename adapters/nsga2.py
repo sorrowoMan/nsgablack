@@ -36,6 +36,8 @@ class NSGA2Adapter(AlgorithmAdapter):
     context_mutates = ()
     context_cache = ()
     context_notes = "Population-based NSGA-II adapter with propose/update loop."
+    state_recovery_level = "L2"
+    state_recovery_notes = "Restores population/objectives/violations and ranking state for deterministic continuation."
 
     def __init__(self, config: Optional[NSGA2Config] = None, name: str = "nsga2", priority: int = 0) -> None:
         super().__init__(name=name, priority=priority)

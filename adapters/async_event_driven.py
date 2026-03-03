@@ -92,6 +92,8 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         "Queue-based event orchestration for multi-strategy propose/update.",
         "Provides queue/inflight/archive snapshots for replay and inspection.",
     )
+    state_recovery_level = "L1"
+    state_recovery_notes = "Restores queue/inflight/archive/history snapshots; external side effects are not replayed."
 
     def __init__(
         self,

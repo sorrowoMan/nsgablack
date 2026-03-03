@@ -52,6 +52,8 @@ class VNSAdapter(AlgorithmAdapter):
         "VNS writes neighborhood index/sigma into per-step context for mutator consumption.",
         "Use context-aware mutator to make neighborhood switching effective.",
     )
+    state_recovery_level = "L1"
+    state_recovery_notes = "Restores neighborhood index and incumbent state; candidate batch cache is recomputed."
 
     # Soft partner contracts (informational; no hard dependency).
     #

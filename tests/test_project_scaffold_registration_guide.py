@@ -175,6 +175,73 @@ def test_project_doctor_strict_allows_runtime_api_calls(tmp_path):
     assert not rows
 
 
+def test_project_doctor_strict_blocks_runtime_private_calls(tmp_path):
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir(parents=True)
+    source = (
+        "class DemoAdapter:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'ok'\n"
+        "    def update(self, solver):\n"
+        "        solver.runtime._unsafe_refresh_state()\n"
+    )
+    (adapter_dir / "demo_adapter_runtime_private.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "runtime-private-call"]
+    assert rows
+    assert all(d.level == "error" for d in rows)
+
+
+def test_project_doctor_strict_blocks_missing_state_recovery_level(tmp_path):
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir(parents=True)
+    source = (
+        "class DemoAdapter:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'ok'\n"
+        "    def get_state(self):\n"
+        "        return {}\n"
+        "    def set_state(self, state):\n"
+        "        return None\n"
+    )
+    (adapter_dir / "demo_adapter_missing_level.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
+    rows = [d for d in report.diagnostics if d.code == "state-recovery-level-missing"]
+    assert rows
+    assert all(d.level == "error" for d in rows)
+
+
+def test_project_doctor_accepts_valid_state_recovery_level(tmp_path):
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir(parents=True)
+    source = (
+        "class DemoAdapter:\n"
+        "    context_requires = ()\n"
+        "    context_provides = ()\n"
+        "    context_mutates = ()\n"
+        "    context_cache = ()\n"
+        "    context_notes = 'ok'\n"
+        "    state_recovery_level = 'L1'\n"
+        "    def get_state(self):\n"
+        "        return {}\n"
+        "    def set_state(self, state):\n"
+        "        return None\n"
+    )
+    (adapter_dir / "demo_adapter_with_level.py").write_text(source, encoding="utf-8")
+
+    report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
+    rows = [d for d in report.diagnostics if d.code.startswith("state-recovery-level-")]
+    assert not rows
+
+
 def test_project_doctor_strict_blocks_plugin_direct_solver_state_access(tmp_path):
     plugins_dir = tmp_path / "plugins"
     plugins_dir.mkdir(parents=True)

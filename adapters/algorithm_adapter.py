@@ -21,6 +21,8 @@ class AlgorithmAdapter(ABC):
     context_mutates = ()
     context_cache = ()
     context_notes = None
+    state_recovery_level = "L0"
+    state_recovery_notes = "No adapter-owned runtime state is guaranteed to roundtrip."
 
     def __init__(self, name: str, priority: int = 0) -> None:
         self.name = name
@@ -54,7 +56,7 @@ class AlgorithmAdapter(ABC):
     @abstractmethod
     def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         """Return a list of candidate solutions."""
-        raise NotImplementedError
+        ...
 
     def update(
         self,
@@ -189,6 +191,8 @@ class CompositeAdapter(AlgorithmAdapter):
     context_mutates = ()
     context_cache = ()
     context_notes = "Composite adapter: unions child adapter contracts."
+    state_recovery_level = "L1"
+    state_recovery_notes = "Restores child adapter snapshots via adapter.get_state()/set_state()."
 
     def __init__(self, adapters: Sequence[AlgorithmAdapter], name: str = "composite", priority: int = 0) -> None:
         super().__init__(name=name, priority=priority)

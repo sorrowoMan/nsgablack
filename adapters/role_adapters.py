@@ -42,6 +42,8 @@ class RoleAdapter(AlgorithmAdapter):
     context_mutates: Tuple[str, ...] = ()
     context_cache: Tuple[str, ...] = ()
     context_notes: str = "Role wrapper: injects role metadata and delegates propose/update to inner adapter."
+    state_recovery_level: str = "L1"
+    state_recovery_notes: str = "Restores role metadata and delegates inner adapter state restore."
 
     def __init__(
         self,
@@ -276,6 +278,8 @@ class MultiRoleControllerAdapter(AlgorithmAdapter):
     context_mutates = (KEY_ROLE_REPORTS, KEY_CANDIDATE_ROLES)
     context_cache = ()
     context_notes = "Controller for RoleAdapter set: dispatches candidates and returns role-scoped feedback."
+    state_recovery_level = "L1"
+    state_recovery_notes = "Restores child role adapter snapshots keyed by role name."
 
     def setup(self, solver: Any) -> None:
         self._runtime_projection = {}

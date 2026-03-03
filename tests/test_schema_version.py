@@ -33,3 +33,33 @@ def test_schema_tool_checks_repro_bundle_pattern(tmp_path: Path):
     checked, issues = check_files([tmp_path])
     assert checked == 1
     assert not issues
+
+
+def test_schema_tool_skips_runs_by_default(tmp_path: Path):
+    runs = tmp_path / "runs"
+    runs.mkdir(parents=True)
+    bad = runs / "demo.summary.json"
+    bad.write_text('{"schema_name":"benchmark_summary","schema_version":0}', encoding="utf-8")
+    checked, issues = check_files([tmp_path])
+    assert checked == 0
+    assert not issues
+
+
+def test_schema_tool_can_include_runs_explicitly(tmp_path: Path):
+    runs = tmp_path / "runs"
+    runs.mkdir(parents=True)
+    bad = runs / "demo.summary.json"
+    bad.write_text('{"schema_name":"benchmark_summary","schema_version":0}', encoding="utf-8")
+    checked, issues = check_files([tmp_path], include_runs=True)
+    assert checked == 1
+    assert issues
+
+
+def test_schema_tool_scans_explicit_historical_root(tmp_path: Path):
+    runs = tmp_path / "runs"
+    runs.mkdir(parents=True)
+    bad = runs / "demo.summary.json"
+    bad.write_text('{"schema_name":"benchmark_summary","schema_version":0}', encoding="utf-8")
+    checked, issues = check_files([runs])
+    assert checked == 1
+    assert issues

@@ -29,6 +29,8 @@ class PatternSearchAdapter(AlgorithmAdapter):
     context_mutates = ()
     context_cache = ()
     context_notes = "Coordinate pattern search with adaptive step-size."
+    state_recovery_level = "L1"
+    state_recovery_notes = "Restores incumbent point/score and step size; direction samples are regenerated."
 
     def __init__(self, config: Optional[PatternSearchConfig] = None, name: str = "pattern_search", priority: int = 0) -> None:
         super().__init__(name=name, priority=priority)
