@@ -4,7 +4,7 @@ import numpy as np
 def test_surrogate_evaluation_plugin_reduces_true_evals_for_composable_solver():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import AlgorithmAdapter
+    from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.plugins import SurrogateEvaluationPlugin, SurrogateEvaluationConfig
 
     class ExpensiveSphere(BlackBoxProblem):

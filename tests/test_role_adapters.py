@@ -2,7 +2,7 @@ import numpy as np
 
 
 def test_role_adapter_contract_strict_requires_keys():
-    from nsgablack.core.adapters import AlgorithmAdapter, RoleAdapter
+    from nsgablack.adapters import AlgorithmAdapter, RoleAdapter
 
     class Dummy(AlgorithmAdapter):
         def __init__(self):
@@ -28,7 +28,7 @@ def test_role_adapter_contract_strict_requires_keys():
 def test_multi_role_controller_adapter_runs_with_composable_solver():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import AlgorithmAdapter, RoleAdapter, MultiRoleControllerAdapter
+    from nsgablack.adapters import AlgorithmAdapter, RoleAdapter, MultiRoleControllerAdapter
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from nsgablack.core.composable_solver import ComposableSolver
-from nsgablack.core.adapters import VNSAdapter
+from nsgablack.adapters import VNSAdapter
 from nsgablack.representation import RepresentationPipeline, UniformInitializer, GaussianMutation, ClipRepair, ContextGaussianMutation
 from nsgablack.plugins import BenchmarkHarnessPlugin, ModuleReportPlugin, SurrogateEvaluationPlugin, SurrogateEvaluationConfig
 

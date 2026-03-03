@@ -5,7 +5,7 @@ import pytest
 def test_moead_adapter_runs_and_updates_archive():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import MOEADAdapter, MOEADConfig
+    from nsgablack.adapters import MOEADAdapter, MOEADConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
     from nsgablack.plugins import ParetoArchivePlugin
@@ -55,7 +55,7 @@ def test_moead_adapter_runs_and_updates_archive():
 
 
 def test_moead_adapter_rejects_legacy_nsga_loop_solver():
-    from nsgablack.core.adapters import MOEADAdapter
+    from nsgablack.adapters import MOEADAdapter
 
     class _LegacyLikeSolver:
         num_objectives = 2

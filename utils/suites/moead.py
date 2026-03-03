@@ -19,7 +19,7 @@ def attach_moead(
     config: Optional[Any] = None,
     archive: bool = True,
 ) -> Any:
-    from ...core.adapters import MOEADAdapter, MOEADConfig
+    from ...adapters import MOEADAdapter, MOEADConfig
     from ...plugins import ParetoArchivePlugin
 
     cfg = config if config is not None else MOEADConfig()

@@ -9,9 +9,8 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 
-from .adapters import NSGA2Adapter, NSGA2Config
+from ..adapters import NSGA2Adapter, NSGA2Config
 from .composable_solver import ComposableSolver
-from .runtime import SolverRuntime
 from ..utils.engineering.error_policy import report_soft_error
 from ..utils.parallel.evaluator import ParallelEvaluator
 from ..utils.performance.fast_non_dominated_sort import FastNonDominatedSort
@@ -130,17 +129,6 @@ class EvolutionSolver(ComposableSolver):
         self.last_result: Dict[str, Any] = {}
         self.run_count: int = 0
 
-        self.runtime = SolverRuntime(
-            self,
-            context_store=self.context_store,
-            snapshot_store=self.snapshot_store,
-            snapshot_store_serializer=snapshot_store_serializer,
-            snapshot_store_hmac_env_var=snapshot_store_hmac_env_var,
-            snapshot_store_unsafe_allow_unsigned=snapshot_store_unsafe_allow_unsigned,
-            snapshot_store_max_payload_bytes=snapshot_store_max_payload_bytes,
-            snapshot_schema=self.snapshot_schema,
-        )
-
         enabled_parallel = enable_parallel
         if enabled_parallel is None:
             enabled_parallel = parallel
@@ -219,13 +207,9 @@ class EvolutionSolver(ComposableSolver):
 
     def set_context_store(self, store: Any) -> None:
         super().set_context_store(store)
-        if hasattr(self, "runtime") and self.runtime is not None:
-            self.runtime.set_context_store(self.context_store)
 
     def set_snapshot_store(self, store: Any) -> None:
         super().set_snapshot_store(store)
-        if hasattr(self, "runtime") and self.runtime is not None:
-            self.runtime.set_snapshot_store(self.snapshot_store)
 
     def set_context_store_backend(
         self,
@@ -241,8 +225,6 @@ class EvolutionSolver(ComposableSolver):
             redis_url=redis_url,
             key_prefix=key_prefix,
         )
-        if hasattr(self, "runtime") and self.runtime is not None:
-            self.runtime.set_context_store(self.context_store)
 
     def set_snapshot_store_backend(
         self,
@@ -268,8 +250,6 @@ class EvolutionSolver(ComposableSolver):
             unsafe_allow_unsigned=unsafe_allow_unsigned,
             max_payload_bytes=max_payload_bytes,
         )
-        if hasattr(self, "runtime") and self.runtime is not None:
-            self.runtime.set_snapshot_store(self.snapshot_store)
 
     def _ensure_parallel_evaluator(self) -> Optional[ParallelEvaluator]:
         if not self.enable_parallel_evaluation:

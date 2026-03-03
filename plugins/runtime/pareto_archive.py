@@ -72,14 +72,7 @@ class ParetoArchivePlugin(Plugin):
                 setter(self.archive_X, self.archive_F)
                 return
             except Exception:
-                pass
-        runtime = getattr(solver, "runtime", None)
-        if runtime is not None and hasattr(runtime, "set_pareto_snapshot"):
-            try:
-                runtime.set_pareto_snapshot(self.archive_X, self.archive_F)
                 return
-            except Exception:
-                pass
         try:
             for field, value in (
                 ("pareto_solutions", None if self.archive_X is None else np.asarray(self.archive_X)),

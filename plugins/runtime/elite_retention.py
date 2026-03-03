@@ -30,13 +30,6 @@ def _evaluate_candidate_with_solver(solver, x: np.ndarray, individual_id: int) -
                 counter(1)
             except Exception:
                 pass
-        else:
-            runtime = getattr(solver, "runtime", None)
-            if runtime is not None and hasattr(runtime, "increment_evaluation_count"):
-                try:
-                    runtime.increment_evaluation_count(1)
-                except Exception:
-                    pass
         return np.asarray(obj, dtype=float).reshape(-1), float(vio)
 
     raise AttributeError("solver has neither evaluate_individual() nor _evaluate_individual()")

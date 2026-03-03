@@ -15,32 +15,30 @@ class _Sphere(BlackBoxProblem):
         return float(np.sum(arr**2))
 
 
-def test_runtime_facade_forwards_snapshot_and_context_calls() -> None:
+def test_solver_control_plane_snapshot_and_context_calls() -> None:
     solver = EvolutionSolver(_Sphere(), pop_size=2, max_generations=1)
-    runtime = solver.runtime
 
     pop = np.asarray([[0.0, 0.0], [1.0, 1.0]], dtype=float)
     obj = np.asarray([[0.0], [2.0]], dtype=float)
     vio = np.asarray([0.0, 0.0], dtype=float)
 
-    assert runtime.write_population_snapshot(pop, obj, vio) is True
-    payload = runtime.read_snapshot()
+    assert solver.write_population_snapshot(pop, obj, vio) is True
+    payload = solver.read_snapshot()
     assert isinstance(payload, dict)
     assert "population" in payload
-    ctx = runtime.get_context()
+    ctx = solver.get_context()
     assert "snapshot_key" in ctx
 
 
-def test_runtime_facade_forwards_control_plane_updates() -> None:
+def test_solver_control_plane_updates_state() -> None:
     solver = EvolutionSolver(_Sphere(), pop_size=2, max_generations=1)
-    runtime = solver.runtime
 
-    assert runtime.set_generation(7) == 7
-    assert runtime.increment_evaluation_count(3) == 3
-    runtime.set_best_snapshot(np.asarray([1.0, 2.0]), 5.0)
-    runtime.set_pareto_snapshot(np.asarray([[1.0, 2.0]]), np.asarray([[5.0]]))
+    assert solver.set_generation(7) == 7
+    assert solver.increment_evaluation_count(3) == 3
+    solver.set_best_snapshot(np.asarray([1.0, 2.0]), 5.0)
+    solver.set_pareto_snapshot(np.asarray([[1.0, 2.0]]), np.asarray([[5.0]]))
 
-    best_x, best_obj = runtime.resolve_best_snapshot()
+    best_x, best_obj = solver.resolve_best_snapshot()
     assert int(solver.generation) == 7
     assert int(solver.evaluation_count) == 3
     assert best_x is not None

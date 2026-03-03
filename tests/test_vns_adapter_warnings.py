@@ -4,7 +4,7 @@ import numpy as np
 
 
 def test_vns_adapter_warns_when_mutator_not_context_aware():
-    from nsgablack.core.adapters import VNSAdapter
+    from nsgablack.adapters import VNSAdapter
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import GaussianMutation
 
@@ -22,7 +22,7 @@ def test_vns_adapter_warns_when_mutator_not_context_aware():
 
 
 def test_vns_adapter_no_warn_for_context_aware_mutator():
-    from nsgablack.core.adapters import VNSAdapter
+    from nsgablack.adapters import VNSAdapter
     from nsgablack.representation import RepresentationPipeline, ContextSwitchMutator
 
     class AddOne:

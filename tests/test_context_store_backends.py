@@ -48,11 +48,11 @@ def test_create_context_store_rejects_unknown_backend() -> None:
     assert raised
 
 
-def test_solver_runtime_uses_configured_context_store_backend_memory() -> None:
+def test_solver_uses_configured_context_store_backend_memory() -> None:
     solver = EvolutionSolver(_Sphere(), context_store_backend="memory")
-    solver.runtime.context_store.set("k", "v")
+    solver.context_store.set("k", "v")
     ctx = solver.get_context()
-    assert solver.runtime.context_store.get("k") == "v"
+    assert solver.context_store.get("k") == "v"
     assert "generation" in ctx
 
 

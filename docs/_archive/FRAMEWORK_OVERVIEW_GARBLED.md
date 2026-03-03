@@ -773,7 +773,7 @@ bias_manager.domain_manager.add_bias(
 - core/solver.py：NSGA-II 底座（EvolutionSolver）。
 - core/blank_solver.py：空白底座（SolverBase，流程由 Plugin/子类驱动）。
 - core/composable_solver.py：可组合底座（ComposableSolver，逻辑由 Adapter 驱动）。
-- core/adapters/：策略内核（VNS/MOEA-D/SA/多角色控制等）。
+- adapters/：策略内核（VNS/MOEA-D/SA/多角色控制等）。
 - utils/suites/：权威组合（attach_* 一键装配，避免漏配）。
 
 Legacy（旧 solvers 目录已归档，不再作为当前推荐入口）：

@@ -16,7 +16,7 @@ import warnings
 import numpy as np
 
 from .algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import (
+from ..utils.context.context_keys import (
     KEY_MOEAD_NEIGHBOR_MODE,
     KEY_MOEAD_SUBPROBLEM,
     KEY_MOEAD_WEIGHT,

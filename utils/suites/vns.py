@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ...core.adapters import VNSAdapter, VNSConfig
+from ...adapters import VNSAdapter, VNSConfig
 from ...representation.continuous import ContextGaussianMutation, GaussianMutation
 from ...utils.context.context_keys import KEY_MUTATION_SIGMA
 

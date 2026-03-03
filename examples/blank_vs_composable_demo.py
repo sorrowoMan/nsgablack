@@ -11,7 +11,7 @@ try:
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.blank_solver import SolverBase
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import AlgorithmAdapter
+    from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
     from nsgablack.bias import BiasModule, ConvergenceBias
@@ -24,7 +24,7 @@ except ModuleNotFoundError:  # pragma: no cover - convenience for direct script 
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.blank_solver import SolverBase
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import AlgorithmAdapter
+    from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
     from nsgablack.bias import BiasModule, ConvergenceBias

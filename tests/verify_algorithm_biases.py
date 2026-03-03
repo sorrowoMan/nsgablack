@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from nsgablack.core.adapters import (
+from nsgablack.adapters import (
     DEConfig,
     DifferentialEvolutionAdapter,
     GradientDescentAdapter,

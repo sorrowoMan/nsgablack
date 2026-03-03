@@ -19,13 +19,13 @@ from ...plugins import (
     MultiFidelityEvaluationPlugin,
     MultiFidelityEvaluationConfig,
 )
-from ...core.adapters import (
+from ...adapters import (
     TrustRegionMODFOAdapter,
     TrustRegionMODFOConfig,
     TrustRegionDFOAdapter,
     TrustRegionSubspaceAdapter,
 )
-from ...core.adapters import MOEADAdapter
+from ...adapters import MOEADAdapter
 from ...bias import BiasModule, DynamicPenaltyBias, StructurePriorBias, UncertaintyExplorationBias, RiskBias
 from ...bias.algorithmic.signal_driven import RobustnessBias
 

@@ -411,7 +411,6 @@ class CheckpointResumePlugin(Plugin):
 
     def _apply_solver_state(self, solver: Any, state: Dict[str, Any], resume_cursor: Optional[int]) -> None:
         generation = int(state.get("generation", getattr(solver, "generation", 0)))
-        runtime = getattr(solver, "runtime", None)
         eval_count = int(state.get("evaluation_count", getattr(solver, "evaluation_count", 0)))
         def _set_field(field: str, value: Any) -> None:
             setattr(solver, str(field), value)
@@ -420,11 +419,6 @@ class CheckpointResumePlugin(Plugin):
         if callable(set_generation):
             try:
                 set_generation(generation)
-            except Exception:
-                _set_field("generation", generation)
-        elif runtime is not None and hasattr(runtime, "set_generation"):
-            try:
-                runtime.set_generation(generation)
             except Exception:
                 _set_field("generation", generation)
         else:
@@ -437,14 +431,7 @@ class CheckpointResumePlugin(Plugin):
                 increment_eval(eval_count - current)
             except Exception:
                 _set_field("evaluation_count", eval_count)
-        elif runtime is not None and hasattr(runtime, "increment_evaluation_count"):
-            try:
-                current = int(getattr(solver, "evaluation_count", 0) or 0)
-                runtime.increment_evaluation_count(eval_count - current)
-            except Exception:
-                _set_field("evaluation_count", eval_count)
         else:
-            _set_field("generation", generation)
             _set_field("evaluation_count", eval_count)
         if (
             "population" in state
@@ -471,12 +458,6 @@ class CheckpointResumePlugin(Plugin):
                 except Exception:
                     _set_field("pareto_solutions", state.get("pareto_solutions"))
                     _set_field("pareto_objectives", state.get("pareto_objectives"))
-            elif runtime is not None and hasattr(runtime, "set_pareto_snapshot"):
-                try:
-                    runtime.set_pareto_snapshot(state.get("pareto_solutions"), state.get("pareto_objectives"))
-                except Exception:
-                    _set_field("pareto_solutions", state.get("pareto_solutions"))
-                    _set_field("pareto_objectives", state.get("pareto_objectives"))
             else:
                 _set_field("pareto_solutions", state.get("pareto_solutions"))
                 _set_field("pareto_objectives", state.get("pareto_objectives"))
@@ -488,12 +469,6 @@ class CheckpointResumePlugin(Plugin):
             if callable(set_best):
                 try:
                     set_best(state.get("best_x"), state.get("best_objective"))
-                except Exception:
-                    _set_field("best_x", state.get("best_x"))
-                    _set_field("best_objective", state.get("best_objective"))
-            elif runtime is not None and hasattr(runtime, "set_best_snapshot"):
-                try:
-                    runtime.set_best_snapshot(state.get("best_x"), state.get("best_objective"))
                 except Exception:
                     _set_field("best_x", state.get("best_x"))
                     _set_field("best_objective", state.get("best_objective"))

@@ -4,7 +4,7 @@ import numpy as np
 def test_vns_adapter_improves_sphere():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import VNSAdapter, VNSConfig
+    from nsgablack.adapters import VNSAdapter, VNSConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
 

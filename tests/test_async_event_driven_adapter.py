@@ -14,7 +14,7 @@ def _build_pipeline():
 
 def test_async_event_driven_adapter_runs(sample_problem):
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import (
+    from nsgablack.adapters import (
         AsyncEventDrivenAdapter,
         AsyncEventDrivenConfig,
         EventStrategySpec,
@@ -56,7 +56,7 @@ def test_async_event_driven_adapter_runs(sample_problem):
 
 def test_attach_async_event_suite_wires_plugins(sample_problem):
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import EventStrategySpec, SAConfig, SimulatedAnnealingAdapter
+    from nsgablack.adapters import EventStrategySpec, SAConfig, SimulatedAnnealingAdapter
     from nsgablack.utils.suites import attach_async_event_driven
 
     solver = ComposableSolver(problem=sample_problem, representation_pipeline=_build_pipeline())

@@ -19,7 +19,7 @@ import numpy as np
 from ..headless import run_headless_single_objective
 from ...core.base import BlackBoxProblem
 
-# Note: VNS is now provided via adapters (`core/adapters/vns.py`).
+# Note: VNS is now provided via adapters (`adapters/vns.py`).
 # The batch VNS helper stays optional and requires a user-supplied solver.
 BlackBoxSolverVNS = None  # type: ignore
 
@@ -179,7 +179,7 @@ def run_vns_in_parallel(
     if BlackBoxSolverVNS is None:
         raise ImportError(
             "BlackBoxSolverVNS 已从主包中归档（solvers/ 已移除）。"
-            "如需 VNS，请使用 core/adapters 的 VNSAdapter（ComposableSolver + utils/suites/vns.py）。"
+            "如需 VNS，请使用 adapters 的 VNSAdapter（ComposableSolver + utils/suites/vns.py）。"
         )
     tasks: List[Tuple[Callable[[], BlackBoxProblem], int, Dict[str, Any]]] = [
         (problem_factory, i, solver_kwargs)

@@ -1,4 +1,4 @@
-﻿# core/adapters
+﻿# adapters
 
 Purpose:
 - Canonical home of algorithm adapters.

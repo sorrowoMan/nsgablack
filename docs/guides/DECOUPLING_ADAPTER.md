@@ -137,7 +137,7 @@ update(evaluations) -> state
 
 ## 9) 相关入口
 
-- `core/adapters/`：Adapter 实现
+- `adapters/`：Adapter 实现
 - `utils/suites/`：权威组合装配
 - `docs/guides/DECOUPLING_REPRESENTATION.md`
 - `docs/guides/DECOUPLING_BIAS.md`

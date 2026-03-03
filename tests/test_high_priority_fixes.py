@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from nsgablack.core.adapters.differential_evolution import DEConfig, DifferentialEvolutionAdapter
+from nsgablack.adapters.differential_evolution import DEConfig, DifferentialEvolutionAdapter
 from nsgablack.plugins.evaluation.monte_carlo_evaluation import (
     MonteCarloEvaluationConfig,
     MonteCarloEvaluationPlugin,

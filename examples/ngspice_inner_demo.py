@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from nsgablack.core.adapters import AlgorithmAdapter
+from nsgablack.adapters import AlgorithmAdapter
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.core.composable_solver import ComposableSolver
 from nsgablack.plugins import InnerSolverConfig, InnerSolverPlugin

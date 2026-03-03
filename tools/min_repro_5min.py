@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.core.adapters import SAConfig, SimulatedAnnealingAdapter
+from nsgablack.adapters import SAConfig, SimulatedAnnealingAdapter
 from nsgablack.core.composable_solver import ComposableSolver
 from nsgablack.plugins import BenchmarkHarnessConfig, BenchmarkHarnessPlugin, ModuleReportConfig, ModuleReportPlugin
 from nsgablack.representation import RepresentationPipeline

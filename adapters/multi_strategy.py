@@ -21,7 +21,7 @@ import math
 import numpy as np
 
 from .algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import (
+from ..utils.context.context_keys import (
     KEY_CANDIDATE_ROLES,
     KEY_CANDIDATE_UNITS,
     KEY_ROLE,

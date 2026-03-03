@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ...core.adapters import SAConfig, SimulatedAnnealingAdapter
+from ...adapters import SAConfig, SimulatedAnnealingAdapter
 
 
 def attach_simulated_annealing(

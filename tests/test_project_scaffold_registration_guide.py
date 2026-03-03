@@ -567,7 +567,7 @@ def test_project_doctor_strict_blocks_framework_component_missing_catalog_entry(
         "    context_mutates = ()\n"
         "    context_cache = ()\n"
         "    context_notes = ('demo',)\n"
-        "MissingFrameworkAdapter.__module__ = 'nsgablack.core.adapters.__missing__'\n"
+        "MissingFrameworkAdapter.__module__ = 'nsgablack.adapters.__missing__'\n"
         "\n"
         "def build_solver():\n"
         "    return SimpleNamespace(\n"

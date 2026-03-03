@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from nsgablack.core.adapters.trust_region_dfo import TrustRegionDFOAdapter, TrustRegionDFOConfig
-from nsgablack.core.adapters.trust_region_mo_dfo import TrustRegionMODFOAdapter, TrustRegionMODFOConfig
-from nsgablack.core.adapters.trust_region_nonsmooth import (
+from nsgablack.adapters.trust_region_dfo import TrustRegionDFOAdapter, TrustRegionDFOConfig
+from nsgablack.adapters.trust_region_mo_dfo import TrustRegionMODFOAdapter, TrustRegionMODFOConfig
+from nsgablack.adapters.trust_region_nonsmooth import (
     TrustRegionNonSmoothAdapter,
     TrustRegionNonSmoothConfig,
 )
-from nsgablack.core.adapters.trust_region_subspace import (
+from nsgablack.adapters.trust_region_subspace import (
     TrustRegionSubspaceAdapter,
     TrustRegionSubspaceConfig,
 )

@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from nsgablack.catalog.markers import component
-from nsgablack.core.adapters.algorithm_adapter import AlgorithmAdapter
+from nsgablack.adapters.algorithm_adapter import AlgorithmAdapter
 
 
 @component(kind="adapter")

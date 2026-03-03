@@ -5,7 +5,7 @@ Bias package public API.
 
 Only scalar preference biases are exported from this package.
 Process-level algorithm mechanisms should be integrated as adapters
-under ``nsgablack.core.adapters``.
+under ``nsgablack.adapters``.
 """
 
 from .core.base import BiasBase, AlgorithmicBias, DomainBias, OptimizationContext, create_bias

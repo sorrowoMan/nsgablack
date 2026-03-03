@@ -9,7 +9,7 @@ import numpy as np
 try:
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import AlgorithmAdapter, CompositeAdapter
+    from nsgablack.adapters import AlgorithmAdapter, CompositeAdapter
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
     from nsgablack.bias import BiasModule, ConvergenceBias
@@ -21,7 +21,7 @@ except ModuleNotFoundError:  # pragma: no cover - convenience for direct script 
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import AlgorithmAdapter, CompositeAdapter
+    from nsgablack.adapters import AlgorithmAdapter, CompositeAdapter
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
     from nsgablack.bias import BiasModule, ConvergenceBias

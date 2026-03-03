@@ -4,7 +4,7 @@ import numpy as np
 
 
 def test_inner_solver_backend_retry_and_timeout_strategy():
-    from nsgablack.core.adapters import AlgorithmAdapter
+    from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.plugins import InnerSolverConfig, InnerSolverPlugin

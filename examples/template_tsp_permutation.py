@@ -5,7 +5,7 @@ import numpy as np
 try:
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import VNSAdapter, VNSConfig
+    from nsgablack.adapters import VNSAdapter, VNSConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.permutation import (
         PermutationInitializer,
@@ -20,7 +20,7 @@ except ModuleNotFoundError:  # pragma: no cover
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import VNSAdapter, VNSConfig
+    from nsgablack.adapters import VNSAdapter, VNSConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.permutation import (
         PermutationInitializer,

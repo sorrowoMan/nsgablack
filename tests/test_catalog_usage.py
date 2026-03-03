@@ -20,7 +20,7 @@ def test_build_usage_profile_infers_adapter_control_plane_wiring():
         key="adapter.demo",
         title="DemoAdapter",
         kind="adapter",
-        import_path="nsgablack.core.adapters:NSGA2Adapter",
+        import_path="nsgablack.adapters:NSGA2Adapter",
     )
     usage = build_usage_profile(entry)
     joined = "\n".join(usage.minimal_wiring)

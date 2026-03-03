@@ -5,7 +5,7 @@ import pytest
 
 
 def test_composable_solver_always_triggers_on_step():
-    from nsgablack.core.adapters import AlgorithmAdapter
+    from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.plugins import Plugin

@@ -23,7 +23,7 @@ import warnings
 import numpy as np
 
 from .algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import KEY_MUTATION_SIGMA, KEY_TEMPERATURE
+from ..utils.context.context_keys import KEY_MUTATION_SIGMA, KEY_TEMPERATURE
 
 
 @dataclass

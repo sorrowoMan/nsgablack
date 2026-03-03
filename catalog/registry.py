@@ -486,7 +486,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="adapter.vns",
             title="VNSAdapter",
             kind="adapter",
-            import_path="nsgablack.core.adapters:VNSAdapter",
+            import_path="nsgablack.adapters:VNSAdapter",
             tags=('adapter', 'core', 'local_search', 'refinement', 'stage', 'strategy', 'vns'),
             summary="VNS局部搜索内核：多邻域分阶段精修。 / Adapter: VNS local search core with multi-neighborhood refinement.",
             companions=("repr.context_gaussian", "repr.context_switch", "suite.vns"),
@@ -495,7 +495,7 @@ def _default_entries() -> List[CatalogEntry]:
                 "希望用少量评估预算做稳定改进时",
             ),
             minimal_wiring=(
-                "from nsgablack.core.adapters import VNSAdapter",
+                "from nsgablack.adapters import VNSAdapter",
                 "solver.set_adapter(VNSAdapter())",
             ),
             required_companions=("repr.context_gaussian",),
@@ -506,7 +506,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="adapter.sa",
             title="SimulatedAnnealingAdapter",
             kind="adapter",
-            import_path="nsgablack.core.adapters:SimulatedAnnealingAdapter",
+            import_path="nsgablack.adapters:SimulatedAnnealingAdapter",
             tags=('adapter', 'core', 'local_search', 'sa', 'simulated_annealing', 'strategy'),
             summary="模拟退火内核：温度调度 + Metropolis接受。 / Adapter: SA core with temperature schedule and Metropolis acceptance.",
             companions=("repr.context_gaussian", "suite.sa"),
@@ -515,7 +515,7 @@ def _default_entries() -> List[CatalogEntry]:
                 "希望通过温度控制探索-收敛节奏时",
             ),
             minimal_wiring=(
-                "from nsgablack.core.adapters import SimulatedAnnealingAdapter",
+                "from nsgablack.adapters import SimulatedAnnealingAdapter",
                 "solver.set_adapter(SimulatedAnnealingAdapter())",
             ),
             required_companions=("repr.context_gaussian",),
@@ -526,7 +526,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="adapter.multi_strategy",
             title="MultiStrategyControllerAdapter",
             kind="adapter",
-            import_path="nsgablack.core.adapters:MultiStrategyControllerAdapter",
+            import_path="nsgablack.adapters:MultiStrategyControllerAdapter",
             tags=('adapter', 'controller', 'cooperation', 'core', 'multi_strategy', 'parallel', 'roles', 'strategy'),
             summary="多策略协同控制器：统一调度、共享状态与动态预算。 / Adapter: multi-strategy controller with unified scheduling/shared state/dynamic budgets.",
             companions=("suite.multi_strategy", "plugin.pareto_archive"),
@@ -535,7 +535,7 @@ def _default_entries() -> List[CatalogEntry]:
                 "需要把多个 adapter 组合成同一运行回路时",
             ),
             minimal_wiring=(
-                "from nsgablack.core.adapters import MultiStrategyControllerAdapter",
+                "from nsgablack.adapters import MultiStrategyControllerAdapter",
                 "solver.set_adapter(MultiStrategyControllerAdapter(...))",
             ),
             required_companions=("plugin.pareto_archive",),
@@ -546,7 +546,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="adapter.moead",
             title="MOEADAdapter",
             kind="adapter",
-            import_path="nsgablack.core.adapters:MOEADAdapter",
+            import_path="nsgablack.adapters:MOEADAdapter",
             tags=('adapter', 'core', 'decomposition', 'moead', 'multiobjective', 'strategy'),
             summary="MOEA/D分解内核：权重向量 + 邻域替换。 / Adapter: MOEA/D decomposition core with weight vectors and neighborhood replacement.",
             companions=("plugin.pareto_archive", "suite.moead"),
@@ -555,7 +555,7 @@ def _default_entries() -> List[CatalogEntry]:
                 "需要稳定的邻域协同更新而非全局排序时",
             ),
             minimal_wiring=(
-                "from nsgablack.core.adapters import MOEADAdapter",
+                "from nsgablack.adapters import MOEADAdapter",
                 "solver.set_adapter(MOEADAdapter())",
             ),
             required_companions=("plugin.pareto_archive",),
@@ -566,7 +566,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="adapter.nsga2",
             title="NSGA2Adapter",
             kind="adapter",
-            import_path="nsgablack.core.adapters:NSGA2Adapter",
+            import_path="nsgablack.adapters:NSGA2Adapter",
             tags=('adapter', 'core', 'evolutionary', 'multiobjective', 'nsga2', 'strategy'),
             summary="Adapter: NSGA-II with non-dominated sorting and crowding selection.",
             use_when=(
@@ -574,7 +574,7 @@ def _default_entries() -> List[CatalogEntry]:
                 "希望在收敛与多样性之间取得平衡时",
             ),
             minimal_wiring=(
-                "from nsgablack.core.adapters import NSGA2Adapter",
+                "from nsgablack.adapters import NSGA2Adapter",
                 "solver.set_adapter(NSGA2Adapter())",
             ),
             required_companions=(),
@@ -585,7 +585,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="adapter.nsga3",
             title="NSGA3Adapter",
             kind="adapter",
-            import_path="nsgablack.core.adapters:NSGA3Adapter",
+            import_path="nsgablack.adapters:NSGA3Adapter",
             tags=('adapter', 'core', 'evolutionary', 'multiobjective', 'nsga3', 'strategy'),
             summary="Adapter: NSGA-III with reference-point niching.",
             use_when=(
@@ -593,7 +593,7 @@ def _default_entries() -> List[CatalogEntry]:
                 "希望提升前沿分布均匀性时",
             ),
             minimal_wiring=(
-                "from nsgablack.core.adapters import NSGA3Adapter",
+                "from nsgablack.adapters import NSGA3Adapter",
                 "solver.set_adapter(NSGA3Adapter())",
             ),
             required_companions=(),
@@ -604,7 +604,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="adapter.spea2",
             title="SPEA2Adapter",
             kind="adapter",
-            import_path="nsgablack.core.adapters:SPEA2Adapter",
+            import_path="nsgablack.adapters:SPEA2Adapter",
             tags=('adapter', 'core', 'evolutionary', 'multiobjective', 'spea2', 'strategy'),
             summary="Adapter: SPEA2 with strength and density fitness.",
             use_when=(
@@ -612,7 +612,7 @@ def _default_entries() -> List[CatalogEntry]:
                 "希望作为 NSGA 系列的对照方法时",
             ),
             minimal_wiring=(
-                "from nsgablack.core.adapters import SPEA2Adapter",
+                "from nsgablack.adapters import SPEA2Adapter",
                 "solver.set_adapter(SPEA2Adapter())",
             ),
             required_companions=(),
@@ -623,7 +623,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="adapter.de",
             title="DifferentialEvolutionAdapter",
             kind="adapter",
-            import_path="nsgablack.core.adapters:DifferentialEvolutionAdapter",
+            import_path="nsgablack.adapters:DifferentialEvolutionAdapter",
             tags=('adapter', 'core', 'de', 'differential_evolution', 'evolutionary', 'strategy'),
             summary="Adapter: Differential Evolution with greedy replacement.",
             use_when=(
@@ -631,7 +631,7 @@ def _default_entries() -> List[CatalogEntry]:
                 "需要快速基线而非复杂控制逻辑时",
             ),
             minimal_wiring=(
-                "from nsgablack.core.adapters import DifferentialEvolutionAdapter",
+                "from nsgablack.adapters import DifferentialEvolutionAdapter",
                 "solver.set_adapter(DifferentialEvolutionAdapter())",
             ),
             required_companions=(),
@@ -642,7 +642,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="adapter.pattern_search",
             title="PatternSearchAdapter",
             kind="adapter",
-            import_path="nsgablack.core.adapters:PatternSearchAdapter",
+            import_path="nsgablack.adapters:PatternSearchAdapter",
             tags=('adapter', 'core', 'local_search', 'pattern_search', 'strategy'),
             summary="Adapter: coordinate pattern search with adaptive step size.",
             use_when=(
@@ -650,7 +650,7 @@ def _default_entries() -> List[CatalogEntry]:
                 "需要轻量坐标方向搜索作为局部改进器时",
             ),
             minimal_wiring=(
-                "from nsgablack.core.adapters import PatternSearchAdapter",
+                "from nsgablack.adapters import PatternSearchAdapter",
                 "solver.set_adapter(PatternSearchAdapter())",
             ),
             required_companions=(),
@@ -661,7 +661,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="adapter.gradient_descent",
             title="GradientDescentAdapter",
             kind="adapter",
-            import_path="nsgablack.core.adapters:GradientDescentAdapter",
+            import_path="nsgablack.adapters:GradientDescentAdapter",
             tags=('adapter', 'core', 'gradient', 'gradient_descent', 'local_search', 'strategy'),
             summary="Adapter: finite-difference gradient descent local refinement.",
             use_when=(
@@ -669,7 +669,7 @@ def _default_entries() -> List[CatalogEntry]:
                 "可以接受有限差分带来的额外评估开销时",
             ),
             minimal_wiring=(
-                "from nsgablack.core.adapters import GradientDescentAdapter",
+                "from nsgablack.adapters import GradientDescentAdapter",
                 "solver.set_adapter(GradientDescentAdapter())",
             ),
             required_companions=(),
@@ -680,7 +680,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="adapter.trust_region_dfo",
             title="TrustRegionDFOAdapter",
             kind="adapter",
-            import_path="nsgablack.core.adapters:TrustRegionDFOAdapter",
+            import_path="nsgablack.adapters:TrustRegionDFOAdapter",
             tags=('adapter', 'core', 'dfo', 'local_search', 'strategy', 'trust_region'),
             summary="信赖域DFO内核：无梯度局部搜索。 / Adapter: trust-region derivative-free local search.",
             use_when=(
@@ -688,7 +688,7 @@ def _default_entries() -> List[CatalogEntry]:
                 "希望在受控半径内做无梯度精修时",
             ),
             minimal_wiring=(
-                "from nsgablack.core.adapters import TrustRegionDFOAdapter",
+                "from nsgablack.adapters import TrustRegionDFOAdapter",
                 "solver.set_adapter(TrustRegionDFOAdapter())",
             ),
             required_companions=(),
@@ -699,7 +699,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="adapter.trust_region_subspace",
             title="TrustRegionSubspaceAdapter",
             kind="adapter",
-            import_path="nsgablack.core.adapters:TrustRegionSubspaceAdapter",
+            import_path="nsgablack.adapters:TrustRegionSubspaceAdapter",
             tags=('adapter', 'core', 'dfo', 'strategy', 'subspace', 'trust_region'),
             summary="子空间/低秩信赖域：适用高维局部搜索。 / Adapter: subspace/low-rank trust-region search for high-D.",
             use_when=(
@@ -707,7 +707,7 @@ def _default_entries() -> List[CatalogEntry]:
                 "希望把评估预算聚焦到主导子空间时",
             ),
             minimal_wiring=(
-                "from nsgablack.core.adapters import TrustRegionSubspaceAdapter",
+                "from nsgablack.adapters import TrustRegionSubspaceAdapter",
                 "solver.set_adapter(TrustRegionSubspaceAdapter())",
             ),
             required_companions=("plugin.subspace_basis",),
@@ -718,7 +718,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="adapter.trust_region_nonsmooth",
             title="TrustRegionNonSmoothAdapter",
             kind="adapter",
-            import_path="nsgablack.core.adapters:TrustRegionNonSmoothAdapter",
+            import_path="nsgablack.adapters:TrustRegionNonSmoothAdapter",
             tags=('adapter', 'core', 'local_search', 'nonsmooth', 'strategy', 'trust_region'),
             summary="非光滑信赖域：支持Linf聚合等非光滑目标。 / Adapter: non-smooth trust-region with Linf aggregation.",
             use_when=(
@@ -726,7 +726,7 @@ def _default_entries() -> List[CatalogEntry]:
                 "需要比纯随机局部扰动更稳的非光滑精修时",
             ),
             minimal_wiring=(
-                "from nsgablack.core.adapters import TrustRegionNonSmoothAdapter",
+                "from nsgablack.adapters import TrustRegionNonSmoothAdapter",
                 "solver.set_adapter(TrustRegionNonSmoothAdapter())",
             ),
             required_companions=(),
@@ -737,7 +737,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="adapter.mas",
             title="MASAdapter",
             kind="adapter",
-            import_path="nsgablack.core.adapters:MASAdapter",
+            import_path="nsgablack.adapters:MASAdapter",
             tags=('adapter', 'core', 'local_search', 'mas', 'strategy', 'surrogate'),
             summary="Model-and-Search：交替建模与搜索。 / Adapter: model-and-search alternating model update + search.",
             use_when=(
@@ -745,7 +745,7 @@ def _default_entries() -> List[CatalogEntry]:
                 "评估昂贵，想优先在模型建议区域探索时",
             ),
             minimal_wiring=(
-                "from nsgablack.core.adapters import MASAdapter",
+                "from nsgablack.adapters import MASAdapter",
                 "solver.set_adapter(MASAdapter())",
             ),
             required_companions=("plugin.mas_model",),
@@ -826,7 +826,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="adapter.trust_region_mo_dfo",
             title="TrustRegionMODFOAdapter",
             kind="adapter",
-            import_path="nsgablack.core.adapters:TrustRegionMODFOAdapter",
+            import_path="nsgablack.adapters:TrustRegionMODFOAdapter",
             tags=('adapter', 'core', 'dfo', 'multiobjective', 'strategy', 'trust_region'),
             summary="多目标信赖域DFO：权重标度/帕累托精修。 / Adapter: MO trust-region DFO with scalarization.",
             use_when=(
@@ -834,7 +834,7 @@ def _default_entries() -> List[CatalogEntry]:
                 "希望把多目标优化与局部 DFO 结合时",
             ),
             minimal_wiring=(
-                "from nsgablack.core.adapters import TrustRegionMODFOAdapter",
+                "from nsgablack.adapters import TrustRegionMODFOAdapter",
                 "solver.set_adapter(TrustRegionMODFOAdapter())",
             ),
             required_companions=("plugin.pareto_archive",),
@@ -3001,7 +3001,7 @@ def _discover_python_entries() -> List[CatalogEntry]:
         return [e for e in out if e.key and e.kind and e.import_path]
 
     packages = [
-        "nsgablack.core.adapters",
+        "nsgablack.adapters",
         "nsgablack.bias",
         "nsgablack.representation",
         "nsgablack.utils.suites",

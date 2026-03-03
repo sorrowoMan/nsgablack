@@ -14,7 +14,7 @@ def _pipeline():
 
 def test_single_trajectory_adapter_runs(sample_problem):
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import SingleTrajectoryAdaptiveAdapter, SingleTrajectoryAdaptiveConfig
+    from nsgablack.adapters import SingleTrajectoryAdaptiveAdapter, SingleTrajectoryAdaptiveConfig
 
     np.random.seed(13)
     adapter = SingleTrajectoryAdaptiveAdapter(
@@ -33,7 +33,7 @@ def test_single_trajectory_adapter_runs(sample_problem):
 
 def test_attach_single_trajectory_suite(sample_problem):
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import SingleTrajectoryAdaptiveConfig
+    from nsgablack.adapters import SingleTrajectoryAdaptiveConfig
     from nsgablack.utils.suites import attach_single_trajectory_adaptive
 
     solver = ComposableSolver(problem=sample_problem, representation_pipeline=_pipeline())

@@ -438,7 +438,7 @@ def _adapter_class_template() -> str:
 
         import numpy as np
 
-        from nsgablack.core.adapters.algorithm_adapter import AlgorithmAdapter
+        from nsgablack.adapters.algorithm_adapter import AlgorithmAdapter
 
 
         class AdapterTemplate(AlgorithmAdapter):
@@ -918,7 +918,7 @@ def _vscode_snippets_template() -> str:
             "prefix": ["nadapter", "@component(kind=\\"adapter\\")"],
             "body": [
               "from nsgablack.catalog.markers import component",
-              "from nsgablack.core.adapters.algorithm_adapter import AlgorithmAdapter",
+              "from nsgablack.adapters.algorithm_adapter import AlgorithmAdapter",
               "",
               "@component(kind=\\"adapter\\")",
               "class ${1:Adapter1}(AlgorithmAdapter):",

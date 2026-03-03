@@ -5,7 +5,7 @@ import numpy as np
 from nsgablack.bias.core.base import AlgorithmicBias, DomainBias
 from nsgablack.bias.core.manager import DomainBiasManager, UniversalBiasManager
 from nsgablack.bias.managers.adaptive_manager import AdaptiveAlgorithmicManager, OptimizationState
-from nsgablack.core.adapters.moead import MOEADAdapter, MOEADConfig
+from nsgablack.adapters.moead import MOEADAdapter, MOEADConfig
 from nsgablack.utils.context.context_keys import KEY_MOEAD_NEIGHBOR_MODE, KEY_MOEAD_SUBPROBLEM
 from nsgablack.utils.parallel.evaluator import ParallelEvaluator
 from nsgablack.utils.performance.memory_manager import OptimizationMemoryOptimizer

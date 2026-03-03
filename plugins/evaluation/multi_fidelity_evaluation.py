@@ -121,13 +121,6 @@ class MultiFidelityEvaluationPlugin(Plugin):
                 return
             except Exception:
                 pass
-        runtime = getattr(solver, "runtime", None)
-        if runtime is not None and hasattr(runtime, "increment_evaluation_count"):
-            try:
-                runtime.increment_evaluation_count(int(delta))
-                return
-            except Exception:
-                pass
         try:
             key = "evaluation_count"
             setattr(solver, key, int(getattr(solver, key, 0) or 0) + int(delta))

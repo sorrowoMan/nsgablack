@@ -1,8 +1,23 @@
-# START_HERE
+# START_HERE：先跑通，再变强
 
-NSGABlack 的推荐入口：先脚手架，再组件化装配，再严格审计。
+这份文档是我给“现在就要把项目落地”的你准备的。  
+我不假设你已经熟悉框架内部，只给你最稳、最短、最不绕路的路径。
 
-## 1) 先创建标准项目结构
+---
+
+## 你今天的目标（先别追最优）
+
+我建议你今天只拿下这三件事：
+
+1. 项目能稳定启动。  
+2. 闭环能完整跑完。  
+3. strict 审计能通过。  
+
+先做到这三件事，后面再谈性能和效果，节奏会快得多。
+
+---
+
+## 第 1 步：15 分钟最小启动路径
 
 ```powershell
 python -m nsgablack project init my_project
@@ -11,200 +26,108 @@ python -m nsgablack project doctor --path . --build --strict
 python build_solver.py
 ```
 
-## 2) 最小工作流
+这一步我会让你重点看：
 
-1. `problem/`：实现问题定义（`evaluate` / `evaluate_constraints`）。  
-2. `pipeline/`：实现 initializer/mutator/repair（硬约束优先放这里）。  
-3. `bias/`：表达软偏好（非硬约束）。  
-4. `adapter/`：实现 propose/update 流程。  
-5. `plugins/`：添加工程能力（日志、缓存、恢复、报告）。  
-6. `build_solver.py`：只做装配，不重复实现框架内核。  
+- `build_solver.py` 是否只做装配。  
+- 是否有 import 阶段重计算。  
+- doctor 是否已经清零 error。  
 
-## 2.1) 当前架构要点（v2）
+---
 
-- Context 只放小字段与快照引用（`snapshot_key` / `population_ref` 等）
-- 大对象走 `SnapshotStore`（内存/Redis/文件后端可切）
-- 统一入口：`solver.read_snapshot()` / `Plugin.resolve_population_snapshot()` / `Plugin.commit_population_snapshot()`
+## 第 2 步：按这个顺序组装（非常关键）
 
-## 3) Catalog 使用
+顺序不要乱，乱了就容易变量过多无法归因。
 
-```powershell
-python -m nsgablack catalog search vns
-python -m nsgablack catalog show suite.multi_strategy
-python -m nsgablack project catalog search context_requires --field context --path . --global
-```
+1. `Problem`：先让 `evaluate(x)` 稳定。  
+2. `Pipeline`：先保证可行解生成与修复。  
+3. `Adapter`：先上单策略跑通闭环。  
+4. `Bias`：再加软偏好，保证可解释。  
+5. `Plugins`：最后加并行、checkpoint、trace、报告。  
 
-注册路径优先级：
+---
 
-- 优先：`catalog/entries.toml`
-- 备选：`project_registry.py`
+## 第 3 步：三条硬规则（请直接照做）
 
-## 4) Run Inspector
+1. 状态写入统一走 `solver.*`。  
+2. 小字段走 `ContextStore`。  
+3. 大对象走 `SnapshotStore`。  
 
-Run Inspector 的 `Load` 会调用 `build_solver()` 来构建 wiring。
-`build_solver()` 必须只做装配，重计算延迟到 `run()` / `evaluate()` 首次调用，避免 UI Load 触发耗时任务。
-`Sequence` 卡片包含 `List`、`Trie`、`Trace` 子标签：`List` 看去重序列，`Trie` 看共享前缀与分支，`Trace` 看并发时序明细（默认关闭）。
+统一读写接口：
 
+- `solver.read_snapshot()`
+- `Plugin.resolve_population_snapshot()`
+- `Plugin.commit_population_snapshot()`
 
-```powershell
-python -m nsgablack run_inspector --entry build_solver.py:build_solver
-```
+如果你守住这三条，架构会非常稳。
 
-空启动：
+---
 
-```powershell
-python -m nsgablack run_inspector --empty --workspace .
-```
+## 第 4 步：按角色挑入口
 
-## 5) Strict 快速排障
+### 我先跑项目
+
+- `README.md`
+- `WORKFLOW_END_TO_END.md`
+
+### 我开发 Adapter
+
+- `adapters/`
+- `docs/architecture/README.md`
+- `tests/test_*adapter*.py`
+
+### 我开发 Plugin
+
+- `plugins/`
+- `docs/user_guide/CONTEXT_CONTRACTS.md`
+- `tests/test_*plugin*.py`
+
+### 我做治理与平台
+
+- `project/doctor.py`
+- `catalog/*`
+- `docs/project/CONTRIBUTING.md`
+
+---
+
+## 第 5 步：最常见卡点和处理方式
+
+### 卡点 A：能跑，但结果不稳定
+
+优先查：
+
+- seed 是否固定。  
+- `evaluate` 是否有副作用。  
+- 并行是否有共享状态污染。  
+
+### 卡点 B：doctor 报违规写入
+
+优先查：
+
+- 是否直接写了 `solver.population/objectives/...`。  
+- 是否绕过了 `solver.*` 控制面。  
+
+### 卡点 C：改太多，不知道谁起作用
+
+处理方式：
+
+- 每轮只改一层。  
+- 每轮改完完整复跑。  
+
+---
+
+## 第 6 步：固定你的日常命令
 
 ```powershell
 python -m nsgablack project doctor --path . --strict
+python -m pytest -q
 ```
 
-高频错误码：
+你可以把这两条当“出门前检查”：  
+doctor 看结构，pytest 看行为。
 
-- `runtime-bypass-write`
-- `class-contract-missing`
-- `contracts-not-explicit`
-- `template-not-implemented`
-- `plugin-direct-solver-state-access`
-- `solver-mirror-write`
-- `metrics-provider-missing`
-- `metrics-fallback-invalid`
-- `metrics-fallback-nonliteral`
-- `algorithm-as-bias`
+---
 
-启动错误优先修：
+## 如果你现在只看一份进阶文档
 
-- `build-solver-import-failed`
-- `build-solver-missing`
-- `build-solver-instantiate-failed`
-
-## 6) Checkpoint HMAC（CLI）
-
-```python
-from nsgablack.utils.suites import attach_checkpoint_resume
-
-attach_checkpoint_resume(
-    solver,
-    checkpoint_dir="runs/checkpoints",
-    auto_resume=True,
-    hmac_env_var="NSGABLACK_CHECKPOINT_HMAC_KEY",
-    trust_checkpoint=False,
-)
-```
-
-```powershell
-$env:NSGABLACK_CHECKPOINT_HMAC_KEY = "replace-with-strong-secret"
-python build_solver.py --enable-checkpoint --checkpoint-dir runs/checkpoints
-```
-
-只在迁移历史无签名 checkpoint 时临时加：
-
-```powershell
-python build_solver.py --enable-checkpoint --trust-checkpoint
-```
-
-## 7) Plugin Strict 何时开/关
-
-- 开（审计/复现/CI）：`python build_solver.py --plugin-strict`
-  - 插件报错即停止，避免静默退化。
-- 关（探索调参）：默认关闭
-  - 插件异常仅告警并继续，迭代更快。
-
-## 8) Thread 并发隔离（Bias）
-
-- 使用 `--thread-bias-isolation deepcopy`（推荐默认）可避免线程共享状态污染。
-- 可选 `disable_cache`（性能优先）或 `off`（完全关闭隔离，不推荐）。
-
-## 9) 平台依赖与回归建议
-
-- Run Inspector 需要 Tk。
-- Python 3.10 自动使用 `tomli` fallback。
-- 建议回归命令：
-
-```powershell
-python -m pytest -q tests/test_refactoring.py tests/test_tomli_fallback.py tests/test_optional_numba_probe.py
-python -m nsgablack project doctor --path . --strict
-```
-
-## 10) Directory Responsibility (evaluation vs solver_backends)
-- `plugins/evaluation/`: evaluation-time accelerators and numerical tools (MC/surrogate/multi-fidelity/newton solver).
-- `plugins/solver_backends/`: nested orchestration helpers (inner solver runner, contract bridge, timeout budget).
-- Rule: put reusable evaluation operators in `evaluation`; put cross-layer orchestration in `solver_backends`.
-
-## 11) 深度 × 广度打通入口（推荐）
-- 深度（嵌套）：`docs/user_guide/INNER_SOLVER_BACKENDS.md`
-- 数值求解：`docs/user_guide/NUMERICAL_SOLVER_PLUGINS.md`
-- Redis 后端：`docs/user_guide/REDIS_CONTEXT_BACKEND.md`
-- 总览：`docs/user_guide/DEPTH_BREADTH_WORKFLOW.md`
-- 三层示例：`examples/nested_three_layer_demo.py`
-
-
-## Redis Context Backend (optional)
-
-Enable Redis as context backend (context contract/API stays the same):
-
-```python
-solver = EvolutionSolver(
-    problem,
-    context_store_backend="redis",
-    context_store_redis_url="redis://127.0.0.1:6379/0",
-    context_store_key_prefix="nsgablack:ctx",
-)
-```
-
-Quick verify:
-
-```powershell
-python -c "import redis; r=redis.Redis(host='127.0.0.1', port=6379, db=0); print('ping=', r.ping())"
-```
-
-Docker lifecycle (recommended):
-
-```powershell
-docker run --name nsgablack-redis -p 6379:6379 -d --restart unless-stopped redis:7
-(这是“通用稳妥默认”，你可以按场景改：
-
-最小临时跑（不保活）
-docker run --name nsgablack-redis -p 6379:6379 -d redis (line 7)
-
-需要重启后自动拉起（推荐长期开发机）
---restart unless-stopped
-
-想本机隔离多个项目
-改端口，例如 -p 6381 (line 6379)
-
-不想占用公网监听（更安全）
--p 127.0.0.1 (line 6379, column 6379)
-
-需要持久化（容器删了数据还在）
-加卷：-v redis-data:/data)
-
-# next time after reboot:
-docker start nsgablack-redis
-# stop when not needed:
-docker stop nsgablack-redis
-```
-
-
-常见问题：
-- 第一次使用要不要执行 `docker run`？
-  - 要。首次需要创建容器；之后通常只需 `docker start/stop`。
-- 每次都要重新创建容器吗？
-  - 不需要。`docker start/stop` 只控制启停，不会删除容器。
-- 不启用 Redis 可以吗？
-  - 可以。将 `context_store_backend="memory"` 即可回到内存后端。
-
-## Catalog 注册边界（强规则）
-
-- 框架级组件（`nsgablack.*`）必须注册到全局 Catalog。
-  原因：框架组件是团队共享资产，必须可搜索、可审计、可复用；否则会出现“能跑但查不到”的治理断层。
-- 项目级组件（非 `nsgablack.*`）允许不注册。
-  原因：项目迭代阶段可能快速试验，强制注册会增加摩擦，不利于探索。
-
-在 `project doctor --build --strict` 下：
-
-- 框架级未注册：报错（阻断）。
-- 项目级未注册：输出信息项 `project-component-unregistered`，列出具体组件，不给建议文案。
+看 `WORKFLOW_END_TO_END.md`。  
+那份文档是“我在你旁边陪跑”的完整步骤版。

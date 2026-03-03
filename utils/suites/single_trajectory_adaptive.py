@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ...core.adapters import SingleTrajectoryAdaptiveAdapter, SingleTrajectoryAdaptiveConfig
+from ...adapters import SingleTrajectoryAdaptiveAdapter, SingleTrajectoryAdaptiveConfig
 
 
 def attach_single_trajectory_adaptive(

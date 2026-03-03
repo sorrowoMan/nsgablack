@@ -16,7 +16,7 @@ import warnings
 import numpy as np
 
 from .algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import (
+from ..utils.context.context_keys import (
     KEY_CANDIDATE_ROLES,
     KEY_ROLE,
     KEY_ROLE_ADAPTER,

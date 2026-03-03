@@ -59,7 +59,7 @@ def test_upsert_writes_context_contract_fields(tmp_path):
         key="adapter.demo_context",
         title="DemoAdapter",
         kind="adapter",
-        import_path="nsgablack.core.adapters.vns:VNSAdapter",
+        import_path="nsgablack.adapters.vns:VNSAdapter",
         summary="adapter demo",
         context_requires=("population_ref", "generation"),
         context_provides=("vns_k",),

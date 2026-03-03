@@ -42,7 +42,7 @@ from _bootstrap import ensure_nsgablack_importable  # noqa: E402
 ensure_nsgablack_importable(Path(__file__))
 
 from nsgablack.core.composable_solver import ComposableSolver  # noqa: E402
-from nsgablack.core.adapters import (  # noqa: E402
+from nsgablack.adapters import (  # noqa: E402
     AlgorithmAdapter,
     MOEADAdapter,
     MOEADConfig,

@@ -6,7 +6,7 @@ import numpy as np
 def test_inner_solver_can_run_inner_adapter_pipeline_bias_and_plugin():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import AlgorithmAdapter
+    from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.plugins import BridgeRule, ContractBridgePlugin, InnerSolverConfig, InnerSolverPlugin, Plugin
 
     class InnerProblem(BlackBoxProblem):
@@ -116,8 +116,8 @@ def test_inner_solver_can_run_inner_adapter_pipeline_bias_and_plugin():
 def test_inner_solver_can_run_inner_multi_strategy_stack():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import AlgorithmAdapter
-    from nsgablack.core.adapters.multi_strategy import (
+    from nsgablack.adapters import AlgorithmAdapter
+    from nsgablack.adapters.multi_strategy import (
         MultiStrategyConfig,
         MultiStrategyControllerAdapter,
         StrategySpec,
@@ -238,8 +238,8 @@ def test_inner_solver_can_run_inner_multi_strategy_stack():
 def test_three_layer_inner_with_multi_strategy_pipeline_bias_plugin():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import AlgorithmAdapter
-    from nsgablack.core.adapters.multi_strategy import (
+    from nsgablack.adapters import AlgorithmAdapter
+    from nsgablack.adapters.multi_strategy import (
         MultiStrategyConfig,
         MultiStrategyControllerAdapter,
         StrategySpec,

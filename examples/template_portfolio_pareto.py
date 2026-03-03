@@ -5,7 +5,7 @@ import numpy as np
 try:
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import MOEADConfig
+    from nsgablack.adapters import MOEADConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation
     from nsgablack.utils.suites import attach_moead, attach_benchmark_harness, attach_module_report
@@ -16,7 +16,7 @@ except ModuleNotFoundError:  # pragma: no cover
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.core.adapters import MOEADConfig
+    from nsgablack.adapters import MOEADConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation
     from nsgablack.utils.suites import attach_moead, attach_benchmark_harness, attach_module_report
