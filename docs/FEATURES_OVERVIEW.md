@@ -163,12 +163,19 @@
   - `cache_enabled=True`, `cache_max_items=128`  
   - `history_best_f=inf`, `history_best_x=None`
 
-### Solver 入口（两大主入口）
+### Solver 入口（三类语义）
 
-- 传统 NSGA-II：`core/solver.py` → `EvolutionSolver`  
-- 组合求解器：`core/composable_solver.py` → `ComposableSolver`  
+- 控制底座语义：`core/blank_solver.py` → `SolverBase`  
+  - 提供运行骨架、状态控制面、context/snapshot 通道  
+  - 默认不内置具体优化策略（`step()` 为空，由子类或组件注入）
+
+- step 编排语义：`core/composable_solver.py` → `ComposableSolver`  
   - `adapter` 可替换、支持多策略协同  
+  - 每个 step 走统一流程：`propose -> evaluate -> update`  
   - 默认会调用 pipeline repair（若设置）
+
+- 种群代际语义：`core/evolution_solver.py` → `EvolutionSolver`  
+  - 面向 population/generation 的进化式迭代  
   - `best_x` 为**摘要代表点**：默认标量 `sum(objectives) + violation * 1e6`  
     - 若多目标尺度差异大，可设置 `solver.objective_scalarizer` 自定义标量化规则
 
