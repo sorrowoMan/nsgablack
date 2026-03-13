@@ -1,9 +1,24 @@
 # examples/cases/production_scheduling
 
-用途：生产调度案例的示例与复现说明。
-边界：案例逻辑不作为通用算法。
-示例：`working_integrated_optimizer.py`。
+Production scheduling case demo (project-local architecture).
 
-Purpose: production scheduling case demo.
-Boundary: case-specific logic only.
-Example: `working_integrated_optimizer.py`.
+## Structure
+
+- `problem/`: problem semantics and constraints
+- `pipeline/`: initializer/mutator/repair assembly
+- `bias/`: soft preference module
+- `adapter/`: case-local strategy adapters
+- `solver/`: strict feasible solver control + compatibility entry
+- `plugins/`: runtime plugins and export utilities
+- `cli/`: argument parser
+- `build_solver.py`: scaffold standard entry + real assembly (plugin registration zone)
+- `solver/assembly.py`: compatibility module for legacy imports
+- `solver/run_case.py`: CLI entrypoint
+- `working_integrated_optimizer.py`: compatibility wrapper only
+
+## Run
+
+```powershell
+python build_solver.py
+python solver/run_case.py --parallel --parallel-backend thread --parallel-workers 8
+```

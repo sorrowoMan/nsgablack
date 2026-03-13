@@ -131,25 +131,18 @@ class Catalog:
 
         out = [e for e in self._entries if match(e)]
 
-        # UX: prefer "official recommended wiring" first.
-        # Suites are the authoritative combinations and should surface before raw parts.
-        def rank(e: CatalogEntry) -> Tuple[int, int, str]:
-            is_suite = int(e.kind == "suite" or e.key.startswith("suite."))
-            # smaller is better
-            primary = 0 if is_suite else 1
-            # keep stable-ish grouping by kind and key
+        # keep stable-ish grouping by kind and key
+        def rank(e: CatalogEntry) -> Tuple[int, str]:
             kind_order = {
-                "suite": 0,
-                "adapter": 1,
-                "plugin": 2,
-                "bias": 3,
-                "representation": 4,
-                "tool": 5,
-                "doc": 6,
-                "example": 7,
+                "adapter": 0,
+                "plugin": 1,
+                "bias": 2,
+                "representation": 3,
+                "tool": 4,
+                "doc": 5,
+                "example": 6,
             }
-            secondary = int(kind_order.get(e.kind, 99))
-            return (primary, secondary, e.key)
+            return (int(kind_order.get(e.kind, 99)), e.key)
 
         out.sort(key=rank)
         return out[: max(0, int(limit))]
@@ -489,7 +482,7 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.adapters:VNSAdapter",
             tags=('adapter', 'core', 'local_search', 'refinement', 'stage', 'strategy', 'vns'),
             summary="VNS局部搜索内核：多邻域分阶段精修。 / Adapter: VNS local search core with multi-neighborhood refinement.",
-            companions=("repr.context_gaussian", "repr.context_switch", "suite.vns"),
+            companions=("repr.context_gaussian", "repr.context_switch"),
             use_when=(
                 "需要以局部精修为主，并可逐步扩大/切换邻域时",
                 "希望用少量评估预算做稳定改进时",
@@ -509,7 +502,7 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.adapters:SimulatedAnnealingAdapter",
             tags=('adapter', 'core', 'local_search', 'sa', 'simulated_annealing', 'strategy'),
             summary="模拟退火内核：温度调度 + Metropolis接受。 / Adapter: SA core with temperature schedule and Metropolis acceptance.",
-            companions=("repr.context_gaussian", "suite.sa"),
+            companions=("repr.context_gaussian",),
             use_when=(
                 "需要允许小概率接受劣解以跳出局部最优时",
                 "希望通过温度控制探索-收敛节奏时",
@@ -529,7 +522,7 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.adapters:MultiStrategyControllerAdapter",
             tags=('adapter', 'controller', 'cooperation', 'core', 'multi_strategy', 'parallel', 'roles', 'strategy'),
             summary="多策略协同控制器：统一调度、共享状态与动态预算。 / Adapter: multi-strategy controller with unified scheduling/shared state/dynamic budgets.",
-            companions=("suite.multi_strategy", "plugin.pareto_archive"),
+            companions=("plugin.pareto_archive",),
             use_when=(
                 "需要 explorer/exploiter 等角色协同并保持可审计流程时",
                 "需要把多个 adapter 组合成同一运行回路时",
@@ -549,7 +542,7 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.adapters:MOEADAdapter",
             tags=('adapter', 'core', 'decomposition', 'moead', 'multiobjective', 'strategy'),
             summary="MOEA/D分解内核：权重向量 + 邻域替换。 / Adapter: MOEA/D decomposition core with weight vectors and neighborhood replacement.",
-            companions=("plugin.pareto_archive", "suite.moead"),
+            companions=("plugin.pareto_archive",),
             use_when=(
                 "多目标问题希望用分解子问题并行推进时",
                 "需要稳定的邻域协同更新而非全局排序时",
@@ -782,7 +775,7 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.bias.algorithmic.signal_driven.robustness:RobustnessBias",
             tags=('bias', 'mc', 'robustness', 'signal_driven', 'algorithmic'),
             summary="鲁棒性偏置：针\u5bf9\u6270\u52a8\u7684\u7a33\u5b9a\u6027\u8bc4\u4f30\u3002 / Algorithmic bias: robustness-oriented scoring under perturbations.",
-            companions=("plugin.monte_carlo_eval", "suite.monte_carlo_robustness"),
+            companions=("plugin.monte_carlo_eval",),
             use_when=(
                 'Need to inject soft preference guidance without changing hard constraints.',
             ),
@@ -792,7 +785,7 @@ def _default_entries() -> List[CatalogEntry]:
             ),
             required_companions=(
                 'plugin.monte_carlo_eval',
-                'suite.monte_carlo_robustness',
+                
             ),
             config_keys=(
                 '(none)',
@@ -918,7 +911,7 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.plugins.evaluation.monte_carlo_evaluation:MonteCarloEvaluationPlugin",
             tags=('evaluation', 'mc', 'signal'),
             summary="\u63d2\u4ef6\uff1aMonteCarloEvaluationPlugin\u3002 / Plugin: MonteCarloEvaluationPlugin.",
-            companions=("bias.robustness", "suite.monte_carlo_robustness"),
+            companions=("bias.robustness",),
             use_when=(
                 '需要记录/审查/并行/评估增强等工程能力时',
             ),
@@ -928,7 +921,7 @@ def _default_entries() -> List[CatalogEntry]:
             ),
             required_companions=(
                 'bias.robustness',
-                'suite.monte_carlo_robustness',
+                
             ),
             config_keys=(
                 'name',
@@ -943,7 +936,7 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.plugins.runtime.pareto_archive:ParetoArchivePlugin",
             tags=('archive', 'multiobjective', 'pareto'),
             summary="\u63d2\u4ef6\uff1aParetoArchivePlugin\u3002 / Plugin: ParetoArchivePlugin.",
-            companions=("adapter.moead", "suite.moead"),
+            companions=("adapter.moead",),
             use_when=(
                 '需要记录/审查/并行/评估增强等工程能力时',
             ),
@@ -953,7 +946,7 @@ def _default_entries() -> List[CatalogEntry]:
             ),
             required_companions=(
                 'adapter.moead',
-                'suite.moead',
+                
             ),
             config_keys=(
                 'name',
@@ -968,7 +961,7 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.plugins.ops.benchmark_harness:BenchmarkHarnessPlugin",
             tags=('benchmark', 'comparison', 'logging', 'protocol'),
             summary="\u63d2\u4ef6\uff1aBenchmarkHarnessPlugin\u3002 / Plugin: BenchmarkHarnessPlugin.",
-            companions=("suite.benchmark_harness",),
+            companions=("plugin.module_report",),
             use_when=(
                 '需要记录/审查/并行/评估增强等工程能力时',
             ),
@@ -977,7 +970,7 @@ def _default_entries() -> List[CatalogEntry]:
                 'solver.add_plugin(BenchmarkHarnessPlugin())',
             ),
             required_companions=(
-                'suite.benchmark_harness',
+                '(none)',
             ),
             config_keys=(
                 'name',
@@ -993,7 +986,7 @@ def _default_entries() -> List[CatalogEntry]:
             import_path="nsgablack.plugins.ops.module_report:ModuleReportPlugin",
             tags=('ablation', 'audit', 'bias', 'report'),
             summary="\u63d2\u4ef6\uff1aModuleReportPlugin\u3002 / Plugin: ModuleReportPlugin.",
-            companions=("suite.module_report", "plugin.benchmark_harness"),
+            companions=("plugin.benchmark_harness",),
             use_when=(
                 '需要记录/审查/并行/评估增强等工程能力时',
             ),
@@ -1002,7 +995,6 @@ def _default_entries() -> List[CatalogEntry]:
                 'solver.add_plugin(ModuleReportPlugin())',
             ),
             required_companions=(
-                'suite.module_report',
                 'plugin.benchmark_harness',
             ),
             config_keys=(
@@ -1229,381 +1221,6 @@ def _default_entries() -> List[CatalogEntry]:
             ),
             example_entry='python -m nsgablack catalog search dynamic_repair --kind example',
         ),
-        # --- Suites (authority wiring) ---
-        CatalogEntry(
-            key="suite.monte_carlo_robustness",
-            title="attach_monte_carlo_robustness",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_monte_carlo_robustness",
-            tags=('authority', 'bundle', 'mc', 'robustness', 'suite'),
-            summary="权威装配：Monte Carlo评估 + 鲁棒性偏置。 / Authority wiring: MC evaluation + robustness bias.",
-            companions=("plugin.monte_carlo_eval", "bias.robustness"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_monte_carlo_robustness',
-                'attach_monte_carlo_robustness(solver)',
-            ),
-            required_companions=(
-                'plugin.monte_carlo_eval',
-                'bias.robustness',
-            ),
-            config_keys=(
-                'mc_samples',
-                'reduce',
-                'cvar_alpha',
-                'random_seed',
-                'robustness_weight',
-                'robustness_aggregate',
-                'robustness_power',
-            ),
-            example_entry='python -m nsgablack catalog search monte_carlo_robustness --kind example',
-        ),
-        CatalogEntry(
-            key="suite.ray_parallel",
-            title="attach_ray_parallel",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_ray_parallel",
-            tags=('authority', 'bundle', 'distributed', 'parallel', 'ray', 'suite'),
-            summary="权威装配：Ray并行评估/调度。 / Authority wiring: Ray parallel evaluation/scheduling.",
-            companions=("plugin.profiler", "plugin.benchmark_harness"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_ray_parallel',
-                'attach_ray_parallel(solver)',
-            ),
-            required_companions=(
-                'plugin.profiler',
-                'plugin.benchmark_harness',
-            ),
-            config_keys=(
-                'problem_factory',
-                'address',
-                'init_ray',
-                'init_kwargs',
-                'max_workers',
-                'chunk_size',
-                'strict',
-            ),
-            example_entry='python -m nsgablack catalog search ray_parallel --kind example',
-        ),
-        CatalogEntry(
-            key="suite.moead",
-            title="attach_moead",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_moead",
-            tags=('authority', 'bundle', 'moead', 'multiobjective', 'suite'),
-            summary="权威装配：MOEA/D适配器 + Pareto归档。 / Authority wiring: MOEA/D adapter + Pareto archive.",
-            companions=("adapter.moead", "plugin.pareto_archive"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_moead',
-                'attach_moead(solver)',
-            ),
-            required_companions=(
-                'adapter.moead',
-                'plugin.pareto_archive',
-            ),
-            config_keys=(
-                'config',
-                'archive',
-            ),
-            example_entry='python -m nsgablack catalog search moead --kind example',
-        ),
-        CatalogEntry(
-            key="suite.sa",
-            title="attach_simulated_annealing",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_simulated_annealing",
-            tags=('authority', 'bundle', 'sa', 'simulated_annealing', 'suite'),
-            summary="权威装配：SA适配器 + 推荐算子。 / Authority wiring: SA adapter + recommended operators.",
-            companions=("adapter.sa", "repr.context_gaussian"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_simulated_annealing',
-                'attach_simulated_annealing(solver)',
-            ),
-            required_companions=(
-                'adapter.sa',
-                'repr.context_gaussian',
-            ),
-            config_keys=(
-                'config',
-            ),
-            example_entry='python -m nsgablack catalog search sa --kind example',
-        ),
-        CatalogEntry(
-            key="suite.vns",
-            title="attach_vns",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_vns",
-            tags=('authority', 'bundle', 'local_search', 'suite', 'vns'),
-            summary="权威装配：VNS适配器 + 多邻域算子。 / Authority wiring: VNS adapter + multi-neighborhood operators.",
-            companions=("adapter.vns", "repr.context_gaussian", "repr.context_switch"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_vns',
-                'attach_vns(solver)',
-            ),
-            required_companions=(
-                'adapter.vns',
-                'repr.context_gaussian',
-                'repr.context_switch',
-            ),
-            config_keys=(
-                'config',
-                'ensure_context_mutator',
-            ),
-            example_entry='python -m nsgablack catalog search vns --kind example',
-        ),
-        CatalogEntry(
-            key="suite.trust_region_dfo",
-            title="attach_trust_region_dfo",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_trust_region_dfo",
-            tags=('authority', 'bundle', 'dfo', 'local_search', 'suite', 'trust_region'),
-            summary="权威装配：信赖域DFO + 报告插件。 / Authority wiring: trust-region DFO + reporting.",
-            companions=("adapter.trust_region_dfo", "plugin.benchmark_harness", "plugin.module_report"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_trust_region_dfo',
-                'attach_trust_region_dfo(solver)',
-            ),
-            required_companions=(
-                'adapter.trust_region_dfo',
-                'plugin.benchmark_harness',
-                'plugin.module_report',
-            ),
-            config_keys=(
-                '(none)',
-            ),
-            example_entry='python -m nsgablack catalog search trust_region_dfo --kind example',
-        ),
-        CatalogEntry(
-            key="suite.trust_region_subspace",
-            title="attach_trust_region_subspace",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_trust_region_subspace",
-            tags=('authority', 'bundle', 'local_search', 'subspace', 'suite', 'trust_region'),
-            summary="权威装配：子空间信赖域 + 报告插件。 / Authority wiring: subspace trust-region + reporting.",
-            companions=("adapter.trust_region_subspace", "plugin.benchmark_harness", "plugin.module_report"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_trust_region_subspace',
-                'attach_trust_region_subspace(solver)',
-            ),
-            required_companions=(
-                'adapter.trust_region_subspace',
-                'plugin.benchmark_harness',
-                'plugin.module_report',
-            ),
-            config_keys=(
-                '(none)',
-            ),
-            example_entry='python -m nsgablack catalog search trust_region_subspace --kind example',
-        ),
-        CatalogEntry(
-            key="suite.trust_region_subspace_learned",
-            title="attach_trust_region_subspace_learned",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_trust_region_subspace_learned",
-            tags=('authority', 'bundle', 'learned', 'subspace', 'suite', 'trust_region'),
-            summary="权威装配：子空间信赖域 + 学习基底(PCA/SVD)。 / Authority wiring: subspace trust-region + learned basis (PCA/SVD).",
-            companions=("adapter.trust_region_subspace", "plugin.subspace_basis", "plugin.benchmark_harness", "plugin.module_report"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_trust_region_subspace_learned',
-                'attach_trust_region_subspace_learned(solver)',
-            ),
-            required_companions=(
-                'adapter.trust_region_subspace',
-                'plugin.subspace_basis',
-                'plugin.benchmark_harness',
-                'plugin.module_report',
-            ),
-            config_keys=(
-                '(none)',
-            ),
-            example_entry='python -m nsgablack catalog search trust_region_subspace_learned --kind example',
-        ),
-        CatalogEntry(
-            key="suite.trust_region_nonsmooth",
-            title="attach_trust_region_nonsmooth",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_trust_region_nonsmooth",
-            tags=('authority', 'bundle', 'local_search', 'nonsmooth', 'suite', 'trust_region'),
-            summary="权威装配：非光滑信赖域 + 报告插件。 / Authority wiring: nonsmooth trust-region + reporting.",
-            companions=("adapter.trust_region_nonsmooth", "plugin.benchmark_harness", "plugin.module_report"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_trust_region_nonsmooth',
-                'attach_trust_region_nonsmooth(solver)',
-            ),
-            required_companions=(
-                'adapter.trust_region_nonsmooth',
-                'plugin.benchmark_harness',
-                'plugin.module_report',
-            ),
-            config_keys=(
-                '(none)',
-            ),
-            example_entry='python -m nsgablack catalog search trust_region_nonsmooth --kind example',
-        ),
-        CatalogEntry(
-            key="suite.mas",
-            title="attach_mas",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_mas",
-            tags=('authority', 'bundle', 'local_search', 'mas', 'suite', 'surrogate'),
-            summary="权威装配：MAS + 模型插件 + 报告。 / Authority wiring: MAS + model plugin + reporting.",
-            companions=("adapter.mas", "plugin.mas_model", "plugin.benchmark_harness", "plugin.module_report"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_mas',
-                'attach_mas(solver)',
-            ),
-            required_companions=(
-                'adapter.mas',
-                'plugin.mas_model',
-                'plugin.benchmark_harness',
-                'plugin.module_report',
-            ),
-            config_keys=(
-                '(none)',
-            ),
-            example_entry='python -m nsgablack catalog search mas --kind example',
-        ),
-        CatalogEntry(
-            key="suite.multi_strategy",
-            title="attach_multi_strategy_coop",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_multi_strategy_coop",
-            tags=('authority', 'bundle', 'cooperation', 'multi_strategy', 'parallel', 'suite'),
-            summary="权威装配：多策略协同（角色/预算/共享状态）。 / Authority wiring: multi-strategy cooperation with roles/budgets/shared state.",
-            companions=("adapter.multi_strategy", "plugin.pareto_archive"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_multi_strategy_coop',
-                'attach_multi_strategy_coop(solver)',
-            ),
-            required_companions=(
-                'adapter.multi_strategy',
-                'plugin.pareto_archive',
-            ),
-            config_keys=(
-                'strategies',
-                'roles',
-                'config',
-                'attach_pareto_archive',
-            ),
-            example_entry='python -m nsgablack catalog search multi_strategy --kind example',
-        ),
-        CatalogEntry(
-            key="suite.benchmark_harness",
-            title="attach_benchmark_harness",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_benchmark_harness",
-            tags=('authority', 'benchmark', 'bundle', 'comparison', 'protocol', 'suite'),
-            summary="权威装配：BenchmarkHarness统一输出口径。 / Authority wiring: BenchmarkHarness output protocol.",
-            companions=("plugin.benchmark_harness",),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_benchmark_harness',
-                'attach_benchmark_harness(solver)',
-            ),
-            required_companions=(
-                'plugin.benchmark_harness',
-            ),
-            config_keys=(
-                'output_dir',
-                'run_id',
-                'seed',
-                'log_every',
-                'flush_every',
-                'overwrite',
-            ),
-            example_entry='python -m nsgablack catalog search benchmark_harness --kind example',
-        ),
-        CatalogEntry(
-            key="suite.module_report",
-            title="attach_module_report",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_module_report",
-            tags=('ablation', 'audit', 'authority', 'bundle', 'report', 'suite'),
-            summary="权威装配：ModuleReport审计/消融。 / Authority wiring: ModuleReport audit/ablation.",
-            companions=("plugin.module_report", "plugin.benchmark_harness"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_module_report',
-                'attach_module_report(solver)',
-            ),
-            required_companions=(
-                'plugin.module_report',
-                'plugin.benchmark_harness',
-            ),
-            config_keys=(
-                'output_dir',
-                'run_id',
-                'write_bias_markdown',
-            ),
-            example_entry='python -m nsgablack catalog search module_report --kind example',
-        ),
-        CatalogEntry(
-            key="suite.nsga2_engineering",
-            title="attach_nsga2_engineering",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_nsga2_engineering",
-            tags=('authority', 'bundle', 'engineering', 'nsga2', 'plugins', 'suite'),
-            summary="权威装配：NSGA-II工程化插件集（日志/精英/多样性）。 / Authority wiring: NSGA-II engineering bundle (logging/elite/diversity).",
-            companions=("plugin.elite", "plugin.convergence_monitor", "plugin.diversity_init", "plugin.benchmark_harness"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_nsga2_engineering',
-                'attach_nsga2_engineering(solver)',
-            ),
-            required_companions=(
-                'plugin.elite',
-                'plugin.convergence_monitor',
-                'plugin.diversity_init',
-                'plugin.benchmark_harness',
-            ),
-            config_keys=(
-                'enable_basic_elite',
-                'enable_convergence',
-                'enable_diversity_metrics',
-                'convergence_early_stop',
-            ),
-            example_entry='python -m nsgablack catalog search nsga2_engineering --kind example',
-        ),
-
-        # --- Biases (more algorithmic building blocks; kept as "main class per module") ---
         CatalogEntry(
             key="bias.pso",
             title="ParticleSwarmBias",
@@ -1715,221 +1332,6 @@ def _default_entries() -> List[CatalogEntry]:
             example_entry='python -m nsgablack catalog search diversity --kind example',
         ),
 
-        
-        CatalogEntry(
-            key="suite.trust_region_mo_dfo",
-            title="attach_trust_region_mo_dfo",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_trust_region_mo_dfo",
-            tags=(', ', 'authority', 'bundle', 'frontier', 'multiobjective', 'suite', 'trust_region'),
-            summary="权威装配：多目标DFO + Pareto + 报告。 / Authority wiring: MO DFO + Pareto + reporting.",
-            companions=("adapter.trust_region_mo_dfo", "plugin.pareto_archive"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_trust_region_mo_dfo',
-                'attach_trust_region_mo_dfo(solver)',
-            ),
-            required_companions=(
-                'adapter.trust_region_mo_dfo',
-                'plugin.pareto_archive',
-            ),
-            config_keys=(
-                '(none)',
-            ),
-            example_entry='python -m nsgablack catalog search trust_region_mo_dfo --kind example',
-        ),
-        CatalogEntry(
-            key="suite.trust_region_subspace_frontier",
-            title="attach_trust_region_subspace_frontier",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_trust_region_subspace_frontier",
-            tags=(', ', 'authority', 'bundle', 'frontier', 'subspace', 'suite', 'trust_region'),
-            summary="权威装配：子空间信赖域前沿组合 + 报告。 / Authority wiring: subspace trust-region frontier bundle.",
-            companions=("adapter.trust_region_subspace", "plugin.subspace_basis"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_trust_region_subspace_frontier',
-                'attach_trust_region_subspace_frontier(solver)',
-            ),
-            required_companions=(
-                'adapter.trust_region_subspace',
-                'plugin.subspace_basis',
-            ),
-            config_keys=(
-                '(none)',
-            ),
-            example_entry='python -m nsgablack catalog search trust_region_subspace_frontier --kind example',
-        ),
-        CatalogEntry(
-            key="suite.active_learning_surrogate",
-            title="attach_active_learning_surrogate",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_active_learning_surrogate",
-            tags=('active_learning', 'authority', 'bundle', 'frontier', 'suite', 'surrogate'),
-            summary="权威装配：主动学习代理评估 + 报告。 / Authority wiring: active-learning surrogate evaluation + reporting.",
-            companions=("plugin.surrogate_eval",),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_active_learning_surrogate',
-                'attach_active_learning_surrogate(solver)',
-            ),
-            required_companions=(
-                'plugin.surrogate_eval',
-            ),
-            config_keys=(
-                '(none)',
-            ),
-            example_entry='python -m nsgablack catalog search active_learning_surrogate --kind example',
-        ),
-        CatalogEntry(
-            key="suite.robust_dfo",
-            title="attach_robust_dfo",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_robust_dfo",
-            tags=('authority', 'bundle', 'dfo', 'frontier', 'mc', 'robustness', 'suite'),
-            summary="权威装配：DFO + MC评估 + 鲁棒偏置。 / Authority wiring: DFO + MC eval + robustness bias.",
-            companions=("adapter.trust_region_dfo", "plugin.monte_carlo_eval", "bias.robustness"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_robust_dfo',
-                'attach_robust_dfo(solver)',
-            ),
-            required_companions=(
-                'adapter.trust_region_dfo',
-                'plugin.monte_carlo_eval',
-                'bias.robustness',
-            ),
-            config_keys=(
-                '(none)',
-            ),
-            example_entry='python -m nsgablack catalog search robust_dfo --kind example',
-        ),
-        CatalogEntry(
-            key="suite.surrogate_assisted_ea",
-            title="attach_surrogate_assisted_ea",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_surrogate_assisted_ea",
-            tags=('authority', 'bundle', 'evolutionary', 'frontier', 'suite', 'surrogate'),
-            summary="权威装配：代理辅助进化搜索。 / Authority wiring: surrogate-assisted evolutionary search.",
-            companions=("plugin.surrogate_eval",),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_surrogate_assisted_ea',
-                'attach_surrogate_assisted_ea(solver)',
-            ),
-            required_companions=(
-                'plugin.surrogate_eval',
-            ),
-            config_keys=(
-                '(none)',
-            ),
-            example_entry='python -m nsgablack catalog search surrogate_assisted_ea --kind example',
-        ),
-        CatalogEntry(
-            key="suite.surrogate_model_lab",
-            title="attach_surrogate_model_lab",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_surrogate_model_lab",
-            tags=('authority', 'bundle', 'frontier', 'model_type', 'suite', 'surrogate'),
-            summary="权威装配：代理模型家族实验室。 / Authority wiring: surrogate model family lab bundle.",
-            companions=("plugin.surrogate_eval",),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_surrogate_model_lab',
-                'attach_surrogate_model_lab(solver)',
-            ),
-            required_companions=(
-                'plugin.surrogate_eval',
-            ),
-            config_keys=(
-                'model_type',
-            ),
-            example_entry='python -m nsgablack catalog search surrogate_model_lab --kind example',
-        ),
-        CatalogEntry(
-            key="suite.structure_prior_mo",
-            title="attach_structure_prior_mo",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_structure_prior_mo",
-            tags=('authority', 'bundle', 'frontier', 'multiobjective', 'structure', 'suite'),
-            summary="权威装配：结构先验 + 多目标组合。 / Authority wiring: structure-prior + multi-objective bundle.",
-            companions=("bias.structure_prior", "adapter.moead"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_structure_prior_mo',
-                'attach_structure_prior_mo(solver)',
-            ),
-            required_companions=(
-                'bias.structure_prior',
-                'adapter.moead',
-            ),
-            config_keys=(
-                '(none)',
-            ),
-            example_entry='python -m nsgablack catalog search structure_prior_mo --kind example',
-        ),
-        
-        CatalogEntry(
-            key="suite.multi_fidelity_eval",
-            title="attach_multi_fidelity_eval",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_multi_fidelity_eval",
-            tags=('authority', 'bundle', 'evaluation', 'frontier', 'multi_fidelity', 'suite'),
-            summary="权威装配：多保真评估 + 报告。 / Authority wiring: multi-fidelity evaluation + reporting.",
-            companions=("plugin.multi_fidelity_eval",),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_multi_fidelity_eval',
-                'attach_multi_fidelity_eval(solver)',
-            ),
-            required_companions=(
-                'plugin.multi_fidelity_eval',
-            ),
-            config_keys=(
-                '(none)',
-            ),
-            example_entry='python -m nsgablack catalog search multi_fidelity_eval --kind example',
-        ),
-        CatalogEntry(
-            key="suite.risk_cvar",
-            title="attach_risk_cvar",
-            kind="suite",
-            import_path="nsgablack.utils.suites:attach_risk_cvar",
-            tags=('authority', 'bundle', 'cvar', 'frontier', 'risk', 'suite'),
-            summary="权威装配：MC评估 + CVaR风险偏置。 / Authority wiring: MC evaluation + CVaR risk bias.",
-            companions=("plugin.monte_carlo_eval", "bias.risk"),
-            use_when=(
-                '想一键接入权威组合，避免漏配时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.utils.suites import attach_risk_cvar',
-                'attach_risk_cvar(solver)',
-            ),
-            required_companions=(
-                'plugin.monte_carlo_eval',
-                'bias.risk',
-            ),
-            config_keys=(
-                '(none)',
-            ),
-            example_entry='python -m nsgablack catalog search risk_cvar --kind example',
-        ),
         # --- Plugins (more capabilities) ---
         CatalogEntry(
             key="plugin.adaptive_parameters",
@@ -3004,7 +2406,7 @@ def _discover_python_entries() -> List[CatalogEntry]:
         "nsgablack.adapters",
         "nsgablack.bias",
         "nsgablack.representation",
-        "nsgablack.utils.suites",
+        "nsgablack.utils.wiring",
         "nsgablack.plugins",
     ]
     out: List[CatalogEntry] = []

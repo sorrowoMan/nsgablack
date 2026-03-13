@@ -21,7 +21,7 @@
 2. **with_parallel_evaluation** (`utils/parallel/integration.py`)
 
    - 推荐的“集成方式”：在不改 Solver 源码的前提下，把并行评估能力注入到一次运行里
-   - 保持 core 干净：并行属于工程能力（tool/plugin/suite），不属于求解器底座强绑定能力
+   - 保持 core 干净：并行属于工程能力（tool、plugin、wiring helper），不属于求解器底座强绑定能力
 3. **SmartEvaluatorSelector** (智能选择器)
 
    - 根据问题特性自动选择最佳并行策略
@@ -69,7 +69,7 @@ with with_parallel_evaluation(
 
 说明：
 - 这种方式不会改变你的 Solver 类型，只是在运行期间把 `ParallelEvaluator` 挂接进去
-- 更符合当前框架的“单一路径收敛”：core 不做装配，装配在 suite/tool/plugin 层完成
+- 更符合当前框架的“单一路径收敛”：core 不做装配，装配在 wiring helper/tool/plugin 层完成
 
 ## 配置选项
 

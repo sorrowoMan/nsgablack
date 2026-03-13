@@ -31,7 +31,7 @@ def get_project_entries():
             key="problem.production_schedule",
             title="ProductionSchedulingProblem",
             kind="tool",
-            import_path="refactor_problem:ProductionSchedulingProblem",
+            import_path="problem:ProductionSchedulingProblem",
             tags=("project", "problem", "production", "scheduling"),
             summary="Production scheduling problem semantics and objective definition.",
             companions=("project.pipeline.production_schedule",),
@@ -42,7 +42,7 @@ def get_project_entries():
             context_notes=("Problem layer does not mutate runtime context directly.",),
             use_when=("Define objective/constraint semantics for this production case.",),
             minimal_wiring=(
-                "from refactor_problem import ProductionSchedulingProblem",
+                "from problem import ProductionSchedulingProblem",
                 "problem = ProductionSchedulingProblem(...)",
             ),
             required_companions=("project.pipeline.production_schedule",),
@@ -53,7 +53,7 @@ def get_project_entries():
             key="pipeline.production_schedule",
             title="build_schedule_pipeline",
             kind="representation",
-            import_path="refactor_pipeline:build_schedule_pipeline",
+            import_path="pipeline:build_schedule_pipeline",
             tags=("project", "pipeline", "repair", "production"),
             summary="Schedule representation pipeline (initializer/mutator/repair).",
             companions=("project.problem.production_schedule",),
@@ -72,7 +72,7 @@ def get_project_entries():
             key="bias.production_schedule",
             title="build_production_bias_module",
             kind="bias",
-            import_path="refactor_bias:build_production_bias_module",
+            import_path="bias:build_production_bias_module",
             tags=("project", "bias", "domain", "production"),
             summary="Domain preference bundle for production scheduling.",
             companions=("project.problem.production_schedule",),
@@ -83,7 +83,7 @@ def get_project_entries():
             context_notes=("Bias layer expresses soft preferences and does not enforce hard feasibility.",),
             use_when=("Need domain-level preference shaping for production objectives.",),
             minimal_wiring=(
-                "from refactor_bias import build_production_bias_module",
+                "from bias import build_production_bias_module",
                 "bias_module = build_production_bias_module(problem, weights=...)",
             ),
             required_companions=("project.problem.production_schedule",),
@@ -110,4 +110,3 @@ def get_project_entries():
             example_entry="build_solver:build_solver",
         ),
     ]
-

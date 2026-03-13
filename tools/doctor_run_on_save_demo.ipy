@@ -1,0 +1,98 @@
+# %%
+# Doctor IDE diagnostics demo (script-style cells).
+# If you want true notebook grids, open `tools/doctor_run_on_save_demo.ipynb`.
+
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+def ensure_demo_root(*, reset: bool = False) -> Path:
+    global tmp
+    workspace_demo = (Path.cwd() / ".doctor_demo").resolve()
+    if (
+        reset
+        or "tmp" not in globals()
+        or not isinstance(tmp, Path)
+        or not tmp.exists()
+        or tmp != workspace_demo
+    ):
+        tmp = workspace_demo
+    if reset and tmp.exists():
+        shutil.rmtree(tmp, ignore_errors=True)
+    (tmp / "plugins").mkdir(parents=True, exist_ok=True)
+    return tmp
+
+
+def write_violation(root: Path) -> Path:
+    file_path = root / "plugins" / "demo_violation.py"
+    file_path.write_text(
+        "def bad_call(solver):\n"
+        "    solver.runtime._unsafe_private_hook()\n",
+        encoding="utf-8",
+    )
+    return file_path
+
+
+def write_fixed(root: Path) -> Path:
+    file_path = root / "plugins" / "demo_violation.py"
+    file_path.write_text(
+        "def ok_call(solver):\n"
+        "    return solver\n",
+        encoding="utf-8",
+    )
+    return file_path
+
+
+def run_doctor(path: Path) -> tuple[int, str, str]:
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "nsgablack",
+            "project",
+            "doctor",
+            "--path",
+            str(path),
+            "--strict",
+            "--format",
+            "problem",
+        ],
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+    )
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+# %%
+# 1) Create violating file in workspace
+root = ensure_demo_root(reset=True)
+violating = write_violation(root)
+print("demo root:", root)
+print("violating file:", violating)
+
+
+# %%
+# 2) Run doctor (terminal output style)
+code, out, err = run_doctor(root)
+print("exit_code =", code)
+print(out)
+if err.strip():
+    print("stderr:")
+    print(err)
+
+
+# %%
+# 3) Fix and run again
+fixed = write_fixed(root)
+code2, out2, err2 = run_doctor(root)
+print("fixed file:", fixed)
+print("exit_code =", code2)
+print(out2)
+if err2.strip():
+    print("stderr:")
+    print(err2)

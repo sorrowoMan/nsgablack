@@ -4,16 +4,14 @@ import numpy as np
 
 try:
     from nsgablack.core.evolution_solver import EvolutionSolver
-    from nsgablack.utils.suites import attach_nsga2_engineering
-    from nsgablack.plugins import BenchmarkHarnessPlugin, ModuleReportPlugin
+    from nsgablack.plugins import BasicElitePlugin, BenchmarkHarnessPlugin, ModuleReportPlugin
 except ModuleNotFoundError:  # pragma: no cover
     import sys
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from nsgablack.core.evolution_solver import EvolutionSolver
-    from nsgablack.utils.suites import attach_nsga2_engineering
-    from nsgablack.plugins import BenchmarkHarnessPlugin, ModuleReportPlugin
+    from nsgablack.plugins import BasicElitePlugin, BenchmarkHarnessPlugin, ModuleReportPlugin
 
 
 class BiObjectiveSphere:
@@ -39,12 +37,7 @@ def build_solver():
     solver.set_solver_hyperparams(pop_size=60)
     solver.set_solver_hyperparams(max_generations=40)
 
-    attach_nsga2_engineering(
-        solver,
-        enable_basic_elite=True,
-        enable_convergence=False,
-        enable_diversity_metrics=False,
-    )
+    solver.add_plugin(BasicElitePlugin(retention_prob=0.9, retention_ratio=0.1))
 
     solver.add_plugin(BenchmarkHarnessPlugin())
     solver.add_plugin(ModuleReportPlugin())

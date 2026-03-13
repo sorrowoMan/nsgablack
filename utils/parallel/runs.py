@@ -179,7 +179,7 @@ def run_vns_in_parallel(
     if BlackBoxSolverVNS is None:
         raise ImportError(
             "BlackBoxSolverVNS 已从主包中归档（solvers/ 已移除）。"
-            "如需 VNS，请使用 adapters 的 VNSAdapter（ComposableSolver + utils/suites/vns.py）。"
+            "如需 VNS，请使用 adapters 的 VNSAdapter（ComposableSolver + ContextGaussianMutation/ContextSwitchMutator）。"
         )
     tasks: List[Tuple[Callable[[], BlackBoxProblem], int, Dict[str, Any]]] = [
         (problem_factory, i, solver_kwargs)

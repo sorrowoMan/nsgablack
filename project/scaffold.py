@@ -68,76 +68,126 @@ def _readme_for_folder(name: str) -> str:
 
 def _root_readme(project_name: str) -> str:
     return dedent(
-        f"""\
-        # {project_name}
+        f"""        # {project_name}
 
-        **????**
-        NSGABlack ???????
+        NSGABlack scaffold project.
 
-        ## ???? / Structure
-        - `problem/`: ???? / problem definition
-        - `pipeline/`: ?????? / representation + hard constraints
-        - `bias/`: ??? / soft preference
-        - `adapter/`: ????????/ strategy orchestration (optional)
-        - `plugins/`: ????????/ engineering capabilities (optional)
-        - `data/`: ???? / input data
-        - `assets/`: ???? / outputs
+        ## Start Here (2 files only)
+        - Read `START_HERE.md` first (stage-gate workflow).
+        - Keep `BUILD_SOLVER_REGISTRATION.md` open while wiring `build_solver.py`.
 
-        ## ???? / Recommended Flow
-        1. ?? `START_HERE.md`
-        2. ?? `COMPONENT_REGISTRATION.md`
-        3. ?? `python -m nsgablack project doctor --path . --build`
-        4. ? `build_solver.py` ????????
+        ## Structure
+        - `problem/`: problem semantics
+        - `pipeline/`: representation + hard-constraint repair
+        - `bias/`: soft preferences
+        - `adapter/`: strategy orchestration (optional)
+        - `plugins/`: engineering/runtime capabilities (optional)
+        - `data/`: input data
+        - `assets/`: output artifacts
 
-        ## ???? / Entry Files
-        - `build_solver.py`: ?? problem/pipeline/bias/strategy
-        - `project_registry.py`: ???? Catalog ??
-        - `COMPONENT_REGISTRATION.md`: ????? why/what/how
+        ## Recommended Flow
+        1. Run `python -m nsgablack project doctor --path . --build`
+        2. Complete stage gates in `START_HERE.md`
+        3. Wire `build_solver.py` by registration zones
+        4. Register metadata in `project_registry.py` / `catalog/entries.toml`
+
+        ## Entry Files
+        - `build_solver.py`: standard assembly entry with explicit registration zones
+        - `BUILD_SOLVER_REGISTRATION.md`: zone mapping + what belongs where
+        - `project_registry.py`: local catalog registry
+        - `COMPONENT_REGISTRATION.md`: registration metadata contract
         """
     )
 
 def _start_here() -> str:
     return dedent(
-        """\
-        # START_HERE
+        """        # START_HERE
 
-        ??? 6 ?????? + English??
+        If you only read one file, read this one.
+        ???????????????
 
-        ## Step 1 - ???? / Health check first
+        ## Stage Gate 0 - Health Baseline
+        Run first:
         ```powershell
         python -m nsgablack project doctor --path . --build
         ```
-        - ???????????? `COMPONENT_REGISTRATION.md`?
-        - If you will add reusable components, read `COMPONENT_REGISTRATION.md` first.
+        Pass criteria:
+        - Scaffold exists and doctor output is understandable.
+        - No unresolved structure errors before wiring.
 
-        ## Step 2 - ????? / Implement problem
-        - File: `problem/example_problem.py`
-        - ?? / Required:
-          - `evaluate(x)` returns objective vector (`numpy.ndarray`)
-          - `evaluate_constraints(x)` returns violation vector (empty if no constraints)
+        ## Stage Gate 1 - Problem Semantics
+        File: `problem/example_problem.py`
+        Deliverable:
+        - `evaluate(x)` returns objective vector (`numpy.ndarray`).
+        - `evaluate_constraints(x)` returns violation vector.
+        Pass criteria:
+        - Problem file contains only business semantics.
+        - No repair logic, no plugin logic, no strategy logic.
 
-        ## Step 3 - ????? / Implement pipeline
-        - File: `pipeline/example_pipeline.py`
-        - ?????????? / Keep hard feasibility in this layer.
+        ## Stage Gate 2 - Layer Placement (Most Important)
+        Split requirements into layers:
+        - Problem: semantics only
+        - Pipeline: init/mutate/repair/encode/decode
+        - Bias: soft preference only
+        - Solver/Adapter: search strategy and orchestration
+        - Plugin: observability/engineering/runtime capability
+        Pass criteria:
+        - Each requirement is placed in one layer only.
+        - Any cross-layer decision has an explicit reason.
 
-        ## Step 4 - ????? / Add bias if needed
-        - File: `bias/example_bias.py`
-        - ????????????? / Bias encodes preference, not hard constraints.
-
-        ## Step 5 - ???? / Assemble only
-        - File: `build_solver.py`
-        - ?? wiring???????? / Keep it as wiring; avoid re-implementing internals.
-
-        ## Step 6 - ????? / Run and inspect
+        ## Stage Gate 3 - Catalog Candidate Review
+        Search components:
         ```powershell
-        python build_solver.py
+        python -m nsgablack project catalog search <keyword> --path . --global
+        ```
+        For each candidate, record:
+        - Why choose
+        - Why not choose alternatives
+        - Expected input/output shape
+        - Dependency and state behavior
+
+        ## Stage Gate 4 - Assembly Wiring
+        File: `build_solver.py`
+        Wire by zone order:
+        1) problem
+        2) pipeline
+        3) bias
+        4) solver core
+        5) observability plugins
+        6) project plugins
+        7) optional checkpoint
+        Pass criteria:
+        - Assembly is explicit and traceable.
+        - No hidden side effects.
+
+        ## Stage Gate 5 - Registration & Discoverability
+        Register metadata:
+        - `project_registry.py`
+        - `catalog/entries.toml`
+        Pass criteria:
+        - Teammates can understand what each component does from metadata only.
+
+        ## Stage Gate 6 - Contract Verification
+        Run:
+        ```powershell
+        python -m nsgablack project doctor --path . --build --strict
         python -m nsgablack project catalog list --path .
         ```
+        Pass criteria:
+        - Context/snapshot/shape checks pass.
+        - Errors can be explained and fixed by file + line.
 
-        ## ?? / Optional
-        - Run Inspector: `python -m nsgablack run_inspector --entry build_solver.py:build_solver`
-        - ????????? / Include global catalog in search:
-          `python -m nsgablack project catalog search vns --path . --global`
+        ## Stage Gate 7 - Evidence Loop
+        Run minimal experiment:
+        ```powershell
+        python build_solver.py
+        ```
+        Optional inspection:
+        ```powershell
+        python -m nsgablack run_inspector --entry build_solver.py:build_solver
+        ```
+        Pass criteria:
+        - New user can reproduce run and explain why this composition works.
         """
     )
 
@@ -188,6 +238,123 @@ def _component_registration_guide() -> str:
         - `Scope=all`: merged view
         """
     )
+
+
+def _component_contract_template() -> str:
+    return dedent(
+        """\
+        # Component Contract Card Template
+
+        Use this card for every project component (adapter/pipeline/bias/plugin).
+
+        ## 1. Identity
+        - Component key:
+        - Kind:
+        - Source path:
+        - Owner:
+
+        ## 2. Responsibility
+        - What this component must do:
+        - What this component must NOT do:
+
+        ## 3. I/O Contract
+        - Input shape/types:
+        - Output shape/types:
+        - Side effects:
+
+        ## 4. Context Contract
+        - context_requires:
+        - context_provides:
+        - context_mutates:
+        - context_cache:
+        - context_notes:
+
+        ## 5. Recovery Contract
+        - Implements get_state/set_state: yes/no
+        - state_recovery_level: L0/L1/L2
+        - Recovery boundary notes:
+
+        ## 6. Mode Boundary
+        - Prove mode boundary (if any):
+        - Heuristic mode boundary (if any):
+
+        ## 7. Stop Condition
+        - Explicit stop/short-circuit behavior:
+        """
+    )
+
+
+def _component_test_matrix_readme() -> str:
+    return dedent(
+        """\
+        # Component Test Matrix Templates
+
+        Copy one template per new component and rename to `tests/test_<component>_<kind>.py`.
+
+        Required matrix (minimum):
+        1. smoke
+        2. contract
+        3. checkpoint_roundtrip
+        4. strict_fault
+        """
+    )
+
+
+def _smoke_test_template() -> str:
+    return dedent(
+        """\
+        \"\"\"Template: smoke test for a new component.\"\"\"
+
+        import pytest
+
+
+        def test_component_smoke_template():
+            pytest.skip("Copy this template, rename to tests/test_<component>_smoke.py, then implement.")
+        """
+    )
+
+
+def _contract_test_template() -> str:
+    return dedent(
+        """\
+        \"\"\"Template: contract behavior test for a new component.\"\"\"
+
+        import pytest
+
+
+        def test_component_contract_template():
+            pytest.skip("Validate propose/update or hook I/O contract and context flow.")
+        """
+    )
+
+
+def _checkpoint_roundtrip_test_template() -> str:
+    return dedent(
+        """\
+        \"\"\"Template: checkpoint roundtrip test for a new component.\"\"\"
+
+        import pytest
+
+
+        def test_component_checkpoint_roundtrip_template():
+            pytest.skip("Validate get_state -> set_state roundtrip at declared recovery level.")
+        """
+    )
+
+
+def _strict_fault_test_template() -> str:
+    return dedent(
+        """\
+        \"\"\"Template: strict/fault test for a new component.\"\"\"
+
+        import pytest
+
+
+        def test_component_strict_fault_template():
+            pytest.skip("Validate strict mode + fault path behavior.")
+        """
+    )
+
 
 def _problem_template() -> str:
     return dedent(
@@ -750,9 +917,30 @@ def _project_catalog_entries_template() -> str:
 
 def _build_solver_template() -> str:
     return dedent(
-        """\
+        """
         # -*- coding: utf-8 -*-
-        \"\"\"Project entrypoint: assembly only.\"\"\"
+        \"\"\"Project entrypoint with explicit registration zones.
+
+        ?????????????
+        Keep all assembly in this file. For each zone, define:
+        1) `_extend_<zone>_args(parser)` for CLI flags
+        2) `_register_<zone>(...)` for component wiring
+
+        ???? / Recommended order:
+        1) problem / ????
+        2) pipeline / ?????
+        3) bias / ???
+        4) solver core / ?????
+        5) observability plugins / ????
+        6) project/domain plugins / ??????
+        7) optional checkpoint / ??????
+
+        Stage-gate reminder:
+        - Gate 1: problem semantics only
+        - Gate 2: layer placement
+        - Gate 3: catalog candidate review
+        - Gate 4: zone wiring (this file)
+        \"\"\"
 
         from __future__ import annotations
 
@@ -760,8 +948,8 @@ def _build_solver_template() -> str:
         from datetime import datetime
 
         from nsgablack.core.evolution_solver import EvolutionSolver
-        from nsgablack.utils.suites import attach_checkpoint_resume
-        from nsgablack.utils.suites import attach_default_observability_plugins
+        from nsgablack.utils.wiring import attach_checkpoint_resume
+        from nsgablack.utils.wiring import attach_observability_profile
 
         from bias.example_bias import build_bias_module
         from pipeline.example_pipeline import build_pipeline
@@ -769,17 +957,46 @@ def _build_solver_template() -> str:
         from problem.example_problem import ExampleProblem
 
 
-        def build_solver(argv: list[str] | None = None) -> EvolutionSolver:
-            parser = argparse.ArgumentParser(add_help=False)
+        # --- Zone 1: problem / ???? -----------------------------------------
+        def _extend_problem_args(parser: argparse.ArgumentParser) -> None:
             parser.add_argument("--dimension", type=int, default=8)
+
+
+        def _register_problem(args) -> ExampleProblem:
+            # DO: only create problem semantics.
+            # DO NOT: attach plugins / strategy / repair rules here.
+            return ExampleProblem(dimension=int(args.dimension))
+
+
+        # --- Zone 2: pipeline / ????? --------------------------------------
+        def _extend_pipeline_args(parser: argparse.ArgumentParser) -> None:
+            _ = parser
+            # Add pipeline-specific flags here when needed.
+
+
+        def _register_pipeline(args):
+            _ = args
+            # DO: keep init/mutate/repair/encode-decode here.
+            # DO NOT: put business objective semantics here.
+            return build_pipeline()
+
+
+        # --- Zone 3: bias / ??? --------------------------------------------
+        def _extend_bias_args(parser: argparse.ArgumentParser) -> None:
+            parser.add_argument("--enable-bias", action="store_true")
+
+
+        def _register_bias(problem: ExampleProblem, args):
+            _ = problem
+            # DO: soft guidance only.
+            # DO NOT: hard-feasibility enforcement (belongs to pipeline repair).
+            return build_bias_module(enable_bias=bool(args.enable_bias))
+
+
+        # --- Zone 4: solver core / ????? ----------------------------------
+        def _extend_solver_args(parser: argparse.ArgumentParser) -> None:
             parser.add_argument("--pop-size", type=int, default=80)
             parser.add_argument("--generations", type=int, default=60)
-            parser.add_argument("--enable-bias", action="store_true")
-            parser.add_argument("--enable-example-plugin", action="store_true")
-            parser.add_argument("--no-profiler", action="store_true")
-            parser.add_argument("--no-decision-trace", action="store_true")
-            parser.add_argument("--run-dir", default="runs")
-            parser.add_argument("--run-id", default=None)
             parser.add_argument("--plugin-strict", action="store_true")
             parser.add_argument(
                 "--thread-bias-isolation",
@@ -787,19 +1004,11 @@ def _build_solver_template() -> str:
                 default="deepcopy",
                 help="Thread backend bias isolation policy when parallel evaluation is enabled.",
             )
-            parser.add_argument("--enable-checkpoint", action="store_true")
-            parser.add_argument("--checkpoint-dir", default="runs/checkpoints")
-            parser.add_argument(
-                "--trust-checkpoint",
-                action="store_true",
-                help="Explicitly trust unsigned checkpoints for resume (not allowed with strict mode).",
-            )
-            args, _ = parser.parse_known_args(argv if argv is not None else [])
 
-            problem = ExampleProblem(dimension=int(args.dimension))
-            pipeline = build_pipeline()
-            bias_module = build_bias_module(enable_bias=bool(args.enable_bias))
 
+        def _register_solver(problem: ExampleProblem, pipeline, bias_module, args) -> EvolutionSolver:
+            # DO: wire solver + adapter/strategy parameters.
+            # DO NOT: spread plugin registration into this zone.
             solver = EvolutionSolver(problem, bias_module=bias_module)
             solver.pop_size = int(args.pop_size)
             solver.max_generations = int(args.generations)
@@ -809,32 +1018,104 @@ def _build_solver_template() -> str:
             solver.report_interval = max(1, solver.max_generations // 10)
             solver.set_representation_pipeline(pipeline)
             solver.parallel_thread_bias_isolation = str(args.thread_bias_isolation)
-            run_id = str(args.run_id) if args.run_id else datetime.now().strftime("%Y%m%d_%H%M%S")
-            attach_default_observability_plugins(
-                solver,
-                output_dir=str(args.run_dir),
-                run_id=run_id,
-                enable_pareto_archive=True,
-                enable_benchmark=True,
-                enable_module_report=True,
-                enable_profiler=not bool(args.no_profiler),
-                enable_decision_trace=not bool(args.no_decision_trace),
-            )
             if hasattr(solver, "plugin_manager") and getattr(solver, "plugin_manager", None) is not None:
                 try:
                     solver.plugin_manager.strict = bool(args.plugin_strict)
                 except Exception:
                     pass
+            return solver
+
+
+        # --- Zone 5: observability plugins / ???? ---------------------------
+        def _extend_observability_args(parser: argparse.ArgumentParser) -> None:
+            parser.add_argument(
+                "--observability-profile",
+                choices=["quickstart", "default", "strict"],
+                default="default",
+                help="Plug-and-play profile for observability wiring.",
+            )
+            parser.add_argument("--no-profiler", action="store_true")
+            parser.add_argument("--no-decision-trace", action="store_true")
+            parser.add_argument("--run-dir", default="runs")
+            parser.add_argument("--run-id", default=None)
+
+
+        def _register_observability_plugins(solver: EvolutionSolver, args, run_id: str) -> None:
+            # Framework observability/runtime plugins only.
+            attach_observability_profile(
+                solver,
+                profile=str(args.observability_profile),
+                output_dir=str(args.run_dir),
+                run_id=run_id,
+                enable_profiler=False if bool(args.no_profiler) else None,
+                enable_decision_trace=False if bool(args.no_decision_trace) else None,
+            )
+
+
+        # --- Zone 6: project plugins / ???? --------------------------------
+        def _extend_project_plugin_args(parser: argparse.ArgumentParser) -> None:
+            parser.add_argument("--enable-example-plugin", action="store_true")
+
+
+        def _register_project_plugins(solver: EvolutionSolver, args) -> None:
+            # Register domain/business plugins in this zone only.
             if bool(args.enable_example_plugin):
                 solver.add_plugin(ExampleProjectPlugin(interval=5, verbose=True))
-            if bool(args.enable_checkpoint):
-                attach_checkpoint_resume(
-                    solver,
-                    checkpoint_dir=str(args.checkpoint_dir),
-                    auto_resume=True,
-                    strict=not bool(args.trust_checkpoint),
-                    trust_checkpoint=bool(args.trust_checkpoint),
-                )
+
+
+        # --- Zone 7: optional checkpoint / ?????? -------------------------
+        def _extend_checkpoint_args(parser: argparse.ArgumentParser) -> None:
+            parser.add_argument("--enable-checkpoint", action="store_true")
+            parser.add_argument("--checkpoint-dir", default="runs/checkpoints")
+            parser.add_argument(
+                "--trust-checkpoint",
+                action="store_true",
+                help="Explicitly trust unsigned checkpoints for resume (not allowed with strict mode).",
+            )
+
+
+        def _register_optional_checkpoint(solver: EvolutionSolver, args) -> None:
+            # Optional engineering capability; keep isolated from core zones.
+            if not bool(args.enable_checkpoint):
+                return
+            attach_checkpoint_resume(
+                solver,
+                checkpoint_dir=str(args.checkpoint_dir),
+                auto_resume=True,
+                strict=not bool(args.trust_checkpoint),
+                trust_checkpoint=bool(args.trust_checkpoint),
+            )
+
+
+        def _build_parser() -> argparse.ArgumentParser:
+            parser = argparse.ArgumentParser(add_help=False)
+            _extend_problem_args(parser)
+            _extend_pipeline_args(parser)
+            _extend_bias_args(parser)
+            _extend_solver_args(parser)
+            _extend_observability_args(parser)
+            _extend_project_plugin_args(parser)
+            _extend_checkpoint_args(parser)
+            return parser
+
+
+        def _parse_args(argv: list[str] | None = None):
+            parser = _build_parser()
+            args, _ = parser.parse_known_args(argv if argv is not None else [])
+            return args
+
+
+        def build_solver(argv: list[str] | None = None) -> EvolutionSolver:
+            args = _parse_args(argv)
+            run_id = str(args.run_id) if args.run_id else datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            problem = _register_problem(args)
+            pipeline = _register_pipeline(args)
+            bias_module = _register_bias(problem, args)
+            solver = _register_solver(problem, pipeline, bias_module, args)
+            _register_observability_plugins(solver, args, run_id)
+            _register_project_plugins(solver, args)
+            _register_optional_checkpoint(solver, args)
             return solver
 
 
@@ -855,6 +1136,77 @@ def _build_solver_template() -> str:
         """
     )
 
+
+def _build_solver_registration_guide_template() -> str:
+    return dedent(
+        """        # BUILD_SOLVER_REGISTRATION
+
+        Goal: after searching from catalog, you should know exactly where to place each component.
+        ???? catalog ?????????????????????????
+
+        ## Zone Pair Rule (must follow)
+        Each zone keeps two functions together:
+        - `_extend_<zone>_args(parser)`: CLI flags for this zone.
+        - `_register_<zone>(...)`: component wiring for this zone.
+
+        ## Zone Order
+        1. Problem
+           - `_extend_problem_args(parser)`
+           - `_register_problem(args)`
+
+        2. Pipeline
+           - `_extend_pipeline_args(parser)`
+           - `_register_pipeline(args)`
+
+        3. Bias
+           - `_extend_bias_args(parser)`
+           - `_register_bias(problem, args)`
+
+        4. Solver Core
+           - `_extend_solver_args(parser)`
+           - `_register_solver(problem, pipeline, bias_module, args)`
+
+        5. Observability Plugins
+           - `_extend_observability_args(parser)`
+           - `_register_observability_plugins(solver, args, run_id)`
+           - Recommended: use `--observability-profile` first, then override with `--no-profiler` / `--no-decision-trace` only when needed.
+
+        6. Project Plugins
+           - `_extend_project_plugin_args(parser)`
+           - `_register_project_plugins(solver, args)`
+
+        7. Checkpoint (Optional)
+           - `_extend_checkpoint_args(parser)`
+           - `_register_optional_checkpoint(solver, args)`
+
+        ## Catalog Kind -> Zone Mapping
+        - `problem` -> Problem zone
+        - `pipeline` / `representation` -> Pipeline zone
+        - `bias` -> Bias zone
+        - `adapter` / `solver` -> Solver Core zone
+        - `plugin`:
+          - observability/runtime plugin -> Observability zone
+          - domain/business plugin -> Project Plugins zone
+
+        ## Selection Checklist (before wiring)
+        For each chosen component, answer in one line:
+        - Why this component fits this problem
+        - Which alternatives were rejected and why
+        - Expected input/output shape
+        - Required context keys and side effects
+
+        ## Validation Checklist (after wiring)
+        - Run `python -m nsgablack project doctor --path . --build --strict`
+        - Ensure no layer misuse (wrong-zone logic)
+        - Ensure shape/context contract is explainable by file and line
+
+        ## Guardrails
+        - Keep `build_solver(argv=None)` as the only assembly entrypoint.
+        - Prefer `solver.add_plugin(...)` only in project plugin zone.
+        - Do not put repair logic into problem/bias.
+        - Do not put business semantics into plugins.
+        """
+    )
 
 def _vscode_snippets_template() -> str:
     return dedent(
@@ -981,8 +1333,45 @@ def init_project(target_dir: Path | str, *, force: bool = False) -> Path:
         "marker = nsgablack-scaffold-project\n",
         overwrite=force,
     )
+    (root / "docs" / "contracts").mkdir(parents=True, exist_ok=True)
+    (root / "tests" / "templates").mkdir(parents=True, exist_ok=True)
     _write_file(root / "START_HERE.md", _start_here(), overwrite=force)
+    _write_file(
+        root / "BUILD_SOLVER_REGISTRATION.md",
+        _build_solver_registration_guide_template(),
+        overwrite=force,
+    )
     _write_file(root / "COMPONENT_REGISTRATION.md", _component_registration_guide(), overwrite=force)
+    _write_file(
+        root / "docs" / "contracts" / "COMPONENT_CONTRACT_TEMPLATE.md",
+        _component_contract_template(),
+        overwrite=force,
+    )
+    _write_file(
+        root / "tests" / "templates" / "README.md",
+        _component_test_matrix_readme(),
+        overwrite=force,
+    )
+    _write_file(
+        root / "tests" / "templates" / "smoke_template.py",
+        _smoke_test_template(),
+        overwrite=force,
+    )
+    _write_file(
+        root / "tests" / "templates" / "contract_template.py",
+        _contract_test_template(),
+        overwrite=force,
+    )
+    _write_file(
+        root / "tests" / "templates" / "checkpoint_roundtrip_template.py",
+        _checkpoint_roundtrip_test_template(),
+        overwrite=force,
+    )
+    _write_file(
+        root / "tests" / "templates" / "strict_fault_template.py",
+        _strict_fault_test_template(),
+        overwrite=force,
+    )
     _write_file(root / "project_registry.py", _project_registry_template(), overwrite=force)
     _write_file(root / "catalog" / "entries.toml", _project_catalog_entries_template(), overwrite=force)
     _write_file(root / "build_solver.py", _build_solver_template(), overwrite=force)

@@ -8,7 +8,7 @@ try:
     from nsgablack.adapters import MASAdapter, MASConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
-    from nsgablack.utils.suites import attach_benchmark_harness
+    from nsgablack.utils.wiring import attach_benchmark_harness
     from nsgablack.plugins import MASModelPlugin
 except ModuleNotFoundError:  # pragma: no cover
     import sys
@@ -20,7 +20,7 @@ except ModuleNotFoundError:  # pragma: no cover
     from nsgablack.adapters import MASAdapter, MASConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
-    from nsgablack.utils.suites import attach_benchmark_harness
+    from nsgablack.utils.wiring import attach_benchmark_harness
     from nsgablack.plugins import MASModelPlugin
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from .base import BlackBoxProblem
 from .blank_solver import SolverBase
 from .composable_solver import ComposableSolver
+from .config import StorageConfig, _apply_storage_config
 from .evolution_solver import EvolutionSolver
 from ..adapters import AlgorithmAdapter, CompositeAdapter, RoleAdapter, MultiRoleControllerAdapter
 from .interfaces import (
@@ -26,6 +27,7 @@ __all__ = [
     "BlackBoxProblem",
     "EvolutionSolver",
     "SolverBase",
+    "StorageConfig",
     "AlgorithmAdapter",
     "CompositeAdapter",
     "ComposableSolver",

@@ -31,7 +31,7 @@ evaluate(x) = f(x) + algorithmic_bias(x) + domain_bias(x)
 
 有一类算法偏置并不“自产”关键评估信号，而是消费能力层（插件/外部评估器）注入到 `context.metrics` 的统计量（例如 `mc_std`、代理模型不确定性等）。
 
-- 这类偏置必须与信号提供方配套（推荐通过 suite 的权威组合入口完成装配）
+- 这类偏置必须与信号提供方配套（推荐通过 wiring 的权威组合入口完成装配）
 - 详见：`docs/user_guide/signal_driven_bias.md`
 
 ## 快速开始
@@ -149,7 +149,7 @@ convergence_bias = ConvergenceBias(
 from nsgablack.bias.algorithmic.signal_driven import UncertaintyExplorationBias
 
 exploration_bias = UncertaintyExplorationBias(weight=0.1)
-# 需要配套统计信号插件（推荐通过 suite 装配）
+# 需要配套统计信号插件（推荐通过 wiring 装配）
 ```
 
 **适用场景**：

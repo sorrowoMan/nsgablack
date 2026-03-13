@@ -95,3 +95,92 @@ def normalize_bias_output(value: Any, *, name: str = "bias_output") -> float:
     out = normalize_violation(value, name=name)
     return out
 
+
+# ---------------------------------------------------------------------------
+# Extension-point contract declaration verification
+# ---------------------------------------------------------------------------
+
+_CORE_CONTRACT_ATTRS = ("context_requires", "context_provides", "context_mutates", "context_cache")
+
+
+def verify_component_contract(
+    component: Any,
+    *,
+    strict: bool = False,
+    component_name: str | None = None,
+) -> List[str]:
+    """Check that *component* has declared all four core context contract fields.
+
+    Parameters
+    ----------
+    component:
+        Any adapter, plugin, representation, or bias object.
+    strict:
+        If True, raise ContractError when any field is missing.
+        If False (default), return the list of missing field names.
+    component_name:
+        Optional display name used in the error message.
+
+    Returns
+    -------
+    List[str]
+        Names of the missing core contract fields (empty = fully declared).
+    """
+    name = component_name or getattr(component, "name", None) or type(component).__name__
+    missing: List[str] = []
+    for attr in _CORE_CONTRACT_ATTRS:
+        if getattr(component, attr, None) is None:
+            missing.append(attr)
+    if missing and strict:
+        raise ContractError(
+            f"Component '{name}' is missing core context contract fields: "
+            + ", ".join(missing)
+            + ". Declare them as class-level tuples (may be empty: `() `)."
+        )
+    return missing
+
+
+def verify_solver_contracts(
+    solver: Any,
+    *,
+    strict: bool = False,
+) -> List[Tuple[str, List[str]]]:
+    """Walk *solver* components and collect missing contract fields.
+
+    Returns
+    -------
+    List[Tuple[str, List[str]]]
+        List of (component_name, missing_fields) for every component that
+        is missing at least one core contract attribute. Empty list = all OK.
+    """
+    issues: List[Tuple[str, List[str]]] = []
+
+    def _check(label: str, obj: Any) -> None:
+        if obj is None:
+            return
+        m = verify_component_contract(obj, strict=strict, component_name=label)
+        if m:
+            issues.append((label, m))
+
+    _check("adapter", getattr(solver, "adapter", None))
+    adapter = getattr(solver, "adapter", None)
+    if adapter is not None:
+        for i, spec in enumerate(getattr(adapter, "strategies", ()) or ()):
+            sub = getattr(spec, "adapter", None)
+            _check(f"adapter.strategy[{i}]", sub)
+        for i, role in enumerate(getattr(adapter, "roles", ()) or ()):
+            role_adapter = getattr(role, "adapter", None)
+            if not callable(role_adapter):
+                _check(f"adapter.role[{i}]", role_adapter)
+
+    _check("representation_pipeline", getattr(solver, "representation_pipeline", None))
+    _check("bias_module", getattr(solver, "bias_module", None))
+
+    plugin_manager = getattr(solver, "plugin_manager", None)
+    if plugin_manager is not None:
+        for plugin in getattr(plugin_manager, "plugins", None) or []:
+            pname = getattr(plugin, "name", type(plugin).__name__)
+            _check(f"plugin.{pname}", plugin)
+
+    return issues
+

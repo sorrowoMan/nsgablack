@@ -65,9 +65,9 @@ Use this as the definitive map for import paths and stable entrypoints.
   - `TrustRegionMODFOAdapter`, `TrustRegionMODFOConfig`
   - `TrustRegionSubspaceAdapter`, `TrustRegionSubspaceConfig`
   - `TrustRegionNonSmoothAdapter`, `TrustRegionNonSmoothConfig`
-  - `TrustRegionBaseAdapter` (shared trust-region base in `adapters/trust_region_base.py`)
-  - `SingleTrajectoryAdaptiveAdapter` (in `adapters/single_trajectory_adaptive.py`)
-  - `AsyncEventDrivenAdapter` (in `adapters/async_event_driven.py`)
+  - `TrustRegionBaseAdapter` (shared trust-region base in `adapters/trust_region_base/adapter.py`)
+  - `SingleTrajectoryAdaptiveAdapter` (in `adapters/single_trajectory_adaptive/adapter.py`)
+  - `AsyncEventDrivenAdapter` (in `adapters/async_event_driven/adapter.py`)
   - `MASAdapter`, `MASConfig`
 
 ## 6) Plugins (capabilities)
@@ -92,17 +92,11 @@ Use this as the definitive map for import paths and stable entrypoints.
   - `SubspaceBasisPlugin`, `SubspaceBasisConfig`
   - `CheckpointResumePlugin`, `CheckpointResumeConfig`
 
-## 7) Suites (authority wiring)
+## 7) Wiring Helpers (authority wiring)
 
-- `utils/suites/__init__.py`
-  - `attach_monte_carlo_robustness`
-  - `attach_moead`
-  - `attach_simulated_annealing`
-  - `attach_vns`
-  - `attach_multi_strategy_coop`
+- `utils/wiring/__init__.py`
   - `attach_benchmark_harness`
   - `attach_module_report`
-  - `attach_nsga2_engineering`
   - `attach_ray_parallel`
   - `attach_dynamic_switch`
   - `attach_trust_region_mo_dfo`

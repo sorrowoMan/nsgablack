@@ -22,7 +22,7 @@
 实现路径：
 - `MultiStrategyControllerAdapter` + role adapters
 - BiasModule 组合
-- Plugin suites/capability plugins
+- Plugin wiring helpers/capability plugins
 
 ## 3) 一条闭环工作流
 1. 脚手架：`project init`

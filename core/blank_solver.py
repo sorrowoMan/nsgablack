@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import logging
 import random
+import warnings
 from typing import Any, Dict, Optional, Tuple
+
+from .config import StorageConfig, _apply_storage_config
 
 import numpy as np
 
@@ -23,6 +26,7 @@ from .interfaces import (
     load_representation_pipeline,
 )
 from .solver_helpers import (
+    ComponentDependencyScheduler,
     apply_bias_module,
     build_context_store_or_memory,
     build_solver_context,
@@ -93,6 +97,11 @@ class SolverBase:
         ignore_constraint_violation_when_bias: bool = False,
         plugin_strict: bool = False,
         snapshot_strict: bool = False,
+        # ----------------------------------------------------------------
+        # Preferred: pass a single StorageConfig instead of the flat args.
+        # If storage_config is provided, its fields override the flat args.
+        # ----------------------------------------------------------------
+        storage_config: Optional[StorageConfig] = None,
         context_store_backend: str = "memory",
         context_store_ttl_seconds: Optional[float] = None,
         context_store_redis_url: str = "redis://localhost:6379/0",
@@ -108,6 +117,27 @@ class SolverBase:
         snapshot_store_max_payload_bytes: int = 8_388_608,
         snapshot_schema: str = "population_snapshot_v1",
     ) -> None:
+        # Merge StorageConfig (if supplied) into local flat variables so the
+        # rest of __init__ continues to read them by their original names.
+        if storage_config is not None:
+            _sc = _apply_storage_config(storage_config, {})
+            context_store_backend = _sc.get("context_store_backend", context_store_backend)
+            context_store_ttl_seconds = _sc.get("context_store_ttl_seconds", context_store_ttl_seconds)
+            context_store_redis_url = _sc.get("context_store_redis_url", context_store_redis_url)
+            context_store_key_prefix = _sc.get("context_store_key_prefix", context_store_key_prefix)
+            snapshot_store_backend = _sc.get("snapshot_store_backend", snapshot_store_backend)
+            snapshot_store_ttl_seconds = _sc.get("snapshot_store_ttl_seconds", snapshot_store_ttl_seconds)
+            snapshot_store_redis_url = _sc.get("snapshot_store_redis_url", snapshot_store_redis_url)
+            snapshot_store_key_prefix = _sc.get("snapshot_store_key_prefix", snapshot_store_key_prefix)
+            snapshot_store_dir = _sc.get("snapshot_store_dir", snapshot_store_dir)
+            snapshot_store_serializer = _sc.get("snapshot_store_serializer", snapshot_store_serializer)
+            snapshot_store_hmac_env_var = _sc.get("snapshot_store_hmac_env_var", snapshot_store_hmac_env_var)
+            snapshot_store_unsafe_allow_unsigned = _sc.get("snapshot_store_unsafe_allow_unsigned", snapshot_store_unsafe_allow_unsigned)
+            snapshot_store_max_payload_bytes = _sc.get("snapshot_store_max_payload_bytes", snapshot_store_max_payload_bytes)
+            snapshot_schema = _sc.get("snapshot_schema", snapshot_schema)
+        # Keep reference so callers can introspect / rebuild config.
+        self._storage_config = storage_config
+
         self.problem = problem
         self.dimension = problem.dimension
         self.num_objectives = problem.get_num_objectives()
@@ -131,6 +161,8 @@ class SolverBase:
             short_circuit_events=["evaluate_population", "evaluate_individual"],
             strict=bool(plugin_strict),
         )
+        self._plugin_scheduler = ComponentDependencyScheduler()
+        self.plugin_strict = bool(plugin_strict)
         self.snapshot_strict = bool(snapshot_strict)
 
         self.population = None
@@ -166,6 +198,7 @@ class SolverBase:
         self.snapshot_store: SnapshotStore = self._build_snapshot_store()
         self._latest_snapshot_handle = None
         self._snapshot_generation = None
+        self._pending_plugin_order_updates: list[dict[str, Any]] = []
 
     def _build_context_store(self) -> ContextStore:
         return build_context_store_or_memory(
@@ -254,21 +287,52 @@ class SolverBase:
     # ------------------------------------------------------------------
     @property
     def bias_module(self) -> Optional[BiasInterface]:
+        """Return the active bias module.
+
+        The getter is **pure** – it never modifies ``self``.  Lazy
+        auto-loading is intentionally removed to avoid hidden state
+        mutations during serialisation / pickling / property access in
+        tests.  Call :meth:`init_bias_module` explicitly if you want the
+        framework to auto-construct a default bias module.
+        """
         if self._bias_module_internal is not None:
             return self._bias_module_internal
-        if self.enable_bias:
-            if not hasattr(self, "_bias_module_cached"):
-                self._bias_module_cached = load_bias_module()
-            return self._bias_module_cached
-        return None
+        # Return pre-initialised cached instance only (never create here).
+        return getattr(self, "_bias_module_cached", None)
 
     @bias_module.setter
     def bias_module(self, value: Optional[BiasInterface]) -> None:
         self._bias_module_internal = value
         if value is not None:
             self.enable_bias = True
+            # Invalidate any previously cached default.
             if hasattr(self, "_bias_module_cached"):
                 delattr(self, "_bias_module_cached")
+
+    def init_bias_module(self, force: bool = False) -> Optional[BiasInterface]:
+        """Explicitly initialise the default bias module.
+
+        This is the **sole** place where lazy auto-loading is permitted.
+        Call it once during solver setup rather than relying on the
+        property getter to do it implicitly.
+
+        Args:
+            force: If True, reinitialise even if a module is already present.
+
+        Returns:
+            The (possibly newly created) bias module, or None.
+        """
+        if not force and self._bias_module_internal is not None:
+            return self._bias_module_internal
+        if not force and hasattr(self, "_bias_module_cached"):
+            return self._bias_module_cached  # type: ignore[return-value]
+        if self.enable_bias or force:
+            loaded = load_bias_module()
+            # Store in dedicated cache slot, NOT _bias_module_internal, so
+            # the setter contract (user-supplied vs auto-loaded) stays clear.
+            self._bias_module_cached = loaded
+            return loaded
+        return None
 
     @property
     def representation_pipeline(self) -> Optional[RepresentationInterface]:
@@ -287,59 +351,226 @@ class SolverBase:
     def enable_bias_module(self, enable: bool = True) -> None:
         self.enable_bias = enable
         if enable and self._bias_module_internal is None:
-            self._bias_module_internal = load_bias_module()
+            self.init_bias_module()
 
     # ------------------------------------------------------------------
     # Plugin helpers
     # ------------------------------------------------------------------
-    def add_plugin(self, plugin: Any) -> "SolverBase":
+    def add_plugin(
+        self,
+        plugin: Any,
+        *,
+        depends_on: Optional[Any] = None,
+        before: Optional[Any] = None,
+        after: Optional[Any] = None,
+    ) -> "SolverBase":
+        """Add plugin with explicit attach status tracking.
+        
+        Args:
+            plugin: Plugin instance to add
+            
+        Returns:
+            self for method chaining
+            
+        Raises:
+            RuntimeError: In strict mode if attach fails
+            
+        Notes:
+            - plugin_strict=True: attach failure raises exception immediately
+            - plugin_strict=False (default): logs error, marks plugin as "attach_failed"
+            - Plugin remains registered even if attach fails (for inspection)
+            - Plugins with attach_failed=True will be skipped during lifecycle hooks
+        """
+        if bool(getattr(self, "running", False)):
+            raise RuntimeError(
+                "Cannot add plugin while solver is running. "
+                "Register plugins during setup."
+            )
+        plugin_name = getattr(plugin, 'name', plugin.__class__.__name__)
         self.plugin_manager.register(plugin)
+        self._plugin_scheduler.register_component(
+            str(plugin_name),
+            priority=int(getattr(plugin, "priority", 0) or 0),
+        )
+
+        declared_depends = getattr(plugin, "depends_on_plugins", None)
+        declared_before = getattr(plugin, "before_plugins", None)
+        declared_after = getattr(plugin, "after_plugins", None)
+        apply_depends = depends_on if depends_on is not None else declared_depends
+        apply_before = before if before is not None else declared_before
+        apply_after = after if after is not None else declared_after
+        try:
+            self._plugin_scheduler.set_constraints(
+                str(plugin_name),
+                depends_on=apply_depends,
+                before=apply_before,
+                after=apply_after,
+            )
+            self._sync_plugin_execution_order()
+        except Exception as exc:
+            self.plugin_manager.unregister(str(plugin_name))
+            self._plugin_scheduler.unregister_component(str(plugin_name))
+            raise RuntimeError(
+                f"Plugin '{plugin_name}' order constraints invalid: {exc}"
+            ) from exc
+        
+        attach_success = False
         try:
             plugin.attach(self)
+            attach_success = True
         except Exception as exc:
-            report_soft_error(
-                component="SolverBase",
-                event="plugin_attach",
-                exc=exc,
-                logger=logger,
-                context_store=self.context_store,
-                strict=False,
-                level="debug",
-            )
-        try:
-            if hasattr(plugin, "on_solver_init"):
-                plugin.on_solver_init(self)
-        except Exception as exc:
-            strict_init = bool(getattr(plugin, "raise_on_init_error", False)) or bool(
-                getattr(plugin, "strict_init", False)
-            )
-            if strict_init:
-                raise
-            try:
-                import warnings
-
-                warnings.warn(
-                    f"Plugin '{getattr(plugin, 'name', plugin.__class__.__name__)}' init failed: {exc}",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-            except Exception as warn_exc:
+            error_msg = f"Plugin '{plugin_name}' attach failed: {exc}"
+            
+            if bool(getattr(self, "plugin_strict", False)):
+                # Strict mode: unregister and raise
+                self.plugin_manager.unregister(plugin_name)
+                self._plugin_scheduler.unregister_component(str(plugin_name))
+                raise RuntimeError(error_msg) from exc
+            else:
+                # Soft mode: mark as failed, log, continue
+                plugin._attach_failed = True
+                plugin._attach_error = str(exc)
                 report_soft_error(
                     component="SolverBase",
-                    event="plugin_init_warning_emit",
-                    exc=warn_exc,
+                    event="plugin_attach",
+                    exc=exc,
                     logger=logger,
                     context_store=self.context_store,
                     strict=False,
-                    level="debug",
+                    level="warning",  # Elevated from debug
                 )
+                logger.warning(
+                    f"Plugin '{plugin_name}' registered but attach failed. "
+                    f"It will be skipped during lifecycle hooks. Error: {exc}"
+                )
+        
+        # Call on_solver_init only if attach succeeded
+        if attach_success:
+            try:
+                if hasattr(plugin, "on_solver_init"):
+                    plugin.on_solver_init(self)
+            except Exception as exc:
+                strict_init = bool(getattr(plugin, "raise_on_init_error", False)) or bool(
+                    getattr(plugin, "strict_init", False)
+                )
+                if strict_init:
+                    raise
+                try:
+                    import warnings
+
+                    warnings.warn(
+                        f"Plugin '{plugin_name}' init failed: {exc}",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+                except Exception as warn_exc:
+                    report_soft_error(
+                        component="SolverBase",
+                        event="plugin_init_warning_emit",
+                        exc=warn_exc,
+                        logger=logger,
+                        context_store=self.context_store,
+                        strict=False,
+                        level="debug",
+                    )
+        
         return self
 
     def remove_plugin(self, plugin_name: str) -> None:
+        if bool(getattr(self, "running", False)):
+            raise RuntimeError(
+                "Cannot remove plugin while solver is running."
+            )
         self.plugin_manager.unregister(plugin_name)
+        self._plugin_scheduler.unregister_component(str(plugin_name))
+        self._sync_plugin_execution_order()
 
     def get_plugin(self, plugin_name: str) -> Any:
         return self.plugin_manager.get(plugin_name)
+
+    def set_plugin_order(
+        self,
+        plugin_name: str,
+        *,
+        depends_on: Optional[Any] = None,
+        before: Optional[Any] = None,
+        after: Optional[Any] = None,
+    ) -> None:
+        self._set_plugin_order(
+            plugin_name,
+            depends_on=depends_on,
+            before=before,
+            after=after,
+            allow_during_run=False,
+        )
+
+    def _set_plugin_order(
+        self,
+        plugin_name: str,
+        *,
+        depends_on: Optional[Any] = None,
+        before: Optional[Any] = None,
+        after: Optional[Any] = None,
+        allow_during_run: bool,
+    ) -> None:
+        if bool(getattr(self, "running", False)) and not bool(allow_during_run):
+            raise RuntimeError(
+                "Cannot mutate plugin topology while solver is running. "
+                "Use request_plugin_order() and let changes apply at the next generation boundary."
+            )
+        name = str(plugin_name)
+        rules_backup = self._plugin_scheduler.snapshot_rules()
+        try:
+            self._plugin_scheduler.set_constraints(
+                name,
+                depends_on=depends_on,
+                before=before,
+                after=after,
+            )
+            self._sync_plugin_execution_order()
+        except Exception:
+            self._plugin_scheduler.restore_rules(rules_backup)
+            self._sync_plugin_execution_order()
+            raise
+
+    def request_plugin_order(
+        self,
+        plugin_name: str,
+        *,
+        depends_on: Optional[Any] = None,
+        before: Optional[Any] = None,
+        after: Optional[Any] = None,
+    ) -> None:
+        self._pending_plugin_order_updates.append(
+            {
+                "plugin_name": str(plugin_name),
+                "depends_on": depends_on,
+                "before": before,
+                "after": after,
+            }
+        )
+
+    def _apply_pending_plugin_order_updates(self) -> None:
+        pending = list(self._pending_plugin_order_updates)
+        self._pending_plugin_order_updates.clear()
+        for row in pending:
+            self._set_plugin_order(
+                row.get("plugin_name", ""),
+                depends_on=row.get("depends_on"),
+                before=row.get("before"),
+                after=row.get("after"),
+                allow_during_run=True,
+            )
+
+    def _sync_plugin_execution_order(self) -> None:
+        order = self._plugin_scheduler.resolve_order_strict()
+        self.plugin_manager.set_execution_order(order)
+
+    def validate_plugin_order(self) -> None:
+        try:
+            self._sync_plugin_execution_order()
+        except Exception as exc:
+            raise RuntimeError(f"Plugin order validation failed: {exc}") from exc
 
     # ------------------------------------------------------------------
     # Control-plane wiring helpers (preferred over direct attribute writes)
@@ -351,11 +582,16 @@ class SolverBase:
         self.bias_module = bias_module
         if enable is not None:
             self.enable_bias = bool(enable)
+            if bool(enable) and bias_module is None:
+                # Explicit enable with no provided module: init default if available.
+                self.init_bias_module()
         elif bias_module is not None:
             self.enable_bias = True
 
     def set_enable_bias(self, enable: bool) -> None:
         self.enable_bias = bool(enable)
+        if bool(enable) and self._bias_module_internal is None and not hasattr(self, "_bias_module_cached"):
+            self.init_bias_module()
 
     def set_representation_pipeline(self, pipeline: Optional[RepresentationInterface]) -> None:
         self.representation_pipeline = pipeline
@@ -455,9 +691,26 @@ class SolverBase:
         return x
 
     def decode_candidate(self, x: Any, context: Optional[Dict[str, Any]] = None) -> Any:
+        """Decode a candidate from encoded space back to decision space.
+
+        Capability check: looks for an explicit ``decode`` method on the
+        pipeline (or its ``encoder`` component), **not** merely the presence
+        of an ``encoder`` attribute.  This avoids silently returning the raw
+        encoded value when only encoding (not decoding) is implemented.
+        """
         pipeline = self.representation_pipeline
-        if pipeline is not None and getattr(pipeline, "encoder", None) is not None:
-            return pipeline.decode(x, context)
+        if pipeline is None:
+            return x
+        # Prefer a decode method directly on the pipeline.
+        decode_fn = getattr(pipeline, "decode", None)
+        if callable(decode_fn):
+            return decode_fn(x, context)
+        # Fall back: look for decoder capability on the encoder sub-component.
+        encoder_comp = getattr(pipeline, "encoder", None)
+        if encoder_comp is not None:
+            sub_decode = getattr(encoder_comp, "decode", None)
+            if callable(sub_decode):
+                return sub_decode(x, context)
         return x
 
     def initialize_population(
@@ -878,6 +1131,7 @@ class SolverBase:
         return None
 
     def run(self, max_steps: Optional[int] = None) -> Dict[str, Any]:
+        self.validate_plugin_order()
         return run_solver_loop(self, max_steps=max_steps)
 
     # ------------------------------------------------------------------

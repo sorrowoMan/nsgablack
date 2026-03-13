@@ -1,7 +1,7 @@
 ﻿# FRONTIER_ALGOS_INTEGRATION
 
 This document explains how frontier algorithm ideas are decomposed into
-Suites + Adapters + Biases + Plugins in NSGABlack.
+Wiring Helpers + Adapters + Biases + Plugins in NSGABlack.
 
 ## 1) Multi-objective DFO / Trust-Region
 - Adapter: `TrustRegionDFOAdapter`

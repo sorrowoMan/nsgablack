@@ -35,6 +35,9 @@ def run_solver_loop(solver: Any, *, max_steps: Optional[int] = None) -> Dict[str
         if solver.stop_requested:
             break
         solver.generation = step_idx
+        apply_pending_order = getattr(solver, "_apply_pending_plugin_order_updates", None)
+        if callable(apply_pending_order):
+            apply_pending_order()
         solver.plugin_manager.on_generation_start(solver.generation)
         # Keep on_step semantics consistent even when subclasses override step().
         solver.plugin_manager.on_step(solver, solver.generation)

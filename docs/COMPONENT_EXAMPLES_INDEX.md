@@ -5,7 +5,7 @@
 ## 覆盖策略（阶段性）
 - Bias：统一用 `examples/bias_gallery_demo.py` 覆盖全部 `bias.*`（按 catalog key 选择）。
 - Plugin：统一用 `examples/plugin_gallery_demo.py` 覆盖全部 `plugin.*`（按 catalog key 选择）。
-- Adapter / Representation / Suite：优先用“真实可运行模板”覆盖，缺口逐步补齐。
+- Adapter / Representation / Wiring：优先用“真实可运行模板”覆盖，缺口逐步补齐。
 
 ## Adapters
 
@@ -55,32 +55,13 @@
 - `SurrogateEvaluationPlugin` -> `examples/surrogate_plugin_demo.py`
 - `SensitivityAnalysisPlugin` -> `examples/dynamic_multi_strategy_demo.py`
 
-## Suites
+## Wiring Helpers
 
-- `suite.monte_carlo_robustness` -> `examples/monte_carlo_dp_robust_demo.py`
-- `suite.ray_parallel` -> `examples/ray_parallel_demo.py`
-- `suite.moead` -> `examples/template_multiobjective_pareto.py`, `examples/template_portfolio_pareto.py`
-- `suite.sa` -> `examples/template_continuous_constrained.py`
-- `suite.vns` -> `examples/template_tsp_permutation.py`
-- `suite.trust_region_dfo` -> `examples/trust_region_dfo_demo.py`
-- `suite.trust_region_subspace` -> `examples/trust_region_subspace_demo.py`
-- `suite.trust_region_subspace_learned` -> `examples/trust_region_subspace_frontier_demo.py`
-- `suite.trust_region_nonsmooth` -> `examples/trust_region_nonsmooth_demo.py`
-- `suite.mas` -> `examples/mas_demo.py`
-- `suite.multi_strategy` -> `examples/dynamic_multi_strategy_demo.py`, `examples/multi_strategy_coop_demo.py`
-- `suite.benchmark_harness` -> 多数模板/示例
-- `suite.module_report` -> 多数模板/示例
-- `suite.nsga2_engineering` -> `examples/nsga2_solver_demo.py`
-- `suite.trust_region_mo_dfo` -> `examples/trust_region_mo_dfo_demo.py`
-- `suite.trust_region_subspace_frontier` -> `examples/trust_region_subspace_frontier_demo.py`
-- `suite.active_learning_surrogate` -> `examples/active_learning_surrogate_demo.py`
-- `suite.robust_dfo` -> `examples/robust_dfo_demo.py`
-- `suite.surrogate_assisted_ea` -> `examples/surrogate_assisted_ea_demo.py`
-- `suite.surrogate_model_lab` -> `examples/surrogate_model_lab_demo.py`
-- `suite.structure_prior_mo` -> `examples/structure_prior_mo_demo.py`
-- `suite.multi_fidelity_eval` -> `examples/multi_fidelity_demo.py`
-- `suite.risk_cvar` -> `examples/risk_bias_demo.py`
-- `suite.dynamic_switch` -> `examples/dynamic_multi_strategy_demo.py`
+- `utils/wiring/ray_parallel.py` -> `examples/ray_parallel_demo.py`
+- `adapter.vns` + `repr.context_switch` -> `examples/template_tsp_permutation.py`
+- `plugin.benchmark_harness` -> 多数模板/示例
+- `plugin.module_report` -> 多数模板/示例
+- `plugin.dynamic_switch` -> `examples/dynamic_multi_strategy_demo.py`
 
 ## Problem Templates (ready-to-run)
 

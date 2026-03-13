@@ -628,6 +628,8 @@ class EvolutionSolver(ComposableSolver):
 
     def run(self, return_experiment: bool = False, return_dict: bool = False):
         self._sync_nsga2_adapter_config()
+        if hasattr(self, "validate_plugin_order"):
+            self.validate_plugin_order()
         self.running = True
         self.stop_requested = False
         self.start_time = time.time()
@@ -694,6 +696,9 @@ class EvolutionSolver(ComposableSolver):
             if self.stop_requested:
                 break
             self.generation = int(gen)
+            apply_pending_order = getattr(self, "_apply_pending_plugin_order_updates", None)
+            if callable(apply_pending_order):
+                apply_pending_order()
             self.plugin_manager.on_generation_start(self.generation)
             self.plugin_manager.on_step(self, self.generation)
 
@@ -703,8 +708,8 @@ class EvolutionSolver(ComposableSolver):
 
             self.step()
 
-            self.generation = int(gen + 1)
             self.plugin_manager.on_generation_end(self.generation)
+            self.generation = int(gen + 1)
             if self.enable_progress_log and self.report_interval > 0 and (self.generation % self.report_interval == 0):
                 self._log_progress()
 

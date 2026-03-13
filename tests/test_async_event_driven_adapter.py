@@ -54,23 +54,23 @@ def test_async_event_driven_adapter_runs(sample_problem):
     assert len(adapter.archive) > 0
 
 
-def test_attach_async_event_suite_wires_plugins(sample_problem):
+def test_async_event_direct_wiring_wires_plugins(sample_problem):
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.adapters import EventStrategySpec, SAConfig, SimulatedAnnealingAdapter
-    from nsgablack.utils.suites import attach_async_event_driven
+    from nsgablack.adapters import AsyncEventDrivenAdapter, EventStrategySpec, SAConfig, SimulatedAnnealingAdapter
+    from nsgablack.plugins import AsyncEventHubPlugin, ParetoArchivePlugin
 
     solver = ComposableSolver(problem=sample_problem, representation_pipeline=_build_pipeline())
-    adapter = attach_async_event_driven(
-        solver,
+    adapter = AsyncEventDrivenAdapter(
         strategies=[
             EventStrategySpec(
                 adapter=SimulatedAnnealingAdapter(SAConfig(batch_size=1)),
                 name="sa",
             )
         ],
-        attach_async_hub=True,
-        attach_pareto_archive=True,
     )
+    solver.set_adapter(adapter)
+    solver.add_plugin(AsyncEventHubPlugin())
+    solver.add_plugin(ParetoArchivePlugin())
 
     assert solver.adapter is adapter
     assert solver.get_plugin("async_event_hub") is not None

@@ -11,7 +11,7 @@
 
 - `compute_bias(...)` 的输出必须是有限 `float`（非 NaN/Inf）。
 - 偏置建议只影响“评分/选择压力/软约束倾向”，不要直接替代表示修复（硬约束更适合放在 repair/约束算子里）。
-- 若偏置依赖外部统计信号（信号驱动偏置），必须声明 `requires_metrics` 并提供 `recommended_plugins` 或 `utils/suites/*` 权威组合入口；缺信号时必须安全退化（返回 0.0）。
+- 若偏置依赖外部统计信号（信号驱动偏置），必须声明 `requires_metrics` 并提供 `recommended_plugins` 或 `utils/wiring/*` 权威组合入口；缺信号时必须安全退化（返回 0.0）。
 
 ## 3) Solver ↔ Adapter（搜索策略模块）
 
@@ -25,7 +25,7 @@
 
 ## 5) 解构算法的工程清单（强烈建议遵守）
 
-- 当你要把传统算法拆成 Bias/Representation/Adapter/Plugin/Suite 时，建议按工程清单执行，避免“组件找不到 / 忘配套导致静默退化”。
+- 当你要把传统算法拆成 Bias/Representation/Adapter/Plugin/Wiring 时，建议按工程清单执行，避免“组件找不到 / 忘配套导致静默退化”。
 - 参考：`docs/development/DECOMPOSITION_CHECKLIST.md`
 
 ## 工程实现

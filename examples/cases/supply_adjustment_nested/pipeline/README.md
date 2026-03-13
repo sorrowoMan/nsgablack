@@ -1,6 +1,9 @@
-﻿# pipeline/
+# pipeline/
 
-Reserved.
+Case-local pipeline components.
 
-This case focuses on outer-problem + inner-evaluation architecture.
-Add representation pipeline components here if needed.
+Current component:
+
+- `l0_binary_pipeline.py`
+  - `build_l0_binary_pipeline(init_prob, bitflip_rate)`
+  - Builds binary initializer/mutator/repair pipeline for L0 blacklist search

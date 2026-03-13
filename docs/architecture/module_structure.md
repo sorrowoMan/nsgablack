@@ -9,7 +9,7 @@ nsgablack/
 ├── representation/       # 表示管线与算子
 ├── bias/                 # 偏置系统
 ├── plugins/              # 运行能力扩展
-├── utils/                # 工程工具、suites、context/snapshot
+├── utils/                # 工程工具、wiring helpers、context/snapshot
 ├── catalog/              # 组件索引与可发现性
 ├── docs/                 # 文档
 └── examples/             # 示例
@@ -42,7 +42,7 @@ nsgablack/
 - 约定：`Context` 放引用，`Snapshot` 放大对象。
 
 ## 5. 工程层
-- `utils/suites/`：权威组合装配入口（减少漏配）。
+- `utils/wiring/`：权威组合装配入口（减少漏配）。
 - `utils/engineering/`：配置、schema、日志、实验结果等。
 - `catalog/`：统一索引与搜索入口。
 

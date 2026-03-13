@@ -34,9 +34,10 @@ python working_nested_optimizer.py `
   --bom "../production_scheduling/machine_material_mapping.csv" `
   --supply "../production_scheduling/SUPPLY.xlsx"
 
-# 显式指定基线计划（不指定时自动取最新 integrated_result_production_*.xlsx）
+# 显式指定基线计划（不指定时自动取最新 integrated_result_production_*.xlsx，
+# 会优先扫描 `../runs/production_schedule/exports/`）
 python working_nested_optimizer.py `
-  --baseline-plan "../integrated_result_production_20260225_022256.xlsx"
+  --baseline-plan "../runs/production_schedule/exports/integrated_result_production_20260225_022256.xlsx"
 
 # 调低内层预算（更快）
 python working_nested_optimizer.py --inner-trials 3

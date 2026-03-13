@@ -142,7 +142,7 @@ Sequence 页展示“组件交互顺序图”，只关注 **调用顺序**，不
 - Trace 内部视图：`Events`（逐事件）与 `By Thread/Task`（线程/任务聚合）
 
 前置条件：
-- 启用 `SequenceGraphPlugin`（默认 observability suite 已包含）
+- 启用 `SequenceGraphPlugin`（默认 observability wiring 已包含）
 
 ---
 
@@ -173,7 +173,7 @@ Contribution 页还会显示：
 
 Catalog 页：
 - 支持关键词搜索
-- 可过滤 kind（suite / bias / adapter / example 等）
+- 可过滤 kind（plugin / bias / adapter / example 等）
 - `Scope` 支持 `all / project / framework`（全部 / 本地项目组件 / 框架内组件）
 - 选中条目会显示 `How to Use`（适用场景、最小接线、必配组件、配置键、示例入口）
 - 选中条目会显示 `Context Contract`（requires/provides/mutates/cache/notes；为空也会显示 `(none)`）
@@ -221,9 +221,9 @@ Context 页现在按 canonical key 做统一显示与联动。重点字段包括
 - dynamic_switch 输出的是“运行中权重轨迹”
 - 如果禁用了 strategy，权重应显示为 off / 0
 
-**Q3：为什么提示 missing suite？**
-- Suite 是权威组合入口
-- 如果插件本体已启用，不会再提示 suite 缺失
+**Q3：为什么提示 missing companion？**
+- 提示通常来自 Catalog 的 `companions` 规则（需要搭配的 plugin/adapter）。
+- 如果你已经手动完成等价装配，刷新后提示会消失。
 
 ---
 

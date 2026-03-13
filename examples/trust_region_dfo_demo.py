@@ -8,7 +8,7 @@ try:
     from nsgablack.adapters import TrustRegionDFOAdapter, TrustRegionDFOConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
-    from nsgablack.utils.suites import attach_benchmark_harness
+    from nsgablack.utils.wiring import attach_benchmark_harness
 except ModuleNotFoundError:  # pragma: no cover
     import sys
     from pathlib import Path
@@ -19,7 +19,7 @@ except ModuleNotFoundError:  # pragma: no cover
     from nsgablack.adapters import TrustRegionDFOAdapter, TrustRegionDFOConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
-    from nsgablack.utils.suites import attach_benchmark_harness
+    from nsgablack.utils.wiring import attach_benchmark_harness
 
 
 class SphereProblem(BlackBoxProblem):

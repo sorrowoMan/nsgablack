@@ -10,7 +10,7 @@
 - 表示/修复走 `RepresentationPipeline`
 - 业务倾向/软约束走 `BiasModule`
 - 并行/记录/短路评估/缓存/代理模型走 Plugin
-- 容易漏配的组合收敛成 Suite
+- 容易漏配的组合收敛成 Wiring
 
 你会发现：ML/代理模型天然更像 Plugin，而不是算法策略本身。
 
@@ -30,7 +30,7 @@
 把 NSGABlack 视作一个“可调用的求解器”，外层工具负责调参/调组合。
 
 建议做法：
-- 把 solver 的关键参数抽成 config（seed/budget/adapter/bias/suites）
+- 把 solver 的关键参数抽成 config（seed/budget/adapter/bias/wiring helpers）
 - 外层只改 config，不改算法代码
 - 每次 trial 统一挂 BenchmarkHarnessPlugin，输出到独立 run_id 目录
 
@@ -42,7 +42,7 @@
 
 建议做法：
 - 使用框架提供的“评估短路插槽”接口（只扩展接口，不内置 surrogate 逻辑）
-- 将“训练/更新/持久化”也放在 Plugin/Suite 中组织
+- 将“训练/更新/持久化”也放在 Plugin/Wiring 中组织
 
 ## 3. 推荐的落地路径
 
@@ -54,7 +54,7 @@
 ## 4. 参考入口
 
 - 端到端流程：`WORKFLOW_END_TO_END.md`
-- Catalog/Suites：`docs/user_guide/catalog.md`
+- Catalog/Wiring Helpers：`docs/user_guide/catalog.md`
 - 插件系统：`docs/user_guide/PLUGIN_SYSTEM.md`
 - 核心边界：`docs/CORE_STABILITY.md`
 

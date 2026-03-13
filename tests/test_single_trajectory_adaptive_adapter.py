@@ -31,16 +31,18 @@ def test_single_trajectory_adapter_runs(sample_problem):
     assert "best_score" in st
 
 
-def test_attach_single_trajectory_suite(sample_problem):
+def test_single_trajectory_direct_wiring(sample_problem):
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.adapters import SingleTrajectoryAdaptiveConfig
-    from nsgablack.utils.suites import attach_single_trajectory_adaptive
+    from nsgablack.adapters import SingleTrajectoryAdaptiveAdapter, SingleTrajectoryAdaptiveConfig
 
     solver = ComposableSolver(problem=sample_problem, representation_pipeline=_pipeline())
-    adapter = attach_single_trajectory_adaptive(
-        solver,
-        config=SingleTrajectoryAdaptiveConfig(batch_size=4, initial_sigma=0.3),
+    adapter = SingleTrajectoryAdaptiveAdapter(
+        config=SingleTrajectoryAdaptiveConfig(
+            batch_size=4,
+            initial_sigma=0.3,
+        ),
     )
+    solver.set_adapter(adapter)
     solver.max_steps = 5
     solver.run()
 

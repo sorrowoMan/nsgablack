@@ -4,9 +4,9 @@
 本文严格对照了以下文件：
 
 - `examples/cases/production_scheduling/working_integrated_optimizer.py`
-- `examples/cases/production_scheduling/refactor_problem.py`
-- `examples/cases/production_scheduling/refactor_pipeline.py`
-- `examples/cases/production_scheduling/refactor_bias.py`
+- `examples/cases/production_scheduling/problem/production_problem.py`
+- `examples/cases/production_scheduling/pipeline/schedule_pipeline.py`
+- `examples/cases/production_scheduling/bias/production_bias.py`
 - `examples/cases/production_scheduling/refactor_data.py`
 
 ---
@@ -69,7 +69,7 @@ Pipeline → Bias → Adapter → Plugin。
 在排程问题里，“不合法的解”没有任何价值。  
 因此先做**硬约束落地**，把可行性锁进 Pipeline。
 
-对应代码：`refactor_pipeline.py`
+对应代码：`pipeline/schedule_pipeline.py`
 
 ### 设计逻辑（对应代码里的做法）
 - **初始化**  
@@ -92,7 +92,7 @@ Pipeline → Bias → Adapter → Plugin。
 ## 3) Bias：把软偏好“显式化”
 
 偏好不是硬约束，但会决定“什么样的解更好”。  
-在代码里用 Bias 把它显式化（`refactor_bias.py`）：
+在代码里用 Bias 把它显式化（`bias/production_bias.py`）：
 
 ### 具体偏好信号（代码中的 Bias）
 - 物料短缺惩罚  

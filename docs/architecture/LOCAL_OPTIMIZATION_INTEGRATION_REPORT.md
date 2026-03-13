@@ -17,12 +17,7 @@ and MAS (Model‑and‑Search).
 ### Plugins
 - `MASModelPlugin` (injects surrogate model into context for MAS)
 
-### Suites (authority wiring)
-- `suite.trust_region_dfo`
-- `suite.trust_region_subspace`
-- `suite.trust_region_subspace_learned`
-- `suite.trust_region_nonsmooth`
-- `suite.mas`
+### Wiring Helpers (authority wiring)
 
 ### Demos
 - `examples/trust_region_dfo_demo.py`
@@ -65,10 +60,10 @@ python examples/trust_region_nonsmooth_demo.py
 python examples/mas_demo.py
 ```
 
-Or attach by suite:
+Or attach by wiring:
 
 ```python
-from nsgablack.utils.suites import attach_trust_region_dfo, attach_mas
+from nsgablack.utils.wiring import attach_trust_region_dfo, attach_mas
 
 attach_trust_region_dfo(solver)
 attach_mas(solver)
@@ -86,15 +81,9 @@ All new entries are registered in Catalog and API index:
 - `adapter.mas`
 - `plugin.mas_model`
 - `plugin.subspace_basis`
-- `suite.trust_region_dfo`
-- `suite.trust_region_subspace`
-- `suite.trust_region_subspace_learned`
-- `suite.trust_region_nonsmooth`
-- `suite.mas`
 
 Use:
 
 ```bash
 python -m nsgablack catalog search trust_region
-python -m nsgablack catalog show suite.trust_region_dfo
 ```

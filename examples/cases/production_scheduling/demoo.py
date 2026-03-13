@@ -198,8 +198,10 @@ def main(argv: list[str] | None = None) -> int:
         in_path = _find_latest_result(
             [
                 here / "examples" / "cases",
+                here / "examples" / "cases" / "runs" / "production_schedule" / "exports",
                 here,
                 here.parent / "examples" / "cases",
+                here.parent / "examples" / "cases" / "runs" / "production_schedule" / "exports",
                 here.parent,
             ]
         )

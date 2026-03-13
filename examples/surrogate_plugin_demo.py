@@ -38,10 +38,11 @@ _ensure_importable()
 
 from nsgablack.core.base import BlackBoxProblem  # noqa: E402
 from nsgablack.core.composable_solver import ComposableSolver  # noqa: E402
+from nsgablack.adapters import SAConfig, SimulatedAnnealingAdapter  # noqa: E402
 from nsgablack.representation import RepresentationPipeline  # noqa: E402
 from nsgablack.representation.continuous import ClipRepair, GaussianMutation, UniformInitializer  # noqa: E402
 from nsgablack.plugins import SurrogateEvaluationConfig, SurrogateEvaluationPlugin  # noqa: E402
-from nsgablack.utils.suites import attach_benchmark_harness, attach_simulated_annealing  # noqa: E402
+from nsgablack.utils.wiring import attach_benchmark_harness  # noqa: E402
 
 
 class ExpensiveSphere(BlackBoxProblem):
@@ -65,7 +66,11 @@ def _build_solver(*, enable_surrogate: bool, out_dir: str, run_id: str) -> Compo
         repair=ClipRepair(low=-5.0, high=5.0),
     )
     solver = ComposableSolver(problem=problem, representation_pipeline=pipeline)
-    attach_simulated_annealing(solver, batch_size=48, initial_temperature=1.0, cooling_rate=0.95)
+    solver.set_adapter(
+        SimulatedAnnealingAdapter(
+            SAConfig(batch_size=48, initial_temperature=1.0, cooling_rate=0.95),
+        )
+    )
     attach_benchmark_harness(solver, output_dir=out_dir, run_id=run_id, seed=123, overwrite=True)
 
     if enable_surrogate:

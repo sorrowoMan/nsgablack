@@ -79,11 +79,12 @@ def test_robustness_bias_is_noop_without_mc_stats():
         assert len(rec) == 0
 
 
-def test_suite_attach_monte_carlo_robustness_runs():
+def test_direct_wiring_monte_carlo_robustness_runs():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.adapters import AlgorithmAdapter
-    from nsgablack.utils.suites import attach_monte_carlo_robustness
+    from nsgablack.bias import BiasModule, RobustnessBias
+    from nsgablack.plugins import MonteCarloEvaluationConfig, MonteCarloEvaluationPlugin
 
     class NoisySphere(BlackBoxProblem):
         def __init__(self, dim=2):
@@ -101,9 +102,15 @@ def test_suite_attach_monte_carlo_robustness_runs():
         def propose(self, solver, context):
             return [np.zeros(solver.dimension) for _ in range(4)]
 
-    solver = ComposableSolver(problem=NoisySphere(), adapter=Fixed())
+    bias = BiasModule()
+    bias.add(RobustnessBias(weight=0.2))
+    solver = ComposableSolver(problem=NoisySphere(), adapter=Fixed(), bias_module=bias)
     solver.max_steps = 1
-    attach_monte_carlo_robustness(solver, mc_samples=8, robustness_weight=0.2, random_seed=0)
+    solver.add_plugin(
+        MonteCarloEvaluationPlugin(
+            config=MonteCarloEvaluationConfig(mc_samples=8, reduce="mean", random_seed=0)
+        )
+    )
     solver.run()
     assert solver.objectives is not None
 

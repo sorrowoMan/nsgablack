@@ -25,9 +25,9 @@ __all__ = [
     "plugins",
     "runs",
     "runtime",
-    "suites",
     "surrogate",
     "viz",
+    "wiring",
 ]
 
 
@@ -42,9 +42,9 @@ def __getattr__(name):
         "plugins",
         "runs",
         "runtime",
-        "suites",
         "surrogate",
         "viz",
+        "wiring",
     }:
         return import_module(f"{__name__}.{name}")
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")

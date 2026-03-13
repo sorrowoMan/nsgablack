@@ -30,6 +30,7 @@ from .evaluation_helpers import (
 )
 from .run_helpers import run_solver_loop
 from .candidate_helpers import sample_random_candidate
+from .component_scheduler import ComponentDependencyScheduler, ComponentOrderError
 
 __all__ = [
     "apply_bias_module",
@@ -45,6 +46,8 @@ __all__ = [
     "build_snapshot_refs",
     "increment_evaluation_counter",
     "run_solver_loop",
+    "ComponentDependencyScheduler",
+    "ComponentOrderError",
     "resolve_best_snapshot_fields",
     "sample_random_candidate",
     "set_best_snapshot_fields",

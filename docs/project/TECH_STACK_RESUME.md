@@ -6,9 +6,9 @@
 
 ## 1) 架构与设计模式（可解释、可扩展、可维护）
 
-- 分层与边界：Core 稳定底座 + Suite 装配层 + Plugin 生态层（core 不装配，suite 做权威装配）
-  - 证据：`core/`、`utils/suites/`、`plugins/`
-  - 复杂度证明：难点是“扩展点多但依赖方向不混乱”；我把装配收敛进 suite，让 core 长期稳定，避免新需求把 solver 变成胶水堆。
+- 分层与边界：Core 稳定底座 + Wiring 装配层 + Plugin 生态层（core 不装配，wiring 做权威装配）
+  - 证据：`core/`、`utils/wiring/`、`plugins/`
+  - 复杂度证明：难点是“扩展点多但依赖方向不混乱”；我把装配收敛进 wiring，让 core 长期稳定，避免新需求把 solver 变成胶水堆。
 - 插件化生命周期（事件分发）：统一 hook（init/pop/gen/finish），支持 priority 调度与可选 short-circuit
   - 证据：`plugins/base.py`
   - 复杂度证明：常见坑是 hook 顺序不一致/返回值悄悄失效/插件互相踩踏；我用统一契约 + priority +（可选）短路规则把行为边界固定。
@@ -30,8 +30,8 @@
 - Context Key 约定：统一 key 命名与语义，降低协作成本，减少“隐性协议”
   - 证据：`utils/context/context_keys.py`
   - 复杂度证明：常见坑是同一语义不同 key（口径无法对齐）；我把协议显式化为 keys，让新增模块可对齐。
-- 显式构造注入 + suite 装配：不引入重型 DI 容器/事件总线，降低副作用与排障复杂度
-  - 证据：`utils/suites/`、`core/`
+- 显式构造注入 + wiring 装配：不引入重型 DI 容器/事件总线，降低副作用与排障复杂度
+  - 证据：`utils/wiring/`、`core/`
   - 复杂度证明：DI/总线容易让故障定位变难；我选择“明确调用链 + 显式装配”，复杂度可控。
 
 ## 3) 并行与性能工程（可控、可切换、有护栏）
@@ -87,7 +87,7 @@
 
 ## 8) 质量保障（测试与规范）
 
-- pytest 覆盖关键工程能力：插件/并行/约束/context/catalog/adapter/suite 等
+- pytest 覆盖关键工程能力：插件/并行/约束/context/catalog/adapter/wiring 等
   - 证据：`tests/`
   - 复杂度证明：组合爆炸会带来高回归风险；我用测试把契约固化，保证架构演进不崩。
 - 工具链集中配置：black/mypy/pytest/cov 统一在 pyproject，便于持续迭代
@@ -96,7 +96,7 @@
 
 ## 9) 一句话讲法（对外表达模板）
 
-- “我把优化算法拆成 Core（稳定底座）+ Suite（权威装配）+ Plugin（工程生态），新点子落地不牵一发动全身。”
+- “我把优化算法拆成 Core（稳定底座）+ Wiring（权威装配）+ Plugin（工程生态），新点子落地不牵一发动全身。”
 - “我做了统一实验口径与模块贡献审计：每次 run 都能追溯启用了什么模块、偏置贡献多少、插件耗时多少。”
 - “我把最慢的黑箱评估做成可切换的线程/进程并行，并加了 picklable 预检与 fallback 护栏，真实业务环境下也不容易炸。”
 

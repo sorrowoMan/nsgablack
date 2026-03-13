@@ -1,47 +1,86 @@
 # START_HERE
 
-新项目 6 步上手（中文 + English）。
+If you only read one file, read this one.
 
-## Step 1 - 先做体检 / Health check first
+## Stage Gate 0 - Health Baseline
+Run first:
 ```powershell
 python -m nsgablack project doctor --path . --build
 ```
-- 若要新增可复用组件，先读 `COMPONENT_REGISTRATION.md`。
-- If you will add reusable components, read `COMPONENT_REGISTRATION.md` first.
+Pass criteria:
+- Scaffold exists and doctor output is understandable.
+- No unresolved structure errors before wiring.
 
-## Step 2 - 实现问题层 / Implement problem
-- File: `problem/example_problem.py`
-- 必需 / Required:
-  - `evaluate(x)` returns objective vector (`numpy.ndarray`)
-  - `evaluate_constraints(x)` returns violation vector (empty if no constraints)
+## Stage Gate 1 - Problem Semantics
+File: `problem/example_problem.py`
+Deliverable:
+- `evaluate(x)` returns objective vector (`numpy.ndarray`).
+- `evaluate_constraints(x)` returns violation vector.
+Pass criteria:
+- Problem file contains only business semantics.
+- No repair logic, no plugin logic, no strategy logic.
 
-## Step 3 - 实现管线层 / Implement pipeline
-- File: `pipeline/example_pipeline.py`
-- 硬可行性优先放在此层 / Keep hard feasibility in this layer.
+## Stage Gate 2 - Layer Placement (Most Important)
+Split requirements into layers:
+- Problem: semantics only
+- Pipeline: init/mutate/repair/encode/decode
+- Bias: soft preference only
+- Solver/Adapter: search strategy and orchestration
+- Plugin: observability/engineering/runtime capability
+Pass criteria:
+- Each requirement is placed in one layer only.
+- Any cross-layer decision has an explicit reason.
 
-## Step 4 - 按需加偏置 / Add bias if needed
-- File: `bias/example_bias.py`
-- 偏置表达偏好，不替代硬约束 / Bias encodes preference, not hard constraints.
-
-## Step 5 - 只做装配 / Assemble only
-- File: `build_solver.py`
-- 保持 wiring，不重写框架内核 / Keep it as wiring; avoid re-implementing internals.
-
-## Step 6 - 运行与检查 / Run and inspect
+## Stage Gate 3 - Catalog Candidate Review
+Search components:
 ```powershell
-python build_solver.py
+python -m nsgablack project catalog search <keyword> --path . --global
+```
+For each candidate, record:
+- Why choose
+- Why not choose alternatives
+- Expected input/output shape
+- Dependency and state behavior
+
+## Stage Gate 4 - Assembly Wiring
+File: `build_solver.py`
+Wire by zone order:
+1) problem
+2) pipeline
+3) bias
+4) solver core
+5) observability plugins
+6) project plugins
+7) optional checkpoint
+Pass criteria:
+- Assembly is explicit and traceable.
+- No hidden side effects.
+
+## Stage Gate 5 - Registration & Discoverability
+Register metadata:
+- `project_registry.py`
+- `catalog/entries.toml`
+Pass criteria:
+- Teammates can understand what each component does from metadata only.
+
+## Stage Gate 6 - Contract Verification
+Run:
+```powershell
+python -m nsgablack project doctor --path . --build --strict
 python -m nsgablack project catalog list --path .
 ```
+Pass criteria:
+- Context/snapshot/shape checks pass.
+- Errors can be explained and fixed by file + line.
 
-## 可选 / Optional
-- Run Inspector: `python -m nsgablack run_inspector --entry build_solver.py:build_solver`
-- 搜索时合并全局目录 / Include global catalog in search:
-  `python -m nsgablack project catalog search vns --path . --global`
-
-## Catalog registration priority / 注册路径优先级
-- Preferred: `catalog/entries.toml`
-- Optional fallback: `project_registry.py`
-
-Rule:
-- Static searchable metadata -> `entries.toml`
-- Dynamic registration code -> `project_registry.py`
+## Stage Gate 7 - Evidence Loop
+Run minimal experiment:
+```powershell
+python build_solver.py
+```
+Optional inspection:
+```powershell
+python -m nsgablack run_inspector --entry build_solver.py:build_solver
+```
+Pass criteria:
+- New user can reproduce run and explain why this composition works.

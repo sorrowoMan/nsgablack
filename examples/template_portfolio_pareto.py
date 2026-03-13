@@ -5,10 +5,11 @@ import numpy as np
 try:
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.adapters import MOEADConfig
+    from nsgablack.adapters import MOEADAdapter, MOEADConfig
+    from nsgablack.plugins import ParetoArchivePlugin
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation
-    from nsgablack.utils.suites import attach_moead, attach_benchmark_harness, attach_module_report
+    from nsgablack.utils.wiring import attach_benchmark_harness, attach_module_report
 except ModuleNotFoundError:  # pragma: no cover
     import sys
     from pathlib import Path
@@ -16,10 +17,11 @@ except ModuleNotFoundError:  # pragma: no cover
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.adapters import MOEADConfig
+    from nsgablack.adapters import MOEADAdapter, MOEADConfig
+    from nsgablack.plugins import ParetoArchivePlugin
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation
-    from nsgablack.utils.suites import attach_moead, attach_benchmark_harness, attach_module_report
+    from nsgablack.utils.wiring import attach_benchmark_harness, attach_module_report
 
 
 class SimplexRepair:
@@ -77,7 +79,8 @@ def build_solver():
     solver = ComposableSolver(problem=problem, representation_pipeline=pipeline)
     solver.set_max_steps(80)
 
-    attach_moead(solver, config=MOEADConfig(pop_size=40, n_neighbors=10), archive=True)
+    solver.set_adapter(MOEADAdapter(MOEADConfig(pop_size=40, n_neighbors=10)))
+    solver.add_plugin(ParetoArchivePlugin())
     attach_benchmark_harness(solver, output_dir="runs", run_id="template_portfolio", overwrite=True, log_every=1)
     attach_module_report(solver, output_dir="runs", run_id="template_portfolio", write_bias_markdown=True)
     return solver

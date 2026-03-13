@@ -54,6 +54,14 @@
 - 禁止在新组件中直接镜像写入 `solver.population/objectives/constraint_violations/best_x/best_objective/...`。
 - `project doctor --strict` 会检查“绕过 Runtime 直接写 solver 状态”的代码并报错。
 
+### Bias 初始化策略（必须遵守）
+
+- `bias_module` 不再在 getter 中隐式自动创建。
+- 若需要启用默认 Bias，请显式调用：
+  - `solver.init_bias_module()` 或
+  - `solver.set_enable_bias(True)`（会触发初始化）
+- 设计目的：避免属性访问触发隐藏状态变更，保证可序列化与可测试。
+
 ### Catalog 注册边界（必须遵守）
 
 - 框架级组件（`nsgablack.*`）必须进入全局 Catalog。
@@ -98,7 +106,7 @@ nsgablack/
 ├── core/           # 核心模块
 ├── bias/           # 偏置系统
 ├── representation/ # 表示/算子/修复（RepresentationPipeline）
-├── utils/          # 工具与插件（Plugin/Suite/并行/评估等）
+├── utils/          # 工具与插件（Plugin/Wiring/并行/评估等）
 ├── catalog/        # 可发现性（search/show/list）
 ├── examples/       # 示例代码
 ├── tests/          # pytest 测试（权威回归口径）

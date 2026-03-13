@@ -69,6 +69,10 @@ KEY_ADAPTER_BEST_SCORE = "adapter_best_score"
 # Dynamic runtime switching
 KEY_DYNAMIC = "dynamic"
 KEY_PHASE_ID = "phase_id"
+KEY_COMPANION_PHASE_INDEX = "companion_phase_index"
+KEY_COMPANION_TRIGGER_REASON = "companion_trigger_reason"
+KEY_COMPANION_NEXT_ELIGIBLE_GENERATION = "companion_next_eligible_generation"
+KEY_COMPANION_PHASE_COUNT_USED = "companion_phase_count_used"
 
 # Advanced cooperation: phase + region + seeding
 KEY_PHASE = "phase"
@@ -189,6 +193,10 @@ CANONICAL_CONTEXT_KEYS = {
     KEY_ADAPTER_BEST_SCORE,
     KEY_DYNAMIC,
     KEY_PHASE_ID,
+    KEY_COMPANION_PHASE_INDEX,
+    KEY_COMPANION_TRIGGER_REASON,
+    KEY_COMPANION_NEXT_ELIGIBLE_GENERATION,
+    KEY_COMPANION_PHASE_COUNT_USED,
     KEY_PHASE,
     KEY_REGION_ID,
     KEY_REGION_BOUNDS,

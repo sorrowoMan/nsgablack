@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,8 @@ from nsgablack.core.evolution_solver import EvolutionSolver
 
 from evaluation import ProductionInnerEvalConfig, ProductionInnerEvaluationModel
 from problem.supply_event_shift_problem import SupplyEventShiftProblem
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -113,7 +116,8 @@ class BlacklistDesignProblem(BlackBoxProblem):
             return
         try:
             sink(**kwargs)
-        except Exception:
+        except Exception as exc:
+            logger.debug("decision sink emit failed: %s", exc)
             return
 
     def _decode_blacklist_ids(self, x: np.ndarray) -> list[int]:

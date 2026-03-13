@@ -48,17 +48,14 @@ from nsgablack.adapters import (  # noqa: E402
     SimulatedAnnealingAdapter,
     SAConfig,
 )
+from nsgablack.plugins import ParetoArchivePlugin  # noqa: E402
 from nsgablack.representation import RepresentationPipeline  # noqa: E402
 from nsgablack.representation.continuous import (  # noqa: E402
     UniformInitializer,
     ContextGaussianMutation,
     ClipRepair,
 )
-from nsgablack.utils.suites import (  # noqa: E402
-    attach_benchmark_harness,
-    attach_vns,
-    attach_multi_strategy_coop,
-)
+from nsgablack.utils.wiring import attach_benchmark_harness  # noqa: E402
 
 
 class DemoSphere(BlackBoxProblem):
@@ -87,7 +84,7 @@ def run_baseline_vns(*, out_dir: str, seed: int = 42) -> None:
     pipeline = build_pipeline(problem)
 
     solver = ComposableSolver(problem=problem, representation_pipeline=pipeline)
-    attach_vns(solver, config=VNSConfig(batch_size=32, k_max=4))
+    solver.set_adapter(VNSAdapter(VNSConfig(batch_size=32, k_max=4)))
     attach_benchmark_harness(solver, output_dir=out_dir, run_id="baseline_vns", seed=seed, overwrite=True)
 
     solver.set_max_steps(40)
@@ -131,7 +128,8 @@ def run_coop_phase_regions(*, out_dir: str, seed: int = 42) -> None:
     )
 
     solver = ComposableSolver(problem=problem, representation_pipeline=pipeline)
-    attach_multi_strategy_coop(solver, roles=roles, config=cfg, attach_pareto_archive=True)
+    solver.set_adapter(MultiStrategyControllerAdapter(roles=roles, config=cfg))
+    solver.add_plugin(ParetoArchivePlugin())
     attach_benchmark_harness(solver, output_dir=out_dir, run_id="coop_phase_regions", seed=seed, overwrite=True)
 
     solver.set_max_steps(40)

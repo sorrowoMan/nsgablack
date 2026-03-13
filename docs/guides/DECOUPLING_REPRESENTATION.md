@@ -30,11 +30,11 @@
 如果你忘了加，算法仍然能跑，但会退化（悄悄变差）。
 
 建议做法：
-- 优先使用 `suite.vns` 等权威组合（它会把伙伴组件一起装好）
+- 直接按契约装配：`adapter.vns` + `ContextGaussianMutation`/`ContextSwitchMutator`
 - 手搓时，至少写一个自检：init 是否大多可行、mutate 是否总被 repair 拉回
 
 ## 你应该看哪里
 
 - 表示与算子索引：`docs/indexes/REPRESENTATION_INDEX.md`
 - 表示实现：`representation/`
-- VNS 相关：`adapters/vns.py`、`representation/`（ContextSwitchMutator 等）
+- VNS 相关：`adapters/vns/adapter.py`、`representation/`（ContextSwitchMutator 等）
