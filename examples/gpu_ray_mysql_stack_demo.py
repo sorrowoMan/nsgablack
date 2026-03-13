@@ -27,7 +27,7 @@ from nsgablack.plugins import (
     MySQLRunLoggerPlugin,
 )
 from nsgablack.utils.parallel import with_parallel_evaluation
-from nsgablack.utils.suites import attach_ray_parallel
+from nsgablack.utils.wiring import attach_ray_parallel
 
 
 class DemoGpuProblem(BlackBoxProblem):

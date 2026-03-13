@@ -4,7 +4,7 @@
 
 因此本页收敛为指向：
 
-- 拆解规范（交付物/伙伴组件/收敛到 suites）：`DECOMPOSITION_RULES.md`
+- 拆解规范（交付物/伙伴组件/收敛到 wiring helpers）：`DECOMPOSITION_RULES.md`
 - 拆解检查清单（开发时照着过一遍）：`docs/development/DECOMPOSITION_CHECKLIST.md`
 - 端到端落地（把拆解变成可跑配置）：`WORKFLOW_END_TO_END.md`
 - 权威示例（事实标准）：`docs/AUTHORITATIVE_EXAMPLES.md`

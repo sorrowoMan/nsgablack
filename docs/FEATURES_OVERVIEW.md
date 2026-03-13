@@ -20,7 +20,7 @@
 
 - **多策略协同**：MultiStrategyControllerAdapter（本质是“多策略提案者 + 统一评估/归档/调度”，共享状态 + 动态预算）
 - **多算法并行/阶段协作**：支持探索-精修阶段调度
-- **Suite 权威组合**：必配组件一键装配，避免漏配
+- **Wiring 权威组合**：必配组件一键装配，避免漏配
 - **Catalog 可发现性**：search/show/list + companions 伙伴提示
 
 ---
@@ -182,7 +182,7 @@
 ### Adapter（策略内核）
 
 - 典型接口：`setup(solver)` / `propose(solver, context)` / `update(...)`  
-- 多策略协同：`adapters/multi_strategy.py`（Strategy/Adapter 的编排框架）  
+- 多策略协同：`adapters/multi_strategy/adapter.py`（Strategy/Adapter 的编排框架）  
   - `StrategySpec(name, adapter, weight, enabled=True)`  
   - `MultiStrategyConfig(total_batch_size, adapt_weights, phase_schedule, ...)`
 

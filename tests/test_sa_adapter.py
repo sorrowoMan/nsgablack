@@ -36,11 +36,11 @@ def test_simulated_annealing_adapter_runs_and_cools(sample_problem):
     assert float(ctx["temperature"]) < float(cfg.initial_temperature)
 
 
-def test_sa_suite_attach_smoke(sample_problem):
+def test_sa_direct_wiring_smoke(sample_problem):
     from nsgablack.core.composable_solver import ComposableSolver
+    from nsgablack.adapters import SAConfig, SimulatedAnnealingAdapter
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
-    from nsgablack.utils.suites import attach_simulated_annealing
 
     pipeline = RepresentationPipeline(
         initializer=UniformInitializer(low=-5.0, high=5.0),
@@ -49,7 +49,11 @@ def test_sa_suite_attach_smoke(sample_problem):
     )
 
     solver = ComposableSolver(problem=sample_problem, representation_pipeline=pipeline)
-    attach_simulated_annealing(solver, initial_temperature=5.0, cooling_rate=0.9)
+    solver.set_adapter(
+        SimulatedAnnealingAdapter(
+            SAConfig(initial_temperature=5.0, cooling_rate=0.9),
+        )
+    )
     solver.max_steps = 3
     solver.run()
 

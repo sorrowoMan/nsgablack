@@ -14,11 +14,11 @@ When building new algorithms / doing integrations, prefer relying on:
   - `utils/extension_contracts.py` (executable safeguards)
   - `utils/context/context_keys.py` (canonical context keys)
   - `plugins/` (capabilities layer)
-  - `utils/suites/` (authoritative wiring)
+  - `utils/wiring/` (authoritative wiring)
 - `catalog/`: discoverability (search/show/list)
 
 Design principle: keep solver bases pure; bring capabilities in via
-Adapter/Plugin/Bias/Representation/Suite.
+Adapter/Plugin/Bias/Representation/Wiring.
 
 Why this matters: the decomposition makes extensions feel natural. New features
 land in the right layer instead of the solver loop, keeping components reusable,
@@ -48,5 +48,5 @@ To reduce maintenance pressure, this repository does not ship a first-class
 and is explicitly **not** part of the stability promise.
 
 - Historical explorations / old examples / old docs: see git history (the `deprecated/legacy/` directory has been cleaned)
-- New "experimental ideas": land as Plugin/Suite first; move into Core only after
+- New "experimental ideas": land as Plugin/Wiring first; move into Core only after
   contracts + tests + catalog entries are in place

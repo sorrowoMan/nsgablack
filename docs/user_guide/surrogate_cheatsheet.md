@@ -3,7 +3,7 @@
 In NSGABlack, surrogate support is treated as a *capability layer*:
 
 - it should not change solver bases
-- it integrates via Plugin / Suite
+- it integrates via Plugin / Wiring
 
 ## Recommended entrypoints
 

@@ -10,7 +10,7 @@ Why: it shows the canonical decomposition flow:
 - ``Problem`` (objectives only)
 - ``RepresentationPipeline`` (init/mutate/repair for feasibility)
 - ``BiasModule`` (soft preferences)
-- ``Suite + Plugin`` (authoritative wiring + unified experiment protocol)
+- ``Wiring + Plugin`` (authoritative wiring + unified experiment protocol)
 
 Install
 -------

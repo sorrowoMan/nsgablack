@@ -4,7 +4,7 @@ from __future__ import annotations
 def test_set_plugin_strict_helper():
     from nsgablack.core.blank_solver import SolverBase
     from nsgablack.core.base import BlackBoxProblem
-    from nsgablack.utils.suites import set_plugin_strict
+    from nsgablack.utils.wiring import set_plugin_strict
 
     class _P(BlackBoxProblem):
         def __init__(self):
@@ -23,7 +23,7 @@ def test_set_parallel_thread_bias_isolation_helper():
     from nsgablack.core.blank_solver import SolverBase
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.utils.parallel import with_parallel_evaluation
-    from nsgablack.utils.suites import set_parallel_thread_bias_isolation
+    from nsgablack.utils.wiring import set_parallel_thread_bias_isolation
 
     class _P(BlackBoxProblem):
         def __init__(self):

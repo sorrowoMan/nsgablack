@@ -17,7 +17,24 @@
         "${workspaceFolder}/.."
     ],
     "chatgpt.openOnStartup": false,
+    "files.encoding": "utf8",
+    "files.autoGuessEncoding": false,
     "python-envs.defaultEnvManager": "ms-python.python:conda",
     "python-envs.defaultPackageManager": "ms-python.python:conda",
-    "python-envs.pythonProjects": []
+    "python-envs.pythonProjects": [],
+    "task.allowAutomaticTasks": "on",
+    "triggerTaskOnSave.on": true,
+    "triggerTaskOnSave.delay": 300,
+    "triggerTaskOnSave.restart": true,
+    "triggerTaskOnSave.showNotifications": true,
+    "triggerTaskOnSave.tasks": {
+        "doctor: strict (problem)": [
+            "**/*.py",
+            "**/*.toml",
+            "**/*.json",
+            "**/*.yml",
+            "**/*.yaml",
+            "**/*.md"
+        ]
+    }
 }

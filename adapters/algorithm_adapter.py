@@ -28,6 +28,34 @@ class AlgorithmAdapter(ABC):
         self.name = name
         self.priority = priority
 
+    @staticmethod
+    def resolve_config(
+        *,
+        config: Any,
+        config_cls: Any,
+        config_kwargs: Optional[Dict[str, Any]] = None,
+        adapter_name: str = "adapter",
+    ) -> Any:
+        """Normalize adapter config from explicit config or inline kwargs.
+
+        Rules:
+        - Use either `config` or `config_kwargs`, not both.
+        - If `config` is provided it must be an instance of `config_cls`.
+        - If `config` is omitted, build `config_cls(**config_kwargs)` (or defaults).
+        """
+        kwargs = dict(config_kwargs or {})
+        if config is not None and kwargs:
+            raise ValueError(
+                f"{adapter_name}: pass either config=... or inline config kwargs, not both."
+            )
+        if config is None:
+            return config_cls(**kwargs) if kwargs else config_cls()
+        if not isinstance(config, config_cls):
+            raise TypeError(
+                f"{adapter_name}: config must be {config_cls.__name__}, got {type(config).__name__}."
+            )
+        return config
+
     def create_local_rng(self, solver: Any = None, seed: Optional[int] = None) -> np.random.Generator:
         """Create a component-local RNG.
 

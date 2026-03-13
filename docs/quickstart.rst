@@ -5,7 +5,7 @@ This project intentionally keeps the top-level namespace small.
 The recommended workflow is:
 
 - discover wiring via :code:`python -m nsgablack catalog ...`
-- use :code:`ComposableSolver + Suite + Plugin` as the main path
+- use :code:`ComposableSolver + Wiring + Plugin` as the main path
 
 Install
 -------
@@ -30,6 +30,6 @@ First Run (Authoritative)
 3) Discover components::
 
    python -m nsgablack catalog search vns
-   python -m nsgablack catalog search suite
-   python -m nsgablack catalog show suite.moead
+   python -m nsgablack catalog search plugin
+   python -m nsgablack catalog show adapter.moead
 

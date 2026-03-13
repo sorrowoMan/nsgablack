@@ -103,7 +103,7 @@ update(evaluations) -> state
 
 - `ComposableSolver` 统一编排
 - `MultiStrategyController` 协同调度
-- `Suite` 权威装配
+- `Wiring` 权威装配
 
 ---
 
@@ -138,7 +138,7 @@ update(evaluations) -> state
 ## 9) 相关入口
 
 - `adapters/`：Adapter 实现
-- `utils/suites/`：权威组合装配
+- `utils/wiring/`：权威组合装配
 - `docs/guides/DECOUPLING_REPRESENTATION.md`
 - `docs/guides/DECOUPLING_BIAS.md`
 - `docs/guides/DECOUPLING_CAPABILITIES.md`

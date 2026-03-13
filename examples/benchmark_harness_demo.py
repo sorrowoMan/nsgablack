@@ -34,10 +34,11 @@ _ensure_importable()
 
 from nsgablack.core.base import BlackBoxProblem  # noqa: E402
 from nsgablack.core.composable_solver import ComposableSolver  # noqa: E402
+from nsgablack.adapters import SAConfig, SimulatedAnnealingAdapter  # noqa: E402
 from nsgablack.representation import RepresentationPipeline  # noqa: E402
 from nsgablack.representation.continuous import ClipRepair, UniformInitializer  # noqa: E402
 from nsgablack.representation.continuous import GaussianMutation  # noqa: E402
-from nsgablack.utils.suites import attach_benchmark_harness, attach_simulated_annealing  # noqa: E402
+from nsgablack.utils.wiring import attach_benchmark_harness  # noqa: E402
 
 
 class DemoSphere(BlackBoxProblem):
@@ -62,7 +63,11 @@ def main() -> None:
     )
 
     solver = ComposableSolver(problem=problem, representation_pipeline=pipeline)
-    attach_simulated_annealing(solver, batch_size=32, initial_temperature=1.0, cooling_rate=0.92)
+    solver.set_adapter(
+        SimulatedAnnealingAdapter(
+            SAConfig(batch_size=32, initial_temperature=1.0, cooling_rate=0.92)
+        )
+    )
     attach_benchmark_harness(
         solver,
         output_dir=out_dir,

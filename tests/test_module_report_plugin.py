@@ -7,7 +7,7 @@ def test_module_report_writes_reports_and_injects_artifacts(sample_problem, samp
     from nsgablack.adapters import SimulatedAnnealingAdapter, SAConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
-    from nsgablack.utils.suites import attach_benchmark_harness, attach_module_report
+    from nsgablack.utils.wiring import attach_benchmark_harness, attach_module_report
 
     pipeline = RepresentationPipeline(
         initializer=UniformInitializer(low=-10.0, high=10.0),

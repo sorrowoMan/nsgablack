@@ -14,7 +14,7 @@ def test_catalog_search_basic():
 def test_catalog_entry_load_smoke():
     catalog = get_catalog()
 
-    entry = catalog.get("suite.monte_carlo_robustness")
+    entry = catalog.get("plugin.checkpoint_resume")
     assert entry is not None
     loaded = entry.load()
     assert callable(loaded)

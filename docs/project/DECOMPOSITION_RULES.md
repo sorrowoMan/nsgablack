@@ -1,8 +1,8 @@
-# 算法拆解原则（Adapter / Plugin / Bias / Pipeline / Suite）
+# 算法拆解原则（Adapter / Plugin / Bias / Pipeline / Wiring）
 
 这一页是“可快速查找”的总纲：你不需要记住所有文件在哪，但需要记住**拆解边界**与**配套规则**，这样无论你怎么拆，都不会把系统拆坏。
 
-如果你只记一条：**底座保持纯净；能力通过扩展点组合进来；成套能力必须提供 Suite。**
+如果你只记一条：**底座保持纯净；能力通过扩展点组合进来；成套能力必须提供 Wiring。**
 
 ## 1. 四类扩展点 + 一个权威组合
 
@@ -25,17 +25,17 @@
 - 负责：日志、监控、早停、阶段切换、动态调参、统计信号注入、并行评估调用、实验记录……
 - 特点：最灵活、也最容易“长成上帝对象”，所以要靠契约/护栏约束副作用边界
 
-### Suite（权威组合 / Recipe）
+### Wiring（权威组合 / Recipe）
 - 负责：把“必须成套才有意义”的能力做成一键装配入口，避免漏配导致隐性 bug
-- 例子：`MonteCarloEvaluationPlugin` + `RobustnessBias` 就应该用 suite 固化（事实标准）
+- 例子：`MonteCarloEvaluationPlugin` + `RobustnessBias` 就应该用 wiring 固化（事实标准）
 
 ## 2. 伙伴组件（companions）是什么
 
 当一个能力“单独存在意义不大”或“漏配会退化/报错”时，需要明确它的伙伴组件：
 
-- `Bias` 依赖某些 metrics：推荐对应的 Plugin/Suite
+- `Bias` 依赖某些 metrics：推荐对应的 Plugin/Wiring
 - `Adapter` 依赖某个 representation 的 context 变异：推荐对应的 mutator wrapper
-- `Plugin` 与某个 adapter/bias 形成权威组合：推荐对应的 Suite
+- `Plugin` 与某个 adapter/bias 形成权威组合：推荐对应的 Wiring
 
 伙伴信息有两层：
 

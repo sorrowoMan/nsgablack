@@ -8,7 +8,7 @@ try:
     from nsgablack.adapters import AStarAdapter, AStarConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ClipRepair
-    from nsgablack.utils.suites import attach_benchmark_harness, attach_module_report
+    from nsgablack.utils.wiring import attach_benchmark_harness, attach_module_report
 except ModuleNotFoundError:  # pragma: no cover
     import sys
     from pathlib import Path
@@ -19,7 +19,7 @@ except ModuleNotFoundError:  # pragma: no cover
     from nsgablack.adapters import AStarAdapter, AStarConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ClipRepair
-    from nsgablack.utils.suites import attach_benchmark_harness, attach_module_report
+    from nsgablack.utils.wiring import attach_benchmark_harness, attach_module_report
 
 
 class GridGoal(BlackBoxProblem):

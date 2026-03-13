@@ -47,6 +47,12 @@ from .ops.benchmark_harness import BenchmarkHarnessPlugin, BenchmarkHarnessConfi
 from .ops.module_report import ModuleReportPlugin, ModuleReportConfig
 from .ops.profiler import ProfilerPlugin, ProfilerConfig
 from .runtime.dynamic_switch import DynamicSwitchPlugin
+from .runtime.companion_orchestrator import (
+    CompanionEventRules,
+    CompanionOrchestratorConfig,
+    CompanionOrchestratorPlugin,
+    CompanionPhaseScheduler,
+)
 from .ops.sensitivity_analysis import SensitivityAnalysisPlugin, SensitivityAnalysisConfig, SensitivityParam
 from .ops.otel_tracing import OpenTelemetryTracingPlugin, OpenTelemetryTracingConfig
 from .ops.decision_trace import DecisionTracePlugin, DecisionTraceConfig
@@ -100,6 +106,10 @@ __all__ = [
     'ProfilerPlugin',
     'ProfilerConfig',
     'DynamicSwitchPlugin',
+    'CompanionEventRules',
+    'CompanionOrchestratorConfig',
+    'CompanionOrchestratorPlugin',
+    'CompanionPhaseScheduler',
     'SensitivityAnalysisPlugin',
     'SensitivityAnalysisConfig',
     'SensitivityParam',

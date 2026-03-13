@@ -1,9 +1,9 @@
 # 算法解构工程清单
 
-这份清单用于约束“如何把一个传统算法拆成 NSGABlack 的 Bias/Representation/Adapter/Plugin/Suite”，核心目标是：
+这份清单用于约束“如何把一个传统算法拆成 NSGABlack 的 Bias/Representation/Adapter/Plugin/Wiring”，核心目标是：
 
 - 框架不限制你怎么拆，但**拆出来的组件必须可发现、可组合、且不会静默退化**；
-- 当组合需要“成套配合”时，必须提供权威组合入口（suite）或至少给出明确伙伴提示。
+- 当组合需要“成套配合”时，必须提供权威组合入口（wiring）或至少给出明确伙伴提示。
 
 ---
 
@@ -15,13 +15,13 @@
 - **有明确循环过程/阶段/子过程**（流程算法，如 VNS/TS/SA 的完整版本）→ `Adapter` 或 `Plugin`
 - **编码/变异/交叉/修复/可行性**（表示与算子）→ `RepresentationPipeline`
 - **编排/记录/并行/缓存/代理/评估调度**（能力层，绝不污染底座）→ `Plugin`
-- **必须成套才有意义**（否则无效或语义错误）→ `utils/suites/*`
+- **必须成套才有意义**（否则无效或语义错误）→ `utils/wiring/*`
 
 经验法则：
 
 - “能跨算法复用的思想”优先偏置化；
 - “必须维持自身状态与循环”的算法优先适配器化；
-- “融合”多数是阶段编排（Plugin/Suite），不是把所有东西揉成一个偏置。
+- “融合”多数是阶段编排（Plugin/Wiring），不是把所有东西揉成一个偏置。
 
 ---
 
@@ -32,7 +32,7 @@
 ### 1.1 Bias
 
 - `requires_metrics: set[str]`（信号驱动必填；缺信号必须退化）
-- `recommended_plugins: list[str]`（或指向 suite）
+- `recommended_plugins: list[str]`（或指向 wiring）
 
 例：`RobustnessBias.requires_metrics = {"mc_std"}`
 
@@ -83,16 +83,16 @@
 
 ---
 
-## 4. Suite（权威组合入口）
+## 4. Wiring（权威组合入口）
 
-只有在“必须成套才有意义”时才做 suite。规则：
+只有在“必须成套才有意义”时才做 wiring。规则：
 
-- suite 不引入新状态：只负责装配（挂 plugin/bias/adapter/pipeline 默认值）
-- suite 提供一个最小可运行的基准组合，后续任何功能回归都应对齐它
+- wiring 不引入新状态：只负责装配（挂 plugin/bias/adapter/pipeline 默认值）
+- wiring 提供一个最小可运行的基准组合，后续任何功能回归都应对齐它
 
 例：
 
-- `utils/suites/monte_carlo_robustness.py`：MC 插件提供 `mc_std`，RobustnessBias 消费它
+- `plugins/evaluation/monte_carlo_evaluation.py` + `bias/algorithmic/signal_driven/robustness.py`：MC 插件提供 `mc_std`，RobustnessBias 消费它
 
 ---
 

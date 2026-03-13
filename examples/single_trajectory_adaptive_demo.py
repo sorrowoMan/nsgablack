@@ -7,10 +7,9 @@ import numpy as np
 try:
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.adapters import SingleTrajectoryAdaptiveConfig
+    from nsgablack.adapters import SingleTrajectoryAdaptiveAdapter, SingleTrajectoryAdaptiveConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import ClipRepair, ContextGaussianMutation, UniformInitializer
-    from nsgablack.utils.suites import attach_single_trajectory_adaptive
 except ModuleNotFoundError:  # pragma: no cover
     import sys
     from pathlib import Path
@@ -18,10 +17,9 @@ except ModuleNotFoundError:  # pragma: no cover
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.adapters import SingleTrajectoryAdaptiveConfig
+    from nsgablack.adapters import SingleTrajectoryAdaptiveAdapter, SingleTrajectoryAdaptiveConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import ClipRepair, ContextGaussianMutation, UniformInitializer
-    from nsgablack.utils.suites import attach_single_trajectory_adaptive
 
 
 class SphereProblem(BlackBoxProblem):
@@ -50,16 +48,17 @@ def build_solver():
     solver = ComposableSolver(problem=problem, representation_pipeline=pipeline)
     solver.set_max_steps(40)
 
-    attach_single_trajectory_adaptive(
-        solver,
-        config=SingleTrajectoryAdaptiveConfig(
+    solver.set_adapter(
+        SingleTrajectoryAdaptiveAdapter(
+            config=SingleTrajectoryAdaptiveConfig(
             batch_size=10,
             initial_sigma=0.45,
             min_sigma=0.03,
             max_sigma=1.8,
             target_success_rate=0.25,
             restart_patience=15,
-        ),
+            ),
+        )
     )
     return solver
 

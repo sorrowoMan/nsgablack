@@ -4,12 +4,39 @@ from nsgablack.project import init_project, run_project_doctor
 def test_init_project_creates_component_registration_guide(tmp_path):
     root = init_project(tmp_path / "demo_project")
     guide = root / "COMPONENT_REGISTRATION.md"
+    build_solver_guide = root / "BUILD_SOLVER_REGISTRATION.md"
+    build_solver = root / "build_solver.py"
+    start_here = root / "START_HERE.md"
     marker = root / ".nsgablack-project"
     assert guide.is_file()
+    assert build_solver_guide.is_file()
+    assert build_solver.is_file()
+    assert start_here.is_file()
     assert marker.is_file()
     text = guide.read_text(encoding="utf-8")
+    build_solver_text = build_solver_guide.read_text(encoding="utf-8")
+    build_solver_py = build_solver.read_text(encoding="utf-8")
+    start_here_text = start_here.read_text(encoding="utf-8")
     assert "Why register components" in text
     assert "project_registry.py" in text
+    assert "_register_problem(args)" in build_solver_text
+    assert "_extend_problem_args(parser)" in build_solver_text
+    assert "Catalog Kind -> Zone Mapping" in build_solver_text
+    assert "_extend_problem_args" in build_solver_py
+    assert "_register_problem" in build_solver_py
+    assert "_extend_pipeline_args" in build_solver_py
+    assert "_register_pipeline" in build_solver_py
+    assert "--observability-profile" in build_solver_py
+    assert build_solver_py.index("_extend_problem_args") < build_solver_py.index("_register_problem")
+    assert build_solver_py.index("_extend_pipeline_args") < build_solver_py.index("_register_pipeline")
+    assert "Stage Gate 2 - Layer Placement" in start_here_text
+    assert "Stage Gate 6 - Contract Verification" in start_here_text
+
+
+def test_init_project_creates_contract_and_test_matrix_templates(tmp_path):
+    root = init_project(tmp_path / "demo_project")
+    assert (root / "docs" / "contracts" / "COMPONENT_CONTRACT_TEMPLATE.md").is_file()
+    assert (root / "tests" / "templates" / "README.md").is_file()
 
 
 def test_project_doctor_warns_when_registration_guide_missing(tmp_path):
@@ -20,6 +47,26 @@ def test_project_doctor_warns_when_registration_guide_missing(tmp_path):
     report = run_project_doctor(root, instantiate_solver=False)
     codes = {d.code for d in report.diagnostics}
     assert "missing-component-registration-guide" in codes
+
+
+def test_project_doctor_warns_when_component_contract_template_missing(tmp_path):
+    root = init_project(tmp_path / "demo_project")
+    path = root / "docs" / "contracts" / "COMPONENT_CONTRACT_TEMPLATE.md"
+    path.unlink()
+
+    report = run_project_doctor(root, instantiate_solver=False)
+    codes = {d.code for d in report.diagnostics}
+    assert "missing-contract-card-template" in codes
+
+
+def test_project_doctor_warns_when_component_test_matrix_template_missing(tmp_path):
+    root = init_project(tmp_path / "demo_project")
+    path = root / "tests" / "templates" / "README.md"
+    path.unlink()
+
+    report = run_project_doctor(root, instantiate_solver=False)
+    codes = {d.code for d in report.diagnostics}
+    assert "missing-component-test-matrix-template" in codes
 
 
 def test_project_doctor_skips_scaffold_checks_for_non_scaffold_folder(tmp_path):

@@ -8,7 +8,7 @@
 ## 1) `examples/end_to_end_workflow_demo.py`
 
 - 输入
-  - 问题定义 + 组件装配（suite）
+  - 问题定义 + 组件装配（wiring）
   - seed / run_id / 输出目录
 - 输出
   - `runs/<run_id>.csv`

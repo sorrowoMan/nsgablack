@@ -1,92 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Project-local Catalog registration."""
+"""Project-local Catalog registration.
+
+NOTE:
+- Preferred local registration source is `catalog/entries.toml` (created by scaffold).
+- Keep this file for optional dynamic registration only.
+"""
 
 from __future__ import annotations
 
-from nsgablack.catalog import CatalogEntry
-
-
 def get_project_entries():
-    return [
-        CatalogEntry(
-            key="problem.example",
-            title="ExampleProblem",
-            kind="tool",
-            import_path="problem.example_problem:ExampleProblem",
-            tags=("project", "example", "problem"),
-            summary="Example two-objective problem.",
-            context_requires=(),
-            context_provides=(),
-            context_mutates=(),
-            context_cache=(),
-            context_notes=("Defines objective/constraint semantics only; no runtime context writes.",),
-            use_when=("Define project objective/constraint semantics.",),
-            minimal_wiring=("from problem.example_problem import ExampleProblem",),
-            required_companions=("project.pipeline.example",),
-            config_keys=("dimension",),
-            example_entry="build_solver:build_solver",
-        ),
-        CatalogEntry(
-            key="pipeline.example",
-            title="build_pipeline",
-            kind="representation",
-            import_path="pipeline.example_pipeline:build_pipeline",
-            tags=("project", "example", "pipeline"),
-            summary="Example representation pipeline.",
-            companions=("project.problem.example",),
-            context_requires=(),
-            context_provides=(),
-            context_mutates=(),
-            context_cache=(),
-            context_notes=("Pipeline handles init/mutate/repair; no additional runtime context keys.",),
-            use_when=("Need init/mutate/repair wiring for vector representation.",),
-            minimal_wiring=(
-                "from pipeline.example_pipeline import build_pipeline",
-                "solver.set_representation_pipeline(build_pipeline())",
-            ),
-            required_companions=("project.problem.example",),
-            config_keys=(),
-            example_entry="build_solver:build_solver",
-        ),
-        CatalogEntry(
-            key="solver.example",
-            title="build_solver",
-            kind="example",
-            import_path="build_solver:build_solver",
-            tags=("project", "example", "solver"),
-            summary="Example solver assembly entry.",
-            companions=("project.problem.example", "project.pipeline.example"),
-            context_requires=(),
-            context_provides=(),
-            context_mutates=(),
-            context_cache=(),
-            context_notes=("Assembly entrypoint; context contract is delegated to registered components.",),
-            use_when=("Need runnable assembly entry for CLI and Run Inspector.",),
-            minimal_wiring=("python build_solver.py",),
-            required_companions=("project.problem.example", "project.pipeline.example"),
-            config_keys=("dimension", "pop_size", "generations", "enable_bias"),
-            example_entry="build_solver:build_solver",
-        ),
-        CatalogEntry(
-            key="plugin.heartbeat",
-            title="GenerationHeartbeatPlugin",
-            kind="plugin",
-            import_path="plugins.example_plugin:GenerationHeartbeatPlugin",
-            tags=("project", "plugin", "heartbeat"),
-            summary="Writes heartbeat counters to context for smoke testing plugin wiring.",
-            companions=("project.solver.example",),
-            context_requires=("generation",),
-            context_provides=("project.heartbeat.count", "project.heartbeat.last_generation"),
-            context_mutates=("project.heartbeat.count", "project.heartbeat.last_generation"),
-            context_cache=(),
-            context_notes=("Simple runtime signal plugin; good for validating plugin lifecycle and context flow.",),
-            use_when=("Need to verify custom plugin is loaded and actively writing context keys.",),
-            minimal_wiring=(
-                "from plugins.example_plugin import GenerationHeartbeatPlugin",
-                "solver.add_plugin(GenerationHeartbeatPlugin(interval=10))",
-            ),
-            required_companions=("project.solver.example",),
-            config_keys=("interval", "verbose"),
-            example_entry="build_solver:build_solver",
-        ),
-    ]
+    # Optional dynamic entries. Keep empty by default.
+    return []

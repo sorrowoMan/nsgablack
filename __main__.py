@@ -14,7 +14,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional, Tuple
 
@@ -28,6 +32,22 @@ _KIND_LABELS = {
     "tool": "Tool",
     "example": "Example",
     "doc": "Doc",
+}
+
+_DOCTOR_LINE_PATTERNS = (
+    re.compile(r"@L(?P<line>\d+)"),
+    re.compile(r"\bline\s+(?P<line>\d+)\b", re.IGNORECASE),
+)
+_DOCTOR_WATCH_EXTENSIONS = {".py", ".toml", ".md", ".json", ".yaml", ".yml", ".ini", ".cfg"}
+_DOCTOR_WATCH_IGNORED_DIRS = {
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".mypy_cache",
+    ".pytest_cache",
+    "runs",
+    "artifacts",
 }
 
 
@@ -299,20 +319,153 @@ def _cmd_project_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def _doctor_extract_line_column(message: str) -> tuple[int | None, int | None]:
+    text = str(message or "")
+    for pattern in _DOCTOR_LINE_PATTERNS:
+        match = pattern.search(text)
+        if match is None:
+            continue
+        try:
+            return int(match.group("line")), 1
+        except Exception:
+            continue
+    return None, None
+
+
+def _doctor_severity(level: str) -> str:
+    return {"error": "error", "warn": "warning", "info": "info"}.get(str(level).strip().lower(), "info")
+
+
+def _doctor_report_payload(report) -> dict:
+    diagnostics: list[dict] = []
+    default_path = str(report.project_root)
+    for diag in report.diagnostics:
+        line, column = _doctor_extract_line_column(str(getattr(diag, "message", "")))
+        diagnostics.append(
+            {
+                "level": str(getattr(diag, "level", "")),
+                "severity": _doctor_severity(str(getattr(diag, "level", ""))),
+                "code": str(getattr(diag, "code", "")),
+                "message": str(getattr(diag, "message", "")),
+                "path": str(getattr(diag, "path", "") or default_path),
+                "line": int(line) if line is not None else None,
+                "column": int(column) if column is not None else None,
+            }
+        )
+    return {
+        "project_root": str(report.project_root),
+        "summary": {
+            "errors": int(report.error_count),
+            "warnings": int(report.warn_count),
+            "infos": int(report.info_count),
+        },
+        "diagnostics": diagnostics,
+    }
+
+
+def _format_doctor_problem_lines(report) -> str:
+    rows: list[str] = []
+    default_path = str(report.project_root)
+    for diag in report.diagnostics:
+        path = str(getattr(diag, "path", "") or default_path)
+        line, column = _doctor_extract_line_column(str(getattr(diag, "message", "")))
+        row = (
+            f"{path}:{int(line) if line is not None else 1}:{int(column) if column is not None else 1}: "
+            f"{_doctor_severity(str(getattr(diag, 'level', '')))} "
+            f"{str(getattr(diag, 'code', ''))}: "
+            f"{str(getattr(diag, 'message', '')).replace(chr(10), ' ').strip()}"
+        )
+        rows.append(row)
+    return "\n".join(rows)
+
+
+def _doctor_exit_code(report, *, strict: bool) -> int:
+    if int(report.error_count) > 0:
+        return 2
+    if bool(strict) and int(report.warn_count) > 0:
+        return 1
+    return 0
+
+
+def _doctor_print_report(*, report, output_format: str, format_doctor_report) -> None:
+    fmt = str(output_format).strip().lower()
+    if fmt == "json":
+        print(json.dumps(_doctor_report_payload(report), ensure_ascii=False, indent=2))
+        return
+    if fmt == "problem":
+        print(_format_doctor_problem_lines(report))
+        return
+    print(format_doctor_report(report))
+
+
+def _doctor_watch_signature(root: Path) -> tuple[tuple[str, int, int], ...]:
+    entries: list[tuple[str, int, int]] = []
+    for file_path in root.rglob("*"):
+        if not file_path.is_file():
+            continue
+        if any(part in _DOCTOR_WATCH_IGNORED_DIRS for part in file_path.parts):
+            continue
+        if file_path.suffix.lower() not in _DOCTOR_WATCH_EXTENSIONS:
+            continue
+        try:
+            stat = file_path.stat()
+        except OSError:
+            continue
+        try:
+            rel = file_path.relative_to(root).as_posix()
+        except Exception:
+            rel = str(file_path)
+        entries.append((rel, int(stat.st_mtime_ns), int(stat.st_size)))
+    entries.sort()
+    return tuple(entries)
+
+
 def _cmd_project_doctor(args: argparse.Namespace) -> int:
     from .project import format_doctor_report, run_project_doctor
 
-    report = run_project_doctor(
-        path=Path(args.path) if args.path else Path.cwd(),
-        instantiate_solver=bool(args.build),
-        strict=bool(args.strict),
-    )
-    print(format_doctor_report(report))
-    if report.error_count > 0:
-        return 2
-    if bool(args.strict) and report.warn_count > 0:
-        return 1
-    return 0
+    output_format = "json" if bool(getattr(args, "json", False)) else str(getattr(args, "format", "text"))
+    output_format = output_format.strip().lower()
+    if output_format not in {"text", "json", "problem"}:
+        output_format = "text"
+
+    def _run_once() -> tuple[object, int]:
+        report = run_project_doctor(
+            path=Path(args.path) if args.path else Path.cwd(),
+            instantiate_solver=bool(args.build),
+            strict=bool(args.strict),
+        )
+        _doctor_print_report(report=report, output_format=output_format, format_doctor_report=format_doctor_report)
+        return report, _doctor_exit_code(report, strict=bool(args.strict))
+
+    if not bool(getattr(args, "watch", False)):
+        _, exit_code = _run_once()
+        return exit_code
+
+    interval = float(getattr(args, "watch_interval", 1.0) or 1.0)
+    if interval < 0.2:
+        interval = 0.2
+
+    report, exit_code = _run_once()
+    watch_root = Path(report.project_root)
+    last_sig = _doctor_watch_signature(watch_root)
+    print(f"[doctor-watch] started root={watch_root} interval={interval:g}s format={output_format}")
+    print("[doctor-watch] cycle-done")
+
+    try:
+        while True:
+            time.sleep(interval)
+            current_sig = _doctor_watch_signature(watch_root)
+            if current_sig == last_sig:
+                continue
+            last_sig = current_sig
+            stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[doctor-watch] cycle-start {stamp}")
+            report, exit_code = _run_once()
+            watch_root = Path(report.project_root)
+            print("[doctor-watch] cycle-done")
+    except KeyboardInterrupt:
+        print("[doctor-watch] stopped")
+        return 130
 
 
 def _cmd_project_catalog_search(args: argparse.Namespace) -> int:
@@ -505,6 +658,28 @@ def build_parser() -> argparse.ArgumentParser:
         "--strict",
         action="store_true",
         help="Return non-zero when warnings exist",
+    )
+    p_doctor.add_argument(
+        "--format",
+        choices=("text", "json", "problem"),
+        default="text",
+        help="Output format for doctor report (default: text)",
+    )
+    p_doctor.add_argument(
+        "--json",
+        action="store_true",
+        help="Shortcut for --format json",
+    )
+    p_doctor.add_argument(
+        "--watch",
+        action="store_true",
+        help="Watch project files and re-run doctor when files change",
+    )
+    p_doctor.add_argument(
+        "--watch-interval",
+        type=float,
+        default=1.0,
+        help="Watch polling interval in seconds (default: 1.0)",
     )
     p_doctor.set_defaults(func=_cmd_project_doctor)
 

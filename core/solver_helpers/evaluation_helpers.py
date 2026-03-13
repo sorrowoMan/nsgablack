@@ -13,6 +13,12 @@ from ...utils.extension_contracts import (
     normalize_objectives,
     normalize_violation,
 )
+from ...utils.evaluation.shape_validation import (
+    EvaluationShapeError,
+    validate_individual_evaluation_shape,
+    validate_population_evaluation_shape,
+    validate_plugin_short_circuit_return,
+)
 
 
 def evaluate_individual_with_plugins_and_bias(
@@ -22,18 +28,38 @@ def evaluate_individual_with_plugins_and_bias(
 ) -> Tuple[np.ndarray, float]:
     overridden = solver.plugin_manager.trigger("evaluate_individual", solver, x, individual_id)
     if overridden is not None:
-        try:
-            obj, vio = overridden
-        except Exception as exc:  # pragma: no cover
-            raise ContractError("evaluate_individual plugin return must be (objectives, violation)") from exc
-        obj = normalize_objectives(obj, num_objectives=solver.num_objectives, name="plugin.evaluate_individual.objectives")
-        vio = normalize_violation(vio, name="plugin.evaluate_individual.violation")
-        solver.evaluation_count += 1
-        return obj, vio
+        result = validate_plugin_short_circuit_return(
+            overridden,
+            expected_mode="individual",
+            population_size=None,
+            num_objectives=solver.num_objectives,
+            context="plugin.evaluate_individual",
+            strict=bool(getattr(solver, "plugin_strict", False)),
+        )
+        if result is not None:
+            obj, vio = result
+            obj = normalize_objectives(
+                obj,
+                num_objectives=solver.num_objectives,
+                name="plugin.evaluate_individual.objectives",
+            )
+            vio = normalize_violation(vio, name="plugin.evaluate_individual.violation")
+            solver.evaluation_count += 1
+            return obj, vio
 
     x = normalize_candidate(x, dimension=solver.dimension, name="evaluate_individual.x")
     val = solver.problem.evaluate(x)
-    obj = normalize_objectives(val, num_objectives=solver.num_objectives, name="problem.evaluate")
+    try:
+        obj_arr, vio_val = validate_individual_evaluation_shape(
+            val,
+            0.0,
+            solver.num_objectives,
+            context="problem.evaluate",
+            strict=bool(getattr(solver, "plugin_strict", False)),
+        )
+    except EvaluationShapeError as exc:
+        raise ContractError(str(exc)) from exc
+    obj = normalize_objectives(obj_arr, num_objectives=solver.num_objectives, name="problem.evaluate")
     cons_arr, violation = evaluate_constraints_safe(solver.problem, x)
     try:
         violation = normalize_violation(violation, name="constraint_violation")
@@ -41,6 +67,9 @@ def evaluate_individual_with_plugins_and_bias(
         if not np.isinf(float(violation)):
             raise
         violation = float(violation)
+    # If validation produced a violation (non-strict coercion), respect it.
+    if not np.isfinite(float(violation)) and np.isfinite(float(vio_val)):
+        violation = float(vio_val)
 
     context = solver.build_context(
         individual_id=individual_id,
@@ -63,21 +92,17 @@ def evaluate_population_with_plugins_and_bias(
 ) -> Tuple[np.ndarray, np.ndarray]:
     overridden = solver.plugin_manager.trigger("evaluate_population", solver, population)
     if overridden is not None:
-        try:
-            objectives, violations = overridden
-        except Exception as exc:  # pragma: no cover
-            raise ContractError("evaluate_population plugin return must be (objectives, violations)") from exc
-        objectives = np.asarray(objectives, dtype=float)
-        violations = np.asarray(violations, dtype=float).ravel()
-        if objectives.ndim != 2 or objectives.shape[1] != solver.num_objectives:
-            raise ContractError(
-                f"plugin.evaluate_population.objectives shape mismatch: got {tuple(objectives.shape)} expected (N, {solver.num_objectives})"
-            )
-        if violations.shape[0] != objectives.shape[0]:
-            raise ContractError(
-                f"plugin.evaluate_population.violations length mismatch: got {int(violations.shape[0])} expected {int(objectives.shape[0])}"
-            )
-        return objectives, violations
+        result = validate_plugin_short_circuit_return(
+            overridden,
+            expected_mode="population",
+            population_size=int(population.shape[0]) if population is not None else None,
+            num_objectives=solver.num_objectives,
+            context="plugin.evaluate_population",
+            strict=bool(getattr(solver, "plugin_strict", False)),
+        )
+        if result is not None:
+            objectives, violations = result
+            return objectives, violations
 
     if population is None:
         raise ContractError("evaluate_population.population cannot be empty")
@@ -111,6 +136,18 @@ def evaluate_population_with_plugins_and_bias(
         else:
             objectives[idx, : obj.size] = obj
         violations[idx] = vio
+
+    try:
+        objectives, violations = validate_population_evaluation_shape(
+            objectives,
+            violations,
+            pop_size,
+            solver.num_objectives,
+            context="evaluate_population",
+            strict=bool(getattr(solver, "plugin_strict", False)),
+        )
+    except EvaluationShapeError as exc:
+        raise ContractError(str(exc)) from exc
 
     solver._persist_snapshot(
         population=population,

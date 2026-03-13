@@ -6,7 +6,7 @@
 
 | 你要的能力 | 推荐入口/组件 | 关键实现文件 | 产物/输出 |
 | --- | --- | --- | --- |
-| 组装一个可运行的实验（问题 + 算法 + 口径 + 输出） | `suite.*` + `plugin.*` | `utils/suites/`、`plugins/` | 运行目录下 CSV/JSON/报告文件 |
+| 组装一个可运行的实验（问题 + 算法 + 口径 + 输出） | `utils/wiring` 的 `attach_*` + `plugin.*` | `utils/wiring/`、`plugins/` | 运行目录下 CSV/JSON/报告文件 |
 | 统一实验口径（逐步记录 + summary） | `plugin.benchmark_harness` | `plugins/ops/benchmark_harness.py` | `steps.csv`、`summary.json` |
 | 模块/偏置生效审计（“到底是谁在起作用”） | `plugin.module_report` | `plugins/ops/module_report.py`、`plugins/base.py` | `modules.json`、`bias.json`（可选 `bias.md`） |
 | 并行评估（加速 evaluate + bias/constraint） | `with_parallel_evaluation(...)` | `utils/parallel/evaluator.py`、`utils/parallel/integration.py` | 进程/线程池并行评估结果 |
@@ -15,7 +15,7 @@
 | Catalog（“官方推荐入口”索引） | `python -m nsgablack catalog ...` | `catalog/registry.py` | CLI 列表/详情 |
 
 说明：
-- 本项目的“主路径”是 `suite + plugin`，`core/solver.py` 作为稳定底座尽量不作为文档主入口。
+- 本项目的“主路径”是 `wiring + plugin`，`core/solver.py` 作为稳定底座尽量不作为文档主入口。
 - Windows 下运行 CLI 时，建议从仓库根目录（`nsgablack/` 的父目录）执行；如果当前目录就是 `nsgablack/`，`python -m nsgablack` 会因为模块搜索路径而找不到同名包。
 
 ## 1. 代码结构与边界（我应该把东西放哪）
@@ -25,7 +25,7 @@
 定位：通用求解生命周期与基础接口，追求“稳定、可复用、少副作用”。
 
 - 求解器底座与通用接口：`core/`
-- “不要在 core 里做装配”：装配放到 `utils/suites/`，生态能力放到 `plugins/`
+- “不要在 core 里做装配”：装配放到 `utils/wiring/`，生态能力放到 `plugins/`
 
 ### 1.2 Representation：表示与变换管线（可插拔）
 
@@ -54,12 +54,12 @@
   - 插件可声明 `is_algorithmic`（用于“贡献报告”筛选：哪些算算法模块，哪些是胶水模块）
   - PluginManager 对插件 hook 进行计时/采样（实现以 `plugins/base.py` 为准）
 
-### 1.5 Suite：装配层（官方推荐入口）
+### 1.5 Wiring：装配层（官方推荐入口）
 
-定位：把“用哪些 solver/adapter/插件/默认参数”统一收敛在 suite；core 不做装配，suite 做。
+定位：把“用哪些 solver/adapter/插件/默认参数”统一收敛在 wiring；core 不做装配，wiring 做。
 
-- suite 目录：`utils/suites/`
-- catalog 伙伴组件：`catalog/registry.py` 中的 `companions`/推荐条目会把 suite 与关键插件绑成“权威路径”
+- wiring 目录：`utils/wiring/`
+- catalog 伙伴组件：`catalog/registry.py` 中的 `companions`/推荐条目会把 wiring 与关键插件绑成“权威路径”
 
 ## 2. 组件通信与数据流（没有事件总线，但有统一上下文）
 
@@ -79,7 +79,7 @@
 
 工程取舍（当前实现）：
 - Context 用 dict：低侵入、易扩展、跨进程传递时更容易裁剪成“可序列化最小集合”
-- DI 不引入容器：装配放在 suite，靠显式构造注入；避免生命周期系统带来的复杂度
+- DI 不引入容器：装配放在 wiring，靠显式构造注入；避免生命周期系统带来的复杂度
 
 ## 3. 并行与性能（并行的是评估，不是“框架本身”）
 
@@ -143,7 +143,7 @@
 ### 5.2 兼容层（仅做过渡，不做长期依赖）
 
 - 兼容工具/旧路径适配：`utils/compat/solver_extensions.py`
-- 建议：新代码只依赖 `suite + plugin` 主路径；compat 只服务于历史脚本迁移
+- 建议：新代码只依赖 `wiring + plugin` 主路径；compat 只服务于历史脚本迁移
 
 ## 6. Catalog：索引是显式注册（可控、可审计）
 
@@ -220,8 +220,8 @@
   - `build_dataclass_config()`：面向 dataclass 的配置注入（可 strict）
 
 工程建议：
-- suite 作为“权威装配层”，可以提供默认 dataclass config；用户通过外部 config 覆盖
-- 对外 demo 尽量用“配置 + suite”驱动，避免脚本里散落一堆参数
+- wiring 作为“权威装配层”，可以提供默认 dataclass config；用户通过外部 config 覆盖
+- 对外 demo 尽量用“配置 + wiring”驱动，避免脚本里散落一堆参数
 
 ### 9.2 实验结果结构化落盘（轻量版 experiment tracking）
 
@@ -246,7 +246,7 @@
 - 文档与 catalog 的“权威路径”不再指向兼容层
 
 示例（可参考）：
-- `utils/runs/headless.py` 中对旧功能的 DeprecationWarning：明确告诉用户要迁移到 `RepresentationPipeline + plugins/suites`
+- `utils/runs/headless.py` 中对旧功能的 DeprecationWarning：明确告诉用户要迁移到 `RepresentationPipeline + plugins/wiring helpers`
 
 ## 11. 失败模式与健壮性（真实问题一定会炸，怎么炸得可控）
 
@@ -293,7 +293,7 @@
 定位：可视化属于“可选增强”，不应当污染用户环境（例如 import 时强行切 backend）。
 
 - 可视化适配：`utils/viz/`
-- 推荐做法：通过 plugin/suite 控制可视化启用，而不是在包 import 时做全局副作用设置
+- 推荐做法：通过 plugin 或 wiring helper 控制可视化启用，而不是在包 import 时做全局副作用设置
 
 ## 13. 扩展开发指南（给贡献者一个“按部就班的入口”）
 
@@ -321,14 +321,14 @@ class MyPlugin(Plugin):
         ...
 ```
 
-### 13.2 新增一个 Suite（官方推荐装配）
+### 13.2 新增一个 Wiring（官方推荐装配）
 
 工程约束：
-- suite 负责“装配”，不要把算法细节塞进 core
-- suite 输出要尽量可复用：给外部脚本一个稳定的“开箱即用”入口
+- wiring 负责“装配”，不要把算法细节塞进 core
+- wiring 输出要尽量可复用：给外部脚本一个稳定的“开箱即用”入口
 
 入口：
-- `utils/suites/`
+- `utils/wiring/`
 
 ### 13.3 新增 catalog 条目（让用户能搜到）
 
@@ -336,7 +336,7 @@ class MyPlugin(Plugin):
 - `catalog/registry.py`
 
 建议规则：
-- `suite.*` 始终优先作为“推荐入口”
+- `utils/wiring` 的 `attach_*` 始终优先作为“推荐入口”
 - 原子组件（bias/representation/plugin）可以注册，但要写清楚 companions（把“怎么组装”绑定上）
 
 ## 14. Catalog 自动装配（如果你要做，建议怎么做）
@@ -477,7 +477,7 @@ bias.md（可选）：`{output_dir}/{run_id}.bias.md`
 
 核心参数（以 `ParallelEvaluator(...)` 为准）：
 - `backend`: `"process" | "thread" | "joblib" | "ray"`（ray/joblib 取决于可选依赖）
-- `max_workers`: 默认会基于 CPU 核心数；建议在外层 suite 固化默认值
+- `max_workers`: 默认会基于 CPU 核心数；建议在外层 wiring 固化默认值
 - `chunk_size`: batch 粒度（影响负载均衡与 IPC 开销）
 - `enable_load_balancing`: 是否启用更均衡的任务分发
 - `retry_errors/max_retries`: 单个个体失败是否重试（工程上用于规避偶发错误）

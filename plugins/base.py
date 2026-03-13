@@ -40,7 +40,7 @@ class Plugin(ABC):
         Args:
             name: Plugin name.
             solver: Optional solver instance; can also be attached later.
-            priority: Larger values run earlier.
+            priority: Smaller values run earlier.
         """
         self.name = name
         self.solver = solver
@@ -445,7 +445,7 @@ class PluginManager:
 
         self.plugins.append(plugin)
         # Keep stable order among same-priority plugins.
-        self.plugins.sort(key=lambda p: p.priority, reverse=True)
+        self.plugins.sort(key=lambda p: p.priority)
         self.plugin_map[plugin.name] = plugin
         return plugin
 
@@ -472,16 +472,45 @@ class PluginManager:
         if plugin:
             plugin.disable()
 
+    def set_execution_order(self, ordered_plugin_names) -> None:
+        """Reorder registered plugins by explicit name list.
+
+        Unknown names are ignored. Registered plugins not included in
+        `ordered_plugin_names` are appended preserving current order.
+        """
+        by_name = {str(p.name): p for p in self.plugins}
+        seen = set()
+        reordered = []
+        for name in (ordered_plugin_names or ()):
+            key = str(name)
+            plugin = by_name.get(key)
+            if plugin is None or key in seen:
+                continue
+            reordered.append(plugin)
+            seen.add(key)
+        for plugin in self.plugins:
+            key = str(plugin.name)
+            if key in seen:
+                continue
+            reordered.append(plugin)
+        self.plugins = reordered
+
     def trigger(self, event_name: str, *args, **kwargs):
         """Trigger an event on plugins.
 
         If short-circuit is enabled for this event, returns the first non-None
         handler result.
+        
+        Plugins marked with _attach_failed=True are skipped silently.
         """
         should_short_circuit = self.short_circuit and event_name in self.short_circuit_events
 
         for plugin in self.plugins:
             if not plugin.enabled:
+                continue
+            
+            # Skip plugins that failed to attach
+            if bool(getattr(plugin, "_attach_failed", False)):
                 continue
 
             handler = getattr(plugin, event_name, None)
@@ -662,6 +691,8 @@ class PluginManager:
             )
         for plugin in self.plugins:
             if plugin.enabled:
+                if bool(getattr(plugin, "_attach_failed", False)):
+                    continue
                 plugin.attach(solver)
                 plugin.on_solver_init(solver)
 

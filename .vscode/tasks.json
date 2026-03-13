@@ -1,0 +1,62 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "doctor: strict (problem)",
+      "type": "shell",
+      "command": "python -m nsgablack project doctor --path . --strict --format problem",
+      "group": "test",
+      "problemMatcher": [
+        {
+          "owner": "nsgablack-doctor",
+          "fileLocation": "absolute",
+          "pattern": {
+            "regexp": "^(.*):(\\d+):(\\d+): (error|warning|info) ([a-z0-9\\-]+): (.*)$",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "severity": 4,
+            "code": 5,
+            "message": 6
+          }
+        }
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      }
+    },
+    {
+      "label": "doctor: watch (problem)",
+      "type": "shell",
+      "command": "python -m nsgablack project doctor --path . --strict --format problem --watch --watch-interval 1.0",
+      "isBackground": true,
+      "problemMatcher": [
+        {
+          "owner": "nsgablack-doctor",
+          "fileLocation": "absolute",
+          "pattern": {
+            "regexp": "^(.*):(\\d+):(\\d+): (error|warning|info) ([a-z0-9\\-]+): (.*)$",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "severity": 4,
+            "code": 5,
+            "message": 6
+          },
+          "background": {
+            "activeOnStart": true,
+            "beginsPattern": "^\\[doctor-watch\\] cycle-start",
+            "endsPattern": "^\\[doctor-watch\\] cycle-done$"
+          }
+        }
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    }
+  ]
+}

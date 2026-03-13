@@ -13,6 +13,7 @@ python examples/cases/supply_adjustment_nested/working_blacklist_optimizer.py `
 from __future__ import annotations
 
 import argparse
+import logging
 import json
 import random
 import sys
@@ -21,6 +22,8 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 _THIS_DIR = Path(__file__).resolve().parent
 if str(_THIS_DIR) not in sys.path:
@@ -31,19 +34,26 @@ from _bootstrap import ensure_nsgablack_importable  # noqa: E402
 ensure_nsgablack_importable(Path(__file__))
 
 from nsgablack.core.evolution_solver import EvolutionSolver  # noqa: E402
-from nsgablack.representation.base import RepresentationPipeline  # noqa: E402
-from nsgablack.representation.binary import BinaryInitializer, BinaryRepair, BitFlipMutation  # noqa: E402
-from nsgablack.utils.suites import attach_default_observability_plugins  # noqa: E402
+from nsgablack.utils.wiring import attach_default_observability_plugins  # noqa: E402
 from nsgablack.utils.viz import launch_from_builder  # noqa: E402
 
 from evaluation import ProductionInnerEvalConfig, ProductionInnerEvaluationModel
+from pipeline import build_l0_binary_pipeline
 from problem import BlacklistDesignProblem, BlacklistEvalConfig
 from problem.supply_event_shift_problem import SupplyEventShiftProblem
 
 
 def _resolve_default_baseline_plan(base_dir: Path) -> Optional[Path]:
     cases_dir = base_dir.parent
-    cands = sorted(cases_dir.glob("integrated_result_production_*.xlsx"), reverse=True)
+    export_dirs = (
+        cases_dir,
+        cases_dir / "runs" / "production_schedule" / "exports",
+    )
+    cands = []
+    for d in export_dirs:
+        if d.exists():
+            cands.extend(d.glob("integrated_result_production_*.xlsx"))
+    cands = sorted(cands, reverse=True)
     return cands[0] if cands else None
 
 
@@ -98,7 +108,8 @@ def _read_ids_file(path: Path) -> list[int]:
             continue
         try:
             out.append(int(s))
-        except Exception:
+        except ValueError as exc:
+            logger.debug("skip non-integer id line in %s: %r (%s)", path, s, exc)
             continue
     return sorted(set(out))
 
@@ -245,10 +256,9 @@ def _build_solver(args):
         max_generations=int(args.l0_generations),
     )
     # L0 is binary combinational search: use binary initializer/mutation/repair.
-    l0_pipeline = RepresentationPipeline(
-        initializer=BinaryInitializer(probability=float(np.clip(args.l0_init_prob, 0.0, 1.0))),
-        mutator=BitFlipMutation(rate=float(np.clip(args.l0_bitflip_rate, 0.0, 1.0))),
-        repair=BinaryRepair(threshold=0.5),
+    l0_pipeline = build_l0_binary_pipeline(
+        init_prob=float(args.l0_init_prob),
+        bitflip_rate=float(args.l0_bitflip_rate),
     )
     solver.set_representation_pipeline(l0_pipeline)
     # Keep crossover conservative in binary space to reduce noisy floating intermediates.
@@ -280,13 +290,15 @@ def _dump_best_blacklist(solver) -> None:
                     x = pop[int(np.argmin(score))]
                 else:
                     x = pop[0]
-        except Exception:
+        except (TypeError, ValueError) as exc:
+            logger.debug("best blacklist fallback selection failed: %s", exc)
             x = None
     if problem is None or x is None:
         return
     try:
         ids = problem._decode_blacklist_ids(np.asarray(x, dtype=float))
-    except Exception:
+    except Exception as exc:
+        logger.warning("decode blacklist ids failed, skip dump: %s", exc)
         return
     run_dir = getattr(solver, "_l0_run_dir", Path("runs/supply_adjustment_nested"))
     run_id = getattr(solver, "_l0_run_id", datetime.now().strftime("%Y%m%d_%H%M%S"))

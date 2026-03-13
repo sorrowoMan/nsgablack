@@ -13,7 +13,7 @@
   - Stable API 参数/返回结构不兼容变更
   - 插件 hook 语义变更
 - MINOR：向后兼容新增能力
-  - 新增 suite/plugin/adapter/representation
+  - 新增 wiring/plugin/adapter/representation
   - Provisional API 调整（尽量给弃用提示）
 - PATCH：向后兼容的修复/小优化
   - bugfix、性能优化、文档修复、测试增强

@@ -134,7 +134,7 @@ python build_solver.py
 
 ```powershell
 python -m nsgablack catalog search vns
-python -m nsgablack catalog show suite.multi_strategy
+python -m nsgablack catalog show adapter.multi_strategy
 python -m nsgablack project doctor --path . --strict
 python -m pytest -q
 ```

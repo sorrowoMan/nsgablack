@@ -310,7 +310,7 @@ def test_checkpoint_strict_requires_hmac_and_forbids_unsafe(sample_problem, tmp_
 
 def test_attach_checkpoint_resume_trust_checkpoint_maps_to_unsafe(sample_problem, tmp_path: Path):
     from nsgablack.core.evolution_solver import EvolutionSolver
-    from nsgablack.utils.suites import attach_checkpoint_resume
+    from nsgablack.utils.wiring import attach_checkpoint_resume
 
     solver = EvolutionSolver(sample_problem)
     plugin = attach_checkpoint_resume(
@@ -324,7 +324,7 @@ def test_attach_checkpoint_resume_trust_checkpoint_maps_to_unsafe(sample_problem
 
 def test_attach_checkpoint_resume_strict_conflicts_with_trust_checkpoint(sample_problem, tmp_path: Path):
     from nsgablack.core.evolution_solver import EvolutionSolver
-    from nsgablack.utils.suites import attach_checkpoint_resume
+    from nsgablack.utils.wiring import attach_checkpoint_resume
 
     solver = EvolutionSolver(sample_problem)
     with pytest.raises(ValueError):

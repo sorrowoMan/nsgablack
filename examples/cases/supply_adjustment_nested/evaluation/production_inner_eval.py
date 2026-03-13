@@ -455,7 +455,7 @@ class ProductionInnerEvaluationModel:
             sys.path.insert(0, str(self.production_case_dir))
 
         from refactor_data import ProductionData
-        from refactor_problem import ProductionConstraints, ProductionSchedulingProblem
+        from problem import ProductionConstraints, ProductionSchedulingProblem
         from working_integrated_optimizer import build_multi_agent_solver
 
         data = ProductionData(

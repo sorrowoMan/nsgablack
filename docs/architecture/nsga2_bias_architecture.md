@@ -20,7 +20,7 @@ This document describes the *current* recommended architecture for:
 
 If you want multi-role / cooperative search:
 
-- Use `adapters/multi_strategy.py` as the controller (phase/regions/seeds/shared facts)
+- Use `adapters/multi_strategy/adapter.py` as the controller (phase/regions/seeds/shared facts)
 - Each role is an Adapter (or RoleAdapter-wrapped Adapter)
 - Each role can have multiple units (independent adapter instances)
 

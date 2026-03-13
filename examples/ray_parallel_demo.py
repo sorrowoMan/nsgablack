@@ -20,7 +20,7 @@ def main() -> int:
 
     from nsgablack.core.blank_solver import SolverBase
     from nsgablack.utils.parallel import with_parallel_evaluation
-    from nsgablack.utils.suites import attach_ray_parallel
+    from nsgablack.utils.wiring import attach_ray_parallel
 
     class SphereProblem:
         name = "sphere"

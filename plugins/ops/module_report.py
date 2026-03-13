@@ -52,7 +52,7 @@ class ModuleReportPlugin(Plugin):
         name: str = "module_report",
         *,
         config: Optional[ModuleReportConfig] = None,
-        priority: int = 5,
+        priority: int = -5,
     ) -> None:
         super().__init__(name=name, priority=priority)
         self.cfg = config or ModuleReportConfig()

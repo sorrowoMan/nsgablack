@@ -36,7 +36,7 @@ python build_solver.py
 
 ```powershell
 python -m nsgablack catalog search vns
-python -m nsgablack catalog show suite.multi_strategy
+python -m nsgablack catalog show adapter.multi_strategy
 python -m nsgablack catalog search context_requires --field context --kind plugin
 ```
 
@@ -74,7 +74,7 @@ python tools/context_field_guard.py --strict
 ## 7) 权威示例（输入/输出契约）
 
 - `examples/end_to_end_workflow_demo.py`
-  - 输入：problem + suite wiring + seed
+  - 输入：problem + wiring wiring + seed
   - 输出：`runs/` 下 benchmark/module report 工件
 - `examples/benchmark_harness_demo.py`
   - 输入：solver + BenchmarkHarnessPlugin 配置
@@ -99,7 +99,7 @@ python tools/min_repro_5min.py
 下面是推荐的 `build_solver.py` 装配方式（签名校验默认开启）：
 
 ```python
-from nsgablack.utils.suites import attach_checkpoint_resume
+from nsgablack.utils.wiring import attach_checkpoint_resume
 
 attach_checkpoint_resume(
     solver,

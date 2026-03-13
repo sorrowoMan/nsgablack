@@ -1,12 +1,13 @@
 import numpy as np
 
 
-def test_attach_moead_suite_installs_adapter_and_archive():
+def test_moead_adapter_direct_wiring_installs_archive():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
+    from nsgablack.adapters import MOEADAdapter, MOEADConfig
+    from nsgablack.plugins import ParetoArchivePlugin
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
-    from nsgablack.utils.suites import attach_moead
 
     class BiSphere(BlackBoxProblem):
         def __init__(self, dim=3, low=-3.0, high=3.0):
@@ -29,7 +30,8 @@ def test_attach_moead_suite_installs_adapter_and_archive():
     )
     solver = ComposableSolver(problem=BiSphere(), representation_pipeline=pipeline, adapter=None)
     solver.max_steps = 3
-    attach_moead(solver, archive=True)
+    solver.set_adapter(MOEADAdapter(MOEADConfig()))
+    solver.add_plugin(ParetoArchivePlugin())
     solver.run()
     assert getattr(solver, "adapter", None) is not None
     assert getattr(solver, "pareto_objectives", None) is not None

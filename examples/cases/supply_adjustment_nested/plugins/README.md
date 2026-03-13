@@ -1,5 +1,9 @@
-﻿# plugins/
+# plugins/
 
-Reserved.
+Case-local plugin components.
 
-Use plugins for observability, logging, fallback, timeout, and export.
+Current component:
+
+- `supply_adjustment_export_plugin.py`
+  - `SupplyAdjustmentExportPlugin`
+  - Exports `adjusted_supply_<run_id>.xlsx` and `adjusted_supply_moves_<run_id>.csv`

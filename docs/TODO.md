@@ -6,13 +6,19 @@
 ## 近期优先级
 
 - 巩固传统优化主线：Adapter / Pipeline / Bias / Plugin 的稳定组合与可复现性
-- 完善可发现性与自检体验（Catalog + Suites + Run Inspector）
+- 完善可发现性与自检体验（Catalog + Wiring Helpers + Run Inspector）
 - Catalog 搜索：支持 tag 过滤（多 tag 组合，含中英文别名）
 - 补齐高价值示例与对比基线（多策略协同/多偏置/并行评估）
 - 实验批次模板插件：自动跑 N seeds，输出 batch.json / batch.csv
 - 结果对比器插件：自动统计差异表（compare.csv / compare.md）
 
 ## 想法池（暂缓）
+
+- Meta-Adapter 选择器（与多策略协调器联动，支持嵌套求解器动态选择）
+  - 目标：按运行信号动态分配角色权重/预算（可扩展到分布式）
+  - 边界：不替代多策略协调器；作为上层“策略分配器”
+  - 当前结论：低算力阶段收益不明显，先不做
+  - 触发时机：进入大规模/分布式或嵌套求解器复杂编排阶段再推进
 
 - 动态优化入口增强：在 Run Inspector 中增加“动态信号面板”用于手动触发 DynamicSwitch
   - 目标：演示/调试动态切换逻辑，避免“切换不透明/漏配”

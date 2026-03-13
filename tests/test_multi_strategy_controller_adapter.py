@@ -43,12 +43,19 @@ def test_multi_strategy_controller_runs_and_broadcasts_shared_state(sample_probl
     assert "sa" in shared["strategies"]
 
 
-def test_attach_multi_strategy_suite_smoke(sample_problem):
+def test_multi_strategy_direct_wiring_smoke(sample_problem):
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.adapters import StrategySpec, VNSAdapter, VNSConfig, SimulatedAnnealingAdapter, SAConfig
+    from nsgablack.adapters import (
+        MultiStrategyControllerAdapter,
+        StrategySpec,
+        VNSAdapter,
+        VNSConfig,
+        SimulatedAnnealingAdapter,
+        SAConfig,
+    )
+    from nsgablack.plugins import ParetoArchivePlugin
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
-    from nsgablack.utils.suites import attach_multi_strategy_coop
 
     pipeline = RepresentationPipeline(
         initializer=UniformInitializer(low=-5.0, high=5.0),
@@ -57,14 +64,15 @@ def test_attach_multi_strategy_suite_smoke(sample_problem):
     )
 
     solver = ComposableSolver(problem=sample_problem, representation_pipeline=pipeline)
-    attach_multi_strategy_coop(
-        solver,
+    solver.set_adapter(
+        MultiStrategyControllerAdapter(
         strategies=[
             StrategySpec(adapter=VNSAdapter(VNSConfig(batch_size=4, k_max=2)), name="vns", weight=0.5),
             StrategySpec(adapter=SimulatedAnnealingAdapter(SAConfig(batch_size=2)), name="sa", weight=0.5),
         ],
-        attach_pareto_archive=True,
+        )
     )
+    solver.add_plugin(ParetoArchivePlugin())
     solver.max_steps = 3
     solver.run()
     assert solver.adapter is not None

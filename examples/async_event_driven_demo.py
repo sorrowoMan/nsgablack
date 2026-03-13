@@ -15,15 +15,16 @@ try:
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.adapters import (
         AsyncEventDrivenConfig,
+        AsyncEventDrivenAdapter,
         EventStrategySpec,
         SAConfig,
         SimulatedAnnealingAdapter,
         VNSAdapter,
         VNSConfig,
     )
+    from nsgablack.plugins import AsyncEventHubPlugin, ParetoArchivePlugin
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import ClipRepair, ContextGaussianMutation, UniformInitializer
-    from nsgablack.utils.suites import attach_async_event_driven
 except ModuleNotFoundError:  # pragma: no cover
     import sys
     from pathlib import Path
@@ -33,15 +34,16 @@ except ModuleNotFoundError:  # pragma: no cover
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.adapters import (
         AsyncEventDrivenConfig,
+        AsyncEventDrivenAdapter,
         EventStrategySpec,
         SAConfig,
         SimulatedAnnealingAdapter,
         VNSAdapter,
         VNSConfig,
     )
+    from nsgablack.plugins import AsyncEventHubPlugin, ParetoArchivePlugin
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import ClipRepair, ContextGaussianMutation, UniformInitializer
-    from nsgablack.utils.suites import attach_async_event_driven
 
 
 class SphereProblem(BlackBoxProblem):
@@ -89,13 +91,14 @@ def build_solver():
         max_archive_size=300,
     )
 
-    attach_async_event_driven(
-        solver,
+    solver.set_adapter(
+        AsyncEventDrivenAdapter(
         strategies=strategies,
         config=config,
-        attach_async_hub=True,
-        attach_pareto_archive=True,
+        )
     )
+    solver.add_plugin(AsyncEventHubPlugin())
+    solver.add_plugin(ParetoArchivePlugin())
     return solver
 
 

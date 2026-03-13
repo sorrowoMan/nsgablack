@@ -18,7 +18,7 @@ This workflow keeps solver bases pure. Surrogate logic is injected as a plugin.
 
 1) Build the baseline (no surrogate)
 
-- attach strategy (Adapter/Suite)
+- attach strategy (Adapter/Wiring)
 - attach `BenchmarkHarnessPlugin` so every run has the same protocol output
 
 2) Enable surrogate short-circuit

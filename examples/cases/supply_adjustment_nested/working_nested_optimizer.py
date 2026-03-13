@@ -32,18 +32,26 @@ from _bootstrap import ensure_nsgablack_importable  # noqa: E402
 ensure_nsgablack_importable(Path(__file__))
 
 from nsgablack.core.evolution_solver import EvolutionSolver  # noqa: E402
-from nsgablack.plugins import Plugin  # noqa: E402
 from nsgablack.utils.parallel import with_parallel_evaluation  # noqa: E402
-from nsgablack.utils.suites import attach_default_observability_plugins  # noqa: E402
+from nsgablack.utils.wiring import attach_default_observability_plugins  # noqa: E402
 from nsgablack.utils.viz import launch_from_builder  # noqa: E402
 
 from evaluation import ProductionInnerEvalConfig, ProductionInnerEvaluationModel
+from plugins import SupplyAdjustmentExportPlugin
 from problem import SupplyEventShiftProblem
 
 
 def _resolve_default_baseline_plan(base_dir: Path) -> Optional[Path]:
     cases_dir = base_dir.parent
-    cands = sorted(cases_dir.glob("integrated_result_production_*.xlsx"), reverse=True)
+    export_dirs = (
+        cases_dir,
+        cases_dir / "runs" / "production_schedule" / "exports",
+    )
+    cands = []
+    for d in export_dirs:
+        if d.exists():
+            cands.extend(d.glob("integrated_result_production_*.xlsx"))
+    cands = sorted(cands, reverse=True)
     return cands[0] if cands else None
 
 
@@ -88,79 +96,6 @@ def _load_case_data(base_dir: Path, bom: Optional[str], supply: Optional[str], *
     print(f"[data] bom={data.bom_path}")
     print(f"[data] supply={data.supply_path}")
     return data
-
-
-class SupplyAdjustmentExportPlugin(Plugin):
-    """Export selected adjusted supply table and move log at run end."""
-
-    context_requires = ()
-    context_provides = ()
-    context_mutates = ()
-    context_cache = ()
-    context_notes = (
-        "Exports adjusted supply/move log; no runtime context mutation.",
-    )
-
-    def __init__(self, *, case_problem: SupplyEventShiftProblem, output_dir: Path, run_id: str) -> None:
-        super().__init__(name="supply_adjustment_export")
-        self.case_problem = case_problem
-        self.output_dir = output_dir
-        self.run_id = run_id
-
-    def on_solver_finish(self, _result):
-        solver = getattr(self, "solver", None)
-        if solver is None:
-            return
-
-        x = getattr(solver, "best_x", None)
-        if x is None and isinstance(_result, dict):
-            pareto = _result.get("pareto_solutions")
-            if isinstance(pareto, dict) and "individuals" in pareto:
-                inds = pareto.get("individuals")
-                objs = pareto.get("objectives")
-                try:
-                    inds_arr = np.asarray(inds, dtype=float)
-                    if inds_arr.ndim == 2 and inds_arr.shape[0] > 0:
-                        if objs is not None:
-                            obj_arr = np.asarray(objs, dtype=float)
-                            if obj_arr.ndim == 2 and obj_arr.shape[0] == inds_arr.shape[0]:
-                                # choose by simple scalarization for export only
-                                ref = obj_arr - np.min(obj_arr, axis=0, keepdims=True)
-                                score = np.sum(ref, axis=1)
-                                x = inds_arr[int(np.argmin(score))]
-                            else:
-                                x = inds_arr[0]
-                        else:
-                            x = inds_arr[0]
-                except Exception:
-                    x = None
-        if x is None:
-            pop = getattr(solver, "population", None)
-            obj = getattr(solver, "objectives", None)
-            try:
-                pop_arr = np.asarray(pop, dtype=float)
-                obj_arr = np.asarray(obj, dtype=float)
-                if pop_arr.ndim == 2 and pop_arr.shape[0] > 0:
-                    if obj_arr.ndim == 2 and obj_arr.shape[0] == pop_arr.shape[0]:
-                        idx = int(np.argmin(np.sum(obj_arr, axis=1)))
-                    else:
-                        idx = 0
-                    x = pop_arr[idx]
-            except Exception:
-                x = None
-        if x is None:
-            return
-
-        out_xlsx = self.output_dir / f"adjusted_supply_{self.run_id}.xlsx"
-        out_moves = self.output_dir / f"adjusted_supply_moves_{self.run_id}.csv"
-
-        shifts, _ = self.case_problem.export_adjusted_supply(np.asarray(x, dtype=float), out_xlsx)
-        move_df = self.case_problem.export_move_log(shifts, out_moves)
-
-        moved_events = int((shifts > 0).sum())
-        moved_days = int(shifts.sum())
-        print(f"[export] adjusted_supply={out_xlsx}")
-        print(f"[export] move_log={out_moves} rows={len(move_df)} moved_events={moved_events} moved_days={moved_days}")
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -7,7 +7,7 @@ def test_benchmark_harness_writes_csv_and_summary(sample_problem, tmp_path: Path
     from nsgablack.adapters import SimulatedAnnealingAdapter, SAConfig
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
-    from nsgablack.utils.suites import attach_benchmark_harness
+    from nsgablack.utils.wiring import attach_benchmark_harness
 
     pipeline = RepresentationPipeline(
         initializer=UniformInitializer(low=-10.0, high=10.0),

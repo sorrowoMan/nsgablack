@@ -13,7 +13,7 @@ python -m nsgablack catalog show <key>
 
 
 ## 类别说明（简要）
-- **Suite**：权威组合（推荐装配方式）
+- **Wiring**：权威组合（推荐装配方式）
 - **Adapter**：搜索策略内核（算法逻辑）
 - **Bias**：偏好/软约束（可开关、可比较）
 - **Representation**：表示/初始化/变异/修复（硬约束优先）
@@ -21,33 +21,13 @@ python -m nsgablack catalog show <key>
 - **Tool**：工具入口/辅助组件
 - **Example**：示例与演示（非 API）
 
-## Suite 列表
+## Wiring 列表
 | Key | Title | Summary | Tags | Companions | Import |
 |---|---|---|---|---|---|
-| `suite.active_learning_surrogate` | attach_active_learning_surrogate | 权威装配：主动学习代理评估 + 报告。 / Authority wiring: active-learning surrogate evaluation + reporting. | active_learning, authority, bundle, frontier, suite, surrogate | plugin.surrogate_eval | `nsgablack.utils.suites:attach_active_learning_surrogate` |
-| `suite.benchmark_harness` | attach_benchmark_harness | 权威装配：BenchmarkHarness统一输出口径。 / Authority wiring: BenchmarkHarness output protocol. | authority, benchmark, bundle, comparison, protocol, suite | plugin.benchmark_harness | `nsgablack.utils.suites:attach_benchmark_harness` |
-| `suite.dynamic_switch` | attach_dynamic_switch | 权威装配：动态切换插件，用于运行时策略/权重切换。 / Authority wiring: dynamic switch plugin for runtime strategy/weight switching. | authority, bundle, dynamic, suite, switch | - | `nsgablack.utils.suites.dynamic_switch:attach_dynamic_switch` |
-| `suite.mas` | attach_mas | 权威装配：MAS + 模型插件 + 报告。 / Authority wiring: MAS + model plugin + reporting. | authority, bundle, local_search, mas, suite, surrogate | adapter.mas, plugin.mas_model, plugin.benchmark_harness, plugin.module_report | `nsgablack.utils.suites:attach_mas` |
-| `suite.module_report` | attach_module_report | 权威装配：ModuleReport审计/消融。 / Authority wiring: ModuleReport audit/ablation. | ablation, audit, authority, bundle, report, suite | plugin.module_report, plugin.benchmark_harness | `nsgablack.utils.suites:attach_module_report` |
-| `suite.moead` | attach_moead | 权威装配：MOEA/D适配器 + Pareto归档。 / Authority wiring: MOEA/D adapter + Pareto archive. | authority, bundle, moead, multiobjective, suite | adapter.moead, plugin.pareto_archive | `nsgablack.utils.suites:attach_moead` |
-| `suite.monte_carlo_robustness` | attach_monte_carlo_robustness | 权威装配：Monte Carlo评估 + 鲁棒性偏置。 / Authority wiring: MC evaluation + robustness bias. | authority, bundle, mc, robustness, suite | plugin.monte_carlo_eval, bias.robustness | `nsgablack.utils.suites:attach_monte_carlo_robustness` |
-| `suite.multi_fidelity_eval` | attach_multi_fidelity_eval | 权威装配：多保真评估 + 报告。 / Authority wiring: multi-fidelity evaluation + reporting. | authority, bundle, evaluation, frontier, multi_fidelity, suite | plugin.multi_fidelity_eval | `nsgablack.utils.suites:attach_multi_fidelity_eval` |
-| `suite.multi_strategy` | attach_multi_strategy_coop | 权威装配：多策略协同（角色/预算/共享状态）。 / Authority wiring: multi-strategy cooperation with roles/budgets/shared state. | authority, bundle, cooperation, multi_strategy, parallel, suite | adapter.multi_strategy, plugin.pareto_archive | `nsgablack.utils.suites:attach_multi_strategy_coop` |
-| `suite.nsga2_engineering` | attach_nsga2_engineering | 权威装配：NSGA-II工程化插件集（日志/精英/多样性）。 / Authority wiring: NSGA-II engineering bundle (logging/elite/diversity). | authority, bundle, engineering, nsga2, plugins, suite | plugin.elite, plugin.convergence_monitor, plugin.diversity_init, plugin.benchmark_harness | `nsgablack.utils.suites:attach_nsga2_engineering` |
-| `suite.ray_parallel` | attach_ray_parallel | 权威装配：Ray并行评估/调度。 / Authority wiring: Ray parallel evaluation/scheduling. | authority, bundle, distributed, parallel, ray, suite | plugin.profiler, plugin.benchmark_harness | `nsgablack.utils.suites:attach_ray_parallel` |
-| `suite.risk_cvar` | attach_risk_cvar | 权威装配：MC评估 + CVaR风险偏置。 / Authority wiring: MC evaluation + CVaR risk bias. | authority, bundle, cvar, frontier, risk, suite | plugin.monte_carlo_eval, bias.risk | `nsgablack.utils.suites:attach_risk_cvar` |
-| `suite.robust_dfo` | attach_robust_dfo | 权威装配：DFO + MC评估 + 鲁棒偏置。 / Authority wiring: DFO + MC eval + robustness bias. | authority, bundle, dfo, frontier, mc, robustness, suite | adapter.trust_region_dfo, plugin.monte_carlo_eval, bias.robustness | `nsgablack.utils.suites:attach_robust_dfo` |
-| `suite.sa` | attach_simulated_annealing | 权威装配：SA适配器 + 推荐算子。 / Authority wiring: SA adapter + recommended operators. | authority, bundle, sa, simulated_annealing, suite | adapter.sa, repr.context_gaussian | `nsgablack.utils.suites:attach_simulated_annealing` |
-| `suite.structure_prior_mo` | attach_structure_prior_mo | 权威装配：结构先验 + 多目标组合。 / Authority wiring: structure-prior + multi-objective bundle. | authority, bundle, frontier, multiobjective, structure, suite | bias.structure_prior, adapter.moead | `nsgablack.utils.suites:attach_structure_prior_mo` |
-| `suite.surrogate_assisted_ea` | attach_surrogate_assisted_ea | 权威装配：代理辅助进化搜索。 / Authority wiring: surrogate-assisted evolutionary search. | authority, bundle, evolutionary, frontier, suite, surrogate | plugin.surrogate_eval | `nsgablack.utils.suites:attach_surrogate_assisted_ea` |
-| `suite.surrogate_model_lab` | attach_surrogate_model_lab | 权威装配：代理模型家族实验室。 / Authority wiring: surrogate model family lab bundle. | authority, bundle, frontier, model_type, suite, surrogate | plugin.surrogate_eval | `nsgablack.utils.suites:attach_surrogate_model_lab` |
-| `suite.trust_region_dfo` | attach_trust_region_dfo | 权威装配：信赖域DFO + 报告插件。 / Authority wiring: trust-region DFO + reporting. | authority, bundle, dfo, local_search, suite, trust_region | adapter.trust_region_dfo, plugin.benchmark_harness, plugin.module_report | `nsgablack.utils.suites:attach_trust_region_dfo` |
-| `suite.trust_region_mo_dfo` | attach_trust_region_mo_dfo | 权威装配：多目标DFO + Pareto + 报告。 / Authority wiring: MO DFO + Pareto + reporting. | , , authority, bundle, frontier, multiobjective, suite, trust_region | adapter.trust_region_mo_dfo, plugin.pareto_archive | `nsgablack.utils.suites:attach_trust_region_mo_dfo` |
-| `suite.trust_region_nonsmooth` | attach_trust_region_nonsmooth | 权威装配：非光滑信赖域 + 报告插件。 / Authority wiring: nonsmooth trust-region + reporting. | authority, bundle, local_search, nonsmooth, suite, trust_region | adapter.trust_region_nonsmooth, plugin.benchmark_harness, plugin.module_report | `nsgablack.utils.suites:attach_trust_region_nonsmooth` |
-| `suite.trust_region_subspace` | attach_trust_region_subspace | 权威装配：子空间信赖域 + 报告插件。 / Authority wiring: subspace trust-region + reporting. | authority, bundle, local_search, subspace, suite, trust_region | adapter.trust_region_subspace, plugin.benchmark_harness, plugin.module_report | `nsgablack.utils.suites:attach_trust_region_subspace` |
-| `suite.trust_region_subspace_frontier` | attach_trust_region_subspace_frontier | 权威装配：子空间信赖域前沿组合 + 报告。 / Authority wiring: subspace trust-region frontier bundle. | , , authority, bundle, frontier, subspace, suite, trust_region | adapter.trust_region_subspace, plugin.subspace_basis | `nsgablack.utils.suites:attach_trust_region_subspace_frontier` |
-| `suite.trust_region_subspace_learned` | attach_trust_region_subspace_learned | 权威装配：子空间信赖域 + 学习基底(PCA/SVD)。 / Authority wiring: subspace trust-region + learned basis (PCA/SVD). | authority, bundle, learned, subspace, suite, trust_region | adapter.trust_region_subspace, plugin.subspace_basis, plugin.benchmark_harness, plugin.module_report | `nsgablack.utils.suites:attach_trust_region_subspace_learned` |
-| `suite.vns` | attach_vns | 权威装配：VNS适配器 + 多邻域算子。 / Authority wiring: VNS adapter + multi-neighborhood operators. | authority, bundle, local_search, suite, vns | adapter.vns, repr.context_gaussian, repr.context_switch | `nsgablack.utils.suites:attach_vns` |
+| `plugin.benchmark_harness` | attach_benchmark_harness | 权威装配：BenchmarkHarness统一输出口径。 / Authority wiring: BenchmarkHarness output protocol. | authority, benchmark, bundle, comparison, protocol, wiring | plugin.benchmark_harness | `nsgablack.utils.wiring:attach_benchmark_harness` |
+| `plugin.dynamic_switch` | attach_dynamic_switch | 权威装配：动态切换插件，用于运行时策略/权重切换。 / Authority wiring: dynamic switch plugin for runtime strategy/weight switching. | authority, bundle, dynamic, wiring, switch | - | `nsgablack.utils.wiring.dynamic_switch:attach_dynamic_switch` |
+| `plugin.module_report` | attach_module_report | 权威装配：ModuleReport审计/消融。 / Authority wiring: ModuleReport audit/ablation. | ablation, audit, authority, bundle, report, wiring | plugin.module_report, plugin.benchmark_harness | `nsgablack.utils.wiring:attach_module_report` |
+| `utils/wiring/ray_parallel.py` | attach_ray_parallel | 权威装配：Ray并行评估/调度。 / Authority wiring: Ray parallel evaluation/scheduling. | authority, bundle, distributed, parallel, ray, wiring | plugin.profiler, plugin.benchmark_harness | `nsgablack.utils.wiring:attach_ray_parallel` |
 
 ## Adapter 列表
 | Key | Title | Summary | Tags | Companions | Import |
@@ -56,7 +36,6 @@ python -m nsgablack catalog show <key>
 | `adapter.composite` | CompositeAdapter | 组合适配器：合并多个适配器候选，并处理冲突。 / Adapter: composite adapter merging proposals and resolving conflicts. | adapter, composition, core, strategy | - | `nsgablack.adapters.algorithm_adapter:CompositeAdapter` |
 | `adapter.mas` | MASAdapter | Model-and-Search：交替建模与搜索。 / Adapter: model-and-search alternating model update + search. | adapter, core, local_search, mas, strategy, surrogate | - | `nsgablack.adapters:MASAdapter` |
 | `adapter.moa_star` | MOAStarAdapter | 多目标A*：Pareto标签与支配剪枝，面向多目标路径。 / Adapter: MOA* with Pareto labels and dominance pruning. | adapter, astar, core, graph, heuristic, multiobjective, pareto, strategy | - | `nsgablack.adapters.moa_star:MOAStarAdapter` |
-| `adapter.moead` | MOEADAdapter | MOEA/D分解内核：权重向量 + 邻域替换。 / Adapter: MOEA/D decomposition core with weight vectors and neighborhood replacement. | adapter, core, decomposition, moead, multiobjective, strategy | plugin.pareto_archive, suite.moead | `nsgablack.adapters:MOEADAdapter` |
 
 | `adapter.de` | DifferentialEvolutionAdapter | 差分进化适配器：变异/交叉/贪心替换。/ Adapter: Differential Evolution with greedy replacement. | adapter, core, de, differential_evolution, evolutionary, strategy | - | `nsgablack.adapters:DifferentialEvolutionAdapter` |
 | `adapter.gradient_descent` | GradientDescentAdapter | 梯度下降适配器：有限差分估计梯度并局部精修。/ Adapter: finite-difference gradient descent local refinement. | adapter, core, gradient, gradient_descent, local_search, strategy | - | `nsgablack.adapters:GradientDescentAdapter` |
@@ -65,14 +44,12 @@ python -m nsgablack catalog show <key>
 | `adapter.pattern_search` | PatternSearchAdapter | 模式搜索适配器：坐标方向试探与步长自适应。/ Adapter: coordinate pattern search with adaptive step size. | adapter, core, local_search, pattern_search, strategy | - | `nsgablack.adapters:PatternSearchAdapter` |
 | `adapter.spea2` | SPEA2Adapter | SPEA2 适配器：强度值与密度估计联合选择。/ Adapter: SPEA2 with strength and density fitness. | adapter, core, evolutionary, multiobjective, spea2, strategy | - | `nsgablack.adapters:SPEA2Adapter` |
 | `adapter.multi_role_controller` | MultiRoleControllerAdapter | 多角色控制器：共享上下文与预算分配，统一调度各角色。 / Adapter: multi-role controller with shared context and budget scheduling. | adapter, composition, controller, core, roles, strategy | - | `nsgablack.adapters.role_adapters:MultiRoleControllerAdapter` |
-| `adapter.multi_strategy` | MultiStrategyControllerAdapter | 多策略协同控制器：统一调度、共享状态与动态预算。 / Adapter: multi-strategy controller with unified scheduling/shared state/dynamic budgets. | adapter, controller, cooperation, core, multi_strategy, parallel, roles, strategy | suite.multi_strategy, plugin.pareto_archive | `nsgablack.adapters:MultiStrategyControllerAdapter` |
 | `adapter.role` | RoleAdapter | 角色适配器：附加角色元数据与配额，用于分工协同。 / Adapter: role wrapper with metadata and candidate quotas for cooperation. | adapter, composition, core, roles, strategy | - | `nsgablack.adapters.role_adapters:RoleAdapter` |
-| `adapter.sa` | SimulatedAnnealingAdapter | 模拟退火内核：温度调度 + Metropolis接受。 / Adapter: SA core with temperature schedule and Metropolis acceptance. | adapter, core, local_search, sa, simulated_annealing, strategy | repr.context_gaussian, suite.sa | `nsgablack.adapters:SimulatedAnnealingAdapter` |
 | `adapter.trust_region_dfo` | TrustRegionDFOAdapter | 信赖域DFO内核：无梯度局部搜索。 / Adapter: trust-region derivative-free local search. | adapter, core, dfo, local_search, strategy, trust_region | - | `nsgablack.adapters:TrustRegionDFOAdapter` |
 | `adapter.trust_region_mo_dfo` | TrustRegionMODFOAdapter | 多目标信赖域DFO：权重标度/帕累托精修。 / Adapter: MO trust-region DFO with scalarization. | adapter, core, dfo, multiobjective, strategy, trust_region | - | `nsgablack.adapters:TrustRegionMODFOAdapter` |
 | `adapter.trust_region_nonsmooth` | TrustRegionNonSmoothAdapter | 非光滑信赖域：支持Linf聚合等非光滑目标。 / Adapter: non-smooth trust-region with Linf aggregation. | adapter, core, local_search, nonsmooth, strategy, trust_region | - | `nsgablack.adapters:TrustRegionNonSmoothAdapter` |
 | `adapter.trust_region_subspace` | TrustRegionSubspaceAdapter | 子空间/低秩信赖域：适用高维局部搜索。 / Adapter: subspace/low-rank trust-region search for high-D. | adapter, core, dfo, strategy, subspace, trust_region | - | `nsgablack.adapters:TrustRegionSubspaceAdapter` |
-| `adapter.vns` | VNSAdapter | VNS局部搜索内核：多邻域分阶段精修。 / Adapter: VNS local search core with multi-neighborhood refinement. | adapter, core, local_search, refinement, stage, strategy, vns | repr.context_gaussian, repr.context_switch, suite.vns | `nsgablack.adapters:VNSAdapter` |
+| `adapter.vns` | VNSAdapter | VNS局部搜索内核：多邻域分阶段精修。 / Adapter: VNS local search core with multi-neighborhood refinement. | adapter, core, local_search, refinement, stage, strategy, vns | repr.context_gaussian, repr.context_switch | `nsgablack.adapters:VNSAdapter` |
 
 ## Bias 列表
 | Key | Title | Summary | Tags | Companions | Import |
@@ -132,7 +109,6 @@ python -m nsgablack catalog show <key>
 | `bias.pso_adaptive` | AdaptivePSOBias | 自适应PSO偏置：动态惯性与学习因子。 / Algorithmic bias: adaptive PSO parameters. | adaptive, algorithmic, bias, pso | - | `nsgablack.bias.algorithmic.pso:AdaptivePSOBias` |
 | `bias.resource_constraint` | ResourceConstraintBias | 资源约束偏置：资源容量/消耗约束。 / Domain bias: resource capacity constraints. | bias, domain, resource | - | `nsgablack.bias.domain.scheduling:ResourceConstraintBias` |
 | `bias.risk` | RiskBias | 风险偏置：支持CVaR/最坏情况风险控制。 / Domain bias: risk-aware scoring (CVaR/worst-case). | bias, cvar, domain, risk, worst_case | - | `nsgablack.bias.domain.risk_bias:RiskBias` |
-| `bias.robustness` | RobustnessBias | 鲁棒性偏置：针对扰动的稳定性评估。 / Algorithmic bias: robustness-oriented scoring under perturbations. | bias, mc, robustness, signal_driven, algorithmic | plugin.monte_carlo_eval, suite.monte_carlo_robustness | `nsgablack.bias.algorithmic.signal_driven.robustness:RobustnessBias` |
 | `bias.rule_based` | RuleBasedBias | 规则偏置：基于规则的加权/惩罚。 / Domain bias: rule-based weighting/penalty. | bias, domain, rule | - | `nsgablack.bias.domain.constraint:RuleBasedBias` |
 | `bias.safety` | SafetyBias | 安全偏置：风险/安全约束优先。 / Domain bias: safety/risk prioritization. | bias, domain, safety | - | `nsgablack.bias.domain.engineering:SafetyBias` |
 | `bias.scheduling` | SchedulingBias | 排程偏置：任务顺序/负载平衡。 / Domain bias: scheduling preference. | bias, domain, scheduling | - | `nsgablack.bias.domain.scheduling:SchedulingBias` |
@@ -164,17 +140,15 @@ python -m nsgablack catalog show <key>
 | Key | Title | Summary | Tags | Companions | Import |
 |---|---|---|---|---|---|
 | `plugin.adaptive_parameters` | AdaptiveParametersPlugin | 插件：AdaptiveParametersPlugin。 / Plugin: AdaptiveParametersPlugin. | adaptive, parameters, plugin | - | `nsgablack.utils.plugins:AdaptiveParametersPlugin` |
-| `plugin.benchmark_harness` | BenchmarkHarnessPlugin | 插件：BenchmarkHarnessPlugin。 / Plugin: BenchmarkHarnessPlugin. | benchmark, comparison, logging, protocol | suite.benchmark_harness | `nsgablack.utils.plugins:BenchmarkHarnessPlugin` |
+| `plugin.benchmark_harness` | BenchmarkHarnessPlugin | 插件：BenchmarkHarnessPlugin。 / Plugin: BenchmarkHarnessPlugin. | benchmark, comparison, logging, protocol | plugin.benchmark_harness | `nsgablack.utils.plugins:BenchmarkHarnessPlugin` |
 | `plugin.convergence_monitor` | ConvergencePlugin | 插件：ConvergencePlugin。 / Plugin: ConvergencePlugin. | convergence, monitor, plugin | - | `nsgablack.utils.plugins:ConvergencePlugin` |
 | `plugin.diversity_init` | DiversityInitPlugin | 插件：DiversityInitPlugin。 / Plugin: DiversityInitPlugin. | diversity, init, plugin | - | `nsgablack.utils.plugins:DiversityInitPlugin` |
 | `plugin.dynamic_switch` | DynamicSwitchPlugin | 插件：DynamicSwitchPlugin。 / Plugin: DynamicSwitchPlugin. | context, dynamic, plugin, switch | - | `nsgablack.utils.plugins.dynamic_switch:DynamicSwitchPlugin` |
 | `plugin.elite` | BasicElitePlugin | 插件：BasicElitePlugin。 / Plugin: BasicElitePlugin. | archive, elite, plugin | - | `nsgablack.utils.plugins:BasicElitePlugin` |
 | `plugin.mas_model` | MASModelPlugin | 插件：MASModelPlugin。 / Plugin: MASModelPlugin. | mas, surrogate | - | `nsgablack.utils.plugins:MASModelPlugin` |
 | `plugin.memory` | MemoryPlugin | 插件：MemoryPlugin。 / Plugin: MemoryPlugin. | engineering, memory, plugin | - | `nsgablack.utils.plugins:MemoryPlugin` |
-| `plugin.module_report` | ModuleReportPlugin | 插件：ModuleReportPlugin。 / Plugin: ModuleReportPlugin. | ablation, audit, bias, report | suite.module_report, plugin.benchmark_harness | `nsgablack.utils.plugins:ModuleReportPlugin` |
-| `plugin.monte_carlo_eval` | MonteCarloEvaluationPlugin | 插件：MonteCarloEvaluationPlugin。 / Plugin: MonteCarloEvaluationPlugin. | evaluation, mc, signal | bias.robustness, suite.monte_carlo_robustness | `nsgablack.utils.plugins:MonteCarloEvaluationPlugin` |
+| `plugin.module_report` | ModuleReportPlugin | 插件：ModuleReportPlugin。 / Plugin: ModuleReportPlugin. | ablation, audit, bias, report | plugin.module_report, plugin.benchmark_harness | `nsgablack.utils.plugins:ModuleReportPlugin` |
 | `plugin.multi_fidelity_eval` | MultiFidelityEvaluationPlugin | 插件：MultiFidelityEvaluationPlugin。 / Plugin: MultiFidelityEvaluationPlugin. | evaluation, frontier, multi_fidelity, plugin | - | `nsgablack.utils.plugins:MultiFidelityEvaluationPlugin` |
-| `plugin.pareto_archive` | ParetoArchivePlugin | 插件：ParetoArchivePlugin。 / Plugin: ParetoArchivePlugin. | archive, multiobjective, pareto | adapter.moead, suite.moead | `nsgablack.utils.plugins:ParetoArchivePlugin` |
 | `plugin.profiler` | ProfilerPlugin | 插件：ProfilerPlugin。 / Plugin: ProfilerPlugin. | audit, performance, profile, throughput | plugin.benchmark_harness, plugin.module_report | `nsgablack.utils.plugins:ProfilerPlugin` |
 | `plugin.subspace_basis` | SubspaceBasisPlugin | 插件：SubspaceBasisPlugin。 / Plugin: SubspaceBasisPlugin. | cluster, dfo, pca, random, sparse_pca, subspace, svd | - | `nsgablack.utils.plugins:SubspaceBasisPlugin` |
 | `plugin.surrogate_eval` | SurrogateEvaluationPlugin | 插件：SurrogateEvaluationPlugin。 / Plugin: SurrogateEvaluationPlugin. | evaluation, optional, surrogate | - | `nsgablack.utils.plugins:SurrogateEvaluationPlugin` |
@@ -206,7 +180,7 @@ python -m nsgablack catalog show <key>
 | `example.moa_star` | moa_star_demo | 示例：moa_star_demo。 / Example: moa_star_demo. | demo, example, moa_star, pareto, search | - | `nsgablack.examples_registry:moa_star_demo` |
 | `example.monte_carlo_robust` | monte_carlo_dp_robust_demo | 示例：monte_carlo_dp_robust_demo。 / Example: monte_carlo_dp_robust_demo. | demo, example, monte_carlo, robust | - | `nsgablack.examples_registry:monte_carlo_dp_robust_demo` |
 | `example.multi_fidelity` | multi_fidelity_demo | 示例：multi_fidelity_demo。 / Example: multi_fidelity_demo. | demo, example, multi_fidelity | - | `nsgablack.examples_registry:multi_fidelity_demo` |
-| `example.nsga2_solver` | nsga2_solver_demo | 示例：nsga2_solver_demo。 / Example: nsga2_solver_demo. | demo, example, nsga2, solver, suite | - | `nsgablack.examples_registry:nsga2_solver_demo` |
+| `example.nsga2_solver` | nsga2_solver_demo | 示例：nsga2_solver_demo。 / Example: nsga2_solver_demo. | demo, example, nsga2, solver, wiring | - | `nsgablack.examples_registry:nsga2_solver_demo` |
 | `example.parallel_evaluator` | parallel_evaluator_demo | 示例：parallel_evaluator_demo。 / Example: parallel_evaluator_demo. | demo, evaluation, example, parallel | - | `nsgablack.examples_registry:parallel_evaluator_demo` |
 | `example.parallel_repair` | parallel_repair_demo | 示例：parallel_repair_demo。 / Example: parallel_repair_demo. | demo, example, parallel, pipeline, repair | - | `nsgablack.examples_registry:parallel_repair_demo` |
 | `example.plugin_gallery` | plugin_gallery_demo | 示例：plugin_gallery_demo。 / Example: plugin_gallery_demo. | demo, example, gallery, plugin | - | `nsgablack.examples_registry:plugin_gallery_demo` |

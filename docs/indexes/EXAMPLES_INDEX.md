@@ -9,7 +9,7 @@
 你也可以用 Catalog 搜索示例相关组件：
 
 ```powershell
-python -m nsgablack catalog search suite
+python -m nsgablack catalog search plugin
 python -m nsgablack catalog search plugin
 python -m nsgablack catalog search vns
 ```

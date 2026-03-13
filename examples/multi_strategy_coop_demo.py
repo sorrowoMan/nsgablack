@@ -1,12 +1,4 @@
-"""多算法并行协同（多策略协作）示例。
-
-目标：演示如何用 ComposableSolver + MultiStrategyControllerAdapter
-让多个策略（例如 VNS + SA）并行协同搜索，并共享最佳信息/档案。
-
-注意：
-- 这里的“并行”指策略并行（同一步生成来自多个策略的候选并统一评估）。
-- 若评估本身昂贵，可结合 ParallelEvaluator / 并行 wrapper / 评估短路插件进一步加速。
-"""
+﻿"""Multi-strategy cooperation demo (VNS + SA, direct wiring)."""
 
 import numpy as np
 
@@ -14,15 +6,16 @@ try:
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.adapters import (
+        MultiStrategyControllerAdapter,
+        SAConfig,
+        SimulatedAnnealingAdapter,
         StrategySpec,
         VNSAdapter,
         VNSConfig,
-        SimulatedAnnealingAdapter,
-        SAConfig,
     )
+    from nsgablack.plugins import ParetoArchivePlugin
     from nsgablack.representation import RepresentationPipeline
-    from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
-    from nsgablack.utils.suites import attach_multi_strategy_coop, attach_vns
+    from nsgablack.representation.continuous import ClipRepair, ContextGaussianMutation, UniformInitializer
 except ModuleNotFoundError:  # pragma: no cover
     import sys
     from pathlib import Path
@@ -31,15 +24,16 @@ except ModuleNotFoundError:  # pragma: no cover
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.adapters import (
+        MultiStrategyControllerAdapter,
+        SAConfig,
+        SimulatedAnnealingAdapter,
         StrategySpec,
         VNSAdapter,
         VNSConfig,
-        SimulatedAnnealingAdapter,
-        SAConfig,
     )
+    from nsgablack.plugins import ParetoArchivePlugin
     from nsgablack.representation import RepresentationPipeline
-    from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
-    from nsgablack.utils.suites import attach_multi_strategy_coop, attach_vns
+    from nsgablack.representation.continuous import ClipRepair, ContextGaussianMutation, UniformInitializer
 
 
 class SphereProblem(BlackBoxProblem):
@@ -59,27 +53,23 @@ def main():
 
     pipeline = RepresentationPipeline(
         initializer=UniformInitializer(low=problem.low, high=problem.high),
-        mutator=GaussianMutation(sigma=0.6, low=problem.low, high=problem.high),
+        mutator=ContextGaussianMutation(base_sigma=0.6, low=problem.low, high=problem.high),
         repair=ClipRepair(low=problem.low, high=problem.high),
     )
 
     solver = ComposableSolver(problem=problem, representation_pipeline=pipeline)
     solver.set_max_steps(40)
 
-    # 子策略 1：VNS（suite 可自动把 GaussianMutation 升级为 ContextGaussianMutation）
-    vns = VNSAdapter(VNSConfig(batch_size=16, k_max=4, base_sigma=0.15))
-    # 子策略 2：SA（顺序接受准则；这里 batch>1 主要是为了吞吐/可并行评估）
-    sa = SimulatedAnnealingAdapter(SAConfig(batch_size=8, initial_temperature=8.0, cooling_rate=0.95, base_sigma=0.6))
-
-    # 可选：先用 attach_vns() 升级 mutator（这样 VNS 的 neighborhood schedule 不会退化）
-    attach_vns(solver, ensure_context_mutator=True, batch_size=16, k_max=4, base_sigma=0.15)
-    # attach_vns 已设置了 solver.adapter（VNS），我们用 multi_strategy 会覆盖它，所以重新构造 spec 即可
-
     strategies = [
-        StrategySpec(adapter=vns, name="vns", weight=0.6),
-        StrategySpec(adapter=sa, name="sa", weight=0.4),
+        StrategySpec(adapter=VNSAdapter(VNSConfig(batch_size=16, k_max=4, base_sigma=0.15)), name="vns", weight=0.6),
+        StrategySpec(
+            adapter=SimulatedAnnealingAdapter(SAConfig(batch_size=8, initial_temperature=8.0, cooling_rate=0.95, base_sigma=0.6)),
+            name="sa",
+            weight=0.4,
+        ),
     ]
-    attach_multi_strategy_coop(solver, strategies=strategies, attach_pareto_archive=True)
+    solver.set_adapter(MultiStrategyControllerAdapter(strategies=strategies))
+    solver.add_plugin(ParetoArchivePlugin())
 
     result = solver.run()
     print("status:", result["status"], "steps:", result["steps"])

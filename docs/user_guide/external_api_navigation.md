@@ -4,12 +4,12 @@ Goal: keep public entrypoints small, stable, and scenario-driven.
 
 Core layers (stable):
 
-- `core/` + `representation/` + `bias/` + `utils/(plugins|suites|contracts)` + `catalog/`
+- `core/` + `representation/` + `bias/` + `utils/(plugins|wiring helpers|contracts)` + `catalog/`
 
 Note:
 
 - Historical/experimental directories were removed to reduce maintenance cost.
-- New ideas should land as Plugin/Suite first (capabilities layer), then move into
+- New ideas should land as Plugin/Wiring first (capabilities layer), then move into
   Core after contracts + tests + catalog entries are in place.
 
 ## 1) Minimal public imports (recommended)
@@ -37,7 +37,7 @@ Algorithm decomposition / fusion:
 
 - Solver: `ComposableSolver`
 - Strategy: `adapters/*` (Adapter.propose/update)
-- Wiring: `utils/suites/*` (authoritative combinations)
+- Wiring: `utils/wiring/*` (authoritative combinations)
 
 Custom workflow / non-evolutionary prototype:
 
@@ -50,14 +50,14 @@ Expensive black-box evaluation (cache / surrogate / short-circuit):
 
 Multi-strategy cooperation (roles + many units + shared facts):
 
-- Controller: `adapters/multi_strategy.py`
-- Role wrapper: `adapters/role_adapters.py`
-- Suite: `utils/suites/multi_strategy.py`
+- Controller: `adapters/multi_strategy/adapter.py`
+- Role wrapper: `adapters/role_adapters/adapter.py`
+- Assembly: direct `solver.set_adapter(...)` in `build_solver.py`
 
 Unified experiment protocol (fair comparisons):
 
 - Plugin: `plugins/ops/benchmark_harness.py`
-- Suite: `utils/suites/benchmark_harness.py`
+- Wiring: `utils/wiring/benchmark_harness.py`
 
 ## 3) Discoverability
 
@@ -65,7 +65,7 @@ Use Catalog instead of searching source code:
 
 ```bash
 python -m nsgablack catalog search vns
-python -m nsgablack catalog search suite
+python -m nsgablack catalog search plugin
 python -m nsgablack catalog search 实验
-python -m nsgablack catalog show suite.multi_strategy
+python -m nsgablack catalog show adapter.multi_strategy
 ```

@@ -4,9 +4,9 @@
 
 对应组件：
 
-- 控制器：`adapters/multi_strategy.py` (`MultiStrategyControllerAdapter`)
-- 权威装配：`utils/suites/multi_strategy.py` (`attach_multi_strategy_coop`)
-- 共享事实（可选）：`plugin.pareto_archive`（Suite 默认会挂）
+- 控制器：`adapters/multi_strategy/adapter.py` (`MultiStrategyControllerAdapter`)
+- 装配方式：在 `build_solver.py` 直接 `solver.set_adapter(...)`
+- 共享事实（可选）：`plugin.pareto_archive`（按需 `solver.add_plugin(...)`）
 
 ## 1) 什么时候需要“多策略协同”
 
@@ -65,19 +65,16 @@ solver.run()
 - 控制器能统一调度候选预算、阶段、权重与共享状态
 - 你可以直接做消融：删掉一个 RoleSpec 就能比较效果
 
-## 3) 推荐用法：用 Suite 做权威装配
+## 3) 推荐用法：用 Wiring 做权威装配
 
-当你不想手动记“要不要挂 ParetoArchive”等细节时，直接用 Suite：
+当你不想手动记“要不要挂 ParetoArchive”等细节时，直接用 Wiring：
 
 ```python
-from nsgablack.utils.suites import attach_multi_strategy_coop
+from nsgablack.adapters import MultiStrategyControllerAdapter
+from nsgablack.plugins import ParetoArchivePlugin
 
-adapter = attach_multi_strategy_coop(
-    solver,
-    roles=roles,
-    config=cfg,
-    attach_pareto_archive=True,
-)
+solver.set_adapter(MultiStrategyControllerAdapter(roles=roles, config=cfg))
+solver.add_plugin(ParetoArchivePlugin())  # optional
 ```
 
 ## 4) 和并行评估怎么配合
@@ -87,7 +84,7 @@ adapter = attach_multi_strategy_coop(
 两者可以叠加：
 
 - 多策略：用 `ComposableSolver + MultiStrategyControllerAdapter`
-- 并行：用 `with_parallel_evaluation(ComposableSolver)` 或在 suite 中装配并行能力
+- 并行：用 `with_parallel_evaluation(ComposableSolver)` 或在 wiring 中装配并行能力
 
 并行评估的详细用法见：`docs/user_guide/parallel_evaluation.md`
 

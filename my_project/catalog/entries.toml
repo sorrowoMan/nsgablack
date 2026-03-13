@@ -1,18 +1,81 @@
 [[entry]]
-key = 'project.bias.testbias'
-title = 'testbias'
-kind = 'bias'
-import_path = 'my_project.bias.template_bias:testbias'
-tags = []
-summary = 'Bias component: testbias.'
-companions = []
+key = "project.problem.example"
+title = "ExampleProblem"
+kind = "tool"
+import_path = "problem.example_problem:ExampleProblem"
+tags = ["project", "example", "problem"]
+summary = "Example two-objective problem."
+companions = ["project.pipeline.example"]
 context_requires = []
 context_provides = []
 context_mutates = []
 context_cache = []
-context_notes = ['注册检测']
-use_when = ['需要表达软偏好或搜索倾向时']
-minimal_wiring = ['from my_project.bias.template_bias import testbias', 'bias_module.add(testbias())']
-required_companions = ['(none)']
-config_keys = ['weight']
-example_entry = 'python -m nsgablack catalog search testbias --kind example'
+context_notes = ["Defines objective/constraint semantics only; no runtime context writes."]
+use_when = ["Define project objective/constraint semantics."]
+minimal_wiring = ["from problem.example_problem import ExampleProblem"]
+required_companions = ["project.pipeline.example"]
+config_keys = ["dimension"]
+example_entry = "build_solver:build_solver"
+
+[[entry]]
+key = "project.pipeline.example"
+title = "build_pipeline"
+kind = "representation"
+import_path = "pipeline.example_pipeline:build_pipeline"
+tags = ["project", "example", "pipeline"]
+summary = "Example representation pipeline."
+companions = ["project.problem.example"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["Pipeline handles init/mutate/repair; no additional runtime context keys."]
+use_when = ["Need init/mutate/repair wiring for vector representation."]
+minimal_wiring = [
+  "from pipeline.example_pipeline import build_pipeline",
+  "solver.set_representation_pipeline(build_pipeline())",
+]
+required_companions = ["project.problem.example"]
+config_keys = []
+example_entry = "build_solver:build_solver"
+
+[[entry]]
+key = "project.solver.example"
+title = "build_solver"
+kind = "example"
+import_path = "build_solver:build_solver"
+tags = ["project", "example", "solver"]
+summary = "Example solver assembly entry."
+companions = ["project.problem.example", "project.pipeline.example"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["Assembly entrypoint; context contract is delegated to registered components."]
+use_when = ["Need runnable assembly entry for CLI and Run Inspector."]
+minimal_wiring = ["python build_solver.py"]
+required_companions = ["project.problem.example", "project.pipeline.example"]
+config_keys = ["dimension", "pop_size", "generations", "enable_bias"]
+example_entry = "build_solver:build_solver"
+
+[[entry]]
+key = "project.plugin.example"
+title = "ExampleProjectPlugin"
+kind = "plugin"
+import_path = "plugins.example_plugin:ExampleProjectPlugin"
+tags = ["project", "example", "plugin"]
+summary = "Example plugin template with explicit context contracts."
+companions = ["project.solver.example"]
+context_requires = ["generation"]
+context_provides = ["project.example_plugin.hit_count"]
+context_mutates = ["project.example_plugin.hit_count"]
+context_cache = []
+context_notes = ["Scaffold plugin example for lifecycle/context wiring."]
+use_when = ["Need a minimal custom plugin starting point."]
+minimal_wiring = [
+  "from plugins.example_plugin import ExampleProjectPlugin",
+  "solver.add_plugin(ExampleProjectPlugin(interval=5))",
+]
+required_companions = ["project.solver.example"]
+config_keys = ["interval", "verbose"]
+example_entry = "build_solver:build_solver"
