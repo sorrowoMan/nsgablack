@@ -36,13 +36,13 @@
 - `adapter.vns` -> `nsgablack.adapters:VNSAdapter`
 - `adapter.sa` -> `nsgablack.adapters:SimulatedAnnealingAdapter`
 - `adapter.moead` -> `nsgablack.adapters:MOEADAdapter`
-- `adapter.multi_strategy` -> `nsgablack.adapters:MultiStrategyControllerAdapter`
+- `adapter.multi_strategy` -> `nsgablack.adapters:StrategyRouterAdapter`
 
 ## 5) 工程工具（Tools）
 
 - `tool.parallel_evaluator` -> `nsgablack.utils.parallel:ParallelEvaluator`
-- `tool.context_keys` -> `nsgablack.utils.context:context_keys`
-- `tool.context_schema` -> `nsgablack.utils.context:MinimalEvaluationContext`
+- `tool.context_keys` -> `nsgablack.core.state:context_keys`
+- `tool.context_schema` -> `nsgablack.core.state:MinimalEvaluationContext`
 
 ## 6) 明确不承诺稳定的范围
 

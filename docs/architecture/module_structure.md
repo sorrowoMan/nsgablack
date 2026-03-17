@@ -37,8 +37,8 @@ nsgablack/
 - `plugins/`：checkpoint、trace、report、并行、导出等运行能力。
 
 ## 4. Context 与 Snapshot
-- `utils/context/context_store.py`：小字段存储（契约字段、协作字段）。
-- `utils/context/snapshot_store.py`：大对象存储（population/objectives/violations 等）。
+- `core/state/context_store.py`：小字段存储（契约字段、协作字段）。
+- `core/state/snapshot_store.py`：大对象存储（population/objectives/violations 等）。
 - 约定：`Context` 放引用，`Snapshot` 放大对象。
 
 ## 5. 工程层

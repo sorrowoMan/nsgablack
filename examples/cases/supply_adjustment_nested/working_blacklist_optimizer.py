@@ -34,10 +34,12 @@ from _bootstrap import ensure_nsgablack_importable  # noqa: E402
 ensure_nsgablack_importable(Path(__file__))
 
 from nsgablack.core.evolution_solver import EvolutionSolver  # noqa: E402
+from nsgablack.core.nested_solver import InnerRuntimeConfig, TaskInnerRuntimeEvaluator  # noqa: E402
+from nsgablack.plugins import TimeoutBudgetConfig, TimeoutBudgetPlugin  # noqa: E402
 from nsgablack.utils.wiring import attach_default_observability_plugins  # noqa: E402
 from nsgablack.utils.viz import launch_from_builder  # noqa: E402
 
-from evaluation import ProductionInnerEvalConfig, ProductionInnerEvaluationModel
+from inner_solver import InnerProductionSolverConfig
 from pipeline import build_l0_binary_pipeline
 from problem import BlacklistDesignProblem, BlacklistEvalConfig
 from problem.supply_event_shift_problem import SupplyEventShiftProblem
@@ -241,7 +243,7 @@ def _build_solver(args):
     )
     print(
         f"[l0] strict_ids={len(strict_ids)} relational_safe={len(relational_ids)} "
-        f"material_candidates={len(candidates)} l0_dim={problem.dimension} inner_mode={args.inner_mode} "
+        f"material_candidates={len(candidates)} l0_dim={problem.dimension} inner_mode=full_nested "
         f"parallel={bool(args.parallel)} backend={args.parallel_backend} workers={int(max(1, args.parallel_workers))} "
         f"max_moved_events={('off' if int(args.max_moved_events) <= 0 else int(args.max_moved_events))}"
     )
@@ -254,6 +256,14 @@ def _build_solver(args):
         problem,
         pop_size=int(args.l0_pop_size),
         max_generations=int(args.l0_generations),
+    )
+    solver.add_plugin(
+        TimeoutBudgetPlugin(
+            config=TimeoutBudgetConfig(layer="L1", max_calls=200, time_budget_ms=120_000, fail_closed=True)
+        )
+    )
+    problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(
+        config=InnerRuntimeConfig(source_layer="L1", target_layer="L0")
     )
     # L0 is binary combinational search: use binary initializer/mutation/repair.
     l0_pipeline = build_l0_binary_pipeline(
@@ -348,31 +358,23 @@ def _run_final_l1_and_export(*, solver, args) -> None:
     production_case_dir = getattr(problem_l0, "production_case_dir", _THIS_DIR.parent / "production_scheduling")
     material_ids = np.asarray(problem_l0.material_ids)
 
-    inner = ProductionInnerEvaluationModel(
-        bom_matrix=bom_matrix,
-        base_supply=base_supply,
-        production_case_dir=Path(production_case_dir),
-        baseline_schedule=baseline_schedule,
-        cfg=ProductionInnerEvalConfig(
-            mode=str(args.inner_mode),
-            inner_trials=2,
-            hybrid_top_quantile=0.85,
-            hybrid_explore_prob=0.02,
-            hybrid_random_refine_ratio=0.10,
-            hybrid_warmup=12,
-            hybrid_refine_pop_size=max(8, int(args.final_l1_pop_size // 2)),
-            hybrid_refine_generations=max(1, int(args.final_l1_generations // 4)),
-            parallel=bool(args.parallel),
-            parallel_backend=str(args.parallel_backend),
-            parallel_workers=int(max(1, args.parallel_workers)),
-            parallel_chunk_size=args.parallel_chunk_size,
-            parallel_strict=bool(args.parallel_strict),
-            parallel_thread_bias_isolation=str(args.parallel_thread_bias_isolation),
-        ),
+    inner_cfg = InnerProductionSolverConfig(
+        pop_size=max(8, int(args.final_l1_pop_size // 2)),
+        generations=max(1, int(args.final_l1_generations // 4)),
+        max_active_machines_per_day=8,
+        max_production_per_machine=3000.0,
+        parallel=bool(args.parallel),
+        parallel_backend=str(args.parallel_backend),
+        parallel_workers=int(max(1, args.parallel_workers)),
+        parallel_chunk_size=args.parallel_chunk_size,
+        parallel_strict=bool(args.parallel_strict),
+        parallel_thread_bias_isolation=str(args.parallel_thread_bias_isolation),
     )
     p = SupplyEventShiftProblem(
         base_supply=base_supply,
-        inner_model=inner,
+        bom_matrix=bom_matrix,
+        production_case_dir=Path(production_case_dir),
+        inner_solver_cfg=inner_cfg,
         material_ids=material_ids,
         material_blacklist=blacklist_ids,
         max_moved_events=(None if int(args.max_moved_events) <= 0 else int(args.max_moved_events)),
@@ -381,6 +383,14 @@ def _run_final_l1_and_export(*, solver, args) -> None:
         p,
         pop_size=int(max(4, args.final_l1_pop_size)),
         max_generations=int(max(1, args.final_l1_generations)),
+    )
+    s.add_plugin(
+        TimeoutBudgetPlugin(
+            config=TimeoutBudgetConfig(layer="L2", max_calls=800, time_budget_ms=90_000, fail_closed=True)
+        )
+    )
+    p.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(
+        config=InnerRuntimeConfig(source_layer="L2", target_layer="L1")
     )
     s.run()
     best_x = getattr(s, "best_x", None)

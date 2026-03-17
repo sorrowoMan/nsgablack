@@ -2,7 +2,7 @@ import uuid
 
 import numpy as np
 
-from nsgablack.utils.context.snapshot_store import FileSnapshotStore, InMemorySnapshotStore
+from nsgablack.core.state.snapshot_store import FileSnapshotStore, InMemorySnapshotStore
 
 
 def test_snapshot_store_memory_roundtrip() -> None:

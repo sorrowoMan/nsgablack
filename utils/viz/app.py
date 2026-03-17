@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import hashlib
 import importlib.util
 import re
@@ -556,7 +556,7 @@ class VisualizerApp(tk.Tk):
         self._set_status(f"Opened component detail: {target}")
         return True
 
-    def _resolve_entry_file(self, raw_path: str) -> Path:
+    def _get_entry_file(self, raw_path: str) -> Path:
         text = str(raw_path).strip()
         if not text:
             raise ValueError("Entry file is empty")
@@ -583,7 +583,7 @@ class VisualizerApp(tk.Tk):
             self._set_status("Run is in progress; skip loading a new entry")
             return
         try:
-            path = self._resolve_entry_file(self._entry_path_var.get())
+            path = self._get_entry_file(self._entry_path_var.get())
             func = self._entry_func_var.get().strip() or "build_solver"
             entry = f"{path}:{func}"
             self.builder = _load_entry(entry)
@@ -995,7 +995,7 @@ class VisualizerApp(tk.Tk):
                 return "WARN", "MOEA/D typically needs an archive plugin to expose Pareto outputs."
             return "OK", "Archive plugin detected for MOEA/D output tracking."
 
-        if name == "MultiStrategyControllerAdapter":
+        if name == "StrategyRouterAdapter":
             child_status: List[str] = []
             child_notes: List[str] = []
             seen_children: set[int] = set()

@@ -22,3 +22,12 @@ Production scheduling case demo (project-local architecture).
 python build_solver.py
 python solver/run_case.py --parallel --parallel-backend thread --parallel-workers 8
 ```
+
+## Baselines
+
+Single-objective baselines (maximize total output only):
+
+```powershell
+python solver/run_case.py --solver baseline-greedy --single-objective
+python solver/run_case.py --solver baseline-aco --single-objective --aco-ants 48
+```

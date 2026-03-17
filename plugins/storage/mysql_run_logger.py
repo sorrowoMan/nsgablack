@@ -1,4 +1,4 @@
-"""
+﻿"""
 MySQL run logger plugin.
 
 Writes run metadata + report paths into a MySQL table.
@@ -122,8 +122,8 @@ CREATE TABLE IF NOT EXISTS `{table}` (
         payload = {
             "status": result.get("status") if isinstance(result, dict) else None,
             "steps": result.get("steps") if isinstance(result, dict) else None,
-            "best_objective": self._resolve_context_value(solver, KEY_BEST_OBJECTIVE, "best_objective"),
-            "best_x": self._resolve_context_value(solver, KEY_BEST_X, "best_x"),
+            "best_objective": self._get_context_value(solver, KEY_BEST_OBJECTIVE, "best_objective"),
+            "best_x": self._get_context_value(solver, KEY_BEST_X, "best_x"),
         }
         payload_jsonable = self._to_jsonable(payload)
         result_jsonable = self._to_jsonable(result if isinstance(result, dict) else None)
@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS `{table}` (
         if isinstance(best_obj_value, (list, dict)):
             best_obj_value = None
 
-        run_id = self._resolve_run_id(solver, result, artifacts)
+        run_id = self._get_run_id(solver, result, artifacts)
 
         conn = self._get_connection()
         try:
@@ -222,7 +222,7 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 pass
         return str(value)
 
-    def _resolve_context_value(self, solver: Any, key: str, attr_fallback: str) -> Any:
+    def _get_context_value(self, solver: Any, key: str, attr_fallback: str) -> Any:
         getter = getattr(solver, "get_context", None)
         if callable(getter):
             try:
@@ -236,7 +236,7 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         except Exception:
             return None
 
-    def _resolve_run_id(self, solver: Any, result: Dict[str, Any], artifacts: Dict[str, Any] | None) -> Optional[str]:
+    def _get_run_id(self, solver: Any, result: Dict[str, Any], artifacts: Dict[str, Any] | None) -> Optional[str]:
         # 1) explicit result-level run_id
         if isinstance(result, dict):
             rid = result.get("run_id")
@@ -270,4 +270,5 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             except Exception:
                 pass
         return None
+
 

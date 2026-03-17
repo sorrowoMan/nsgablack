@@ -51,8 +51,8 @@
   - `skopt`（Bayesian optional）
 
 ### 2.2 存储与序列化 / Storage & Serialization
-- Context backends: memory / redis（`utils/context/context_store.py`）
-- Snapshot backends: memory / redis / file(npz + meta + extras)（`utils/context/snapshot_store.py`）
+- Context backends: memory / redis（`core/state/context_store.py`）
+- Snapshot backends: memory / redis / file(npz + meta + extras)（`core/state/snapshot_store.py`）
 - Serialization formats:
   - JSON / JSONL（运行产物、trace、bundle）
   - TOML（catalog entries）
@@ -125,7 +125,7 @@
 ### 4.2 运行交互契约 / Runtime Interaction Contract
 - 推荐大对象读写入口：
   - `solver.read_snapshot()`
-  - `Plugin.resolve_population_snapshot()`
+  - `Plugin.get_population_snapshot()`
   - `Plugin.commit_population_snapshot()`
 - 设计收益 / Benefit:
   - 降低组件间隐式耦合

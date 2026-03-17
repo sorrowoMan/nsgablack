@@ -6,7 +6,7 @@ def test_robustness_bias_penalizes_high_mc_std():
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.bias import BiasModule, RobustnessBias
-    from nsgablack.plugins import MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig
+    from nsgablack.plugins import MonteCarloEvaluationProviderPlugin, MonteCarloEvaluationConfig
 
     class HeteroscedasticNoisySphere(BlackBoxProblem):
         def __init__(self, dim=2):
@@ -39,7 +39,7 @@ def test_robustness_bias_penalizes_high_mc_std():
     solver = ComposableSolver(problem=problem, adapter=TwoCandidatesOnce(), bias_module=bias)
     solver.max_steps = 1
     solver.add_plugin(
-        MonteCarloEvaluationPlugin(
+        MonteCarloEvaluationProviderPlugin(
             config=MonteCarloEvaluationConfig(mc_samples=64, reduce="mean", random_seed=0)
         )
     )
@@ -84,7 +84,7 @@ def test_direct_wiring_monte_carlo_robustness_runs():
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.bias import BiasModule, RobustnessBias
-    from nsgablack.plugins import MonteCarloEvaluationConfig, MonteCarloEvaluationPlugin
+    from nsgablack.plugins import MonteCarloEvaluationConfig, MonteCarloEvaluationProviderPlugin
 
     class NoisySphere(BlackBoxProblem):
         def __init__(self, dim=2):
@@ -107,7 +107,7 @@ def test_direct_wiring_monte_carlo_robustness_runs():
     solver = ComposableSolver(problem=NoisySphere(), adapter=Fixed(), bias_module=bias)
     solver.max_steps = 1
     solver.add_plugin(
-        MonteCarloEvaluationPlugin(
+        MonteCarloEvaluationProviderPlugin(
             config=MonteCarloEvaluationConfig(mc_samples=8, reduce="mean", random_seed=0)
         )
     )

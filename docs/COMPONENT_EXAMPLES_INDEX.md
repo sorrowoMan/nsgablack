@@ -11,7 +11,7 @@
 
 - `SimulatedAnnealingAdapter` -> `examples/template_continuous_constrained.py`, `examples/template_knapsack_binary.py`
 - `VNSAdapter` -> `examples/dynamic_multi_strategy_demo.py`, `examples/template_tsp_permutation.py`
-- `MultiStrategyControllerAdapter` -> `examples/dynamic_multi_strategy_demo.py`, `examples/multi_strategy_coop_demo.py`
+- `StrategyRouterAdapter` -> `examples/dynamic_multi_strategy_demo.py`, `examples/multi_strategy_coop_demo.py`
 - `MOEADAdapter` -> `examples/template_multiobjective_pareto.py`, `examples/template_portfolio_pareto.py`
 - `TrustRegionDFOAdapter` -> `examples/trust_region_dfo_demo.py`
 - `TrustRegionSubspaceAdapter` -> `examples/trust_region_subspace_demo.py`
@@ -19,7 +19,7 @@
 - `TrustRegionMODFOAdapter` -> `examples/trust_region_mo_dfo_demo.py`
 - `MASAdapter` -> `examples/mas_demo.py`
 - `CompositeAdapter` -> `examples/composable_solver_fusion_demo.py`
-- `RoleAdapter` / `MultiRoleControllerAdapter` -> `examples/role_adapters_demo.py`
+- `RoleAdapter` / `RoleRouterAdapter` -> `examples/role_adapters_demo.py`
 - `AStarAdapter` -> `examples/astar_demo.py`
 - `MOAStarAdapter` -> `examples/moa_star_demo.py`
 
@@ -50,9 +50,9 @@
 - `ModuleReportPlugin` -> 多数示例（如 `examples/dynamic_multi_strategy_demo.py`）
 - `DynamicSwitchPlugin` -> `examples/dynamic_multi_strategy_demo.py`
 - `ParetoArchivePlugin` -> `examples/template_multiobjective_pareto.py`, `examples/template_portfolio_pareto.py`
-- `MonteCarloEvaluationPlugin` -> `examples/monte_carlo_dp_robust_demo.py`
-- `MultiFidelityEvaluationPlugin` -> `examples/multi_fidelity_demo.py`
-- `SurrogateEvaluationPlugin` -> `examples/surrogate_plugin_demo.py`
+- `MonteCarloEvaluationProviderPlugin` -> `examples/monte_carlo_dp_robust_demo.py`
+- `MultiFidelityEvaluationProviderPlugin` -> `examples/multi_fidelity_demo.py`
+- `SurrogateEvaluationProviderPlugin` -> `examples/surrogate_plugin_demo.py`
 - `SensitivityAnalysisPlugin` -> `examples/dynamic_multi_strategy_demo.py`
 
 ## Wiring Helpers

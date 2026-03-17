@@ -5,7 +5,6 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 import numpy as np
 
-from ..base import Plugin
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
 from ...utils.extension_contracts import ContractError, normalize_candidate, normalize_objectives
 
@@ -20,14 +19,8 @@ class MultiFidelityEvaluationConfig:
     random_seed: Optional[int] = 0
 
 
-class MultiFidelityEvaluationPlugin(Plugin):
-    """
-    Two-level evaluation plugin (low-fidelity + high-fidelity).
-
-    - Uses low-fidelity scores to pre-rank candidates.
-    - Evaluates a subset with high-fidelity (true) evaluation.
-    - Returns mixed objectives (high-fidelity for selected, low-fidelity for others).
-    """
+class MultiFidelityEvaluationProviderPlugin:
+    """Multi-fidelity L4 provider factory."""
 
     is_algorithmic = True
     context_requires = ()
@@ -46,21 +39,19 @@ class MultiFidelityEvaluationPlugin(Plugin):
         config: Optional[MultiFidelityEvaluationConfig] = None,
         low_fidelity: Optional[Callable[[Any], Any]] = None,
     ) -> None:
-        super().__init__(name=name)
+        self.name = str(name)
         self.cfg = config or MultiFidelityEvaluationConfig()
         self.low_fidelity = low_fidelity
         self._rng = np.random.default_rng(self.cfg.random_seed)
         self.stats = {"low_calls": 0, "high_calls": 0}
 
-    def on_solver_init(self, solver):
+    def evaluate_population_runtime(self, solver, population: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         if self.low_fidelity is None:
             lf = getattr(getattr(solver, "problem", None), "evaluate_low_fidelity", None)
             if callable(lf):
                 self.low_fidelity = lf
-
-    def evaluate_population(self, solver, population: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         if self.low_fidelity is None:
-            raise RuntimeError("MultiFidelityEvaluationPlugin requires low_fidelity evaluator.")
+            raise RuntimeError("MultiFidelityEvaluationProviderPlugin requires low_fidelity evaluator.")
 
         pop = np.asarray(population)
         if pop.ndim == 1:
@@ -153,4 +144,40 @@ class MultiFidelityEvaluationPlugin(Plugin):
         if mode == "first":
             return arr[:, 0]
         return np.sum(arr, axis=1)
+
+    def create_provider(self):
+        owner = self
+
+        class _Provider:
+            name = owner.name
+            semantic_mode = "equivalent"
+
+            def can_handle_individual(self, solver, x, context):
+                _ = context
+                if owner.low_fidelity is None:
+                    lf = getattr(getattr(solver, "problem", None), "evaluate_low_fidelity", None)
+                    if callable(lf):
+                        owner.low_fidelity = lf
+                return owner.low_fidelity is not None and x is not None
+
+            def evaluate_individual(self, solver, x, context, individual_id=None):
+                _ = context
+                pop = np.asarray(x, dtype=float).reshape(1, -1)
+                objs, vios = owner.evaluate_population_runtime(solver, pop)
+                return np.asarray(objs[0], dtype=float).reshape(-1), float(vios[0])
+
+            def can_handle_population(self, solver, population, context):
+                _ = solver
+                _ = context
+                if owner.low_fidelity is None:
+                    lf = getattr(getattr(solver, "problem", None), "evaluate_low_fidelity", None)
+                    if callable(lf):
+                        owner.low_fidelity = lf
+                return owner.low_fidelity is not None and population is not None
+
+            def evaluate_population(self, solver, population, context):
+                _ = context
+                return owner.evaluate_population_runtime(solver, np.asarray(population, dtype=float))
+
+        return _Provider()
 

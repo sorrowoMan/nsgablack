@@ -16,11 +16,11 @@ example_entry = "python -m nsgablack catalog search dynamic_cli_signal --kind ex
 key = "tool.context_store_redis"
 title = "RedisContextStore"
 kind = "tool"
-import_path = "nsgablack.utils.context.context_store:RedisContextStore"
+import_path = "nsgablack.core.state.context_store:RedisContextStore"
 tags = ["context", "redis", "store", "tool", "backend", "ttl"]
 summary = "Context backend tool: RedisContextStore for shared context state with optional TTL."
 use_when = ["Need Redis-backed context storage/shared state for runs, replay, or distributed workers."]
-minimal_wiring = ["from nsgablack.utils.context.context_store import create_context_store", "store = create_context_store(backend='redis', redis_url='redis://127.0.0.1:6379/0', key_prefix='nsgablack:run', ttl_seconds=30)"]
+minimal_wiring = ["from nsgablack.core.state.context_store import create_context_store", "store = create_context_store(backend='redis', redis_url='redis://127.0.0.1:6379/0', key_prefix='nsgablack:run', ttl_seconds=30)"]
 required_companions = ["(none)"]
 config_keys = ["context_store_backend", "context_store_redis_url", "context_store_key_prefix", "context_store_ttl_seconds"]
 example_entry = "python -m nsgablack catalog search context_store_redis --kind doc"

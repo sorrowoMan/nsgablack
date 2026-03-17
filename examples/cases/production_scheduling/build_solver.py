@@ -1,9 +1,17 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Standard assembly entry for production_scheduling case.
 
 This file is both:
 - scaffold entry (doctor/inspector expects `build_solver:build_solver`)
 - real assembly module (problem/pipeline/adapter/plugins wiring)
+
+
+python examples/cases/production_scheduling/solver/run_case.py --solver baseline-aco --single-objective --aco-ants 48
+python examples/cases/production_scheduling/solver/run_case.py --solver multi-agent --parallel --parallel-backend thread --parallel-workers 8 `
+  --moead-pop-size 50 --vns-batch-size 32 --generations 30 `
+  --material-cap-ratio 2.6 --daily-cap-ratio 2.8 `
+  --daily-floor-ratio 0.35 --smooth-strength 0.2 --reserve-ratio 0.4
+
 """
 
 from __future__ import annotations
@@ -29,7 +37,7 @@ from nsgablack.adapters import (  # noqa: E402
     MOEADAdapter,
     MOEADConfig,
     MultiStrategyConfig,
-    MultiStrategyControllerAdapter,
+    StrategyRouterAdapter,
     RoleSpec,
     VNSAdapter,
     VNSConfig,
@@ -40,7 +48,12 @@ from nsgablack.utils.parallel import with_parallel_evaluation  # noqa: E402
 from nsgablack.utils.wiring import attach_default_observability_plugins  # noqa: E402
 from nsgablack.utils.viz import launch_from_builder  # noqa: E402
 
-from adapter import ProductionLocalSearchAdapter, ProductionRandomSearchAdapter  # noqa: E402
+from adapter import (  # noqa: E402
+    ProductionACOBaselineAdapter,
+    ProductionGreedyBaselineAdapter,
+    ProductionLocalSearchAdapter,
+    ProductionRandomSearchAdapter,
+)
 from bias import build_production_bias_module  # noqa: E402
 from cli import build_parser  # noqa: E402
 from pipeline import build_schedule_pipeline  # noqa: E402
@@ -50,7 +63,7 @@ from plugins.export_utils import (  # noqa: E402
     export_pareto_batch as export_pareto_batch_fn,
     export_schedule,
     extract_pareto,
-    resolve_export_path,
+    get_export_path,
     supply_tag_from_path,
     write_export_summary,
 )
@@ -109,7 +122,7 @@ def _register_case_plugins(solver, problem, args) -> None:
             extract_pareto=extract_pareto,
             choose_pareto_solutions=choose_pareto_solutions,
             project_schedule_material_feasible=project_schedule_material_feasible,
-            resolve_export_path=resolve_export_path,
+            get_export_path=get_export_path,
             export_schedule=export_schedule,
             write_export_summary=write_export_summary,
             export_pareto_batch=_export_pareto_batch_with_projection,
@@ -235,7 +248,7 @@ def build_multi_agent_solver(problem, args):
         phase_schedule=(("explore", max(5, int(args.generations // 3))), ("exploit", -1)),
         phase_roles={"explore": ["explorer"], "exploit": ["exploiter"]},
     )
-    controller = MultiStrategyControllerAdapter(roles=roles, config=cfg)
+    controller = StrategyRouterAdapter(roles=roles, config=cfg)
 
     base_solver_cls = ComposableSolver if bool(getattr(args, "allow_infeasible_update", False)) else StrictFeasibleProductionSolver
     SolverClass = with_parallel_evaluation(base_solver_cls)
@@ -277,11 +290,89 @@ def run_multi_agent(problem, args):
         print(f"Selected key Pareto candidates: {len(choices)} (export handled by production_export plugin)")
 
 
+def build_baseline_solver(problem, args, *, mode: str) -> ComposableSolver:
+    pipeline = build_schedule_pipeline(
+        problem,
+        problem.constraints,
+        material_cap_ratio=args.material_cap_ratio,
+        daily_floor_ratio=args.daily_floor_ratio,
+        donor_keep_ratio=args.donor_keep_ratio,
+        daily_cap_ratio=args.daily_cap_ratio,
+        reserve_ratio=args.reserve_ratio,
+        coverage_bonus=args.coverage_bonus,
+        budget_mode=args.budget_mode,
+        smooth_strength=args.smooth_strength,
+        smooth_passes=args.smooth_passes,
+    )
+    if bool(getattr(args, "no_pipeline", False)):
+        pipeline.repair = None
+
+    bias_module = None if args.no_bias else build_production_bias_module(problem, weights={})
+    if bias_module is not None and hasattr(bias_module, "cache_enabled"):
+        try:
+            setattr(bias_module, "cache_enabled", False)
+        except Exception:
+            pass
+
+    if mode == "baseline-aco":
+        adapter = ProductionACOBaselineAdapter(
+            ants=int(args.aco_ants),
+            evaporation=float(args.aco_evaporation),
+            alpha=float(args.aco_alpha),
+            beta=float(args.aco_beta),
+            q=float(args.aco_q),
+        )
+    else:
+        adapter = ProductionGreedyBaselineAdapter()
+
+    base_solver_cls = ComposableSolver if bool(getattr(args, "allow_infeasible_update", False)) else StrictFeasibleProductionSolver
+    SolverClass = with_parallel_evaluation(base_solver_cls)
+    factory = (
+        build_problem_factory(args, base_dir=_THIS_DIR)
+        if args.parallel and args.parallel_backend in ("process", "ray")
+        else None
+    )
+    solver = SolverClass(
+        problem=problem,
+        adapter=adapter,
+        representation_pipeline=pipeline,
+        bias_module=bias_module,
+        enable_parallel=bool(args.parallel),
+        parallel_backend=args.parallel_backend,
+        parallel_max_workers=args.parallel_workers,
+        parallel_chunk_size=args.parallel_chunk_size,
+        parallel_verbose=bool(args.parallel_verbose),
+        parallel_precheck=not bool(args.parallel_no_precheck),
+        parallel_strict=bool(args.parallel_strict),
+        parallel_thread_bias_isolation=str(args.parallel_thread_bias_isolation),
+        parallel_problem_factory=factory,
+    )
+    _attach_observability_plugins(solver, args)
+    _register_case_plugins(solver, problem, args)
+    solver.set_max_steps(int(args.generations))
+    return solver
+
+
 def _build_solver_from_args(args) -> ComposableSolver:
     if int(getattr(args, "days", 31)) != 31:
         print(f"[run] override --days={args.days} ignored; enforcing 31-day window (day0..30).")
     args.days = 31
+    if str(getattr(args, "solver", "multi-agent")).startswith("baseline"):
+        if not bool(getattr(args, "single_objective", False)):
+            args.single_objective = True
+            print("[run] baseline solver -> force --single-objective (maximize total output only)")
+        if getattr(args, "parallel_backend", None) != "thread":
+            args.parallel_backend = "thread"
+            args.parallel = True
+            print("[run] baseline solver -> force --parallel-backend thread")
+        if getattr(args, "parallel_thread_bias_isolation", None) == "deepcopy":
+            args.parallel_thread_bias_isolation = "disable_cache"
+            print("[run] baseline solver -> force --parallel-thread-bias-isolation disable_cache")
     problem = build_problem(args, base_dir=_THIS_DIR, print_paths=True)
+    if args.solver == "baseline-aco":
+        return build_baseline_solver(problem, args, mode="baseline-aco")
+    if args.solver == "baseline-greedy":
+        return build_baseline_solver(problem, args, mode="baseline-greedy")
     return build_multi_agent_solver(problem, args)
 
 
@@ -314,8 +405,15 @@ def main(args=None, *, case_root: Optional[Path] = None):
     if int(getattr(args, "days", 31)) != 31:
         print(f"[run] override --days={args.days} ignored; enforcing 31-day window (day0..30).")
     args.days = 31
+    if str(getattr(args, "solver", "multi-agent")).startswith("baseline") and getattr(args, "parallel_backend", None) != "thread":
+        args.parallel_backend = "thread"
+        args.parallel = True
+        print("[run] baseline solver -> force --parallel-backend thread")
+    if getattr(args, "parallel_backend", None) == "thread" and getattr(args, "parallel_thread_bias_isolation", None) == "deepcopy":
+        args.parallel_thread_bias_isolation = "disable_cache"
+        print("[run] thread backend -> switch bias isolation to disable_cache")
     print(
-        "[run] solver=multi-agent "
+        f"[run] solver={args.solver} "
         f"parallel={bool(args.parallel)} backend={args.parallel_backend} workers={args.parallel_workers} "
         f"generations={args.generations} pop_size={args.pop_size} days=31"
     )
@@ -328,6 +426,12 @@ def main(args=None, *, case_root: Optional[Path] = None):
     random.seed(args.seed)
     np.random.seed(args.seed)
     problem = build_problem(args, base_dir=_THIS_DIR, print_paths=True)
+    if args.solver == "baseline-aco":
+        build_baseline_solver(problem, args, mode="baseline-aco").run()
+        return
+    if args.solver == "baseline-greedy":
+        build_baseline_solver(problem, args, mode="baseline-greedy").run()
+        return
     run_multi_agent(problem, args)
 
 
@@ -348,4 +452,5 @@ def cli_main(argv: Optional[list] = None, *, case_root: Optional[Path] = None) -
 
 if __name__ == "__main__":
     raise SystemExit(cli_main())
+
 

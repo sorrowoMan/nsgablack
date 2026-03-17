@@ -5,9 +5,8 @@ from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
 import numpy as np
 
-from ..base import Plugin
 from ...utils.context.context_keys import KEY_METRICS
-from ...utils.context.context_schema import build_minimal_context
+from ...core.state.context_schema import build_minimal_context
 from ...utils.extension_contracts import normalize_objectives, normalize_violation
 from ..solver_backends.backend_contract import BackendSolveRequest, normalize_backend_output
 
@@ -23,8 +22,8 @@ class EvaluationModelConfig:
     update_context_metrics: bool = True
 
 
-class EvaluationModelPlugin(Plugin):
-    """Unified evaluation plugin using backend-contract for outer and inner layers."""
+class EvaluationModelProviderPlugin:
+    """Evaluation-model L4 provider factory."""
 
     context_requires = ("problem",)
     context_provides = ("metrics.eval_model_calls", "metrics.eval_model_failures")
@@ -42,7 +41,8 @@ class EvaluationModelPlugin(Plugin):
         backend_factory: Optional[BackendFactory] = None,
         priority: int = 75,
     ) -> None:
-        super().__init__(name=name, priority=priority)
+        self.name = str(name)
+        self.priority = int(priority)
         self.cfg = config or EvaluationModelConfig()
         self.backend_factory = backend_factory
         self.stats: Dict[str, float] = {"calls": 0.0, "failures": 0.0}
@@ -95,7 +95,7 @@ class EvaluationModelPlugin(Plugin):
         except Exception:
             return
 
-    def evaluate_individual(self, solver, x: np.ndarray, individual_id: Optional[int] = None):
+    def evaluate_individual_runtime(self, solver, x: np.ndarray, individual_id: Optional[int] = None):
         if not self._scope_enabled("outer"):
             return None
         candidate = np.asarray(x, dtype=float).reshape(-1)
@@ -143,3 +143,42 @@ class EvaluationModelPlugin(Plugin):
         )
         self._update_metrics(solver)
         return obj, float(vio)
+
+    def create_provider(self):
+        owner = self
+
+        class _Provider:
+            name = owner.name
+            semantic_mode = "equivalent"
+            allow_inner = owner.allow_inner
+
+            def can_handle_individual(self, solver, x, context):
+                _ = solver
+                _ = x
+                _ = context
+                return owner._scope_enabled("outer")
+
+            def evaluate_individual(self, solver, x, context, individual_id=None):
+                _ = context
+                return owner.evaluate_individual_runtime(
+                    solver,
+                    np.asarray(x, dtype=float),
+                    individual_id=individual_id,
+                )
+
+            def can_handle_population(self, solver, population, context):
+                _ = solver
+                _ = population
+                _ = context
+                return False
+
+            def evaluate_population(self, solver, population, context):
+                _ = solver
+                _ = population
+                _ = context
+                return None
+
+            def evaluate_model(self, solver, request):
+                return owner.evaluate_model(solver, request)
+
+        return _Provider()

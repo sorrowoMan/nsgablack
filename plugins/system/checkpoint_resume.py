@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import copy
 import hashlib
@@ -133,7 +133,7 @@ class CheckpointResumePlugin(Plugin):
         if solver is None:
             return False
         self._assert_strict_security_ready()
-        path = self._resolve_checkpoint_path(checkpoint)
+        path = self._get_checkpoint_path(checkpoint)
         if path is None:
             if bool(self.cfg.strict):
                 raise FileNotFoundError(f"checkpoint not found: {checkpoint}")
@@ -159,7 +159,7 @@ class CheckpointResumePlugin(Plugin):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _resolve_checkpoint_path(self, checkpoint: str) -> Optional[Path]:
+    def _get_checkpoint_path(self, checkpoint: str) -> Optional[Path]:
         text = str(checkpoint or "").strip()
         if text and text.lower() != "latest":
             path = Path(text)
@@ -210,7 +210,7 @@ class CheckpointResumePlugin(Plugin):
         except Exception:
             return value
 
-    def _resolve_hmac_key(self) -> Optional[bytes]:
+    def _get_hmac_key(self) -> Optional[bytes]:
         env_var = str(getattr(self.cfg, "hmac_env_var", "") or "").strip()
         if not env_var:
             return None
@@ -223,7 +223,7 @@ class CheckpointResumePlugin(Plugin):
     def _assert_strict_security_ready(self) -> None:
         if not bool(getattr(self.cfg, "strict", False)):
             return
-        key = self._resolve_hmac_key()
+        key = self._get_hmac_key()
         if key is None:
             env_var = str(getattr(self.cfg, "hmac_env_var", "NSGABLACK_CHECKPOINT_HMAC_KEY") or "").strip()
             raise ValueError(
@@ -237,7 +237,7 @@ class CheckpointResumePlugin(Plugin):
         return hmac.new(key, payload_bytes, hashlib.sha256).hexdigest()
 
     def _wrap_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        key = self._resolve_hmac_key()
+        key = self._get_hmac_key()
         mac: Optional[str] = None
         if key is not None:
             try:
@@ -266,7 +266,7 @@ class CheckpointResumePlugin(Plugin):
         else:
             raise ValueError("invalid checkpoint payload: unsupported type")
 
-        key = self._resolve_hmac_key()
+        key = self._get_hmac_key()
         if bool(getattr(self.cfg, "strict", False)):
             if key is None:
                 env_var = str(getattr(self.cfg, "hmac_env_var", "NSGABLACK_CHECKPOINT_HMAC_KEY") or "").strip()
@@ -346,8 +346,8 @@ class CheckpointResumePlugin(Plugin):
 
     def _build_payload(self, *, solver: Any, reason: str) -> Dict[str, Any]:
         generation = int(getattr(solver, "generation", 0))
-        best_x_ctx, best_obj_ctx = self._resolve_context_best(solver)
-        snap_pop, snap_obj, snap_vio = self.resolve_population_snapshot(solver)
+        best_x_ctx, best_obj_ctx = self._get_context_best(solver)
+        snap_pop, snap_obj, snap_vio = self.get_population_snapshot(solver)
         solver_state = {
             "generation": generation,
             "evaluation_count": int(getattr(solver, "evaluation_count", 0)),
@@ -389,7 +389,7 @@ class CheckpointResumePlugin(Plugin):
         }
         return payload
 
-    def _resolve_context_best(self, solver: Any) -> tuple[Any, Optional[float]]:
+    def _get_context_best(self, solver: Any) -> tuple[Any, Optional[float]]:
         getter = getattr(solver, "get_context", None)
         if not callable(getter):
             return None, None
@@ -574,3 +574,4 @@ class CheckpointResumePlugin(Plugin):
             "last_saved_generation": self.last_saved_generation,
             "last_loaded_generation": self.last_loaded_generation,
         }
+

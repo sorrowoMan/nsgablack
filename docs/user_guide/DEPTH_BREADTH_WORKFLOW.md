@@ -8,10 +8,10 @@
 - L3：更内层数值求解（隐式方程/残差求根）。
 
 实现路径：
-- `InnerSolverPlugin`：L1 在 `evaluate_individual` 调 L2/L3。
+- `problem.inner_runtime_evaluator`：L1 在 `evaluate_individual` 调 L2/L3。
 - `ContractBridgePlugin`：把内层结果桥接回外层 context。
 - `TimeoutBudgetPlugin`：限制内层调用预算，避免失控。
-- `NewtonSolverPlugin/BroydenSolverPlugin`：作为 L3 求解工具。
+- `NewtonSolverProviderPlugin/BroydenSolverProviderPlugin`：作为 L3 求解工具。
 
 ## 2) 广度（Breadth）：多策略协同
 - 同层并行角色（explorer / exploiter）。
@@ -20,7 +20,7 @@
 - 同层插件组合（缓存/容错/报告/审计）。
 
 实现路径：
-- `MultiStrategyControllerAdapter` + role adapters
+- `StrategyRouterAdapter` + role adapters
 - BiasModule 组合
 - Plugin wiring helpers/capability plugins
 

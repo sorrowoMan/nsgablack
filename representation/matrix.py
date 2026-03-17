@@ -10,7 +10,7 @@ from typing import Optional, Any, Tuple
 import numpy as np
 
 from .base import RepresentationComponentContract
-from ..utils.context.context_keys import (
+from ..core.state.context_keys import (
     KEY_BLOCK_MAX,
     KEY_BLOCK_MIN,
     KEY_COL_SUMS,

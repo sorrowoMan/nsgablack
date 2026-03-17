@@ -11,7 +11,7 @@
 | 模块/偏置生效审计（“到底是谁在起作用”） | `plugin.module_report` | `plugins/ops/module_report.py`、`plugins/base.py` | `modules.json`、`bias.json`（可选 `bias.md`） |
 | 并行评估（加速 evaluate + bias/constraint） | `with_parallel_evaluation(...)` | `utils/parallel/evaluator.py`、`utils/parallel/integration.py` | 进程/线程池并行评估结果 |
 | 约束计算与容错 | `evaluate_constraints_safe(...)` | `utils/constraints/constraint_utils.py` | 约束向量 + violation |
-| Context 约定（跨模块共享信息） | `context_keys.*` | `utils/context/context_keys.py` | 统一 key 命名与约定 |
+| Context 约定（跨模块共享信息） | `context_keys.*` | `core/state/context_keys.py` | 统一 key 命名与约定 |
 | Catalog（“官方推荐入口”索引） | `python -m nsgablack catalog ...` | `catalog/registry.py` | CLI 列表/详情 |
 
 说明：
@@ -67,8 +67,8 @@
 
 本框架没有引入独立事件总线/消息队列；核心通信是“明确的函数调用链”，并用 `context: dict` 传递跨模块信息。
 
-- Context 约定：`utils/context/context_keys.py`
-- 最小 context 构造：`utils/context/context_schema.py`（并行评估会用它构造可序列化的最小 context）
+- Context 约定：`core/state/context_keys.py`
+- 最小 context 构造：`core/state/context_schema.py`（并行评估会用它构造可序列化的最小 context）
 - 常见数据：
   - `generation`、`individual_id`
   - `constraints`、`constraint_violation`
@@ -516,7 +516,7 @@ solver = ParallelBlank(problem, enable_parallel=True, parallel_backend="process"
 
 ### 18.1 最小 schema（并行/串行共用）
 
-实现：`utils/context/context_schema.py`
+实现：`core/state/context_schema.py`
 
 最小字段：
 - `generation`（可空）
@@ -530,7 +530,7 @@ solver = ParallelBlank(problem, enable_parallel=True, parallel_backend="process"
 
 ### 18.2 键约定（避免“各写各的”）
 
-实现：`utils/context/context_keys.py`
+实现：`core/state/context_keys.py`
 
 工程规则：
 - 统一 key 名称与含义（例如 generation/seed/constraint_violation 等）

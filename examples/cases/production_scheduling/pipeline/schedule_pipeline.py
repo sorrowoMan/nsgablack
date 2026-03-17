@@ -27,7 +27,7 @@ _ensure_importable()
 from nsgablack.representation import RepresentationPipeline
 
 try:
-    from nsgablack.utils.context.context_keys import KEY_MUTATION_SIGMA, KEY_VNS_K
+    from nsgablack.core.state.context_keys import KEY_MUTATION_SIGMA, KEY_VNS_K
 except (ImportError, AttributeError):
     KEY_MUTATION_SIGMA = "mutation_sigma"
     KEY_VNS_K = "vns_k"

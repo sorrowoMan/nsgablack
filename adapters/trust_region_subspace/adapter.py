@@ -10,7 +10,6 @@ from typing import Any, Dict, Optional
 import numpy as np
 
 from ..trust_region_base import TrustRegionBaseAdapter
-from ...utils.context.context_keys import KEY_SUBSPACE_BASIS
 
 
 @dataclass
@@ -24,6 +23,8 @@ class TrustRegionSubspaceConfig:
     success_tolerance: float = 1e-8
     include_center: bool = True
     subspace_dim: int = 8
+    basis_method: str = "random"  # random | pca | svd | sparse_pca | cluster
+    min_samples: int = 32
     resample_every: int = 10
     random_seed: Optional[int] = None
 
@@ -38,9 +39,7 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
     context_provides = ()
     context_mutates = ()
     context_cache = ()
-    context_notes = (
-        "Optional key subspace_basis can inject a custom basis from context.",
-    )
+    context_notes = ("Subspace basis is managed internally (random or population-derived).",)
 
     def __init__(
         self,
@@ -65,11 +64,8 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
         self._basis = None
         self._steps = 0
     def _before_propose(self, solver: Any, context: Dict[str, Any]) -> None:
-        basis_from_ctx = context.get(KEY_SUBSPACE_BASIS)
-        if basis_from_ctx is not None:
-            self._basis = np.asarray(basis_from_ctx, dtype=float)
         if self._basis is None or (self._steps % max(1, int(self.cfg.resample_every)) == 0):
-            self._basis = self._sample_subspace(solver)
+            self._basis = self._build_or_sample_basis(solver)
         self._steps += 1
 
     def _sample_delta(self, solver: Any, context: Dict[str, Any]) -> np.ndarray:
@@ -84,6 +80,68 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
         mat = self._rng.normal(size=(dim, k))
         q, _ = np.linalg.qr(mat)
         return q[:, :k]
+
+    def _build_or_sample_basis(self, solver: Any) -> np.ndarray:
+        method = str(getattr(self.cfg, "basis_method", "random") or "random").strip().lower()
+        if method == "random":
+            return self._sample_subspace(solver)
+
+        pop = getattr(solver, "population", None)
+        if pop is None:
+            return self._sample_subspace(solver)
+        X = np.asarray(pop, dtype=float)
+        if X.ndim != 2 or X.shape[0] < int(self.cfg.min_samples):
+            return self._sample_subspace(solver)
+        return self._build_basis_from_population(X, solver)
+
+    def _build_basis_from_population(self, X: np.ndarray, solver: Any) -> np.ndarray:
+        dim = int(getattr(solver, "dimension", X.shape[1]) or X.shape[1])
+        k = min(max(1, int(self.cfg.subspace_dim)), dim)
+        method = str(getattr(self.cfg, "basis_method", "random") or "random").strip().lower()
+        if method == "random":
+            return self._sample_subspace(solver)
+
+        if method == "svd":
+            Xc = X - np.mean(X, axis=0, keepdims=True)
+            try:
+                _, _, vt = np.linalg.svd(Xc, full_matrices=False)
+                return vt[:k].T
+            except Exception:
+                return self._sample_subspace(solver)
+
+        if method == "sparse_pca":
+            try:
+                from sklearn.decomposition import SparsePCA
+
+                spca = SparsePCA(n_components=k, random_state=self.cfg.random_seed)
+                spca.fit(X)
+                basis = np.asarray(spca.components_, dtype=float).T
+                return basis
+            except Exception:
+                method = "pca"
+
+        if method == "cluster":
+            try:
+                from sklearn.cluster import KMeans
+
+                n_clusters = min(max(2, k), X.shape[0])
+                km = KMeans(n_clusters=n_clusters, random_state=self.cfg.random_seed, n_init=5)
+                labels = km.fit_predict(X)
+                _ = labels
+                centers = km.cluster_centers_
+                Xc = centers - np.mean(centers, axis=0, keepdims=True)
+                _, _, vt = np.linalg.svd(Xc, full_matrices=False)
+                return vt[:k].T
+            except Exception:
+                method = "pca"
+
+        # PCA basis (top-k right singular vectors)
+        Xc = X - np.mean(X, axis=0, keepdims=True)
+        try:
+            _, _, vt = np.linalg.svd(Xc, full_matrices=False)
+            return vt[:k].T
+        except Exception:
+            return self._sample_subspace(solver)
 
     def _score(
         self,

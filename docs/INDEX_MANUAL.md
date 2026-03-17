@@ -43,7 +43,7 @@ python -m nsgablack catalog show <key>
 | `adapter.nsga3` | NSGA3Adapter | NSGA-III 适配器：参考点引导的 niching 选择。/ Adapter: NSGA-III with reference-point niching. | adapter, core, evolutionary, multiobjective, nsga3, strategy | - | `nsgablack.adapters:NSGA3Adapter` |
 | `adapter.pattern_search` | PatternSearchAdapter | 模式搜索适配器：坐标方向试探与步长自适应。/ Adapter: coordinate pattern search with adaptive step size. | adapter, core, local_search, pattern_search, strategy | - | `nsgablack.adapters:PatternSearchAdapter` |
 | `adapter.spea2` | SPEA2Adapter | SPEA2 适配器：强度值与密度估计联合选择。/ Adapter: SPEA2 with strength and density fitness. | adapter, core, evolutionary, multiobjective, spea2, strategy | - | `nsgablack.adapters:SPEA2Adapter` |
-| `adapter.multi_role_controller` | MultiRoleControllerAdapter | 多角色控制器：共享上下文与预算分配，统一调度各角色。 / Adapter: multi-role controller with shared context and budget scheduling. | adapter, composition, controller, core, roles, strategy | - | `nsgablack.adapters.role_adapters:MultiRoleControllerAdapter` |
+| `adapter.multi_role_controller` | RoleRouterAdapter | 多角色控制器：共享上下文与预算分配，统一调度各角色。 / Adapter: multi-role controller with shared context and budget scheduling. | adapter, composition, controller, core, roles, strategy | - | `nsgablack.adapters.role_adapters:RoleRouterAdapter` |
 | `adapter.role` | RoleAdapter | 角色适配器：附加角色元数据与配额，用于分工协同。 / Adapter: role wrapper with metadata and candidate quotas for cooperation. | adapter, composition, core, roles, strategy | - | `nsgablack.adapters.role_adapters:RoleAdapter` |
 | `adapter.trust_region_dfo` | TrustRegionDFOAdapter | 信赖域DFO内核：无梯度局部搜索。 / Adapter: trust-region derivative-free local search. | adapter, core, dfo, local_search, strategy, trust_region | - | `nsgablack.adapters:TrustRegionDFOAdapter` |
 | `adapter.trust_region_mo_dfo` | TrustRegionMODFOAdapter | 多目标信赖域DFO：权重标度/帕累托精修。 / Adapter: MO trust-region DFO with scalarization. | adapter, core, dfo, multiobjective, strategy, trust_region | - | `nsgablack.adapters:TrustRegionMODFOAdapter` |
@@ -125,7 +125,7 @@ python -m nsgablack catalog show <key>
 |---|---|---|---|---|---|
 | `repr.binary` | BinaryInitializer | 表示组件：BinaryInitializer。 / Representation: BinaryInitializer. | binary, bit, initializer | - | `nsgablack.representation.binary:BinaryInitializer` |
 | `repr.context_gaussian` | ContextGaussianMutation | 表示组件：ContextGaussianMutation。 / Representation: ContextGaussianMutation. | context, continuous, mutation, vns | adapter.vns | `nsgablack.representation.continuous:ContextGaussianMutation` |
-| `repr.context_switch` | ContextSwitchMutator | 表示组件：ContextSwitchMutator。 / Representation: ContextSwitchMutator. | context, discrete, mutation, switch, vns | adapter.vns | `nsgablack.representation:ContextSwitchMutator` |
+| `repr.context_switch` | ContextSelectMutator | 表示组件：ContextSelectMutator。 / Representation: ContextSelectMutator. | context, discrete, mutation, switch, vns | adapter.vns | `nsgablack.representation:ContextSelectMutator` |
 | `repr.continuous` | UniformInitializer | 表示组件：UniformInitializer。 / Representation: UniformInitializer. | continuous, initializer, real | - | `nsgablack.representation.continuous:UniformInitializer` |
 | `repr.dynamic_repair` | DynamicRepair | 表示组件：DynamicRepair。 / Representation: DynamicRepair. | dynamic, pipeline, repair | - | `nsgablack.representation.dynamic:DynamicRepair` |
 | `repr.graph` | GraphEdgeInitializer | 表示组件：GraphEdgeInitializer。 / Representation: GraphEdgeInitializer. | graph, initializer, network | - | `nsgablack.representation.graph:GraphEdgeInitializer` |
@@ -139,19 +139,15 @@ python -m nsgablack catalog show <key>
 ## Plugin 列表
 | Key | Title | Summary | Tags | Companions | Import |
 |---|---|---|---|---|---|
-| `plugin.adaptive_parameters` | AdaptiveParametersPlugin | 插件：AdaptiveParametersPlugin。 / Plugin: AdaptiveParametersPlugin. | adaptive, parameters, plugin | - | `nsgablack.utils.plugins:AdaptiveParametersPlugin` |
 | `plugin.benchmark_harness` | BenchmarkHarnessPlugin | 插件：BenchmarkHarnessPlugin。 / Plugin: BenchmarkHarnessPlugin. | benchmark, comparison, logging, protocol | plugin.benchmark_harness | `nsgablack.utils.plugins:BenchmarkHarnessPlugin` |
-| `plugin.convergence_monitor` | ConvergencePlugin | 插件：ConvergencePlugin。 / Plugin: ConvergencePlugin. | convergence, monitor, plugin | - | `nsgablack.utils.plugins:ConvergencePlugin` |
 | `plugin.diversity_init` | DiversityInitPlugin | 插件：DiversityInitPlugin。 / Plugin: DiversityInitPlugin. | diversity, init, plugin | - | `nsgablack.utils.plugins:DiversityInitPlugin` |
 | `plugin.dynamic_switch` | DynamicSwitchPlugin | 插件：DynamicSwitchPlugin。 / Plugin: DynamicSwitchPlugin. | context, dynamic, plugin, switch | - | `nsgablack.utils.plugins.dynamic_switch:DynamicSwitchPlugin` |
 | `plugin.elite` | BasicElitePlugin | 插件：BasicElitePlugin。 / Plugin: BasicElitePlugin. | archive, elite, plugin | - | `nsgablack.utils.plugins:BasicElitePlugin` |
-| `plugin.mas_model` | MASModelPlugin | 插件：MASModelPlugin。 / Plugin: MASModelPlugin. | mas, surrogate | - | `nsgablack.utils.plugins:MASModelPlugin` |
 | `plugin.memory` | MemoryPlugin | 插件：MemoryPlugin。 / Plugin: MemoryPlugin. | engineering, memory, plugin | - | `nsgablack.utils.plugins:MemoryPlugin` |
 | `plugin.module_report` | ModuleReportPlugin | 插件：ModuleReportPlugin。 / Plugin: ModuleReportPlugin. | ablation, audit, bias, report | plugin.module_report, plugin.benchmark_harness | `nsgablack.utils.plugins:ModuleReportPlugin` |
-| `plugin.multi_fidelity_eval` | MultiFidelityEvaluationPlugin | 插件：MultiFidelityEvaluationPlugin。 / Plugin: MultiFidelityEvaluationPlugin. | evaluation, frontier, multi_fidelity, plugin | - | `nsgablack.utils.plugins:MultiFidelityEvaluationPlugin` |
+| `plugin.multi_fidelity_eval` | MultiFidelityEvaluationProviderPlugin | 插件：MultiFidelityEvaluationProviderPlugin。 / Plugin: MultiFidelityEvaluationProviderPlugin. | evaluation, frontier, multi_fidelity, plugin | - | `nsgablack.utils.plugins:MultiFidelityEvaluationProviderPlugin` |
 | `plugin.profiler` | ProfilerPlugin | 插件：ProfilerPlugin。 / Plugin: ProfilerPlugin. | audit, performance, profile, throughput | plugin.benchmark_harness, plugin.module_report | `nsgablack.utils.plugins:ProfilerPlugin` |
-| `plugin.subspace_basis` | SubspaceBasisPlugin | 插件：SubspaceBasisPlugin。 / Plugin: SubspaceBasisPlugin. | cluster, dfo, pca, random, sparse_pca, subspace, svd | - | `nsgablack.utils.plugins:SubspaceBasisPlugin` |
-| `plugin.surrogate_eval` | SurrogateEvaluationPlugin | 插件：SurrogateEvaluationPlugin。 / Plugin: SurrogateEvaluationPlugin. | evaluation, optional, surrogate | - | `nsgablack.utils.plugins:SurrogateEvaluationPlugin` |
+| `plugin.surrogate_eval` | SurrogateEvaluationProviderPlugin | 插件：SurrogateEvaluationProviderPlugin。 / Plugin: SurrogateEvaluationProviderPlugin. | evaluation, optional, surrogate | - | `nsgablack.utils.plugins:SurrogateEvaluationProviderPlugin` |
 
 ## Tool 列表
 | Key | Title | Summary | Tags | Companions | Import |
@@ -159,8 +155,8 @@ python -m nsgablack catalog show <key>
 | `solver.blank` | SolverBase | 工具：SolverBase。 / Tool: SolverBase. | base, blank, solver | - | `nsgablack.core.blank_solver:SolverBase` |
 | `solver.composable` | ComposableSolver | 工具：ComposableSolver。 / Tool: ComposableSolver. | adapter, composition, solver | - | `nsgablack.core.composable_solver:ComposableSolver` |
 | `solver.nsga2` | EvolutionSolver | 工具：EvolutionSolver。 / Tool: EvolutionSolver. | evolutionary, nsga2, solver | - | `nsgablack.core.evolution_solver:EvolutionSolver` |
-| `tool.context_keys` | Context Keys | 工具：Context Keys。 / Tool: Context Keys. | context, keys, schema, tool | - | `nsgablack.utils.context:context_keys` |
-| `tool.context_schema` | MinimalEvaluationContext | 工具：MinimalEvaluationContext。 / Tool: MinimalEvaluationContext. | context, parallel, schema, tool | tool.context_keys | `nsgablack.utils.context:MinimalEvaluationContext` |
+| `tool.context_keys` | Context Keys | 工具：Context Keys。 / Tool: Context Keys. | context, keys, schema, tool | - | `nsgablack.core.state:context_keys` |
+| `tool.context_schema` | MinimalEvaluationContext | 工具：MinimalEvaluationContext。 / Tool: MinimalEvaluationContext. | context, parallel, schema, tool | tool.context_keys | `nsgablack.core.state:MinimalEvaluationContext` |
 | `tool.dynamic_cli_signal` | CLISignalProvider | 工具：CLISignalProvider。 / Tool: CLISignalProvider. | cli, dynamic, signal, tool | - | `nsgablack.utils.dynamic:CLISignalProvider` |
 | `tool.logging` | configure_logging | 工具：configure_logging。 / Tool: configure_logging. | engineering, logging, tool | - | `nsgablack.utils.engineering:configure_logging` |
 | `tool.metrics` | pareto_filter | 工具：pareto_filter。 / Tool: pareto_filter. | analysis, metrics, pareto, tool | - | `nsgablack.utils.analysis:pareto_filter` |

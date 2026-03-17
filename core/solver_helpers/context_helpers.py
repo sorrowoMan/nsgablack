@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, Optional
 
 import numpy as np
 
-from ...utils.context.context_keys import (
+from ...core.state.context_keys import (
     KEY_BEST_OBJECTIVE,
     KEY_BEST_X,
     KEY_SNAPSHOT_KEY,
@@ -66,7 +66,7 @@ def build_solver_context(
         )
 
     solver._strip_large_context(ctx)
-    best_x, best_obj = solver._resolve_best_snapshot()
+    best_x, best_obj = solver._get_best_snapshot()
     ctx[KEY_BEST_X] = best_x
     ctx[KEY_BEST_OBJECTIVE] = best_obj
     if individual is not None:
@@ -123,7 +123,7 @@ def get_solver_context_view(
             continue
         ctx[key] = value
 
-    best_x, best_obj = solver._resolve_best_snapshot()
+    best_x, best_obj = solver._get_best_snapshot()
     ctx[KEY_BEST_X] = best_x
     ctx[KEY_BEST_OBJECTIVE] = best_obj
     solver._strip_large_context(ctx)

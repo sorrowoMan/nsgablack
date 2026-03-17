@@ -18,7 +18,7 @@ This guide explains how to use Redis for both `ContextStore` and `SnapshotStore`
 - Snapshot 流程：
   - 先写大对象得到 `snapshot_key`。
   - 再把 `snapshot_key`/`population_ref` 放入 Context。
-  - 消费方通过 `solver.read_snapshot()` 或 `resolve_population_snapshot()` 解析大对象。
+  - 消费方通过 `solver.read_snapshot()` 或 `get_population_snapshot()` 解析大对象。
 
 ### 3) Redis 下的典型键流转
 
@@ -53,7 +53,7 @@ This guide explains how to use Redis for both `ContextStore` and `SnapshotStore`
 - 有 `snapshot_key` 但读不到数据：
   - 看 Redis 连通性、TTL、后端写入异常。
 - 数据错位：
-  - 检查是否绕过 `read_snapshot()/resolve_population_snapshot()` 直接读旧镜像字段。
+  - 检查是否绕过 `read_snapshot()/get_population_snapshot()` 直接读旧镜像字段。
 
 ### 6) 最小配置示例
 
@@ -89,7 +89,7 @@ solver = EvolutionSolver(
 - Snapshot path:
   - Persist large payload first and get `snapshot_key`.
   - Publish only references (`snapshot_key`, `population_ref`) into context.
-  - Resolve payload via `solver.read_snapshot()` or `resolve_population_snapshot()`.
+  - Resolve payload via `solver.read_snapshot()` or `get_population_snapshot()`.
 
 ### 3) Typical key flow in Redis
 

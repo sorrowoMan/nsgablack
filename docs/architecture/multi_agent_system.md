@@ -12,7 +12,7 @@ Core idea:
 ## Building blocks
 
 - Solver base: `core/composable_solver.py` (`ComposableSolver`)
-- Controller: `adapters/multi_strategy/adapter.py` (`MultiStrategyControllerAdapter`)
+- Controller: `adapters/multi_strategy/adapter.py` (`StrategyRouterAdapter`)
 - Role wrapper + contracts: `adapters/role_adapters/adapter.py` (`RoleAdapter`)
 - Wiring pattern: direct `solver.set_adapter(...)` + optional `solver.add_plugin(ParetoArchivePlugin())`
 - Shared archive (recommended): `plugins/runtime/pareto_archive.py`

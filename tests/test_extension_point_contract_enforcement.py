@@ -37,7 +37,7 @@ def _make(cls: Type[Any]) -> Any:
     _SKIP_INSTANTIATE = {
         "AStarAdapter", "MOAStarAdapter",
         "CompositeAdapter",
-        "RoleAdapter", "MultiRoleControllerAdapter",
+        "RoleAdapter", "RoleRouterAdapter",
         "AsyncEventDrivenAdapter",
     }
     if cls.__name__ in _SKIP_INSTANTIATE:
@@ -311,7 +311,7 @@ def test_doctor_core_contract_keys_contains_all_four_fields():
                          ids=[n for n, _ in _get_all_adapter_classes()])
 def test_get_component_contract_does_not_raise(name, cls):
     """get_component_contract() must not raise for any exported adapter."""
-    from nsgablack.utils.context.context_contracts import get_component_contract
+    from nsgablack.core.state.context_contracts import get_component_contract
     if cls.__name__ == "AlgorithmAdapter":
         pytest.skip("Abstract base — not directly instantiable")
     adapter = _make(cls)
@@ -329,7 +329,7 @@ def test_get_component_contract_does_not_raise(name, cls):
                          ids=[n for n, _ in _get_all_adapter_classes()])
 def test_get_component_contract_returns_contract_instance(name, cls):
     """All adapters that declare contract fields must return a ContextContract."""
-    from nsgablack.utils.context.context_contracts import get_component_contract, ContextContract
+    from nsgablack.core.state.context_contracts import get_component_contract, ContextContract
     if cls.__name__ == "AlgorithmAdapter":
         pytest.skip("Abstract base — not directly instantiable")
     adapter = _make(cls)

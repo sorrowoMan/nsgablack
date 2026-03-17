@@ -2,8 +2,8 @@
 Context helpers (canonical keys + minimal evaluation schema + lifecycle + replay).
 
 Recommended imports:
-- `from nsgablack.utils.context import context_keys as CK`
-- `from nsgablack.utils.context.context_schema import build_minimal_context`
+- `from nsgablack.core.state import context_keys as CK`
+- `from nsgablack.core.state.context_schema import build_minimal_context`
 """
 
 from __future__ import annotations

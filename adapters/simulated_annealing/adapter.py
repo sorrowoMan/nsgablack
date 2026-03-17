@@ -63,7 +63,7 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
     # Soft partner contracts: SA communicates temperature and (optionally)
     # mutation scale via context. Representation mutator may consume these keys.
     requires_context_keys = {KEY_TEMPERATURE}
-    recommended_mutators = ["ContextGaussianMutation", "ContextSwitchMutator"]
+    recommended_mutators = ["ContextGaussianMutation", "ContextSelectMutator"]
 
     def __init__(
         self,
@@ -114,7 +114,7 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
                 "SimulatedAnnealingAdapter 未检测到 representation_pipeline.mutator；"
                 "SA 将无法产生邻域候选（会退化为几乎不移动）。"
                 "建议：连续变量用 GaussianMutation/ContextGaussianMutation；"
-                "离散/多邻域用 ContextSwitchMutator 或自定义 mutator。",
+                "离散/多邻域用 ContextSelectMutator 或自定义 mutator。",
                 RuntimeWarning,
                 stacklevel=3,
             )

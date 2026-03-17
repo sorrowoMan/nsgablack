@@ -10,9 +10,13 @@ from __future__ import annotations
 import logging
 import random
 import warnings
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
+from .acceleration import AccelerationFacade, ExecutionResult
+from .acceleration_helpers import maybe_accel_map, maybe_accel_run
 from .config import StorageConfig, _apply_storage_config
+from .control_plane import BaseController, ControlArbiter, RuntimeController
+from .evaluation_runtime import EvaluationMediator, EvaluationMediatorConfig, EvaluationProvider
 
 import numpy as np
 
@@ -39,7 +43,7 @@ from .solver_helpers import (
     evaluate_population_with_plugins_and_bias,
     get_solver_context_view,
     increment_evaluation_counter,
-    resolve_best_snapshot_fields,
+    get_best_snapshot_fields,
     run_solver_loop,
     sample_random_candidate,
     set_best_snapshot_fields,
@@ -48,7 +52,7 @@ from .solver_helpers import (
     snapshot_meta,
     strip_large_context_fields,
 )
-from ..utils.context.context_keys import (
+from ..core.state.context_keys import (
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_CONSTRAINT_VIOLATIONS_REF,
     KEY_DECISION_TRACE,
@@ -67,8 +71,8 @@ from ..utils.context.context_keys import (
     KEY_SNAPSHOT_META,
     KEY_SNAPSHOT_SCHEMA,
 )
-from ..utils.context.context_store import ContextStore
-from ..utils.context.snapshot_store import SnapshotStore, make_snapshot_key
+from ..core.state.context_store import ContextStore
+from ..core.state.snapshot_store import SnapshotStore, make_snapshot_key
 from ..utils.engineering.error_policy import report_soft_error
 from ..utils.extension_contracts import (
     normalize_bias_output,
@@ -157,9 +161,22 @@ class SolverBase:
         # - evaluate_population: plugin takeover (surrogate/cache/layered eval)
         # - evaluate_individual: per-candidate override
         self.plugin_manager = PluginManager(
-            short_circuit=True,
-            short_circuit_events=["evaluate_population", "evaluate_individual"],
+            short_circuit=False,
+            short_circuit_events=[],
             strict=bool(plugin_strict),
+        )
+        # L0: cross-cutting acceleration infrastructure (not plugin-ordered).
+        self.accel = AccelerationFacade()
+        self._accel_default_backends: dict[str, str] = {}
+        # L3: runtime control-plane (slot/domain arbitration).
+        self.control_arbiter = ControlArbiter(strict=bool(plugin_strict))
+        self.runtime_controller = RuntimeController(arbiter=self.control_arbiter)
+        # L4: single evaluation mediation entry.
+        self.evaluation_mediator = EvaluationMediator(
+            EvaluationMediatorConfig(
+                allow_approximate=False,
+                strict_conflict=True,
+            )
         )
         self._plugin_scheduler = ComponentDependencyScheduler()
         self.plugin_strict = bool(plugin_strict)
@@ -572,11 +589,41 @@ class SolverBase:
         except Exception as exc:
             raise RuntimeError(f"Plugin order validation failed: {exc}") from exc
 
+    def validate_control_plane(self) -> None:
+        try:
+            self.runtime_controller.validate_configuration()
+        except Exception as exc:
+            raise RuntimeError(f"Runtime controller validation failed: {exc}") from exc
+
     # ------------------------------------------------------------------
     # Control-plane wiring helpers (preferred over direct attribute writes)
     # ------------------------------------------------------------------
     def set_adapter(self, adapter: Any) -> None:
         setattr(self, "adapter", adapter)
+
+    def set_strategy_controller(self, controller: Any) -> None:
+        """Set a strategy controller adapter (serial or multi-strategy)."""
+        setattr(self, "adapter", controller)
+
+    def set_phase_controller(self, phases: Any, *, name: str = "serial_phase_controller") -> None:
+        """Convenience: build a StrategyChainAdapter from phases."""
+        try:
+            from ..adapters.serial_strategy import StrategyChainAdapter, SerialPhaseSpec
+        except Exception as exc:
+            raise RuntimeError("StrategyChainAdapter is unavailable") from exc
+        specs = []
+        for item in phases:
+            if isinstance(item, SerialPhaseSpec):
+                specs.append(item)
+                continue
+            if isinstance(item, tuple) and len(item) >= 2:
+                pname, adapter = item[0], item[1]
+                steps = int(item[2]) if len(item) > 2 else -1
+                specs.append(SerialPhaseSpec(name=str(pname), adapter=adapter, steps=steps))
+                continue
+            raise ValueError("phase entries must be SerialPhaseSpec or (name, adapter[, steps])")
+        controller = StrategyChainAdapter(phases=specs, name=str(name))
+        setattr(self, "adapter", controller)
 
     def set_bias_module(self, bias_module: Optional[BiasInterface], enable: Optional[bool] = None) -> None:
         self.bias_module = bias_module
@@ -588,7 +635,7 @@ class SolverBase:
         elif bias_module is not None:
             self.enable_bias = True
 
-    def set_enable_bias(self, enable: bool) -> None:
+    def set_bias_enabled(self, enable: bool) -> None:
         self.enable_bias = bool(enable)
         if bool(enable) and self._bias_module_internal is None and not hasattr(self, "_bias_module_cached"):
             self.init_bias_module()
@@ -603,6 +650,135 @@ class SolverBase:
 
     def has_numba_support(self) -> bool:
         return bool(has_numba())
+
+    def register_controller(self, controller: BaseController) -> None:
+        self.runtime_controller.register_controller(controller)
+
+    def register_evaluation_provider(self, provider: EvaluationProvider) -> None:
+        self.evaluation_mediator.register_provider(provider)
+
+    def register_acceleration_backend(self, *, scope: str, backend: str, factory: Any) -> None:
+        self.accel.register(scope=scope, backend=backend, factory=factory)
+
+    def get_acceleration_backend(self, *, scope: str, backend: str = "default", **kwargs: Any) -> Any:
+        return self.accel.get(scope=scope, backend=backend, **kwargs)
+
+    def set_acceleration_default_backend(self, *, scope: str, backend: str) -> None:
+        self._accel_default_backends[str(scope)] = str(backend)
+
+    def get_acceleration_default_backend(self, *, scope: str) -> Optional[str]:
+        return self._accel_default_backends.get(str(scope))
+
+    def accel_run(
+        self,
+        *,
+        scope: str,
+        task: str,
+        payload: Mapping[str, Any],
+        backend: Optional[str] = None,
+        hints: Optional[Mapping[str, Any]] = None,
+        context: Optional[Mapping[str, Any]] = None,
+        inline_if_missing: bool = True,
+    ) -> ExecutionResult:
+        chosen = backend if backend is not None else self.get_acceleration_default_backend(scope=scope)
+        if chosen is None and inline_if_missing:
+            return maybe_accel_run(
+                solver=self,
+                scope=scope,
+                task=task,
+                payload=payload,
+                backend=None,
+                hints=hints,
+                context=context,
+            )
+        return self.accel.run(
+            scope=scope,
+            task=task,
+            payload=payload,
+            backend=chosen,
+            hints=hints,
+            context=context,
+        )
+
+    def accel_map(
+        self,
+        *,
+        scope: str,
+        task: str,
+        items: Iterable[Any],
+        call: Any,
+        backend: Optional[str] = None,
+        hints: Optional[Mapping[str, Any]] = None,
+        context: Optional[Mapping[str, Any]] = None,
+        inline_if_missing: bool = True,
+    ) -> ExecutionResult:
+        chosen = backend if backend is not None else self.get_acceleration_default_backend(scope=scope)
+        if chosen is None and inline_if_missing:
+            return maybe_accel_map(
+                solver=self,
+                scope=scope,
+                task=task,
+                items=items,
+                call=call,
+                backend=None,
+                hints=hints,
+                context=context,
+            )
+        return self.accel.map(
+            scope=scope,
+            task=task,
+            items=items,
+            call=call,
+            backend=chosen,
+            hints=hints,
+            context=context,
+        )
+
+    def accel_submit(
+        self,
+        *,
+        scope: str,
+        task: str,
+        payload: Mapping[str, Any],
+        backend: Optional[str] = None,
+        hints: Optional[Mapping[str, Any]] = None,
+        context: Optional[Mapping[str, Any]] = None,
+    ) -> Any:
+        chosen = backend if backend is not None else self.get_acceleration_default_backend(scope=scope)
+        if chosen is None:
+            raise ValueError("accel_submit requires an explicit backend or a configured default backend")
+        return self.accel.submit(
+            scope=scope,
+            task=task,
+            payload=payload,
+            backend=chosen,
+            hints=hints,
+            context=context,
+        )
+
+    def accel_map_async(
+        self,
+        *,
+        scope: str,
+        task: str,
+        items: Iterable[Any],
+        call: Any,
+        backend: Optional[str] = None,
+        hints: Optional[Mapping[str, Any]] = None,
+        context: Optional[Mapping[str, Any]] = None,
+    ) -> Any:
+        chosen = backend if backend is not None else self.get_acceleration_default_backend(scope=scope)
+        if chosen is None:
+            raise ValueError("accel_map_async requires an explicit backend or a configured default backend")
+        return self.accel.map_async(
+            scope=scope,
+            task=task,
+            items=items,
+            call=call,
+            backend=chosen,
+            hints=hints,
+            context=context,
+        )
 
     def set_max_steps(self, max_steps: int) -> None:
         self.max_steps = int(max_steps)
@@ -636,8 +812,8 @@ class SolverBase:
             logger=logger,
         )
 
-    def resolve_best_snapshot(self) -> Tuple[Optional[Any], Optional[float]]:
-        return self._resolve_best_snapshot()
+    def get_best_snapshot(self) -> Tuple[Optional[Any], Optional[float]]:
+        return self._get_best_snapshot()
 
     def set_solver_hyperparams(
         self,
@@ -1077,8 +1253,8 @@ class SolverBase:
     def _ensure_snapshot_readable(self, ctx: Dict[str, Any]) -> None:
         ensure_snapshot_readable(self, ctx)
 
-    def _resolve_best_snapshot(self) -> Tuple[Optional[Any], Optional[float]]:
-        return resolve_best_snapshot_fields(
+    def _get_best_snapshot(self) -> Tuple[Optional[Any], Optional[float]]:
+        return get_best_snapshot_fields(
             self,
             report_soft_error_fn=report_soft_error,
             logger=logger,
@@ -1118,6 +1294,11 @@ class SolverBase:
     # ------------------------------------------------------------------
     # Minimal runtime loop (override step() for custom logic)
     # ------------------------------------------------------------------
+    def _apply_runtime_control_slot(self, slot: str) -> None:
+        from .solver_helpers import apply_runtime_control_slot
+
+        apply_runtime_control_slot(self, slot=str(slot))
+
     def request_stop(self) -> None:
         self.stop_requested = True
 
@@ -1132,6 +1313,7 @@ class SolverBase:
 
     def run(self, max_steps: Optional[int] = None) -> Dict[str, Any]:
         self.validate_plugin_order()
+        self.validate_control_plane()
         return run_solver_loop(self, max_steps=max_steps)
 
     # ------------------------------------------------------------------

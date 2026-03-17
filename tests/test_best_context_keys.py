@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from nsgablack.utils.context.context_keys import KEY_BEST_OBJECTIVE, KEY_BEST_X
+from nsgablack.core.state.context_keys import KEY_BEST_OBJECTIVE, KEY_BEST_X
 
 
 def test_composable_solver_exposes_best_context_keys(sample_problem) -> None:

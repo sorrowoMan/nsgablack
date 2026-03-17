@@ -41,14 +41,14 @@
 - `provides_metrics: set[str]`（如果它往 `context["metrics"]` 注入信号/统计）
 - `short_circuit` 事件必须在 README/docstring 写清楚（接管了哪些事件）
 
-例：`MonteCarloEvaluationPlugin.provides_metrics = {"mc_std", ...}`
+例：`MonteCarloEvaluationProviderPlugin.provides_metrics = {"mc_std", ...}`
 
 ### 1.3 Adapter
 
 - `requires_context_keys: set[str]`（它会往 context 写什么，也希望算子消费什么）
 - `recommended_mutators: list[str]` / `recommended_plugins: list[str]`
 
-例：`VNSAdapter.recommended_mutators = ["ContextGaussianMutation", "ContextSwitchMutator"]`
+例：`VNSAdapter.recommended_mutators = ["ContextGaussianMutation", "ContextSelectMutator"]`
 
 ---
 
@@ -79,7 +79,7 @@
 配套算子：
 
 - 连续：`ContextGaussianMutation(sigma_key="mutation_sigma")`
-- 多邻域切换：`ContextSwitchMutator(k_key="vns_k")`
+- 多邻域切换：`ContextSelectMutator(k_key="vns_k")`
 
 ---
 

@@ -168,17 +168,9 @@ def _fix_registry(path: str) -> None:
             "MOEA/D 分解偏置，按权重/子问题提供选择信号。",
             "MOEA/D decomposition bias providing selection signals.",
         ),
-        "plugin.adaptive_parameters": (
-            "自适应参数插件，按进度/信号调参。",
-            "Adaptive parameters plugin adjusting parameters by progress/signals.",
-        ),
         "plugin.elite": (
             "精英保留插件，提高稳定性与收敛可靠性。",
             "Elite retention plugin for stability and convergence.",
-        ),
-        "plugin.convergence_monitor": (
-            "收敛监控插件，可选早停。",
-            "Convergence monitor plugin with optional early stop.",
         ),
         "plugin.diversity_init": (
             "多样性初始化插件，提高初始覆盖。",

@@ -5,7 +5,7 @@ This case provides `project_registry.py` with local Catalog entries.
 Rules:
 - register solver entry (`build_solver:build_solver`)
 - register outer problem component
-- register inner evaluation model component
+- register inner production solver component
 
 Run:
 

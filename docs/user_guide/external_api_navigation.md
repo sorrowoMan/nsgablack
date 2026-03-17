@@ -46,7 +46,7 @@ Custom workflow / non-evolutionary prototype:
 
 Expensive black-box evaluation (cache / surrogate / short-circuit):
 
-- Plugin: `plugins/evaluation/surrogate_evaluation.py` (`SurrogateEvaluationPlugin`)
+- Plugin: `plugins/evaluation/surrogate_evaluation.py` (`SurrogateEvaluationProviderPlugin`)
 
 Multi-strategy cooperation (roles + many units + shared facts):
 

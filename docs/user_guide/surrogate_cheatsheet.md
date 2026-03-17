@@ -7,7 +7,7 @@ In NSGABlack, surrogate support is treated as a *capability layer*:
 
 ## Recommended entrypoints
 
-- Plugin: `plugins/evaluation/surrogate_evaluation.py` (`SurrogateEvaluationPlugin`)
+- Plugin: `plugins/evaluation/surrogate_evaluation.py` (`SurrogateEvaluationProviderPlugin`)
 - Docs: `docs/user_guide/surrogate_workflow.md`
 
 ## Typical usage pattern

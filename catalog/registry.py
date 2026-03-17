@@ -517,9 +517,9 @@ def _default_entries() -> List[CatalogEntry]:
         ),
         CatalogEntry(
             key="adapter.multi_strategy",
-            title="MultiStrategyControllerAdapter",
+            title="StrategyRouterAdapter",
             kind="adapter",
-            import_path="nsgablack.adapters:MultiStrategyControllerAdapter",
+            import_path="nsgablack.adapters:StrategyRouterAdapter",
             tags=('adapter', 'controller', 'cooperation', 'core', 'multi_strategy', 'parallel', 'roles', 'strategy'),
             summary="多策略协同控制器：统一调度、共享状态与动态预算。 / Adapter: multi-strategy controller with unified scheduling/shared state/dynamic budgets.",
             companions=("plugin.pareto_archive",),
@@ -528,8 +528,8 @@ def _default_entries() -> List[CatalogEntry]:
                 "需要把多个 adapter 组合成同一运行回路时",
             ),
             minimal_wiring=(
-                "from nsgablack.adapters import MultiStrategyControllerAdapter",
-                "solver.set_adapter(MultiStrategyControllerAdapter(...))",
+                "from nsgablack.adapters import StrategyRouterAdapter",
+                "solver.set_adapter(StrategyRouterAdapter(...))",
             ),
             required_companions=("plugin.pareto_archive",),
             config_keys=("roles", "total_batch_size", "phase_schedule", "seed"),
@@ -703,8 +703,15 @@ def _default_entries() -> List[CatalogEntry]:
                 "from nsgablack.adapters import TrustRegionSubspaceAdapter",
                 "solver.set_adapter(TrustRegionSubspaceAdapter())",
             ),
-            required_companions=("plugin.subspace_basis",),
-            config_keys=("batch_size", "subspace_dim", "initial_radius", "update_every"),
+            required_companions=(),
+            config_keys=(
+                "batch_size",
+                "subspace_dim",
+                "basis_method",
+                "min_samples",
+                "initial_radius",
+                "resample_every",
+            ),
             example_entry="examples/trust_region_subspace_demo.py:build_solver",
         ),
         CatalogEntry(
@@ -741,8 +748,17 @@ def _default_entries() -> List[CatalogEntry]:
                 "from nsgablack.adapters import MASAdapter",
                 "solver.set_adapter(MASAdapter())",
             ),
-            required_companions=("plugin.mas_model",),
-            config_keys=("batch_size", "explore_ratio", "exploit_ratio", "seed"),
+            required_companions=(),
+            config_keys=(
+                "batch_size",
+                "exploration_ratio",
+                "enable_surrogate",
+                "surrogate_model_type",
+                "surrogate_min_train_samples",
+                "surrogate_max_train_samples",
+                "surrogate_retrain_every_call",
+                "random_seed",
+            ),
             example_entry="examples/mas_demo.py:build_solver",
         ),
         # --- Biases (algorithmic) ---
@@ -1085,52 +1101,6 @@ def _default_entries() -> List[CatalogEntry]:
         ),
         # --- Representation helpers ---
         CatalogEntry(
-            key="plugin.mas_model",
-            title="MASModelPlugin",
-            kind="plugin",
-            import_path="nsgablack.plugins.models.mas_model:MASModelPlugin",
-            tags=('mas', 'surrogate'),
-            summary="\u63d2\u4ef6\uff1aMASModelPlugin\u3002 / Plugin: MASModelPlugin.",
-            use_when=(
-                '需要记录/审查/并行/评估增强等工程能力时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.plugins.models.mas_model import MASModelPlugin',
-                'solver.add_plugin(MASModelPlugin())',
-            ),
-            required_companions=(
-                '(none)',
-            ),
-            config_keys=(
-                'name',
-                'config',
-            ),
-            example_entry='python -m nsgablack catalog search mas_model --kind example',
-        ),
-        CatalogEntry(
-            key="plugin.subspace_basis",
-            title="SubspaceBasisPlugin",
-            kind="plugin",
-            import_path="nsgablack.plugins.models.subspace_basis:SubspaceBasisPlugin",
-            tags=('cluster', 'dfo', 'pca', 'random', 'sparse_pca', 'subspace', 'svd'),
-            summary="\u63d2\u4ef6\uff1aSubspaceBasisPlugin\u3002 / Plugin: SubspaceBasisPlugin.",
-            use_when=(
-                '需要记录/审查/并行/评估增强等工程能力时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.plugins.models.subspace_basis import SubspaceBasisPlugin',
-                'solver.add_plugin(SubspaceBasisPlugin())',
-            ),
-            required_companions=(
-                '(none)',
-            ),
-            config_keys=(
-                'name',
-                'config',
-            ),
-            example_entry='python -m nsgablack catalog search subspace_basis --kind example',
-        ),
-        CatalogEntry(
             key="repr.context_gaussian",
             title="ContextGaussianMutation",
             kind="representation",
@@ -1155,17 +1125,17 @@ def _default_entries() -> List[CatalogEntry]:
         ),
         CatalogEntry(
             key="repr.context_switch",
-            title="ContextSwitchMutator",
+            title="ContextSelectMutator",
             kind="representation",
-            import_path="nsgablack.representation:ContextSwitchMutator",
+            import_path="nsgablack.representation:ContextSelectMutator",
             tags=('context', 'discrete', 'mutation', 'switch', 'vns'),
-            summary="\u8868\u793a\u7ec4\u4ef6\uff1aContextSwitchMutator\u3002 / Representation: ContextSwitchMutator.",
+            summary="\u8868\u793a\u7ec4\u4ef6\uff1aContextSelectMutator\u3002 / Representation: ContextSelectMutator.",
             companions=("adapter.vns",),
             use_when=(
                 'Need to wire representation initializer/mutator/repair behavior.',
             ),
             minimal_wiring=(
-                'from nsgablack.representation import ContextSwitchMutator',
+                'from nsgablack.representation import ContextSelectMutator',
                 'Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.',
             ),
             required_companions=(
@@ -1334,33 +1304,6 @@ def _default_entries() -> List[CatalogEntry]:
 
         # --- Plugins (more capabilities) ---
         CatalogEntry(
-            key="plugin.adaptive_parameters",
-            title="AdaptiveParametersPlugin",
-            kind="plugin",
-            import_path="nsgablack.plugins.runtime.adaptive_parameters:AdaptiveParametersPlugin",
-            tags=('adaptive', 'parameters', 'plugin'),
-            summary="\u63d2\u4ef6\uff1aAdaptiveParametersPlugin\u3002 / Plugin: AdaptiveParametersPlugin.",
-            use_when=(
-                '需要记录/审查/并行/评估增强等工程能力时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.plugins.runtime.adaptive_parameters import AdaptiveParametersPlugin',
-                'solver.add_plugin(AdaptiveParametersPlugin())',
-            ),
-            required_companions=(
-                '(none)',
-            ),
-            config_keys=(
-                'stagnation_window',
-                'improvement_threshold',
-                'min_mutation_rate',
-                'max_mutation_rate',
-                'min_crossover_rate',
-                'max_crossover_rate',
-            ),
-            example_entry='python -m nsgablack catalog search adaptive_parameters --kind example',
-        ),
-        CatalogEntry(
             key="plugin.elite",
             title="BasicElitePlugin",
             kind="plugin",
@@ -1382,32 +1325,6 @@ def _default_entries() -> List[CatalogEntry]:
                 'retention_ratio',
             ),
             example_entry='python -m nsgablack catalog search elite --kind example',
-        ),
-        CatalogEntry(
-            key="plugin.convergence_monitor",
-            title="ConvergencePlugin",
-            kind="plugin",
-            import_path="nsgablack.plugins.runtime.convergence:ConvergencePlugin",
-            tags=('convergence', 'monitor', 'plugin'),
-            summary="\u63d2\u4ef6\uff1aConvergencePlugin\u3002 / Plugin: ConvergencePlugin.",
-            use_when=(
-                '需要记录/审查/并行/评估增强等工程能力时',
-            ),
-            minimal_wiring=(
-                'from nsgablack.plugins.runtime.convergence import ConvergencePlugin',
-                'solver.add_plugin(ConvergencePlugin())',
-            ),
-            required_companions=(
-                '(none)',
-            ),
-            config_keys=(
-                'stagnation_window',
-                'improvement_epsilon',
-                'diversity_threshold',
-                'min_generations',
-                'enable_early_stop',
-            ),
-            example_entry='python -m nsgablack catalog search convergence_monitor --kind example',
         ),
         CatalogEntry(
             key="plugin.diversity_init",
@@ -1639,14 +1556,14 @@ def _default_entries() -> List[CatalogEntry]:
             key="tool.context_keys",
             title="Context Keys",
             kind="tool",
-            import_path="nsgablack.utils.context:context_keys",
+            import_path="nsgablack.core.state:context_keys",
             tags=('context', 'keys', 'schema', 'tool'),
             summary="\u5de5\u5177\uff1aContext Keys\u3002 / Tool: Context Keys.",
             use_when=(
                 'Need this utility/tool in workflow assembly or diagnostics.',
             ),
             minimal_wiring=(
-                'from nsgablack.utils.context import context_keys',
+                'from nsgablack.core.state import context_keys',
                 'context_keys()',
             ),
             required_companions=(
@@ -1661,7 +1578,7 @@ def _default_entries() -> List[CatalogEntry]:
             key="tool.context_schema",
             title="MinimalEvaluationContext",
             kind="tool",
-            import_path="nsgablack.utils.context:MinimalEvaluationContext",
+            import_path="nsgablack.core.state:MinimalEvaluationContext",
             tags=('context', 'parallel', 'schema', 'tool'),
             summary="\u5de5\u5177\uff1aMinimalEvaluationContext\u3002 / Tool: MinimalEvaluationContext.",
             companions=("tool.context_keys",),
@@ -1669,7 +1586,7 @@ def _default_entries() -> List[CatalogEntry]:
                 'Need this utility/tool in workflow assembly or diagnostics.',
             ),
             minimal_wiring=(
-                'from nsgablack.utils.context import MinimalEvaluationContext',
+                'from nsgablack.core.state import MinimalEvaluationContext',
                 'MinimalEvaluationContext()',
             ),
             required_companions=(
@@ -2316,7 +2233,40 @@ def _default_entries() -> List[CatalogEntry]:
     ]
 
 
-_CATALOG: Optional[Catalog] = None
+_CATALOG_BY_PROFILE: Dict[str, Catalog] = {}
+
+
+def _normalize_catalog_profile(profile: Optional[str]) -> str:
+    raw = str(profile or os.environ.get("NSGABLACK_CATALOG_PROFILE", "default")).strip().lower()
+    if raw in {"framework-core", "framework_core", "core"}:
+        return "framework-core"
+    return "default"
+
+
+def _uses_examples_path(text: str) -> bool:
+    raw = str(text or "").lower()
+    return (
+        "examples/" in raw
+        or "examples\\" in raw
+        or "nsgablack.examples_registry" in raw
+    )
+
+
+def _apply_catalog_profile(entries: Sequence[CatalogEntry], profile: str) -> List[CatalogEntry]:
+    normalized = _normalize_catalog_profile(profile)
+    if normalized != "framework-core":
+        return list(entries)
+
+    out: List[CatalogEntry] = []
+    for entry in entries:
+        if entry.kind in {"example", "doc"}:
+            continue
+        if _uses_examples_path(entry.import_path):
+            continue
+        if _uses_examples_path(entry.example_entry):
+            entry = replace(entry, example_entry="")
+        out.append(entry)
+    return out
 
 
 def _load_entrypoint_entries() -> List[CatalogEntry]:
@@ -2556,9 +2506,10 @@ def _load_external_entries() -> List[CatalogEntry]:
     return out
 
 
-def get_catalog(*, refresh: bool = False) -> Catalog:
-    global _CATALOG
-    if refresh or _CATALOG is None:
+def get_catalog(*, refresh: bool = False, profile: Optional[str] = None) -> Catalog:
+    global _CATALOG_BY_PROFILE
+    profile_name = _normalize_catalog_profile(profile)
+    if refresh or profile_name not in _CATALOG_BY_PROFILE:
         from .usage import enrich_context_contracts, enrich_usage_contracts
 
         base = _default_entries()
@@ -2574,10 +2525,12 @@ def get_catalog(*, refresh: bool = False) -> Catalog:
             merged[e.key] = e
         for e in eps:
             merged[e.key] = e
+        profiled_entries = _apply_catalog_profile(list(merged.values()), profile_name)
+
         enriched = enrich_context_contracts(
-            list(merged.values()),
+            profiled_entries,
             kinds=("plugin", "adapter", "bias", "representation"),
         )
         enriched = enrich_usage_contracts(enriched)
-        _CATALOG = Catalog(enriched)
-    return _CATALOG
+        _CATALOG_BY_PROFILE[profile_name] = Catalog(enriched)
+    return _CATALOG_BY_PROFILE[profile_name]

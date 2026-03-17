@@ -22,6 +22,7 @@ import numpy as np
 
 from ..algorithm_adapter import AlgorithmAdapter
 from ...utils.context.context_keys import (
+    KEY_GENERATION,
     KEY_CANDIDATE_ROLES,
     KEY_CANDIDATE_UNITS,
     KEY_ROLE,
@@ -76,6 +77,25 @@ class UnitSpec:
 
 
 @dataclass
+class MultiStrategyControlRule:
+    """Declarative runtime rule (advance_when-like) for MultiStrategy control."""
+
+    name: str = "rule"
+    when: Optional[Callable[[Dict[str, Any]], bool]] = None
+    # Optional expression DSL (no lambda required), e.g.:
+    # {"all": [{"ge": ["$generation", 20]}, {"eq": ["$context.mode", "exploit"]}]}
+    when_dsl: Optional[Dict[str, Any]] = None
+    # Optional action DSL (no lambda required), e.g.:
+    # {"set_phase": "exploit", "enable_roles": ["vns"], "weight_multipliers": {"vns": 2.0}}
+    then: Optional[Dict[str, Any]] = None
+    set_phase: Optional[str] = None
+    enable_roles: Optional[Sequence[str]] = None
+    disable_roles: Optional[Sequence[str]] = None
+    weight_multipliers: Optional[Dict[str, float]] = None
+    weight_overrides: Optional[Dict[str, float]] = None
+
+
+@dataclass
 class MultiStrategyConfig:
     # Total candidates per step across all strategies.
     total_batch_size: int = 64
@@ -93,6 +113,23 @@ class MultiStrategyConfig:
     stagnation_window: int = 10  # steps without improvement to consider stagnant
     min_weight: float = 0.05
     max_weight: float = 10.0
+
+    # Optional policy hooks (context-driven control).
+    # - phase_policy(ctx) -> phase_name or (phase_name, phase_step)
+    # - role_enable_policy(role, ctx) -> bool
+    # - role_weight_policy(role, current_weight, ctx) -> new_weight
+    phase_policy: Optional[Callable[[Dict[str, Any]], Optional[Union[str, Tuple[str, int]]]]] = None
+    role_enable_policy: Optional[Callable[[str, Dict[str, Any]], bool]] = None
+    role_weight_policy: Optional[Callable[[str, float, Dict[str, Any]], float]] = None
+
+    # Declarative control rules (advance_when-like syntax):
+    # - Functional: rule.when(ctx) -> bool
+    # - DSL: rule.when_dsl / rule.then
+    #   Supported condition forms:
+    #   1) {"all": [expr, ...]} / {"any": [expr, ...]} / {"not": expr}
+    #   2) {"eq|ne|gt|ge|lt|le|in|not_in": [left, right]}
+    #   Variable reference: "$generation" or {"var": "context.signal"}
+    control_rules: Tuple[MultiStrategyControlRule, ...] = ()
 
     # ------------------------------------------------------------
     # Phase scheduling (macro-serial, micro-parallel)
@@ -123,7 +160,7 @@ class MultiStrategyConfig:
     seeds_source: str = "pareto"  # "pareto" or "best"
 
 
-class MultiStrategyControllerAdapter(AlgorithmAdapter):
+class StrategyRouterAdapter(AlgorithmAdapter):
     """
     Controller adapter that orchestrates multiple child adapters.
 
@@ -174,7 +211,7 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
             config=config,
             config_cls=MultiStrategyConfig,
             config_kwargs=config_kwargs,
-            adapter_name="MultiStrategyControllerAdapter",
+            adapter_name="StrategyRouterAdapter",
         )
         self.cfg = self.config
         self.strategies: List[StrategySpec] = list(strategies or [])
@@ -208,7 +245,7 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
         self._unit_region: Dict[Tuple[str, int], int] = {}
 
         if self.roles and self.strategies:
-            raise ValueError("MultiStrategyControllerAdapter: provide either strategies=... or roles=..., not both.")
+            raise ValueError("StrategyRouterAdapter: provide either strategies=... or roles=..., not both.")
 
     def setup(self, solver: Any) -> None:
         self._rng = self.create_local_rng(solver)
@@ -327,16 +364,302 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
                 w *= float(mult)
         return w
 
-    def _allocate_role_budgets(self) -> Dict[str, int]:
+    def _build_runtime_rule_context(
+        self,
+        solver: Any,
+        context: Dict[str, Any],
+        *,
+        phase: str,
+        phase_step: int,
+    ) -> Dict[str, Any]:
+        out = self._build_policy_context(solver, context, phase=phase, phase_step=phase_step)
+        try:
+            out.setdefault("generation", int(getattr(solver, "generation", context.get(KEY_GENERATION, 0))))
+        except Exception:
+            pass
+        try:
+            out.setdefault("best_objective", getattr(solver, "best_objective", None))
+        except Exception:
+            pass
+        try:
+            out.setdefault("best_x", getattr(solver, "best_x", None))
+        except Exception:
+            pass
+        try:
+            out.setdefault("evaluation_count", getattr(solver, "evaluation_count", None))
+        except Exception:
+            pass
+        return out
+
+    @staticmethod
+    def _dsl_get_value_by_path(obj: Any, path: str, default: Any = None) -> Any:
+        if path is None:
+            return default
+        text = str(path).strip()
+        if not text:
+            return default
+        parts = text.split(".")
+        cur = obj
+        for part in parts:
+            if isinstance(cur, dict):
+                if part not in cur:
+                    return default
+                cur = cur.get(part)
+                continue
+            if hasattr(cur, part):
+                cur = getattr(cur, part)
+                continue
+            return default
+        return cur
+
+    def _dsl_resolve(self, token: Any, rule_ctx: Dict[str, Any]) -> Any:
+        if isinstance(token, dict) and "var" in token:
+            return self._dsl_get_value_by_path(rule_ctx, str(token.get("var")), None)
+        if isinstance(token, str) and token.startswith("$"):
+            return self._dsl_get_value_by_path(rule_ctx, token[1:], None)
+        return token
+
+    def _dsl_eval(self, expr: Any, rule_ctx: Dict[str, Any]) -> bool:
+        if expr is None:
+            return True
+        if not isinstance(expr, dict):
+            return bool(self._dsl_resolve(expr, rule_ctx))
+
+        if "all" in expr:
+            items = expr.get("all") or []
+            return all(self._dsl_eval(item, rule_ctx) for item in list(items))
+        if "any" in expr:
+            items = expr.get("any") or []
+            return any(self._dsl_eval(item, rule_ctx) for item in list(items))
+        if "not" in expr:
+            return not self._dsl_eval(expr.get("not"), rule_ctx)
+
+        op_map = {
+            "eq": lambda a, b: a == b,
+            "ne": lambda a, b: a != b,
+            "gt": lambda a, b: a > b,
+            "ge": lambda a, b: a >= b,
+            "lt": lambda a, b: a < b,
+            "le": lambda a, b: a <= b,
+            "in": lambda a, b: a in b,
+            "not_in": lambda a, b: a not in b,
+        }
+        for op, fn in op_map.items():
+            if op not in expr:
+                continue
+            pair = expr.get(op)
+            if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+                return False
+            left = self._dsl_resolve(pair[0], rule_ctx)
+            right = self._dsl_resolve(pair[1], rule_ctx)
+            try:
+                return bool(fn(left, right))
+            except Exception:
+                return False
+
+        if "op" in expr:
+            op = str(expr.get("op") or "").strip().lower()
+            pair = [expr.get("left"), expr.get("right")]
+            if op not in op_map:
+                return False
+            left = self._dsl_resolve(pair[0], rule_ctx)
+            right = self._dsl_resolve(pair[1], rule_ctx)
+            try:
+                return bool(op_map[op](left, right))
+            except Exception:
+                return False
+
+        return bool(expr)
+
+    @staticmethod
+    def _list_to_str_set(value: Any) -> Optional[set[str]]:
+        if value is None:
+            return None
+        if not isinstance(value, (list, tuple, set)):
+            return None
+        return {str(v) for v in value}
+
+    def _rule_action_payload(self, rule: MultiStrategyControlRule) -> Dict[str, Any]:
+        enable_roles = self._list_to_str_set(rule.enable_roles) or set()
+        disable_roles = self._list_to_str_set(rule.disable_roles) or set()
+        weight_multipliers = dict(rule.weight_multipliers or {})
+        weight_overrides = dict(rule.weight_overrides or {})
+        set_phase = rule.set_phase
+
+        then = rule.then if isinstance(rule.then, dict) else {}
+        if "set_phase" in then and then.get("set_phase") is not None:
+            set_phase = str(then.get("set_phase"))
+
+        then_enable = self._list_to_str_set(then.get("enable_roles"))
+        if then_enable:
+            enable_roles.update(then_enable)
+
+        then_disable = self._list_to_str_set(then.get("disable_roles"))
+        if then_disable:
+            disable_roles.update(then_disable)
+
+        then_mult = then.get("weight_multipliers")
+        if isinstance(then_mult, dict):
+            for role, mult in then_mult.items():
+                role_str = str(role)
+                current = float(weight_multipliers.get(role_str, 1.0))
+                weight_multipliers[role_str] = current * float(mult)
+
+        then_override = then.get("weight_overrides")
+        if isinstance(then_override, dict):
+            for role, value in then_override.items():
+                weight_overrides[str(role)] = float(value)
+
+        return {
+            "set_phase": None if set_phase is None else str(set_phase),
+            "enable_roles": enable_roles,
+            "disable_roles": disable_roles,
+            "weight_multipliers": weight_multipliers,
+            "weight_overrides": weight_overrides,
+        }
+
+    def _evaluate_control_rules(self, rule_ctx: Dict[str, Any]) -> Dict[str, Any]:
+        matched: List[str] = []
+        force_phase: Optional[str] = None
+        enabled_roles: set[str] = set()
+        has_enable_roles = False
+        disabled_roles: set[str] = set()
+        weight_multipliers: Dict[str, float] = {}
+        weight_overrides: Dict[str, float] = {}
+
+        for idx, rule in enumerate(tuple(self.cfg.control_rules or ())):
+            if not isinstance(rule, MultiStrategyControlRule):
+                continue
+            cond = rule.when
+            should_apply = True
+            if callable(cond):
+                try:
+                    should_apply = bool(cond(dict(rule_ctx)))
+                except Exception:
+                    should_apply = False
+            elif isinstance(rule.when_dsl, dict):
+                try:
+                    should_apply = bool(self._dsl_eval(rule.when_dsl, dict(rule_ctx)))
+                except Exception:
+                    should_apply = False
+            if not should_apply:
+                continue
+
+            matched.append(str(rule.name or f"rule_{idx}"))
+            action = self._rule_action_payload(rule)
+            if action.get("set_phase") is not None:
+                force_phase = str(action.get("set_phase"))
+            if action.get("enable_roles"):
+                has_enable_roles = True
+                enabled_roles.update(action.get("enable_roles") or set())
+            if action.get("disable_roles"):
+                disabled_roles.update(action.get("disable_roles") or set())
+            if isinstance(action.get("weight_multipliers"), dict):
+                for role, mult in (action.get("weight_multipliers") or {}).items():
+                    role_str = str(role)
+                    current = float(weight_multipliers.get(role_str, 1.0))
+                    weight_multipliers[role_str] = current * float(mult)
+            if isinstance(action.get("weight_overrides"), dict):
+                for role, value in (action.get("weight_overrides") or {}).items():
+                    weight_overrides[str(role)] = float(value)
+
+        return {
+            "matched": matched,
+            "force_phase": force_phase,
+            "enabled_roles": enabled_roles if has_enable_roles else None,
+            "disabled_roles": disabled_roles,
+            "weight_multipliers": weight_multipliers,
+            "weight_overrides": weight_overrides,
+        }
+
+    def _build_policy_context(
+        self,
+        solver: Any,
+        context: Dict[str, Any],
+        *,
+        phase: str,
+        phase_step: int,
+    ) -> Dict[str, Any]:
+        return {
+            "step": int(self._step),
+            "generation": context.get(KEY_GENERATION),
+            "phase": str(phase),
+            "phase_step": int(phase_step),
+            "shared": self.shared_state,
+            "solver": solver,
+            "context": context,
+        }
+
+    def _apply_phase_policy(
+        self,
+        default_phase: str,
+        default_phase_step: int,
+        policy_ctx: Dict[str, Any],
+    ) -> Tuple[str, int]:
+        fn = getattr(self.cfg, "phase_policy", None)
+        if not callable(fn):
+            return str(default_phase), int(default_phase_step)
+        try:
+            value = fn(dict(policy_ctx))
+        except Exception:
+            return str(default_phase), int(default_phase_step)
+        if value is None:
+            return str(default_phase), int(default_phase_step)
+        if isinstance(value, tuple):
+            if len(value) == 0:
+                return str(default_phase), int(default_phase_step)
+            phase_name = str(value[0])
+            if len(value) >= 2:
+                try:
+                    return phase_name, int(value[1])
+                except Exception:
+                    return phase_name, int(default_phase_step)
+            return phase_name, int(default_phase_step)
+        return str(value), int(default_phase_step)
+
+    def _allocate_role_budgets(
+        self,
+        policy_ctx: Optional[Dict[str, Any]] = None,
+        rule_effects: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, int]:
         phase = self._current_phase_name
         allowed = self._enabled_roles_for_phase(phase)
+        policy_ctx = dict(policy_ctx or {})
+        rule_effects = dict(rule_effects or {})
+        allow_roles = rule_effects.get("enabled_roles")
+        if allow_roles is not None:
+            allow_roles = {str(r) for r in allow_roles}
+        deny_roles = {str(r) for r in set(rule_effects.get("disabled_roles") or set())}
+        rule_weight_mult = dict(rule_effects.get("weight_multipliers") or {})
+        rule_weight_override = dict(rule_effects.get("weight_overrides") or {})
+        enable_policy = getattr(self.cfg, "role_enable_policy", None)
+        weight_policy = getattr(self.cfg, "role_weight_policy", None)
         enabled = []
         for (name, w, en) in self._role_specs():
             if not en:
                 continue
             if allowed is not None and name not in allowed:
                 continue
+            if allow_roles is not None and name not in allow_roles:
+                continue
+            if name in deny_roles:
+                continue
+            if callable(enable_policy):
+                try:
+                    if not bool(enable_policy(str(name), dict(policy_ctx))):
+                        continue
+                except Exception:
+                    pass
             w_eff = self._effective_weight(name, float(w), phase)
+            if name in rule_weight_override:
+                w_eff = float(rule_weight_override[name])
+            if name in rule_weight_mult:
+                w_eff = float(w_eff) * float(rule_weight_mult[name])
+            if callable(weight_policy):
+                try:
+                    w_eff = float(weight_policy(str(name), float(w_eff), dict(policy_ctx)))
+                except Exception:
+                    pass
             if w_eff <= 0:
                 continue
             enabled.append((name, w_eff))
@@ -475,13 +798,39 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
     def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         # phase bookkeeping
         phase, phase_step = self._phase_for_step(int(self._step))
+        pre_policy_ctx = self._build_policy_context(
+            solver,
+            context,
+            phase=str(phase),
+            phase_step=int(phase_step),
+        )
+        phase, phase_step = self._apply_phase_policy(
+            str(phase),
+            int(phase_step),
+            pre_policy_ctx,
+        )
+        rule_ctx = self._build_runtime_rule_context(
+            solver,
+            context,
+            phase=str(phase),
+            phase_step=int(phase_step),
+        )
+        rule_effects = self._evaluate_control_rules(rule_ctx)
+        if rule_effects.get("force_phase") is not None:
+            phase = str(rule_effects.get("force_phase"))
         self._current_phase_name = str(phase)
         self._phase_step = int(phase_step)
 
         self._maybe_refresh_regions(solver)
         self._assign_regions_to_units()
 
-        role_budgets = self._allocate_role_budgets()
+        policy_ctx = self._build_policy_context(
+            solver,
+            context,
+            phase=self._current_phase_name,
+            phase_step=self._phase_step,
+        )
+        role_budgets = self._allocate_role_budgets(policy_ctx=policy_ctx, rule_effects=rule_effects)
         unit_budgets = self._split_to_units(role_budgets)
         if not unit_budgets:
             return []
@@ -494,6 +843,7 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
             "step": int(self._step),
             "phase": self._current_phase_name,
             "phase_step": int(self._phase_step),
+            "control_rules": list(rule_effects.get("matched") or []),
         }
 
         candidates: List[np.ndarray] = []
@@ -901,3 +1251,11 @@ class MultiStrategyControllerAdapter(AlgorithmAdapter):
             "cache": cache,
             "notes": contract.get("notes"),
         }
+
+
+class MultiStrategyControllerAdapter(StrategyRouterAdapter):
+    context_requires = StrategyRouterAdapter.context_requires
+    context_provides = StrategyRouterAdapter.context_provides
+    context_mutates = StrategyRouterAdapter.context_mutates
+    context_cache = StrategyRouterAdapter.context_cache
+    context_notes = StrategyRouterAdapter.context_notes

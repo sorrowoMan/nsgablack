@@ -454,9 +454,24 @@ class ProductionInnerEvaluationModel:
         if str(self.production_case_dir) not in sys.path:
             sys.path.insert(0, str(self.production_case_dir))
 
+        for name in (
+            "problem",
+            "plugins",
+            "adapter",
+            "bias",
+            "pipeline",
+            "refactor_data",
+            "build_solver",
+            "working_integrated_optimizer",
+        ):
+            mod = sys.modules.get(name)
+            mod_file = str(getattr(mod, "__file__", "") or "")
+            if mod is not None and str(self.production_case_dir) not in mod_file:
+                sys.modules.pop(name, None)
+
         from refactor_data import ProductionData
         from problem import ProductionConstraints, ProductionSchedulingProblem
-        from working_integrated_optimizer import build_multi_agent_solver
+        from build_solver import build_multi_agent_solver
 
         data = ProductionData(
             machines=int(self.machines),

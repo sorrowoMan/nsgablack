@@ -245,9 +245,9 @@ Run Inspector 不是“好看 UI”，而是：
 1. `docs/user_guide/DEPTH_BREADTH_WORKFLOW.md`
    - 先建立框架总图：深度（嵌套层级）+ 广度（多策略协同）。
 2. `docs/user_guide/INNER_SOLVER_BACKENDS.md`
-   - 再理解内层编排：`InnerSolverPlugin` / `ContractBridgePlugin` / `TimeoutBudgetPlugin`。
+   - 再理解内层编排：`problem.inner_runtime_evaluator` / `ContractBridgePlugin` / `TimeoutBudgetPlugin`。
 3. `docs/user_guide/NUMERICAL_SOLVER_PLUGINS.md`
-   - 再看数值求解：`NewtonSolverPlugin` / `BroydenSolverPlugin`。
+   - 再看数值求解：`NewtonSolverProviderPlugin` / `BroydenSolverProviderPlugin`。
 4. `docs/user_guide/REDIS_CONTEXT_BACKEND.md`
    - 理解 context 后端切换：memory / redis、TTL、容器工作流与常见错误。
 5. `examples/nested_three_layer_demo.py` + `examples/nested_three_layer_demo.md`

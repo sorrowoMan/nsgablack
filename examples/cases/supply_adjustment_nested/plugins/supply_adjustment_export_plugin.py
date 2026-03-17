@@ -59,7 +59,7 @@ class SupplyAdjustmentExportPlugin(Plugin):
                     x = None
         if x is None:
             try:
-                pop_arr, obj_arr, _ = self.resolve_population_snapshot(solver)
+                pop_arr, obj_arr, _ = self.get_population_snapshot(solver)
                 if pop_arr.ndim == 2 and pop_arr.shape[0] > 0:
                     if obj_arr.ndim == 2 and obj_arr.shape[0] == pop_arr.shape[0]:
                         idx = int(np.argmin(np.sum(obj_arr, axis=1)))

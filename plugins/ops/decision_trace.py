@@ -10,7 +10,7 @@ import json
 import time
 
 from ..base import Plugin
-from ...utils.context.context_events import record_context_event
+from ...core.state.context_events import record_context_event
 from ...utils.context.context_keys import KEY_CONTEXT_EVENTS, KEY_DECISION_TRACE_REF
 from ...utils.engineering.file_io import atomic_write_text
 from ...utils.runtime.decision_trace import append_decision_jsonl, build_decision_event

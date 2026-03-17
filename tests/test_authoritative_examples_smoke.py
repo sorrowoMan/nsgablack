@@ -8,9 +8,9 @@ def test_authoritative_examples_import_and_execute_smoke():
     # These are "fact standard" examples. Keep them runnable.
     root = Path(__file__).resolve().parents[1]
     examples = [
-        root / "examples" / "blank_solver_plugin_demo.py",
-        root / "examples" / "blank_vs_composable_demo.py",
-        root / "examples" / "composable_solver_fusion_demo.py",
+        root / "examples" / "_misc_examples" / "blank_solver_plugin_demo.py",
+        root / "examples" / "_misc_examples" / "blank_vs_composable_demo.py",
+        root / "examples" / "_misc_examples" / "composable_solver_fusion_demo.py",
     ]
 
     for p in examples:

@@ -1,11 +1,11 @@
-import numpy as np
+﻿import numpy as np
 
 
 def test_monte_carlo_evaluation_plugin_averages_noise():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.adapters import AlgorithmAdapter
-    from nsgablack.plugins import MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig
+    from nsgablack.plugins import MonteCarloEvaluationProviderPlugin, MonteCarloEvaluationConfig
 
     class NoisySphere(BlackBoxProblem):
         def __init__(self, dim=3):
@@ -26,9 +26,14 @@ def test_monte_carlo_evaluation_plugin_averages_noise():
     problem = NoisySphere()
     solver = ComposableSolver(problem=problem, adapter=FixedCandidate())
     solver.max_steps = 1
-    solver.add_plugin(MonteCarloEvaluationPlugin(config=MonteCarloEvaluationConfig(mc_samples=40, reduce="mean", random_seed=0)))
+    solver.register_evaluation_provider(
+        MonteCarloEvaluationProviderPlugin(
+            config=MonteCarloEvaluationConfig(mc_samples=40, reduce="mean", random_seed=0)
+        ).create_provider()
+    )
     solver.run()
 
     # Expect mean close to 0 for x=0 (noise averaged out)
     assert solver.last_step_summary["best_objective"] < 0.5
+
 

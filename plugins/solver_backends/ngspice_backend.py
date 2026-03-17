@@ -54,7 +54,7 @@ class NgspiceBackend:
     """Minimal ngspice backend implementing BackendSolver.solve(request).
 
     Notes:
-    - Intended for InnerSolverPlugin backend path.
+    - Intended for `problem.inner_runtime_evaluator` backend path.
     - If ngspice is unavailable and mock_when_unavailable=True, returns a deterministic mock result.
     - For real projects, provide custom netlist_builder/result_parser.
     """

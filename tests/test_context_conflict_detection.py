@@ -1,4 +1,4 @@
-from nsgablack.utils.context.context_contracts import (
+from nsgablack.core.state.context_contracts import (
     ContextContract,
     detect_context_conflicts,
 )

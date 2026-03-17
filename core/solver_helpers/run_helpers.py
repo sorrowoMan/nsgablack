@@ -6,6 +6,33 @@ import time
 from typing import Any, Dict, Optional
 
 
+def apply_runtime_control_slot(solver: Any, *, slot: str) -> None:
+    runtime_controller = getattr(solver, "runtime_controller", None)
+    if runtime_controller is None or not hasattr(runtime_controller, "resolve"):
+        return
+    context = {}
+    getter = getattr(solver, "get_context", None)
+    if callable(getter):
+        try:
+            context = dict(getter() or {})
+        except Exception:
+            context = {}
+    try:
+        resolved = runtime_controller.resolve(solver, slot=str(slot), context=context)
+    except Exception:
+        if bool(getattr(solver, "plugin_strict", False)):
+            raise
+        return
+    stopping = resolved.get("stopping") if isinstance(resolved, dict) else None
+    payload = dict(getattr(stopping, "payload", {}) or {}) if stopping is not None else {}
+    if bool(payload.get("stop", False)):
+        request_stop = getattr(solver, "request_stop", None)
+        if callable(request_stop):
+            request_stop()
+        else:
+            setattr(solver, "stop_requested", True)
+
+
 def run_solver_loop(solver: Any, *, max_steps: Optional[int] = None) -> Dict[str, Any]:
     steps = int(max_steps if max_steps is not None else solver.max_steps)
     solver.running = True
@@ -38,11 +65,13 @@ def run_solver_loop(solver: Any, *, max_steps: Optional[int] = None) -> Dict[str
         apply_pending_order = getattr(solver, "_apply_pending_plugin_order_updates", None)
         if callable(apply_pending_order):
             apply_pending_order()
+        apply_runtime_control_slot(solver, slot="gen_start")
         solver.plugin_manager.on_generation_start(solver.generation)
         # Keep on_step semantics consistent even when subclasses override step().
         solver.plugin_manager.on_step(solver, solver.generation)
         solver.step()
         solver.plugin_manager.on_generation_end(solver.generation)
+        apply_runtime_control_slot(solver, slot="gen_end")
         executed_steps += 1
 
     solver.teardown()
@@ -51,6 +80,7 @@ def run_solver_loop(solver: Any, *, max_steps: Optional[int] = None) -> Dict[str
         total_steps = int(solver.generation + 1)
     else:
         total_steps = int(start_step)
+    solver.generation = int(total_steps)
     result = {
         "status": "stopped" if solver.stop_requested else "completed",
         "steps": total_steps,
@@ -58,6 +88,16 @@ def run_solver_loop(solver: Any, *, max_steps: Optional[int] = None) -> Dict[str
         "resume_from": int(start_step) if resume_loaded else 0,
         "elapsed_sec": elapsed,
     }
+    builder = getattr(solver, "_build_run_result", None)
+    if callable(builder):
+        try:
+            built = builder(dict(result))
+            if isinstance(built, dict):
+                result = built
+        except Exception:
+            # Fall back to base result on builder errors.
+            pass
+    setattr(solver, "last_result", result)
     solver.plugin_manager.on_solver_finish(result)
     solver.running = False
     return result

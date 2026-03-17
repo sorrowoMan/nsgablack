@@ -43,8 +43,9 @@ from .matrix import (
     MatrixBlockSumRepair,
 )
 from .constraints import BoundConstraint
-from .context_mutators import ContextSwitchMutator
+from .context_mutators import ContextSelectMutator, SerialMutator, ContextDispatchMutator
 from .dynamic import DynamicRepair
+from .orchestrator import OrchestrationPolicy, PipelineOrchestrator
 
 __all__ = [
     "RepresentationPipeline",
@@ -88,6 +89,10 @@ __all__ = [
     "MatrixSparsityRepair",
     "MatrixBlockSumRepair",
     "BoundConstraint",
-    "ContextSwitchMutator",
+    "ContextSelectMutator",
+    "SerialMutator",
+    "ContextDispatchMutator",
+    "OrchestrationPolicy",
+    "PipelineOrchestrator",
     "DynamicRepair",
 ]

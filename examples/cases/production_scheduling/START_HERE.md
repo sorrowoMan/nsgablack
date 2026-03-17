@@ -7,6 +7,10 @@
 3. 可视化：`python -m nsgablack run_inspector --entry build_solver.py:build_solver`
 4. CLI 入口：`python solver/run_case.py --parallel --parallel-backend thread --parallel-workers 8`
 
+基线对照（单目标）：
+- `python solver/run_case.py --solver baseline-greedy --single-objective`
+- `python solver/run_case.py --solver baseline-aco --single-objective --aco-ants 48`
+
 结构说明：
 
 - `build_solver.py`：项目脚手架标准入口 + 求解器装配与插件注册区

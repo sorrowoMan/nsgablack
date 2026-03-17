@@ -6,10 +6,10 @@ import pytest
 from nsgablack.adapters.differential_evolution import DEConfig, DifferentialEvolutionAdapter
 from nsgablack.plugins.evaluation.monte_carlo_evaluation import (
     MonteCarloEvaluationConfig,
-    MonteCarloEvaluationPlugin,
+    MonteCarloEvaluationProviderPlugin,
 )
 from nsgablack.plugins.storage.mysql_run_logger import MySQLRunLoggerPlugin
-from nsgablack.utils.context.context_keys import KEY_ADAPTER_BEST_SCORE, KEY_GENERATION
+from nsgablack.core.state.context_keys import KEY_ADAPTER_BEST_SCORE, KEY_GENERATION
 
 
 class _DummyMCProblem:
@@ -58,7 +58,7 @@ def test_monte_carlo_plugin_does_not_pollute_global_numpy_rng():
     before = np.random.get_state()
 
     solver = _DummyMCSolver(dim=4)
-    plugin = MonteCarloEvaluationPlugin(
+    plugin = MonteCarloEvaluationProviderPlugin(
         config=MonteCarloEvaluationConfig(mc_samples=8, random_seed=42)
     )
     population = np.zeros((3, solver.dimension), dtype=float)
@@ -124,7 +124,7 @@ class _Solver:
 def test_mysql_run_logger_resolves_run_id_from_plugin_configs():
     plugin = MySQLRunLoggerPlugin()
     solver = _Solver()
-    rid = plugin._resolve_run_id(solver=solver, result={}, artifacts={})
+    rid = plugin._get_run_id(solver=solver, result={}, artifacts={})
     assert rid == "bench_001"
 
 

@@ -31,8 +31,8 @@ def _iter_context_fields(entry) -> Iterable[tuple[str, str]]:
 
 def check_catalog_context_keys() -> List[GuardIssue]:
     from nsgablack.catalog import get_catalog
-    from nsgablack.utils.context.context_field_governance import is_canonical_context_key
-    from nsgablack.utils.context.context_keys import normalize_context_key
+    from nsgablack.core.state.context_field_governance import is_canonical_context_key
+    from nsgablack.core.state.context_keys import normalize_context_key
 
     issues: List[GuardIssue] = []
     for entry in get_catalog(refresh=True).list():
@@ -51,7 +51,7 @@ def check_catalog_context_keys() -> List[GuardIssue]:
 
 
 def check_context_field_rules_doc(path: Path | None = None) -> List[GuardIssue]:
-    from nsgablack.utils.context.context_field_governance import (
+    from nsgablack.core.state.context_field_governance import (
         CONTEXT_FIELD_SCHEMA_NAME,
         CONTEXT_FIELD_SCHEMA_VERSION,
     )

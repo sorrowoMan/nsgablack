@@ -29,7 +29,7 @@
 
 ### 3) context 字段分类有没有正式的生命周期定义？**有。**
 
-在 `utils/context/context_schema.py` 中定义了：
+在 `core/state/context_schema.py` 中定义了：
 ```
 input / runtime / derived / cache / output / event
 ```
@@ -54,7 +54,7 @@ input / runtime / derived / cache / output / event
 ## 常用 API
 
 ```python
-from nsgablack.utils.context import (
+from nsgablack.core.state import (
     RUNTIME_CONTEXT_SCHEMA,
     validate_context,
     get_context_lifecycle,

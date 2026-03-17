@@ -36,7 +36,7 @@
 
 ## 3) Canonical Key 规则（强制）
 
-必须使用 `nsgablack.utils.context.context_keys` 中的标准 key，禁止随意新造同义字段名。
+必须使用 `nsgablack.core.state.context_keys` 中的标准 key，禁止随意新造同义字段名。
 
 常见标准 key（本轮已统一）：
 
@@ -83,8 +83,8 @@
 
 ## 6) 新增字段的最小流程
 
-1. 在 `utils/context/context_keys.py` 增加常量并加入 canonical 集合  
-2. 在 `utils/context/context_schema.py` 增加字段定义（category/replayable）  
+1. 在 `core/state/context_keys.py` 增加常量并加入 canonical 集合  
+2. 在 `core/state/context_schema.py` 增加字段定义（category/replayable）  
 3. 在组件内使用常量更新 `context_requires/provides/mutates/cache`  
 4. 运行：
    - `python -m tools.context_field_guard`
@@ -96,7 +96,7 @@
 
 ```python
 from nsgablack.plugins.base import Plugin
-from nsgablack.utils.context.context_keys import KEY_MUTATION_RATE, KEY_CROSSOVER_RATE
+from nsgablack.core.state.context_keys import KEY_MUTATION_RATE, KEY_CROSSOVER_RATE
 
 
 class MyAdaptivePlugin(Plugin):
@@ -113,7 +113,7 @@ class MyAdaptivePlugin(Plugin):
 
 Context 契约之上，还有一层更底层的状态治理规则——它约束的是 **population / objectives / constraint_violations 的读写路径**：
 
-- **读取**：统一使用 `resolve_population_snapshot(solver)` 或 `solver.read_snapshot()`（快照引用 → store）
+- **读取**：统一使用 `get_population_snapshot(solver)` 或 `solver.read_snapshot()`（快照引用 → store）
 - **写入**：统一使用 `commit_population_snapshot(solver, ...)`（adapter-first：有 adapter 时写 adapter，无 adapter 时同步写 solver）
 - **禁止**：Plugin / Adapter 不得直接写 `solver.population = ...` 等镜像字段（Doctor `--strict` 会检查 `solver-mirror-write` 和 `plugin-direct-solver-state-access`）
 

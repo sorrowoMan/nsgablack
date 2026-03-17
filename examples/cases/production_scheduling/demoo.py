@@ -38,8 +38,8 @@ def _find_latest_result(search_dirs: list[Path]) -> Path:
     patterns = [
         "integrated_result_production_*.xlsx",
         "integrated_result_*.xlsx",
-        "??????_*.xlsx",
-        "?????????_*.xlsx",
+        "集成结果_*.xlsx",
+        "生产计划_*.xlsx",
         "GA_ProductionSchedule_*.xlsx",
         "*.xlsx",
     ]
@@ -58,7 +58,7 @@ def _find_latest_result(search_dirs: list[Path]) -> Path:
 def _load_plan(path: Path, sheet: str | None, verbose: bool = False) -> pd.DataFrame:
     xls = pd.ExcelFile(path)
     if sheet is None:
-        sheet = "production_plan" if "production_plan" in xls.sheet_names else ("????" if "????" in xls.sheet_names else xls.sheet_names[0])
+        sheet = "production_plan" if "production_plan" in xls.sheet_names else ("生产计划" if "生产计划" in xls.sheet_names else xls.sheet_names[0])
     elif sheet not in xls.sheet_names:
         raise KeyError(f"Excel 里没有 sheet={sheet!r}。可选：{xls.sheet_names}")
 

@@ -12,7 +12,7 @@ When building new algorithms / doing integrations, prefer relying on:
 - `bias/`: bias system (domain + algorithmic + signal-driven)
 - `utils/`:
   - `utils/extension_contracts.py` (executable safeguards)
-  - `utils/context/context_keys.py` (canonical context keys)
+  - `core/state/context_keys.py` (canonical context keys)
   - `plugins/` (capabilities layer)
   - `utils/wiring/` (authoritative wiring)
 - `catalog/`: discoverability (search/show/list)
@@ -26,7 +26,7 @@ combinations low-friction, and regressions easier to control.
 
 ### Core conventions (must follow)
 
-- **State Governance**: read via `solver.read_snapshot()` / `resolve_population_snapshot()`,
+- **State Governance**: read via `solver.read_snapshot()` / `get_population_snapshot()`,
   write via `commit_population_snapshot()`. Never assign `solver.population` directly.
 - **Instance-level RNG**: all randomness via `self._rng = np.random.default_rng()`.
   Never use `np.random.*` global functions.

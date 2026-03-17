@@ -6,11 +6,6 @@
         "Nelder",
         "Mead"
     ],
-    "python.analysis.extraPaths": [
-        "${workspaceFolder}",
-        "${workspaceFolder}/.."
-    ],
-    "python.analysis.typeCheckingMode": "basic",
     "python.analysis.diagnosticMode": "workspace",
     "python.autoComplete.extraPaths": [
         "${workspaceFolder}",
@@ -36,5 +31,6 @@
             "**/*.yaml",
             "**/*.md"
         ]
-    }
+    },
+    "python.analysis.autoImportCompletions": true
 }

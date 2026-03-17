@@ -10,7 +10,7 @@ from typing import Optional, Any, Tuple
 import numpy as np
 
 from .base import RepresentationComponentContract
-from ..utils.context.context_keys import KEY_BOUNDS, KEY_MUTATION_SIGMA, KEY_PROBLEM
+from ..core.state.context_keys import KEY_BOUNDS, KEY_MUTATION_SIGMA, KEY_PROBLEM
 
 
 def _as_bound_array(value: Any, size: int) -> Optional[np.ndarray]:

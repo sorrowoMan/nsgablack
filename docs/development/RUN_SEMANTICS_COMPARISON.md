@@ -4,6 +4,8 @@
 
 本文档对比 `SolverBase.run()` 和 `EvolutionSolver.run()` 的语义差异，确保生命周期钩子、终止条件、状态管理的一致性。
 
+**统一约定**：唯一循环入口是 `run_solver_loop`；各 Solver 的 `run()` 只负责结果视图转换（dict / tuple / ExperimentResult）。
+
 ## 1. 方法签名差异
 
 | 求解器 | 签名 | 返回类型 |

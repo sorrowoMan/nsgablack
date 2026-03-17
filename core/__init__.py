@@ -2,12 +2,32 @@
 
 from __future__ import annotations
 
+from .acceleration import (
+    AccelerationError,
+    AccelerationFacade,
+    AccelerationRegistry,
+    AsyncHandle,
+    ExecutionResult,
+    GpuBackend,
+    ProcessPoolBackend,
+    ThreadPoolBackend,
+)
+from .acceleration_helpers import maybe_accel_map, maybe_accel_run
 from .base import BlackBoxProblem
 from .blank_solver import SolverBase
 from .composable_solver import ComposableSolver
 from .config import StorageConfig, _apply_storage_config
+from .control_plane import BaseController, ControlArbiter, ControlDecision, RuntimeController
 from .evolution_solver import EvolutionSolver
-from ..adapters import AlgorithmAdapter, CompositeAdapter, RoleAdapter, MultiRoleControllerAdapter
+from .evaluation_runtime import EvaluationMediator, EvaluationMediatorConfig, EvaluationProvider
+from .nested_solver import (
+    InnerRuntimeConfig,
+    InnerRuntimeEvaluator,
+    InnerSolveRequest,
+    InnerSolveResult,
+    TaskInnerRuntimeEvaluator,
+)
+from ..adapters import AlgorithmAdapter, CompositeAdapter, RoleAdapter, RoleRouterAdapter
 from .interfaces import (
     BiasInterface,
     PluginInterface,
@@ -27,16 +47,38 @@ __all__ = [
     "BlackBoxProblem",
     "EvolutionSolver",
     "SolverBase",
+    "AccelerationRegistry",
+    "AccelerationFacade",
+    "ExecutionResult",
+    "AccelerationError",
+    "AsyncHandle",
+    "ThreadPoolBackend",
+    "ProcessPoolBackend",
+    "GpuBackend",
+    "maybe_accel_run",
+    "maybe_accel_map",
     "StorageConfig",
     "AlgorithmAdapter",
     "CompositeAdapter",
     "ComposableSolver",
     "RoleAdapter",
-    "MultiRoleControllerAdapter",
+    "RoleRouterAdapter",
     "BiasInterface",
     "RepresentationInterface",
     "VisualizationInterface",
     "PluginInterface",
+    "BaseController",
+    "ControlDecision",
+    "ControlArbiter",
+    "RuntimeController",
+    "EvaluationMediator",
+    "EvaluationMediatorConfig",
+    "EvaluationProvider",
+    "InnerSolveRequest",
+    "InnerSolveResult",
+    "InnerRuntimeEvaluator",
+    "TaskInnerRuntimeEvaluator",
+    "InnerRuntimeConfig",
     "OptimizationContext",
     "has_bias_module",
     "has_representation_module",

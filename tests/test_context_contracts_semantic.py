@@ -1,12 +1,12 @@
-from types import SimpleNamespace
+﻿from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from nsgablack.adapters.algorithm_adapter import AlgorithmAdapter
-from nsgablack.adapters.multi_strategy import MultiStrategyControllerAdapter, StrategySpec
-from nsgablack.utils.context.context_contracts import collect_solver_contracts, get_component_contract
-from nsgablack.utils.context.context_keys import KEY_MUTATION_SIGMA, KEY_VNS_K
+from nsgablack.adapters.multi_strategy import StrategyRouterAdapter, StrategySpec
+from nsgablack.core.state.context_contracts import collect_solver_contracts, get_component_contract
+from nsgablack.core.state.context_keys import KEY_MUTATION_SIGMA, KEY_VNS_K
 
 
 class _NoopAdapter(AlgorithmAdapter):
@@ -47,7 +47,7 @@ def test_algorithm_adapter_contract_merges_legacy_and_context_fields():
 def test_collect_solver_contracts_includes_multi_strategy_children():
     explorer = StrategySpec(adapter=_NoopAdapter(name="explorer"), name="explorer")
     exploiter = StrategySpec(adapter=_NoopAdapter(name="exploiter"), name="exploiter")
-    controller = MultiStrategyControllerAdapter(strategies=[explorer, exploiter])
+    controller = StrategyRouterAdapter(strategies=[explorer, exploiter])
     solver = SimpleNamespace(
         representation_pipeline=None,
         bias_module=None,
@@ -82,3 +82,4 @@ def test_algorithm_adapter_population_snapshot_contract_shape_mismatch_raises():
             objectives=np.array([[1.0]], dtype=float),
             violations=np.array([0.0, 0.0], dtype=float),
         )
+

@@ -19,7 +19,7 @@ import numpy as np
 
 from .core.base import AlgorithmicBias, DomainBias, OptimizationContext
 from .core.manager import UniversalBiasManager
-from ..utils.context.context_keys import (
+from ..core.state.context_keys import (
     KEY_CONSTRAINTS,
     KEY_CONSTRAINT_VIOLATION,
     KEY_GENERATION,
@@ -33,8 +33,8 @@ from ..utils.context.context_keys import (
     KEY_SNAPSHOT_KEY,
     KEY_BIAS_CACHE_FINGERPRINT,
 )
-from ..utils.context.context_store import ContextStore
-from ..utils.context.snapshot_store import SnapshotStore
+from ..core.state.context_store import ContextStore
+from ..core.state.snapshot_store import SnapshotStore
 
 logger = logging.getLogger(__name__)
 

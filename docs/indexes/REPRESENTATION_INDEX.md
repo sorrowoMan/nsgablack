@@ -5,7 +5,7 @@
 ## representation（表征/编码）
 
 - representation/base.py
-  - RepresentationPipeline, ParallelRepair, ContextSwitchMutator
+  - RepresentationPipeline, ParallelRepair, ContextSelectMutator
 - representation/constraints.py
   - BoundConstraint（边界约束检查/修复，re-exported from base）
 - representation/continuous.py

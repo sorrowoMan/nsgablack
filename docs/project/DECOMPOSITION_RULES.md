@@ -9,7 +9,7 @@
 ### RepresentationPipeline（表示与算子）
 - 负责：编码/解码、初始化、变异、修复（以及可行性构造这类“硬约束”）
 - 特点：更像“数据流管线”，可复用性极强
-- 典型问题：VNS/邻域类方法需要随阶段切换邻域算子，可用 `ContextSwitchMutator` 这类 wrapper
+- 典型问题：VNS/邻域类方法需要随阶段切换邻域算子，可用 `ContextSelectMutator` 这类 wrapper
 
 ### Bias（偏好/倾向/软约束）
 - 负责：把“方向性策略”表达成可叠加的评分/惩罚/调度；典型是软约束、偏好、阶段权重
@@ -27,7 +27,7 @@
 
 ### Wiring（权威组合 / Recipe）
 - 负责：把“必须成套才有意义”的能力做成一键装配入口，避免漏配导致隐性 bug
-- 例子：`MonteCarloEvaluationPlugin` + `RobustnessBias` 就应该用 wiring 固化（事实标准）
+- 例子：`MonteCarloEvaluationProviderPlugin` + `RobustnessBias` 就应该用 wiring 固化（事实标准）
 
 ## 2. 伙伴组件（companions）是什么
 

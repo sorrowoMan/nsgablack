@@ -167,7 +167,7 @@ python -m nsgablack run_inspector --entry build_solver.py:build_solver
 读取方式：
 
 - `solver.read_snapshot()`
-- `Plugin.resolve_population_snapshot()`
+- `Plugin.get_population_snapshot()`
 
 写回方式：
 

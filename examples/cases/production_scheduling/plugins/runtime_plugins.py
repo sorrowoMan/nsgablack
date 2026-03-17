@@ -13,7 +13,7 @@ from nsgablack.plugins import Plugin
 ExtractParetoFn = Callable[[Any], tuple[Optional[np.ndarray], Optional[np.ndarray]]]
 ChooseParetoFn = Callable[[Any, np.ndarray, np.ndarray], list[tuple[str, np.ndarray, np.ndarray]]]
 ProjectScheduleFn = Callable[[Any, np.ndarray], np.ndarray]
-ResolveExportPathFn = Callable[[Optional[Path], str, Optional[str]], Path]
+GetExportPathFn = Callable[[Optional[Path], str, Optional[str]], Path]
 ExportScheduleFn = Callable[[Path, np.ndarray], None]
 WriteExportSummaryFn = Callable[..., None]
 ExportParetoBatchFn = Callable[[Any, np.ndarray, np.ndarray, Optional[Path], str, int], int]
@@ -119,7 +119,7 @@ class ProductionExportPlugin(Plugin):
         extract_pareto: ExtractParetoFn,
         choose_pareto_solutions: ChooseParetoFn,
         project_schedule_material_feasible: ProjectScheduleFn,
-        resolve_export_path: ResolveExportPathFn,
+        get_export_path: GetExportPathFn,
         export_schedule: ExportScheduleFn,
         write_export_summary: WriteExportSummaryFn,
         export_pareto_batch: ExportParetoBatchFn,
@@ -131,7 +131,7 @@ class ProductionExportPlugin(Plugin):
         self._extract_pareto = extract_pareto
         self._choose_pareto_solutions = choose_pareto_solutions
         self._project_schedule_material_feasible = project_schedule_material_feasible
-        self._resolve_export_path = resolve_export_path
+        self._get_export_path = get_export_path
         self._export_schedule = export_schedule
         self._write_export_summary = write_export_summary
         self._export_pareto_batch = export_pareto_batch
@@ -155,12 +155,14 @@ class ProductionExportPlugin(Plugin):
         for label, chosen, _obj in choices:
             schedule = self.problem.decode_schedule(chosen)
             schedule = self._project_schedule_material_feasible(self.problem, schedule)
-            export_path = self._resolve_export_path(base_export, label, supply_tag=supply_tag)
+            export_path = self._get_export_path(base_export, label, supply_tag=supply_tag)
             self._export_schedule(export_path, schedule)
             cons = self.problem.evaluate_constraints(schedule.reshape(-1))
             cons_arr = np.asarray(cons, dtype=float).reshape(-1)
             is_feasible = bool(np.all(cons_arr <= 1e-9))
             total_output = float(np.sum(schedule))
+            if bool(getattr(self.args, "sanity_check_export", False)):
+                self._sanity_check_export(label, schedule, cons_arr, total_output)
             self._write_export_summary(
                 export_path=export_path,
                 label=label,
@@ -188,3 +190,34 @@ class ProductionExportPlugin(Plugin):
             )
             if exported:
                 print(f"[export] Pareto batch exported: {exported}")
+
+    def _sanity_check_export(self, label: str, schedule: np.ndarray, cons_arr: np.ndarray, total_output: float) -> None:
+        try:
+            schedule_arr = np.asarray(schedule, dtype=float)
+            projected = self._project_schedule_material_feasible(self.problem, schedule_arr)
+            proj_cons = self.problem.evaluate_constraints(projected.reshape(-1))
+            proj_cons_arr = np.asarray(proj_cons, dtype=float).reshape(-1)
+            proj_output = float(np.sum(projected))
+
+            if not np.allclose(cons_arr, proj_cons_arr, atol=1e-6):
+                delta = proj_cons_arr - cons_arr
+                print(f"[sanity] {label}: constraint delta={delta.tolist()}")
+            if abs(proj_output - total_output) > 1e-6:
+                print(f"[sanity] {label}: total_output {total_output:.6g} -> {proj_output:.6g} after re-project")
+
+            if hasattr(self.problem, "sanity_check_schedule"):
+                summary = self.problem.sanity_check_schedule(schedule_arr)
+                print(
+                    "[sanity] "
+                    f"{label}: material_shortage_total={summary['material_shortage_total']:.6g} "
+                    f"max_daily_shortage={summary['material_shortage_max_daily']:.6g} "
+                    f"min_stock_after={summary['material_min_stock_after']:.6g} "
+                    f"machines_excess_total={summary['machines_excess_total']:.6g} "
+                    f"machines_excess_max_daily={summary['machines_excess_max_daily']:.6g} "
+                    f"machines_shortage_total={summary['machines_shortage_total']:.6g} "
+                    f"machines_shortage_max_daily={summary['machines_shortage_max_daily']:.6g} "
+                    f"below_min_total={summary['production_below_min_total']:.6g} "
+                    f"above_max_total={summary['production_above_max_total']:.6g}"
+                )
+        except Exception as exc:
+            print(f"[sanity] {label}: failed to recompute constraints ({exc!r})")

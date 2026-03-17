@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,7 +54,7 @@ _HINT_RULES: Dict[str, tuple[str, str, str]] = {
     "plugin-direct-solver-state-access": (
         "Plugin direct solver state access",
         "Plugin",
-        "Use resolve_population_snapshot()/commit_population_snapshot() instead.",
+        "Use get_population_snapshot()/commit_population_snapshot() instead.",
     ),
     "class-contract-missing": (
         "Missing context contract",
@@ -479,3 +479,4 @@ class DoctorView:
         if strict_fail:
             text = f"{text}\n[STRICT] warnings>0 => fail"
         self._set_output(text)
+

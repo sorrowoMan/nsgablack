@@ -51,9 +51,10 @@ DEFAULT_BOM_CANDIDATES = (
 )
 
 DEFAULT_SUPPLY_CANDIDATES = (
+    "SUPPLY.xlsx",
     # Recommended canonical names (Windows-friendly)
      "SUPPLY_adjusted_from_l1_20260226_174006.xlsx",
-    "SUPPLY.xlsx",
+    
     "SUPPLY_adjusted_from_l1_20260226_174006.xlsx",
     "SUPPLY_adjusted_from_l1_20260226_155747.xlsx",
     "SUPPLY_adjusted_from_l1_20260226_153518.xlsx",

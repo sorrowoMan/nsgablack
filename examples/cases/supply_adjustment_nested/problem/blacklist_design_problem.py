@@ -11,7 +11,10 @@ import numpy as np
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.core.evolution_solver import EvolutionSolver
 
-from evaluation import ProductionInnerEvalConfig, ProductionInnerEvaluationModel
+from nsgablack.core.nested_solver import InnerRuntimeConfig, TaskInnerRuntimeEvaluator
+from nsgablack.plugins import TimeoutBudgetConfig, TimeoutBudgetPlugin
+
+from inner_solver import InnerProductionSolverConfig
 from problem.supply_event_shift_problem import SupplyEventShiftProblem
 
 logger = logging.getLogger(__name__)
@@ -153,16 +156,12 @@ class BlacklistDesignProblem(BlackBoxProblem):
         blacklist_mask[self._strict_mask] = True
         return (np.where(blacklist_mask)[0] + 1).astype(int).tolist()
 
-    def _build_inner_model(self) -> ProductionInnerEvaluationModel:
-        cfg = ProductionInnerEvalConfig(
-            mode=str(self.eval_cfg.inner_mode),
-            inner_trials=int(self.eval_cfg.inner_trials),
-            hybrid_top_quantile=float(self.eval_cfg.hybrid_top_quantile),
-            hybrid_explore_prob=float(self.eval_cfg.hybrid_explore_prob),
-            hybrid_random_refine_ratio=float(self.eval_cfg.hybrid_random_refine_ratio),
-            hybrid_warmup=int(self.eval_cfg.hybrid_warmup),
-            hybrid_refine_pop_size=int(self.eval_cfg.hybrid_refine_pop_size),
-            hybrid_refine_generations=int(self.eval_cfg.hybrid_refine_generations),
+    def _build_l1_solver(self, blacklist_ids: list[int]):
+        inner_cfg = InnerProductionSolverConfig(
+            pop_size=int(self.eval_cfg.hybrid_refine_pop_size),
+            generations=int(self.eval_cfg.hybrid_refine_generations),
+            max_active_machines_per_day=8,
+            max_production_per_machine=3000.0,
             parallel=bool(self.eval_cfg.parallel),
             parallel_backend=str(self.eval_cfg.parallel_backend),
             parallel_workers=int(self.eval_cfg.parallel_workers),
@@ -170,20 +169,11 @@ class BlacklistDesignProblem(BlackBoxProblem):
             parallel_strict=bool(self.eval_cfg.parallel_strict),
             parallel_thread_bias_isolation=str(self.eval_cfg.parallel_thread_bias_isolation),
         )
-        return ProductionInnerEvaluationModel(
-            bom_matrix=self.bom_matrix,
-            base_supply=self.base_supply,
-            production_case_dir=self.production_case_dir,
-            baseline_schedule=self.baseline_schedule,
-            cfg=cfg,
-        )
-
-    def _run_l1(self, blacklist_ids: list[int]) -> tuple[float, float]:
-        t0 = time.perf_counter()
-        inner = self._build_inner_model()
         problem = SupplyEventShiftProblem(
             base_supply=self.base_supply,
-            inner_model=inner,
+            bom_matrix=self.bom_matrix,
+            production_case_dir=self.production_case_dir,
+            inner_solver_cfg=inner_cfg,
             material_ids=self.material_ids,
             material_blacklist=blacklist_ids,
             max_moved_events=self.eval_cfg.max_moved_events,
@@ -193,12 +183,41 @@ class BlacklistDesignProblem(BlackBoxProblem):
             pop_size=int(self.eval_cfg.outer_pop_size),
             max_generations=int(self.eval_cfg.outer_generations),
         )
-        solver.run()
+        solver.add_plugin(
+            TimeoutBudgetPlugin(
+                config=TimeoutBudgetConfig(
+                    layer="L2",
+                    max_calls=500,
+                    time_budget_ms=60_000,
+                    fail_closed=True,
+                )
+            )
+        )
+        problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(
+            config=InnerRuntimeConfig(source_layer="L2", target_layer="L1")
+        )
+        return solver
+
+    @staticmethod
+    def _best_output_from_solver(solver) -> float:
+        try:
+            obj = np.asarray(getattr(solver, "objectives", None), dtype=float)
+            if obj.ndim == 2 and obj.shape[0] > 0:
+                idx = int(np.argmin(np.sum(obj, axis=1)))
+                return float(-obj[idx][0])
+        except Exception:
+            pass
         best = getattr(solver, "best_objective", None)
-        if best is None:
-            best = np.inf
+        if best is None or not np.isfinite(best):
+            return 0.0
+        return float(-best)
+
+    def _run_l1(self, blacklist_ids: list[int]) -> tuple[float, float]:
+        t0 = time.perf_counter()
+        solver = self._build_l1_solver(blacklist_ids)
+        solver.run()
         runtime = float(max(0.0, time.perf_counter() - t0))
-        best_output = float(-best) if np.isfinite(best) else 0.0
+        best_output = float(self._best_output_from_solver(solver))
         return runtime, best_output
 
     def _compute_baseline_output(self) -> float:
@@ -252,6 +271,42 @@ class BlacklistDesignProblem(BlackBoxProblem):
             },
         )
         return obj
+
+    def build_inner_task(self, x: np.ndarray, eval_context: dict) -> dict:
+        blacklist = self._decode_blacklist_ids(x)
+        key = tuple(blacklist)
+        hit = self._cache.get(key)
+        if hit is not None:
+            cached = hit[1]
+            return {
+                "run_inner": lambda _p, _s, _c: {
+                    "status": "ok",
+                    "runtime_sec": float(cached.get("runtime", 0.0)),
+                    "best_output": float(cached.get("best_output", 0.0)),
+                }
+            }
+
+        def _run_inner(_problem, _solver, _ctx):
+            runtime, best_output = self._run_l1(blacklist)
+            return {
+                "status": "ok",
+                "runtime_sec": float(runtime),
+                "best_output": float(best_output),
+            }
+
+        return {"run_inner": _run_inner}
+
+    def evaluate_from_inner_result(self, x: np.ndarray, inner_result: dict, eval_context: dict):
+        _ = eval_context
+        baseline_output = self._ensure_baseline_output()
+        blacklist = self._decode_blacklist_ids(x)
+        runtime = float(inner_result.get("runtime_sec", 0.0))
+        best_output = float(inner_result.get("best_output", 0.0))
+        quality_gap = max(0.0, (baseline_output - best_output) / max(baseline_output, 1e-9))
+        size_ratio = float(len(blacklist)) / max(1.0, float(self.base_supply.shape[0]))
+        obj = np.array([runtime, quality_gap, size_ratio], dtype=float)
+        self._cache[tuple(blacklist)] = (obj, {"runtime": runtime, "best_output": best_output, "quality_gap": quality_gap})
+        return obj, float(inner_result.get("violation", 0.0))
 
     def evaluate_constraints(self, x: np.ndarray) -> np.ndarray:
         _ = self._ensure_baseline_output()

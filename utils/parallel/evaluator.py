@@ -334,6 +334,7 @@ class ParallelEvaluator:
             print(f"[parallel] start n={pop_size} backend={self.backend} workers={self.max_workers}")
 
         error_count = 0
+        error_samples: List[str] = []
         try:
             if self.backend == "ray":
                 results = self._evaluate_with_ray(tasks)
@@ -349,6 +350,8 @@ class ParallelEvaluator:
                 else:
                     error_count += 1
                     self.stats["error_count"] += 1
+                    if error is not None and len(error_samples) < 5:
+                        error_samples.append(f"idx={idx} err={error}")
                     if self.retry_errors and self.max_retries > 0:
                         objectives[idx], constraint_violations[idx] = self._retry_evaluation(
                             population[idx], idx, task_config
@@ -381,6 +384,10 @@ class ParallelEvaluator:
             print(f"[parallel] done elapsed={total_time:.2f}s avg_ms={total_time/pop_size*1000:.2f}")
             if error_count > 0:
                 print(f"[parallel] warning: {error_count} individuals failed")
+
+        if self.strict and error_count > 0:
+            detail = "; ".join(error_samples) if error_samples else "no error detail captured"
+            raise RuntimeError(f"Parallel evaluation failed for {error_count}/{pop_size}. Sample errors: {detail}")
 
         if return_detailed:
             return {

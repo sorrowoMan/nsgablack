@@ -251,7 +251,7 @@ class RoleAdapter(AlgorithmAdapter):
         }
 
 
-class MultiRoleControllerAdapter(AlgorithmAdapter):
+class RoleRouterAdapter(AlgorithmAdapter):
     """Orchestrate multiple RoleAdapter instances.
 
     This adapter:
@@ -372,3 +372,11 @@ class MultiRoleControllerAdapter(AlgorithmAdapter):
         _ = solver
         source = f"adapter.{self.__class__.__name__}"
         return {str(key): source for key in self._runtime_projection.keys()}
+
+
+class MultiRoleControllerAdapter(RoleRouterAdapter):
+    context_requires = RoleRouterAdapter.context_requires
+    context_provides = RoleRouterAdapter.context_provides
+    context_mutates = RoleRouterAdapter.context_mutates
+    context_cache = RoleRouterAdapter.context_cache
+    context_notes = RoleRouterAdapter.context_notes

@@ -8,7 +8,7 @@ import pytest
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.core.blank_solver import SolverBase
 from nsgablack.core.evolution_solver import EvolutionSolver
-from nsgablack.utils.context.context_store import (
+from nsgablack.core.state.context_store import (
     InMemoryContextStore,
     create_context_store,
 )

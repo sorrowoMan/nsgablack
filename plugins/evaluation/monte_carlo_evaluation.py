@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
@@ -26,8 +26,8 @@ class MonteCarloEvaluationConfig:
     random_seed: Optional[int] = 0
 
 
-class MonteCarloEvaluationPlugin(Plugin):
-    is_algorithmic = True
+class MonteCarloEvaluationProviderPlugin(Plugin):
+    is_algorithmic = False
     context_requires = ()
     context_provides = (
         KEY_METRICS_MC_SAMPLES,
@@ -42,15 +42,9 @@ class MonteCarloEvaluationPlugin(Plugin):
         "Per-candidate Monte Carlo evaluation; writes MC statistics into context.metrics "
         "and returns reduced objective values."
     )
-    """Monte Carlo evaluation as a capability plugin.
+    """Monte Carlo L4 provider factory.
 
-    It overrides `evaluate_population` (short-circuit hook) and aggregates multiple
-    stochastic evaluations per candidate.
-
-    Notes:
-    - This plugin assumes the stochasticity lives inside `problem.evaluate(x)`.
-    - Constraints are evaluated once per candidate (common case: deterministic constraints).
-    - Bias application is delegated back to the solver via `solver._apply_bias(...)`.
+    Use `solver.register_evaluation_provider(MonteCarloEvaluationProviderPlugin(...).create_provider())`.
     """
 
     # Soft partner contracts (informational; no hard dependency).
@@ -62,11 +56,42 @@ class MonteCarloEvaluationPlugin(Plugin):
         *,
         config: Optional[MonteCarloEvaluationConfig] = None,
     ) -> None:
-        super().__init__(name=name)
+        super().__init__(name=str(name))
         self.cfg = config or MonteCarloEvaluationConfig()
         self._rng = np.random.default_rng(self.cfg.random_seed)
+        self._provider = None
 
-    def evaluate_population(self, solver, population: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def attach(self, solver) -> None:
+        super().attach(solver)
+        if self._provider is not None:
+            return
+        provider = self.create_provider()
+        self._provider = provider
+        register = getattr(solver, "register_evaluation_provider", None)
+        if callable(register):
+            register(provider)
+
+    def detach(self, solver) -> None:
+        provider = self._provider
+        self._provider = None
+        unregister = getattr(solver, "unregister_evaluation_provider", None)
+        if callable(unregister) and provider is not None:
+            try:
+                unregister(provider)
+            except Exception:
+                pass
+        super().detach(solver)
+
+    def __getattr__(self, item: str):
+        if str(item) == "evaluate_population":
+            def _compat(solver, population: np.ndarray, context: Optional[Dict[str, Any]] = None):
+                _ = context
+                return self.evaluate_population_runtime(solver, population)
+
+            return _compat
+        raise AttributeError(item)
+
+    def evaluate_population_runtime(self, solver, population: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         pop = np.asarray(population)
         if pop.ndim == 1:
             pop = pop.reshape(1, -1)
@@ -162,4 +187,34 @@ class MonteCarloEvaluationPlugin(Plugin):
                 out.append(float(np.mean(col[:k])))
             return np.asarray(out, dtype=float)
         return np.mean(Y, axis=0)
+
+    def create_provider(self):
+        owner = self
+
+        class _Provider:
+            name = owner.name
+            semantic_mode = "equivalent"
+
+            def can_handle_individual(self, solver, x, context):
+                _ = solver
+                _ = context
+                return x is not None
+
+            def evaluate_individual(self, solver, x, context, individual_id=None):
+                _ = context
+                pop = np.asarray(x, dtype=float).reshape(1, -1)
+                objs, vios = owner.evaluate_population_runtime(solver, pop)
+                return np.asarray(objs[0], dtype=float).reshape(-1), float(vios[0])
+
+            def can_handle_population(self, solver, population, context):
+                _ = solver
+                _ = context
+                return population is not None
+
+            def evaluate_population(self, solver, population, context):
+                _ = context
+                return owner.evaluate_population_runtime(solver, np.asarray(population, dtype=float))
+
+        return _Provider()
+
 

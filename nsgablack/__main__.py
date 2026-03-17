@@ -198,7 +198,7 @@ def _print_usage_fields(e) -> None:
 def _cmd_catalog_search(args: argparse.Namespace) -> int:
     from .catalog import get_catalog
 
-    c = get_catalog()
+    c = get_catalog(profile=args.profile)
     entries = c.search(
         args.query,
         kinds=args.kind,
@@ -220,7 +220,7 @@ def _cmd_catalog_search(args: argparse.Namespace) -> int:
 def _cmd_catalog_list(args: argparse.Namespace) -> int:
     from .catalog import get_catalog
 
-    c = get_catalog()
+    c = get_catalog(profile=args.profile)
     entries = c.list()
     if args.kind:
         kind_set = {str(k).strip().lower() for k in args.kind}
@@ -243,7 +243,7 @@ def _cmd_catalog_list(args: argparse.Namespace) -> int:
 def _cmd_catalog_show(args: argparse.Namespace) -> int:
     from .catalog import get_catalog
 
-    c = get_catalog()
+    c = get_catalog(profile=args.profile)
     e = c.get(args.key)
     if e is None:
         print(f"catalog: key not found: {args.key}", file=sys.stderr)
@@ -550,6 +550,12 @@ def _cmd_project_catalog_show(args: argparse.Namespace) -> int:
 
 def _add_common_filters(p: argparse.ArgumentParser) -> None:
     p.add_argument(
+        "--profile",
+        choices=("default", "framework-core"),
+        default="default",
+        help="Catalog profile: default (full) or framework-core (exclude doc/example entries)",
+    )
+    p.add_argument(
         "--kind",
         action="append",
         default=None,
@@ -592,6 +598,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_show = sub_cat.add_parser("show", help="Show one entry details and companions")
     p_show.add_argument("key", help="Entry key, e.g. adapter.vns")
+    p_show.add_argument(
+        "--profile",
+        choices=("default", "framework-core"),
+        default="default",
+        help="Catalog profile: default (full) or framework-core (exclude doc/example entries)",
+    )
     p_show.set_defaults(func=_cmd_catalog_show)
 
     p_add = sub_cat.add_parser("add", help="Quick add/update a catalog entry in TOML")

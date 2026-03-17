@@ -1,7 +1,7 @@
 # Numerical Solver Base（原理与用法）
 
 ## 1) 作用
-`NumericalSolverPlugin` 是“隐式方程评估接管器”：
+`NumericalSolverProviderPlugin` 是“隐式方程评估接管器”：
 - 当 Problem 提供隐式系统 hook 时，插件先做数值求解，再回填 objective/violation。
 - 当 hook 不存在时，不接管，保持默认 `problem.evaluate` 路径。
 
@@ -26,10 +26,10 @@
 
 ## 5) 最小接入示例
 ```python
-from nsgablack.plugins import NumericalSolverConfig, NewtonSolverPlugin
+from nsgablack.plugins import NumericalSolverConfig, NewtonSolverProviderPlugin
 
 solver.add_plugin(
-    NewtonSolverPlugin(
+    NewtonSolverProviderPlugin(
         config=NumericalSolverConfig(
             tol=1e-8,
             max_iter=100,

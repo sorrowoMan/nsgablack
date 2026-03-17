@@ -26,7 +26,9 @@ from .doctor_core.rules import (
     check_contract_source as _check_contract_source_rule,
     check_examples_suites_solver_control_writes as _check_examples_suites_solver_control_writes_rule,
     check_metrics_provider_alignment as _check_metrics_provider_alignment_rule,
+    check_no_plugin_evaluation_short_circuit as _check_no_plugin_evaluation_short_circuit_rule,
     check_registry as _check_registry_rule,
+    check_runtime_governance_runtime_state as _check_runtime_governance_runtime_state_rule,
     check_runtime_private_surface as _check_runtime_private_surface_rule,
     check_structure as _check_structure_rule,
     check_snapshot_refs as _check_snapshot_refs_rule,
@@ -36,7 +38,7 @@ from .doctor_core.rules import (
     looks_like_scaffold_project as _looks_like_scaffold_project_rule,
 )
 from ..catalog import get_catalog
-from ..utils.context.context_keys import (
+from ..core.state.context_keys import (
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_CONSTRAINT_VIOLATIONS_REF,
     KEY_DECISION_TRACE,
@@ -223,6 +225,7 @@ def _check_build_solver(root: Path, diags: List[DoctorDiagnostic], *, instantiat
         check_component_catalog_registration=_check_component_catalog_registration,
         check_metrics_provider_alignment=_check_metrics_provider_alignment,
         check_process_like_bias_usage=_check_process_like_bias_usage,
+        check_runtime_governance_runtime_state=_check_runtime_governance_runtime_state,
     )
 
 
@@ -408,6 +411,22 @@ def _check_runtime_private_surface(root: Path, diags: List[DoctorDiagnostic], *,
     )
 
 
+def _check_runtime_governance_runtime_state(
+    *,
+    solver: object,
+    build_file: Path,
+    diags: List[DoctorDiagnostic],
+    strict: bool,
+) -> None:
+    _check_runtime_governance_runtime_state_rule(
+        solver=solver,
+        build_file=build_file,
+        diags=diags,
+        strict=bool(strict),
+        add=_add,
+    )
+
+
 def _check_component_order_constraints(root: Path, diags: List[DoctorDiagnostic], *, strict: bool) -> None:
     _check_component_order_constraints_rule(
         root=root,
@@ -438,6 +457,12 @@ def run_project_doctor(
     _check_contract_source(root, diags, strict=bool(strict))
     _check_component_order_constraints(root, diags, strict=bool(strict))
     _check_runtime_private_surface(root, diags, strict=bool(strict))
+    _check_no_plugin_evaluation_short_circuit_rule(
+        root=root,
+        diags=diags,
+        strict=bool(strict),
+        add=_add,
+    )
     _check_adapter_layer_purity(root, diags, strict=bool(strict))
     _check_examples_suites_solver_control_writes(root, diags, strict=bool(strict))
     _check_broad_exception_swallow(root, diags, strict=bool(strict))
@@ -452,7 +477,7 @@ def _add_common_misuse_hints(root: Path, diags: List[DoctorDiagnostic]) -> None:
         "doctor-common-misuse-hints",
         (
             "Common misuse hints: do not read/write solver population/objectives/constraint_violations directly; "
-            "use resolve_population_snapshot()/commit_population_snapshot()/solver.read_snapshot(). "
+            "use get_population_snapshot()/commit_population_snapshot()/solver.read_snapshot(). "
             "Keep large objects in SnapshotStore and only references in Context."
         ),
         root,
@@ -468,3 +493,4 @@ def iter_diagnostics_by_level(
     level: str,
 ) -> List[DoctorDiagnostic]:
     return _iter_diagnostics_by_level(diagnostics, level)
+

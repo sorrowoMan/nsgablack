@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable, List, Sequence, Set
 
 from ..model import DoctorDiagnostic
-from nsgablack.utils.context.context_keys import (
+from nsgablack.core.state.context_keys import (
     CANONICAL_CONTEXT_KEYS,
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_DECISION_TRACE,

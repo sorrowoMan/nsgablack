@@ -5,7 +5,6 @@ from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
-from ..base import Plugin
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
 from ...utils.extension_contracts import (
     ContractError,
@@ -43,8 +42,10 @@ class SurrogateEvaluationConfig:
     random_seed: Optional[int] = 0
 
 
-class SurrogateEvaluationPlugin(Plugin):
-    is_algorithmic = True
+class SurrogateEvaluationProviderPlugin:
+    """Surrogate L4 provider factory."""
+
+    is_algorithmic = False
     context_requires = ()
     context_provides = (KEY_METRICS_SURROGATE_STD,)
     context_mutates = (KEY_METRICS,)
@@ -72,7 +73,7 @@ class SurrogateEvaluationPlugin(Plugin):
         parallel_evaluator: Any = None,
         parallel_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
-        super().__init__(name=name)
+        self.name = str(name)
         self.cfg = config or SurrogateEvaluationConfig()
         self.model_type = str(model_type)
         # Optional: allow using a pre-trained surrogate model (capability-layer only).
@@ -92,20 +93,14 @@ class SurrogateEvaluationPlugin(Plugin):
             "train_samples": 0,
         }
 
-    def on_solver_init(self, solver):
-        if self._surrogate is not None:
-            return
-
-        # 延迟 import，避免把 sklearn 强绑定到核心路径
-        from ...utils.surrogate.vector_surrogate import VectorSurrogate
-
-        n_obj = int(getattr(solver, "num_objectives", 1) or 1)
-        self._surrogate = VectorSurrogate(num_objectives=n_obj, model_type=self.model_type)  # type: ignore[arg-type]
-
-    # ---- short-circuit hook: SolverBase.evaluate_population(...) ----
-    def evaluate_population(self, solver, population: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    # ---- L4 provider implementation ----
+    def evaluate_population_runtime(self, solver, population: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         if self._surrogate is None:
-            raise RuntimeError("SurrogateEvaluationPlugin not initialized (missing on_solver_init call)")
+            # Lazy import to avoid hard sklearn binding on core path.
+            from ...utils.surrogate.vector_surrogate import VectorSurrogate
+
+            n_obj = int(getattr(solver, "num_objectives", 1) or 1)
+            self._surrogate = VectorSurrogate(num_objectives=n_obj, model_type=self.model_type)  # type: ignore[arg-type]
 
         pop = np.asarray(population)
         if pop.ndim == 1:
@@ -187,6 +182,35 @@ class SurrogateEvaluationPlugin(Plugin):
             out_obj[i] = obj_i
 
         return out_obj, violations
+
+    def create_provider(self):
+        owner = self
+
+        class _Provider:
+            name = owner.name
+            semantic_mode = "approximate"
+
+            def can_handle_individual(self, solver, x, context):
+                _ = solver
+                _ = context
+                return x is not None
+
+            def evaluate_individual(self, solver, x, context, individual_id=None):
+                _ = context
+                pop = np.asarray(x, dtype=float).reshape(1, -1)
+                objs, vios = owner.evaluate_population_runtime(solver, pop)
+                return np.asarray(objs[0], dtype=float).reshape(-1), float(vios[0])
+
+            def can_handle_population(self, solver, population, context):
+                _ = solver
+                _ = context
+                return owner._surrogate is not None and population is not None and int(np.asarray(population).shape[0]) > 0
+
+            def evaluate_population(self, solver, population, context):
+                _ = context
+                return owner.evaluate_population_runtime(solver, np.asarray(population, dtype=float))
+
+        return _Provider()
 
     # ------------------------------------------------------------------
     # Internals
