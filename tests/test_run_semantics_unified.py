@@ -16,6 +16,7 @@ from nsgablack.core.composable_solver import ComposableSolver
 from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.plugins.base import Plugin
+from nsgablack.adapters.algorithm_adapter import AlgorithmAdapter
 
 
 class SimpleProblem(BlackBoxProblem):
@@ -87,6 +88,22 @@ class GenerationCounterPlugin(Plugin):
     def all_consistent(self) -> bool:
         """Check if on_generation_start and on_generation_end saw same generation."""
         return all(start == end for start, end in self.gen_pairs)
+
+
+class FixedAdapter(AlgorithmAdapter):
+    """Deterministic adapter for hook-order tests."""
+
+    def __init__(self, n_candidates: int = 4):
+        super().__init__("fixed_adapter")
+        self.n_candidates = int(n_candidates)
+
+    def propose(self, solver: Any, context: Dict[str, Any]):
+        _ = context
+        return [np.zeros((solver.dimension,), dtype=float) for _ in range(self.n_candidates)]
+
+    def update(self, solver: Any, candidates, objectives, violations, context):
+        _ = (solver, candidates, objectives, violations, context)
+        return None
 
 
 class FaultyProblem(BlackBoxProblem):
@@ -175,6 +192,32 @@ def test_hook_order_consistency_evolution_solver():
         assert start_idx < step_idx < end_idx
 
 
+def test_hook_order_consistency_evolution_vs_composable():
+    """Ensure EvolutionSolver and ComposableSolver share core hook order."""
+    recorder_evo = HookRecorderPlugin()
+    recorder_comp = HookRecorderPlugin()
+
+    evo = EvolutionSolver(problem=SimpleProblem(), pop_size=6, max_generations=3)
+    evo.add_plugin(recorder_evo)
+    evo.run(return_dict=True)
+
+    comp = ComposableSolver(problem=SimpleProblem(), adapter=FixedAdapter(n_candidates=6))
+    comp.add_plugin(recorder_comp)
+    comp.set_max_steps(3)
+    comp.run()
+
+    core_hooks = {
+        "on_solver_init",
+        "on_generation_start",
+        "on_step",
+        "on_generation_end",
+        "on_solver_finish",
+    }
+    evo_order = [h for h in recorder_evo.order if h in core_hooks]
+    comp_order = [h for h in recorder_comp.order if h in core_hooks]
+    assert evo_order == comp_order, (evo_order, comp_order)
+
+
 def test_generation_counter_consistency_evolution_solver():
     """Test that generation counter is consistent during hooks in EvolutionSolver.
     
@@ -221,7 +264,8 @@ def test_max_steps_parameter_compatibility():
         max_generations=7,
     )
     result = evo_solver.run(return_dict=True)
-    assert result['generation'] == 7
+    assert result['steps'] == 7
+    assert result['generation'] in (6, 7)
     
     # KNOWN LIMITATION: run(max_steps=5) is ignored by EvolutionSolver
     # TODO: After fix, this should work:

@@ -7,7 +7,7 @@ def test_inner_solver_backend_retry_and_timeout_strategy():
     from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.plugins import InnerSolverConfig, InnerSolverPlugin
+    from nsgablack.core.nested_solver import InnerRuntimeConfig, TaskInnerRuntimeEvaluator
     from nsgablack.plugins.solver_backends.backend_contract import BackendSolveRequest
 
     class _RetryBackend:
@@ -45,11 +45,9 @@ def test_inner_solver_backend_retry_and_timeout_strategy():
     solver = ComposableSolver(problem=_Problem(), adapter=_Adapter())
     solver.max_steps = 1
     solver.pop_size = 1
-    solver.add_plugin(
-        InnerSolverPlugin(
-            config=InnerSolverConfig(max_retries=1, retry_backoff_ms=0.0),
-            inner_backend_factory=lambda _p, _ctx: backend,
-        )
+    solver.problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(
+        config=InnerRuntimeConfig(max_retries=1, retry_backoff_ms=0.0),
+        inner_backend_factory=lambda _p, _ctx: backend,
     )
     solver.run()
     assert solver.best_objective is not None

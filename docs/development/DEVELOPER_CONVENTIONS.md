@@ -10,7 +10,7 @@
 
 | 操作 | 方法 | 含义 |
 |------|------|------|
-| **读种群** | `solver.read_snapshot()` / `Plugin.resolve_population_snapshot(solver)` | 快照优先：snapshot store → adapter → solver |
+| **读种群** | `solver.read_snapshot()` / `Plugin.get_population_snapshot(solver)` | 快照优先：snapshot store → adapter → solver |
 | **写种群** | `Plugin.commit_population_snapshot(solver, pop, obj, vio)` | 回写到 adapter（优先）和 solver |
 
 ### 为什么

@@ -214,12 +214,12 @@ example_entry = 'python -m nsgablack catalog search dynamic_cli_signal --kind ex
 key = "tool.context_store_redis"
 title = "RedisContextStore"
 kind = "tool"
-import_path = "nsgablack.utils.context.context_store:RedisContextStore"
+import_path = "nsgablack.core.state.context_store:RedisContextStore"
 tags = ["context", "redis", "store", "tool", "backend", "ttl"]
 summary = "Context backend tool: RedisContextStore for shared context state with optional TTL."
 use_when = ["Need Redis-backed context storage/shared state for runs, replay, or distributed workers."]
 minimal_wiring = [
-  "from nsgablack.utils.context.context_store import create_context_store",
+  "from nsgablack.core.state.context_store import create_context_store",
   "store = create_context_store(backend='redis', redis_url='redis://127.0.0.1:6379/0', key_prefix='nsgablack:run', ttl_seconds=30)"
 ]
 required_companions = ["(none)"]
@@ -902,9 +902,9 @@ config_keys = ['(none)']
 example_entry = 'python -m nsgablack catalog search production_scheduling --kind example'
 [[entry]]
 key = "plugin.monte_carlo_eval"
-title = "MonteCarloEvaluationPlugin"
+title = "MonteCarloEvaluationProviderPlugin"
 kind = "plugin"
-import_path = "nsgablack.plugins.evaluation.monte_carlo_evaluation:MonteCarloEvaluationPlugin"
+import_path = "nsgablack.plugins.evaluation.monte_carlo_evaluation:MonteCarloEvaluationProviderPlugin"
 tags = ["evaluation", "mc", "robustness", "plugin"]
 summary = "Monte Carlo 璇勪及鎻掍欢锛氬鍊欓€夎В鍋氭壈鍔ㄩ噰鏍疯瘎浼板苟鍐欏叆缁熻閲忋€?/ Plugin: perturbation-based Monte Carlo evaluation with metrics."
 companions = ['bias.robustness']
@@ -912,17 +912,17 @@ context_provides = ["metrics.mc_samples", "metrics.mc_mean", "metrics.mc_std", "
 context_mutates = ["metrics"]
 use_when = ["闇€瑕佹瘮杈冭В鐨勭ǔ鍋ユ€э紙鑰岄潪鍗曠偣骞歌繍鍊硷級鏃?, "瀛樺湪杈撳叆鎵板姩/鍣０涓斿笇鏈涚粺璁℃剰涔夎瘎浼版椂"]
 minimal_wiring = [
-  "from nsgablack.plugins import MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig",
-  "solver.add_plugin(MonteCarloEvaluationPlugin(config=MonteCarloEvaluationConfig(n_samples=16)))"
+  "from nsgablack.plugins import MonteCarloEvaluationProviderPlugin, MonteCarloEvaluationConfig",
+  "solver.register_evaluation_provider(MonteCarloEvaluationProviderPlugin(config=MonteCarloEvaluationConfig(n_samples=16)).build_provider())"
 ]
 required_companions = ["bias.robustness"]
 config_keys = ["n_samples", "noise_std", "aggregation", "seed", "parallel"]
 example_entry = "examples/monte_carlo_dp_robust_demo.py:build_solver"
 [[entry]]
 key = "plugin.surrogate_eval"
-title = "SurrogateEvaluationPlugin"
+title = "SurrogateEvaluationProviderPlugin"
 kind = "plugin"
-import_path = "nsgablack.plugins.evaluation.surrogate_evaluation:SurrogateEvaluationPlugin"
+import_path = "nsgablack.plugins.evaluation.surrogate_evaluation:SurrogateEvaluationProviderPlugin"
 tags = ["evaluation", "surrogate", "plugin"]
 summary = "浠ｇ悊璇勪及鎻掍欢锛氱敤 surrogate 杩戜技璇勪及骞惰緭鍑轰笉纭畾搴︽寚鏍囥€?/ Plugin: surrogate-assisted evaluation with uncertainty metrics."
 companions = []
@@ -930,33 +930,33 @@ context_provides = ["metrics.surrogate_std"]
 context_mutates = ["metrics"]
 use_when = ["鐪熷疄璇勪及鏄傝吹锛岄渶瑕佸厛鐢ㄤ唬鐞嗙瓫閫夊€欓€夋椂", "甯屾湜闄嶄綆鎬讳綋璇勪及鎴愭湰鏃?]
 minimal_wiring = [
-  "from nsgablack.plugins import SurrogateEvaluationPlugin, SurrogateEvaluationConfig",
-  "solver.add_plugin(SurrogateEvaluationPlugin(config=SurrogateEvaluationConfig()))"
+  "from nsgablack.plugins import SurrogateEvaluationProviderPlugin, SurrogateEvaluationConfig",
+  "solver.register_evaluation_provider(SurrogateEvaluationProviderPlugin(config=SurrogateEvaluationConfig()).build_provider())"
 ]
 required_companions = []
 config_keys = ["train_interval", "warmup_evals", "uncertainty_threshold", "model_type", "fallback_on_error"]
 example_entry = "examples/surrogate_plugin_demo.py:build_solver"
 [[entry]]
 key = "plugin.multi_fidelity_eval"
-title = "MultiFidelityEvaluationPlugin"
+title = "MultiFidelityEvaluationProviderPlugin"
 kind = "plugin"
-import_path = "nsgablack.plugins.evaluation.multi_fidelity_evaluation:MultiFidelityEvaluationPlugin"
+import_path = "nsgablack.plugins.evaluation.multi_fidelity_evaluation:MultiFidelityEvaluationProviderPlugin"
 tags = ["evaluation", "multi_fidelity", "plugin"]
 summary = "澶氫繚鐪熻瘎浼版彃浠讹細鎸夐樁娈?瑙勫垯鍒囨崲浣庝繚鐪熶笌楂樹繚鐪熻瘎浼般€?/ Plugin: multi-fidelity evaluation switching between low/high fidelity."
 companions = []
 use_when = ["璇勪及鎴愭湰楂樹笖鍙瀯閫犱綆淇濈湡杩戜技鏃?, "甯屾湜鍏堢矖绛涘啀绮捐瘎鏃?]
 minimal_wiring = [
-  "from nsgablack.plugins import MultiFidelityEvaluationPlugin, MultiFidelityEvaluationConfig",
-  "solver.add_plugin(MultiFidelityEvaluationPlugin(config=MultiFidelityEvaluationConfig()))"
+  "from nsgablack.plugins import MultiFidelityEvaluationProviderPlugin, MultiFidelityEvaluationConfig",
+  "solver.register_evaluation_provider(MultiFidelityEvaluationProviderPlugin(config=MultiFidelityEvaluationConfig()).build_provider())"
 ]
 required_companions = []
 config_keys = ["low_fidelity_ratio", "switch_step", "budget", "fallback_to_high_fidelity"]
 example_entry = "examples/multi_fidelity_demo.py:build_solver"
 [[entry]]
 key = "plugin.newton_solver"
-title = "NewtonSolverPlugin"
+title = "NewtonSolverProviderPlugin"
 kind = "plugin"
-import_path = "nsgablack.plugins.evaluation.newton_solver_plugin:NewtonSolverPlugin"
+import_path = "nsgablack.plugins.evaluation.newton_solver_plugin:NewtonSolverProviderPlugin"
 tags = ["evaluation", "solver", "nonlinear", "newton", "plugin"]
 summary = "Newton solver plugin: nonlinear equation solving during evaluation. / 牛顿求解插件：在评估阶段执行非线性方程求解。"
 companions = ['plugin.broyden_solver']
@@ -967,17 +967,17 @@ context_cache = []
 context_notes = ["Requires problem hooks build_implicit_system(x, ctx) and evaluate_from_implicit_solution(x, y, ctx)."]
 use_when = ["Use when evaluation requires solving implicit nonlinear equations.", "Use when you want solver-plugin replacement without touching outer loop."]
 minimal_wiring = [
-  "from nsgablack.plugins import NewtonSolverPlugin, NumericalSolverConfig",
-  "solver.add_plugin(NewtonSolverPlugin(config=NumericalSolverConfig(tol=1e-8, max_iter=100)))"
+  "from nsgablack.plugins import NewtonSolverProviderPlugin, NumericalSolverConfig",
+  "solver.register_evaluation_provider(NewtonSolverProviderPlugin(config=NumericalSolverConfig(tol=1e-8, max_iter=100)).build_provider())"
 ]
 required_companions = ["problem hook: build_implicit_system", "problem hook: evaluate_from_implicit_solution"]
 config_keys = ["tol", "max_iter", "fallback_to_problem_eval", "warn_on_failure"]
 example_entry = "python -m nsgablack catalog search newton_solver --kind plugin"
 [[entry]]
 key = "plugin.broyden_solver"
-title = "BroydenSolverPlugin"
+title = "BroydenSolverProviderPlugin"
 kind = "plugin"
-import_path = "nsgablack.plugins.evaluation.broyden_solver_plugin:BroydenSolverPlugin"
+import_path = "nsgablack.plugins.evaluation.broyden_solver_plugin:BroydenSolverProviderPlugin"
 tags = ["evaluation", "solver", "nonlinear", "broyden", "plugin"]
 summary = "Broyden solver plugin: Jacobian-free nonlinear solving in evaluation. / Broyden 求解插件：无显式 Jacobian 的评估求解。"
 companions = ['plugin.newton_solver']
@@ -985,36 +985,15 @@ context_requires = ["problem"]
 context_provides = ["metrics.implicit_residual", "metrics.implicit_iters", "metrics.implicit_success"]
 context_mutates = ["metrics"]
 context_cache = []
-context_notes = ["Same problem hooks as NewtonSolverPlugin; useful when Jacobian is unavailable."]
+context_notes = ["Same problem hooks as NewtonSolverProviderPlugin; useful when Jacobian is unavailable."]
 use_when = ["Use when Jacobian is unavailable or unstable.", "Use when a Jacobian-free nonlinear backend is preferred."]
 minimal_wiring = [
-  "from nsgablack.plugins import BroydenSolverPlugin, NumericalSolverConfig",
-  "solver.add_plugin(BroydenSolverPlugin(config=NumericalSolverConfig(tol=1e-7, max_iter=120)))"
+  "from nsgablack.plugins import BroydenSolverProviderPlugin, NumericalSolverConfig",
+  "solver.register_evaluation_provider(BroydenSolverProviderPlugin(config=NumericalSolverConfig(tol=1e-7, max_iter=120)).build_provider())"
 ]
 required_companions = ["problem hook: build_implicit_system", "problem hook: evaluate_from_implicit_solution"]
 config_keys = ["tol", "max_iter", "fallback_to_problem_eval", "warn_on_failure"]
 example_entry = "python -m nsgablack catalog search broyden_solver --kind plugin"
-[[entry]]
-key = "plugin.inner_solver"
-title = "InnerSolverPlugin"
-kind = "plugin"
-import_path = "nsgablack.plugins.solver_backends.inner_solver:InnerSolverPlugin"
-tags = ["evaluation", "nested", "inner", "plugin"]
-summary = "Inner solver plugin: runs inner workflow in evaluate_individual. / 内层求解插件：在 evaluate_individual 中执行内层流程。"
-companions = ['plugin.contract_bridge', 'plugin.inner_timeout_budget']
-context_requires = ["problem"]
-context_provides = ["metrics.inner_elapsed_ms", "metrics.inner_status", "metrics.inner_calls"]
-context_mutates = ["metrics"]
-context_cache = []
-context_notes = ["Supports problem hooks build_inner_problem/build_inner_solver/run_inner_solver/evaluate_from_inner_result and optional custom factories."]
-use_when = ["Use when evaluation itself is an inner problem workflow.", "Use when you need layered/nested optimization architecture."]
-minimal_wiring = [
-  "from nsgablack.plugins import InnerSolverPlugin, InnerSolverConfig",
-  "solver.add_plugin(InnerSolverPlugin(config=InnerSolverConfig(source_layer='L2', target_layer='L1')))"
-]
-required_companions = ["problem hook: evaluate_from_inner_result (recommended)"]
-config_keys = ["source_layer", "target_layer", "fallback_penalty", "warn_on_failure"]
-example_entry = "python -m nsgablack catalog search inner_solver --kind plugin"
 [[entry]]
 key = "plugin.contract_bridge"
 title = "ContractBridgePlugin"
@@ -1022,7 +1001,7 @@ kind = "plugin"
 import_path = "nsgablack.plugins.solver_backends.contract_bridge:ContractBridgePlugin"
 tags = ["evaluation", "nested", "bridge", "contract", "plugin"]
 summary = "Contract bridge plugin: maps inner result fields across layers. / 契约桥接插件：把内层结果字段映射到任意层级。"
-companions = ['plugin.inner_solver', 'plugin.inner_timeout_budget']
+companions = ['plugin.inner_timeout_budget', 'runtime.inner_evaluator']
 context_requires = []
 context_provides = []
 context_mutates = ["metadata.layers"]
@@ -1033,7 +1012,7 @@ minimal_wiring = [
   "from nsgablack.plugins import ContractBridgePlugin, BridgeRule",
   "solver.add_plugin(ContractBridgePlugin(rules=[BridgeRule('objective', 'inner_objective', target_layer='L1')]))"
 ]
-required_companions = ["plugin.inner_solver"]
+required_companions = ["runtime.inner_evaluator"]
 config_keys = ["rules", "allow_overwrite"]
 example_entry = "python -m nsgablack catalog search contract_bridge --kind plugin"
 [[entry]]
@@ -1043,7 +1022,7 @@ kind = "plugin"
 import_path = "nsgablack.plugins.solver_backends.timeout_budget:TimeoutBudgetPlugin"
 tags = ["evaluation", "nested", "timeout", "budget", "plugin"]
 summary = "Inner timeout/budget plugin: bounds inner calls and runtime. / 内层预算插件：限制内层调用次数与耗时。"
-companions = ['plugin.inner_solver', 'plugin.contract_bridge']
+companions = ['plugin.contract_bridge', 'runtime.inner_evaluator']
 context_requires = []
 context_provides = []
 context_mutates = []
@@ -1054,51 +1033,30 @@ minimal_wiring = [
   "from nsgablack.plugins import TimeoutBudgetPlugin, TimeoutBudgetConfig",
   "solver.add_plugin(TimeoutBudgetPlugin(config=TimeoutBudgetConfig(layer='L2', max_calls=200, time_budget_ms=30000)))"
 ]
-required_companions = ["plugin.inner_solver"]
+required_companions = ["runtime.inner_evaluator"]
 config_keys = ["layer", "max_calls", "time_budget_ms", "fail_closed"]
 example_entry = "python -m nsgablack catalog search inner_timeout_budget --kind plugin"
 [[entry]]
-key = "plugin.mas_model"
-title = "MASModelPlugin"
+key = "runtime.inner_evaluator"
+title = "TaskInnerRuntimeEvaluator"
 kind = "plugin"
-import_path = "nsgablack.plugins.models.mas_model:MASModelPlugin"
-tags = ["plugin", "model", "mas", "surrogate"]
-summary = "MAS model plugin: accumulates population/objective samples, trains lightweight surrogate, and exposes context['mas_model'] for MASAdapter."
-companions = ['adapter.mas']
-context_requires = []
-context_provides = ["mas_model"]
-context_mutates = ["mas_model"]
+import_path = "nsgablack.core.nested_solver:TaskInnerRuntimeEvaluator"
+tags = ["runtime", "nested", "inner", "evaluation", "contract"]
+summary = "Problem-side inner runtime evaluator: executes nested evaluation through problem.inner_runtime_evaluator."
+companions = ['plugin.contract_bridge', 'plugin.inner_timeout_budget']
+context_requires = ["problem"]
+context_provides = ["metrics.inner_calls", "metrics.inner_status", "metrics.inner_elapsed_ms"]
+context_mutates = ["metrics"]
 context_cache = []
-context_notes = ["Reads solver.population and solver.objectives on generation end; writes context key mas_model on context build."]
-use_when = ["MASAdapter needs model-guided exploit step.", "Real evaluation is expensive and runtime surrogate guidance is desired."]
+context_notes = ["Configured at problem level (solver.problem.inner_runtime_evaluator), not via solver.add_plugin()."]
+use_when = ["Evaluation itself is a nested optimization workflow.", "You need L1/L2/L3 layered evaluation contracts."]
 minimal_wiring = [
-  "from nsgablack.plugins import MASModelPlugin, MASModelConfig",
-  "solver.add_plugin(MASModelPlugin(config=MASModelConfig(min_train_samples=20, retrain_every_call=True, model_type='rf')))"
+  "from nsgablack.core.nested_solver import InnerRuntimeConfig, TaskInnerRuntimeEvaluator",
+  "solver.problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(config=InnerRuntimeConfig(source_layer='L2', target_layer='L1'))"
 ]
-required_companions = ["adapter.mas"]
-config_keys = ["min_train_samples", "retrain_every_call", "model_type"]
-example_entry = "examples/mas_demo.py:build_solver"
-[[entry]]
-key = "plugin.subspace_basis"
-title = "SubspaceBasisPlugin"
-kind = "plugin"
-import_path = "nsgablack.plugins.models.subspace_basis:SubspaceBasisPlugin"
-tags = ["plugin", "model", "subspace", "pca", "svd", "random", "cluster", "sparse_pca"]
-summary = "Subspace basis plugin: learns or samples low-rank basis from population and exposes context['subspace_basis'] for trust-region subspace adapters."
-companions = ['adapter.trust_region_subspace']
-context_requires = []
-context_provides = ["subspace_basis"]
-context_mutates = ["subspace_basis"]
-context_cache = []
-context_notes = ["Reads solver.population on generation end and periodically updates context key subspace_basis."]
-use_when = ["Trust-region subspace search needs data-driven basis instead of purely random basis.", "High-dimensional search benefits from periodic low-rank projection updates."]
-minimal_wiring = [
-  "from nsgablack.plugins import SubspaceBasisPlugin, SubspaceBasisConfig",
-  "solver.add_plugin(SubspaceBasisPlugin(config=SubspaceBasisConfig(method='pca', subspace_dim=8, min_samples=32, update_every=5)))"
-]
-required_companions = ["adapter.trust_region_subspace"]
-config_keys = ["method", "subspace_dim", "min_samples", "update_every", "random_seed"]
-example_entry = "examples/trust_region_subspace_demo.py:build_solver"
+required_companions = ["problem hook: evaluate_from_inner_result (recommended)"]
+config_keys = ["source_layer", "target_layer", "fallback_penalty", "warn_on_failure", "max_retries", "per_call_timeout_ms", "retry_backoff_ms"]
+example_entry = "python -m nsgablack catalog search inner_runtime --kind plugin"
 [[entry]]
 key = "plugin.pareto_archive"
 title = "ParetoArchivePlugin"
@@ -1212,36 +1170,6 @@ minimal_wiring = [
 required_companions = []
 config_keys = ["host", "port", "user", "password", "database", "table", "connect_timeout"]
 example_entry = "python -m nsgablack catalog show plugin.mysql_run_logger"
-[[entry]]
-key = "plugin.adaptive_parameters"
-title = "AdaptiveParametersPlugin"
-kind = "plugin"
-import_path = "nsgablack.plugins.runtime.adaptive_parameters:AdaptiveParametersPlugin"
-tags = ["runtime", "adaptive", "plugin", "parameters"]
-summary = "鑷€傚簲鍙傛暟鎻掍欢锛氭牴鎹仠婊?鏀硅繘鐘舵€佽皟鑺傛悳绱㈠弬鏁般€?/ Plugin: adapt mutation/crossover parameters from progress signals."
-use_when = ["鎼滅储鍑虹幇鏃╃啛鏀舵暃鎴栧仠婊炴椂", "甯屾湜鍑忓皯鎵嬪伐璋冨弬棰戠巼鏃?]
-minimal_wiring = [
-  "from nsgablack.plugins import AdaptiveParametersPlugin",
-  "solver.add_plugin(AdaptiveParametersPlugin())"
-]
-required_companions = []
-config_keys = ["stagnation_window", "improvement_threshold", "min_mutation_rate", "max_mutation_rate", "min_crossover_rate", "max_crossover_rate"]
-example_entry = "examples/plugin_gallery_demo.py:build_solver"
-[[entry]]
-key = "plugin.convergence_monitor"
-title = "ConvergencePlugin"
-kind = "plugin"
-import_path = "nsgablack.plugins.runtime.convergence:ConvergencePlugin"
-tags = ["runtime", "convergence", "monitor", "plugin"]
-summary = "鏀舵暃鐩戞帶鎻掍欢锛氱洃娴嬪仠婊炰笌澶氭牱鎬э紝鏀寔鏃╁仠绛栫暐銆?/ Plugin: convergence/stagnation monitor with optional early stop."
-use_when = ["甯屾湜鍦ㄦ棤鏁堣凯浠ｉ樁娈垫彁鍓嶇粓姝㈡椂", "闇€瑕佸彲瑙ｉ噴鐨勬敹鏁涜繃绋嬩俊鍙锋椂"]
-minimal_wiring = [
-  "from nsgablack.plugins import ConvergencePlugin",
-  "solver.add_plugin(ConvergencePlugin())"
-]
-required_companions = []
-config_keys = ["stagnation_window", "improvement_epsilon", "diversity_threshold", "min_generations", "enable_early_stop"]
-example_entry = "examples/nsga2_solver_demo.py:build_solver"
 [[entry]]
 key = "plugin.diversity_init"
 title = "DiversityInitPlugin"
@@ -1738,9 +1666,9 @@ config_keys = ["(none)"]
 
 [[entry]]
 key = "plugin.gpu_eval_template"
-title = "GpuEvaluationTemplatePlugin"
+title = "GpuEvaluationTemplateProviderPlugin"
 kind = "plugin"
-import_path = "nsgablack.plugins.evaluation.gpu_evaluation_template:GpuEvaluationTemplatePlugin"
+import_path = "nsgablack.plugins.evaluation.gpu_evaluation_template:GpuEvaluationTemplateProviderPlugin"
 tags = ["plugin", "evaluation", "gpu", "template", "short_circuit"]
 summary = "Minimal GPU evaluation short-circuit template plugin. / 最小 GPU 评估短路模板插件。"
 companions = ['plugin.mysql_run_logger']
@@ -1750,7 +1678,7 @@ context_mutates = ["metrics"]
 context_cache = []
 context_notes = ["Returns None when backend/hook unavailable, so solver keeps default path."]
 use_when = ["Need a minimal GPU batch-evaluation short-circuit plugin with safe fallback."]
-minimal_wiring = ["from nsgablack.plugins import GpuEvaluationTemplatePlugin", "solver.add_plugin(GpuEvaluationTemplatePlugin())"]
+minimal_wiring = ["from nsgablack.plugins import GpuEvaluationTemplateProviderPlugin", "solver.register_evaluation_provider(GpuEvaluationTemplateProviderPlugin().build_provider())"]
 required_companions = ["(none)"]
 config_keys = ["preferred_backend", "device", "fallback_to_solver_eval", "warn_on_fallback"]
 example_entry = "python -m nsgablack catalog search gpu_eval_template --kind plugin"

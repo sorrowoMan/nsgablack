@@ -15,7 +15,6 @@ and MAS (Model‑and‑Search).
 - `MASAdapter` (model‑and‑search loop)
 
 ### Plugins
-- `MASModelPlugin` (injects surrogate model into context for MAS)
 
 ### Wiring Helpers (authority wiring)
 
@@ -34,7 +33,6 @@ and MAS (Model‑and‑Search).
 | DFO Trust‑Region | TrustRegionDFOAdapter | (optional surrogate) | optional exploration bias | repair / init |
 | Subspace TR | TrustRegionSubspaceAdapter | subspace surrogate (optional) | optional exploration bias | repair / init |
 | Non‑Smooth TR | TrustRegionNonSmoothAdapter | (optional stats) | optional soft penalties | repair / init |
-| MAS | MASAdapter | MASModelPlugin | optional exploration bias | repair / init |
 
 ---
 
@@ -44,7 +42,6 @@ and MAS (Model‑and‑Search).
    The search loop is fully isolated and can be swapped without affecting the solver base.
 
 2) **Model logic sits in Plugin**  
-   MAS uses `MASModelPlugin` to provide a surrogate without contaminating the Adapter.
 
 3) **Hard constraints are enforced by the pipeline**  
    All candidates pass through `RepresentationPipeline.repair`, keeping feasibility logic centralized.
@@ -79,8 +76,6 @@ All new entries are registered in Catalog and API index:
 - `adapter.trust_region_subspace`
 - `adapter.trust_region_nonsmooth`
 - `adapter.mas`
-- `plugin.mas_model`
-- `plugin.subspace_basis`
 
 Use:
 

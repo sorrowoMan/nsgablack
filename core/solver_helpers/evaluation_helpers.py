@@ -1,4 +1,4 @@
-"""Evaluation-path helper functions used by SolverBase."""
+﻿"""Evaluation-path helper functions used by SolverBase."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Any, Optional, Tuple
 import numpy as np
 
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
+from ..nested_solver import InnerRuntimeEvaluator
 from ...utils.extension_contracts import (
     ContractError,
     normalize_candidate,
@@ -17,7 +18,6 @@ from ...utils.evaluation.shape_validation import (
     EvaluationShapeError,
     validate_individual_evaluation_shape,
     validate_population_evaluation_shape,
-    validate_plugin_short_circuit_return,
 )
 
 
@@ -26,26 +26,63 @@ def evaluate_individual_with_plugins_and_bias(
     x: np.ndarray,
     individual_id: Optional[int] = None,
 ) -> Tuple[np.ndarray, float]:
-    overridden = solver.plugin_manager.trigger("evaluate_individual", solver, x, individual_id)
-    if overridden is not None:
-        result = validate_plugin_short_circuit_return(
-            overridden,
-            expected_mode="individual",
-            population_size=None,
-            num_objectives=solver.num_objectives,
-            context="plugin.evaluate_individual",
-            strict=bool(getattr(solver, "plugin_strict", False)),
-        )
-        if result is not None:
-            obj, vio = result
-            obj = normalize_objectives(
-                obj,
-                num_objectives=solver.num_objectives,
-                name="plugin.evaluate_individual.objectives",
+    mediator = getattr(solver, "evaluation_mediator", None)
+    if mediator is not None and hasattr(mediator, "evaluate_individual"):
+        providers = getattr(mediator, "list_providers", None)
+        has_provider = callable(providers) and len(tuple(providers())) > 0
+        if has_provider:
+            return mediator.evaluate_individual(
+                solver,
+                x,
+                individual_id=individual_id,
+                context={"individual_id": individual_id},
+                fallback=lambda: _evaluate_individual_via_problem(solver, x, individual_id),
             )
-            vio = normalize_violation(vio, name="plugin.evaluate_individual.violation")
+    return _evaluate_individual_via_problem(solver, x, individual_id)
+
+
+def _evaluate_individual_via_problem(
+    solver: Any,
+    x: np.ndarray,
+    individual_id: Optional[int],
+) -> Tuple[np.ndarray, float]:
+    problem = getattr(solver, "problem", None)
+    evaluator = getattr(problem, "inner_runtime_evaluator", None) if problem is not None else None
+    if isinstance(evaluator, InnerRuntimeEvaluator):
+        nested = evaluator.evaluate(
+            solver=solver,
+            x=x,
+            individual_id=0 if individual_id is None else int(individual_id),
+            context={"individual_id": individual_id},
+        )
+        if nested is not None:
+            obj_nested, vio_nested = nested
+            obj_nested = normalize_objectives(
+                obj_nested,
+                num_objectives=solver.num_objectives,
+                name="problem.inner_runtime.objectives",
+            )
+            vio_nested = normalize_violation(vio_nested, name="problem.inner_runtime.violation")
+            cons_arr, violation_calc = evaluate_constraints_safe(solver.problem, np.asarray(x, dtype=float).reshape(-1))
+            if np.isfinite(float(violation_calc)):
+                vio_nested = float(max(float(vio_nested), float(violation_calc)))
+            if solver.enable_bias and solver.bias_module is not None:
+                ctx = solver.build_context(
+                    individual_id=individual_id,
+                    constraints=cons_arr,
+                    violation=float(vio_nested),
+                    individual=np.asarray(x, dtype=float).reshape(-1),
+                )
+                obj_nested = solver._apply_bias(
+                    obj_nested,
+                    np.asarray(x, dtype=float).reshape(-1),
+                    individual_id,
+                    ctx,
+                )
+                if solver.ignore_constraint_violation_when_bias:
+                    vio_nested = 0.0
             solver.evaluation_count += 1
-            return obj, vio
+            return obj_nested, vio_nested
 
     x = normalize_candidate(x, dimension=solver.dimension, name="evaluate_individual.x")
     val = solver.problem.evaluate(x)
@@ -67,9 +104,10 @@ def evaluate_individual_with_plugins_and_bias(
         if not np.isinf(float(violation)):
             raise
         violation = float(violation)
-    # If validation produced a violation (non-strict coercion), respect it.
-    if not np.isfinite(float(violation)) and np.isfinite(float(vio_val)):
-        violation = float(vio_val)
+    # If validation produced a violation (non-strict coercion), merge it without
+    # masking hard constraint failures (e.g., inf from constraint evaluation error).
+    if np.isfinite(float(violation)) and np.isfinite(float(vio_val)):
+        violation = float(max(float(violation), float(vio_val)))
 
     context = solver.build_context(
         individual_id=individual_id,
@@ -90,20 +128,24 @@ def evaluate_population_with_plugins_and_bias(
     solver: Any,
     population: np.ndarray,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    overridden = solver.plugin_manager.trigger("evaluate_population", solver, population)
-    if overridden is not None:
-        result = validate_plugin_short_circuit_return(
-            overridden,
-            expected_mode="population",
-            population_size=int(population.shape[0]) if population is not None else None,
-            num_objectives=solver.num_objectives,
-            context="plugin.evaluate_population",
-            strict=bool(getattr(solver, "plugin_strict", False)),
-        )
-        if result is not None:
-            objectives, violations = result
-            return objectives, violations
+    mediator = getattr(solver, "evaluation_mediator", None)
+    if mediator is not None and hasattr(mediator, "evaluate_population"):
+        providers = getattr(mediator, "list_providers", None)
+        has_provider = callable(providers) and len(tuple(providers())) > 0
+        if has_provider:
+            return mediator.evaluate_population(
+                solver,
+                population,
+                context={"population_size": int(population.shape[0]) if population is not None else None},
+                fallback=lambda: _evaluate_population_via_problem(solver, population),
+            )
+    return _evaluate_population_via_problem(solver, population)
 
+
+def _evaluate_population_via_problem(
+    solver: Any,
+    population: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
     if population is None:
         raise ContractError("evaluate_population.population cannot be empty")
     population = np.asarray(population)

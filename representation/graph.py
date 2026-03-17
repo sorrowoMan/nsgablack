@@ -10,7 +10,7 @@ from typing import Optional
 import numpy as np
 
 from .base import RepresentationComponentContract
-from ..utils.context.context_keys import KEY_NUM_NODES
+from ..core.state.context_keys import KEY_NUM_NODES
 
 
 @dataclass

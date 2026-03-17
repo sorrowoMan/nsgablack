@@ -12,7 +12,7 @@ from nsgablack.adapters.trust_region_subspace import (
     TrustRegionSubspaceAdapter,
     TrustRegionSubspaceConfig,
 )
-from nsgablack.utils.context.context_keys import KEY_MO_WEIGHTS
+from nsgablack.core.state.context_keys import KEY_MO_WEIGHTS
 
 
 class _Problem:

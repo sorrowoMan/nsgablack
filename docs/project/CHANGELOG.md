@@ -20,7 +20,7 @@ The format is based on Keep a Changelog, and this project aims to follow SemVer.
 ### Changed
 - Project doctor strict mode escalates missing contracts as errors.
 - Run Inspector Context panel gains throttled refresh, local cache, and in-UI error visibility.
-- State Governance 双轨制：`resolve_population_snapshot()` (读) + `commit_population_snapshot()` (写)，消除 solver mirror write。
+- State Governance 双轨制：`get_population_snapshot()` (读) + `commit_population_snapshot()` (写)，消除 solver mirror write。
 - Doctor `--strict` 新增两条守卫规则：`solver-mirror-write` + `plugin-direct-solver-state-access`。
 - MOEA/D 修复：per-candidate mode + batch subproblem projection (M-04/M-05)。
 - AdaptiveBias weight_cap 限制 + 多样性采样优化 (M-09/M-10)。

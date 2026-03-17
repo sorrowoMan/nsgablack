@@ -40,16 +40,10 @@
 
 ### 三类 Solver 语义（这块最容易绕）
 
-- `SolverBase`（`core/blank_solver.py`）  
-  我把它当“控制底座”：生命周期、控制面 API、context/snapshot 通道都在这里。  
-  它默认不内置具体优化策略，`step()` 只是留给子类和组件扩展的挂点。
-
-- `ComposableSolver`（`core/composable_solver.py`）  
-  我把它当“step 编排器”：每一步都走统一流程 `propose -> evaluate -> update`。  
-  适合要换 adapter、叠插件、做组合策略的场景。
-
-- `EvolutionSolver`（`core/evolution_solver.py`）  
-  我把它当“种群代际求解器”：以 population/generation 为核心节奏。  
+- `SolverBase`（`core/blank_solver.py`）我把它当“控制底座”：生命周期、控制面 API、context/snapshot 通道都在这里。它默认不内置具体优化策略，`step()` 只是留给子类和组件扩展的挂点。
+- `ComposableSolver`（`core/composable_solver.py`）我把它当“step 编排器”：每一步都走统一流程 `propose -> evaluate -> update`。适合要换 adapter、叠插件、做组合策略的场景。
+- `EvolutionSolver`（`core/evolution_solver.py`）
+  我把它当“种群代际求解器”：以 population/generation 为核心节奏。
   适合进化式启发算法（不只 NSGA-II），保留代际语义和种群运算直觉。
 
 ### 数据分层
@@ -60,8 +54,37 @@
 ### 统一读写入口
 
 - `solver.read_snapshot()`
-- `Plugin.resolve_population_snapshot()`
+- `Plugin.get_population_snapshot()`
 - `Plugin.commit_population_snapshot()`
+
+### 架构与 API 速查（和 `AGENTS.md` 对齐）
+
+如果你要改框架主干，这几条建议直接当“最低契约”：
+
+- **Adapter 最小 API**
+  - `propose(self, solver, context) -> Sequence[np.ndarray]`
+  - `update(self, solver, candidates, objectives, violations, context) -> None`
+- **Plugin 生命周期钩子**
+  - `on_solver_init` / `on_population_init`
+  - `on_generation_start` / `on_step` / `on_generation_end`
+  - `on_solver_finish`
+- **Representation 核心 API**
+  - `init` / `mutate` / `repair` / `encode` / `decode`
+- **Solver 控制面关键 API**
+  - `set_adapter(...)`
+  - `evaluate_individual(...)` / `evaluate_population(...)`
+  - `set_context_store(...)` / `set_snapshot_store(...)`
+  - `write_population_snapshot(...)` / `read_snapshot(...)`
+
+标准一代主流程：
+
+`adapter.propose -> representation -> evaluate_population/evaluate_individual -> adapter.update -> plugin hooks`
+
+判定一条改动是否合格，我一般看三件事：
+
+1. 有没有破坏四层边界（Solver / Adapter / Representation / Plugin）。
+2. 大对象是否仍通过 snapshot 流转，而不是直接塞 context。
+3. 插件短路评估时，返回 shape 是否与输入 candidate 数量严格对齐。
 
 ---
 
@@ -133,11 +156,18 @@ python build_solver.py
 ## 常用命令（我每天都在用）
 
 ```powershell
-python -m nsgablack catalog search vns
-python -m nsgablack catalog show adapter.multi_strategy
-python -m nsgablack project doctor --path . --strict
+python -m nsgablack catalog search vns --profile framework-core
+python -m nsgablack catalog show adapter.multi_strategy --profile framework-core
+python -m nsgablack project doctor --path . --strict --format problem
 python -m pytest -q
 ```
+
+### Catalog 双口径（非常重要）
+
+- `default`：完整口径（包含 `example/doc`）。
+- `framework-core`：主干口径（排除 `example/doc` 与 `examples_registry` 导向结果）。
+
+做架构审计、主干盘点、契约重塑时，请显式带：`--profile framework-core`。
 
 ---
 

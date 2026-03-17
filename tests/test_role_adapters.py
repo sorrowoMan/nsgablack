@@ -28,7 +28,7 @@ def test_role_adapter_contract_strict_requires_keys():
 def test_multi_role_controller_adapter_runs_with_composable_solver():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.adapters import AlgorithmAdapter, RoleAdapter, MultiRoleControllerAdapter
+    from nsgablack.adapters import AlgorithmAdapter, RoleAdapter, RoleRouterAdapter
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
 
@@ -64,7 +64,7 @@ def test_multi_role_controller_adapter_runs_with_composable_solver():
         repair=ClipRepair(low=problem.low, high=problem.high),
     )
 
-    controller = MultiRoleControllerAdapter(
+    controller = RoleRouterAdapter(
         [
             RoleAdapter("explorer", Explorer(), max_candidates=8),
             RoleAdapter("exploiter", Exploiter(), max_candidates=8),

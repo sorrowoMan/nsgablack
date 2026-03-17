@@ -35,7 +35,7 @@ Use this as the definitive map for import paths and stable entrypoints.
   - `BinaryInitializer`, `BinaryRepair`, `BitFlipMutation`, `BinaryCapacityRepair`
   - `GraphEdgeInitializer`, `GraphEdgeMutation`, `GraphConnectivityRepair`, `GraphDegreeRepair`
   - `IntegerMatrixInitializer`, `IntegerMatrixMutation`, `MatrixRowColSumRepair`, `MatrixSparsityRepair`, `MatrixBlockSumRepair`
-  - `BoundConstraint`, `ContextSwitchMutator`
+  - `BoundConstraint`, `ContextSelectMutator`
 
 ## 4) Bias system
 
@@ -54,11 +54,11 @@ Use this as the definitive map for import paths and stable entrypoints.
 
 - `adapters/__init__.py`
   - `AlgorithmAdapter`, `CompositeAdapter`
-  - `RoleAdapter`, `MultiRoleControllerAdapter`
+  - `RoleAdapter`, `RoleRouterAdapter`
   - `VNSAdapter`, `VNSConfig`
   - `MOEADAdapter`, `MOEADConfig`
   - `SimulatedAnnealingAdapter`, `SAConfig`
-  - `MultiStrategyControllerAdapter`, `MultiStrategyConfig`, `StrategySpec`, `RoleSpec`
+  - `StrategyRouterAdapter`, `MultiStrategyConfig`, `StrategySpec`, `RoleSpec`
   - `AStarAdapter`, `AStarConfig`
   - `MOAStarAdapter`, `MOAStarConfig`
   - `TrustRegionDFOAdapter`, `TrustRegionDFOConfig`
@@ -76,20 +76,16 @@ Use this as the definitive map for import paths and stable entrypoints.
   - `Plugin`, `PluginManager`
   - `BasicElitePlugin`, `HistoricalElitePlugin`
   - `DiversityInitPlugin`
-  - `ConvergencePlugin`
   - `MemoryPlugin`
-  - `AdaptiveParametersPlugin`
-  - `SurrogateEvaluationPlugin`, `SurrogateEvaluationConfig`
-  - `MultiFidelityEvaluationPlugin`, `MultiFidelityEvaluationConfig`
-  - `MonteCarloEvaluationPlugin`, `MonteCarloEvaluationConfig`
+  - `SurrogateEvaluationProviderPlugin`, `SurrogateEvaluationConfig`
+  - `MultiFidelityEvaluationProviderPlugin`, `MultiFidelityEvaluationConfig`
+  - `MonteCarloEvaluationProviderPlugin`, `MonteCarloEvaluationConfig`
   - `ParetoArchivePlugin`, `ParetoArchiveConfig`
   - `BenchmarkHarnessPlugin`, `BenchmarkHarnessConfig`
   - `ModuleReportPlugin`, `ModuleReportConfig`
   - `ProfilerPlugin`, `ProfilerConfig`
   - `DynamicSwitchPlugin`
   - `SensitivityAnalysisPlugin`, `SensitivityAnalysisConfig`, `SensitivityParam`
-  - `MASModelPlugin`, `MASModelConfig`
-  - `SubspaceBasisPlugin`, `SubspaceBasisConfig`
   - `CheckpointResumePlugin`, `CheckpointResumeConfig`
 
 ## 7) Wiring Helpers (authority wiring)
@@ -143,10 +139,10 @@ Use this as the definitive map for import paths and stable entrypoints.
 - `utils/engineering/schema_version.py` — `stamp_schema`, `schema_check`, `require_schema`, `SCHEMA_VERSIONS`
 - `utils/runtime/dependencies.py`
 - `utils/runtime/imports.py`
-- `utils/context/context_schema.py`
-- `utils/context/context_keys.py`
-- `utils/context/context_field_governance.py` — `is_canonical_context_key`, `CONTEXT_FIELD_SCHEMA_NAME/VERSION`
-- `utils/context/context_contracts.py` — `collect_solver_contracts`, `detect_context_conflicts`, `get_component_contract`
+- `core/state/context_schema.py`
+- `core/state/context_keys.py`
+- `core/state/context_field_governance.py` — `is_canonical_context_key`, `CONTEXT_FIELD_SCHEMA_NAME/VERSION`
+- `core/state/context_contracts.py` — `collect_solver_contracts`, `detect_context_conflicts`, `get_component_contract`
 
 ---
 

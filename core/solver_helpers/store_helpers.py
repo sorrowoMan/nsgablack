@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
-from ...utils.context.context_store import ContextStore, create_context_store
-from ...utils.context.snapshot_store import SnapshotStore, create_snapshot_store
+from ...core.state.context_store import ContextStore, create_context_store
+from ...core.state.snapshot_store import SnapshotStore, create_snapshot_store
 
 
 def build_context_store_or_memory(

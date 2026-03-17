@@ -1,16 +1,13 @@
 """Population-based evolutionary solver built on ComposableSolver + adapters."""
 
 from __future__ import annotations
-
 import logging
 import random
-import time
 from typing import Any, Dict, List, Literal, Optional, Tuple
-
 import numpy as np
-
 from ..adapters import NSGA2Adapter, NSGA2Config
 from .composable_solver import ComposableSolver
+from .solver_helpers import format_run_result
 from ..utils.engineering.error_policy import report_soft_error
 from ..utils.parallel.evaluator import ParallelEvaluator
 from ..utils.performance.fast_non_dominated_sort import FastNonDominatedSort
@@ -121,6 +118,9 @@ class EvolutionSolver(ComposableSolver):
             snapshot_store_max_payload_bytes=snapshot_store_max_payload_bytes,
             snapshot_schema=snapshot_schema,
         )
+        # SolverBase.__init__ resets max_steps; restore generation semantics here.
+        self.max_generations = int(max_generations)
+        self.max_steps = int(max_generations)
 
         self.history: List[Tuple[int, List[np.ndarray]]] = []
         self.pareto_solutions: Optional[Dict[str, np.ndarray]] = None
@@ -342,13 +342,53 @@ class EvolutionSolver(ComposableSolver):
             self._refresh_best()
         return population
 
+    def setup(self) -> None:
+        self._sync_nsga2_adapter_config()
+        resume_loaded = bool(getattr(self, "_resume_loaded", False))
+        if not resume_loaded:
+            if getattr(self, "random_seed", None) is None:
+                try:
+                    self.random_seed = int(np.random.randint(0, 2**32 - 1))
+                except Exception as exc:
+                    report_soft_error(
+                        component="EvolutionSolver",
+                        event="auto_seed_generate",
+                        exc=exc,
+                        logger=logger,
+                        context_store=self.context_store,
+                        strict=False,
+                        level="debug",
+                    )
+                    self.random_seed = 0
+            self.set_random_seed(getattr(self, "random_seed", None))
+            self.mutation_range = float(self.initial_mutation_range)
+
+        super().setup()
+
+        if not resume_loaded:
+            self.history = []
+            if self.population is None or self.objectives is None or self.constraint_violations is None:
+                self.initialize_population(pop_size=self.pop_size, evaluate=True)
+            else:
+                self._sync_adapter_from_solver()
+                self.update_pareto_solutions()
+                if not self.history:
+                    self.record_history()
+                self._refresh_best()
+
     def step(self) -> None:
         self._sync_nsga2_adapter_config()
+        max_g = max(1, int(self.max_generations))
+        progress = min(1.0, max(0.0, float(self.generation) / float(max_g)))
+        self.mutation_range = max(0.01, float(self.initial_mutation_range) * (1.0 - progress))
         super().step()
         self._sync_solver_from_adapter()
         self.update_pareto_solutions()
         self.record_history()
         self._refresh_best()
+        if self.enable_progress_log and self.report_interval > 0:
+            if (int(self.generation) + 1) % int(self.report_interval) == 0:
+                self._log_progress()
 
     def _sync_adapter_from_solver(self) -> None:
         adapter = getattr(self, "adapter", None)
@@ -626,135 +666,59 @@ class EvolutionSolver(ComposableSolver):
         idx = int(np.argmin(score))
         return pop[idx], float(score[idx])
 
-    def run(self, return_experiment: bool = False, return_dict: bool = False):
-        self._sync_nsga2_adapter_config()
-        if hasattr(self, "validate_plugin_order"):
-            self.validate_plugin_order()
-        self.running = True
-        self.stop_requested = False
-        self.start_time = time.time()
-
-        self.plugin_manager.on_solver_init(self)
-        resume_loaded = bool(getattr(self, "_resume_loaded", False))
-        if not resume_loaded:
-            if getattr(self, "random_seed", None) is None:
-                try:
-                    self.random_seed = int(np.random.randint(0, 2**32 - 1))
-                except Exception as exc:
-                    report_soft_error(
-                        component="EvolutionSolver",
-                        event="auto_seed_generate",
-                        exc=exc,
-                        logger=logger,
-                        context_store=self.context_store,
-                        strict=False,
-                        level="debug",
-                    )
-                    self.random_seed = 0
-            self.set_random_seed(getattr(self, "random_seed", None))
-            self.mutation_range = float(self.initial_mutation_range)
-
-        self.setup()
-
-        if resume_loaded:
-            start_generation = int(getattr(self, "_resume_cursor", getattr(self, "generation", 0)))
-            start_generation = max(0, start_generation)
-            self.generation = start_generation
-            try:
-                self.evaluation_count = int(getattr(self, "evaluation_count", 0))
-            except Exception as exc:
-                report_soft_error(
-                    component="EvolutionSolver",
-                    event="resume_evaluation_count_cast",
-                    exc=exc,
-                    logger=logger,
-                    context_store=self.context_store,
-                    strict=False,
-                    level="debug",
-                )
-                self.evaluation_count = 0
-        else:
-            start_generation = 0
-            self.generation = 0
-            self.evaluation_count = 0
-            self.history = []
-            if self.population is None or self.objectives is None or self.constraint_violations is None:
-                self.initialize_population(pop_size=self.pop_size, evaluate=True)
-            else:
-                self._sync_adapter_from_solver()
-                self.update_pareto_solutions()
-                if not self.history:
-                    self.record_history()
-                self._refresh_best()
-
-        setattr(self, "_resume_loaded", False)
-        setattr(self, "_resume_cursor", 0)
-        setattr(self, "_resume_rng_state", None)
-
-        max_generations = max(0, int(self.max_generations))
-        for gen in range(start_generation, max_generations):
-            if self.stop_requested:
-                break
-            self.generation = int(gen)
-            apply_pending_order = getattr(self, "_apply_pending_plugin_order_updates", None)
-            if callable(apply_pending_order):
-                apply_pending_order()
-            self.plugin_manager.on_generation_start(self.generation)
-            self.plugin_manager.on_step(self, self.generation)
-
-            max_g = max(1, int(self.max_generations))
-            progress = min(1.0, max(0.0, float(gen) / float(max_g)))
-            self.mutation_range = max(0.01, float(self.initial_mutation_range) * (1.0 - progress))
-
-            self.step()
-
-            self.plugin_manager.on_generation_end(self.generation)
-            self.generation = int(gen + 1)
-            if self.enable_progress_log and self.report_interval > 0 and (self.generation % self.report_interval == 0):
-                self._log_progress()
-
-        self.teardown()
-        self.running = False
+    def _build_run_result(self, base_result: Dict[str, Any]) -> Dict[str, Any]:
+        out = dict(base_result)
+        out["pareto_solutions"] = self.pareto_solutions
+        out["pareto_objectives"] = self.pareto_objectives
+        out["generation"] = int(getattr(self, "generation", 0))
+        out["evaluation_count"] = int(getattr(self, "evaluation_count", 0))
+        out["elapsed_sec"] = float(out.get("elapsed_sec", 0.0))
         self.run_count += 1
+        return out
 
-        result = {
-            "pareto_solutions": self.pareto_solutions,
-            "pareto_objectives": self.pareto_objectives,
-            "generation": int(self.generation),
-            "evaluation_count": int(getattr(self, "evaluation_count", 0)),
-            "elapsed_sec": float(time.time() - self.start_time),
-        }
-        self.last_result = result
-        self.plugin_manager.on_solver_finish(result)
+    def run(self, return_experiment: bool = False, return_dict: bool = False):
+        try:
+            self.max_steps = int(self.max_generations)
+        except Exception:
+            pass
+        base = super().run()
 
-        if return_experiment:
+        def _build_experiment():
             experiment_cls = self._experiment_result_class()
-            if experiment_cls is not None:
-                exp = experiment_cls(
-                    problem_name=getattr(self.problem, "name", "unknown"),
-                    config={
-                        "pop_size": int(self.pop_size),
-                        "max_generations": int(self.max_generations),
-                        "crossover_rate": float(self.crossover_rate),
-                        "mutation_rate": float(self.mutation_rate),
-                    },
-                )
-                exp.set_results(
-                    self.pareto_solutions["individuals"] if self.pareto_solutions else None,
-                    self.pareto_objectives,
-                    int(self.generation),
-                    int(getattr(self, "evaluation_count", 0)),
-                    float(time.time() - self.start_time),
-                    self.history,
-                    None,
-                )
-                return exp
+            if experiment_cls is None:
+                return None
+            exp = experiment_cls(
+                problem_name=getattr(self.problem, "name", "unknown"),
+                config={
+                    "pop_size": int(self.pop_size),
+                    "max_generations": int(self.max_generations),
+                    "crossover_rate": float(self.crossover_rate),
+                    "mutation_rate": float(self.mutation_rate),
+                },
+            )
+            exp.set_results(
+                self.pareto_solutions["individuals"] if self.pareto_solutions else None,
+                self.pareto_objectives,
+                int(getattr(self, "generation", 0)),
+                int(getattr(self, "evaluation_count", 0)),
+                float(base.get("elapsed_sec", 0.0)),
+                self.history,
+                None,
+            )
+            return exp
 
-        if return_dict:
-            return result
+        def _build_tuple():
+            best_x, best_f = self._get_best_solution()
+            return best_x, best_f
 
-        best_x, best_f = self._get_best_solution()
-        return best_x, best_f
+        return format_run_result(
+            solver=self,
+            base_result=base,
+            return_dict=bool(return_dict),
+            return_experiment=bool(return_experiment),
+            experiment_builder=_build_experiment,
+            tuple_builder=_build_tuple,
+        )
 
     def _log_progress(self) -> None:
         if self.objectives is None:

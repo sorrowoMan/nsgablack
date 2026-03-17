@@ -137,7 +137,7 @@ Bias 建议在策略跑通后再加。
 统一读写入口：
 
 - `solver.read_snapshot()`
-- `Plugin.resolve_population_snapshot()`
+- `Plugin.get_population_snapshot()`
 - `Plugin.commit_population_snapshot()`
 
 这条守住了，后续扩展会轻松很多。

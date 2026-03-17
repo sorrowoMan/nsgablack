@@ -10,7 +10,7 @@ from typing import Optional, Any, Tuple
 import numpy as np
 
 from .base import RepresentationComponentContract
-from ..utils.context.context_keys import KEY_BOUNDS, KEY_PROBLEM
+from ..core.state.context_keys import KEY_BOUNDS, KEY_PROBLEM
 
 
 def _get_bounds(problem: Any, context: Optional[dict]) -> Tuple[np.ndarray, np.ndarray]:

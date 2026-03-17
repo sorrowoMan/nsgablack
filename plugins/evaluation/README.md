@@ -6,12 +6,12 @@
 
 ## 本次拆分（每个数值求解器独立插件）
 - `numerical_solver_base.py`
-  - `NumericalSolverPlugin`（公共评估接管逻辑）
+  - `NumericalSolverProviderPlugin`（公共评估接管逻辑）
   - `NumericalSolverConfig`
 - `newton_solver_plugin.py`
-  - `NewtonSolverPlugin`（`scipy.optimize.root` / `hybr`）
+  - `NewtonSolverProviderPlugin`（`scipy.optimize.root` / `hybr`）
 - `broyden_solver_plugin.py`
-  - `BroydenSolverPlugin`（`scipy.optimize.broyden1`）
+  - `BroydenSolverProviderPlugin`（`scipy.optimize.broyden1`）
 
 ## 触发时机
 - 主要在 `evaluate_individual` 阶段接管评估。

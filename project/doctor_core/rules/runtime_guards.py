@@ -1,4 +1,4 @@
-"""Runtime/control-plane static guard rules used by project doctor."""
+﻿"""Runtime/control-plane static guard rules used by project doctor."""
 
 from __future__ import annotations
 
@@ -288,8 +288,9 @@ def check_plugin_solver_state_access(
         "error",
         "plugin-direct-solver-state-access",
         "Plugins must not directly access solver population/objectives/constraint_violations under --strict; "
-        "use resolve_population_snapshot()/commit_population_snapshot(). "
+        "use get_population_snapshot()/commit_population_snapshot(). "
         + " | ".join(parts),
         path,
     )
+
 

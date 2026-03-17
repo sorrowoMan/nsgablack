@@ -6,7 +6,6 @@ from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 import numpy as np
 from scipy import optimize
 
-from ..base import Plugin
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
 from ...utils.context.context_keys import (
     KEY_METRICS,
@@ -14,7 +13,7 @@ from ...utils.context.context_keys import (
     KEY_METRICS_IMPLICIT_RESIDUAL,
     KEY_METRICS_IMPLICIT_SUCCESS,
 )
-from ...utils.context.context_schema import build_minimal_context
+from ...core.state.context_schema import build_minimal_context
 from ...utils.extension_contracts import (
     normalize_bias_output,
     normalize_candidate,
@@ -45,8 +44,8 @@ class NumericalSolverConfig:
     warn_on_failure: bool = True
 
 
-class NumericalSolverPlugin(Plugin):
-    """Base plugin for implicit-equation numerical solving."""
+class NumericalSolverProviderPlugin:
+    """Base L4 provider factory for implicit-equation numerical solving."""
 
     is_algorithmic = True
     context_requires = ("problem",)
@@ -69,7 +68,8 @@ class NumericalSolverPlugin(Plugin):
         config: Optional[NumericalSolverConfig] = None,
         priority: int = 50,
     ) -> None:
-        super().__init__(name=name, priority=priority)
+        self.name = str(name)
+        self.priority = int(priority)
         self.cfg = config or NumericalSolverConfig()
         self.stats: Dict[str, float] = {
             "calls": 0.0,
@@ -178,7 +178,7 @@ class NumericalSolverPlugin(Plugin):
             return np.asarray(out, dtype=float)
         return obj
 
-    def evaluate_individual(self, solver, x: np.ndarray, individual_id: Optional[int] = None):
+    def evaluate_individual_runtime(self, solver, x: np.ndarray, individual_id: Optional[int] = None):
         problem = getattr(solver, "problem", None)
         if problem is None:
             return None
@@ -259,7 +259,38 @@ class NumericalSolverPlugin(Plugin):
         return obj, float(violation)
 
     def get_report(self) -> Optional[Dict[str, Any]]:
-        out = super().get_report() or {}
-        out["stats"] = dict(self.stats)
-        return out
+        return {"stats": dict(self.stats)}
 
+    def create_provider(self):
+        owner = self
+
+        class _Provider:
+            name = owner.name
+            semantic_mode = "equivalent"
+
+            def can_handle_individual(self, solver, x, context):
+                _ = context
+                problem = getattr(solver, "problem", None)
+                return callable(getattr(problem, "evaluate_from_implicit_solution", None))
+
+            def evaluate_individual(self, solver, x, context, individual_id=None):
+                _ = context
+                return owner.evaluate_individual_runtime(
+                    solver,
+                    np.asarray(x, dtype=float),
+                    individual_id=individual_id,
+                )
+
+            def can_handle_population(self, solver, population, context):
+                _ = solver
+                _ = population
+                _ = context
+                return False
+
+            def evaluate_population(self, solver, population, context):
+                _ = solver
+                _ = population
+                _ = context
+                return None
+
+        return _Provider()

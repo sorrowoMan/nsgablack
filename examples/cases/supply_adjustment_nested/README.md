@@ -15,10 +15,9 @@
 - 总移动事件数最少
 - 总移动天数最少
 
-内层评估（L2）：
-- 默认 `hybrid`：先残差分解筛选，再对高潜候选做精细内层复核
-- `integrated`：仅残差分解评估（`P=B+A`）
-- `fast`：轻量代理评估（调试用）
+内层求解（L2）：
+- 标准嵌套：内层用完整生产调度 solver 求解（`full_nested`）
+- 可选保留：`production_inner_eval` 的快速评估模式（非标准嵌套）
 
 ## Run
 
@@ -42,18 +41,10 @@ python working_nested_optimizer.py `
 # 调低内层预算（更快）
 python working_nested_optimizer.py --inner-trials 3
 
-# 混合评估策略参数（残差筛选 + 精细复核）
+# 标准嵌套内层预算（inner solver）
 python working_nested_optimizer.py `
-  --inner-eval-mode hybrid `
-  --hybrid-top-quantile 0.85 `
-  --hybrid-random-refine-ratio 0.10 `
-  --hybrid-explore-prob 0.05 `
-  --hybrid-warmup 20 `
   --hybrid-refine-pop-size 24 `
   --hybrid-refine-generations 3
-
-说明：
-- 每个候选会记录 `hybrid_residual` 或 `hybrid_refined` 决策，可在 decision trace 中审计。
 ```
 
 ## Output

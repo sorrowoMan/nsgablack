@@ -1,11 +1,12 @@
-import numpy as np
+﻿import numpy as np
 
 
 def test_surrogate_plugin_accepts_pretrained_model_without_online_training():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
+    from nsgablack.core.evaluation_runtime import EvaluationMediatorConfig
     from nsgablack.adapters import AlgorithmAdapter
-    from nsgablack.plugins import SurrogateEvaluationPlugin, SurrogateEvaluationConfig
+    from nsgablack.plugins import SurrogateEvaluationProviderPlugin, SurrogateEvaluationConfig
 
     class DummySurrogate:
         def predict(self, X):
@@ -45,10 +46,14 @@ def test_surrogate_plugin_accepts_pretrained_model_without_online_training():
     solver.max_steps = 1
 
     cfg = SurrogateEvaluationConfig(min_train_samples=0, min_true_evals=0, topk_exploit=0, topk_explore=0, retrain_every_call=False)
-    solver.add_plugin(SurrogateEvaluationPlugin(config=cfg, surrogate=DummySurrogate(), online_training=False))
+    solver.evaluation_mediator.config = EvaluationMediatorConfig(allow_approximate=True, strict_conflict=True)
+    solver.register_evaluation_provider(
+        SurrogateEvaluationProviderPlugin(config=cfg, surrogate=DummySurrogate(), online_training=False).create_provider()
+    )
     solver.run()
 
     assert solver.objectives is not None
     # since we used pure surrogate prediction and no bias, values should match sum(x^2)
     assert float(solver.objectives[0, 0]) == 0.0
+
 

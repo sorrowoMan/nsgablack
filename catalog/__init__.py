@@ -26,14 +26,14 @@ __all__ = [
 ]
 
 
-def search_catalog(query: str, *, kinds=None, tags=None, limit: int = 20):
+def search_catalog(query: str, *, kinds=None, tags=None, limit: int = 20, profile: str | None = None):
     """Convenience wrapper for `get_catalog().search(...)`."""
-    return get_catalog().search(query, kinds=kinds, tags=tags, limit=limit)
+    return get_catalog(profile=profile).search(query, kinds=kinds, tags=tags, limit=limit)
 
 
-def list_catalog(*, kind: str | None = None, tag: str | None = None):
+def list_catalog(*, kind: str | None = None, tag: str | None = None, profile: str | None = None):
     """Convenience wrapper for `get_catalog().list(...)`."""
-    return get_catalog().list(kind=kind, tag=tag)
+    return get_catalog(profile=profile).list(kind=kind, tag=tag)
 
 
 def get_entry(key: str):
@@ -41,6 +41,6 @@ def get_entry(key: str):
     return get_catalog().get(key)
 
 
-def reload_catalog():
+def reload_catalog(*, profile: str | None = None):
     """Reload catalog (useful after editing `catalog/entries.toml` or env var paths)."""
-    return get_catalog(refresh=True)
+    return get_catalog(refresh=True, profile=profile)

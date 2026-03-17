@@ -32,11 +32,13 @@ from _bootstrap import ensure_nsgablack_importable  # noqa: E402
 ensure_nsgablack_importable(Path(__file__))
 
 from nsgablack.core.evolution_solver import EvolutionSolver  # noqa: E402
+from nsgablack.core.nested_solver import InnerRuntimeConfig, TaskInnerRuntimeEvaluator  # noqa: E402
+from nsgablack.plugins import TimeoutBudgetConfig, TimeoutBudgetPlugin  # noqa: E402
 from nsgablack.utils.parallel import with_parallel_evaluation  # noqa: E402
 from nsgablack.utils.wiring import attach_default_observability_plugins  # noqa: E402
 from nsgablack.utils.viz import launch_from_builder  # noqa: E402
 
-from evaluation import ProductionInnerEvalConfig, ProductionInnerEvaluationModel
+from inner_solver import InnerProductionSolverConfig
 from plugins import SupplyAdjustmentExportPlugin
 from problem import SupplyEventShiftProblem
 
@@ -169,34 +171,24 @@ def _build_solver_from_args(args):
         )
         print(f"[data] baseline_plan={baseline_plan_path}")
 
-    inner_model = ProductionInnerEvaluationModel(
-        bom_matrix=np.asarray(data.bom_matrix, dtype=float),
-        base_supply=np.asarray(data.supply_matrix, dtype=float),
-        production_case_dir=(_THIS_DIR.parent / "production_scheduling").resolve(),
-        baseline_schedule=baseline_schedule,
-        cfg=ProductionInnerEvalConfig(
-            mode=str(args.inner_eval_mode),
-            max_active_machines_per_day=int(args.max_active_machines),
-            max_production_per_machine=float(args.max_production_per_machine),
-            inner_trials=int(args.inner_trials),
-            hybrid_top_quantile=float(args.hybrid_top_quantile),
-            hybrid_explore_prob=float(args.hybrid_explore_prob),
-            hybrid_random_refine_ratio=float(args.hybrid_random_refine_ratio),
-            hybrid_warmup=int(args.hybrid_warmup),
-            hybrid_refine_pop_size=int(args.hybrid_refine_pop_size),
-            hybrid_refine_generations=int(args.hybrid_refine_generations),
-            hybrid_rf_enable=not bool(args.hybrid_no_rf),
-            hybrid_rf_uncertainty_quantile=float(args.hybrid_rf_uncertainty_quantile),
-            hybrid_rf_min_samples=int(args.hybrid_rf_min_samples),
-            hybrid_rf_retrain_interval=int(args.hybrid_rf_retrain_interval),
-            hybrid_rf_max_train_samples=int(args.hybrid_rf_max_train_samples),
-            hybrid_rf_n_estimators=int(args.hybrid_rf_n_estimators),
-        ),
+    inner_cfg = InnerProductionSolverConfig(
+        pop_size=int(args.hybrid_refine_pop_size),
+        generations=int(args.hybrid_refine_generations),
+        max_active_machines_per_day=int(args.max_active_machines),
+        max_production_per_machine=float(args.max_production_per_machine),
+        parallel=bool(args.parallel),
+        parallel_backend=str(args.parallel_backend),
+        parallel_workers=int(args.parallel_workers),
+        parallel_chunk_size=getattr(args, "parallel_chunk_size", None),
+        parallel_strict=bool(args.parallel_strict),
+        parallel_thread_bias_isolation=str(args.parallel_thread_bias_isolation),
     )
 
     problem = SupplyEventShiftProblem(
         base_supply=np.asarray(data.supply_matrix, dtype=float),
-        inner_model=inner_model,
+        bom_matrix=np.asarray(data.bom_matrix, dtype=float),
+        production_case_dir=(_THIS_DIR.parent / "production_scheduling").resolve(),
+        inner_solver_cfg=inner_cfg,
         material_ids=np.arange(1, int(args.materials) + 1),
         max_moved_events=(None if int(args.max_moved_events) <= 0 else int(args.max_moved_events)),
     )
@@ -204,11 +196,9 @@ def _build_solver_from_args(args):
     print(f"[outer] adjustable_events={problem.dimension} materials={problem.materials} days=31")
     print("[window] production_window=day0..30 adjustable_supply_event_day_range=1..30")
     print(
-        f"[inner] mode={args.inner_eval_mode} trials={args.inner_trials} "
-        f"q={args.hybrid_top_quantile} ratio={args.hybrid_random_refine_ratio} p={args.hybrid_explore_prob} "
-        f"refine=({args.hybrid_refine_pop_size},{args.hybrid_refine_generations}) "
-        f"rf={'off' if args.hybrid_no_rf else 'on'}(q={args.hybrid_rf_uncertainty_quantile},"
-        f"min={args.hybrid_rf_min_samples},interval={args.hybrid_rf_retrain_interval}) "
+        f"[inner] mode=full_nested "
+        f"inner_pop={args.hybrid_refine_pop_size} inner_gen={args.hybrid_refine_generations} "
+        f"max_active_machines={args.max_active_machines} max_prod={args.max_production_per_machine} "
         f"max_moved_events={('off' if int(args.max_moved_events) <= 0 else int(args.max_moved_events))}"
     )
     if int(args.max_moved_events) <= 0:
@@ -239,15 +229,15 @@ def _build_solver_from_args(args):
         enable_decision_trace=not bool(args.no_decision_trace),
         enable_profiler=not bool(args.no_profiler),
     )
+    solver.add_plugin(
+        TimeoutBudgetPlugin(
+            config=TimeoutBudgetConfig(layer="L2", max_calls=500, time_budget_ms=60_000, fail_closed=True)
+        )
+    )
+    problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(
+        config=InnerRuntimeConfig(source_layer="L2", target_layer="L1")
+    )
     solver.add_plugin(SupplyAdjustmentExportPlugin(case_problem=problem, output_dir=run_dir, run_id=run_id))
-    # Route inner-eval stage decisions into DecisionTrace when plugin is enabled.
-    def _inner_decision_sink(**event_kwargs):
-        fn = getattr(solver, "record_decision_event", None)
-        if callable(fn):
-            return fn(**event_kwargs)
-        return None
-
-    inner_model.decision_sink = _inner_decision_sink
     return solver
 
 

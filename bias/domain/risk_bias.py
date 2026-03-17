@@ -21,7 +21,7 @@ class RiskBias(DomainBias):
     - "worst_case": use worst observed metric (mc_max or mc_min)
 
     This bias consumes metrics from context.metrics (e.g., provided by
-    MonteCarloEvaluationPlugin).
+    MonteCarloEvaluationProviderPlugin).
     """
     context_requires = ("problem_data",)
     context_provides = ()

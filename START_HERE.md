@@ -55,7 +55,7 @@ python build_solver.py
 统一读写接口：
 
 - `solver.read_snapshot()`
-- `Plugin.resolve_population_snapshot()`
+- `Plugin.get_population_snapshot()`
 - `Plugin.commit_population_snapshot()`
 
 守住这三条，架构会非常稳。

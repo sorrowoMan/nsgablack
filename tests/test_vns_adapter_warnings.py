@@ -1,4 +1,4 @@
-import warnings
+﻿import warnings
 
 import numpy as np
 
@@ -23,7 +23,7 @@ def test_vns_adapter_warns_when_mutator_not_context_aware():
 
 def test_vns_adapter_no_warn_for_context_aware_mutator():
     from nsgablack.adapters import VNSAdapter
-    from nsgablack.representation import RepresentationPipeline, ContextSwitchMutator
+    from nsgablack.representation import RepresentationPipeline, ContextSelectMutator
 
     class AddOne:
         def mutate(self, x, context=None):
@@ -32,7 +32,7 @@ def test_vns_adapter_no_warn_for_context_aware_mutator():
     class StubSolver:
         def __init__(self):
             self.representation_pipeline = RepresentationPipeline(
-                mutator=ContextSwitchMutator(mutators=[AddOne()], k_key="vns_k")
+                mutator=ContextSelectMutator(mutators=[AddOne()], k_key="vns_k")
             )
 
     adapter = VNSAdapter()
@@ -42,4 +42,5 @@ def test_vns_adapter_no_warn_for_context_aware_mutator():
         warnings.simplefilter("always")
         adapter.setup(solver)
         assert len(rec) == 0
+
 

@@ -149,7 +149,7 @@ class Plugin(ABC):
             )
             return {"config": {}}
 
-    def resolve_population_snapshot(self, solver=None):
+    def get_population_snapshot(self, solver=None):
         """Return (population, objectives, violations) with snapshot-first fallback order.
 
         Priority:
@@ -169,7 +169,7 @@ class Plugin(ABC):
             except Exception as exc:
                 report_soft_error(
                     component="Plugin",
-                    event="resolve_population_snapshot.reader_default",
+                    event="get_population_snapshot.reader_default",
                     exc=exc,
                     logger=logger,
                     context_store=None,
@@ -185,7 +185,7 @@ class Plugin(ABC):
                     except Exception as exc:
                         report_soft_error(
                             component="Plugin",
-                            event="resolve_population_snapshot.get_context",
+                            event="get_population_snapshot.get_context",
                             exc=exc,
                             logger=logger,
                             context_store=None,
@@ -201,7 +201,7 @@ class Plugin(ABC):
                             except Exception as exc:
                                 report_soft_error(
                                     component="Plugin",
-                                    event="resolve_population_snapshot.reader_with_key",
+                                    event="get_population_snapshot.reader_with_key",
                                     exc=exc,
                                     logger=logger,
                                     context_store=None,
@@ -228,7 +228,7 @@ class Plugin(ABC):
                     except Exception as exc:
                         report_soft_error(
                             component="Plugin",
-                            event="resolve_population_snapshot.payload_cast",
+                            event="get_population_snapshot.payload_cast",
                             exc=exc,
                             logger=logger,
                             context_store=None,
@@ -253,7 +253,7 @@ class Plugin(ABC):
                 except Exception as exc:
                     report_soft_error(
                         component="Plugin",
-                        event="resolve_population_snapshot.adapter_get_population",
+                        event="get_population_snapshot.adapter_get_population",
                         exc=exc,
                         logger=logger,
                         context_store=None,

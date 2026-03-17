@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Project-local Catalog registration.
+"""Thin forwarder for project catalog registration.
 
-NOTE:
-- Preferred local registration source is `catalog/entries.toml` (created by scaffold).
-- Keep this file for optional dynamic registration only.
+Keep root clean; delegate to catalog/project_registry.py.
 """
 
 from __future__ import annotations
 
-def get_project_entries():
-    # Optional dynamic entries. Keep empty by default.
-    return []
+from catalog.project_registry import get_project_entries  # re-export
+
+__all__ = ["get_project_entries"]

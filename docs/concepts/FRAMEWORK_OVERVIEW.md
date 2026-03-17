@@ -8,7 +8,7 @@
 
 - Context 只放小字段与快照引用（`snapshot_key` / `population_ref` 等）
 - 大对象统一走 `SnapshotStore`（内存/Redis/文件后端可切）
-- 统一入口：`solver.read_snapshot()` / `Plugin.resolve_population_snapshot()` / `Plugin.commit_population_snapshot()`
+- 统一入口：`solver.read_snapshot()` / `Plugin.get_population_snapshot()` / `Plugin.commit_population_snapshot()`
 - 详细说明见 `docs/architecture/README.md`
 
 ## 推荐阅读顺序

@@ -1,10 +1,10 @@
-# 多策略协同（MultiStrategyControllerAdapter）
+# 多策略协同（StrategyRouterAdapter）
 
 本页讲清楚一件事：当你不想把“探索/开发/局部搜索/启发式”硬塞进一个算法里时，框架推荐你把它们拆成多个 Adapter，让一个控制器负责“协同与信息共享”。
 
 对应组件：
 
-- 控制器：`adapters/multi_strategy/adapter.py` (`MultiStrategyControllerAdapter`)
+- 控制器：`adapters/multi_strategy/adapter.py` (`StrategyRouterAdapter`)
 - 装配方式：在 `build_solver.py` 直接 `solver.set_adapter(...)`
 - 共享事实（可选）：`plugin.pareto_archive`（按需 `solver.add_plugin(...)`）
 
@@ -22,7 +22,7 @@
 from nsgablack.core.composable_solver import ComposableSolver
 from nsgablack.adapters import (
     MultiStrategyConfig,
-    MultiStrategyControllerAdapter,
+    StrategyRouterAdapter,
     RoleSpec,
     VNSAdapter,
     SimulatedAnnealingAdapter,
@@ -54,7 +54,7 @@ cfg = MultiStrategyConfig(
     phase_roles={"explore": ["explorer"], "exploit": ["exploiter"]},
 )
 
-solver.set_adapter(MultiStrategyControllerAdapter(roles=roles, config=cfg))
+solver.set_adapter(StrategyRouterAdapter(roles=roles, config=cfg))
 solver.max_steps = 80
 solver.run()
 ```
@@ -70,10 +70,10 @@ solver.run()
 当你不想手动记“要不要挂 ParetoArchive”等细节时，直接用 Wiring：
 
 ```python
-from nsgablack.adapters import MultiStrategyControllerAdapter
+from nsgablack.adapters import StrategyRouterAdapter
 from nsgablack.plugins import ParetoArchivePlugin
 
-solver.set_adapter(MultiStrategyControllerAdapter(roles=roles, config=cfg))
+solver.set_adapter(StrategyRouterAdapter(roles=roles, config=cfg))
 solver.add_plugin(ParetoArchivePlugin())  # optional
 ```
 
@@ -83,7 +83,7 @@ solver.add_plugin(ParetoArchivePlugin())  # optional
 
 两者可以叠加：
 
-- 多策略：用 `ComposableSolver + MultiStrategyControllerAdapter`
+- 多策略：用 `ComposableSolver + StrategyRouterAdapter`
 - 并行：用 `with_parallel_evaluation(ComposableSolver)` 或在 wiring 中装配并行能力
 
 并行评估的详细用法见：`docs/user_guide/parallel_evaluation.md`

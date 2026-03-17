@@ -1,23 +1,30 @@
 # plugins/solver_backends
 
-## 目录职责 / Responsibility
-- 中文：放“内层求解编排”插件，负责层级调度、跨层回写、调用预算控制。
-- English: Hosts nested solver orchestration plugins: layer scheduling, cross-layer write-back, and budget guard.
-
-## 典型场景 / Typical Use Cases
-- L1 外层只做总体优化；L2/L3 作为内层评估流程。
-- 在 `evaluate_individual` 中触发内层求解并回写关键字段到外层 context。
-- 对内层调用次数和耗时做硬门禁，避免评估失控。
-
-## 模块说明 / Module Overview
-- `inner_solver.py`
-  - `InnerSolverPlugin`: 在外层评估时触发内层任务执行（L1 -> L2/L3）。
-  - 支持 `build_inner_problem/build_inner_solver/run_inner_solver` 或 `build_inner_task` 钩子。
+该目录现在只保留后端桥接与治理插件：
 - `contract_bridge.py`
-  - `ContractBridgePlugin`: 将内层结果字段按规则桥接到目标层 context（例如 L3 结果直写 L1）。
 - `timeout_budget.py`
-  - `TimeoutBudgetPlugin`: 为内层执行做调用次数/总耗时限制，支持 fail-open/fail-closed。
+- `ngspice_backend.py`（后端实现）
+- `copt_backend.py`（COPT 数值求解后端实现）
 
-## 与 evaluation 的边界 / Boundary with `plugins/evaluation`
-- 中文：`evaluation` 关心“如何评估”；`solver_backends` 关心“评估流程怎么编排到多层”。
-- English: `evaluation` focuses on evaluation method; `solver_backends` focuses on multi-layer orchestration.
+说明：
+- 内层求解执行入口已从插件层移除。
+- 统一改为 `problem.inner_runtime_evaluator`（见 `nsgablack.core.nested_solver`）。
+
+## COPT backend 快速说明
+
+`CoptBackend` 支持三种调用形态（优先级从高到低）：
+
+1. `request.payload['copt_solve_fn'](request, coptpy)`：完全自定义求解逻辑。
+2. `request.payload['copt_template'] + request.payload['copt_template_params']`：模板化求解（内置 `linear` 模板，可扩展）。
+3. `request.payload['copt_linear_spec_builder'](request)`：返回线性模型规格（`c/A/rhs/sense/lb/ub/vtype`），由 backend 代建模并调用 COPT。
+4. 无 builder 时可退化为 mock（`mock_when_unavailable=True`）。
+
+模板化推荐约定：
+- 由系统/策略层在 payload 显式指定 `copt_template`，避免自动猜测可建模性。
+- 由 `copt_backend` 负责读参传参和模板求解执行。
+- 求解输出统一走 backend 标准结果结构（`objective/objectives + violation + metrics`）。
+
+模板实现组织：
+- 建议每个模板一个文件，放在 `plugins/solver_backends/copt_templates/`。
+- `copt_backend` 通过模板注册表加载默认模板，再允许构造参数 `template_solvers` 覆盖/扩展。
+

@@ -1,11 +1,11 @@
-import numpy as np
+﻿import numpy as np
 
 
 def test_newton_implicit_backend_plugin_short_circuits_evaluate_individual():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.adapters import AlgorithmAdapter
-    from nsgablack.plugins import NumericalSolverConfig, NewtonSolverPlugin
+    from nsgablack.plugins import NumericalSolverConfig, NewtonSolverProviderPlugin
 
     class ImplicitProblem(BlackBoxProblem):
         def __init__(self):
@@ -49,8 +49,8 @@ def test_newton_implicit_backend_plugin_short_circuits_evaluate_individual():
     solver = ComposableSolver(problem=ImplicitProblem(), adapter=FixedAdapter())
     solver.max_steps = 1
     solver.pop_size = 4
-    plugin = NewtonSolverPlugin(config=NumericalSolverConfig(tol=1e-10, max_iter=100))
-    solver.add_plugin(plugin)
+    plugin = NewtonSolverProviderPlugin(config=NumericalSolverConfig(tol=1e-10, max_iter=100))
+    solver.register_evaluation_provider(plugin.create_provider())
     solver.run()
 
     assert solver.best_objective is not None
@@ -61,7 +61,7 @@ def test_newton_implicit_backend_plugin_short_circuits_evaluate_individual():
 
 def test_implicit_backend_plugin_returns_none_when_problem_hooks_missing():
     from nsgablack.core.base import BlackBoxProblem
-    from nsgablack.plugins import NewtonSolverPlugin
+    from nsgablack.plugins import NewtonSolverProviderPlugin
 
     class PlainProblem(BlackBoxProblem):
         def __init__(self):
@@ -79,6 +79,7 @@ def test_implicit_backend_plugin_returns_none_when_problem_hooks_missing():
         bias_module = None
         ignore_constraint_violation_when_bias = False
 
-    plugin = NewtonSolverPlugin()
-    out = plugin.evaluate_individual(DummySolver(), np.array([0.1], dtype=float), individual_id=0)
+    provider = NewtonSolverProviderPlugin().create_provider()
+    out = provider.evaluate_individual(DummySolver(), np.array([0.1], dtype=float), context={}, individual_id=0)
     assert out is None
+

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Snapshot store backends for large runtime artifacts (population/objectives/etc).
 
 Snapshot stores keep large objects out of context while still providing
@@ -217,7 +217,7 @@ class RedisSnapshotStore(SnapshotStore):
             return None
         return int(ttl) if ttl > 0 else None
 
-    def _resolve_hmac_key(self) -> Optional[bytes]:
+    def _get_hmac_key(self) -> Optional[bytes]:
         raw = os.environ.get(self.hmac_env_var)
         if raw is None:
             return None
@@ -278,7 +278,7 @@ class RedisSnapshotStore(SnapshotStore):
             return json.dumps(envelope, ensure_ascii=False).encode("utf-8")
 
         if self.serializer == "pickle_signed":
-            key = self._resolve_hmac_key()
+            key = self._get_hmac_key()
             if key is None:
                 raise ValueError(
                     f"snapshot serializer=pickle_signed requires HMAC key in env var: {self.hmac_env_var}"
@@ -360,7 +360,7 @@ class RedisSnapshotStore(SnapshotStore):
         if not isinstance(payload, dict):
             return None
         if self.serializer == "pickle_signed":
-            key = self._resolve_hmac_key()
+            key = self._get_hmac_key()
             if key is None:
                 _report_soft_error(
                     component="SnapshotStore",
@@ -751,3 +751,4 @@ def create_snapshot_store(
             key_prefix=key_prefix,
         )
     raise ValueError(f"Unsupported snapshot store backend: {backend}")
+

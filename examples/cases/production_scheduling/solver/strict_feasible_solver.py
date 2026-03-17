@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from nsgablack.core.composable_solver import ComposableSolver
-from nsgablack.utils.context.context_keys import KEY_STEP
+from nsgablack.core.state.context_keys import KEY_STEP
 from nsgablack.utils.extension_contracts import normalize_candidates, stack_population
 
 

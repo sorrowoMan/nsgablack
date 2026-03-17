@@ -7,7 +7,11 @@ from typing import Optional
 
 from refactor_data import load_production_data
 
-from .production_problem import ProductionConstraints, ProductionSchedulingProblem
+from .production_problem import (
+    ProductionConstraints,
+    ProductionSchedulingProblem,
+    ProductionSchedulingSingleObjectiveProblem,
+)
 
 _PROBLEM_FACTORY_CACHE = {}
 
@@ -31,6 +35,7 @@ class ProductionProblemFactory:
         shortage_unit_penalty: float,
         penalty_objective: bool,
         penalty_scale: float,
+        single_objective: bool = False,
     ) -> None:
         self.base_dir = str(base_dir)
         self.bom = bom
@@ -45,6 +50,7 @@ class ProductionProblemFactory:
         self.shortage_unit_penalty = float(shortage_unit_penalty)
         self.penalty_objective = bool(penalty_objective)
         self.penalty_scale = float(penalty_scale)
+        self.single_objective = bool(single_objective)
         self._cache_key = (
             self.base_dir,
             self.bom,
@@ -59,6 +65,7 @@ class ProductionProblemFactory:
             self.shortage_unit_penalty,
             self.penalty_objective,
             self.penalty_scale,
+            self.single_objective,
         )
 
     def __call__(self) -> ProductionSchedulingProblem:
@@ -85,7 +92,10 @@ class ProductionProblemFactory:
             include_penalty_objective=self.penalty_objective,
             penalty_objective_scale=self.penalty_scale,
         )
-        problem = ProductionSchedulingProblem(data=data, constraints=constraints)
+        if self.single_objective:
+            problem = ProductionSchedulingSingleObjectiveProblem(data=data, constraints=constraints)
+        else:
+            problem = ProductionSchedulingProblem(data=data, constraints=constraints)
         _PROBLEM_FACTORY_CACHE[self._cache_key] = problem
         return problem
 
@@ -105,6 +115,7 @@ def build_problem_factory(args, *, base_dir: Path) -> ProductionProblemFactory:
         shortage_unit_penalty=args.shortage_unit_penalty,
         penalty_objective=args.penalty_objective,
         penalty_scale=args.penalty_scale,
+        single_objective=bool(getattr(args, "single_objective", False)),
     )
 
 
@@ -137,4 +148,6 @@ def build_problem(
         include_penalty_objective=args.penalty_objective,
         penalty_objective_scale=args.penalty_scale,
     )
+    if bool(getattr(args, "single_objective", False)):
+        return ProductionSchedulingSingleObjectiveProblem(data=data, constraints=constraints)
     return ProductionSchedulingProblem(data=data, constraints=constraints)

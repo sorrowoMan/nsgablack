@@ -1,6 +1,6 @@
 import pytest
 
-from nsgablack.utils.context.context_schema import build_minimal_context, validate_minimal_context
+from nsgablack.core.state.context_schema import build_minimal_context, validate_minimal_context
 
 
 def test_build_and_validate_minimal_context():

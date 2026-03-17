@@ -5,7 +5,8 @@ def test_inner_solver_and_bridge_plugins_write_layer_context():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.adapters import AlgorithmAdapter
-    from nsgablack.plugins import BridgeRule, ContractBridgePlugin, InnerSolverConfig, InnerSolverPlugin
+    from nsgablack.plugins import BridgeRule, ContractBridgePlugin
+    from nsgablack.core.nested_solver import InnerRuntimeConfig, TaskInnerRuntimeEvaluator
 
     class OuterProblem(BlackBoxProblem):
         def __init__(self):
@@ -39,7 +40,7 @@ def test_inner_solver_and_bridge_plugins_write_layer_context():
             ]
         )
     )
-    solver.add_plugin(InnerSolverPlugin(config=InnerSolverConfig(source_layer="L2", target_layer="L1")))
+    solver.problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(config=InnerRuntimeConfig(source_layer="L2", target_layer="L1"))
     solver.run()
 
     assert solver.best_objective is not None
@@ -55,11 +56,10 @@ def test_inner_timeout_budget_blocks_calls():
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.plugins import (
-        InnerSolverConfig,
-        InnerSolverPlugin,
         TimeoutBudgetConfig,
         TimeoutBudgetPlugin,
     )
+    from nsgablack.core.nested_solver import InnerRuntimeConfig, TaskInnerRuntimeEvaluator
 
     class OuterProblem(BlackBoxProblem):
         def __init__(self):
@@ -84,7 +84,7 @@ def test_inner_timeout_budget_blocks_calls():
     solver.max_steps = 1
     solver.pop_size = 1
     solver.add_plugin(TimeoutBudgetPlugin(config=TimeoutBudgetConfig(layer="L2", max_calls=0, time_budget_ms=10_000)))
-    solver.add_plugin(InnerSolverPlugin(config=InnerSolverConfig(source_layer="L2", target_layer="L1", fallback_penalty=12345.0)))
+    solver.problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(config=InnerRuntimeConfig(source_layer="L2", target_layer="L1", fallback_penalty=12345.0))
     solver.run()
 
     assert solver.best_objective is not None

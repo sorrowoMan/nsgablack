@@ -59,7 +59,7 @@
 - `bias_module` 不再在 getter 中隐式自动创建。
 - 若需要启用默认 Bias，请显式调用：
   - `solver.init_bias_module()` 或
-  - `solver.set_enable_bias(True)`（会触发初始化）
+  - `solver.set_bias_enabled(True)`（会触发初始化）
 - 设计目的：避免属性访问触发隐藏状态变更，保证可序列化与可测试。
 
 ### Catalog 注册边界（必须遵守）

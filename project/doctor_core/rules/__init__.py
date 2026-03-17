@@ -15,6 +15,10 @@ from .examples_suites import check_examples_suites_solver_control_writes
 from .metrics_provider import check_metrics_provider_alignment
 from .registry_checks import check_registry
 from .runtime_surface import check_runtime_private_surface
+from .runtime_governance import (
+    check_no_plugin_evaluation_short_circuit,
+    check_runtime_governance_runtime_state,
+)
 from .scaffold import check_structure, looks_like_scaffold_project
 from .snapshot_context_policy import (
     check_context_store_policy,
@@ -37,6 +41,8 @@ __all__ = [
     "check_registry",
     "check_metrics_provider_alignment",
     "check_runtime_private_surface",
+    "check_no_plugin_evaluation_short_circuit",
+    "check_runtime_governance_runtime_state",
     "check_structure",
     "check_snapshot_refs",
     "check_snapshot_store_policy",

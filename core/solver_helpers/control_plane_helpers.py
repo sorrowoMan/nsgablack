@@ -110,7 +110,7 @@ def set_pareto_snapshot_fields(
         setattr(solver, "pareto_objectives", objectives)
 
 
-def resolve_best_snapshot_fields(
+def get_best_snapshot_fields(
     solver: Any,
     *,
     report_soft_error_fn: Callable[..., Any],
@@ -154,7 +154,7 @@ def resolve_best_snapshot_fields(
                 solver=solver,
                 report_soft_error_fn=report_soft_error_fn,
                 logger=logger,
-                event="resolve_best_snapshot",
+                event="get_best_snapshot",
                 exc=exc,
             )
 

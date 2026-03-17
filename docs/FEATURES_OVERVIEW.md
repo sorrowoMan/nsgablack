@@ -18,7 +18,7 @@
 
 ## 2. 可组合与协同能力
 
-- **多策略协同**：MultiStrategyControllerAdapter（本质是“多策略提案者 + 统一评估/归档/调度”，共享状态 + 动态预算）
+- **多策略协同**：StrategyRouterAdapter（本质是“多策略提案者 + 统一评估/归档/调度”，共享状态 + 动态预算）
 - **多算法并行/阶段协作**：支持探索-精修阶段调度
 - **Wiring 权威组合**：必配组件一键装配，避免漏配
 - **Catalog 可发现性**：search/show/list + companions 伙伴提示
@@ -28,12 +28,12 @@
 ## 2.1 深度（嵌套）与广度（协同）工作流
 
 - **深度（Depth）**：支持 L1/L2/L3 嵌套评估链路
-  - `InnerSolverPlugin`：外层评估触发内层求解
+  - `problem.inner_runtime_evaluator`：外层评估触发内层求解
   - `ContractBridgePlugin`：内层字段桥接回目标层 context（可 L3 直写 L1）
   - `TimeoutBudgetPlugin`：内层预算门禁（调用次数/总耗时）
-  - `NewtonSolverPlugin` / `BroydenSolverPlugin`：内层数值求解工具
+  - `NewtonSolverProviderPlugin` / `BroydenSolverProviderPlugin`：内层数值求解工具
 - **广度（Breadth）**：支持同层多策略并行协作
-  - `MultiStrategyControllerAdapter` + role adapters
+  - `StrategyRouterAdapter` + role adapters
   - Bias 组合（业务偏好 + 算法偏好）
   - Plugin 组合（缓存/容错/报告/审计）
 
@@ -68,7 +68,7 @@
 ## 5. 插件系统（Plugins）
 
 - **并行评估**：多后端并行（含 Ray）
-- **统计评估**：MonteCarloEvaluationPlugin
+- **统计评估**：MonteCarloEvaluationProviderPlugin
 - **Pareto 归档**：全局非支配解集维护
 - **外部存储/数据库记录**：可扩展插件对接外部存储系统
 - **Profiler**：性能剖析

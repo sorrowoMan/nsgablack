@@ -23,7 +23,7 @@ This workflow keeps solver bases pure. Surrogate logic is injected as a plugin.
 
 2) Enable surrogate short-circuit
 
-- attach `SurrogateEvaluationPlugin`
+- attach `SurrogateEvaluationProviderPlugin`
 - keep `BenchmarkHarnessPlugin` unchanged
 
 3) Compare fairly
@@ -35,7 +35,7 @@ This workflow keeps solver bases pure. Surrogate logic is injected as a plugin.
 
 ### Bias 不在 _true_evaluate 内部 apply
 
-`SurrogateEvaluationPlugin` 的 `_true_evaluate()` **不得**自行调用 `bias_module.compute_bias()`。
+`SurrogateEvaluationProviderPlugin` 的 `_true_evaluate()` **不得**自行调用 `bias_module.compute_bias()`。
 由于 surrogate plugin 接管了 `evaluate_population`（solver 原生 bias 路径被跳过），
 Bias 由 plugin 在 `evaluate_population` 返回前的 Step 5 统一 apply 一次，避免 double-bias。
 

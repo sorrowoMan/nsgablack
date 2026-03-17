@@ -9,7 +9,7 @@ from .snapshot_helpers import (
 from .control_plane_helpers import (
     collect_runtime_context_projection,
     increment_evaluation_counter,
-    resolve_best_snapshot_fields,
+    get_best_snapshot_fields,
     set_best_snapshot_fields,
     set_generation_value,
     set_pareto_snapshot_fields,
@@ -28,7 +28,8 @@ from .evaluation_helpers import (
     evaluate_individual_with_plugins_and_bias,
     evaluate_population_with_plugins_and_bias,
 )
-from .run_helpers import run_solver_loop
+from .run_helpers import apply_runtime_control_slot, run_solver_loop
+from .result_helpers import format_run_result
 from .candidate_helpers import sample_random_candidate
 from .component_scheduler import ComponentDependencyScheduler, ComponentOrderError
 
@@ -45,10 +46,12 @@ __all__ = [
     "build_snapshot_payload",
     "build_snapshot_refs",
     "increment_evaluation_counter",
+    "apply_runtime_control_slot",
+    "format_run_result",
     "run_solver_loop",
     "ComponentDependencyScheduler",
     "ComponentOrderError",
-    "resolve_best_snapshot_fields",
+    "get_best_snapshot_fields",
     "sample_random_candidate",
     "set_best_snapshot_fields",
     "set_generation_value",

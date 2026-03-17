@@ -34,7 +34,7 @@ class ProductionConstraints:
     max_machines_per_day: int = 8
     min_machines_per_day: int = 0
     min_production_per_machine: int = 100
-    max_production_per_machine: int = 3000
+    max_production_per_machine: int = 10000
     shortage_unit_penalty: float = 1.0
     include_penalty_objective: bool = True
     penalty_objective_scale: float = 0.001
@@ -231,3 +231,64 @@ class ProductionSchedulingProblem(BlackBoxProblem):
             "excess_machines": comps["excess_machines"],
             "penalty_score": penalty,
         }
+
+    def sanity_check_schedule(self, schedule: np.ndarray) -> Dict[str, float]:
+        schedule = np.asarray(schedule, dtype=float)
+        supply = np.asarray(self.data.supply_matrix, dtype=float)
+        bom = np.asarray(self._bom_float, dtype=float)
+
+        current_stock = np.zeros(self.materials, dtype=float)
+        total_shortage = 0.0
+        max_daily_shortage = 0.0
+        min_stock_after = 0.0
+
+        for day in range(self.days):
+            current_stock += supply[:, day]
+            consumption = schedule[:, day] @ bom
+            shortage = np.maximum(0.0, consumption - current_stock)
+            daily_shortage = float(np.sum(shortage))
+            total_shortage += daily_shortage
+            max_daily_shortage = max(max_daily_shortage, daily_shortage)
+            current_stock = current_stock - consumption
+            min_stock_after = min(min_stock_after, float(np.min(current_stock)))
+            current_stock = np.maximum(0.0, current_stock)
+
+        daily_active = np.sum(schedule > 0, axis=0)
+        max_machines = float(self.constraints.max_machines_per_day)
+        min_machines = float(self.constraints.min_machines_per_day)
+        excess_machines = np.maximum(0.0, daily_active - max_machines)
+        shortage_machines = np.maximum(0.0, min_machines - daily_active) if min_machines > 0 else 0.0
+
+        min_prod = float(self.constraints.min_production_per_machine)
+        max_prod = float(self.constraints.max_production_per_machine)
+        below_min = np.where((schedule > 0) & (schedule < min_prod), (min_prod - schedule), 0.0)
+        above_max = np.maximum(0.0, schedule - max_prod)
+
+        return {
+            "total_production": float(np.sum(schedule)),
+            "material_shortage_total": float(total_shortage),
+            "material_shortage_max_daily": float(max_daily_shortage),
+            "material_min_stock_after": float(min_stock_after),
+            "machines_excess_total": float(np.sum(excess_machines)),
+            "machines_excess_max_daily": float(np.max(excess_machines)) if excess_machines.size else 0.0,
+            "machines_shortage_total": float(np.sum(shortage_machines))
+            if isinstance(shortage_machines, np.ndarray)
+            else float(shortage_machines),
+            "machines_shortage_max_daily": float(np.max(shortage_machines))
+            if isinstance(shortage_machines, np.ndarray) and shortage_machines.size
+            else (float(shortage_machines) if isinstance(shortage_machines, (int, float)) else 0.0),
+            "production_below_min_total": float(np.sum(below_min)),
+            "production_above_max_total": float(np.sum(above_max)),
+        }
+
+
+class ProductionSchedulingSingleObjectiveProblem(ProductionSchedulingProblem):
+    """Single-objective variant: maximize total production only."""
+
+    def get_num_objectives(self) -> int:
+        return 1
+
+    def evaluate(self, x: np.ndarray) -> np.ndarray:
+        schedule = self.decode_schedule(x)
+        total_production = float(np.sum(schedule))
+        return np.array([-total_production], dtype=float)

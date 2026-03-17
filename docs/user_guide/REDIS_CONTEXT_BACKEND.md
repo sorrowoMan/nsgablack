@@ -104,7 +104,7 @@ docker stop nsgablack-redis
 ## 7) Minimal framework verification
 
 ```powershell
-python -c "from nsgablack.utils.context.context_store import create_context_store; s=create_context_store(backend='redis', redis_url='redis://127.0.0.1:6379/0', key_prefix='nsgablack:ctxdemo', ttl_seconds=30); s.set('k', {'v':1}); print('get=', s.get('k')); print('keys=', list(s.snapshot().keys())[:5])"
+python -c "from nsgablack.core.state.context_store import create_context_store; s=create_context_store(backend='redis', redis_url='redis://127.0.0.1:6379/0', key_prefix='nsgablack:ctxdemo', ttl_seconds=30); s.set('k', {'v':1}); print('get=', s.get('k')); print('keys=', list(s.snapshot().keys())[:5])"
 ```
 
 If this prints values, Redis context backend is working.

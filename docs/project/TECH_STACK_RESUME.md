@@ -25,10 +25,10 @@
 ## 2) 信息传递与工程通信机制（低侵入、可审计）
 
 - Context 机制：跨模块信息用 `dict` 传递，并定义“最小可序列化 schema”（并行/串行共用）
-  - 证据：`utils/context/context_schema.py`
+  - 证据：`core/state/context_schema.py`
   - 复杂度证明：难点是“信息要够用但不能把不可序列化大对象塞进来”；我用 minimal schema 保障并行可用，同时允许 extra 扩展。
 - Context Key 约定：统一 key 命名与语义，降低协作成本，减少“隐性协议”
-  - 证据：`utils/context/context_keys.py`
+  - 证据：`core/state/context_keys.py`
   - 复杂度证明：常见坑是同一语义不同 key（口径无法对齐）；我把协议显式化为 keys，让新增模块可对齐。
 - 显式构造注入 + wiring 装配：不引入重型 DI 容器/事件总线，降低副作用与排障复杂度
   - 证据：`utils/wiring/`、`core/`

@@ -12,7 +12,7 @@ import numpy as np
 
 from ..adapters import AlgorithmAdapter, CompositeAdapter
 from .blank_solver import SolverBase
-from ..utils.context.context_keys import KEY_STEP
+from ..core.state.context_keys import KEY_STEP
 from ..utils.extension_contracts import normalize_candidates, stack_population
 
 

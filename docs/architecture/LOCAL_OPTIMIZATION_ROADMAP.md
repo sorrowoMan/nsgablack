@@ -14,7 +14,7 @@ contract for the upcoming integrations.
 - Radius update based on acceptance ratio
 
 **Plugins**
-- Surrogate model training/prediction (can reuse `SurrogateEvaluationPlugin` or a new light surrogate plugin)
+- Surrogate model training/prediction (can reuse `SurrogateEvaluationProviderPlugin` or a new light surrogate plugin)
 - Optional uncertainty metrics for exploration bias
 
 **Bias**

@@ -80,7 +80,7 @@ class BasicElitePlugin(Plugin):
     def on_generation_end(self, generation: int) -> None:
         if self.solver is None:
             return None
-        population, objectives, violations = self.resolve_population_snapshot(self.solver)
+        population, objectives, violations = self.get_population_snapshot(self.solver)
         if objectives.size == 0:
             return None
         self._update_best_solution(population, objectives)
@@ -193,7 +193,7 @@ class HistoricalElitePlugin(Plugin):
         if self.solver is None or not self.enabled:
             return None
 
-        population, objectives, violations = self.resolve_population_snapshot(self.solver)
+        population, objectives, violations = self.get_population_snapshot(self.solver)
         if objectives.size == 0:
             return None
         self._update_best_and_archive(population, objectives, generation)

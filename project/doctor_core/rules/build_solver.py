@@ -32,6 +32,7 @@ def check_build_solver(
     check_component_catalog_registration: Callable[..., None],
     check_metrics_provider_alignment: Callable[..., None],
     check_process_like_bias_usage: Callable[..., None],
+    check_runtime_governance_runtime_state: Callable[..., None],
 ) -> None:
     build_file = root / "build_solver.py"
     if not build_file.is_file():
@@ -97,7 +98,7 @@ def check_build_solver(
     )
 
     try:
-        from nsgablack.utils.context.context_contracts import (
+        from nsgablack.core.state.context_contracts import (
             collect_solver_contracts,
             detect_context_conflicts,
             get_component_contract,
@@ -166,3 +167,13 @@ def check_build_solver(
         )
     except Exception as exc:
         add(diags, "warn", "algorithm-as-bias-check-failed", f"Process-level bias check failed: {exc}", build_file)
+
+    try:
+        check_runtime_governance_runtime_state(
+            solver=solver,
+            build_file=build_file,
+            diags=diags,
+            strict=bool(strict),
+        )
+    except Exception as exc:
+        add(diags, "warn", "runtime-governance-check-failed", f"Runtime governance check failed: {exc}", build_file)

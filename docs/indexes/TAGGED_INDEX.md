@@ -90,7 +90,7 @@ Core（推荐）
 
 推荐：作为“能力层”接入，不污染底座
 
-- `plugins/evaluation/surrogate_evaluation.py` — 代理评估短路插件（`SurrogateEvaluationPlugin`）[layer:utils] [goal:surrogate]
+- `plugins/evaluation/surrogate_evaluation.py` — 代理评估短路插件（`SurrogateEvaluationProviderPlugin`）[layer:utils] [goal:surrogate]
 - `utils/surrogate/` — 轻量代理工具（训练/管理/策略的最小实现）[layer:utils] [goal:surrogate]
 
 文档

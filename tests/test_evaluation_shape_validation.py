@@ -326,9 +326,12 @@ def test_plugin_short_circuit_population_mode():
 
 def test_plugin_short_circuit_invalid_return_type():
     """Test invalid return type handling."""
-    result = validate_plugin_short_circuit_return(
-        "not a tuple", "individual", None, 2, strict=False
-    )
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        result = validate_plugin_short_circuit_return(
+            "not a tuple", "individual", None, 2, strict=False
+        )
+        assert any("expected (objectives, violations) tuple" in str(w_item.message) for w_item in w)
     
     # Should return None with warning
     assert result is None

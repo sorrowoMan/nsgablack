@@ -3,7 +3,7 @@
 Demo file: `examples/gpu_ray_mysql_stack_demo.py`
 
 ## What it wires
-- `GpuEvaluationTemplatePlugin`: optional GPU short-circuit for `evaluate_population`
+- `GpuEvaluationTemplateProviderPlugin`: optional GPU short-circuit for `evaluate_population`
 - Ray distributed evaluator path (`attach_ray_parallel`)
 - `MySQLRunLoggerPlugin`: writes run metadata to MySQL on solver finish
 

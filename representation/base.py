@@ -10,7 +10,7 @@ import contextlib
 import threading
 import numpy as np
 
-from ..utils.context.context_keys import KEY_METRICS
+from ..core.state.context_keys import KEY_METRICS
 
 class EncodingPlugin(Protocol):
     def encode(self, x: Any, context: Optional[dict] = None) -> Any:
@@ -226,7 +226,7 @@ class RepresentationPipeline:
         notes: List[str] = [str(self.context_notes).strip()] if self.context_notes else []
 
         try:
-            from ..utils.context.context_contracts import get_component_contract
+            from ..core.state.context_contracts import get_component_contract
         except Exception:
             get_component_contract = None  # type: ignore[assignment]
 

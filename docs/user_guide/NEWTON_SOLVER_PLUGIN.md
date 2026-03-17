@@ -1,7 +1,7 @@
-# NewtonSolverPlugin（原理与用法）
+# NewtonSolverProviderPlugin（原理与用法）
 
 ## 1) 原理
-`NewtonSolverPlugin` 基于 `scipy.optimize.root(method="hybr")`：
+`NewtonSolverProviderPlugin` 基于 `scipy.optimize.root(method="hybr")`：
 - 目标：求解 `residual(z)=0`
 - 可选使用 Jacobian（Problem 提供时）
 - 输出求解状态：残差范数、迭代步数、成功标志
@@ -18,10 +18,10 @@
 
 ## 4) 使用示例
 ```python
-from nsgablack.plugins import NewtonSolverPlugin, NumericalSolverConfig
+from nsgablack.plugins import NewtonSolverProviderPlugin, NumericalSolverConfig
 
 solver.add_plugin(
-    NewtonSolverPlugin(
+    NewtonSolverProviderPlugin(
         config=NumericalSolverConfig(
             tol=1e-8,
             max_iter=120,

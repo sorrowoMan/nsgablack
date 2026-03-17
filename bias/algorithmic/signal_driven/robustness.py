@@ -2,7 +2,7 @@
 Robustness bias.
 
 This bias is designed to work with capability plugins that provide
-stochastic evaluation statistics (e.g. MonteCarloEvaluationPlugin).
+stochastic evaluation statistics (e.g. MonteCarloEvaluationProviderPlugin).
 
 Expected context:
 - context.metrics["mc_std"]: per-objective standard deviation (array-like)
@@ -34,7 +34,7 @@ class RobustnessBias(AlgorithmicBias):
     # Soft partner contracts (informational; no hard dependency).
     requires_metrics = ("mc_std",)
     metrics_fallback = "safe_zero"
-    recommended_plugins = ["MonteCarloEvaluationPlugin"]
+    recommended_plugins = ["MonteCarloEvaluationProviderPlugin"]
 
     def __init__(
         self,
@@ -55,7 +55,7 @@ class RobustnessBias(AlgorithmicBias):
             if not self._missing_metrics_warned:
                 warnings.warn(
                     "RobustnessBias 未检测到 context.metrics['mc_std']，将退化为 0.0。"
-                    "如需鲁棒性/稳定性引导，请配合提供 MC 统计的能力层插件（例如 MonteCarloEvaluationPlugin）。",
+                    "如需鲁棒性/稳定性引导，请配合提供 MC 统计的能力层插件（例如 MonteCarloEvaluationProviderPlugin）。",
                     RuntimeWarning,
                     stacklevel=2,
                 )

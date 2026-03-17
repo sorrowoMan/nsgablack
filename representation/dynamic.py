@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Optional, Sequence, Tuple, Any
 
 from .base import RepresentationComponentContract
-from ..utils.context.context_keys import KEY_GENERATION
+from ..core.state.context_keys import KEY_GENERATION
 
 
 @dataclass

@@ -38,7 +38,7 @@ def test_solver_control_plane_updates_state() -> None:
     solver.set_best_snapshot(np.asarray([1.0, 2.0]), 5.0)
     solver.set_pareto_snapshot(np.asarray([[1.0, 2.0]]), np.asarray([[5.0]]))
 
-    best_x, best_obj = solver.resolve_best_snapshot()
+    best_x, best_obj = solver.get_best_snapshot()
     assert int(solver.generation) == 7
     assert int(solver.evaluation_count) == 3
     assert best_x is not None

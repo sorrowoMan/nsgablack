@@ -5,7 +5,6 @@ from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
-from ..base import Plugin
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
 from ...utils.context.context_keys import KEY_METRICS
 
@@ -20,18 +19,8 @@ class GpuEvaluationTemplateConfig:
     warn_on_fallback: bool = True
 
 
-class GpuEvaluationTemplatePlugin(Plugin):
-    """Minimal GPU evaluation plugin.
-
-    Hook point:
-    - evaluate_population(solver, population) short-circuit.
-
-    Contract:
-    - If GPU backend is available and problem supports batch GPU evaluation,
-      return (objectives, violations).
-    - If backend/problem path is not available, return None to let solver
-      continue with its default evaluation path (including parallel/ray path).
-    """
+class GpuEvaluationTemplateProviderPlugin:
+    """GPU L4 provider factory (semantic equivalent)."""
 
     context_requires = ("problem",)
     context_provides = ("metrics.gpu_backend", "metrics.gpu_calls", "metrics.gpu_fallbacks")
@@ -49,7 +38,8 @@ class GpuEvaluationTemplatePlugin(Plugin):
         config: Optional[GpuEvaluationTemplateConfig] = None,
         priority: int = 80,
     ) -> None:
-        super().__init__(name=name, priority=priority)
+        self.name = str(name)
+        self.priority = int(priority)
         self.cfg = config or GpuEvaluationTemplateConfig()
         self.stats: Dict[str, float] = {"calls": 0.0, "fallbacks": 0.0}
 
@@ -95,7 +85,7 @@ class GpuEvaluationTemplatePlugin(Plugin):
             out.append(float(vio))
         return np.asarray(out, dtype=float).reshape(-1)
 
-    def evaluate_population(self, solver, population: np.ndarray) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    def evaluate_population_runtime(self, solver, population: np.ndarray) -> Optional[Tuple[np.ndarray, np.ndarray]]:
         problem = getattr(solver, "problem", None)
         if problem is None:
             return None
@@ -146,3 +136,34 @@ class GpuEvaluationTemplatePlugin(Plugin):
                 pass
 
         return np.asarray(obj, dtype=float), np.asarray(violations, dtype=float)
+
+    def create_provider(self):
+        owner = self
+
+        class _Provider:
+            name = owner.name
+            semantic_mode = "equivalent"
+
+            def can_handle_individual(self, solver, x, context):
+                _ = context
+                return owner._select_backend() is not None and x is not None
+
+            def evaluate_individual(self, solver, x, context, individual_id=None):
+                _ = context
+                pop = np.asarray(x, dtype=float).reshape(1, -1)
+                out = owner.evaluate_population_runtime(solver, pop)
+                if out is None:
+                    return None
+                objs, vios = out
+                return np.asarray(objs[0], dtype=float).reshape(-1), float(vios[0])
+
+            def can_handle_population(self, solver, population, context):
+                _ = solver
+                _ = context
+                return owner._select_backend() is not None and population is not None
+
+            def evaluate_population(self, solver, population, context):
+                _ = context
+                return owner.evaluate_population_runtime(solver, np.asarray(population, dtype=float))
+
+        return _Provider()

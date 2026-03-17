@@ -61,7 +61,7 @@ class VNSAdapter(AlgorithmAdapter):
     # via `context` and expects the representation pipeline's mutator (or a wrapper)
     # to consume these keys.
     requires_context_keys = {KEY_VNS_K, KEY_MUTATION_SIGMA}
-    recommended_mutators = ["ContextGaussianMutation", "ContextSwitchMutator"]
+    recommended_mutators = ["ContextGaussianMutation", "ContextSelectMutator"]
 
     def __init__(
         self,
@@ -104,7 +104,7 @@ class VNSAdapter(AlgorithmAdapter):
             warnings.warn(
                 "VNSAdapter 未检测到 representation_pipeline.mutator；VNS 只能产生固定邻域或直接失败。"
                 "请配置 RepresentationPipeline(mutator=...)，连续变量推荐 ContextGaussianMutation，"
-                "离散/排列推荐 ContextSwitchMutator。",
+                "离散/排列推荐 ContextSelectMutator。",
                 RuntimeWarning,
                 stacklevel=3,
             )
@@ -125,7 +125,7 @@ class VNSAdapter(AlgorithmAdapter):
                 "VNSAdapter 检测到当前 mutator 可能不会消费 context（未发现 sigma_key/k_key 等属性）。"
                 "这会导致 VNS 的 k 邻域变化退化为“固定扰动”。"
                 "建议：连续变量用 ContextGaussianMutation(sigma_key='mutation_sigma')；"
-                "非连续/多邻域用 ContextSwitchMutator(k_key='vns_k') 或自定义可读 context 的 mutator。",
+                "非连续/多邻域用 ContextSelectMutator(k_key='vns_k') 或自定义可读 context 的 mutator。",
                 RuntimeWarning,
                 stacklevel=3,
             )

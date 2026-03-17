@@ -19,6 +19,5 @@ May train/update model caches.
 Prefer degrade-to-observe mode; avoid breaking optimization flow.
 
 ## Directory Contents
-- `mas_model.py`
-- `subspace_basis.py`
+Currently empty (reserved for future model-related plugins).
 

@@ -34,7 +34,7 @@
 ```python
 class RobustnessBias(AlgorithmicBias):
     requires_metrics = {"mc_std"}
-    recommended_plugins = ["MonteCarloEvaluationPlugin"]
+    recommended_plugins = ["MonteCarloEvaluationProviderPlugin"]
 
     def compute(self, x, context):
         if "mc_std" not in context.metrics:
@@ -53,7 +53,7 @@ class RobustnessBias(AlgorithmicBias):
 示例（节选）：
 
 ```python
-class MonteCarloEvaluationPlugin(Plugin):
+class MonteCarloEvaluationProviderPlugin(Plugin):
     provides_metrics = {"mc_mean", "mc_std", "mc_samples"}
 ```
 
@@ -72,11 +72,11 @@ class MonteCarloEvaluationPlugin(Plugin):
 用法：
 
 ```python
-from nsgablack.plugins import MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig
+from nsgablack.plugins import MonteCarloEvaluationProviderPlugin, MonteCarloEvaluationConfig
 from nsgablack.bias import BiasModule, RobustnessBias
 
 solver.add_plugin(
-    MonteCarloEvaluationPlugin(
+    MonteCarloEvaluationProviderPlugin(
         config=MonteCarloEvaluationConfig(mc_samples=64)
     )
 )

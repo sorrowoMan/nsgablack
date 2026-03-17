@@ -1,11 +1,12 @@
-import numpy as np
+﻿import numpy as np
 
 
 def test_surrogate_evaluation_plugin_reduces_true_evals_for_composable_solver():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
+    from nsgablack.core.evaluation_runtime import EvaluationMediatorConfig
     from nsgablack.adapters import AlgorithmAdapter
-    from nsgablack.plugins import SurrogateEvaluationPlugin, SurrogateEvaluationConfig
+    from nsgablack.plugins import SurrogateEvaluationProviderPlugin, SurrogateEvaluationConfig
 
     class ExpensiveSphere(BlackBoxProblem):
         def __init__(self, dim=5):
@@ -28,6 +29,7 @@ def test_surrogate_evaluation_plugin_reduces_true_evals_for_composable_solver():
     problem = ExpensiveSphere(dim=6)
     solver = ComposableSolver(problem=problem, adapter=RandomBatchAdapter(n_candidates=30))
     solver.max_steps = 5
+    solver.evaluation_mediator.config = EvaluationMediatorConfig(allow_approximate=True, strict_conflict=True)
 
     cfg = SurrogateEvaluationConfig(
         min_train_samples=25,
@@ -38,8 +40,8 @@ def test_surrogate_evaluation_plugin_reduces_true_evals_for_composable_solver():
         objective_aggregation="sum",
         random_seed=0,
     )
-    plugin = SurrogateEvaluationPlugin(config=cfg, model_type="rf")
-    solver.add_plugin(plugin)
+    plugin = SurrogateEvaluationProviderPlugin(config=cfg, model_type="rf")
+    solver.register_evaluation_provider(plugin.create_provider())
 
     solver.run()
 
@@ -47,4 +49,5 @@ def test_surrogate_evaluation_plugin_reduces_true_evals_for_composable_solver():
     assert plugin.stats["true_evals"] > 0
     assert plugin.stats["true_evals"] < total_candidates
     assert problem.evaluation_count == plugin.stats["true_evals"]
+
 

@@ -12,7 +12,7 @@
 | 直接改目标值（奖励/惩罚） | 函数式偏置 `BiasModule` | 任意脚本/模块 | `EvolutionSolver` |
 | 需要上下文/更复杂逻辑 | 类偏置 `AlgorithmicBias/DomainBias` | `bias/algorithmic` 或 `bias/domain` | 偏置管理器或自定义流程 |
 | 让算法“变成偏置” | 算法偏置（本质还是类偏置或函数偏置） | 同上 | 同上 |
-| 减少真实评估次数（代理评估/短路） | 代理评估插件 `SurrogateEvaluationPlugin` | `plugins` | `ComposableSolver` / `SolverBase` |
+| 减少真实评估次数（代理评估） | L4 评估提供器 `SurrogateEvaluationProviderPlugin(...).build_provider()` | `evaluation_mediator` | `ComposableSolver` / `SolverBase` |
 
 ---
 
@@ -128,11 +128,11 @@ manager.add_algorithmic_bias(DiversityBias("diversity", weight=0.2))
 
 ---
 
-## D. 代理评估（SurrogateEvaluationPlugin）
+## D. 代理评估（L4 Provider）
 
 **适合**：`evaluate(x)` 很贵（仿真/调度/训练），你想“少做真实评估”，把更多候选交给代理模型排序/筛选。
 
-框架当前推荐的落地方式是：用插件在一次运行内短路 `evaluate_population`，让 solver 的主流程保持不变。
+框架当前推荐的落地方式是：通过 L4 `EvaluationProvider` 接入代理评估，保持 solver 主流程不变。
 
 ### 最小示例（ComposableSolver）
 
@@ -141,7 +141,7 @@ import numpy as np
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.core.composable_solver import ComposableSolver
 from nsgablack.adapters import AlgorithmAdapter
-from nsgablack.utils.plugins import SurrogateEvaluationPlugin, SurrogateEvaluationConfig
+from nsgablack.utils.plugins import SurrogateEvaluationProviderPlugin, SurrogateEvaluationConfig
 
 class MyProblem(BlackBoxProblem):
     def __init__(self, dim=10):
@@ -168,13 +168,15 @@ cfg = SurrogateEvaluationConfig(
     topk_exploit=8,         # 额外：挑预测最优的 top-k 做真评估（防偏）
     topk_explore=8,         # 额外：挑不确定性最高的 top-k 做真评估（主动学习）
 )
-solver.add_plugin(SurrogateEvaluationPlugin(config=cfg, model_type=\"rf\"))
+solver.register_evaluation_provider(
+    SurrogateEvaluationProviderPlugin(config=cfg, model_type=\"rf\").build_provider()
+)
 solver.run()
 ```
 
 ### 说明（避免误解）
 
-- 代理评估是“能力层插件”，不是 core solver 的默认行为；你可以随时开关它做消融对比。
+- 代理评估是 L4 能力，不是 core solver 的默认行为；你可以随时开关它做消融对比。
 - `bias/surrogate` 下的控制类（`SurrogateControlBias`）目前主要作为预留扩展点；如果你需要“分阶段动态调预算”，建议先在插件/adapter 层显式实现，再沉淀成稳定契约。
 
 ---

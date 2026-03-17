@@ -231,7 +231,7 @@ class BenchmarkHarnessPlugin(Plugin):
             except Exception:
                 pass
         # last fallback: compute from current objectives (sum) if available
-        _, obj, vio = self.resolve_population_snapshot(solver)
+        _, obj, vio = self.get_population_snapshot(solver)
         if obj is None:
             return None
         try:

@@ -40,22 +40,32 @@ def _write_file(path: Path, content: str, *, overwrite: bool) -> None:
 
 def _readme_for_folder(name: str) -> str:
     desc = _FOLDER_DESCRIPTIONS.get(name, "Module directory.")
+    desc_cn = {
+        "catalog": "项目本地 catalog 索引：注册可发现的本地组件。",
+        "problem": "问题层：目标、约束、变量维度与边界。",
+        "pipeline": "表示层：初始化、变异、修复、编码/解码。",
+        "bias": "偏置层：软偏好与搜索倾向。",
+        "adapter": "策略层：propose/update 协调。",
+        "plugins": "工程层：日志、并行、回放、可视化等运行能力。",
+        "data": "数据层：项目原始与处理后的数据。",
+        "assets": "产出物：图表、报告、导出文件。",
+    }.get(name, "模块目录。")
     return dedent(
         f"""\
         # {name}
 
-        **??**
-        - ?????{desc}
-        - ??????????????????????
-        - I/O ???
-          - ????????????? context ??
-          - ??????????? context ??????
-          - ??? context???????
-            `context_requires/context_provides/context_mutates/context_cache`?
-        - ?????????????????????????
+        **中文**
+        - 职责：{{desc_cn}}
+        - 边界：只保留本层关切，不在此处隐藏跨层逻辑。
+        - I/O 约定：
+          - 输入：数据源、参数、读取的 context 字段
+          - 输出：返回对象、写入的 context 字段、副作用
+          - 如使用 context，请声明
+            `context_requires/context_provides/context_mutates/context_cache`。
+        - 最小示例：保留一个可运行文件，或说明入口路径。
 
         **English**
-        - Responsibility: {desc}
+        - Responsibility: {{desc}}
         - Boundary: keep only this layer's concern; do not hide cross-layer logic here.
         - I/O contract:
           - Input: data source, parameters, context fields read
@@ -65,6 +75,7 @@ def _readme_for_folder(name: str) -> str:
         - Minimal example: keep one runnable file, or document the entry path.
         """
     )
+
 
 def _root_readme(project_name: str) -> str:
     return dedent(
@@ -104,7 +115,7 @@ def _start_here() -> str:
         """        # START_HERE
 
         If you only read one file, read this one.
-        ???????????????
+        如果只读一个文件，就读这个。
 
         ## Stage Gate 0 - Health Baseline
         Run first:
@@ -153,9 +164,11 @@ def _start_here() -> str:
         2) pipeline
         3) bias
         4) solver core
-        5) observability plugins
-        6) project plugins
-        7) optional checkpoint
+        5) acceleration backends (L0)
+        6) evaluation runtime (L4)
+        7) observability plugins
+        8) project plugins
+        9) optional checkpoint
         Pass criteria:
         - Assembly is explicit and traceable.
         - No hidden side effects.
@@ -191,41 +204,40 @@ def _start_here() -> str:
         """
     )
 
+
 def _component_registration_guide() -> str:
     return dedent(
-        """\
-        # COMPONENT_REGISTRATION
+        """        # COMPONENT_REGISTRATION
 
-        ????????????????
+        组件注册说明
         This file defines the local project registration contract.
 
-        ## ?????? / Why register components
-        - ????? Catalog ? Run Inspector ???
-        - ????????`build_solver.py` + ?? key??
-        - ? context ??????`context_*` ????
+        ## 为什么要注册组件 / Why register components
+        - 供 Catalog 与 Run Inspector 发现与审计
+        - 统一 `build_solver.py` 与 `project_registry.py` 的入口
+        - 让 context I/O 更可追踪
 
-        ## ???? / What should be registered
-        ?????????????????
+        ## 需要注册什么 / What should be registered
         - problem builders
         - pipelines / biases / adapters / plugins
         - solver assembly entries
 
-        ?????????????????
+        原则：仅登记可复用或可发现的组件；实验草稿不必登记。
 
-        ## ????? / Where to register
+        ## 在哪里注册 / Where to register
         - Local project entries: `project_registry.py`
-        - ?? key ?????????????? `project.`?
+        - Catalog key 统一使用 `project.` 前缀
 
-        ## ???? / Minimal entry contract
+        ## 最小条目契约 / Minimal entry contract
         Each `CatalogEntry` should include:
         - `key`, `kind`, `title`, `import_path`
         - `tags`, `summary`
         - `context_requires`, `context_provides`, `context_mutates`, `context_cache`
         - `use_when`, `minimal_wiring`, `required_companions`, `config_keys`, `example_entry`
 
-        context ?????????? `()`?????? `context_notes`?
+        context 若无任何使用，允许为空 `()` 并在 `context_notes` 说明。
 
-        ## ?? / Validation
+        ## 校验 / Validation
         ```powershell
         python -m nsgablack project doctor --path . --build --strict
         python -m nsgablack project catalog list --path .
@@ -663,7 +675,7 @@ def _plugin_template() -> str:
         from typing import Any, Dict
 
         from nsgablack.plugins.base import Plugin
-        from nsgablack.utils.context.context_keys import KEY_GENERATION
+        from nsgablack.core.state.context_keys import KEY_GENERATION
 
         KEY_PROJECT_EXAMPLE_HIT = "project.example_plugin.hit_count"
 
@@ -764,7 +776,7 @@ def _plugin_class_template() -> str:
         from typing import Any, Dict
 
         from nsgablack.plugins.base import Plugin
-        from nsgablack.utils.context.context_keys import KEY_GENERATION
+        from nsgablack.core.state.context_keys import KEY_GENERATION
 
         KEY_PROJECT_PLUGIN_TEMPLATE = "project.plugin_template.hit_count"
 
@@ -921,19 +933,22 @@ def _build_solver_template() -> str:
         # -*- coding: utf-8 -*-
         \"\"\"Project entrypoint with explicit registration zones.
 
-        ?????????????
+        项目入口：显式注册各层组件。
         Keep all assembly in this file. For each zone, define:
         1) `_extend_<zone>_args(parser)` for CLI flags
         2) `_register_<zone>(...)` for component wiring
 
-        ???? / Recommended order:
-        1) problem / ????
-        2) pipeline / ?????
-        3) bias / ???
-        4) solver core / ?????
-        5) observability plugins / ????
-        6) project/domain plugins / ??????
-        7) optional checkpoint / ??????
+        建议顺序 / Recommended order:
+        1) problem / 问题
+        2) pipeline / 表示
+        3) bias / 偏置
+        4) solver core / 求解器
+        5) controllers (L3) / 控制器
+        6) evaluation providers (L4) / 评估提供方
+        7) observability plugins / 观测插件
+        8) project/domain plugins / 项目插件
+        9) optional checkpoint / 断点续跑
+        10) L0 acceleration backend / 加速后端
 
         Stage-gate reminder:
         - Gate 1: problem semantics only
@@ -947,6 +962,8 @@ def _build_solver_template() -> str:
         import argparse
         from datetime import datetime
 
+        from nsgablack.core.control_plane import BaseController, ControlDecision
+        from nsgablack.core.evaluation_runtime import EvaluationProvider
         from nsgablack.core.evolution_solver import EvolutionSolver
         from nsgablack.utils.wiring import attach_checkpoint_resume
         from nsgablack.utils.wiring import attach_observability_profile
@@ -957,7 +974,7 @@ def _build_solver_template() -> str:
         from problem.example_problem import ExampleProblem
 
 
-        # --- Zone 1: problem / ???? -----------------------------------------
+        # --- Zone 1: problem / 问题 -----------------------------------------
         def _extend_problem_args(parser: argparse.ArgumentParser) -> None:
             parser.add_argument("--dimension", type=int, default=8)
 
@@ -968,7 +985,7 @@ def _build_solver_template() -> str:
             return ExampleProblem(dimension=int(args.dimension))
 
 
-        # --- Zone 2: pipeline / ????? --------------------------------------
+        # --- Zone 2: pipeline / 表示 --------------------------------------
         def _extend_pipeline_args(parser: argparse.ArgumentParser) -> None:
             _ = parser
             # Add pipeline-specific flags here when needed.
@@ -981,7 +998,7 @@ def _build_solver_template() -> str:
             return build_pipeline()
 
 
-        # --- Zone 3: bias / ??? --------------------------------------------
+        # --- Zone 3: bias / 偏置 --------------------------------------------
         def _extend_bias_args(parser: argparse.ArgumentParser) -> None:
             parser.add_argument("--enable-bias", action="store_true")
 
@@ -993,7 +1010,7 @@ def _build_solver_template() -> str:
             return build_bias_module(enable_bias=bool(args.enable_bias))
 
 
-        # --- Zone 4: solver core / ????? ----------------------------------
+        # --- Zone 4: solver core / 求解器 ----------------------------------
         def _extend_solver_args(parser: argparse.ArgumentParser) -> None:
             parser.add_argument("--pop-size", type=int, default=80)
             parser.add_argument("--generations", type=int, default=60)
@@ -1026,7 +1043,80 @@ def _build_solver_template() -> str:
             return solver
 
 
-        # --- Zone 5: observability plugins / ???? ---------------------------
+        # --- Zone 5: controllers (L3) / 控制器 -----------------------------
+        def _extend_controller_args(parser: argparse.ArgumentParser) -> None:
+            parser.add_argument("--enable-stop-controller", action="store_true")
+
+
+        class _MaxGenerationStopController(BaseController):
+            domain = "stopping"
+            slots = ("gen_end",)
+
+            def __init__(self, *, limit: int) -> None:
+                super().__init__(name="max_generation_stop", priority=10)
+                self.limit = int(limit)
+
+            def propose(self, solver, slot: str, context):
+                _ = context
+                if str(slot) != "gen_end":
+                    return None
+                should_stop = int(getattr(solver, "generation", 0)) + 1 >= self.limit
+                return ControlDecision(
+                    domain="stopping",
+                    slot=str(slot),
+                    controller=self.name,
+                    priority=self.priority,
+                    payload={"stop": bool(should_stop)},
+                    reason="max_generation_reached",
+                )
+
+
+        def _register_controllers(solver: EvolutionSolver, args) -> None:
+            if bool(args.enable_stop_controller):
+                solver.register_controller(_MaxGenerationStopController(limit=int(args.generations)))
+
+
+        # --- Zone 6: evaluation providers (L4) / 评估提供方 ----------------------
+        def _extend_eval_provider_args(parser: argparse.ArgumentParser) -> None:
+            parser.add_argument("--enable-l4-placeholder-provider", action="store_true")
+
+
+        class _NoopProvider:
+            name = "noop_provider"
+            semantic_mode = "equivalent"
+
+            def can_handle_individual(self, solver, x, context):
+                _ = solver
+                _ = x
+                _ = context
+                return False
+
+            def evaluate_individual(self, solver, x, context, individual_id=None):
+                _ = solver
+                _ = x
+                _ = context
+                _ = individual_id
+                return None
+
+            def can_handle_population(self, solver, population, context):
+                _ = solver
+                _ = population
+                _ = context
+                return False
+
+            def evaluate_population(self, solver, population, context):
+                _ = solver
+                _ = population
+                _ = context
+                return None
+
+
+        def _register_evaluation_providers(solver: EvolutionSolver, args) -> None:
+            if bool(args.enable_l4_placeholder_provider):
+                solver.register_evaluation_provider(_NoopProvider())
+
+
+        # --- Zone 7: observability plugins / 观测插件 ---------------------------
         def _extend_observability_args(parser: argparse.ArgumentParser) -> None:
             parser.add_argument(
                 "--observability-profile",
@@ -1052,7 +1142,7 @@ def _build_solver_template() -> str:
             )
 
 
-        # --- Zone 6: project plugins / ???? --------------------------------
+        # --- Zone 8: project plugins / 项目插件 --------------------------------
         def _extend_project_plugin_args(parser: argparse.ArgumentParser) -> None:
             parser.add_argument("--enable-example-plugin", action="store_true")
 
@@ -1063,7 +1153,7 @@ def _build_solver_template() -> str:
                 solver.add_plugin(ExampleProjectPlugin(interval=5, verbose=True))
 
 
-        # --- Zone 7: optional checkpoint / ?????? -------------------------
+        # --- Zone 9: optional checkpoint / 断点续跑 -------------------------
         def _extend_checkpoint_args(parser: argparse.ArgumentParser) -> None:
             parser.add_argument("--enable-checkpoint", action="store_true")
             parser.add_argument("--checkpoint-dir", default="runs/checkpoints")
@@ -1087,15 +1177,33 @@ def _build_solver_template() -> str:
             )
 
 
+        # --- Zone 10: L0 acceleration backend / 加速后端 -----------------------
+        def _extend_l0_args(parser: argparse.ArgumentParser) -> None:
+            parser.add_argument(
+                "--accel-backend",
+                choices=["default", "vectorized"],
+                default="default",
+            )
+
+
+        def _register_l0_backend(solver: EvolutionSolver, args) -> None:
+            _ = solver
+            _ = args
+            # Register real acceleration backend factories here when needed.
+
+
         def _build_parser() -> argparse.ArgumentParser:
             parser = argparse.ArgumentParser(add_help=False)
             _extend_problem_args(parser)
             _extend_pipeline_args(parser)
             _extend_bias_args(parser)
             _extend_solver_args(parser)
+            _extend_controller_args(parser)
+            _extend_eval_provider_args(parser)
             _extend_observability_args(parser)
             _extend_project_plugin_args(parser)
             _extend_checkpoint_args(parser)
+            _extend_l0_args(parser)
             return parser
 
 
@@ -1113,9 +1221,12 @@ def _build_solver_template() -> str:
             pipeline = _register_pipeline(args)
             bias_module = _register_bias(problem, args)
             solver = _register_solver(problem, pipeline, bias_module, args)
+            _register_controllers(solver, args)
+            _register_evaluation_providers(solver, args)
             _register_observability_plugins(solver, args, run_id)
             _register_project_plugins(solver, args)
             _register_optional_checkpoint(solver, args)
+            _register_l0_backend(solver, args)
             return solver
 
 
@@ -1142,7 +1253,7 @@ def _build_solver_registration_guide_template() -> str:
         """        # BUILD_SOLVER_REGISTRATION
 
         Goal: after searching from catalog, you should know exactly where to place each component.
-        ???? catalog ?????????????????????????
+        补充：从 catalog 检索后，把组件放到正确的注册区。
 
         ## Zone Pair Rule (must follow)
         Each zone keeps two functions together:
@@ -1166,24 +1277,40 @@ def _build_solver_registration_guide_template() -> str:
            - `_extend_solver_args(parser)`
            - `_register_solver(problem, pipeline, bias_module, args)`
 
-        5. Observability Plugins
+        5. Controllers (L3)
+           - `_extend_controller_args(parser)`
+           - `_register_controllers(solver, args)`
+           - Rule: one controller owns one control domain.
+
+        6. Evaluation Providers (L4)
+           - `_extend_eval_provider_args(parser)`
+           - `_register_evaluation_providers(solver, args)`
+           - Rule: semantic replacement must enter through `register_evaluation_provider`.
+
+        7. Observability Plugins
            - `_extend_observability_args(parser)`
            - `_register_observability_plugins(solver, args, run_id)`
            - Recommended: use `--observability-profile` first, then override with `--no-profiler` / `--no-decision-trace` only when needed.
 
-        6. Project Plugins
+        8. Project Plugins
            - `_extend_project_plugin_args(parser)`
            - `_register_project_plugins(solver, args)`
 
-        7. Checkpoint (Optional)
+        9. Checkpoint (Optional)
            - `_extend_checkpoint_args(parser)`
            - `_register_optional_checkpoint(solver, args)`
+
+        10. L0 Acceleration Backend
+           - `_extend_l0_args(parser)`
+           - `_register_l0_backend(solver, args)`
 
         ## Catalog Kind -> Zone Mapping
         - `problem` -> Problem zone
         - `pipeline` / `representation` -> Pipeline zone
         - `bias` -> Bias zone
         - `adapter` / `solver` -> Solver Core zone
+        - `controller` -> Controllers zone
+        - `evaluation-provider` -> Evaluation Providers zone
         - `plugin`:
           - observability/runtime plugin -> Observability zone
           - domain/business plugin -> Project Plugins zone

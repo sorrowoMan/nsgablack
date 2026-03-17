@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional
 
 from ..base import Plugin
-from ...utils.context.context_events import record_context_event, replay_context
+from ...core.state.context_events import record_context_event, replay_context
 from ...utils.context.context_keys import KEY_CONTEXT_EVENTS
 
 

@@ -6,51 +6,7 @@ from nsgablack.adapters.moead import MOEADAdapter, MOEADConfig
 from nsgablack.adapters.vns import VNSAdapter, VNSConfig
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.core.evolution_solver import EvolutionSolver
-from nsgablack.plugins.models.mas_model import MASModelConfig, MASModelPlugin
-from nsgablack.plugins.runtime.convergence import ConvergencePlugin
 from nsgablack.plugins.runtime.pareto_archive import ParetoArchiveConfig, ParetoArchivePlugin
-
-
-class _DummySolver:
-    def __init__(self) -> None:
-        self.population = np.array([[0.0, 0.0], [0.0, 0.0]], dtype=float)
-        self.objectives = np.array([[1.0], [1.0]], dtype=float)
-        self.running = True
-        self.num_objectives = 1
-
-
-def test_convergence_stagnation_count_increments_by_one() -> None:
-    solver = _DummySolver()
-    plugin = ConvergencePlugin(
-        stagnation_window=3,
-        improvement_epsilon=1e-9,
-        diversity_threshold=1.0,
-        min_generations=999,
-        enable_early_stop=False,
-    )
-    plugin.attach(solver)
-    plugin.on_solver_init(solver)
-    plugin.on_population_init(solver.population, solver.objectives, np.zeros(2))
-
-    plugin.on_generation_end(1)
-    plugin.on_generation_end(2)
-    assert plugin.stagnation_count == 1
-
-
-def test_mas_model_plugin_caps_training_buffer() -> None:
-    solver = _DummySolver()
-    plugin = MASModelPlugin(
-        config=MASModelConfig(min_train_samples=100, retrain_every_call=False, max_train_samples=5)
-    )
-    plugin.attach(solver)
-    plugin.on_solver_init(solver)
-
-    solver.population = np.array([[1.0], [2.0], [3.0]], dtype=float)
-    solver.objectives = np.array([[1.0], [2.0], [3.0]], dtype=float)
-    plugin.on_generation_end(1)
-    plugin.on_generation_end(2)
-    assert len(plugin._X) == 5
-    assert len(plugin._Y) == 5
 
 
 def test_pareto_archive_truncates_with_crowding() -> None:

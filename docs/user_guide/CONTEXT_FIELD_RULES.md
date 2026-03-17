@@ -13,7 +13,7 @@
 
 ## 2. 命名规则（必须）
 
-- 使用小写蛇形，优先复用 `utils/context/context_keys.py` 常量。
+- 使用小写蛇形，优先复用 `core/state/context_keys.py` 常量。
 - 不允许同义词并存（例如 `obj` 与 `objectives` 同时存在）。
 - 不允许随意缩写进入长期代码。
 - 新 key 必须先声明常量，再进入组件契约。

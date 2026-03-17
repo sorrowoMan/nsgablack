@@ -16,30 +16,28 @@
 from .base import Plugin, PluginManager
 from .runtime.elite_retention import BasicElitePlugin, HistoricalElitePlugin
 from .runtime.diversity_init import DiversityInitPlugin
-from .runtime.convergence import ConvergencePlugin
 from .system.memory_optimize import MemoryPlugin
-from .runtime.adaptive_parameters import AdaptiveParametersPlugin
-from .evaluation.surrogate_evaluation import SurrogateEvaluationPlugin, SurrogateEvaluationConfig
-from .evaluation.multi_fidelity_evaluation import MultiFidelityEvaluationPlugin, MultiFidelityEvaluationConfig
-from .evaluation.monte_carlo_evaluation import MonteCarloEvaluationPlugin, MonteCarloEvaluationConfig
+from .evaluation.surrogate_evaluation import SurrogateEvaluationProviderPlugin, SurrogateEvaluationConfig
+from .evaluation.multi_fidelity_evaluation import MultiFidelityEvaluationProviderPlugin, MultiFidelityEvaluationConfig
+from .evaluation.monte_carlo_evaluation import MonteCarloEvaluationProviderPlugin, MonteCarloEvaluationConfig
 from .evaluation.numerical_solver_base import (
     NumericalSolverConfig,
-    NumericalSolverPlugin,
+    NumericalSolverProviderPlugin,
 )
 from .evaluation.newton_solver_plugin import (
-    NewtonSolverPlugin,
+    NewtonSolverProviderPlugin,
 )
 from .evaluation.broyden_solver_plugin import (
-    BroydenSolverPlugin,
+    BroydenSolverProviderPlugin,
 )
 from .evaluation.gpu_evaluation_template import (
     GpuEvaluationTemplateConfig,
-    GpuEvaluationTemplatePlugin,
+    GpuEvaluationTemplateProviderPlugin,
 )
-from .evaluation.evaluation_model import EvaluationModelPlugin, EvaluationModelConfig
-from .solver_backends.inner_solver import InnerSolverPlugin, InnerSolverConfig
+from .evaluation.evaluation_model import EvaluationModelProviderPlugin, EvaluationModelConfig
 from .solver_backends.backend_contract import BackendSolveRequest, BackendSolver
 from .solver_backends.ngspice_backend import NgspiceBackend, NgspiceBackendConfig
+from .solver_backends.copt_backend import CoptBackend, CoptBackendConfig
 from .solver_backends.contract_bridge import ContractBridgePlugin, BridgeRule
 from .solver_backends.timeout_budget import TimeoutBudgetPlugin, TimeoutBudgetConfig
 from .runtime.pareto_archive import ParetoArchivePlugin, ParetoArchiveConfig
@@ -47,18 +45,10 @@ from .ops.benchmark_harness import BenchmarkHarnessPlugin, BenchmarkHarnessConfi
 from .ops.module_report import ModuleReportPlugin, ModuleReportConfig
 from .ops.profiler import ProfilerPlugin, ProfilerConfig
 from .runtime.dynamic_switch import DynamicSwitchPlugin
-from .runtime.companion_orchestrator import (
-    CompanionEventRules,
-    CompanionOrchestratorConfig,
-    CompanionOrchestratorPlugin,
-    CompanionPhaseScheduler,
-)
 from .ops.sensitivity_analysis import SensitivityAnalysisPlugin, SensitivityAnalysisConfig, SensitivityParam
 from .ops.otel_tracing import OpenTelemetryTracingPlugin, OpenTelemetryTracingConfig
 from .ops.decision_trace import DecisionTracePlugin, DecisionTraceConfig
 from .ops.sequence_graph import SequenceGraphPlugin, SequenceGraphConfig
-from .models.mas_model import MASModelPlugin, MASModelConfig
-from .models.subspace_basis import SubspaceBasisPlugin, SubspaceBasisConfig
 from .storage.mysql_run_logger import MySQLRunLoggerPlugin, MySQLRunLoggerConfig
 from .system.async_event_hub import AsyncEventHubPlugin, AsyncEventHubConfig
 from .system.boundary_guard import BoundaryGuardPlugin, BoundaryGuardConfig
@@ -70,29 +60,27 @@ __all__ = [
     'BasicElitePlugin',
     'HistoricalElitePlugin',
     'DiversityInitPlugin',
-    'ConvergencePlugin',
     'MemoryPlugin',
-    'AdaptiveParametersPlugin',
-    'SurrogateEvaluationPlugin',
+    'SurrogateEvaluationProviderPlugin',
     'SurrogateEvaluationConfig',
-    'MultiFidelityEvaluationPlugin',
+    'MultiFidelityEvaluationProviderPlugin',
     'MultiFidelityEvaluationConfig',
-    'MonteCarloEvaluationPlugin',
+    'MonteCarloEvaluationProviderPlugin',
     'MonteCarloEvaluationConfig',
     'NumericalSolverConfig',
-    'NumericalSolverPlugin',
-    'NewtonSolverPlugin',
-    'BroydenSolverPlugin',
+    'NumericalSolverProviderPlugin',
+    'NewtonSolverProviderPlugin',
+    'BroydenSolverProviderPlugin',
     'GpuEvaluationTemplateConfig',
-    'GpuEvaluationTemplatePlugin',
-    'EvaluationModelPlugin',
+    'GpuEvaluationTemplateProviderPlugin',
+    'EvaluationModelProviderPlugin',
     'EvaluationModelConfig',
-    'InnerSolverPlugin',
-    'InnerSolverConfig',
     'BackendSolveRequest',
     'BackendSolver',
     'NgspiceBackend',
     'NgspiceBackendConfig',
+    'CoptBackend',
+    'CoptBackendConfig',
     'ContractBridgePlugin',
     'BridgeRule',
     'TimeoutBudgetPlugin',
@@ -106,10 +94,6 @@ __all__ = [
     'ProfilerPlugin',
     'ProfilerConfig',
     'DynamicSwitchPlugin',
-    'CompanionEventRules',
-    'CompanionOrchestratorConfig',
-    'CompanionOrchestratorPlugin',
-    'CompanionPhaseScheduler',
     'SensitivityAnalysisPlugin',
     'SensitivityAnalysisConfig',
     'SensitivityParam',
@@ -119,10 +103,6 @@ __all__ = [
     'DecisionTraceConfig',
     'SequenceGraphPlugin',
     'SequenceGraphConfig',
-    'MASModelPlugin',
-    'MASModelConfig',
-    'SubspaceBasisPlugin',
-    'SubspaceBasisConfig',
     'MySQLRunLoggerPlugin',
     'MySQLRunLoggerConfig',
     'AsyncEventHubPlugin',

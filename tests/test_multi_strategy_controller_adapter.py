@@ -1,4 +1,4 @@
-import numpy as np
+﻿import numpy as np
 
 
 def test_multi_strategy_controller_runs_and_broadcasts_shared_state(sample_problem):
@@ -6,7 +6,7 @@ def test_multi_strategy_controller_runs_and_broadcasts_shared_state(sample_probl
     from nsgablack.adapters import (
         StrategySpec,
         MultiStrategyConfig,
-        MultiStrategyControllerAdapter,
+        StrategyRouterAdapter,
         VNSAdapter,
         VNSConfig,
         SimulatedAnnealingAdapter,
@@ -28,7 +28,7 @@ def test_multi_strategy_controller_runs_and_broadcasts_shared_state(sample_probl
         StrategySpec(adapter=SimulatedAnnealingAdapter(SAConfig(batch_size=4)), name="sa", weight=0.4),
     ]
     cfg = MultiStrategyConfig(total_batch_size=12, adapt_weights=True, stagnation_window=5)
-    controller = MultiStrategyControllerAdapter(strategies=strategies, config=cfg)
+    controller = StrategyRouterAdapter(strategies=strategies, config=cfg)
 
     solver = ComposableSolver(problem=sample_problem, adapter=controller, representation_pipeline=pipeline)
     solver.max_steps = 30
@@ -46,7 +46,7 @@ def test_multi_strategy_controller_runs_and_broadcasts_shared_state(sample_probl
 def test_multi_strategy_direct_wiring_smoke(sample_problem):
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.adapters import (
-        MultiStrategyControllerAdapter,
+        StrategyRouterAdapter,
         StrategySpec,
         VNSAdapter,
         VNSConfig,
@@ -65,7 +65,7 @@ def test_multi_strategy_direct_wiring_smoke(sample_problem):
 
     solver = ComposableSolver(problem=sample_problem, representation_pipeline=pipeline)
     solver.set_adapter(
-        MultiStrategyControllerAdapter(
+        StrategyRouterAdapter(
         strategies=[
             StrategySpec(adapter=VNSAdapter(VNSConfig(batch_size=4, k_max=2)), name="vns", weight=0.5),
             StrategySpec(adapter=SimulatedAnnealingAdapter(SAConfig(batch_size=2)), name="sa", weight=0.5),
@@ -83,7 +83,7 @@ def test_multi_strategy_controller_supports_multi_units_per_role(sample_problem)
     from nsgablack.adapters import (
         RoleSpec,
         MultiStrategyConfig,
-        MultiStrategyControllerAdapter,
+        StrategyRouterAdapter,
         VNSAdapter,
         VNSConfig,
         SimulatedAnnealingAdapter,
@@ -113,7 +113,7 @@ def test_multi_strategy_controller_supports_multi_units_per_role(sample_problem)
         ),
     ]
     cfg = MultiStrategyConfig(total_batch_size=10, adapt_weights=True, stagnation_window=5)
-    controller = MultiStrategyControllerAdapter(roles=roles, config=cfg)
+    controller = StrategyRouterAdapter(roles=roles, config=cfg)
 
     solver = ComposableSolver(problem=sample_problem, adapter=controller, representation_pipeline=pipeline)
     solver.max_steps = 10
@@ -131,7 +131,7 @@ def test_multi_strategy_controller_supports_multi_units_per_role(sample_problem)
 
 def test_multi_strategy_phase_and_region_tasks_are_dispatched(sample_problem):
     from nsgablack.core.composable_solver import ComposableSolver
-    from nsgablack.adapters import RoleSpec, MultiStrategyConfig, MultiStrategyControllerAdapter
+    from nsgablack.adapters import RoleSpec, MultiStrategyConfig, StrategyRouterAdapter
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
     import numpy as np
@@ -181,7 +181,7 @@ def test_multi_strategy_phase_and_region_tasks_are_dispatched(sample_problem):
         seeds_per_task=1,
         seeds_source="best",
     )
-    controller = MultiStrategyControllerAdapter(roles=roles, config=cfg)
+    controller = StrategyRouterAdapter(roles=roles, config=cfg)
 
     solver = ComposableSolver(problem=sample_problem, adapter=controller, representation_pipeline=pipeline)
     solver.max_steps = 5
@@ -202,3 +202,4 @@ def test_multi_strategy_phase_and_region_tasks_are_dispatched(sample_problem):
         break
     assert any_task is not None
     assert "phase" in any_task and "region_id" in any_task and "seeds" in any_task
+

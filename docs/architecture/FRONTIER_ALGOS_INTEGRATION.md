@@ -10,32 +10,31 @@ Wiring Helpers + Adapters + Biases + Plugins in NSGABlack.
 
 ## 2) Subspace Trust-Region (CUATRO_PLS style)
 - Adapter: `TrustRegionSubspaceAdapter`
-- Plugin: `SubspaceBasisPlugin` (PCA/SVD/SparsePCA/Cluster/Random)
 
 ## 3) Active Learning Surrogate
-- Plugin: `SurrogateEvaluationPlugin`
+- Plugin: `SurrogateEvaluationProviderPlugin`
 - Bias: `UncertaintyExplorationBias`
 
 ## 4) Robust DFO
-- Plugin: `MonteCarloEvaluationPlugin`
+- Plugin: `MonteCarloEvaluationProviderPlugin`
 - Bias: `RobustnessBias`
 
 ## 5) Surrogate-Assisted EA
 - Adapter: `VNSAdapter` (or other EA core)
-- Plugin: `SurrogateEvaluationPlugin`
+- Plugin: `SurrogateEvaluationProviderPlugin`
 
 ## 6) Surrogate Model Lab
-- Plugin: `SurrogateEvaluationPlugin` (model_type variants)
+- Plugin: `SurrogateEvaluationProviderPlugin` (model_type variants)
 
 ## 7) Structure Prior
 - Bias: `StructurePriorBias`
 
 ## 8) Multi-Fidelity Evaluation
-- Plugin: `MultiFidelityEvaluationPlugin`
+- Plugin: `MultiFidelityEvaluationProviderPlugin`
 
 ## 9) CVaR / Worst-case Risk
 - Bias: `RiskBias` (CVaR or worst_case)
-- Plugin: `MonteCarloEvaluationPlugin`
+- Plugin: `MonteCarloEvaluationProviderPlugin`
 
 ## 10) Dynamic Repair Pipeline
 - Representation: `DynamicRepair`

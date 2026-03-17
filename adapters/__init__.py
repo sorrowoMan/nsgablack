@@ -5,11 +5,18 @@ This package is the canonical home for adapter-related abstractions.
 """
 
 from .algorithm_adapter import AlgorithmAdapter, CompositeAdapter
-from .role_adapters import RoleAdapter, MultiRoleControllerAdapter
+from .role_adapters import RoleAdapter, RoleRouterAdapter
 from .vns import VNSAdapter, VNSConfig
 from .moead import MOEADAdapter, MOEADConfig
 from .simulated_annealing import SimulatedAnnealingAdapter, SAConfig
-from .multi_strategy import MultiStrategyControllerAdapter, MultiStrategyConfig, StrategySpec, RoleSpec
+from .multi_strategy import (
+    StrategyRouterAdapter,
+    MultiStrategyConfig,
+    MultiStrategyControlRule,
+    StrategySpec,
+    RoleSpec,
+)
+from .serial_strategy import StrategyChainAdapter, SerialStrategyConfig, SerialPhaseSpec
 from .astar import AStarAdapter, AStarConfig
 from .moa_star import MOAStarAdapter, MOAStarConfig
 from .trust_region_dfo import TrustRegionDFOAdapter, TrustRegionDFOConfig
@@ -30,17 +37,21 @@ __all__ = [
     "AlgorithmAdapter",
     "CompositeAdapter",
     "RoleAdapter",
-    "MultiRoleControllerAdapter",
+    "RoleRouterAdapter",
     "VNSAdapter",
     "VNSConfig",
     "MOEADAdapter",
     "MOEADConfig",
     "SimulatedAnnealingAdapter",
     "SAConfig",
-    "MultiStrategyControllerAdapter",
+    "StrategyRouterAdapter",
     "MultiStrategyConfig",
+    "MultiStrategyControlRule",
     "StrategySpec",
     "RoleSpec",
+    "StrategyChainAdapter",
+    "SerialStrategyConfig",
+    "SerialPhaseSpec",
     "AStarAdapter",
     "AStarConfig",
     "MOAStarAdapter",

@@ -1,7 +1,7 @@
-# BroydenSolverPlugin（原理与用法）
+# BroydenSolverProviderPlugin（原理与用法）
 
 ## 1) 原理
-`BroydenSolverPlugin` 基于 `scipy.optimize.broyden1`：
+`BroydenSolverProviderPlugin` 基于 `scipy.optimize.broyden1`：
 - 属于拟牛顿求根（不显式构造完整 Jacobian）
 - 通过迭代更新近似信息，降低 Jacobian 依赖
 
@@ -17,10 +17,10 @@
 
 ## 4) 使用示例
 ```python
-from nsgablack.plugins import BroydenSolverPlugin, NumericalSolverConfig
+from nsgablack.plugins import BroydenSolverProviderPlugin, NumericalSolverConfig
 
 solver.add_plugin(
-    BroydenSolverPlugin(
+    BroydenSolverProviderPlugin(
         config=NumericalSolverConfig(
             tol=1e-7,
             max_iter=150,

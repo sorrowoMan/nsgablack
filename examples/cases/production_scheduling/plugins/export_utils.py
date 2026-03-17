@@ -52,7 +52,7 @@ def crowding_distance(objectives: np.ndarray) -> np.ndarray:
     return distance
 
 
-def resolve_pareto_export_root(base: Optional[Path]) -> Path:
+def get_pareto_export_root(base: Optional[Path]) -> Path:
     if base is None:
         base_dir = default_export_dir()
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -65,7 +65,7 @@ def resolve_pareto_export_root(base: Optional[Path]) -> Path:
     return root
 
 
-def resolve_summary_path(root: Path) -> Path:
+def get_summary_path(root: Path) -> Path:
     return root / "pareto_summary.csv"
 
 
@@ -87,7 +87,7 @@ def export_pareto_batch(
     else:
         limit = max(1, min(int(limit), total))
 
-    export_root = resolve_pareto_export_root(base_export)
+    export_root = get_pareto_export_root(base_export)
     ext = ".xlsx"
     if base_export is not None and base_export.suffix:
         ext = base_export.suffix
@@ -119,7 +119,7 @@ def export_pareto_batch(
     if rows:
         import pandas as pd
 
-        summary_path = resolve_summary_path(export_root)
+        summary_path = get_summary_path(export_root)
         df = pd.DataFrame(rows)
         df.to_csv(summary_path, index=False)
     return len(rows)
@@ -140,7 +140,7 @@ def default_export_dir() -> Path:
     return base_dir
 
 
-def resolve_export_path(base: Optional[Path], label: str, supply_tag: Optional[str] = None) -> Path:
+def get_export_path(base: Optional[Path], label: str, supply_tag: Optional[str] = None) -> Path:
     suffix = f"_{supply_tag}" if supply_tag else ""
     if base is None:
         p = default_export_path(label=label)

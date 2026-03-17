@@ -1,7 +1,7 @@
 # plugins/runtime
 
 ## Purpose
-Runtime behavior plugins: convergence, adaptive params, elite retention, archive.
+Runtime behavior plugins: elite retention, archive, dynamic switch, diversity init.
 
 ## Trigger Timing
 Mostly `on_solver_init`, `on_population_init`, `on_generation_end`.
@@ -19,8 +19,6 @@ May directly mutate solver state or population content.
 Default should degrade safely; strict mode may fail fast.
 
 ## Directory Contents
-- `adaptive_parameters.py`
-- `convergence.py`
 - `diversity_init.py`
 - `dynamic_switch.py`
 - `elite_retention.py`

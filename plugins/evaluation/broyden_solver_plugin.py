@@ -9,19 +9,19 @@ from .numerical_solver_base import (
     JacobianFn,
     NumericalSolveResult,
     NumericalSolverConfig,
-    NumericalSolverPlugin,
+    NumericalSolverProviderPlugin,
     ResidualFn,
 )
 
 
-class BroydenSolverPlugin(NumericalSolverPlugin):
+class BroydenSolverProviderPlugin(NumericalSolverProviderPlugin):
     """Broyden nonlinear solver plugin using scipy.optimize.broyden1."""
 
-    context_requires = NumericalSolverPlugin.context_requires
-    context_provides = NumericalSolverPlugin.context_provides
-    context_mutates = NumericalSolverPlugin.context_mutates
-    context_cache = NumericalSolverPlugin.context_cache
-    context_notes = NumericalSolverPlugin.context_notes
+    context_requires = NumericalSolverProviderPlugin.context_requires
+    context_provides = NumericalSolverProviderPlugin.context_provides
+    context_mutates = NumericalSolverProviderPlugin.context_mutates
+    context_cache = NumericalSolverProviderPlugin.context_cache
+    context_notes = NumericalSolverProviderPlugin.context_notes
 
     def __init__(self, name: str = "broyden_solver", *, config: Optional[NumericalSolverConfig] = None) -> None:
         super().__init__(name=name, config=config, priority=55)

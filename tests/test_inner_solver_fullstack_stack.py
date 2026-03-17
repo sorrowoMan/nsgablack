@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import numpy as np
 
@@ -7,7 +7,8 @@ def test_inner_solver_can_run_inner_adapter_pipeline_bias_and_plugin():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.adapters import AlgorithmAdapter
-    from nsgablack.plugins import BridgeRule, ContractBridgePlugin, InnerSolverConfig, InnerSolverPlugin, Plugin
+    from nsgablack.plugins import BridgeRule, ContractBridgePlugin, Plugin
+    from nsgablack.core.nested_solver import InnerRuntimeConfig, TaskInnerRuntimeEvaluator
 
     class InnerProblem(BlackBoxProblem):
         def __init__(self):
@@ -102,7 +103,7 @@ def test_inner_solver_can_run_inner_adapter_pipeline_bias_and_plugin():
             ]
         )
     )
-    solver.add_plugin(InnerSolverPlugin(config=InnerSolverConfig(source_layer="L2", target_layer="L1")))
+    solver.problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(config=InnerRuntimeConfig(source_layer="L2", target_layer="L1"))
     solver.run()
 
     # inner objective = clipped(2.0)->1.0, evaluate 1.0, then bias +0.5 -> 1.5
@@ -119,10 +120,11 @@ def test_inner_solver_can_run_inner_multi_strategy_stack():
     from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.adapters.multi_strategy import (
         MultiStrategyConfig,
-        MultiStrategyControllerAdapter,
+        StrategyRouterAdapter,
         StrategySpec,
     )
-    from nsgablack.plugins import BridgeRule, ContractBridgePlugin, InnerSolverConfig, InnerSolverPlugin, Plugin
+    from nsgablack.plugins import BridgeRule, ContractBridgePlugin, Plugin
+    from nsgablack.core.nested_solver import InnerRuntimeConfig, TaskInnerRuntimeEvaluator
 
     class InnerProblem(BlackBoxProblem):
         def __init__(self):
@@ -175,7 +177,7 @@ def test_inner_solver_can_run_inner_multi_strategy_stack():
             _ = (x, eval_context)
 
             def _run_inner(_p, _s, _ctx):
-                inner_adapter = MultiStrategyControllerAdapter(
+                inner_adapter = StrategyRouterAdapter(
                     strategies=[
                         StrategySpec(adapter=_Explorer(), name="explorer", weight=1.0),
                         StrategySpec(adapter=_Exploiter(), name="exploiter", weight=1.0),
@@ -224,10 +226,10 @@ def test_inner_solver_can_run_inner_multi_strategy_stack():
             ]
         )
     )
-    solver.add_plugin(InnerSolverPlugin(config=InnerSolverConfig(source_layer="L2", target_layer="L1")))
+    solver.problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(config=InnerRuntimeConfig(source_layer="L2", target_layer="L1"))
     solver.run()
 
-    # inner: x=±0.8 -> objective 0.64, then bias +0.25 => 0.89
+    # inner: x=卤0.8 -> objective 0.64, then bias +0.25 => 0.89
     assert solver.best_objective is not None
     assert abs(float(solver.best_objective) - 0.89) < 1e-8
     layers = getattr(solver, "_layer_contexts", {})
@@ -241,16 +243,11 @@ def test_three_layer_inner_with_multi_strategy_pipeline_bias_plugin():
     from nsgablack.adapters import AlgorithmAdapter
     from nsgablack.adapters.multi_strategy import (
         MultiStrategyConfig,
-        MultiStrategyControllerAdapter,
+        StrategyRouterAdapter,
         StrategySpec,
     )
-    from nsgablack.plugins import (
-        BridgeRule,
-        ContractBridgePlugin,
-        InnerSolverConfig,
-        InnerSolverPlugin,
-        Plugin,
-    )
+    from nsgablack.plugins import BridgeRule, ContractBridgePlugin, Plugin
+    from nsgablack.core.nested_solver import InnerRuntimeConfig, TaskInnerRuntimeEvaluator
     from nsgablack.representation import RepresentationPipeline
 
     class _ClipRepair:
@@ -360,7 +357,7 @@ def test_three_layer_inner_with_multi_strategy_pipeline_bias_plugin():
             _ = (x, eval_context)
 
             def _run_l2(_p, _s, _ctx):
-                l2_adapter = MultiStrategyControllerAdapter(
+                l2_adapter = StrategyRouterAdapter(
                     strategies=[
                         StrategySpec(adapter=_L2Explorer(), name="explorer", weight=1.0),
                         StrategySpec(adapter=_L2Exploiter(), name="exploiter", weight=1.0),
@@ -377,7 +374,7 @@ def test_three_layer_inner_with_multi_strategy_pipeline_bias_plugin():
                 l2.pop_size = 2
                 l2_counter = _CounterPlugin("l2_counter")
                 l2.add_plugin(l2_counter)
-                l2.add_plugin(InnerSolverPlugin(config=InnerSolverConfig(source_layer="L3", target_layer="L2")))
+                l2.problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(config=InnerRuntimeConfig(source_layer="L3", target_layer="L2"))
                 l2.run()
                 return {
                     "status": "ok",
@@ -411,7 +408,7 @@ def test_three_layer_inner_with_multi_strategy_pipeline_bias_plugin():
             ]
         )
     )
-    l1.add_plugin(InnerSolverPlugin(config=InnerSolverConfig(source_layer="L2", target_layer="L1")))
+    l1.problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(config=InnerRuntimeConfig(source_layer="L2", target_layer="L1"))
     l1.run()
 
     # L3 objective ~ abs(repaired x) + 0.1 = 1.1 ; L2 bias adds 0.2 => 1.3
@@ -421,3 +418,4 @@ def test_three_layer_inner_with_multi_strategy_pipeline_bias_plugin():
     assert int(layers.get("L1", {}).get("l2_generations", 0)) == 1
     # L2 candidate should already be repaired into [-1, 1] before L3 task build.
     assert abs(float(layers.get("L1", {}).get("l2_candidate_seen"))) <= 1.0 + 1e-12
+

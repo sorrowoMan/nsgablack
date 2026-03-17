@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from nsgablack.utils.context.context_keys import CANONICAL_CONTEXT_KEYS, normalize_context_key
+from nsgablack.core.state.context_keys import CANONICAL_CONTEXT_KEYS, normalize_context_key
 
 
 ROOTS = (

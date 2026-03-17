@@ -1,4 +1,4 @@
-"""Examples/suites static guard rules used by project doctor."""
+﻿"""Examples/suites static guard rules used by project doctor."""
 
 from __future__ import annotations
 
@@ -102,10 +102,11 @@ def check_examples_suites_solver_control_writes(
                 "examples-suites-direct-solver-control-write",
                 (
                     "Examples/suites must use solver control-plane methods "
-                    "(set_adapter/set_bias_module/set_enable_bias/set_max_steps/set_solver_hyperparams); "
+                    "(set_adapter/set_bias_module/set_bias_enabled/set_max_steps/set_solver_hyperparams); "
                     "direct assignments are forbidden: "
                     + ", ".join(uniq[:10])
                     + (" ..." if len(uniq) > 10 else "")
                 ),
                 py_file,
             )
+

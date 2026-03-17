@@ -7,7 +7,7 @@ import argparse
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Refactored production scheduling (pipeline-first).")
-    parser.add_argument("--solver", choices=["multi-agent"], default="multi-agent")
+    parser.add_argument("--solver", choices=["multi-agent", "baseline-aco", "baseline-greedy"], default="multi-agent")
     parser.add_argument("--ui", action="store_true", help="Launch Run Inspector UI before running.")
     parser.add_argument("--bom", type=str, default=None)
     parser.add_argument("--supply", type=str, default=None)
@@ -29,6 +29,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.001,
         help="Scale for penalty objective when enabled.",
+    )
+    parser.add_argument(
+        "--single-objective",
+        action="store_true",
+        help="Use single-objective production (maximize total output only).",
     )
     parser.add_argument("--pop-size", type=int, default=200)
     parser.add_argument("--generations", type=int, default=30)
@@ -74,6 +79,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--moead-neighborhood", type=int, default=20, help="MOEA/D neighborhood size.")
     parser.add_argument("--moead-delta", type=float, default=0.9, help="MOEA/D neighbor sampling probability.")
     parser.add_argument("--moead-nr", type=int, default=2, help="MOEA/D max replacements per offspring.")
+    parser.add_argument("--aco-ants", type=int, default=48, help="ACO baseline: ant count per step.")
+    parser.add_argument("--aco-evaporation", type=float, default=0.2, help="ACO baseline: pheromone evaporation.")
+    parser.add_argument("--aco-alpha", type=float, default=1.0, help="ACO baseline: pheromone weight.")
+    parser.add_argument("--aco-beta", type=float, default=1.0, help="ACO baseline: heuristic weight.")
+    parser.add_argument("--aco-q", type=float, default=1.0, help="ACO baseline: pheromone deposit scale.")
     parser.add_argument("--parallel", action="store_true", help="Enable parallel evaluation (CPU).")
     parser.add_argument(
         "--parallel-backend",
@@ -93,8 +103,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--parallel-thread-bias-isolation",
         choices=["deepcopy", "disable_cache", "off"],
-        default="deepcopy",
-        help="Thread backend bias isolation strategy (deepcopy recommended).",
+        default="disable_cache",
+        help="Thread backend bias isolation strategy (disable_cache recommended).",
     )
     parser.add_argument(
         "--allow-infeasible-update",
@@ -202,5 +212,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Save selected schedules; suffixes _penalty/_production will be appended.",
+    )
+    parser.add_argument(
+        "--sanity-check-export",
+        action="store_true",
+        help="Recompute material/constraint feasibility for exported schedules and report any deltas.",
     )
     return parser

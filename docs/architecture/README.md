@@ -85,8 +85,8 @@
 
 文件：
 
-- `utils/context/context_store.py`
-- `utils/context/snapshot_store.py`
+- `core/state/context_store.py`
+- `core/state/snapshot_store.py`
 
 职责：
 
@@ -130,7 +130,7 @@
 统一接口：
 
 - `solver.read_snapshot()`
-- `Plugin.resolve_population_snapshot()`
+- `Plugin.get_population_snapshot()`
 - `Plugin.commit_population_snapshot()`
 
 ### 组件流

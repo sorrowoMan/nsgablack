@@ -9,7 +9,7 @@ import pandas as pd
 
 from nsgablack.core.base import BlackBoxProblem
 
-from evaluation.production_inner_eval import ProductionInnerEvaluationModel
+from inner_solver import InnerProductionSolverConfig, build_inner_production_solver, extract_total_output
 
 
 @dataclass(frozen=True)
@@ -40,7 +40,9 @@ class SupplyEventShiftProblem(BlackBoxProblem):
         self,
         *,
         base_supply: np.ndarray,
-        inner_model: ProductionInnerEvaluationModel,
+        bom_matrix: np.ndarray,
+        production_case_dir: Path,
+        inner_solver_cfg: InnerProductionSolverConfig | None = None,
         material_ids: np.ndarray | None = None,
         material_blacklist: np.ndarray | list[int] | set[int] | None = None,
         max_moved_events: int | None = None,
@@ -50,7 +52,9 @@ class SupplyEventShiftProblem(BlackBoxProblem):
             raise ValueError("base_supply must be 2D (materials, days)")
 
         self.materials, self.days = self.base_supply.shape
-        self.inner_model = inner_model
+        self.bom_matrix = np.asarray(bom_matrix, dtype=float)
+        self.production_case_dir = Path(production_case_dir).resolve()
+        self.inner_solver_cfg = inner_solver_cfg or InnerProductionSolverConfig()
         self.max_moved_events = (
             None
             if max_moved_events is None or int(max_moved_events) <= 0
@@ -141,13 +145,13 @@ class SupplyEventShiftProblem(BlackBoxProblem):
         return out
 
     def evaluate(self, x: np.ndarray) -> np.ndarray:
+        # Fallback path: if nested runtime is disabled, use a cheap proxy.
         shifts = self.decode_shifts(x)
         adjusted = self.apply_shifts(shifts)
-        metrics = self.inner_model.evaluate_adjusted_supply(adjusted)
 
         moved_events = int(np.count_nonzero(shifts > 0))
         moved_days = int(np.sum(shifts))
-        total_output = float(metrics["total_output"])
+        total_output = float(np.sum(adjusted))
 
         return np.array([-total_output, float(moved_events), float(moved_days)], dtype=float)
 
@@ -159,6 +163,48 @@ class SupplyEventShiftProblem(BlackBoxProblem):
         shifts = self.decode_shifts(x)
         moved_events = int(np.count_nonzero(shifts > 0))
         return np.array([float(moved_events - self.max_moved_events)], dtype=float)
+
+    def build_inner_task(self, x: np.ndarray, eval_context: dict) -> dict:
+        shifts = self.decode_shifts(x)
+        adjusted = self.apply_shifts(shifts)
+
+        def _run_inner(_problem, _solver, _ctx):
+            solver, inner_problem = build_inner_production_solver(
+                bom_matrix=self.bom_matrix,
+                supply_matrix=adjusted,
+                production_case_dir=self.production_case_dir,
+                cfg=self.inner_solver_cfg,
+            )
+            solver.run()
+            total_output, _schedule = extract_total_output(solver, inner_problem)
+            return {
+                "status": "ok",
+                "objective": float(-total_output),
+                "objectives": np.array([-total_output], dtype=float),
+                "total_output": float(total_output),
+            }
+
+        return {"run_inner": _run_inner}
+
+    def evaluate_from_inner_result(self, x: np.ndarray, inner_result: dict, eval_context: dict):
+        _ = eval_context
+        shifts = self.decode_shifts(x)
+        moved_events = int(np.count_nonzero(shifts > 0))
+        moved_days = int(np.sum(shifts))
+
+        total_output = inner_result.get("total_output", None)
+        if total_output is None:
+            obj = inner_result.get("objectives", inner_result.get("objective", None))
+            if isinstance(obj, (list, tuple, np.ndarray)) and len(obj) > 0:
+                total_output = float(-np.asarray(obj, dtype=float).reshape(-1)[0])
+            elif obj is not None:
+                total_output = float(-float(obj))
+            else:
+                total_output = 0.0
+
+        objectives = np.array([-float(total_output), float(moved_events), float(moved_days)], dtype=float)
+        violation = float(inner_result.get("violation", 0.0))
+        return objectives, violation
 
     def export_adjusted_supply(self, x: np.ndarray, path: Path) -> Tuple[np.ndarray, pd.DataFrame]:
         shifts = self.decode_shifts(x)

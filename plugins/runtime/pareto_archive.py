@@ -63,7 +63,7 @@ class ParetoArchivePlugin(Plugin):
 
     # ------------------------------------------------------------------
     def _get_population(self, solver: Any) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        return self.resolve_population_snapshot(solver)
+        return self.get_population_snapshot(solver)
 
     def _write_pareto_snapshot(self, solver: Any) -> None:
         setter = getattr(solver, "set_pareto_snapshot", None)

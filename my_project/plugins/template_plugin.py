@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from nsgablack.plugins.base import Plugin
-from nsgablack.utils.context.context_keys import KEY_GENERATION
+from nsgablack.core.state.context_keys import KEY_GENERATION
 
 KEY_PROJECT_PLUGIN_TEMPLATE = "project.plugin_template.hit_count"
 
