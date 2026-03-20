@@ -110,6 +110,12 @@ sa_bias_evaluation_report.json
 .claude/settings.local.json
 .claude/
 
+# Local agent/config files (keep local, do not version)
+AGENTS.md
+.vscode/
+.pylance.ini
+pyrightconfig.json
+
 # Test files (keep in tests/ and test/ directories)
 test_*.py
 !tests/test_*.py
@@ -120,6 +126,7 @@ test_*.py
 *.temp
 .DS_Store
 Thumbs.db
+catalog/db.toml
 
 # Local runs/artifacts
 runs/
@@ -166,6 +173,14 @@ docs/reports/
 reports/
 data/results/
 test/
+
+# Docs: keep public docs only; ignore internal/large/unstable docs
+docs/notes/
+docs/qas/
+docs/development/
+docs/evidence/
+docs/_archive/
+docs/attachments/
 
 
 # Keep results directories but ignore generated files
