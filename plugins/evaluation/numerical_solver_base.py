@@ -20,6 +20,7 @@ from ...utils.extension_contracts import (
     normalize_objectives,
     normalize_violation,
 )
+from .provider_plugin_base import EvaluationProviderPluginBase
 
 
 ResidualFn = Callable[[np.ndarray], np.ndarray]
@@ -44,7 +45,7 @@ class NumericalSolverConfig:
     warn_on_failure: bool = True
 
 
-class NumericalSolverProviderPlugin:
+class NumericalSolverProviderPlugin(EvaluationProviderPluginBase):
     """Base L4 provider factory for implicit-equation numerical solving."""
 
     is_algorithmic = True
@@ -68,9 +69,11 @@ class NumericalSolverProviderPlugin:
         config: Optional[NumericalSolverConfig] = None,
         priority: int = 50,
     ) -> None:
+        super().__init__(name=str(name), priority=int(priority))
         self.name = str(name)
         self.priority = int(priority)
         self.cfg = config or NumericalSolverConfig()
+        self.is_algorithmic = True
         self.stats: Dict[str, float] = {
             "calls": 0.0,
             "success": 0.0,
@@ -267,6 +270,7 @@ class NumericalSolverProviderPlugin:
         class _Provider:
             name = owner.name
             semantic_mode = "equivalent"
+            priority = int(getattr(owner, "priority", 0) or 0)
 
             def can_handle_individual(self, solver, x, context):
                 _ = context

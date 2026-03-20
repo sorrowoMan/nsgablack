@@ -9,6 +9,7 @@ from ...utils.context.context_keys import KEY_METRICS
 from ...core.state.context_schema import build_minimal_context
 from ...utils.extension_contracts import normalize_objectives, normalize_violation
 from ..solver_backends.backend_contract import BackendSolveRequest, normalize_backend_output
+from .provider_plugin_base import EvaluationProviderPluginBase
 
 
 BackendFactory = Callable[[Any, Dict[str, Any]], Any]
@@ -22,7 +23,7 @@ class EvaluationModelConfig:
     update_context_metrics: bool = True
 
 
-class EvaluationModelProviderPlugin:
+class EvaluationModelProviderPlugin(EvaluationProviderPluginBase):
     """Evaluation-model L4 provider factory."""
 
     context_requires = ("problem",)
@@ -41,6 +42,7 @@ class EvaluationModelProviderPlugin:
         backend_factory: Optional[BackendFactory] = None,
         priority: int = 75,
     ) -> None:
+        super().__init__(name=str(name), priority=int(priority))
         self.name = str(name)
         self.priority = int(priority)
         self.cfg = config or EvaluationModelConfig()
@@ -151,6 +153,7 @@ class EvaluationModelProviderPlugin:
             name = owner.name
             semantic_mode = "equivalent"
             allow_inner = owner.allow_inner
+            priority = int(getattr(owner, "priority", 0) or 0)
 
             def can_handle_individual(self, solver, x, context):
                 _ = solver

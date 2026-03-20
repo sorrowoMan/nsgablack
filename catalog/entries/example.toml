@@ -1,17 +1,19 @@
 # Auto-generated from catalog/entries.toml
-# kind=example count=3
+
 [[entry]]
 key = "example.async_event_driven"
 title = "async_event_driven_demo"
 kind = "example"
 import_path = "nsgablack.examples_registry:async_event_driven_demo"
 tags = ["adapter", "async", "demo", "event", "multi_strategy"]
-summary = "绀轰緥锛氬紓姝ヤ簨浠堕┍鍔ㄥ崗鍚屼紭鍖栥€?/ Example: async event-driven cooperative optimization."
-companions = ['adapter.async_event_driven']
-use_when = ["闇€瑕佹渶灏忓彲杩愯鏍蜂緥浠ョ悊瑙ｄ簨浠堕槦鍒楃紪鎺掓椂"]
+summary = "示例：async event-driven cooperative optimization。 / Example: async event-driven cooperative optimization."
+use_when = [
+  "需要最小可运行示例来理解事件队列编排时。 / Need a minimal runnable example to understand event-queue orchestration.",
+]
 minimal_wiring = ["python examples/async_event_driven_demo.py", "python examples/async_event_driven_demo.py --ui"]
 required_companions = ["adapter.async_event_driven"]
 config_keys = ["--ui"]
+companions = ["adapter.async_event_driven"]
 example_entry = "examples/async_event_driven_demo.py:build_solver"
 
 [[entry]]
@@ -20,12 +22,14 @@ title = "single_trajectory_adaptive_demo"
 kind = "example"
 import_path = "nsgablack.examples_registry:single_trajectory_adaptive_demo"
 tags = ["adaptive", "demo", "single_trajectory", "strategy"]
-summary = "绀轰緥锛氬崟杞ㄨ抗鑷€傚簲鎼滅储銆?/ Example: single-trajectory adaptive search."
-companions = ['adapter.single_trajectory_adaptive']
-use_when = ["[\"闇€瑕佹渶灏忕ず渚嬬悊瑙ｅ崟杞ㄨ抗鍦ㄧ嚎璋冨弬鎼滅储鏃?]"]
+summary = "示例：single-trajectory adaptive search。 / Example: single-trajectory adaptive search."
+use_when = [
+  "需要最小示例来理解单轨迹在线调参时。 / Need a minimal example to understand single-trajectory online tuning.",
+]
 minimal_wiring = ["python examples/single_trajectory_adaptive_demo.py", "python examples/single_trajectory_adaptive_demo.py --ui"]
 required_companions = ["adapter.single_trajectory_adaptive"]
 config_keys = ["--ui"]
+companions = ["adapter.single_trajectory_adaptive"]
 example_entry = "examples/single_trajectory_adaptive_demo.py:build_solver"
 
 [[entry]]
@@ -34,11 +38,415 @@ title = "gpu_ray_mysql_stack_demo"
 kind = "example"
 import_path = "nsgablack.examples_registry:gpu_ray_mysql_stack_demo"
 tags = ["example", "gpu", "ray", "mysql", "distributed", "plugin_stack"]
-summary = "Integrated stack demo: GPU evaluation template + Ray distributed + MySQL run logger. / 一体示例：GPU评估模板 + Ray分布式 + MySQL落库。"
-companions = ['plugin.gpu_eval_template', 'plugin.mysql_run_logger']
-context_notes = ["Demonstrates safe fallback when GPU backend is unavailable."]
-use_when = ["Need one file showing end-to-end wiring of compute backend + distributed + storage."]
-minimal_wiring = ["python examples/gpu_ray_mysql_stack_demo.py --enable-ray --enable-mysql"]
+summary = "一体化示例：GPU 评估模板 + Ray 分布式 + MySQL 运行日志。 / Integrated stack demo: GPU evaluation template + Ray distributed + MySQL run logger."
+use_when = [
+  "需要单文件展示计算后端+分布式+存储的端到端接线时。 / Need one file showing end-to-end wiring of compute backend + distributed + storage.",
+]
+minimal_wiring = [
+  "python examples/gpu_ray_mysql_stack_demo.py --enable-ray --enable-mysql",
+]
 required_companions = ["Ray runtime (optional)", "MySQL server (optional)"]
-config_keys = ["--gpu-backend", "--gpu-device", "--enable-ray", "--enable-mysql", "--max-workers"]
+config_keys = [
+  "--gpu-backend",
+  "--gpu-device",
+  "--enable-ray",
+  "--enable-mysql",
+  "--max-workers",
+]
+companions = ["plugin.gpu_eval_template", "plugin.mysql_run_logger"]
 example_entry = "docs/user_guide/GPU_RAY_MYSQL_STACK_DEMO.md"
+context_notes = ["Demonstrates safe fallback when GPU backend is unavailable."]
+
+[[entry]]
+key = "example.astar"
+title = "astar_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:astar_demo"
+tags = ["astar", "demo", "example", "graph", "search"]
+summary = "示例：astar_demo。 / Example: astar_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = ["from nsgablack.examples_registry import astar_demo"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\astar_demo.py:build_solver"
+
+[[entry]]
+key = "example.bias_gallery"
+title = "bias_gallery_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:bias_gallery_demo"
+tags = ["bias", "demo", "example", "gallery"]
+summary = "示例：bias_gallery_demo。 / Example: bias_gallery_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = ["from nsgablack.examples_registry import bias_gallery_demo"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\bias_gallery_demo.py:build_solver"
+
+[[entry]]
+key = "example.context_keys"
+title = "context_keys_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:context_keys_demo"
+tags = ["context", "demo", "example", "keys"]
+summary = "示例：context_keys_demo。 / Example: context_keys_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = ["from nsgablack.examples_registry import context_keys_demo"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\context_keys_demo.py:build_solver"
+
+[[entry]]
+key = "example.context_schema"
+title = "context_schema_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:context_schema_demo"
+tags = ["context", "demo", "example", "schema"]
+summary = "示例：context_schema_demo。 / Example: context_schema_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = ["from nsgablack.examples_registry import context_schema_demo"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\context_schema_demo.py:build_solver"
+
+[[entry]]
+key = "example.dynamic_cli_signal"
+title = "dynamic_cli_signal_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:dynamic_cli_signal_demo"
+tags = ["cli", "demo", "dynamic", "example", "signal"]
+summary = "示例：dynamic_cli_signal_demo。 / Example: dynamic_cli_signal_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = [
+  "from nsgablack.examples_registry import dynamic_cli_signal_demo",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\dynamic_cli_signal_demo.py:build_solver"
+
+[[entry]]
+key = "example.dynamic_multi_strategy"
+title = "dynamic_multi_strategy_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:dynamic_multi_strategy_demo"
+tags = ["demo", "dynamic", "example", "multi_strategy", "switch"]
+summary = "示例：dynamic_multi_strategy_demo。 / Example: dynamic_multi_strategy_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = [
+  "from nsgablack.examples_registry import dynamic_multi_strategy_demo",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\dynamic_multi_strategy_demo.py:build_solver"
+
+[[entry]]
+key = "example.logging"
+title = "logging_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:logging_demo"
+tags = ["demo", "example", "logging", "tool"]
+summary = "示例：logging_demo。 / Example: logging_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = ["from nsgablack.examples_registry import logging_demo"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\logging_demo.py:build_solver"
+
+[[entry]]
+key = "example.metrics"
+title = "metrics_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:metrics_demo"
+tags = ["demo", "example", "metrics", "pareto"]
+summary = "示例：metrics_demo。 / Example: metrics_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = ["from nsgablack.examples_registry import metrics_demo"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\metrics_demo.py:build_solver"
+
+[[entry]]
+key = "example.moa_star"
+title = "moa_star_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:moa_star_demo"
+tags = ["demo", "example", "moa_star", "pareto", "search"]
+summary = "示例：moa_star_demo。 / Example: moa_star_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = ["from nsgablack.examples_registry import moa_star_demo"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\moa_star_demo.py:build_solver"
+
+[[entry]]
+key = "example.monte_carlo_robust"
+title = "monte_carlo_dp_robust_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:monte_carlo_dp_robust_demo"
+tags = ["demo", "example", "monte_carlo", "robust"]
+summary = "示例：monte_carlo_dp_robust_demo。 / Example: monte_carlo_dp_robust_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = [
+  "from nsgablack.examples_registry import monte_carlo_dp_robust_demo",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\monte_carlo_dp_robust_demo.py:build_solver"
+
+[[entry]]
+key = "example.multi_fidelity"
+title = "multi_fidelity_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:multi_fidelity_demo"
+tags = ["demo", "example", "multi_fidelity"]
+summary = "示例：multi_fidelity_demo。 / Example: multi_fidelity_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = ["from nsgablack.examples_registry import multi_fidelity_demo"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\multi_fidelity_demo.py:build_solver"
+
+[[entry]]
+key = "example.nsga2_solver"
+title = "nsga2_solver_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:nsga2_solver_demo"
+tags = ["demo", "example", "nsga2", "solver", "suite"]
+summary = "示例：nsga2_solver_demo。 / Example: nsga2_solver_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = ["from nsgablack.examples_registry import nsga2_solver_demo"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\nsga2_solver_demo.py:build_solver"
+
+[[entry]]
+key = "example.parallel_evaluator"
+title = "parallel_evaluator_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:parallel_evaluator_demo"
+tags = ["demo", "evaluation", "example", "parallel"]
+summary = "示例：parallel_evaluator_demo。 / Example: parallel_evaluator_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = [
+  "from nsgablack.examples_registry import parallel_evaluator_demo",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\parallel_evaluator_demo.py:build_solver"
+
+[[entry]]
+key = "example.parallel_repair"
+title = "parallel_repair_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:parallel_repair_demo"
+tags = ["demo", "example", "parallel", "pipeline", "repair"]
+summary = "示例：parallel_repair_demo。 / Example: parallel_repair_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = [
+  "from nsgablack.examples_registry import parallel_repair_demo",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\parallel_repair_demo.py:build_solver"
+
+[[entry]]
+key = "example.plugin_gallery"
+title = "plugin_gallery_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:plugin_gallery_demo"
+tags = ["demo", "example", "gallery", "plugin"]
+summary = "示例：plugin_gallery_demo。 / Example: plugin_gallery_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = ["from nsgablack.examples_registry import plugin_gallery_demo"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\plugin_gallery_demo.py:build_solver"
+
+[[entry]]
+key = "example.risk_bias"
+title = "risk_bias_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:risk_bias_demo"
+tags = ["bias", "demo", "example", "risk"]
+summary = "示例：risk_bias_demo。 / Example: risk_bias_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = ["from nsgablack.examples_registry import risk_bias_demo"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\risk_bias_demo.py:build_solver"
+
+[[entry]]
+key = "example.role_adapters"
+title = "role_adapters_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:role_adapters_demo"
+tags = ["adapter", "demo", "example", "multi_role", "role"]
+summary = "示例：role_adapters_demo。 / Example: role_adapters_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = ["from nsgablack.examples_registry import role_adapters_demo"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\role_adapters_demo.py:build_solver"
+
+[[entry]]
+key = "example.surrogate_plugin"
+title = "surrogate_plugin_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:surrogate_plugin_demo"
+tags = ["demo", "example", "plugin", "surrogate"]
+summary = "示例：surrogate_plugin_demo。 / Example: surrogate_plugin_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = [
+  "from nsgablack.examples_registry import surrogate_plugin_demo",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\surrogate_plugin_demo.py:build_solver"
+
+[[entry]]
+key = "example.template_assignment"
+title = "template_assignment_matrix"
+kind = "example"
+import_path = "nsgablack.examples_registry:template_assignment_matrix"
+tags = ["assignment", "example", "matrix", "repair", "template"]
+summary = "示例：template_assignment_matrix。 / Example: template_assignment_matrix."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = [
+  "from nsgablack.examples_registry import template_assignment_matrix",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\template_assignment_matrix.py:build_solver"
+
+[[entry]]
+key = "example.template_continuous"
+title = "template_continuous_constrained"
+kind = "example"
+import_path = "nsgablack.examples_registry:template_continuous_constrained"
+tags = ["bias", "constraint", "continuous", "example", "pipeline", "template"]
+summary = "示例：template_continuous_constrained。 / Example: template_continuous_constrained."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = [
+  "from nsgablack.examples_registry import template_continuous_constrained",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\template_continuous_constrained.py:build_solver"
+
+[[entry]]
+key = "example.template_graph_path"
+title = "template_graph_path"
+kind = "example"
+import_path = "nsgablack.examples_registry:template_graph_path"
+tags = ["example", "graph", "path", "repair", "template"]
+summary = "示例：template_graph_path。 / Example: template_graph_path."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = ["from nsgablack.examples_registry import template_graph_path"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\template_graph_path.py:build_solver"
+
+[[entry]]
+key = "example.template_knapsack"
+title = "template_knapsack_binary"
+kind = "example"
+import_path = "nsgablack.examples_registry:template_knapsack_binary"
+tags = ["binary", "example", "knapsack", "repair", "template"]
+summary = "示例：template_knapsack_binary。 / Example: template_knapsack_binary."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = [
+  "from nsgablack.examples_registry import template_knapsack_binary",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\template_knapsack_binary.py:build_solver"
+
+[[entry]]
+key = "example.template_mo_pareto"
+title = "template_multiobjective_pareto"
+kind = "example"
+import_path = "nsgablack.examples_registry:template_multiobjective_pareto"
+tags = ["example", "moead", "multiobjective", "pareto", "template"]
+summary = "示例：template_multiobjective_pareto。 / Example: template_multiobjective_pareto."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = [
+  "from nsgablack.examples_registry import template_multiobjective_pareto",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\template_multiobjective_pareto.py:build_solver"
+
+[[entry]]
+key = "example.template_portfolio"
+title = "template_portfolio_pareto"
+kind = "example"
+import_path = "nsgablack.examples_registry:template_portfolio_pareto"
+tags = ["example", "mo", "pareto", "portfolio", "template"]
+summary = "示例：template_portfolio_pareto。 / Example: template_portfolio_pareto."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = [
+  "from nsgablack.examples_registry import template_portfolio_pareto",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\template_portfolio_pareto.py:build_solver"
+
+[[entry]]
+key = "example.template_production_simple"
+title = "template_production_schedule_simple"
+kind = "example"
+import_path = "nsgablack.examples_registry:template_production_schedule_simple"
+tags = ["example", "matrix", "production", "schedule", "template"]
+summary = "示例：template_production_schedule_simple。 / Example: template_production_schedule_simple."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = [
+  "from nsgablack.examples_registry import template_production_schedule_simple",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\template_production_schedule_simple.py:build_solver"
+
+[[entry]]
+key = "example.template_tsp"
+title = "template_tsp_permutation"
+kind = "example"
+import_path = "nsgablack.examples_registry:template_tsp_permutation"
+tags = ["2opt", "example", "permutation", "template", "tsp"]
+summary = "示例：template_tsp_permutation。 / Example: template_tsp_permutation."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = [
+  "from nsgablack.examples_registry import template_tsp_permutation",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\template_tsp_permutation.py:build_solver"
+
+[[entry]]
+key = "example.trust_region_dfo"
+title = "trust_region_dfo_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:trust_region_dfo_demo"
+tags = ["demo", "dfo", "example", "trust_region"]
+summary = "示例：trust_region_dfo_demo。 / Example: trust_region_dfo_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = [
+  "from nsgablack.examples_registry import trust_region_dfo_demo",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\trust_region_dfo_demo.py:build_solver"
+
+[[entry]]
+key = "example.trust_region_subspace"
+title = "trust_region_subspace_demo"
+kind = "example"
+import_path = "nsgablack.examples_registry:trust_region_subspace_demo"
+tags = ["demo", "example", "subspace", "trust_region"]
+summary = "示例：trust_region_subspace_demo。 / Example: trust_region_subspace_demo."
+use_when = ["需要可运行参考实现时。 / Need a runnable reference example."]
+minimal_wiring = [
+  "from nsgablack.examples_registry import trust_region_subspace_demo",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\trust_region_subspace_demo.py:build_solver"

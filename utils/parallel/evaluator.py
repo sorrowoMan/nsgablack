@@ -161,6 +161,8 @@ class ParallelEvaluator:
         context_builder: Optional[ContextBuilder] = None,
         extra_context: Optional[Dict[str, Any]] = None,
         thread_bias_isolation: Literal["deepcopy", "disable_cache", "off"] = "deepcopy",
+        task_timeout_seconds: Optional[float] = 30.0,
+        ray_wait_timeout_seconds: Optional[float] = 30.0,
     ) -> None:
         self.backend: Backend = backend
         self.max_workers = int(max_workers or self._get_default_workers(backend))
@@ -177,6 +179,8 @@ class ParallelEvaluator:
         self.context_builder = context_builder
         self.extra_context: Dict[str, Any] = dict(extra_context or {})
         self.thread_bias_isolation: Literal["deepcopy", "disable_cache", "off"] = thread_bias_isolation
+        self.task_timeout_seconds = task_timeout_seconds
+        self.ray_wait_timeout_seconds = ray_wait_timeout_seconds
 
         self.stats: Dict[str, Any] = {
             "total_evaluations": 0,
@@ -414,13 +418,20 @@ class ParallelEvaluator:
             for future in as_completed(futures):
                 idx = futures[future]
                 try:
-                    results.append(future.result(timeout=30))
+                    if self.task_timeout_seconds is None:
+                        results.append(future.result())
+                    else:
+                        results.append(future.result(timeout=self.task_timeout_seconds))
                 except Exception as exc:
                     results.append((idx, np.full(1, np.inf), float("inf"), repr(exc)))
             return results
 
         results = []
-        for result in executor.map(task_func, tasks, timeout=30):
+        if self.task_timeout_seconds is None:
+            iterator = executor.map(task_func, tasks)
+        else:
+            iterator = executor.map(task_func, tasks, timeout=self.task_timeout_seconds)
+        for result in iterator:
             results.append(result)
         return results
 
@@ -447,7 +458,11 @@ class ParallelEvaluator:
         results: List[Tuple] = []
         pending = list(refs)
         while pending:
-            ready, pending = ray.wait(pending, num_returns=min(256, len(pending)), timeout=30.0)
+            ready, pending = ray.wait(
+                pending,
+                num_returns=min(256, len(pending)),
+                timeout=self.ray_wait_timeout_seconds,
+            )
             if not ready:
                 for ref in pending:
                     idx = int(ref_to_idx.get(ref, -1))

@@ -5,8 +5,20 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
 import numpy as np
 
-from .backend_contract import BackendSolveRequest
+from .backend_contract import BackendCapabilities, BackendSolveRequest
+from .backend_utils import (
+    apply_solution_pool_params,
+    apply_warm_start,
+    extract_solution_pool,
+    register_callback,
+    resolve_callback,
+    resolve_diagnostics,
+    resolve_solution_pool,
+    resolve_warm_start,
+    run_diagnostics,
+)
 from .copt_templates import TemplateSolveFn, build_default_templates
+from .copt_templates.utils import add_gen_constraints, add_indicator_constraints, apply_feas_relaxation, apply_model_params
 
 try:
     import coptpy as _COPT_MODULE
@@ -65,6 +77,16 @@ class CoptBackend:
             for key, fn in template_solvers.items():
                 if callable(fn):
                     self.template_solvers[str(key).strip().lower()] = fn
+
+    @property
+    def capabilities(self) -> BackendCapabilities:
+        return BackendCapabilities(
+            warm_start=True,
+            solution_pool=True,
+            callback=True,
+            diagnostics=True,
+            tuning=False,
+        )
 
     def _build_mock(self, request: BackendSolveRequest, status: str, reason: str) -> Dict[str, Any]:
         cand = np.asarray(request.candidate, dtype=float).reshape(-1)
@@ -149,6 +171,7 @@ class CoptBackend:
         self._set_parameter(model, "RelGap", self.cfg.default_mip_gap)
 
         vars_ = []
+        name_map: Dict[str, Any] = {}
         for i in range(n):
             vtype_i = str(vtypes[i]).upper()
             copt_vtype = cp.COPT.CONTINUOUS
@@ -156,8 +179,10 @@ class CoptBackend:
                 copt_vtype = cp.COPT.BINARY
             elif vtype_i in {"I", "INT", "INTEGER"}:
                 copt_vtype = cp.COPT.INTEGER
-            var = model.addVar(lb=float(lb[i]), ub=float(ub[i]), vtype=copt_vtype, name=f"x_{i}")
+            name = f"x_{i}"
+            var = model.addVar(lb=float(lb[i]), ub=float(ub[i]), vtype=copt_vtype, name=name)
             vars_.append(var)
+            name_map[name] = var
 
         obj_expr = cp.quicksum(float(c[i]) * vars_[i] for i in range(n))
         copt_sense = cp.COPT.MINIMIZE if objective_sense != "max" else cp.COPT.MAXIMIZE
@@ -193,7 +218,22 @@ class CoptBackend:
                 else:
                     raise ValueError(f"unsupported constraint sense: {mark}")
 
+        add_indicator_constraints(model, cp, vars_, name_map, spec.get("indicator_constraints"))
+        add_gen_constraints(model, cp, vars_, name_map, spec.get("gen_constrs") or spec.get("gen_constraints"))
+        apply_model_params(model, cp, spec.get("params") or spec.get("model_params"))
+
+        warm_start = resolve_warm_start(request, request.payload or {})
+        callback_spec = resolve_callback(request, request.payload or {})
+        pool_spec = resolve_solution_pool(request, request.payload or {})
+        diag_spec = resolve_diagnostics(request, request.payload or {})
+        warm_start_meta = apply_warm_start(model, cp, warm_start)
+        callback_meta = register_callback(model, cp, callback_spec)
+        pool_meta = apply_solution_pool_params(model, cp, pool_spec)
+
         model.solve()
+        apply_feas_relaxation(model, cp, spec.get("feas_relax"))
+        diag_out = run_diagnostics(model, cp, diag_spec)
+        pool_out = extract_solution_pool(model, cp, pool_spec)
         status_raw = getattr(model, "status", None)
         obj_val = getattr(model, "objval", None)
         try:
@@ -208,7 +248,7 @@ class CoptBackend:
         if obj_val is None:
             obj_val = float(np.dot(c, x_val))
 
-        return {
+        out = {
             "status": status,
             "objective": float(obj_val),
             "violation": float(spec.get("violation", 0.0)),
@@ -216,9 +256,17 @@ class CoptBackend:
                 "copt.mode": "linear_spec",
                 "copt.status_raw": None if status_raw is None else int(status_raw),
                 "copt.nvars": int(n),
+                "copt.warm_start": warm_start_meta,
+                "copt.callback": callback_meta,
+                "copt.solution_pool": pool_meta,
             },
             "solution": x_val,
         }
+        if diag_out is not None:
+            out["diagnostics"] = diag_out
+        if pool_out is not None:
+            out["solution_pool"] = dict(pool_out)
+        return out
 
     def _solve_qp_spec(self, request: BackendSolveRequest, cp: Any, builder: Callable) -> Mapping[str, Any]:
         spec = dict(builder(request) or {})
@@ -247,6 +295,7 @@ class CoptBackend:
         self._set_parameter(model, "RelGap", self.cfg.default_mip_gap)
 
         vars_ = []
+        name_map: Dict[str, Any] = {}
         for i in range(n):
             vtype_i = str(vtypes[i]).upper()
             copt_vtype = cp.COPT.CONTINUOUS
@@ -254,8 +303,10 @@ class CoptBackend:
                 copt_vtype = cp.COPT.BINARY
             elif vtype_i in {"I", "INT", "INTEGER"}:
                 copt_vtype = cp.COPT.INTEGER
-            var = model.addVar(lb=float(lb[i]), ub=float(ub[i]), vtype=copt_vtype, name=f"x_{i}")
+            name = f"x_{i}"
+            var = model.addVar(lb=float(lb[i]), ub=float(ub[i]), vtype=copt_vtype, name=name)
             vars_.append(var)
+            name_map[name] = var
 
         obj_expr = cp.quicksum(float(c[i]) * vars_[i] for i in range(n))
         has_quadratic = Q is not None
@@ -305,7 +356,22 @@ class CoptBackend:
                 else:
                     raise ValueError(f"unsupported constraint sense: {mark}")
 
+        add_indicator_constraints(model, cp, vars_, name_map, spec.get("indicator_constraints"))
+        add_gen_constraints(model, cp, vars_, name_map, spec.get("gen_constrs") or spec.get("gen_constraints"))
+        apply_model_params(model, cp, spec.get("params") or spec.get("model_params"))
+
+        warm_start = resolve_warm_start(request, request.payload or {})
+        callback_spec = resolve_callback(request, request.payload or {})
+        pool_spec = resolve_solution_pool(request, request.payload or {})
+        diag_spec = resolve_diagnostics(request, request.payload or {})
+        warm_start_meta = apply_warm_start(model, cp, warm_start)
+        callback_meta = register_callback(model, cp, callback_spec)
+        pool_meta = apply_solution_pool_params(model, cp, pool_spec)
+
         model.solve()
+        apply_feas_relaxation(model, cp, spec.get("feas_relax"))
+        diag_out = run_diagnostics(model, cp, diag_spec)
+        pool_out = extract_solution_pool(model, cp, pool_spec)
         status_raw = getattr(model, "status", None)
         obj_val = getattr(model, "objval", None)
         try:
@@ -324,7 +390,7 @@ class CoptBackend:
                 quad_term = quadratic_scale * float(x_val.T @ q_arr @ x_val)
             obj_val = float(np.dot(c, x_val) + quad_term)
 
-        return {
+        out = {
             "status": status,
             "objective": float(obj_val),
             "violation": float(spec.get("violation", 0.0)),
@@ -333,9 +399,17 @@ class CoptBackend:
                 "copt.status_raw": None if status_raw is None else int(status_raw),
                 "copt.nvars": int(n),
                 "copt.has_quadratic": bool(has_quadratic),
+                "copt.warm_start": warm_start_meta,
+                "copt.callback": callback_meta,
+                "copt.solution_pool": pool_meta,
             },
             "solution": x_val,
         }
+        if diag_out is not None:
+            out["diagnostics"] = diag_out
+        if pool_out is not None:
+            out["solution_pool"] = dict(pool_out)
+        return out
 
     def _solve_by_template(self, request: BackendSolveRequest, cp: Any, payload: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
         template_name = self._resolve_template_name(payload)
@@ -348,7 +422,15 @@ class CoptBackend:
                 raise ValueError(f"unsupported copt template: {template_name}")
             return self._build_mock(request, status="mock_unknown_template", reason=f"template={template_name}")
 
-        template_params = self._resolve_mapping(payload, "copt_template_params")
+        template_params = dict(self._resolve_mapping(payload, "copt_template_params"))
+        if getattr(request, "warm_start", None) is not None and "warm_start" not in template_params:
+            template_params["warm_start"] = request.warm_start
+        if getattr(request, "solution_pool", None) is not None and "solution_pool" not in template_params:
+            template_params["solution_pool"] = request.solution_pool
+        if getattr(request, "callback", None) is not None and "callback" not in template_params:
+            template_params["callback"] = request.callback
+        if getattr(request, "diagnostics", None) is not None and "diagnostics" not in template_params:
+            template_params["diagnostics"] = request.diagnostics
         out = dict(template_solver(request, cp, template_params))
         metrics = out.get("metrics")
         out["metrics"] = dict(metrics) if isinstance(metrics, Mapping) else {}

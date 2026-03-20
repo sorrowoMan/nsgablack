@@ -9,8 +9,10 @@ import numpy as np
 from ...core.state.context_keys import (
     KEY_BEST_OBJECTIVE,
     KEY_BEST_X,
+    KEY_PROBLEM,
     KEY_SNAPSHOT_KEY,
 )
+from ...core.state.context_store import RedisContextStore
 
 
 def _report_debug_soft_error(
@@ -43,7 +45,7 @@ def build_solver_context(
     logger: Any,
 ) -> Dict[str, Any]:
     ctx = {
-        "problem": solver.problem,
+        KEY_PROBLEM: solver.problem,
         "generation": solver.generation,
         "constraints": (constraints.tolist() if constraints is not None else []),
         "constraint_violation": float(violation or 0.0),
@@ -79,6 +81,21 @@ def build_solver_context(
     if phase_id is not None:
         ctx["phase_id"] = phase_id
 
+    governance_hook = getattr(solver, "_apply_runtime_governance_context", None)
+    if callable(governance_hook):
+        try:
+            ctx = governance_hook(ctx) or ctx
+        except Exception as exc:
+            report_soft_error_fn(
+                component="SolverBase",
+                event="runtime_governance_context_hook",
+                exc=exc,
+                logger=logger,
+                context_store=getattr(solver, "context_store", None),
+                strict=False,
+                level="debug",
+            )
+
     plugin_manager = getattr(solver, "plugin_manager", None)
     if plugin_manager is not None:
         try:
@@ -95,16 +112,23 @@ def build_solver_context(
 
     solver._strip_large_context(ctx)
     solver._attach_snapshot_refs(ctx, allow_write=True)
-    try:
-        solver.context_store.update(ctx, ttl_seconds=solver.context_store_ttl_seconds)
-    except Exception as exc:
-        _report_debug_soft_error(
-            solver=solver,
-            report_soft_error_fn=report_soft_error_fn,
-            logger=logger,
-            event="context_store_update_build_context",
-            exc=exc,
-        )
+    if bool(getattr(solver, "context_store_update_on_build", True)):
+        store_payload = ctx
+        store = getattr(solver, "context_store", None)
+        if isinstance(store, RedisContextStore):
+            if KEY_PROBLEM in store_payload:
+                store_payload = dict(store_payload)
+                store_payload.pop(KEY_PROBLEM, None)
+        try:
+            solver.context_store.update(store_payload, ttl_seconds=solver.context_store_ttl_seconds)
+        except Exception as exc:
+            _report_debug_soft_error(
+                solver=solver,
+                report_soft_error_fn=report_soft_error_fn,
+                logger=logger,
+                event="context_store_update_build_context",
+                exc=exc,
+            )
     solver._purge_large_context_store()
     return ctx
 
@@ -130,8 +154,14 @@ def get_solver_context_view(
     solver._attach_snapshot_refs(ctx, allow_write=True)
     if bool(getattr(solver, "snapshot_strict", False)):
         ensure_snapshot_readable(solver, ctx)
+    store_payload = ctx
+    store = getattr(solver, "context_store", None)
+    if isinstance(store, RedisContextStore):
+        if KEY_PROBLEM in store_payload:
+            store_payload = dict(store_payload)
+            store_payload.pop(KEY_PROBLEM, None)
     try:
-        solver.context_store.update(ctx, ttl_seconds=solver.context_store_ttl_seconds)
+        solver.context_store.update(store_payload, ttl_seconds=solver.context_store_ttl_seconds)
     except Exception as exc:
         _report_debug_soft_error(
             solver=solver,

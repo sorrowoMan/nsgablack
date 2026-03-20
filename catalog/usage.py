@@ -53,7 +53,7 @@ def _normalize_context_notes(value: object) -> Tuple[str, ...]:
 
 def _infer_use_when(kind: str) -> Tuple[str, ...]:
     mapping = {
-        "plugin": ("需要记录/审查/并行/评估增强等工程能力时",),
+        "plugin": ("需要记录/审计/并行/评估增强等工程能力时",),
         "suite": ("想一键接入权威组合，避免漏配时",),
         "adapter": ("需要替换或新增搜索策略时",),
         "bias": ("需要表达软偏好或搜索倾向时",),

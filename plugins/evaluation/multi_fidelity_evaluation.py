@@ -7,6 +7,7 @@ import numpy as np
 
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
 from ...utils.extension_contracts import ContractError, normalize_candidate, normalize_objectives
+from .provider_plugin_base import EvaluationProviderPluginBase
 
 
 @dataclass
@@ -19,7 +20,7 @@ class MultiFidelityEvaluationConfig:
     random_seed: Optional[int] = 0
 
 
-class MultiFidelityEvaluationProviderPlugin:
+class MultiFidelityEvaluationProviderPlugin(EvaluationProviderPluginBase):
     """Multi-fidelity L4 provider factory."""
 
     is_algorithmic = True
@@ -38,9 +39,12 @@ class MultiFidelityEvaluationProviderPlugin:
         *,
         config: Optional[MultiFidelityEvaluationConfig] = None,
         low_fidelity: Optional[Callable[[Any], Any]] = None,
+        priority: int = 70,
     ) -> None:
+        super().__init__(name=str(name), priority=int(priority))
         self.name = str(name)
         self.cfg = config or MultiFidelityEvaluationConfig()
+        self.is_algorithmic = True
         self.low_fidelity = low_fidelity
         self._rng = np.random.default_rng(self.cfg.random_seed)
         self.stats = {"low_calls": 0, "high_calls": 0}
@@ -151,6 +155,7 @@ class MultiFidelityEvaluationProviderPlugin:
         class _Provider:
             name = owner.name
             semantic_mode = "equivalent"
+            priority = int(getattr(owner, "priority", 0) or 0)
 
             def can_handle_individual(self, solver, x, context):
                 _ = context

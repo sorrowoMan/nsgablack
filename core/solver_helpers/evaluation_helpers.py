@@ -133,18 +133,61 @@ def evaluate_population_with_plugins_and_bias(
         providers = getattr(mediator, "list_providers", None)
         has_provider = callable(providers) and len(tuple(providers())) > 0
         if has_provider:
-            return mediator.evaluate_population(
+            used_fallback = False
+            pre_snapshot = bool(getattr(solver, "snapshot_pre_evaluate_population", False))
+            if pre_snapshot:
+                solver._persist_snapshot(
+                    population=population,
+                    objectives=None,
+                    violations=None,
+                    include_pareto=True,
+                    include_history=True,
+                    include_decision_trace=True,
+                    complete=False,
+                )
+
+            def _fallback():
+                nonlocal used_fallback
+                used_fallback = True
+                # Pre-snapshot already handled above when enabled.
+                return _evaluate_population_via_problem(solver, population, pre_snapshot=False)
+
+            objectives, violations = mediator.evaluate_population(
                 solver,
                 population,
                 context={"population_size": int(population.shape[0]) if population is not None else None},
-                fallback=lambda: _evaluate_population_via_problem(solver, population),
+                fallback=_fallback,
             )
+            if not used_fallback:
+                try:
+                    objectives, violations = validate_population_evaluation_shape(
+                        objectives,
+                        violations,
+                        int(np.asarray(population).shape[0]),
+                        solver.num_objectives,
+                        context="evaluate_population.provider",
+                        strict=bool(getattr(solver, "plugin_strict", False)),
+                    )
+                except EvaluationShapeError as exc:
+                    raise ContractError(str(exc)) from exc
+                solver._persist_snapshot(
+                    population=population,
+                    objectives=objectives,
+                    violations=violations,
+                    include_pareto=True,
+                    include_history=True,
+                    include_decision_trace=True,
+                    complete=True,
+                )
+            return objectives, violations
     return _evaluate_population_via_problem(solver, population)
 
 
 def _evaluate_population_via_problem(
     solver: Any,
     population: np.ndarray,
+    *,
+    pre_snapshot: Optional[bool] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     if population is None:
         raise ContractError("evaluate_population.population cannot be empty")
@@ -157,15 +200,18 @@ def _evaluate_population_via_problem(
         )
 
     pop_size = int(population.shape[0])
-    solver._persist_snapshot(
-        population=population,
-        objectives=None,
-        violations=None,
-        include_pareto=True,
-        include_history=True,
-        include_decision_trace=True,
-        complete=False,
-    )
+    if pre_snapshot is None:
+        pre_snapshot = bool(getattr(solver, "snapshot_pre_evaluate_population", False))
+    if bool(pre_snapshot):
+        solver._persist_snapshot(
+            population=population,
+            objectives=None,
+            violations=None,
+            include_pareto=True,
+            include_history=True,
+            include_decision_trace=True,
+            complete=False,
+        )
 
     objectives = np.zeros((pop_size, solver.num_objectives))
     violations = np.zeros(pop_size, dtype=float)

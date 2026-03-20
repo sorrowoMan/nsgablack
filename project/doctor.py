@@ -38,6 +38,7 @@ from .doctor_core.rules import (
     looks_like_scaffold_project as _looks_like_scaffold_project_rule,
 )
 from ..catalog import get_catalog
+from ..catalog.audit import audit_catalog
 from ..core.state.context_keys import (
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_CONSTRAINT_VIOLATIONS_REF,
@@ -436,11 +437,27 @@ def _check_component_order_constraints(root: Path, diags: List[DoctorDiagnostic]
     )
 
 
+def _check_catalog_audit(diags: List[DoctorDiagnostic]) -> None:
+    try:
+        report = audit_catalog(profile="framework-core", runtime=False)
+    except Exception as exc:
+        _add(diags, "warn", "catalog-audit-failed", f"Catalog audit failed: {exc}")
+        return
+    if report.import_failures or report.context_failures or report.method_failures:
+        msg = (
+            "Catalog audit failures detected: "
+            f"import={report.import_failures} context={report.context_failures} "
+            f"methods={report.method_failures} params={report.param_failures}."
+        )
+        _add(diags, "warn", "catalog-audit-issues", msg)
+
+
 def run_project_doctor(
     path: Path | str | None = None,
     *,
     instantiate_solver: bool = False,
     strict: bool = False,
+    catalog_audit: bool = False,
 ) -> DoctorReport:
     target = Path(path).resolve() if path else Path.cwd()
     root = find_project_root(target)
@@ -466,6 +483,8 @@ def run_project_doctor(
     _check_adapter_layer_purity(root, diags, strict=bool(strict))
     _check_examples_suites_solver_control_writes(root, diags, strict=bool(strict))
     _check_broad_exception_swallow(root, diags, strict=bool(strict))
+    if bool(catalog_audit):
+        _check_catalog_audit(diags)
     _add_common_misuse_hints(root, diags)
     return DoctorReport(project_root=root, diagnostics=tuple(diags))
 

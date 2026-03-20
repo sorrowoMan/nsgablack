@@ -11,6 +11,25 @@ it only makes components discoverable.
 
 from .registry import CatalogEntry, get_catalog
 from .usage import CatalogUsage, build_usage_profile, enrich_context_contracts, enrich_usage_contracts
+from .sync import build_catalog_bundle
+from .api_index import (
+    build_api_index_bundle,
+    export_api_index_docs,
+    export_default_api_index_docs,
+    get_api_index_entry_from_mysql,
+    load_api_index_from_mysql,
+    search_api_index_from_mysql,
+    sync_api_index_to_mysql,
+)
+from .api_doc import (
+    export_api_doc_template,
+    get_api_doc_entry_from_mysql,
+    import_api_doc_jsonl,
+    list_api_doc_gaps_from_mysql,
+    seed_api_doc_params_from_ast,
+)
+from .audit import audit_catalog, audit_catalog_to_mysql
+from .export import export_catalog_docs, export_default_docs
 
 __all__ = [
     "CatalogEntry",
@@ -23,6 +42,23 @@ __all__ = [
     "build_usage_profile",
     "enrich_context_contracts",
     "enrich_usage_contracts",
+    "build_catalog_bundle",
+    "build_api_index_bundle",
+    "audit_catalog",
+    "audit_catalog_to_mysql",
+    "export_catalog_docs",
+    "export_default_docs",
+    "sync_api_index_to_mysql",
+    "load_api_index_from_mysql",
+    "search_api_index_from_mysql",
+    "get_api_index_entry_from_mysql",
+    "export_api_index_docs",
+    "export_default_api_index_docs",
+    "export_api_doc_template",
+    "import_api_doc_jsonl",
+    "get_api_doc_entry_from_mysql",
+    "list_api_doc_gaps_from_mysql",
+    "seed_api_doc_params_from_ast",
 ]
 
 

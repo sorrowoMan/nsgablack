@@ -1,5 +1,5 @@
 # Auto-generated from catalog/entries.toml
-# kind=representation count=4
+
 [[entry]]
 key = "representation.parallel_repair"
 title = "ParallelRepair"
@@ -7,8 +7,13 @@ kind = "representation"
 import_path = "nsgablack.representation:ParallelRepair"
 tags = ["parallel", "pipeline", "repair"]
 summary = "表示组件：ParallelRepair。 / Representation: ParallelRepair."
-use_when = ["Need to wire representation initializer/mutator/repair behavior."]
-minimal_wiring = ["from nsgablack.representation import ParallelRepair", "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate."]
+use_when = [
+  "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
+]
+minimal_wiring = [
+  "from nsgablack.representation import ParallelRepair",
+  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
 example_entry = "python -m nsgablack catalog search parallel_repair --kind example"
@@ -19,11 +24,20 @@ title = "SBXCrossover"
 kind = "representation"
 import_path = "nsgablack.representation.continuous:SBXCrossover"
 tags = ["representation", "crossover", "sbx", "continuous", "bounds", "nsga2"]
-summary = "Representation: simulated binary crossover (SBX)."
-use_when = ["Need SBX crossover for continuous variables in representation pipeline."]
-minimal_wiring = ["from nsgablack.representation import SBXCrossover", "Attach this component into RepresentationPipeline as crossover."]
+summary = "连续变量的模拟二进制交叉（SBX）。 / Representation: simulated binary crossover (SBX)."
+use_when = [
+  "需要在表示管线中使用连续变量的 SBX 交叉时。 / Need SBX crossover for continuous variables in representation pipeline.",
+]
+minimal_wiring = [
+  "from nsgablack.representation import SBXCrossover",
+  "Attach this component into RepresentationPipeline as crossover.",
+]
 required_companions = ["(none)"]
-config_keys = ["eta_c", "low", "high"]
+config_keys = [
+  "eta_c",
+  "low",
+  "high",
+]
 example_entry = "python -m nsgablack catalog search sbx_crossover --kind example"
 
 [[entry]]
@@ -32,22 +46,219 @@ title = "PolynomialMutation"
 kind = "representation"
 import_path = "nsgablack.representation.continuous:PolynomialMutation"
 tags = ["representation", "mutation", "polynomial", "continuous", "bounds", "nsga2"]
-summary = "Representation: polynomial mutation for continuous variables."
-use_when = ["Need polynomial mutation for continuous variables in representation pipeline."]
-minimal_wiring = ["from nsgablack.representation import PolynomialMutation", "Attach this component into RepresentationPipeline as mutator."]
+summary = "连续变量多项式变异。 / Representation: polynomial mutation for continuous variables."
+use_when = [
+  "需要在表示管线中使用连续变量多项式变异时。 / Need polynomial mutation for continuous variables in representation pipeline.",
+]
+minimal_wiring = [
+  "from nsgablack.representation import PolynomialMutation",
+  "Attach this component into RepresentationPipeline as mutator.",
+]
 required_companions = ["(none)"]
-config_keys = ["eta_m", "mutation_rate", "low", "high"]
+config_keys = [
+  "eta_m",
+  "mutation_rate",
+  "low",
+  "high",
+]
 example_entry = "python -m nsgablack catalog search polynomial_mutation --kind example"
 
 [[entry]]
-key = "representation.pipeline"
+key = "repr.binary"
+title = "BinaryInitializer"
+kind = "representation"
+import_path = "nsgablack.representation.binary:BinaryInitializer"
+tags = ["binary", "bit", "initializer"]
+summary = "表示组件：BinaryInitializer。 / Representation: BinaryInitializer."
+use_when = [
+  "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
+]
+minimal_wiring = [
+  "from nsgablack.representation.binary import BinaryInitializer",
+  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog search binary --kind example"
+
+[[entry]]
+key = "repr.context_gaussian"
+title = "ContextGaussianMutation"
+kind = "representation"
+import_path = "nsgablack.representation.continuous:ContextGaussianMutation"
+tags = ["context", "continuous", "mutation", "vns"]
+summary = "表示组件：ContextGaussianMutation。 / Representation: ContextGaussianMutation."
+use_when = [
+  "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
+]
+minimal_wiring = [
+  "from nsgablack.representation.continuous import ContextGaussianMutation",
+  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+]
+required_companions = ["adapter.vns"]
+config_keys = ["(none)"]
+companions = ["adapter.vns"]
+example_entry = "python -m nsgablack catalog search context_gaussian --kind example"
+
+[[entry]]
+key = "repr.context_switch"
+title = "ContextSelectMutator"
+kind = "representation"
+import_path = "nsgablack.representation:ContextSelectMutator"
+tags = ["context", "discrete", "mutation", "switch", "vns"]
+summary = "表示组件：ContextSelectMutator。 / Representation: ContextSelectMutator."
+use_when = [
+  "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
+]
+minimal_wiring = [
+  "from nsgablack.representation import ContextSelectMutator",
+  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+]
+required_companions = ["adapter.vns"]
+config_keys = ["(none)"]
+companions = ["adapter.vns"]
+example_entry = "python -m nsgablack catalog search context_switch --kind example"
+
+[[entry]]
+key = "repr.continuous"
+title = "UniformInitializer"
+kind = "representation"
+import_path = "nsgablack.representation.continuous:UniformInitializer"
+tags = ["continuous", "initializer", "real"]
+summary = "表示组件：UniformInitializer。 / Representation: UniformInitializer."
+use_when = [
+  "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
+]
+minimal_wiring = [
+  "from nsgablack.representation.continuous import UniformInitializer",
+  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog search continuous --kind example"
+
+[[entry]]
+key = "repr.dynamic_repair"
+title = "DynamicRepair"
+kind = "representation"
+import_path = "nsgablack.representation.dynamic:DynamicRepair"
+tags = ["dynamic", "pipeline", "repair"]
+summary = "表示组件：DynamicRepair。 / Representation: DynamicRepair."
+use_when = [
+  "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
+]
+minimal_wiring = [
+  "from nsgablack.representation.dynamic import DynamicRepair",
+  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog search dynamic_repair --kind example"
+
+[[entry]]
+key = "repr.graph"
+title = "GraphEdgeInitializer"
+kind = "representation"
+import_path = "nsgablack.representation.graph:GraphEdgeInitializer"
+tags = ["graph", "initializer", "network"]
+summary = "表示组件：GraphEdgeInitializer。 / Representation: GraphEdgeInitializer."
+use_when = [
+  "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
+]
+minimal_wiring = [
+  "from nsgablack.representation.graph import GraphEdgeInitializer",
+  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog search graph --kind example"
+
+[[entry]]
+key = "repr.integer"
+title = "IntegerInitializer"
+kind = "representation"
+import_path = "nsgablack.representation.integer:IntegerInitializer"
+tags = ["discrete", "initializer", "integer"]
+summary = "表示组件：IntegerInitializer。 / Representation: IntegerInitializer."
+use_when = [
+  "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
+]
+minimal_wiring = [
+  "from nsgablack.representation.integer import IntegerInitializer",
+  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog search integer --kind example"
+
+[[entry]]
+key = "repr.matrix"
+title = "IntegerMatrixInitializer"
+kind = "representation"
+import_path = "nsgablack.representation.matrix:IntegerMatrixInitializer"
+tags = ["grid", "initializer", "matrix"]
+summary = "表示组件：IntegerMatrixInitializer。 / Representation: IntegerMatrixInitializer."
+use_when = [
+  "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
+]
+minimal_wiring = [
+  "from nsgablack.representation.matrix import IntegerMatrixInitializer",
+  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog search matrix --kind example"
+
+[[entry]]
+key = "repr.permutation"
+title = "PermutationInitializer"
+kind = "representation"
+import_path = "nsgablack.representation.permutation:PermutationInitializer"
+tags = ["discrete", "initializer", "permutation", "tsp"]
+summary = "表示组件：PermutationInitializer。 / Representation: PermutationInitializer."
+use_when = [
+  "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
+]
+minimal_wiring = [
+  "from nsgablack.representation.permutation import PermutationInitializer",
+  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog search permutation --kind example"
+
+[[entry]]
+key = "repr.pipeline"
 title = "RepresentationPipeline"
 kind = "representation"
-import_path = "nsgablack.representation.base:RepresentationPipeline"
-tags = ["pipeline", "representation", "runtime", "composition"]
-summary = "Representation: pipeline container for initializer/mutator/repair wiring and execution."
-use_when = ["Need a unified representation execution chain for initialize, mutate, and repair stages."]
-minimal_wiring = ["from nsgablack.representation.base import RepresentationPipeline", "solver.representation_pipeline = RepresentationPipeline(...)"]
-required_companions = ["representation.parallel_repair (optional)"]
-config_keys = ["initializer", "mutator", "repair", "strict_mode"]
-example_entry = "examples/cases/production_scheduling/working_integrated_optimizer.py:build_solver"
+import_path = "nsgablack.representation:RepresentationPipeline"
+tags = ["core", "pipeline", "representation"]
+summary = "表示组件：RepresentationPipeline。 / Representation: RepresentationPipeline."
+use_when = [
+  "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
+]
+minimal_wiring = [
+  "from nsgablack.representation import RepresentationPipeline",
+  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog search pipeline --kind example"
+
+[[entry]]
+key = "repr.projection_repair"
+title = "ProjectionRepair"
+kind = "representation"
+import_path = "nsgablack.representation.continuous:ProjectionRepair"
+tags = ["bounds", "pipeline", "projection", "repair", "simplex"]
+summary = "表示组件：ProjectionRepair。 / Representation: ProjectionRepair."
+use_when = [
+  "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
+]
+minimal_wiring = [
+  "from nsgablack.representation.continuous import ProjectionRepair",
+  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog search projection_repair --kind example"

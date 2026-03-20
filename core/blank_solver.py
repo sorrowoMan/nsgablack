@@ -17,6 +17,14 @@ from .acceleration_helpers import maybe_accel_map, maybe_accel_run
 from .config import StorageConfig, _apply_storage_config
 from .control_plane import BaseController, ControlArbiter, RuntimeController
 from .evaluation_runtime import EvaluationMediator, EvaluationMediatorConfig, EvaluationProvider
+from .runtime_governance import (
+    AdaptiveParametersConfig,
+    AdaptiveParametersGovernor,
+    CompanionOrchestrator,
+    CompanionOrchestratorConfig,
+    ConvergenceConfig,
+    ConvergenceMonitor,
+)
 
 import numpy as np
 
@@ -120,6 +128,12 @@ class SolverBase:
         snapshot_store_unsafe_allow_unsigned: bool = False,
         snapshot_store_max_payload_bytes: int = 8_388_608,
         snapshot_schema: str = "population_snapshot_v1",
+        enable_convergence_monitor: bool = False,
+        convergence_config: Optional[ConvergenceConfig] = None,
+        enable_adaptive_parameters: bool = False,
+        adaptive_config: Optional[AdaptiveParametersConfig] = None,
+        enable_companion_orchestrator: bool = False,
+        companion_config: Optional[CompanionOrchestratorConfig] = None,
     ) -> None:
         # Merge StorageConfig (if supplied) into local flat variables so the
         # rest of __init__ continues to read them by their original names.
@@ -164,6 +178,15 @@ class SolverBase:
             short_circuit=False,
             short_circuit_events=[],
             strict=bool(plugin_strict),
+        )
+        self._convergence_monitor = (
+            ConvergenceMonitor(convergence_config) if bool(enable_convergence_monitor) else None
+        )
+        self._adaptive_governor = (
+            AdaptiveParametersGovernor(adaptive_config) if bool(enable_adaptive_parameters) else None
+        )
+        self._companion_orchestrator = (
+            CompanionOrchestrator(companion_config) if bool(enable_companion_orchestrator) else None
         )
         # L0: cross-cutting acceleration infrastructure (not plugin-ordered).
         self.accel = AccelerationFacade()
@@ -215,6 +238,8 @@ class SolverBase:
         self.snapshot_store: SnapshotStore = self._build_snapshot_store()
         self._latest_snapshot_handle = None
         self._snapshot_generation = None
+        self.snapshot_pre_evaluate_population = False
+        self.context_store_update_on_build = True
         self._pending_plugin_order_updates: list[dict[str, Any]] = []
 
     def _build_context_store(self) -> ContextStore:
@@ -657,6 +682,9 @@ class SolverBase:
     def register_evaluation_provider(self, provider: EvaluationProvider) -> None:
         self.evaluation_mediator.register_provider(provider)
 
+    def unregister_evaluation_provider(self, provider: Any) -> None:
+        self.evaluation_mediator.unregister_provider(provider)
+
     def register_acceleration_backend(self, *, scope: str, backend: str, factory: Any) -> None:
         self.accel.register(scope=scope, backend=backend, factory=factory)
 
@@ -855,7 +883,7 @@ class SolverBase:
     def repair_candidate(self, x: np.ndarray, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         pipeline = self.representation_pipeline
         if pipeline is not None and getattr(pipeline, "repair", None) is not None:
-            out = pipeline.repair.repair(x, context)
+            out = pipeline.repair_one(x, context)
         else:
             out = x
         return normalize_candidate(out, dimension=self.dimension, name="repair_candidate")
@@ -906,6 +934,15 @@ class SolverBase:
             self.plugin_manager.on_population_init(
                 self.population, self.objectives, self.constraint_violations
             )
+            try:
+                self._runtime_governance_on_population_init(
+                    self.population,
+                    self.objectives,
+                    self.constraint_violations,
+                )
+            except Exception:
+                if bool(getattr(self, "plugin_strict", False)):
+                    raise
         return self.population
 
     def write_population_snapshot(
@@ -1225,6 +1262,61 @@ class SolverBase:
     # ------------------------------------------------------------------
     # Evaluation helpers
     # ------------------------------------------------------------------
+    def _apply_runtime_governance_context(self, ctx: Dict[str, Any]) -> Dict[str, Any]:
+        monitor = getattr(self, "_convergence_monitor", None)
+        if monitor is not None:
+            ctx = monitor.on_context_build(self, ctx) or ctx
+        governor = getattr(self, "_adaptive_governor", None)
+        if governor is not None:
+            ctx = governor.on_context_build(self, ctx) or ctx
+        companion = getattr(self, "_companion_orchestrator", None)
+        if companion is not None:
+            ctx = companion.on_context_build(self, ctx) or ctx
+        return ctx
+
+    def _runtime_governance_on_solver_init(self) -> None:
+        monitor = getattr(self, "_convergence_monitor", None)
+        if monitor is not None:
+            monitor.on_solver_init(self)
+        governor = getattr(self, "_adaptive_governor", None)
+        if governor is not None:
+            governor.on_solver_init(self)
+        companion = getattr(self, "_companion_orchestrator", None)
+        if companion is not None:
+            companion.on_solver_init(self)
+
+    def _runtime_governance_on_population_init(
+        self,
+        population: np.ndarray,
+        objectives: np.ndarray,
+        violations: np.ndarray,
+    ) -> None:
+        monitor = getattr(self, "_convergence_monitor", None)
+        if monitor is not None:
+            monitor.on_population_init(population, objectives, violations)
+        governor = getattr(self, "_adaptive_governor", None)
+        if governor is not None:
+            governor.on_population_init(population, objectives, violations)
+
+    def _runtime_governance_on_generation_end(self, generation: int) -> None:
+        monitor = getattr(self, "_convergence_monitor", None)
+        if monitor is not None:
+            monitor.on_generation_end(self, generation)
+        governor = getattr(self, "_adaptive_governor", None)
+        if governor is not None:
+            governor.on_generation_end(self, generation)
+        companion = getattr(self, "_companion_orchestrator", None)
+        if companion is not None:
+            companion.on_generation_end(self, generation)
+
+    def _runtime_governance_on_solver_finish(self, result: Dict[str, Any]) -> None:
+        monitor = getattr(self, "_convergence_monitor", None)
+        if monitor is not None:
+            monitor.on_solver_finish(self, result)
+        governor = getattr(self, "_adaptive_governor", None)
+        if governor is not None:
+            governor.on_solver_finish(self, result)
+
     def build_context(
         self,
         individual_id: Optional[int] = None,

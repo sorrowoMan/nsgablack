@@ -1,26 +1,163 @@
 # Auto-generated from catalog/entries.toml
-# kind=tool count=2
+
 [[entry]]
 key = "tool.dynamic_cli_signal"
 title = "CLISignalProvider"
 kind = "tool"
 import_path = "nsgablack.utils.dynamic:CLISignalProvider"
 tags = ["cli", "dynamic", "signal", "tool"]
-summary = "工具：CLISignalProvider。 / Tool: CLISignalProvider."
-use_when = ["Need this utility/tool in workflow assembly or diagnostics."]
+summary = "CLISignalProvider 工具。 / CLISignalProvider."
+use_when = [
+  "需要在流程装配或诊断中使用该工具时。 / Need this utility/tool in workflow assembly or diagnostics.",
+]
 minimal_wiring = ["from nsgablack.utils.dynamic import CLISignalProvider", "CLISignalProvider()"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
 example_entry = "python -m nsgablack catalog search dynamic_cli_signal --kind example"
+
 [[entry]]
 key = "tool.context_store_redis"
 title = "RedisContextStore"
 kind = "tool"
 import_path = "nsgablack.core.state.context_store:RedisContextStore"
 tags = ["context", "redis", "store", "tool", "backend", "ttl"]
-summary = "Context backend tool: RedisContextStore for shared context state with optional TTL."
-use_when = ["Need Redis-backed context storage/shared state for runs, replay, or distributed workers."]
-minimal_wiring = ["from nsgablack.core.state.context_store import create_context_store", "store = create_context_store(backend='redis', redis_url='redis://127.0.0.1:6379/0', key_prefix='nsgablack:run', ttl_seconds=30)"]
+summary = "Context 后端工具：RedisContextStore（共享状态，可选 TTL）。 / Context backend tool: RedisContextStore for shared context state with optional TTL."
+use_when = [
+  "需要 Redis 作为 context 存储/共享状态用于运行、回放或分布式时。 / Need Redis-backed context storage/shared state for runs, replay, or distributed workers.",
+]
+minimal_wiring = [
+  "from nsgablack.core.state.context_store import create_context_store",
+  "store = create_context_store(backend='redis', redis_url='redis://127.0.0.1:6379/0', key_prefix='nsgablack:run', ttl_seconds=30)",
+]
 required_companions = ["(none)"]
-config_keys = ["context_store_backend", "context_store_redis_url", "context_store_key_prefix", "context_store_ttl_seconds"]
+config_keys = [
+  "context_store_backend",
+  "context_store_redis_url",
+  "context_store_key_prefix",
+  "context_store_ttl_seconds",
+]
 example_entry = "python -m nsgablack catalog search context_store_redis --kind doc"
+
+[[entry]]
+key = "solver.blank"
+title = "SolverBase"
+kind = "tool"
+import_path = "nsgablack.core.blank_solver:SolverBase"
+tags = ["base", "blank", "solver"]
+summary = "工具：SolverBase。 / Tool: SolverBase."
+use_when = [
+  "需要在流程装配或诊断中使用该工具时。 / Need this utility/tool in workflow assembly or diagnostics.",
+]
+minimal_wiring = ["from nsgablack.core.blank_solver import SolverBase", "SolverBase()"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog search blank --kind example"
+
+[[entry]]
+key = "solver.composable"
+title = "ComposableSolver"
+kind = "tool"
+import_path = "nsgablack.core.composable_solver:ComposableSolver"
+tags = ["adapter", "composition", "solver"]
+summary = "工具：ComposableSolver。 / Tool: ComposableSolver."
+use_when = [
+  "需要在流程装配或诊断中使用该工具时。 / Need this utility/tool in workflow assembly or diagnostics.",
+]
+minimal_wiring = [
+  "from nsgablack.core.composable_solver import ComposableSolver",
+  "ComposableSolver()",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog search composable --kind example"
+
+[[entry]]
+key = "solver.nsga2"
+title = "EvolutionSolver"
+kind = "tool"
+import_path = "nsgablack.core.evolution_solver:EvolutionSolver"
+tags = ["evolutionary", "nsga2", "solver"]
+summary = "工具：EvolutionSolver。 / Tool: EvolutionSolver."
+use_when = [
+  "需要在流程装配或诊断中使用该工具时。 / Need this utility/tool in workflow assembly or diagnostics.",
+]
+minimal_wiring = ["from nsgablack.core.evolution_solver import EvolutionSolver", "EvolutionSolver()"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog search nsga2 --kind example"
+
+[[entry]]
+key = "tool.context_keys"
+title = "Context Keys"
+kind = "tool"
+import_path = "nsgablack.core.state:context_keys"
+tags = ["context", "keys", "schema", "tool"]
+summary = "工具：Context Keys。 / Tool: Context Keys."
+use_when = [
+  "需要在流程装配或诊断中使用该工具时。 / Need this utility/tool in workflow assembly or diagnostics.",
+]
+minimal_wiring = ["from nsgablack.core.state import context_keys", "context_keys()"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog search context_keys --kind example"
+
+[[entry]]
+key = "tool.context_schema"
+title = "MinimalEvaluationContext"
+kind = "tool"
+import_path = "nsgablack.core.state:MinimalEvaluationContext"
+tags = ["context", "parallel", "schema", "tool"]
+summary = "工具：MinimalEvaluationContext。 / Tool: MinimalEvaluationContext."
+use_when = [
+  "需要在流程装配或诊断中使用该工具时。 / Need this utility/tool in workflow assembly or diagnostics.",
+]
+minimal_wiring = ["from nsgablack.core.state import MinimalEvaluationContext", "MinimalEvaluationContext()"]
+required_companions = ["tool.context_keys"]
+config_keys = ["(none)"]
+companions = ["tool.context_keys"]
+example_entry = "python -m nsgablack catalog search context_schema --kind example"
+
+[[entry]]
+key = "tool.logging"
+title = "configure_logging"
+kind = "tool"
+import_path = "nsgablack.utils.engineering:configure_logging"
+tags = ["engineering", "logging", "tool"]
+summary = "工具：configure_logging。 / Tool: configure_logging."
+use_when = [
+  "需要在流程装配或诊断中使用该工具时。 / Need this utility/tool in workflow assembly or diagnostics.",
+]
+minimal_wiring = ["from nsgablack.utils.engineering import configure_logging", "configure_logging()"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog search logging --kind example"
+
+[[entry]]
+key = "tool.metrics"
+title = "pareto_filter"
+kind = "tool"
+import_path = "nsgablack.utils.analysis:pareto_filter"
+tags = ["analysis", "metrics", "pareto", "tool"]
+summary = "工具：pareto_filter。 / Tool: pareto_filter."
+use_when = [
+  "需要在流程装配或诊断中使用该工具时。 / Need this utility/tool in workflow assembly or diagnostics.",
+]
+minimal_wiring = ["from nsgablack.utils.analysis import pareto_filter", "pareto_filter()"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog search metrics --kind example"
+
+[[entry]]
+key = "tool.parallel_evaluator"
+title = "ParallelEvaluator"
+kind = "tool"
+import_path = "nsgablack.utils.parallel:ParallelEvaluator"
+tags = ["evaluation", "parallel", "tool"]
+summary = "工具：ParallelEvaluator。 / Tool: ParallelEvaluator."
+use_when = [
+  "需要在流程装配或诊断中使用该工具时。 / Need this utility/tool in workflow assembly or diagnostics.",
+]
+minimal_wiring = ["from nsgablack.utils.parallel import ParallelEvaluator", "ParallelEvaluator()"]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog search parallel_evaluator --kind example"

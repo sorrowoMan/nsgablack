@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from ..backend_contract import BackendSolveRequest
+from .utils import resolve_template_spec
 
 
 def solve_linear_template(
@@ -31,26 +32,15 @@ def solve_linear_template(
 ) -> Mapping[str, Any]:
     payload = dict(request.payload or {})
     params = dict(template_params or {})
+    if "linear_spec_builder" in params and "spec_builder" not in params:
+        params["spec_builder"] = params.get("linear_spec_builder")
 
-    if "spec" in params:
-        spec_obj = params.get("spec")
-        if not isinstance(spec_obj, Mapping):
-            raise TypeError("linear template params['spec'] must be a mapping")
-        return solve_linear_spec(request, cp, lambda _req: dict(spec_obj))
-
-    local_builder = params.get("linear_spec_builder")
-    if not callable(local_builder):
-        local_builder = payload.get("copt_linear_spec_builder")
-    if not callable(local_builder):
-        local_builder = default_linear_builder
-    if callable(local_builder):
-        return solve_linear_spec(request, cp, local_builder)
-
-    if "c" in params:
-        return solve_linear_spec(request, cp, lambda _req: dict(params))
-
-    raise ValueError(
-        "linear template requires one of: template_params['spec'], "
-        "template_params['linear_spec_builder'], payload['copt_linear_spec_builder'], "
-        "constructor linear_spec_builder, or inline template_params with key 'c'"
+    spec = resolve_template_spec(
+        request,
+        params,
+        payload,
+        default_builder=default_linear_builder,
+        payload_builder_keys=("copt_linear_spec_builder", "copt_spec_builder"),
+        inline_keys=("c", "A", "rhs", "sense", "lb", "ub", "vtype", "objective_sense"),
     )
+    return solve_linear_spec(request, cp, lambda _req: dict(spec))

@@ -42,6 +42,12 @@ class ComposableSolver(SolverBase):
         snapshot_store_unsafe_allow_unsigned: bool = False,
         snapshot_store_max_payload_bytes: int = 8_388_608,
         snapshot_schema: str = "population_snapshot_v1",
+        enable_convergence_monitor: bool = False,
+        convergence_config: Optional[object] = None,
+        enable_adaptive_parameters: bool = False,
+        adaptive_config: Optional[object] = None,
+        enable_companion_orchestrator: bool = False,
+        companion_config: Optional[object] = None,
     ) -> None:
         super().__init__(
             problem=problem,
@@ -64,6 +70,12 @@ class ComposableSolver(SolverBase):
             snapshot_store_unsafe_allow_unsigned=snapshot_store_unsafe_allow_unsigned,
             snapshot_store_max_payload_bytes=snapshot_store_max_payload_bytes,
             snapshot_schema=snapshot_schema,
+            enable_convergence_monitor=bool(enable_convergence_monitor),
+            convergence_config=convergence_config,
+            enable_adaptive_parameters=bool(enable_adaptive_parameters),
+            adaptive_config=adaptive_config,
+            enable_companion_orchestrator=bool(enable_companion_orchestrator),
+            companion_config=companion_config,
         )
         self.adapter: Optional[AlgorithmAdapter] = adapter
         self.best_x: Optional[np.ndarray] = None

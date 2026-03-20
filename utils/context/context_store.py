@@ -8,6 +8,7 @@ backend to be switched (in-memory by default, Redis optionally).
 from __future__ import annotations
 
 import pickle
+import warnings
 import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Iterable, Optional
@@ -135,7 +136,12 @@ class RedisContextStore(ContextStore):
     def set(self, key: str, value: Any, *, ttl_seconds: Optional[float] = None) -> None:
         try:
             payload = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
-        except Exception:
+        except Exception as exc:
+            warnings.warn(
+                f"RedisContextStore failed to pickle value for key '{key}': {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
             return
         ttl = self._effective_ttl(ttl_seconds)
         redis_key = self._k(key)
@@ -191,4 +197,3 @@ def create_context_store(
             default_ttl_seconds=ttl_seconds,
         )
     raise ValueError(f"Unsupported context store backend: {backend}")
-

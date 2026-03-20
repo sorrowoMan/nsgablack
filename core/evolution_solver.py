@@ -11,6 +11,11 @@ from .solver_helpers import format_run_result
 from ..utils.engineering.error_policy import report_soft_error
 from ..utils.parallel.evaluator import ParallelEvaluator
 from ..utils.performance.fast_non_dominated_sort import FastNonDominatedSort
+from .runtime_governance import (
+    AdaptiveParametersConfig,
+    CompanionOrchestratorConfig,
+    ConvergenceConfig,
+)
 
 _MIN_POP_FOR_PARALLEL = 1
 logger = logging.getLogger(__name__)
@@ -71,6 +76,12 @@ class EvolutionSolver(ComposableSolver):
         parallel_problem_factory: Any = None,
         parallel_context_builder: Any = None,
         parallel_extra_context: Optional[Dict[str, Any]] = None,
+        enable_convergence_monitor: bool = False,
+        convergence_config: Optional[ConvergenceConfig] = None,
+        enable_adaptive_parameters: bool = False,
+        adaptive_config: Optional[AdaptiveParametersConfig] = None,
+        enable_companion_orchestrator: bool = False,
+        companion_config: Optional[CompanionOrchestratorConfig] = None,
         adapter: Optional[Any] = None,
         **_: Any,
     ) -> None:
@@ -117,6 +128,12 @@ class EvolutionSolver(ComposableSolver):
             snapshot_store_unsafe_allow_unsigned=snapshot_store_unsafe_allow_unsigned,
             snapshot_store_max_payload_bytes=snapshot_store_max_payload_bytes,
             snapshot_schema=snapshot_schema,
+            enable_convergence_monitor=bool(enable_convergence_monitor),
+            convergence_config=convergence_config,
+            enable_adaptive_parameters=bool(enable_adaptive_parameters),
+            adaptive_config=adaptive_config,
+            enable_companion_orchestrator=bool(enable_companion_orchestrator),
+            companion_config=companion_config,
         )
         # SolverBase.__init__ resets max_steps; restore generation semantics here.
         self.max_generations = int(max_generations)

@@ -44,7 +44,8 @@ class MonteCarloEvaluationProviderPlugin(Plugin):
     )
     """Monte Carlo L4 provider factory.
 
-    Use `solver.register_evaluation_provider(MonteCarloEvaluationProviderPlugin(...).create_provider())`.
+    Add as a plugin (auto-registers the provider on attach), or call
+    `solver.register_evaluation_provider(...create_provider())` manually.
     """
 
     # Soft partner contracts (informational; no hard dependency).
@@ -55,8 +56,9 @@ class MonteCarloEvaluationProviderPlugin(Plugin):
         name: str = "monte_carlo_evaluation",
         *,
         config: Optional[MonteCarloEvaluationConfig] = None,
+        priority: int = 10,
     ) -> None:
-        super().__init__(name=str(name))
+        super().__init__(name=str(name), priority=int(priority))
         self.cfg = config or MonteCarloEvaluationConfig()
         self._rng = np.random.default_rng(self.cfg.random_seed)
         self._provider = None
@@ -194,6 +196,7 @@ class MonteCarloEvaluationProviderPlugin(Plugin):
         class _Provider:
             name = owner.name
             semantic_mode = "equivalent"
+            priority = int(getattr(owner, "priority", 0) or 0)
 
             def can_handle_individual(self, solver, x, context):
                 _ = solver
