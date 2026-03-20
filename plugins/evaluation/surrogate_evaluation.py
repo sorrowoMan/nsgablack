@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
+from .provider_plugin_base import EvaluationProviderPluginBase
 from ...utils.extension_contracts import (
     ContractError,
     normalize_candidate,
@@ -42,7 +43,7 @@ class SurrogateEvaluationConfig:
     random_seed: Optional[int] = 0
 
 
-class SurrogateEvaluationProviderPlugin:
+class SurrogateEvaluationProviderPlugin(EvaluationProviderPluginBase):
     """Surrogate L4 provider factory."""
 
     is_algorithmic = False
@@ -72,7 +73,9 @@ class SurrogateEvaluationProviderPlugin:
         online_training: bool = True,
         parallel_evaluator: Any = None,
         parallel_kwargs: Optional[Dict[str, Any]] = None,
+        priority: int = 70,
     ) -> None:
+        super().__init__(name=str(name), priority=int(priority))
         self.name = str(name)
         self.cfg = config or SurrogateEvaluationConfig()
         self.model_type = str(model_type)
@@ -189,6 +192,7 @@ class SurrogateEvaluationProviderPlugin:
         class _Provider:
             name = owner.name
             semantic_mode = "approximate"
+            priority = int(getattr(owner, "priority", 0) or 0)
 
             def can_handle_individual(self, solver, x, context):
                 _ = solver

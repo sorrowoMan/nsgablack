@@ -48,6 +48,40 @@ class EvaluationMediator:
     def __init__(self, config: Optional[EvaluationMediatorConfig] = None) -> None:
         self.config = config or EvaluationMediatorConfig()
         self._providers: list[EvaluationProvider] = []
+        self._approximate_blocked: set[str] = set()
+
+    def _warn_approximate_blocked(self, provider: EvaluationProvider) -> None:
+        name = str(getattr(provider, "name", provider.__class__.__name__))
+        if name in self._approximate_blocked:
+            return
+        self._approximate_blocked.add(name)
+        import warnings
+
+        warnings.warn(
+            (
+                f"Approximate evaluation provider '{name}' is registered but "
+                "EvaluationMediatorConfig.allow_approximate=False, so it will not be used."
+            ),
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    @staticmethod
+    def _provider_priority(provider: EvaluationProvider) -> int:
+        try:
+            return int(getattr(provider, "priority", 0) or 0)
+        except Exception:
+            return 0
+
+    def _select_provider(self, candidates: list[EvaluationProvider]) -> EvaluationProvider:
+        if not candidates:
+            raise ValueError("no evaluation provider candidates to select from")
+        max_priority = max(self._provider_priority(p) for p in candidates)
+        top = [p for p in candidates if self._provider_priority(p) == max_priority]
+        if len(top) > 1 and bool(self.config.strict_conflict):
+            names = ", ".join(str(getattr(x, "name", x.__class__.__name__)) for x in top)
+            raise RuntimeError(f"Multiple evaluation providers share top priority={max_priority}: {names}")
+        return top[0]
 
     def register_provider(self, provider: EvaluationProvider) -> None:
         name = str(getattr(provider, "name", provider.__class__.__name__))
@@ -57,6 +91,23 @@ class EvaluationMediator:
         if mode not in {"exact", "equivalent", "approximate"}:
             raise ValueError(f"Evaluation provider '{name}' has invalid semantic_mode='{mode}'")
         self._providers.append(provider)
+
+    def unregister_provider(self, provider: Any) -> None:
+        if provider is None:
+            return
+        if isinstance(provider, str):
+            name = str(provider)
+            self._providers = [
+                p for p in self._providers if str(getattr(p, "name", p.__class__.__name__)) != name
+            ]
+            return
+        if provider in self._providers:
+            self._providers.remove(provider)
+            return
+        name = str(getattr(provider, "name", provider.__class__.__name__))
+        self._providers = [
+            p for p in self._providers if str(getattr(p, "name", p.__class__.__name__)) != name
+        ]
 
     def list_providers(self) -> Tuple[EvaluationProvider, ...]:
         return tuple(self._providers)
@@ -85,13 +136,22 @@ class EvaluationMediator:
         if not candidates:
             return fallback()
 
-        if len(candidates) > 1 and bool(self.config.strict_conflict):
-            names = ", ".join(str(getattr(x, "name", x.__class__.__name__)) for x in candidates)
-            raise RuntimeError(f"Multiple evaluation providers can handle individual: {names}")
+        if not bool(self.config.allow_approximate):
+            filtered = []
+            for p in candidates:
+                mode = str(getattr(p, "semantic_mode", "approximate")).strip().lower()
+                if mode == "approximate":
+                    self._warn_approximate_blocked(p)
+                    continue
+                filtered.append(p)
+            candidates = filtered
+            if not candidates:
+                return fallback()
 
-        chosen = candidates[0]
+        chosen = self._select_provider(candidates)
         mode = str(getattr(chosen, "semantic_mode", "approximate")).strip().lower()
         if mode == "approximate" and not bool(self.config.allow_approximate):
+            self._warn_approximate_blocked(chosen)
             return fallback()
 
         eval_fn = getattr(chosen, "evaluate_individual", None)
@@ -122,13 +182,22 @@ class EvaluationMediator:
         if not candidates:
             return fallback()
 
-        if len(candidates) > 1 and bool(self.config.strict_conflict):
-            names = ", ".join(str(getattr(x, "name", x.__class__.__name__)) for x in candidates)
-            raise RuntimeError(f"Multiple evaluation providers can handle population: {names}")
+        if not bool(self.config.allow_approximate):
+            filtered = []
+            for p in candidates:
+                mode = str(getattr(p, "semantic_mode", "approximate")).strip().lower()
+                if mode == "approximate":
+                    self._warn_approximate_blocked(p)
+                    continue
+                filtered.append(p)
+            candidates = filtered
+            if not candidates:
+                return fallback()
 
-        chosen = candidates[0]
+        chosen = self._select_provider(candidates)
         mode = str(getattr(chosen, "semantic_mode", "approximate")).strip().lower()
         if mode == "approximate" and not bool(self.config.allow_approximate):
+            self._warn_approximate_blocked(chosen)
             return fallback()
 
         out = chosen.evaluate_population(solver, population, ctx)

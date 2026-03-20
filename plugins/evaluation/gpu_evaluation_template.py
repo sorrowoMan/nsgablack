@@ -7,6 +7,7 @@ import numpy as np
 
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
 from ...utils.context.context_keys import KEY_METRICS
+from .provider_plugin_base import EvaluationProviderPluginBase
 
 
 @dataclass
@@ -19,7 +20,7 @@ class GpuEvaluationTemplateConfig:
     warn_on_fallback: bool = True
 
 
-class GpuEvaluationTemplateProviderPlugin:
+class GpuEvaluationTemplateProviderPlugin(EvaluationProviderPluginBase):
     """GPU L4 provider factory (semantic equivalent)."""
 
     context_requires = ("problem",)
@@ -38,6 +39,7 @@ class GpuEvaluationTemplateProviderPlugin:
         config: Optional[GpuEvaluationTemplateConfig] = None,
         priority: int = 80,
     ) -> None:
+        super().__init__(name=str(name), priority=int(priority))
         self.name = str(name)
         self.priority = int(priority)
         self.cfg = config or GpuEvaluationTemplateConfig()
@@ -143,6 +145,7 @@ class GpuEvaluationTemplateProviderPlugin:
         class _Provider:
             name = owner.name
             semantic_mode = "equivalent"
+            priority = int(getattr(owner, "priority", 0) or 0)
 
             def can_handle_individual(self, solver, x, context):
                 _ = context

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Sequence
 import inspect
 import numpy as np
-
+from nsgablack.catalog import CatalogEntry
 from ..core.base import DomainBias, OptimizationContext
 
 
@@ -109,3 +109,13 @@ class CallableBias(DomainBias):
             return float(value)
         except Exception:
             return 0.0
+CATALOG_ENTRIES = [
+    CatalogEntry(
+        key="bias.callable",
+        title="CallableBias",
+        kind="bias",
+        import_path="nsgablack.bias.domain.callable_bias:CallableBias",
+        tags=("bias", "domain", "callable"),
+        summary="Domain bias wrapper for user callables.",
+    )
+]

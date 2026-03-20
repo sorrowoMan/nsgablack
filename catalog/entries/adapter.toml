@@ -1,12 +1,12 @@
 # Auto-generated from catalog/entries.toml
-# kind=adapter count=7
+
 [[entry]]
 key = "adapter.role"
 title = "RoleAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.role_adapters:RoleAdapter"
 tags = ["adapter", "composition", "core", "roles", "strategy"]
-summary = "瑙掕壊閫傞厤鍣細闄勫姞瑙掕壊鍏冩暟鎹笌閰嶉锛岀敤浜庡垎宸ュ崗鍚屻€?/ Adapter: role wrapper with metadata and candidate quotas for cooperation."
+summary = "角色包装器：元数据与候选配额协作。 / Adapter: role wrapper with metadata and candidate quotas for cooperation."
 
 [[entry]]
 key = "adapter.multi_role_controller"
@@ -14,7 +14,7 @@ title = "MultiRoleControllerAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.role_adapters:MultiRoleControllerAdapter"
 tags = ["adapter", "composition", "controller", "core", "roles", "strategy"]
-summary = "澶氳鑹叉帶鍒跺櫒锛氬叡浜笂涓嬫枃涓庨绠楀垎閰嶏紝缁熶竴璋冨害鍚勮鑹层€?/ Adapter: multi-role controller with shared context and budget scheduling."
+summary = "多角色控制器：共享上下文与预算调度。 / Adapter: multi-role controller with shared context and budget scheduling."
 
 [[entry]]
 key = "adapter.composite"
@@ -22,7 +22,7 @@ title = "CompositeAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.algorithm_adapter:CompositeAdapter"
 tags = ["adapter", "composition", "core", "strategy"]
-summary = "缁勫悎閫傞厤鍣細鍚堝苟澶氫釜閫傞厤鍣ㄥ€欓€夛紝骞跺鐞嗗啿绐併€?/ Adapter: composite adapter merging proposals and resolving conflicts."
+summary = "组合适配器：合并提案并处理冲突。 / Adapter: composite adapter merging proposals and resolving conflicts."
 
 [[entry]]
 key = "adapter.astar"
@@ -30,7 +30,7 @@ title = "AStarAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.astar:AStarAdapter"
 tags = ["adapter", "astar", "core", "graph", "heuristic", "pathfinding", "strategy"]
-summary = "A*鎼滅储鍐呮牳锛氬彲閰嶇疆閭诲眳銆佸惎鍙戝紡涓庣洰鏍囧垽瀹氥€?/ Adapter: A* core with pluggable neighbors/heuristic/goal."
+summary = "A*搜索内核：可配置邻居/启发式/目标判定。 / Adapter: A* core with pluggable neighbors/heuristic/goal."
 
 [[entry]]
 key = "adapter.moa_star"
@@ -38,7 +38,7 @@ title = "MOAStarAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.moa_star:MOAStarAdapter"
 tags = ["adapter", "astar", "core", "graph", "heuristic", "multiobjective", "pareto", "strategy"]
-summary = "澶氱洰鏍嘇*锛歅areto鏍囩涓庢敮閰嶅壀鏋濓紝闈㈠悜澶氱洰鏍囪矾寰勩€?/ Adapter: MOA* with Pareto labels and dominance pruning."
+summary = "多目标A*：Pareto标签与支配剪枝。 / Adapter: MOA* with Pareto labels and dominance pruning."
 
 [[entry]]
 key = "adapter.async_event_driven"
@@ -46,18 +46,44 @@ title = "AsyncEventDrivenAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.async_event_driven:AsyncEventDrivenAdapter"
 tags = ["adapter", "async", "context", "controller", "event", "multi_strategy", "orchestration"]
-summary = "寮傛浜嬩欢椹卞姩鎺у埗鍣細浠ヤ簨浠堕槦鍒楃紪鎺?propose/update銆?/ Adapter: event-queue orchestration for propose/update."
-companions = ["plugin.async_event_hub", "plugin.pareto_archive"]
-context_requires = ["generation"]
-context_provides = ["event_queue", "event_inflight", "event_archive", "event_history", "event_shared"]
-context_mutates = ["event_queue", "event_inflight", "event_archive", "event_history", "event_shared"]
-context_cache = ["event_history", "event_inflight"]
-context_notes = ["Queue-based controller; strategy-level updates are driven by completion events."]
-use_when = ["[\"闇€瑕佸紓姝ユ椂搴忚涔夛紙浜嬩欢娴侊級鑰岄潪浠ｉ檯鍚屾鏃?, \"甯屾湜澶氱瓥鐣ュ崗鍚屼笖淇濇寔鍙璁′簨浠跺巻鍙叉椂\"]"]
-minimal_wiring = ["from nsgablack.adapters import AsyncEventDrivenAdapter, AsyncEventDrivenConfig, EventStrategySpec", "solver.set_adapter(AsyncEventDrivenAdapter(strategies=[...], config=AsyncEventDrivenConfig()))"]
+summary = "事件队列编排：驱动 propose/update。 / Adapter: event-queue orchestration for propose/update."
+use_when = [
+  "需要异步时序语义（事件流）而非代级同步时。 / Need async temporal semantics (event stream) instead of generation-level sync.",
+  "需要多策略协同且可审计事件历史时。 / Need multi-strategy coordination with auditable event history.",
+]
+minimal_wiring = [
+  "from nsgablack.adapters import AsyncEventDrivenAdapter, AsyncEventDrivenConfig, EventStrategySpec",
+  "solver.set_adapter(AsyncEventDrivenAdapter(strategies=[...], config=AsyncEventDrivenConfig()))",
+]
 required_companions = ["plugin.async_event_hub (recommended)", "plugin.pareto_archive (recommended)"]
-config_keys = ["total_batch_size", "target_queue_size", "bootstrap_events_per_strategy", "max_queue_size", "refill_events_per_completion"]
+config_keys = [
+  "total_batch_size",
+  "target_queue_size",
+  "bootstrap_events_per_strategy",
+  "max_queue_size",
+  "refill_events_per_completion",
+]
+companions = ["plugin.async_event_hub", "plugin.pareto_archive"]
 example_entry = "examples/async_event_driven_demo.py:build_solver"
+context_requires = ["generation"]
+context_provides = [
+  "event_queue",
+  "event_inflight",
+  "event_archive",
+  "event_history",
+  "event_shared",
+]
+context_mutates = [
+  "event_queue",
+  "event_inflight",
+  "event_archive",
+  "event_history",
+  "event_shared",
+]
+context_cache = ["event_history", "event_inflight"]
+context_notes = [
+  "Queue-based controller; strategy-level updates are driven by completion events.",
+]
 
 [[entry]]
 key = "adapter.single_trajectory_adaptive"
@@ -65,27 +91,297 @@ title = "SingleTrajectoryAdaptiveAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.single_trajectory_adaptive:SingleTrajectoryAdaptiveAdapter"
 tags = ["adapter", "adaptive", "local_search", "single_trajectory", "strategy"]
-summary = "鍗曡建杩硅嚜閫傚簲鎼滅储锛氫竴鏉¤建杩瑰湪绾胯皟鑺傞偦鍩熷昂搴︺€?/ Adapter: single-trajectory search with online neighborhood adaptation."
+summary = "单轨迹搜索：在线邻域自适应。 / Adapter: single-trajectory search with online neighborhood adaptation."
+use_when = [
+  "需要比种群方法更轻量的单轨迹搜索时。 / Need a lighter single-trajectory search than population-based methods.",
+  "需要快速迭代并自动调整局部步长时。 / Need fast iteration with automatic local step-size adjustment.",
+]
+minimal_wiring = [
+  "from nsgablack.adapters import SingleTrajectoryAdaptiveAdapter, SingleTrajectoryAdaptiveConfig",
+  "solver.set_adapter(SingleTrajectoryAdaptiveAdapter(SingleTrajectoryAdaptiveConfig()))",
+]
+required_companions = ["repr.context_gaussian (recommended)"]
+config_keys = [
+  "batch_size",
+  "initial_sigma",
+  "target_success_rate",
+  "restart_patience",
+  "accept_worse_prob",
+]
 companions = ["repr.context_gaussian"]
+example_entry = "examples/single_trajectory_adaptive_demo.py:build_solver"
 context_requires = ["generation"]
 context_provides = ["single_traj_state", "single_traj_sigma"]
 context_mutates = ["single_traj_state", "single_traj_sigma"]
-context_notes = ["Maintains one active trajectory; adapts mutation_sigma from success rate."]
-use_when = ["[\"闇€瑕佹瘮绉嶇兢娉曟洿杞婚噺鐨勫崟杞ㄨ抗鎼滅储鏃?, \"甯屾湜蹇€熻凯浠ｅ苟鑷姩璋冭妭灞€閮ㄦ闀挎椂\"]"]
-minimal_wiring = ["from nsgablack.adapters import SingleTrajectoryAdaptiveAdapter, SingleTrajectoryAdaptiveConfig", "solver.set_adapter(SingleTrajectoryAdaptiveAdapter(SingleTrajectoryAdaptiveConfig()))"]
-required_companions = ["repr.context_gaussian (recommended)"]
-config_keys = ["batch_size", "initial_sigma", "target_success_rate", "restart_patience", "accept_worse_prob"]
-example_entry = "examples/single_trajectory_adaptive_demo.py:build_solver"
+context_notes = [
+  "Maintains one active trajectory; adapts mutation_sigma from success rate.",
+]
+
+[[entry]]
+key = "adapter.de"
+title = "DifferentialEvolutionAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:DifferentialEvolutionAdapter"
+tags = ["adapter", "core", "de", "differential_evolution", "evolutionary", "strategy"]
+summary = "差分进化：贪婪替换策略。 / Adapter: Differential Evolution with greedy replacement."
+use_when = ["连续变量优化且希望简单稳定的差分变异时", "需要快速基线而非复杂控制逻辑时"]
+minimal_wiring = ["from nsgablack.adapters import DifferentialEvolutionAdapter", "solver.set_adapter(DifferentialEvolutionAdapter())"]
+config_keys = [
+  "batch_size",
+  "f",
+  "cr",
+  "strategy",
+  "seed",
+]
+example_entry = "examples/template_continuous_constrained.py:build_solver"
+
+[[entry]]
+key = "adapter.gradient_descent"
+title = "GradientDescentAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:GradientDescentAdapter"
+tags = ["adapter", "core", "gradient", "gradient_descent", "local_search", "strategy"]
+summary = "有限差分梯度下降：局部精修。 / Adapter: finite-difference gradient descent local refinement."
+use_when = ["需要在候选附近做快速局部下降精修时", "可以接受有限差分带来的额外评估开销时"]
+minimal_wiring = ["from nsgablack.adapters import GradientDescentAdapter", "solver.set_adapter(GradientDescentAdapter())"]
+config_keys = [
+  "batch_size",
+  "learning_rate",
+  "gradient_eps",
+  "max_inner_steps",
+]
+example_entry = "examples/template_continuous_constrained.py:build_solver"
+
+[[entry]]
+key = "adapter.mas"
+title = "MASAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:MASAdapter"
+tags = ["adapter", "core", "local_search", "mas", "strategy", "surrogate"]
+summary = "Model-and-Search：交替建模与搜索。 / Adapter: model-and-search alternating model update + search."
+use_when = ["希望在线更新轻量模型并引导局部搜索时", "评估昂贵，想优先在模型建议区域探索时"]
+minimal_wiring = ["from nsgablack.adapters import MASAdapter", "solver.set_adapter(MASAdapter())"]
+config_keys = [
+  "batch_size",
+  "exploration_ratio",
+  "enable_surrogate",
+  "surrogate_model_type",
+  "surrogate_min_train_samples",
+  "surrogate_max_train_samples",
+  "surrogate_retrain_every_call",
+  "random_seed",
+]
+example_entry = "examples/mas_demo.py:build_solver"
+
+[[entry]]
+key = "adapter.moead"
+title = "MOEADAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:MOEADAdapter"
+tags = ["adapter", "core", "decomposition", "moead", "multiobjective", "strategy"]
+summary = "MOEA/D分解内核：权重向量与邻域替换。 / Adapter: MOEA/D decomposition core with weight vectors and neighborhood replacement."
+use_when = ["多目标问题希望用分解子问题并行推进时", "需要稳定的邻域协同更新而非全局排序时"]
+minimal_wiring = ["from nsgablack.adapters import MOEADAdapter", "solver.set_adapter(MOEADAdapter())"]
+required_companions = ["plugin.pareto_archive"]
+config_keys = [
+  "n_subproblems",
+  "neighbor_size",
+  "decomposition",
+  "seed",
+]
+companions = ["plugin.pareto_archive"]
+example_entry = "examples/moead_demo.py:build_solver"
 
 [[entry]]
 key = "adapter.multi_strategy"
-title = "MultiStrategyControllerAdapter"
+title = "StrategyRouterAdapter"
 kind = "adapter"
-import_path = "nsgablack.adapters.multi_strategy:MultiStrategyControllerAdapter"
-tags = ["adapter", "controller", "multi_strategy", "orchestration", "strategy"]
-summary = "Adapter: multi-strategy controller for composing multiple strategy units in one optimization loop."
-use_when = ["Need to orchestrate multiple strategy units with shared state and adaptive weighting."]
-minimal_wiring = ["from nsgablack.adapters.multi_strategy import MultiStrategyControllerAdapter", "solver.set_adapter(MultiStrategyControllerAdapter(strategies=[...]))"]
-required_companions = ["plugin.pareto_archive (recommended)", "plugin.decision_trace (recommended)"]
-config_keys = ["phase", "strategy_weights", "selection_policy", "update_interval"]
-example_entry = "examples/cases/production_scheduling/working_integrated_optimizer.py:build_solver"
+import_path = "nsgablack.adapters:StrategyRouterAdapter"
+tags = ["adapter", "controller", "cooperation", "core", "multi_strategy", "parallel", "roles", "strategy"]
+summary = "多策略控制器：在单一优化回路编排多策略单元。 / Adapter: multi-strategy controller for composing multiple strategy units in one optimization loop."
+use_when = ["需要编排多策略单元并共享状态时", "需要支持自适应权重的协同控制时"]
+minimal_wiring = ["from nsgablack.adapters import StrategyRouterAdapter", "solver.set_adapter(StrategyRouterAdapter(...))"]
+required_companions = ["plugin.pareto_archive"]
+config_keys = [
+  "roles",
+  "total_batch_size",
+  "phase_schedule",
+  "seed",
+]
+companions = ["plugin.pareto_archive"]
+example_entry = "examples/dynamic_multi_strategy_demo.py:build_solver"
+
+[[entry]]
+key = "adapter.nsga2"
+title = "NSGA2Adapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:NSGA2Adapter"
+tags = ["adapter", "core", "evolutionary", "multiobjective", "nsga2", "strategy"]
+summary = "NSGA-II：非支配排序与拥挤度选择。 / Adapter: NSGA-II with non-dominated sorting and crowding selection."
+use_when = ["标准多目标演化基线，需要稳健 Pareto 前沿维护时", "希望在收敛与多样性之间取得平衡时"]
+minimal_wiring = ["from nsgablack.adapters import NSGA2Adapter", "solver.set_adapter(NSGA2Adapter())"]
+config_keys = [
+  "batch_size",
+  "crossover_rate",
+  "mutation_rate",
+]
+example_entry = "examples/nsga2_solver_demo.py:build_solver"
+
+[[entry]]
+key = "adapter.nsga3"
+title = "NSGA3Adapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:NSGA3Adapter"
+tags = ["adapter", "core", "evolutionary", "multiobjective", "nsga3", "strategy"]
+summary = "NSGA-III：参考点分区/分配机制。 / Adapter: NSGA-III with reference-point niching."
+use_when = ["高维多目标（>=3 目标）需要参考点引导覆盖时", "希望提升前沿分布均匀性时"]
+minimal_wiring = ["from nsgablack.adapters import NSGA3Adapter", "solver.set_adapter(NSGA3Adapter())"]
+config_keys = [
+  "batch_size",
+  "n_reference_points",
+  "crossover_rate",
+  "mutation_rate",
+]
+example_entry = "examples/template_multiobjective_pareto.py:build_solver"
+
+[[entry]]
+key = "adapter.pattern_search"
+title = "PatternSearchAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:PatternSearchAdapter"
+tags = ["adapter", "core", "local_search", "pattern_search", "strategy"]
+summary = "坐标模式搜索：自适应步长。 / Adapter: coordinate pattern search with adaptive step size."
+use_when = ["目标不可导或噪声较大，梯度不可用时", "需要轻量坐标方向搜索作为局部改进器时"]
+minimal_wiring = ["from nsgablack.adapters import PatternSearchAdapter", "solver.set_adapter(PatternSearchAdapter())"]
+config_keys = [
+  "batch_size",
+  "initial_step",
+  "expand_factor",
+  "shrink_factor",
+]
+example_entry = "examples/template_continuous_constrained.py:build_solver"
+
+[[entry]]
+key = "adapter.sa"
+title = "SimulatedAnnealingAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:SimulatedAnnealingAdapter"
+tags = ["adapter", "core", "local_search", "sa", "simulated_annealing", "strategy"]
+summary = "模拟退火内核：温度调度与 Metropolis 接受。 / Adapter: SA core with temperature schedule and Metropolis acceptance."
+use_when = ["需要允许小概率接受劣解以跳出局部最优时", "希望通过温度控制探索-收敛节奏时"]
+minimal_wiring = ["from nsgablack.adapters import SimulatedAnnealingAdapter", "solver.set_adapter(SimulatedAnnealingAdapter())"]
+required_companions = ["repr.context_gaussian"]
+config_keys = [
+  "batch_size",
+  "initial_temperature",
+  "cooling_rate",
+  "min_temperature",
+]
+companions = ["repr.context_gaussian"]
+example_entry = "examples/trust_region_subspace_frontier_demo.py:build_solver"
+
+[[entry]]
+key = "adapter.spea2"
+title = "SPEA2Adapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:SPEA2Adapter"
+tags = ["adapter", "core", "evolutionary", "multiobjective", "spea2", "strategy"]
+summary = "SPEA2：强度/密度适应度。 / Adapter: SPEA2 with strength and density fitness."
+use_when = ["需要精英保留 + 强度密度联合选择时", "希望作为 NSGA 系列的对照方法时"]
+minimal_wiring = ["from nsgablack.adapters import SPEA2Adapter", "solver.set_adapter(SPEA2Adapter())"]
+config_keys = [
+  "batch_size",
+  "archive_size",
+  "k_neighbor",
+]
+example_entry = "examples/template_multiobjective_pareto.py:build_solver"
+
+[[entry]]
+key = "adapter.trust_region_dfo"
+title = "TrustRegionDFOAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:TrustRegionDFOAdapter"
+tags = ["adapter", "core", "dfo", "local_search", "strategy", "trust_region"]
+summary = "信赖域无梯度局部搜索。 / Adapter: trust-region derivative-free local search."
+use_when = ["目标不可导且需要稳定局部改进时", "希望在受控半径内做无梯度精修时"]
+minimal_wiring = ["from nsgablack.adapters import TrustRegionDFOAdapter", "solver.set_adapter(TrustRegionDFOAdapter())"]
+config_keys = [
+  "batch_size",
+  "initial_radius",
+  "min_radius",
+  "max_radius",
+]
+example_entry = "examples/trust_region_dfo_demo.py:build_solver"
+
+[[entry]]
+key = "adapter.trust_region_mo_dfo"
+title = "TrustRegionMODFOAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:TrustRegionMODFOAdapter"
+tags = ["adapter", "core", "dfo", "multiobjective", "strategy", "trust_region"]
+summary = "多目标信赖域DFO：标量化融合。 / Adapter: MO trust-region DFO with scalarization."
+use_when = ["多目标问题需要局部信赖域精修并保持 Pareto 导向时", "希望把多目标优化与局部 DFO 结合时"]
+minimal_wiring = ["from nsgablack.adapters import TrustRegionMODFOAdapter", "solver.set_adapter(TrustRegionMODFOAdapter())"]
+required_companions = ["plugin.pareto_archive"]
+config_keys = [
+  "batch_size",
+  "initial_radius",
+  "scalarization",
+  "weights",
+]
+example_entry = "examples/trust_region_mo_dfo_demo.py:build_solver"
+
+[[entry]]
+key = "adapter.trust_region_nonsmooth"
+title = "TrustRegionNonSmoothAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:TrustRegionNonSmoothAdapter"
+tags = ["adapter", "core", "local_search", "nonsmooth", "strategy", "trust_region"]
+summary = "非光滑信赖域：支持 Linf 聚合。 / Adapter: non-smooth trust-region with Linf aggregation."
+use_when = ["目标非光滑或带 max/Linf 类聚合项时", "需要比纯随机局部扰动更稳的非光滑精修时"]
+minimal_wiring = ["from nsgablack.adapters import TrustRegionNonSmoothAdapter", "solver.set_adapter(TrustRegionNonSmoothAdapter())"]
+config_keys = [
+  "batch_size",
+  "initial_radius",
+  "min_radius",
+  "aggregation",
+]
+example_entry = "examples/trust_region_nonsmooth_demo.py:build_solver"
+
+[[entry]]
+key = "adapter.trust_region_subspace"
+title = "TrustRegionSubspaceAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:TrustRegionSubspaceAdapter"
+tags = ["adapter", "core", "dfo", "strategy", "subspace", "trust_region"]
+summary = "子空间/低秩信赖域搜索：面向高维。 / Adapter: subspace/low-rank trust-region search for high-D."
+use_when = ["高维变量空间需要降维后再做局部精修时", "希望把评估预算聚焦到主导子空间时"]
+minimal_wiring = ["from nsgablack.adapters import TrustRegionSubspaceAdapter", "solver.set_adapter(TrustRegionSubspaceAdapter())"]
+config_keys = [
+  "batch_size",
+  "subspace_dim",
+  "basis_method",
+  "min_samples",
+  "initial_radius",
+  "resample_every",
+]
+example_entry = "examples/trust_region_subspace_demo.py:build_solver"
+
+[[entry]]
+key = "adapter.vns"
+title = "VNSAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:VNSAdapter"
+tags = ["adapter", "core", "local_search", "refinement", "stage", "strategy", "vns"]
+summary = "VNS局部搜索内核：多邻域精修。 / Adapter: VNS local search core with multi-neighborhood refinement."
+use_when = ["需要以局部精修为主，并可逐步扩大/切换邻域时", "希望用少量评估预算做稳定改进时"]
+minimal_wiring = ["from nsgablack.adapters import VNSAdapter", "solver.set_adapter(VNSAdapter())"]
+required_companions = ["repr.context_gaussian"]
+config_keys = [
+  "batch_size",
+  "sigma",
+  "k_max",
+  "n_iter",
+]
+companions = ["repr.context_gaussian", "repr.context_switch"]
+example_entry = "examples/trust_region_subspace_frontier_demo.py:build_solver"

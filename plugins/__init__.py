@@ -35,7 +35,15 @@ from .evaluation.gpu_evaluation_template import (
     GpuEvaluationTemplateProviderPlugin,
 )
 from .evaluation.evaluation_model import EvaluationModelProviderPlugin, EvaluationModelConfig
-from .solver_backends.backend_contract import BackendSolveRequest, BackendSolver
+from .solver_backends.backend_contract import (
+    BackendCapabilities,
+    BackendSolveRequest,
+    BackendSolver,
+    CallbackSpec,
+    DiagnosticSpec,
+    SolutionPoolSpec,
+    WarmStartSpec,
+)
 from .solver_backends.ngspice_backend import NgspiceBackend, NgspiceBackendConfig
 from .solver_backends.copt_backend import CoptBackend, CoptBackendConfig
 from .solver_backends.contract_bridge import ContractBridgePlugin, BridgeRule
@@ -77,6 +85,11 @@ __all__ = [
     'EvaluationModelConfig',
     'BackendSolveRequest',
     'BackendSolver',
+    'BackendCapabilities',
+    'WarmStartSpec',
+    'SolutionPoolSpec',
+    'CallbackSpec',
+    'DiagnosticSpec',
     'NgspiceBackend',
     'NgspiceBackendConfig',
     'CoptBackend',

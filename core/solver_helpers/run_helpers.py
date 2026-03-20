@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Dict, Optional
+
+from ...utils.engineering.error_policy import report_soft_error
+
+logger = logging.getLogger(__name__)
 
 
 def apply_runtime_control_slot(solver: Any, *, slot: str) -> None:
@@ -19,9 +24,18 @@ def apply_runtime_control_slot(solver: Any, *, slot: str) -> None:
             context = {}
     try:
         resolved = runtime_controller.resolve(solver, slot=str(slot), context=context)
-    except Exception:
+    except Exception as exc:
         if bool(getattr(solver, "plugin_strict", False)):
             raise
+        report_soft_error(
+            component="ControlPlane",
+            event=f"runtime_control_slot.{slot}",
+            exc=exc,
+            logger=logger,
+            context_store=getattr(solver, "context_store", None),
+            strict=False,
+            level="warning",
+        )
         return
     stopping = resolved.get("stopping") if isinstance(resolved, dict) else None
     payload = dict(getattr(stopping, "payload", {}) or {}) if stopping is not None else {}
@@ -40,6 +54,13 @@ def run_solver_loop(solver: Any, *, max_steps: Optional[int] = None) -> Dict[str
     solver.start_time = time.time()
 
     solver.plugin_manager.on_solver_init(solver)
+    governance_init = getattr(solver, "_runtime_governance_on_solver_init", None)
+    if callable(governance_init):
+        try:
+            governance_init()
+        except Exception:
+            if bool(getattr(solver, "plugin_strict", False)):
+                raise
     solver.setup()
 
     resume_loaded = bool(getattr(solver, "_resume_loaded", False))
@@ -67,10 +88,17 @@ def run_solver_loop(solver: Any, *, max_steps: Optional[int] = None) -> Dict[str
             apply_pending_order()
         apply_runtime_control_slot(solver, slot="gen_start")
         solver.plugin_manager.on_generation_start(solver.generation)
+        solver.step()
         # Keep on_step semantics consistent even when subclasses override step().
         solver.plugin_manager.on_step(solver, solver.generation)
-        solver.step()
         solver.plugin_manager.on_generation_end(solver.generation)
+        governance_gen_end = getattr(solver, "_runtime_governance_on_generation_end", None)
+        if callable(governance_gen_end):
+            try:
+                governance_gen_end(int(solver.generation))
+            except Exception:
+                if bool(getattr(solver, "plugin_strict", False)):
+                    raise
         apply_runtime_control_slot(solver, slot="gen_end")
         executed_steps += 1
 
@@ -98,6 +126,13 @@ def run_solver_loop(solver: Any, *, max_steps: Optional[int] = None) -> Dict[str
             # Fall back to base result on builder errors.
             pass
     setattr(solver, "last_result", result)
+    governance_finish = getattr(solver, "_runtime_governance_on_solver_finish", None)
+    if callable(governance_finish):
+        try:
+            governance_finish(result)
+        except Exception:
+            if bool(getattr(solver, "plugin_strict", False)):
+                raise
     solver.plugin_manager.on_solver_finish(result)
     solver.running = False
     return result

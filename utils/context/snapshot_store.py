@@ -205,8 +205,23 @@ class RedisSnapshotStore(SnapshotStore):
         self.unsafe_allow_unsigned = bool(unsafe_allow_unsigned)
         self.max_payload_bytes = int(max_payload_bytes)
 
+    def _normalize_key(self, key: str) -> str:
+        text = str(key).strip()
+        if not text:
+            return ""
+        prefix = f"{self._key_prefix}:"
+        if text.startswith(prefix):
+            return text[len(prefix):]
+        prefix_slash = f"{self._key_prefix}/"
+        if text.startswith(prefix_slash):
+            return text[len(prefix_slash):]
+        return text
+
     def _k(self, key: str) -> str:
-        return f"{self._key_prefix}:{str(key)}"
+        norm = self._normalize_key(key)
+        if norm:
+            return f"{self._key_prefix}:{norm}"
+        return f"{self._key_prefix}:"
 
     def _effective_ttl(self, ttl_seconds: Optional[float]) -> Optional[int]:
         if ttl_seconds is not None:

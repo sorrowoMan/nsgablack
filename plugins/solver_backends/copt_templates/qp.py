@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from ..backend_contract import BackendSolveRequest
+from .utils import resolve_template_spec
 
 
 def solve_qp_template(
@@ -33,26 +34,15 @@ def solve_qp_template(
 ) -> Mapping[str, Any]:
     payload = dict(request.payload or {})
     params = dict(template_params or {})
+    if "qp_spec_builder" in params and "spec_builder" not in params:
+        params["spec_builder"] = params.get("qp_spec_builder")
 
-    if "spec" in params:
-        spec_obj = params.get("spec")
-        if not isinstance(spec_obj, Mapping):
-            raise TypeError("qp template params['spec'] must be a mapping")
-        return solve_qp_spec(request, cp, lambda _req: dict(spec_obj))
-
-    local_builder = params.get("qp_spec_builder")
-    if not callable(local_builder):
-        local_builder = payload.get("copt_qp_spec_builder")
-    if not callable(local_builder):
-        local_builder = default_qp_builder
-    if callable(local_builder):
-        return solve_qp_spec(request, cp, local_builder)
-
-    if "c" in params:
-        return solve_qp_spec(request, cp, lambda _req: dict(params))
-
-    raise ValueError(
-        "qp template requires one of: template_params['spec'], "
-        "template_params['qp_spec_builder'], payload['copt_qp_spec_builder'], "
-        "constructor qp_spec_builder, or inline template_params with key 'c'"
+    spec = resolve_template_spec(
+        request,
+        params,
+        payload,
+        default_builder=default_qp_builder,
+        payload_builder_keys=("copt_qp_spec_builder", "copt_spec_builder"),
+        inline_keys=("c", "Q", "A", "rhs", "sense", "lb", "ub", "vtype", "objective_sense", "quadratic_scale"),
     )
+    return solve_qp_spec(request, cp, lambda _req: dict(spec))
