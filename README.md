@@ -2,7 +2,7 @@
 
 为什么复杂优化实验会“悄悄退化”，以及我如何试图让它变得可见。
 
-这是一个 **仍在快速演化中的实验性框架**。
+这是一个  **仍在快速演化中的实验性框架** 。
 
 我分享它是为了讨论思想，而不是作为已完成的产品。
 
@@ -10,9 +10,9 @@
 
 如果你和我一样，做优化项目时最怕的是这些情况：
 
-- 代码能跑，但每次结果都像“玄学”。
-- 想加并行、日志、checkpoint，最后把算法主循环写乱。
-- 改了很多东西，却说不清到底是哪一层带来了变化。
+* 代码能跑，但每次结果都像“玄学”。
+* 想加并行、日志、checkpoint，最后把算法主循环写乱。
+* 改了很多东西，却说不清到底是哪一层带来了变化。
 
 我做 NSGABlack 的目的很直接：
 
@@ -20,77 +20,26 @@
 
 ---
 
-## 你先知道这三件事
+## 核心结构（四层正交）
 
-1. 这不是只比“算法数量”的框架，它更重视“工程可控性”。
-2. 你不用一次学完全部概念，先跑通一个最小闭环就行。
-3. 跑通后再迭代 Adapter、Bias、Plugin，效率会明显提高。
-
----
-
-## 我怎么理解这套架构
-
-### 组件分工
-
-- `Solver`：调度和控制面，只负责“组织流程”。
-- `Adapter`：搜索策略内核，只负责“怎么搜索”。
-- `Pipeline`：初始化、变异、修复，优先承载硬约束。
-- `Bias`：软偏好和倾向，不替代硬约束。
-- `Plugin`：并行、观测、checkpoint、报告等工程能力。
-
-### 三类 Solver 语义（这块最容易绕）
-
-- `SolverBase`（`core/blank_solver.py`）我把它当“控制底座”：生命周期、控制面 API、context/snapshot 通道都在这里。它默认不内置具体优化策略，`step()` 只是留给子类和组件扩展的挂点。
-- `ComposableSolver`（`core/composable_solver.py`）我把它当“step 编排器”：每一步都走统一流程 `propose -> evaluate -> update`。适合要换 adapter、叠插件、做组合策略的场景。
-- `EvolutionSolver`（`core/evolution_solver.py`）
-  我把它当“种群代际求解器”：以 population/generation 为核心节奏。
-  适合进化式启发算法（不只 NSGA-II），保留代际语义和种群运算直觉。
-
-### 数据分层
-
-- `ContextStore`：小字段、运行信号、引用。
-- `SnapshotStore`：population/objectives/violations 等大对象。
-
-### 统一读写入口
-
-- `solver.read_snapshot()`
-- `Plugin.get_population_snapshot()`
-- `Plugin.commit_population_snapshot()`
-
-### 架构与 API 速查（和 `AGENTS.md` 对齐）
-
-如果你要改框架主干，这几条建议直接当“最低契约”：
-
-- **Adapter 最小 API**
-  - `propose(self, solver, context) -> Sequence[np.ndarray]`
-  - `update(self, solver, candidates, objectives, violations, context) -> None`
-- **Plugin 生命周期钩子**
-  - `on_solver_init` / `on_population_init`
-  - `on_generation_start` / `on_step` / `on_generation_end`
-  - `on_solver_finish`
-- **Representation 核心 API**
-  - `init` / `mutate` / `repair` / `encode` / `decode`
-- **Solver 控制面关键 API**
-  - `set_adapter(...)`
-  - `evaluate_individual(...)` / `evaluate_population(...)`
-  - `set_context_store(...)` / `set_snapshot_store(...)`
-  - `write_population_snapshot(...)` / `read_snapshot(...)`
-
-标准一代主流程：
-
-`adapter.propose -> representation -> evaluate_population/evaluate_individual -> adapter.update -> plugin hooks`
-
-判定一条改动是否合格，我一般看三件事：
-
-1. 有没有破坏四层边界（Solver / Adapter / Representation / Plugin）。
-2. 大对象是否仍通过 snapshot 流转，而不是直接塞 context。
-3. 插件短路评估时，返回 shape 是否与输入 candidate 数量严格对齐。
+- **Solver**：控制平面与生命周期（调度、评估入口、状态管理）
+- **Adapter**：算法策略平面（`propose/update`）
+- **Representation**：表示平面（init/mutate/repair/encode/decode）
+- **Plugin**：能力平面（日志、评估短路、checkpoint、审计）
 
 ---
 
-## 2 分钟跑通
+## 关键能力
 
-先不要想“最优解”，先拿到一次可控运行。
+- 多目标优化与多策略编排（NSGA2/3、SPEA2、MOEA/D、VNS、SA、DE 等）
+- L4 评估路径与代理评估接入（surrogate/approximate）
+- Context/Snapshot 分层存储与可回放
+- Catalog 可发现性索引与双口径统计（`default` / `framework-core`）
+- 标准化脚手架与工程治理（Project Doctor / Run Inspector）
+
+---
+
+## 2 分钟起步
 
 ```powershell
 python -m pip install -U pip
@@ -101,87 +50,35 @@ python -m nsgablack project doctor --path . --build --strict
 python build_solver.py
 ```
 
-我建议你跑完后立刻检查：
+---
 
-1. `build_solver.py` 能否稳定实例化 solver。
-2. `doctor --build --strict` 是否没有 error。
-3. 能否完整跑完一轮并拿到可读输出。
+## 目录结构
+
+- `core/`：求解器主干与运行语义
+- `adapters/`：算法策略层
+- `representation/`：表示与算子管线
+- `plugins/`：工程能力层
+- `bias/`：偏置系统（软引导）
+- `catalog/`：组件索引与筛选规则
+- `project/`：脚手架与工程治理
+- `examples/`：案例与演示
+- `tests/`：回归测试
 
 ---
 
-## 按这条顺序迭代
-
-这是我自己长期验证过最稳的顺序：
-
-1. 先定 `Problem`（定义你到底在优化什么）。
-2. 再定 `Pipeline`（先保证可行解链路）。
-3. 再挂 `Adapter`（先单策略跑通）。
-4. 再加 `Bias`（做可解释偏好）。
-5. 最后加 `Plugin`（工程能力外置）。
-
-这个顺序的价值是：你每轮都能清楚归因，不会“多处同时变更导致不可解释”。
-
----
-
-## 我强烈建议你守住的三条规则
-
-1. 组件状态写入统一走 `solver.*` 控制面。
-2. 不要直接写 `solver.population/objectives/constraint_violations/...`。
-3. 大对象不进 context，context 只存小字段和 refs。
-
----
-
-## 三条主线（你可以拿它当日常检查表）
-
-### 工作流
-
-`Problem -> Pipeline -> Adapter -> Bias -> Plugin -> Run -> Doctor/Test`
-
-### 数据流
-
-- 大对象走 snapshot
-- 小字段走 context
-- 访问统一走标准接口
-
-### 组件流
-
-- Solver 调度
-- Adapter 搜索
-- Pipeline 可行化
-- Bias 偏好
-- Plugin 能力
-
----
-
-## 常用命令（我每天都在用）
-
-```powershell
-python -m nsgablack catalog search vns --profile framework-core
-python -m nsgablack catalog show adapter.multi_strategy --profile framework-core
-python -m nsgablack project doctor --path . --strict --format problem
-python -m pytest -q
-```
-
-### Catalog 双口径（非常重要）
-
-- `default`：完整口径（包含 `example/doc`）。
-- `framework-core`：主干口径（排除 `example/doc` 与 `examples_registry` 导向结果）。
-
-做架构审计、主干盘点、契约重塑时，请显式带：`--profile framework-core`。
-
----
-
-## 文档阅读顺序（按投入产出比）
+## 文档入口
 
 1. `START_HERE.md`
-2. `WORKFLOW_END_TO_END.md`
-3. `docs/architecture/README.md`
-4. `docs/user_guide/RUN_INSPECTOR.md`
-5. `docs/user_guide/DEPTH_BREADTH_WORKFLOW.md`
+2. `QUICKSTART.md`
+3. `WORKFLOW_END_TO_END.md`
+4. `docs/architecture/README.md`
+5. `docs/architecture/COPT_INTEGRATION.md`
 
 ---
 
-## 最后一句
+## Catalog 口径提醒
 
-如果你现在感觉“概念很多”，完全正常。
-你先把最小闭环跑通，我再陪你往下拆到多策略协同、深层嵌套、能力治理那一层。
+- `default`：完整口径（含 example/doc）
+- `framework-core`：主干口径（排除 example/doc）
+
+架构审计与主干盘点请显式带 `--profile framework-core`。

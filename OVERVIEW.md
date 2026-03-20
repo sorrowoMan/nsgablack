@@ -1,35 +1,55 @@
-# NSGABlack Overview
+# OVERVIEW
 
-一句话：`NSGABlack` 不是“再来一个算法库”，而是把优化系统拆成可组合、可诊断、可复现的工程框架。
+## 项目定位
 
-## 你会遇到的问题
-- 结果看起来不错，但很难复现和解释“为什么有效”。
-- 新策略接入后牵一发而动全身，对比口径不一致。
-- 约束、偏好、算法逻辑混在一起，维护成本越来越高。
+NSGABlack 是多目标优化工程框架，目标是把“算法实验”提升为**可分层、可治理、可复现**的工程系统。
 
-## 核心结构
-- `Problem`：目标与约束定义。
-- `SolverBase`：求解器控制面（生命周期、stop/step、plugin hook、context/snapshot）。
-- `ComposableSolver`：通用执行器（由 `Adapter.propose/update` 驱动）。
-- `EvolutionSolver`：官方进化求解器预置（基于 adapter 体系）。
-- `RepresentationPipeline`：初始化/变异/修复（硬约束优先放这里）。
-- `BiasModule`：软偏好与策略偏置。
-- `Plugin`：观测、回放、导出、并行、checkpoint 等运行能力。
-- `Catalog + Suite`：组件可发现与权威装配。
+---
 
-## Context + Snapshot 分层
-- `ContextStore`：小字段、契约字段、组件协作字段。
-- `SnapshotStore`：大对象载体（population/objectives/violations/pareto/history/trace）。
-- `Context` 只放引用（`*_ref` / `snapshot_key`），大对象通过快照读写。
+## 四层正交架构
 
-## 快速入口
-```powershell
-python -m pip install -e .
-python examples/end_to_end_workflow_demo.py
-```
+- **Solver**：生命周期与控制平面  
+- **Adapter**：算法策略与搜索逻辑  
+- **Representation**：候选解表示与算子管线  
+- **Plugin**：工程能力与运行期扩展  
 
-建议阅读顺序：
-- `START_HERE.md`
-- `WORKFLOW_END_TO_END.md`
-- `docs/FEATURES_OVERVIEW.md`
+---
+
+## 运行数据流（标准一代）
+
+`adapter.propose -> representation -> evaluate_population -> adapter.update -> plugin hooks`
+
+---
+
+## 评估链路（L4）
+
+- 支持评估短路与代理评估  
+- 同时支持 `individual` 与 `population` 两条路径  
+- 近似评估默认关闭，可通过 `EvaluationMediatorConfig.allow_approximate=True` 开启  
+
+---
+
+## Context / Snapshot 分层
+
+- **Context**：小字段与引用  
+- **Snapshot**：大对象（population/objectives/violations）  
+
+---
+
+## Catalog 双口径
+
+- `default`：完整口径（含 example/doc）  
+- `framework-core`：主干口径（排除 example/doc）  
+
+架构审计与主干统计使用 `framework-core`。
+
+---
+
+## 适用与边界
+
+适合：  
+多目标优化、混合策略编排、复杂约束、可复现工程流程
+
+不适合：  
+只需单一算法的轻量脚本、一次性实验
 
