@@ -27,6 +27,14 @@ from .nested_solver import (
     InnerSolveResult,
     TaskInnerRuntimeEvaluator,
 )
+from .solver_manager import (
+    PhaseSpec,
+    RegimeSpec,
+    ResourceBudgetError,
+    ResourceOffer,
+    ResourceRequest,
+    SolverManager,
+)
 from ..adapters import AlgorithmAdapter, CompositeAdapter, RoleAdapter, RoleRouterAdapter
 from .interfaces import (
     BiasInterface,
@@ -79,6 +87,12 @@ __all__ = [
     "InnerRuntimeEvaluator",
     "TaskInnerRuntimeEvaluator",
     "InnerRuntimeConfig",
+    "SolverManager",
+    "ResourceOffer",
+    "ResourceRequest",
+    "RegimeSpec",
+    "PhaseSpec",
+    "ResourceBudgetError",
     "OptimizationContext",
     "has_bias_module",
     "has_representation_module",

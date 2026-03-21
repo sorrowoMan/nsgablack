@@ -94,6 +94,7 @@
 - `START_HERE.md`
 - `WORKFLOW_END_TO_END.md`
 - `docs/architecture/COPT_INTEGRATION.md`
+- `docs/architecture/SOLVER_ORCHESTRATION.md`
 
 ---
 
