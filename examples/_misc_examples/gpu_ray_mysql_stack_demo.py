@@ -1,4 +1,4 @@
-"""Integrated demo: GPU evaluation template + Ray distributed + MySQL run logger.
+﻿"""Integrated demo: GPU evaluation template + Ray distributed + MySQL run logger.
 
 This is a minimal wiring example. It demonstrates one stack, not a production recipe:
 - GPU evaluation provider (L4 path when GPU batch interface is available)
