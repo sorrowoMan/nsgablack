@@ -12,7 +12,12 @@ from typing import Any, Dict, Optional
 import json
 
 from ..base import Plugin
-from ...utils.context.context_keys import KEY_BEST_OBJECTIVE, KEY_BEST_X
+from ...utils.context.context_keys import (
+    KEY_BEST_OBJECTIVE,
+    KEY_BEST_X,
+    KEY_CHECKPOINT_LAST_LOADED_PATH,
+    KEY_CHECKPOINT_LATEST_PATH,
+)
 
 
 @dataclass
@@ -32,6 +37,20 @@ class MySQLRunLoggerPlugin(Plugin):
     context_provides = ()
     context_mutates = ()
     context_cache = ()
+    artifact_requires = (
+        "modules_report_json",
+        "bias_report_json",
+        "benchmark_csv",
+        "benchmark_summary_json",
+        KEY_CHECKPOINT_LATEST_PATH,
+        KEY_CHECKPOINT_LAST_LOADED_PATH,
+        "profile_json",
+        "decision_trace_count",
+        "decision_trace_jsonl",
+        "decision_trace_summary",
+        "sequence_graph_json",
+        "otel_tracing",
+    )
     context_notes = (
         "Reads solver/result metadata and writes run record to external MySQL table."
     )
@@ -118,12 +137,17 @@ CREATE TABLE IF NOT EXISTS `{table}` (
         if isinstance(artifacts, dict):
             modules_path = artifacts.get("modules_report_json")
             bias_path = artifacts.get("bias_report_json")
+        tracked_artifacts = self._tracked_artifact_payload(
+            solver,
+            artifacts if isinstance(artifacts, dict) else None,
+        )
 
         payload = {
             "status": result.get("status") if isinstance(result, dict) else None,
             "steps": result.get("steps") if isinstance(result, dict) else None,
             "best_objective": self._get_context_value(solver, KEY_BEST_OBJECTIVE, "best_objective"),
             "best_x": self._get_context_value(solver, KEY_BEST_X, "best_x"),
+            "artifact_paths": tracked_artifacts,
         }
         payload_jsonable = self._to_jsonable(payload)
         result_jsonable = self._to_jsonable(result if isinstance(result, dict) else None)
@@ -164,6 +188,36 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             except Exception:
                 pass
         return None
+
+    def _tracked_artifact_payload(self, solver: Any, artifacts: Dict[str, Any] | None) -> Dict[str, Any]:
+        tracked_keys = (
+            "modules_report_json",
+            "bias_report_json",
+            "benchmark_csv",
+            "benchmark_summary_json",
+            KEY_CHECKPOINT_LATEST_PATH,
+            KEY_CHECKPOINT_LAST_LOADED_PATH,
+            "profile_json",
+            "decision_trace_count",
+            "decision_trace_jsonl",
+            "decision_trace_summary",
+            "sequence_graph_json",
+            "otel_tracing",
+        )
+        payload: Dict[str, Any] = {}
+        for key in tracked_keys:
+            value: Any = None
+            if isinstance(artifacts, dict) and key in artifacts:
+                value = artifacts.get(key)
+            elif key == KEY_CHECKPOINT_LATEST_PATH:
+                value = self._get_context_value(solver, KEY_CHECKPOINT_LATEST_PATH, "latest_checkpoint_path")
+            elif key == KEY_CHECKPOINT_LAST_LOADED_PATH:
+                value = self._get_context_value(solver, KEY_CHECKPOINT_LAST_LOADED_PATH, "last_loaded_path")
+
+            if value is None:
+                continue
+            payload[str(key)] = self._to_jsonable(value)
+        return payload
 
     def _print_latest_summary(self, conn, inserted_id: Any = None) -> None:
         query = (

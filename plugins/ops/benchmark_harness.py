@@ -48,6 +48,8 @@ class BenchmarkHarnessPlugin(Plugin):
     context_provides = ()
     context_mutates = ()
     context_cache = ()
+    artifact_provides = ("benchmark_csv", "benchmark_summary_json")
+    phase_in = ("phase",)
     context_notes = (
         "Collects benchmark metrics and writes run artifacts; "
         "does not depend on fixed context keys."
@@ -188,6 +190,12 @@ class BenchmarkHarnessPlugin(Plugin):
 
         if self._summary_path is not None:
             atomic_write_json(self._summary_path, summary, ensure_ascii=True, indent=2, encoding="utf-8")
+        artifacts = result.setdefault("artifacts", {})
+        if isinstance(artifacts, dict):
+            if self._csv_path is not None:
+                artifacts["benchmark_csv"] = str(self._csv_path)
+            if self._summary_path is not None:
+                artifacts["benchmark_summary_json"] = str(self._summary_path)
 
         self._close_writer()
         return None

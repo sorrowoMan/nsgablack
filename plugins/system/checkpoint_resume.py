@@ -42,6 +42,7 @@ class CheckpointResumePlugin(Plugin):
     context_provides = (KEY_CHECKPOINT_LATEST_PATH, KEY_CHECKPOINT_LAST_LOADED_PATH)
     context_mutates = (KEY_CHECKPOINT_LATEST_PATH,)
     context_cache = (KEY_CHECKPOINT_LATEST_PATH,)
+    artifact_provides = (KEY_CHECKPOINT_LATEST_PATH, KEY_CHECKPOINT_LAST_LOADED_PATH)
     context_notes = (
         "Persists solver/adapters/plugin state as checkpoint files and can resume from latest/path.",
     )

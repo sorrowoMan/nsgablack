@@ -1,0 +1,53 @@
+# Local catalog DB config template for nsgablack.
+#
+# This file is documentation only.
+# The live local config file must be:
+#   catalog/db.toml
+#
+# `catalog/db.toml` is already gitignored and should stay local.
+# Do not commit real passwords into Git.
+#
+# Current implementation supports backend-specific blocks:
+# - [postgres] or [postgresql]
+# - [mysql]
+#
+# Hard rule:
+# - enable only ONE backend block at a time
+# - if both are enabled and no explicit URL is passed, current resolution prefers mysql
+#
+# Source modes:
+# - prefer : use DB when available, otherwise fall back to registry
+# - only   : require DB; unavailable DB becomes an error
+# - off    : ignore DB reads and stay on registry
+
+[postgres]
+enabled = false
+mode = "prefer"
+readonly = false
+
+# Option 1: explicit URL
+# url = "postgresql://postgres:YOUR_PASSWORD@localhost:5432/nsgablack"
+
+# Option 2: structured fields
+host = "localhost"
+port = 5432
+user = "postgres"
+password = ""
+database = "nsgablack"
+connect_timeout = 10
+
+[mysql]
+enabled = false
+mode = "prefer"
+readonly = false
+
+# Option 1: explicit URL
+# url = "mysql://root:YOUR_PASSWORD@127.0.0.1:3306/nsgablack"
+
+# Option 2: structured fields
+host = "127.0.0.1"
+port = 3306
+user = "root"
+password = ""
+database = "nsgablack"
+connect_timeout = 10

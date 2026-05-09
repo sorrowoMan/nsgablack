@@ -10,6 +10,19 @@ from .config_loader import load_config, merge_dicts, apply_config, ConfigError
 from .experiment import ExperimentResult
 from .logging_config import configure_logging, JsonFormatter
 from .error_policy import report_soft_error
+from .run_contracts import (
+    RUN_SURFACE_CONTRACT_VERSION,
+    ArtifactRecord,
+    AssemblyRecord,
+    RunRecord,
+    SurfaceRecord,
+    make_artifact_record,
+    make_assembly_record,
+    make_run_record,
+    make_surface_record,
+    stable_json_dumps,
+    stable_signature,
+)
 from .schema_version import (
     SCHEMA_VERSIONS,
     SchemaVersionError,
@@ -28,6 +41,17 @@ __all__ = [
     "configure_logging",
     "JsonFormatter",
     "report_soft_error",
+    "RUN_SURFACE_CONTRACT_VERSION",
+    "SurfaceRecord",
+    "AssemblyRecord",
+    "ArtifactRecord",
+    "RunRecord",
+    "make_surface_record",
+    "make_assembly_record",
+    "make_artifact_record",
+    "make_run_record",
+    "stable_json_dumps",
+    "stable_signature",
     "SCHEMA_VERSIONS",
     "SchemaVersionError",
     "expected_schema_version",

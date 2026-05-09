@@ -5,6 +5,7 @@ Backend adapters for numeric solvers and inner-runtime tools:
 - `timeout_budget.py`
 - `ngspice_backend.py`
 - `copt_backend.py`
+- `mlblack_symbolic_consensus_backend.py`
 
 ## CoptBackend templates
 

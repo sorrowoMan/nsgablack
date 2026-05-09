@@ -33,6 +33,8 @@ class ProfilerPlugin(Plugin):
     context_provides = ()
     context_mutates = ()
     context_cache = ()
+    artifact_provides = ("profile_json",)
+    phase_in = ("phase",)
     context_notes = (
         "Profiles runtime/per-generation timings and writes profile artifact."
     )

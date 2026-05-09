@@ -191,6 +191,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
     )
     context_mutates = (KEY_SHARED, KEY_ROLE_REPORTS, KEY_CANDIDATE_ROLES, KEY_CANDIDATE_UNITS, KEY_UNIT_TASKS)
     context_cache = ()
+    phase_out = (KEY_PHASE,)
     context_notes = (
         "Orchestrates multi-strategy/multi-role cooperation and injects strategy task context.",
         "Shared state is updated every step and exposed via runtime context projection.",

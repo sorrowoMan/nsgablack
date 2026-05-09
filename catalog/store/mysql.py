@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlparse
 from pathlib import Path
 
@@ -28,10 +28,45 @@ from ..contracts import (
     ParamContract,
     UsageContract,
 )
+from ..contract_relations import build_contract_neighbor_sections, enrich_entry_relation_fields
+from ..registry import CatalogEntry, _expand_token_groups, _normalize_catalog_profile
 
 
 _MYSQL_CHARSET = "utf8mb4"
 _MYSQL_COLLATION = "utf8mb4_unicode_ci"
+_FIELD_VALUE_LIMIT = 512
+_FRAMEWORK_CORE_EXCLUDED_KINDS = ("example", "doc")
+_FRAMEWORK_CORE_EXCLUDED_IMPORT_PATTERNS = (
+    "%examples/%",
+    "%examples\\%",
+    "%nsgablack.examples_registry%",
+)
+_CONTEXT_FIELD_NAMES = (
+    "context_requires",
+    "context_provides",
+    "context_mutates",
+    "context_cache",
+    "context_notes",
+    "artifact_requires",
+    "artifact_provides",
+    "phase_in",
+    "phase_out",
+)
+_USAGE_FIELD_NAMES = (
+    "use_when",
+    "minimal_wiring",
+    "required_companions",
+    "config_keys",
+    "example_entry",
+)
+_SEARCHABLE_FIELD_NAMES = (
+    "tags",
+    "companions",
+    "module",
+    "symbol",
+    *_CONTEXT_FIELD_NAMES,
+    *_USAGE_FIELD_NAMES,
+)
 
 
 def _apply_connection_charset(conn) -> None:
@@ -54,6 +89,17 @@ def _apply_connection_charset(conn) -> None:
 def _truthy_env(name: str) -> bool:
     value = os.environ.get(name, "").strip().lower()
     return value in {"1", "true", "yes", "on"}
+
+
+def _env_url_uses_mysql(url: str) -> bool:
+    raw = str(url or "").strip()
+    if not raw:
+        return False
+    try:
+        scheme = str(urlparse(raw).scheme or "").strip().lower()
+    except Exception:
+        return False
+    return scheme in {"mysql", "mysql+pymysql", "mysql+mysqlconnector"}
 
 
 def _read_mysql_config_file() -> Dict[str, object]:
@@ -79,7 +125,7 @@ def _read_mysql_config_file() -> Dict[str, object]:
 
 def _resolve_mysql_config() -> tuple[Optional[str], Optional[MySQLCatalogConfig], bool]:
     env_url = os.environ.get("NSGABLACK_CATALOG_DB_URL", "").strip()
-    if env_url:
+    if _env_url_uses_mysql(env_url):
         return env_url, parse_mysql_url(env_url), _truthy_env("NSGABLACK_CATALOG_DB_READONLY")
 
     cfg_data = _read_mysql_config_file()
@@ -109,7 +155,7 @@ def _resolve_mysql_config() -> tuple[Optional[str], Optional[MySQLCatalogConfig]
 
 def mysql_config_enabled() -> bool:
     env_url = os.environ.get("NSGABLACK_CATALOG_DB_URL", "").strip()
-    if env_url:
+    if _env_url_uses_mysql(env_url):
         return True
     cfg_data = _read_mysql_config_file()
     mysql_block = cfg_data.get("mysql") if isinstance(cfg_data, dict) else None
@@ -129,6 +175,145 @@ def mysql_config_mode() -> str:
         if mode in {"only", "prefer", "off", "disabled"}:
             return "off" if mode == "disabled" else mode
     return "prefer"
+
+
+def mysql_config_info() -> Dict[str, object]:
+    env_url = os.environ.get("NSGABLACK_CATALOG_DB_URL", "").strip()
+    env_cfg = os.environ.get("NSGABLACK_CATALOG_DB_CONFIG", "").strip()
+    data = _read_mysql_config_file()
+    mysql_block = data.get("mysql") if isinstance(data, dict) else None
+    if not isinstance(mysql_block, dict):
+        mysql_block = {}
+    return {
+        "enabled": mysql_config_enabled(),
+        "mode": mysql_config_mode(),
+        "config_env": env_cfg or None,
+        "explicit_url_env": _env_url_uses_mysql(env_url),
+        "readonly": bool(mysql_block.get("readonly", False)) or _truthy_env("NSGABLACK_CATALOG_DB_READONLY"),
+    }
+
+
+def _normalize_strings(values: object) -> Tuple[str, ...]:
+    if values is None:
+        return ()
+    if isinstance(values, str):
+        text = values.strip()
+        return (text,) if text else ()
+    if isinstance(values, Mapping):
+        out: List[str] = []
+        for key in values.keys():
+            text = str(key).strip()
+            if text:
+                out.append(text)
+        return tuple(out)
+    if isinstance(values, (list, tuple, set, frozenset)):
+        out: List[str] = []
+        for item in values:
+            out.extend(_normalize_strings(item))
+        return tuple(out)
+    text = str(values).strip()
+    return (text,) if text else ()
+
+
+def _normalize_field_filters(
+    field_filters: Mapping[str, object] | Sequence[tuple[str, object]] | None,
+) -> Dict[str, Tuple[str, ...]]:
+    if not field_filters:
+        return {}
+    items = field_filters.items() if isinstance(field_filters, Mapping) else field_filters
+    out: Dict[str, Tuple[str, ...]] = {}
+    for name, value in items:
+        key = str(name or "").strip()
+        if not key:
+            continue
+        values = tuple(item for item in _normalize_strings(value) if item)
+        if values:
+            out[key] = values
+    return out
+
+
+def _trim_field_value(value: object) -> str:
+    text = str(value or "").strip()
+    if len(text) <= _FIELD_VALUE_LIMIT:
+        return text
+    return text[: _FIELD_VALUE_LIMIT]
+
+
+def _entry_uses_examples_path(text: object) -> bool:
+    raw = str(text or "").lower()
+    return "examples/" in raw or "examples\\" in raw or "nsgablack.examples_registry" in raw
+
+
+def _apply_profile_to_entry(entry: CatalogEntry, *, profile: str) -> CatalogEntry | None:
+    profile_key = _normalize_catalog_profile(profile)
+    if profile_key != "framework-core":
+        return entry
+    if entry.kind in _FRAMEWORK_CORE_EXCLUDED_KINDS:
+        return None
+    if _entry_uses_examples_path(entry.import_path):
+        return None
+    if _entry_uses_examples_path(entry.example_entry):
+        entry = CatalogEntry(
+            key=entry.key,
+            title=entry.title,
+            kind=entry.kind,
+            import_path=entry.import_path,
+            tags=entry.tags,
+            summary=entry.summary,
+            companions=entry.companions,
+            context_requires=entry.context_requires,
+            context_provides=entry.context_provides,
+            context_mutates=entry.context_mutates,
+            context_cache=entry.context_cache,
+            context_notes=entry.context_notes,
+            use_when=entry.use_when,
+            minimal_wiring=entry.minimal_wiring,
+            required_companions=entry.required_companions,
+            config_keys=entry.config_keys,
+            example_entry="",
+            detail_ref=entry.detail_ref,
+        )
+    return entry
+
+
+def _profile_sql_filters(profile: str) -> tuple[str, List[object]]:
+    profile_key = _normalize_catalog_profile(profile)
+    if profile_key != "framework-core":
+        return "", []
+    clauses = [
+        "c.kind NOT IN (%s, %s)",
+        "LOWER(c.import_path) NOT LIKE %s",
+        "LOWER(c.import_path) NOT LIKE %s",
+        "LOWER(c.import_path) NOT LIKE %s",
+    ]
+    params: List[object] = [
+        _FRAMEWORK_CORE_EXCLUDED_KINDS[0],
+        _FRAMEWORK_CORE_EXCLUDED_KINDS[1],
+        *_FRAMEWORK_CORE_EXCLUDED_IMPORT_PATTERNS,
+    ]
+    return " AND ".join(clauses), params
+
+
+def _like_pattern(token: str) -> str:
+    return f"%{str(token or '').strip().lower()}%"
+
+
+def _catalog_kind_rank(kind: str) -> int:
+    order = {
+        "adapter": 0,
+        "plugin": 1,
+        "bias": 2,
+        "representation": 3,
+        "suite": 4,
+        "tool": 5,
+        "doc": 6,
+        "example": 7,
+    }
+    return int(order.get(str(kind or "").strip().lower(), 99))
+
+
+def _sort_catalog_entries(entries: Sequence[CatalogEntry]) -> List[CatalogEntry]:
+    return sorted(entries, key=lambda entry: (_catalog_kind_rank(entry.kind), entry.key))
 
 
 @dataclass(frozen=True)
@@ -212,6 +397,8 @@ def _connect_mysql(cfg: MySQLCatalogConfig):
 
 
 class MySQLCatalogStore:
+    backend = "mysql"
+
     def __init__(self, url: Optional[str] = None, *, readonly: Optional[bool] = None) -> None:
         cfg: Optional[MySQLCatalogConfig] = None
         resolved_url: Optional[str] = None
@@ -240,6 +427,7 @@ class MySQLCatalogStore:
 
     def _ensure_schema(self, conn) -> None:
         self._apply_migrations(conn)
+        self._ensure_field_value_index(conn)
 
     def _apply_migrations(self, conn) -> None:
         cur = conn.cursor()
@@ -297,7 +485,11 @@ CREATE TABLE IF NOT EXISTS catalog_context_contract (
   provides_json TEXT,
   mutates_json TEXT,
   cache_json TEXT,
-  notes_json TEXT
+  notes_json TEXT,
+  artifact_requires_json TEXT,
+  artifact_provides_json TEXT,
+  phase_in_json TEXT,
+  phase_out_json TEXT
 )
 """,
                     """
@@ -421,6 +613,33 @@ CREATE TABLE IF NOT EXISTS catalog_api_doc (
                     "ALTER TABLE catalog_api_doc CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
                 ),
             ),
+            (
+                7,
+                (
+                    f"""
+CREATE TABLE IF NOT EXISTS catalog_field_value (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  component_id INT NOT NULL,
+  field_scope VARCHAR(32) NOT NULL,
+  field_name VARCHAR(128) NOT NULL,
+  field_value VARCHAR(512) NOT NULL,
+  field_value_norm VARCHAR(512) NOT NULL,
+  KEY idx_catalog_field_component (component_id),
+  KEY idx_catalog_field_name (field_name),
+  KEY idx_catalog_field_name_norm (field_name, field_value_norm)
+) CHARACTER SET {_MYSQL_CHARSET} COLLATE {_MYSQL_COLLATION}
+""",
+                ),
+            ),
+            (
+                8,
+                (
+                    "ALTER TABLE catalog_context_contract ADD COLUMN artifact_requires_json TEXT",
+                    "ALTER TABLE catalog_context_contract ADD COLUMN artifact_provides_json TEXT",
+                    "ALTER TABLE catalog_context_contract ADD COLUMN phase_in_json TEXT",
+                    "ALTER TABLE catalog_context_contract ADD COLUMN phase_out_json TEXT",
+                ),
+            ),
         ]
 
         for version, statements in migrations:
@@ -435,7 +654,149 @@ CREATE TABLE IF NOT EXISTS catalog_api_doc (
             conn.commit()
         cur.close()
 
-    def sync_bundle(self, bundle: CatalogBundle) -> None:
+    def _ensure_field_value_index(self, conn) -> None:
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT COUNT(*) FROM catalog_field_value")
+            row = cur.fetchone()
+            field_value_count = int((row.get("COUNT(*)") if isinstance(row, dict) else row[0]) or 0) if row else 0
+            if field_value_count > 0:
+                return
+            cur.execute("SELECT COUNT(*) FROM catalog_component")
+            component_row = cur.fetchone()
+            component_count = int((component_row.get("COUNT(*)") if isinstance(component_row, dict) else component_row[0]) or 0) if component_row else 0
+            if component_count <= 0:
+                return
+        finally:
+            cur.close()
+
+        cur = conn.cursor()
+        cur.execute(
+            """
+SELECT c.id, c.`key`, c.kind, c.title, c.import_path, c.summary, c.tags, c.companions_json,
+       ctx.requires_json AS context_requires, ctx.provides_json AS context_provides,
+       ctx.mutates_json AS context_mutates, ctx.cache_json AS context_cache, ctx.notes_json AS context_notes,
+       ctx.artifact_requires_json AS artifact_requires, ctx.artifact_provides_json AS artifact_provides,
+       ctx.phase_in_json AS phase_in, ctx.phase_out_json AS phase_out,
+       usage_tbl.use_when_json, usage_tbl.minimal_wiring_json, usage_tbl.required_companions_json,
+       usage_tbl.config_keys_json, usage_tbl.example_entry
+FROM catalog_component AS c
+LEFT JOIN catalog_context_contract AS ctx ON c.id = ctx.component_id
+LEFT JOIN catalog_usage_contract AS usage_tbl ON c.id = usage_tbl.component_id
+"""
+        )
+        rows = cur.fetchall() or []
+        cur.close()
+
+        insert_rows: List[Tuple[int, str, str, str, str]] = []
+
+        def add_rows(component_id: int, field_scope: str, field_name: str, values: object) -> None:
+            seen: set[str] = set()
+            for raw_value in _normalize_strings(values):
+                value = _trim_field_value(raw_value)
+                if not value:
+                    continue
+                norm = value.lower()
+                key = f"{field_scope}|{field_name}|{norm}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                insert_rows.append((component_id, field_scope, field_name, value, norm))
+
+        for row in rows:
+            if isinstance(row, dict):
+                rec = row
+            else:
+                (
+                    component_id,
+                    key,
+                    kind_value,
+                    title,
+                    import_path,
+                    summary,
+                    tags_json,
+                    companions_json,
+                    req_json,
+                    prov_json,
+                    mut_json,
+                    cache_json,
+                    notes_json,
+                    artifact_requires_json,
+                    artifact_provides_json,
+                    phase_in_json,
+                    phase_out_json,
+                    use_when_json,
+                    wiring_json,
+                    required_companions_json,
+                    config_keys_json,
+                    example_entry,
+                ) = row
+                rec = {
+                    "id": component_id,
+                    "key": key,
+                    "kind": kind_value,
+                    "title": title,
+                    "import_path": import_path,
+                    "summary": summary,
+                    "tags": tags_json,
+                    "companions": companions_json,
+                    "context_requires": req_json,
+                    "context_provides": prov_json,
+                    "context_mutates": mut_json,
+                    "context_cache": cache_json,
+                    "context_notes": notes_json,
+                    "artifact_requires": artifact_requires_json,
+                    "artifact_provides": artifact_provides_json,
+                    "phase_in": phase_in_json,
+                    "phase_out": phase_out_json,
+                    "use_when": use_when_json,
+                    "minimal_wiring": wiring_json,
+                    "required_companions": required_companions_json,
+                    "config_keys": config_keys_json,
+                    "example_entry": example_entry,
+                }
+            component_id = int(rec.get("id", 0) or 0)
+            import_path = str(rec.get("import_path", "") or "").strip()
+            add_rows(component_id, "base", "key", rec.get("key"))
+            add_rows(component_id, "base", "title", rec.get("title"))
+            add_rows(component_id, "base", "name", rec.get("title"))
+            add_rows(component_id, "base", "kind", rec.get("kind"))
+            add_rows(component_id, "base", "import_path", import_path)
+            add_rows(component_id, "base", "module", import_path.partition(":")[0].strip())
+            add_rows(component_id, "base", "symbol", import_path.partition(":")[2].strip())
+            add_rows(component_id, "base", "summary", rec.get("summary"))
+            add_rows(component_id, "base", "tags", self._load_json_tuple(rec.get("tags")))
+            add_rows(component_id, "base", "companions", self._load_json_tuple(rec.get("companions")))
+            add_rows(component_id, "context", "context_requires", self._load_json_tuple(rec.get("context_requires")))
+            add_rows(component_id, "context", "context_provides", self._load_json_tuple(rec.get("context_provides")))
+            add_rows(component_id, "context", "context_mutates", self._load_json_tuple(rec.get("context_mutates")))
+            add_rows(component_id, "context", "context_cache", self._load_json_tuple(rec.get("context_cache")))
+            add_rows(component_id, "context", "context_notes", self._load_json_tuple(rec.get("context_notes")))
+            add_rows(component_id, "context", "artifact_requires", self._load_json_tuple(rec.get("artifact_requires")))
+            add_rows(component_id, "context", "artifact_provides", self._load_json_tuple(rec.get("artifact_provides")))
+            add_rows(component_id, "context", "phase_in", self._load_json_tuple(rec.get("phase_in")))
+            add_rows(component_id, "context", "phase_out", self._load_json_tuple(rec.get("phase_out")))
+            add_rows(component_id, "usage", "use_when", self._load_json_tuple(rec.get("use_when")))
+            add_rows(component_id, "usage", "minimal_wiring", self._load_json_tuple(rec.get("minimal_wiring")))
+            add_rows(component_id, "usage", "required_companions", self._load_json_tuple(rec.get("required_companions")))
+            add_rows(component_id, "usage", "config_keys", self._load_json_tuple(rec.get("config_keys")))
+            add_rows(component_id, "usage", "example_entry", rec.get("example_entry"))
+
+        if not insert_rows:
+            return
+        cur = conn.cursor()
+        cur.executemany(
+            """
+INSERT INTO catalog_field_value
+(component_id, field_scope, field_name, field_value, field_value_norm)
+VALUES (%s, %s, %s, %s, %s)
+""",
+            insert_rows,
+        )
+        conn.commit()
+        cur.close()
+
+    def sync_bundle(self, bundle: CatalogBundle, *, profile: str = "default") -> None:
         if self._readonly:
             raise RuntimeError("Catalog store is read-only (NSGABLACK_CATALOG_DB_READONLY=1).")
 
@@ -445,6 +806,7 @@ CREATE TABLE IF NOT EXISTS catalog_api_doc (
             component_ids = self._upsert_components(conn, bundle.components)
             self._upsert_contexts(conn, component_ids, bundle.contexts)
             self._upsert_usages(conn, component_ids, bundle.usages)
+            self._replace_field_values(conn, component_ids, bundle.components, bundle.contexts, bundle.usages)
             self._replace_params(conn, component_ids, bundle.params)
             self._replace_methods(conn, component_ids, bundle.methods)
             self._upsert_health(conn, component_ids, bundle.health)
@@ -541,14 +903,18 @@ ON DUPLICATE KEY UPDATE
             cur.execute(
                 """
 INSERT INTO catalog_context_contract
-(component_id, requires_json, provides_json, mutates_json, cache_json, notes_json)
-VALUES (%s, %s, %s, %s, %s, %s)
+(component_id, requires_json, provides_json, mutates_json, cache_json, notes_json, artifact_requires_json, artifact_provides_json, phase_in_json, phase_out_json)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON DUPLICATE KEY UPDATE
   requires_json=VALUES(requires_json),
   provides_json=VALUES(provides_json),
   mutates_json=VALUES(mutates_json),
   cache_json=VALUES(cache_json),
-  notes_json=VALUES(notes_json)
+  notes_json=VALUES(notes_json),
+  artifact_requires_json=VALUES(artifact_requires_json),
+  artifact_provides_json=VALUES(artifact_provides_json),
+  phase_in_json=VALUES(phase_in_json),
+  phase_out_json=VALUES(phase_out_json)
 """,
                 (
                     cid,
@@ -557,6 +923,10 @@ ON DUPLICATE KEY UPDATE
                     json.dumps(list(ctx.mutates), ensure_ascii=False),
                     json.dumps(list(ctx.cache), ensure_ascii=False),
                     json.dumps(list(ctx.notes), ensure_ascii=False),
+                    json.dumps(list(ctx.artifact_requires), ensure_ascii=False),
+                    json.dumps(list(ctx.artifact_provides), ensure_ascii=False),
+                    json.dumps(list(ctx.phase_in), ensure_ascii=False),
+                    json.dumps(list(ctx.phase_out), ensure_ascii=False),
                 ),
             )
         cur.close()
@@ -592,6 +962,85 @@ ON DUPLICATE KEY UPDATE
                     json.dumps(list(usage.config_keys), ensure_ascii=False),
                     usage.example_entry,
                 ),
+            )
+        cur.close()
+
+    def _replace_field_values(
+        self,
+        conn,
+        component_ids: Dict[str, int],
+        components: Sequence[CatalogComponentContract],
+        contexts: Sequence[ContextContract],
+        usages: Sequence[UsageContract],
+    ) -> None:
+        cur = conn.cursor()
+        ids = tuple(component_ids.values())
+        if ids:
+            fmt = ", ".join(["%s"] * len(ids))
+            cur.execute(f"DELETE FROM catalog_field_value WHERE component_id IN ({fmt})", ids)
+
+        context_by_key = {ctx.component_key: ctx for ctx in contexts}
+        usage_by_key = {usage.component_key: usage for usage in usages}
+        rows: List[Tuple[int, str, str, str, str]] = []
+
+        def add_values(component_id: int, field_scope: str, field_name: str, values: object) -> None:
+            seen: set[str] = set()
+            for raw_value in _normalize_strings(values):
+                value = _trim_field_value(raw_value)
+                if not value:
+                    continue
+                norm = value.lower()
+                key = f"{field_scope}|{field_name}|{norm}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                rows.append((component_id, field_scope, field_name, value, norm))
+
+        for component in components:
+            component_id = component_ids.get(component.key)
+            if component_id is None:
+                continue
+            module_name = str(component.import_path.partition(":")[0] or "").strip()
+            symbol_name = str(component.import_path.partition(":")[2] or "").strip()
+            add_values(component_id, "base", "key", component.key)
+            add_values(component_id, "base", "title", component.title)
+            add_values(component_id, "base", "name", component.title)
+            add_values(component_id, "base", "kind", component.kind)
+            add_values(component_id, "base", "import_path", component.import_path)
+            add_values(component_id, "base", "module", module_name)
+            add_values(component_id, "base", "symbol", symbol_name)
+            add_values(component_id, "base", "tags", component.tags)
+            add_values(component_id, "base", "companions", component.companions)
+            add_values(component_id, "base", "summary", component.summary)
+
+            context = context_by_key.get(component.key)
+            if context is not None:
+                add_values(component_id, "context", "context_requires", context.requires)
+                add_values(component_id, "context", "context_provides", context.provides)
+                add_values(component_id, "context", "context_mutates", context.mutates)
+                add_values(component_id, "context", "context_cache", context.cache)
+                add_values(component_id, "context", "context_notes", context.notes)
+                add_values(component_id, "context", "artifact_requires", context.artifact_requires)
+                add_values(component_id, "context", "artifact_provides", context.artifact_provides)
+                add_values(component_id, "context", "phase_in", context.phase_in)
+                add_values(component_id, "context", "phase_out", context.phase_out)
+
+            usage = usage_by_key.get(component.key)
+            if usage is not None:
+                add_values(component_id, "usage", "use_when", usage.use_when)
+                add_values(component_id, "usage", "minimal_wiring", usage.minimal_wiring)
+                add_values(component_id, "usage", "required_companions", usage.required_companions)
+                add_values(component_id, "usage", "config_keys", usage.config_keys)
+                add_values(component_id, "usage", "example_entry", usage.example_entry)
+
+        if rows:
+            cur.executemany(
+                """
+INSERT INTO catalog_field_value
+(component_id, field_scope, field_name, field_value, field_value_norm)
+VALUES (%s, %s, %s, %s, %s)
+""",
+                rows,
             )
         cur.close()
 
@@ -695,110 +1144,500 @@ ON DUPLICATE KEY UPDATE
             )
         cur.close()
 
-    def load_entries(self) -> List[Dict[str, object]]:
-        conn = _connect_mysql(self._cfg)
-        try:
-            self._ensure_schema(conn)
-            cur = conn.cursor()
-            cur.execute(
-                """
+    def _load_json_tuple(self, value: object) -> Tuple[str, ...]:
+        if not value:
+            return ()
+        if isinstance(value, (list, tuple)):
+            return tuple(str(item).strip() for item in value if str(item).strip())
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    return tuple(str(item).strip() for item in parsed if str(item).strip())
+            except Exception:
+                pass
+            text = value.strip()
+            return (text,) if text else ()
+        return ()
+
+    def _catalog_entry_from_record(self, rec: Mapping[str, object], *, profile: str) -> CatalogEntry | None:
+        entry = CatalogEntry(
+            key=str(rec.get("key", "") or "").strip(),
+            title=str(rec.get("title", "") or "").strip(),
+            kind=str(rec.get("kind", "") or "").strip().lower(),
+            import_path=str(rec.get("import_path", "") or "").strip(),
+            tags=self._load_json_tuple(rec.get("tags")),
+            summary=str(rec.get("summary", "") or "").strip(),
+            companions=self._load_json_tuple(rec.get("companions")),
+            context_requires=self._load_json_tuple(rec.get("context_requires")),
+            context_provides=self._load_json_tuple(rec.get("context_provides")),
+            context_mutates=self._load_json_tuple(rec.get("context_mutates")),
+            context_cache=self._load_json_tuple(rec.get("context_cache")),
+            context_notes=self._load_json_tuple(rec.get("context_notes")),
+            artifact_requires=self._load_json_tuple(rec.get("artifact_requires")),
+            artifact_provides=self._load_json_tuple(rec.get("artifact_provides")),
+            phase_in=self._load_json_tuple(rec.get("phase_in")),
+            phase_out=self._load_json_tuple(rec.get("phase_out")),
+            use_when=self._load_json_tuple(rec.get("use_when")),
+            minimal_wiring=self._load_json_tuple(rec.get("minimal_wiring")),
+            required_companions=self._load_json_tuple(rec.get("required_companions")),
+            config_keys=self._load_json_tuple(rec.get("config_keys")),
+            example_entry=str(rec.get("example_entry", "") or "").strip(),
+        )
+        if not entry.key or not entry.kind or not entry.import_path:
+            return None
+        return _apply_profile_to_entry(enrich_entry_relation_fields(entry), profile=profile)
+
+    def _catalog_row_records(
+        self,
+        conn,
+        *,
+        profile: str,
+        kind: str | None = None,
+        tags: Sequence[str] | None = None,
+        field_filters: Mapping[str, object] | Sequence[tuple[str, object]] | None = None,
+        query: str = "",
+        search_field: str = "all",
+    ) -> List[Mapping[str, object]]:
+        filters = _normalize_field_filters(field_filters)
+        normalized_kind = str(kind or "").strip().lower()
+        normalized_field = str(search_field or "all").strip().lower()
+        if normalized_field not in {"all", "name", "tag", "context", "usage"}:
+            normalized_field = "all"
+
+        clauses = ["1=1"]
+        params: List[object] = []
+        profile_clause, profile_params = _profile_sql_filters(profile)
+        if profile_clause:
+            clauses.append(profile_clause)
+            params.extend(profile_params)
+        if normalized_kind:
+            clauses.append("c.kind = %s")
+            params.append(normalized_kind)
+
+        for tag in _normalize_strings(tags):
+            clauses.append(
+                "EXISTS (SELECT 1 FROM catalog_field_value fv_tag "
+                "WHERE fv_tag.component_id = c.id AND fv_tag.field_name = %s AND fv_tag.field_value_norm = %s)"
+            )
+            params.extend(["tags", str(tag).strip().lower()])
+
+        for field_name, values in filters.items():
+            if not values:
+                continue
+            placeholders = ", ".join(["%s"] * len(values))
+            clauses.append(
+                "EXISTS (SELECT 1 FROM catalog_field_value fv_filter "
+                "WHERE fv_filter.component_id = c.id AND fv_filter.field_name = %s "
+                f"AND fv_filter.field_value_norm IN ({placeholders}))"
+            )
+            params.append(str(field_name))
+            params.extend(str(value).strip().lower() for value in values)
+
+        raw_query = str(query or "").strip().lower()
+        tokens = [token for token in raw_query.split() if token]
+        for token_group in _expand_token_groups(tokens):
+            alias_clauses: List[str] = []
+            for alias in token_group:
+                pattern = _like_pattern(alias)
+                if normalized_field == "name":
+                    alias_clauses.append("(LOWER(c.`key`) LIKE %s OR LOWER(c.title) LIKE %s)")
+                    params.extend([pattern, pattern])
+                elif normalized_field == "tag":
+                    alias_clauses.append(
+                        "EXISTS (SELECT 1 FROM catalog_field_value fv_search "
+                        "WHERE fv_search.component_id = c.id AND fv_search.field_name = 'tags' "
+                        "AND fv_search.field_value_norm LIKE %s)"
+                    )
+                    params.append(pattern)
+                elif normalized_field == "context":
+                    placeholders = ", ".join(["%s"] * len(_CONTEXT_FIELD_NAMES))
+                    alias_clauses.append(
+                        "EXISTS (SELECT 1 FROM catalog_field_value fv_search "
+                        "WHERE fv_search.component_id = c.id "
+                        f"AND fv_search.field_name IN ({placeholders}) "
+                        "AND fv_search.field_value_norm LIKE %s)"
+                    )
+                    params.extend(list(_CONTEXT_FIELD_NAMES) + [pattern])
+                elif normalized_field == "usage":
+                    placeholders = ", ".join(["%s"] * len(_USAGE_FIELD_NAMES))
+                    alias_clauses.append(
+                        "EXISTS (SELECT 1 FROM catalog_field_value fv_search "
+                        "WHERE fv_search.component_id = c.id "
+                        f"AND fv_search.field_name IN ({placeholders}) "
+                        "AND fv_search.field_value_norm LIKE %s)"
+                    )
+                    params.extend(list(_USAGE_FIELD_NAMES) + [pattern])
+                else:
+                    alias_clauses.append(
+                        "("
+                        "LOWER(c.`key`) LIKE %s OR LOWER(c.title) LIKE %s OR LOWER(c.kind) LIKE %s "
+                        "OR LOWER(c.import_path) LIKE %s OR LOWER(c.summary) LIKE %s "
+                        "OR EXISTS (SELECT 1 FROM catalog_field_value fv_search "
+                        "WHERE fv_search.component_id = c.id AND fv_search.field_name IN ("
+                        + ", ".join(["%s"] * len(_SEARCHABLE_FIELD_NAMES))
+                        + ") AND fv_search.field_value_norm LIKE %s)"
+                        ")"
+                    )
+                    params.extend(
+                        [
+                            pattern,
+                            pattern,
+                            pattern,
+                            pattern,
+                            pattern,
+                            *_SEARCHABLE_FIELD_NAMES,
+                            pattern,
+                        ]
+                    )
+            if alias_clauses:
+                clauses.append("(" + " OR ".join(alias_clauses) + ")")
+
+        cur = conn.cursor()
+        cur.execute(
+            """
 SELECT c.id, c.`key`, c.kind, c.title, c.import_path, c.summary, c.tags, c.companions_json,
-       ctx.requires_json, ctx.provides_json, ctx.mutates_json, ctx.cache_json, ctx.notes_json,
+       ctx.requires_json AS context_requires, ctx.provides_json AS context_provides,
+       ctx.mutates_json AS context_mutates, ctx.cache_json AS context_cache, ctx.notes_json AS context_notes,
+       ctx.artifact_requires_json AS artifact_requires, ctx.artifact_provides_json AS artifact_provides,
+       ctx.phase_in_json AS phase_in, ctx.phase_out_json AS phase_out,
        usage_tbl.use_when_json, usage_tbl.minimal_wiring_json, usage_tbl.required_companions_json,
        usage_tbl.config_keys_json, usage_tbl.example_entry
 FROM catalog_component AS c
 LEFT JOIN catalog_context_contract AS ctx ON c.id = ctx.component_id
 LEFT JOIN catalog_usage_contract AS usage_tbl ON c.id = usage_tbl.component_id
-"""
+WHERE """
+            + " AND ".join(clauses),
+            tuple(params),
+        )
+        rows = cur.fetchall() or []
+        cur.close()
+
+        records: List[Mapping[str, object]] = []
+        for row in rows:
+            if isinstance(row, dict):
+                records.append(row)
+                continue
+            (
+                _id,
+                key,
+                kind_value,
+                title,
+                import_path,
+                summary,
+                tags_json,
+                companions_json,
+                req_json,
+                prov_json,
+                mut_json,
+                cache_json,
+                notes_json,
+                artifact_requires_json,
+                artifact_provides_json,
+                phase_in_json,
+                phase_out_json,
+                use_when_json,
+                wiring_json,
+                required_companions_json,
+                config_keys_json,
+                example_entry,
+            ) = row
+            records.append(
+                {
+                    "id": _id,
+                    "key": key,
+                    "kind": kind_value,
+                    "title": title,
+                    "import_path": import_path,
+                    "summary": summary,
+                    "tags": tags_json,
+                    "companions": companions_json,
+                    "context_requires": req_json,
+                    "context_provides": prov_json,
+                    "context_mutates": mut_json,
+                    "context_cache": cache_json,
+                    "context_notes": notes_json,
+                    "artifact_requires": artifact_requires_json,
+                    "artifact_provides": artifact_provides_json,
+                    "phase_in": phase_in_json,
+                    "phase_out": phase_out_json,
+                    "use_when": use_when_json,
+                    "minimal_wiring": wiring_json,
+                    "required_companions": required_companions_json,
+                    "config_keys": config_keys_json,
+                    "example_entry": example_entry,
+                }
             )
-            rows = cur.fetchall() or []
-            out: List[Dict[str, object]] = []
-            for row in rows:
-                if isinstance(row, dict):
-                    rec = row
-                else:
-                    (
-                        _id,
-                        key,
-                        kind,
-                        title,
-                        import_path,
-                        summary,
-                        tags_json,
-                        component_companions_json,
-                        req_json,
-                        prov_json,
-                        mut_json,
-                        cache_json,
-                        notes_json,
-                        use_when_json,
-                        wiring_json,
-                        required_companions_json,
-                        config_keys_json,
-                        example_entry,
-                    ) = row
-                    rec = {
-                        "key": key,
-                        "kind": kind,
-                        "title": title,
-                        "import_path": import_path,
-                        "summary": summary,
-                        "tags": tags_json,
-                        "companions": component_companions_json,
-                        "context_requires": req_json,
-                        "context_provides": prov_json,
-                        "context_mutates": mut_json,
-                        "context_cache": cache_json,
-                        "context_notes": notes_json,
-                        "use_when": use_when_json,
-                        "minimal_wiring": wiring_json,
-                        "required_companions": required_companions_json,
-                        "config_keys": config_keys_json,
-                        "example_entry": example_entry,
-                    }
+        return records
 
-                def _load_json(val: object) -> Tuple[str, ...]:
-                    if not val:
-                        return ()
-                    if isinstance(val, (list, tuple)):
-                        return tuple(str(v) for v in val)
-                    if isinstance(val, str):
-                        try:
-                            parsed = json.loads(val)
-                            if isinstance(parsed, list):
-                                return tuple(str(v) for v in parsed)
-                        except Exception:
-                            pass
-                        return (val,)
-                    return ()
+    def _catalog_entries_from_query(
+        self,
+        conn,
+        *,
+        profile: str,
+        kind: str | None = None,
+        tags: Sequence[str] | None = None,
+        field_filters: Mapping[str, object] | Sequence[tuple[str, object]] | None = None,
+        query: str = "",
+        search_field: str = "all",
+    ) -> List[CatalogEntry]:
+        records = self._catalog_row_records(
+            conn,
+            profile=profile,
+            kind=kind,
+            tags=tags,
+            field_filters=field_filters,
+            query=query,
+            search_field=search_field,
+        )
+        entries: List[CatalogEntry] = []
+        for rec in records:
+            entry = self._catalog_entry_from_record(rec, profile=profile)
+            if entry is not None:
+                entries.append(entry)
+        return _sort_catalog_entries(entries)
 
-                out.append(
-                    {
-                        "key": str(rec.get("key", "")).strip(),
-                        "kind": str(rec.get("kind", "")).strip(),
-                        "title": str(rec.get("title", "")).strip(),
-                        "import_path": str(rec.get("import_path", "")).strip(),
-                        "summary": str(rec.get("summary", "") or "").strip(),
-                        "tags": _load_json(rec.get("tags")),
-                        "context_requires": _load_json(rec.get("context_requires")),
-                        "context_provides": _load_json(rec.get("context_provides")),
-                        "context_mutates": _load_json(rec.get("context_mutates")),
-                        "context_cache": _load_json(rec.get("context_cache")),
-                        "context_notes": _load_json(rec.get("context_notes")),
-                        "use_when": _load_json(rec.get("use_when")),
-                        "minimal_wiring": _load_json(rec.get("minimal_wiring")),
-                        "required_companions": _load_json(rec.get("required_companions")),
-                        "config_keys": _load_json(rec.get("config_keys")),
-                        "example_entry": str(rec.get("example_entry", "") or "").strip(),
-                    }
-                )
-            cur.close()
-            return [e for e in out if e.get("key") and e.get("kind") and e.get("import_path")]
+    def list_catalog_entries(
+        self,
+        *,
+        profile: str = "default",
+        kind: str | None = None,
+        tags: Sequence[str] | None = None,
+        limit: int | None = None,
+        field_filters: Mapping[str, object] | Sequence[tuple[str, object]] | None = None,
+    ) -> List[CatalogEntry]:
+        conn = _connect_mysql(self._cfg)
+        try:
+            self._ensure_schema(conn)
+            entries = self._catalog_entries_from_query(
+                conn,
+                profile=profile,
+                kind=kind,
+                tags=tags,
+                field_filters=field_filters,
+            )
+            if limit is None:
+                return entries
+            return entries[: max(0, int(limit))]
         finally:
             try:
                 conn.close()
             except Exception:
                 pass
+
+    def search_catalog_entries(
+        self,
+        query: str,
+        *,
+        profile: str = "default",
+        kind: str | None = None,
+        tags: Sequence[str] | None = None,
+        field: str = "all",
+        limit: int = 20,
+        field_filters: Mapping[str, object] | Sequence[tuple[str, object]] | None = None,
+    ) -> List[CatalogEntry]:
+        text = str(query or "").strip()
+        if not text:
+            return self.list_catalog_entries(
+                profile=profile,
+                kind=kind,
+                tags=tags,
+                limit=limit,
+                field_filters=field_filters,
+            )
+        conn = _connect_mysql(self._cfg)
+        try:
+            self._ensure_schema(conn)
+            entries = self._catalog_entries_from_query(
+                conn,
+                profile=profile,
+                kind=kind,
+                tags=tags,
+                field_filters=field_filters,
+                query=text,
+                search_field=field,
+            )
+            return entries[: max(0, int(limit))]
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def get_catalog_entry(self, key: str, *, profile: str = "default") -> Optional[CatalogEntry]:
+        normalized_key = str(key or "").strip()
+        if not normalized_key:
+            return None
+        conn = _connect_mysql(self._cfg)
+        try:
+            self._ensure_schema(conn)
+            records = self._catalog_row_records(
+                conn,
+                profile=profile,
+                field_filters={"key": (normalized_key,)},
+            )
+            for rec in records:
+                if str(rec.get("key", "") or "").strip() != normalized_key:
+                    continue
+                return self._catalog_entry_from_record(rec, profile=profile)
+            return None
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def field_values(
+        self,
+        field_name: str,
+        *,
+        profile: str = "default",
+        kind: str | None = None,
+        query: str = "",
+        search_field: str = "all",
+        limit: int = 100,
+        field_filters: Mapping[str, object] | Sequence[tuple[str, object]] | None = None,
+    ) -> List[Dict[str, object]]:
+        target_field = str(field_name or "").strip()
+        if not target_field:
+            return []
+        conn = _connect_mysql(self._cfg)
+        try:
+            self._ensure_schema(conn)
+            entries = self._catalog_entries_from_query(
+                conn,
+                profile=profile,
+                kind=kind,
+                field_filters=field_filters,
+                query=query,
+                search_field=search_field,
+            )
+            counter: Dict[str, int] = {}
+            for entry in entries:
+                values: Tuple[str, ...]
+                if target_field == "key":
+                    values = (entry.key,)
+                elif target_field in {"title", "name"}:
+                    values = (entry.title,)
+                elif target_field == "kind":
+                    values = (entry.kind,)
+                elif target_field == "import_path":
+                    values = (entry.import_path,)
+                elif target_field == "module":
+                    values = (entry.import_path.partition(":")[0].strip(),) if entry.import_path else ()
+                elif target_field == "symbol":
+                    symbol_name = entry.import_path.partition(":")[2].strip()
+                    values = (symbol_name,) if symbol_name else ()
+                elif target_field == "summary":
+                    values = (entry.summary,) if entry.summary else ()
+                else:
+                    values = tuple(getattr(entry, target_field, ()) or ())
+                for value in values:
+                    text = str(value).strip()
+                    if not text:
+                        continue
+                    counter[text] = int(counter.get(text, 0) + 1)
+            rows = sorted(counter.items(), key=lambda item: (-item[1], item[0].lower()))
+            return [{"value": value, "count": count} for value, count in rows[: max(0, int(limit))]]
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def facet_rows(
+        self,
+        *,
+        profile: str = "default",
+        kind: str | None = None,
+        query: str = "",
+        search_field: str = "all",
+        field_filters: Mapping[str, object] | Sequence[tuple[str, object]] | None = None,
+        fields: Sequence[str] | None = None,
+        limit_per_field: int = 25,
+    ) -> Dict[str, List[Dict[str, object]]]:
+        target_fields = tuple(str(field).strip() for field in tuple(fields or ()) if str(field).strip())
+        if not target_fields:
+            return {}
+        payload: Dict[str, List[Dict[str, object]]] = {}
+        for field_name in target_fields:
+            payload[str(field_name)] = self.field_values(
+                field_name,
+                profile=profile,
+                kind=kind,
+                query=query,
+                search_field=search_field,
+                limit=limit_per_field,
+                field_filters=field_filters,
+            )
+        return payload
+
+    def neighbor_payload(self, key: str, *, profile: str = "default") -> Optional[Dict[str, object]]:
+        entry = self.get_catalog_entry(key, profile=profile)
+        if entry is None:
+            return None
+        all_entries = [item for item in self.list_catalog_entries(profile=profile, limit=None) if item.key != entry.key]
+        entry_by_key = {item.key: item for item in all_entries}
+        companion_entries = [entry_by_key[companion_key] for companion_key in entry.companions if companion_key in entry_by_key]
+        companions_by_key = {item.key: item for item in companion_entries}
+        companions = [
+            {
+                "key": item.key,
+                "title": item.title,
+                "kind": item.kind,
+                "summary": item.summary,
+            }
+            for item in companion_entries
+        ]
+        missing_companions = tuple(companion_key for companion_key in entry.companions if companion_key not in companions_by_key)
+        linked_by_entries = [item for item in all_entries if entry.key in tuple(item.companions or ())]
+        linked_by = [
+            {
+                "key": item.key,
+                "title": item.title,
+                "kind": item.kind,
+                "summary": item.summary,
+            }
+            for item in linked_by_entries
+            if item.key != entry.key
+        ]
+        contract_sections = build_contract_neighbor_sections(entry, candidates=all_entries)
+        return {
+            "key": entry.key,
+            "companions": companions,
+            "missing_companions": missing_companions,
+            "linked_by": linked_by,
+            **contract_sections,
+        }
+
+    def load_entries(self) -> List[Dict[str, object]]:
+        entries = self.list_catalog_entries(profile="default", limit=None)
+        return [
+            {
+                "key": entry.key,
+                "kind": entry.kind,
+                "title": entry.title,
+                "import_path": entry.import_path,
+                "summary": entry.summary,
+                "tags": tuple(entry.tags),
+                "companions": tuple(entry.companions),
+                "context_requires": tuple(entry.context_requires),
+                "context_provides": tuple(entry.context_provides),
+                "context_mutates": tuple(entry.context_mutates),
+                "context_cache": tuple(entry.context_cache),
+                "context_notes": tuple(entry.context_notes),
+                "artifact_requires": tuple(getattr(entry, "artifact_requires", ()) or ()),
+                "artifact_provides": tuple(getattr(entry, "artifact_provides", ()) or ()),
+                "phase_in": tuple(getattr(entry, "phase_in", ()) or ()),
+                "phase_out": tuple(getattr(entry, "phase_out", ()) or ()),
+                "use_when": tuple(entry.use_when),
+                "minimal_wiring": tuple(entry.minimal_wiring),
+                "required_companions": tuple(entry.required_companions),
+                "config_keys": tuple(entry.config_keys),
+                "example_entry": str(entry.example_entry or ""),
+            }
+            for entry in entries
+        ]
 
     def sync_api_index(
         self,

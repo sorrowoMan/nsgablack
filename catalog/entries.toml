@@ -3716,3 +3716,22 @@ minimal_wiring = ["from nsgablack.utils.parallel import ParallelEvaluator", "Par
 required_companions = ["(none)"]
 config_keys = ["(none)"]
 example_entry = "python -m nsgablack catalog search parallel_evaluator --kind example"
+
+[[entry]]
+key = "example.phi_bundle_image_search"
+title = "PhiBundleImageSearch"
+kind = "example"
+import_path = "my_project.phi_bundle_image_search.build_solver:build_phi_bundle_image_search_solver"
+tags = ["project", "example", "mlblack", "representation", "phi_bundle", "outer_search"]
+summary = "Standard project scaffold where nsgablack searches PhiBundle representation formula collections and mlblack evaluates generated image representation objects."
+companions = ["adapter.nsga2", "representation.pipeline"]
+context_requires = []
+context_provides = ["phi_bundle_outer_search_records"]
+context_mutates = []
+context_cache = []
+context_notes = ["Outer solver searches formula bundles; inner mlblack proxy owns fitting, source governance, and metrics."]
+use_when = ["Search representation formula collections instead of point-prediction expressions."]
+minimal_wiring = ["python my_project\\phi_bundle_image_search\\run_solver.py --check", "python my_project\\phi_bundle_image_search\\run_solver.py --suite-id digits_phi_outer_v1"]
+required_companions = ["adapter.nsga2", "representation.pipeline"]
+config_keys = ["dataset_key", "max_rows", "pop_size", "generations", "mutation_sigma"]
+example_entry = "python my_project\\phi_bundle_image_search\\run_solver.py --suite-id digits_phi_outer_v1"

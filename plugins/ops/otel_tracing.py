@@ -29,6 +29,7 @@ class OpenTelemetryTracingPlugin(Plugin):
     context_provides = ()
     context_mutates = ()
     context_cache = ()
+    artifact_provides = ("otel_tracing",)
     context_notes = (
         "Emits OpenTelemetry spans for evaluate/adapter/plugin lifecycle to trace performance and failures.",
     )

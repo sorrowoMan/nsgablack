@@ -25,6 +25,10 @@ class ContextContract:
     mutates: Tuple[str, ...]
     cache: Tuple[str, ...]
     notes: Tuple[str, ...]
+    artifact_requires: Tuple[str, ...] = ()
+    artifact_provides: Tuple[str, ...] = ()
+    phase_in: Tuple[str, ...] = ()
+    phase_out: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

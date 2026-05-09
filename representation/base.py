@@ -32,6 +32,10 @@ class RepresentationComponentContract:
     context_provides: ClassVar[tuple] = ()
     context_mutates: ClassVar[tuple] = ()
     context_cache: ClassVar[tuple] = ()
+    artifact_requires: ClassVar[tuple] = ()
+    artifact_provides: ClassVar[tuple] = ()
+    phase_in: ClassVar[tuple] = ()
+    phase_out: ClassVar[tuple] = ()
     context_notes: ClassVar[Optional[str]] = None
 
 
@@ -198,6 +202,10 @@ class RepresentationPipeline:
     context_provides: ClassVar[tuple] = ()
     context_mutates: ClassVar[tuple] = ()
     context_cache: ClassVar[tuple] = ()
+    artifact_requires: ClassVar[tuple] = ()
+    artifact_provides: ClassVar[tuple] = ()
+    phase_in: ClassVar[tuple] = ()
+    phase_out: ClassVar[tuple] = ()
     context_notes: ClassVar[Optional[str]] = None
     encoder: Optional[EncodingPlugin] = None
     repair: Optional[RepairPlugin] = None
@@ -223,6 +231,10 @@ class RepresentationPipeline:
         provides = set(self.context_provides or ())
         mutates = set(self.context_mutates or ())
         cache = set(self.context_cache or ())
+        artifact_requires = set(self.artifact_requires or ())
+        artifact_provides = set(self.artifact_provides or ())
+        phase_in = set(self.phase_in or ())
+        phase_out = set(self.phase_out or ())
         notes: List[str] = [str(self.context_notes).strip()] if self.context_notes else []
 
         try:
@@ -246,6 +258,10 @@ class RepresentationPipeline:
                 provides.update(contract.provides)
                 mutates.update(contract.mutates)
                 cache.update(contract.cache)
+                artifact_requires.update(getattr(contract, "artifact_requires", ()) or ())
+                artifact_provides.update(getattr(contract, "artifact_provides", ()) or ())
+                phase_in.update(getattr(contract, "phase_in", ()) or ())
+                phase_out.update(getattr(contract, "phase_out", ()) or ())
                 note = str(contract.notes or "").strip()
                 if note:
                     notes.append(f"{comp_name}: {note}")
@@ -255,6 +271,10 @@ class RepresentationPipeline:
             "provides": sorted(provides),
             "mutates": sorted(mutates),
             "cache": sorted(cache),
+            "artifact_requires": sorted(artifact_requires),
+            "artifact_provides": sorted(artifact_provides),
+            "phase_in": sorted(phase_in),
+            "phase_out": sorted(phase_out),
             "notes": " | ".join(x for x in notes if x) or None,
         }
 

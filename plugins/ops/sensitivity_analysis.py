@@ -83,6 +83,7 @@ class SensitivityAnalysisPlugin(Plugin):
     context_provides = ()
     context_mutates = ()
     context_cache = ()
+    artifact_provides = ("sensitivity_study_json",)
     context_notes = (
         "Runs multi-run sensitivity studies and writes aggregated study artifacts."
     )

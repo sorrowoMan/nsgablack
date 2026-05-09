@@ -35,6 +35,10 @@ class CatalogEntry:
     context_mutates: Tuple[str, ...] = ()
     context_cache: Tuple[str, ...] = ()
     context_notes: Tuple[str, ...] = ()
+    artifact_requires: Tuple[str, ...] = ()
+    artifact_provides: Tuple[str, ...] = ()
+    phase_in: Tuple[str, ...] = ()
+    phase_out: Tuple[str, ...] = ()
     # Optional usage contracts (how to apply component without reading source).
     use_when: Tuple[str, ...] = ()
     minimal_wiring: Tuple[str, ...] = ()
@@ -95,7 +99,8 @@ class Catalog:
         tag_set = {str(t).lower().strip() for t in (tags or [])}
         field = (fields or "all").strip().lower()
         use_context_in_all = field == "all" and any(
-            ("context" in t) or (t in {"requires", "provides", "mutates", "cache", "contract", "contracts"})
+            ("context" in t)
+            or (t in {"requires", "provides", "mutates", "cache", "contract", "contracts", "artifact", "artifacts", "phase"})
             for t in tokens
         )
         use_usage_in_all = field == "all" and any(
@@ -166,6 +171,10 @@ class Catalog:
             context_mutates=_coerce_str_tuple(payload.get("context_mutates", entry.context_mutates)),
             context_cache=_coerce_str_tuple(payload.get("context_cache", entry.context_cache)),
             context_notes=_coerce_str_tuple(payload.get("context_notes", entry.context_notes)),
+            artifact_requires=_coerce_str_tuple(payload.get("artifact_requires", entry.artifact_requires)),
+            artifact_provides=_coerce_str_tuple(payload.get("artifact_provides", entry.artifact_provides)),
+            phase_in=_coerce_str_tuple(payload.get("phase_in", entry.phase_in)),
+            phase_out=_coerce_str_tuple(payload.get("phase_out", entry.phase_out)),
             use_when=_coerce_str_tuple(payload.get("use_when", entry.use_when)),
             minimal_wiring=_coerce_str_tuple(payload.get("minimal_wiring", entry.minimal_wiring)),
             required_companions=_coerce_str_tuple(payload.get("required_companions", entry.required_companions)),
@@ -219,6 +228,10 @@ class Catalog:
         add_field("context_mutates", e.context_mutates, include_label=bool(e.context_mutates))
         add_field("context_cache", e.context_cache, include_label=bool(e.context_cache))
         add_field("context_notes", e.context_notes, include_label=bool(e.context_notes))
+        add_field("artifact_requires", e.artifact_requires, include_label=bool(e.artifact_requires))
+        add_field("artifact_provides", e.artifact_provides, include_label=bool(e.artifact_provides))
+        add_field("phase_in", e.phase_in, include_label=bool(e.phase_in))
+        add_field("phase_out", e.phase_out, include_label=bool(e.phase_out))
 
         # If contracts are not attached on CatalogEntry, try reading class-level declarations.
         if not parts:
@@ -251,6 +264,26 @@ class Catalog:
                     "context_notes",
                     getattr(symbol, "context_notes", ()),
                     include_label=hasattr(symbol, "context_notes"),
+                )
+                add_field(
+                    "artifact_requires",
+                    getattr(symbol, "artifact_requires", ()),
+                    include_label=hasattr(symbol, "artifact_requires"),
+                )
+                add_field(
+                    "artifact_provides",
+                    getattr(symbol, "artifact_provides", ()),
+                    include_label=hasattr(symbol, "artifact_provides"),
+                )
+                add_field(
+                    "phase_in",
+                    getattr(symbol, "phase_in", ()),
+                    include_label=hasattr(symbol, "phase_in"),
+                )
+                add_field(
+                    "phase_out",
+                    getattr(symbol, "phase_out", ()),
+                    include_label=hasattr(symbol, "phase_out"),
                 )
 
         blob = " ".join(parts).lower()
@@ -534,6 +567,26 @@ def _default_entries() -> List[CatalogEntry]:
             required_companions=("plugin.pareto_archive",),
             config_keys=("roles", "total_batch_size", "phase_schedule", "seed"),
             example_entry="examples/dynamic_multi_strategy_demo.py:build_solver",
+        ),
+        CatalogEntry(
+            key="adapter.serial_strategy",
+            title="StrategyChainAdapter",
+            kind="adapter",
+            import_path="nsgablack.adapters:StrategyChainAdapter",
+            tags=('adapter', 'controller', 'core', 'phase', 'serial', 'strategy'),
+            summary="串行策略控制器：按 phase 顺序切换子 adapter。 / Adapter: serial strategy controller that advances child adapters by phase.",
+            companions=("adapter.multi_strategy",),
+            use_when=(
+                "需要把多段策略按 explore -> exploit 之类的阶段顺序串起来时",
+                "需要让 phase 成为正式运行语义并可被下游组件消费时",
+            ),
+            minimal_wiring=(
+                "from nsgablack.adapters import StrategyChainAdapter",
+                "solver.set_adapter(StrategyChainAdapter(...))",
+            ),
+            required_companions=("adapter.multi_strategy",),
+            config_keys=("phases", "phase_schedule", "repeat_last"),
+            example_entry="python -m nsgablack catalog search serial_strategy --kind example",
         ),
         CatalogEntry(
             key="adapter.moead",
@@ -1047,6 +1100,67 @@ def _default_entries() -> List[CatalogEntry]:
             example_entry='python -m nsgablack catalog search profiler --kind example',
         ),
         CatalogEntry(
+            key="plugin.mysql_run_logger",
+            title="MySQLRunLoggerPlugin",
+            kind="plugin",
+            import_path="nsgablack.plugins.storage.mysql_run_logger:MySQLRunLoggerPlugin",
+            tags=('mysql', 'plugin', 'run_log', 'storage', 'tracking'),
+            summary="运行结果入库插件：把 run 状态、指标与 artifact 路径写入 MySQL。 / Plugin: persist run metadata, metrics, and artifact paths to MySQL.",
+            companions=("plugin.module_report", "plugin.benchmark_harness"),
+            use_when=(
+                '需要把实验结果、状态和产物路径写入外部数据库时 / Need external DB-backed experiment tracking.',
+                '需要把模块审计报告一起带入 run 记录时 / Need module audit artifacts attached to run records.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.plugins.storage.mysql_run_logger import MySQLRunLoggerPlugin, MySQLRunLoggerConfig',
+                "solver.add_plugin(MySQLRunLoggerPlugin(config=MySQLRunLoggerConfig(database='nsgablack')))",
+            ),
+            required_companions=(
+                'plugin.module_report',
+            ),
+            config_keys=(
+                'host',
+                'port',
+                'user',
+                'password',
+                'database',
+                'table',
+                'connect_timeout',
+                'print_latest_summary',
+            ),
+            example_entry='python -m nsgablack catalog search mysql_run_logger --kind example',
+        ),
+        CatalogEntry(
+            key="plugin.sensitivity_analysis",
+            title="SensitivityAnalysisPlugin",
+            kind="plugin",
+            import_path="nsgablack.plugins.ops.sensitivity_analysis:SensitivityAnalysisPlugin",
+            tags=('analysis', 'plugin', 'sensitivity', 'study', 'sweep'),
+            summary="敏感性分析插件：批量跑参数 sweep 并产出聚合 study artifact。 / Plugin: run parameter sweeps and write aggregated sensitivity-study artifacts.",
+            companions=("plugin.benchmark_harness", "plugin.module_report"),
+            use_when=(
+                '需要比较参数变化对结果和稳定性的影响时 / Need parameter-sweep studies across multiple runs.',
+                '需要把批量实验结果收成统一 study artifact 时 / Need aggregated study artifacts for later analysis.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.plugins.ops.sensitivity_analysis import SensitivityAnalysisPlugin, SensitivityAnalysisConfig, SensitivityParam',
+                "plugin = SensitivityAnalysisPlugin(config=SensitivityAnalysisConfig(params=[SensitivityParam(path='adapter.some_param', values=[1, 2, 3])]))",
+            ),
+            required_companions=(
+                'plugin.benchmark_harness',
+            ),
+            config_keys=(
+                'output_dir',
+                'run_id',
+                'seed',
+                'params',
+                'patch_benchmark_run_id',
+                'overwrite_benchmark',
+                'metric_fn',
+            ),
+            example_entry='python -m nsgablack catalog search sensitivity_analysis --kind example',
+        ),
+        CatalogEntry(
             key="plugin.surrogate_eval",
             title="SurrogateEvaluationPlugin",
             kind="plugin",
@@ -1147,6 +1261,32 @@ def _default_entries() -> List[CatalogEntry]:
             example_entry='python -m nsgablack catalog search context_switch --kind example',
         ),
         CatalogEntry(
+            key="repr.context_dispatch",
+            title="ContextDispatchMutator",
+            kind="representation",
+            import_path="nsgablack.representation:ContextDispatchMutator",
+            tags=('context', 'dispatch', 'mutation', 'phase', 'representation', 'strategy'),
+            summary="表示组件：按 strategy/phase 路由不同 mutator。 / Representation: dispatch mutators by strategy or phase context.",
+            companions=("adapter.multi_strategy", "adapter.serial_strategy"),
+            use_when=(
+                '需要让表示层根据 phase / strategy_id 自动切换算子时 / Need phase-aware or strategy-aware operator routing in representation.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.representation import ContextDispatchMutator',
+                'Attach this component into RepresentationPipeline as phase-aware mutator routing.',
+            ),
+            required_companions=(
+                'adapter.multi_strategy',
+            ),
+            config_keys=(
+                'routes',
+                'selector_key',
+                'default_mutator',
+                'strict',
+            ),
+            example_entry='python -m nsgablack catalog search context_dispatch --kind example',
+        ),
+        CatalogEntry(
             key="repr.projection_repair",
             title="ProjectionRepair",
             kind="representation",
@@ -1190,6 +1330,33 @@ def _default_entries() -> List[CatalogEntry]:
                 '(none)',
             ),
             example_entry='python -m nsgablack catalog search dynamic_repair --kind example',
+        ),
+        CatalogEntry(
+            key="repr.pipeline_orchestrator",
+            title="PipelineOrchestrator",
+            kind="representation",
+            import_path="nsgablack.representation:PipelineOrchestrator",
+            tags=('context', 'controller', 'orchestrator', 'phase', 'pipeline', 'representation'),
+            summary="表示层编排控制器：统一 mutate/repair 的 serial/router/dynamic phase 路由。 / Representation: orchestration controller for phase-aware mutate/repair routing.",
+            companions=("repr.pipeline", "adapter.multi_strategy", "adapter.serial_strategy"),
+            use_when=(
+                '需要把 phase-aware operator routing 正式收进表示层，而不是散在 adapter if/else 里 / Need formal phase-aware operator routing inside representation layer.',
+            ),
+            minimal_wiring=(
+                'from nsgablack.representation import PipelineOrchestrator',
+                'Mount PipelineOrchestrator inside RepresentationPipeline mutator or repair stage.',
+            ),
+            required_companions=(
+                'repr.pipeline',
+            ),
+            config_keys=(
+                'mutate_policy',
+                'repair_policy',
+                'mutator',
+                'repair_operator',
+                'strict',
+            ),
+            example_entry='python -m nsgablack catalog search pipeline_orchestrator --kind example',
         ),
         CatalogEntry(
             key="bias.pso",
@@ -2341,6 +2508,10 @@ def _discover_python_entries() -> List[CatalogEntry]:
                             context_mutates=_coerce_str_tuple(it.get("context_mutates", ())),
                             context_cache=_coerce_str_tuple(it.get("context_cache", ())),
                             context_notes=_coerce_str_tuple(it.get("context_notes", ())),
+                            artifact_requires=_coerce_str_tuple(it.get("artifact_requires", ())),
+                            artifact_provides=_coerce_str_tuple(it.get("artifact_provides", ())),
+                            phase_in=_coerce_str_tuple(it.get("phase_in", ())),
+                            phase_out=_coerce_str_tuple(it.get("phase_out", ())),
                             use_when=_coerce_str_tuple(it.get("use_when", ())),
                             minimal_wiring=_coerce_str_tuple(it.get("minimal_wiring", ())),
                             required_companions=_coerce_str_tuple(it.get("required_companions", ())),
@@ -2429,6 +2600,10 @@ def _parse_entries_from_toml(path: Path) -> List[CatalogEntry]:
                 context_mutates=_coerce_str_tuple(item.get("context_mutates", ())),
                 context_cache=_coerce_str_tuple(item.get("context_cache", ())),
                 context_notes=_coerce_str_tuple(item.get("context_notes", ())),
+                artifact_requires=_coerce_str_tuple(item.get("artifact_requires", ())),
+                artifact_provides=_coerce_str_tuple(item.get("artifact_provides", ())),
+                phase_in=_coerce_str_tuple(item.get("phase_in", ())),
+                phase_out=_coerce_str_tuple(item.get("phase_out", ())),
                 use_when=_coerce_str_tuple(item.get("use_when", ())),
                 minimal_wiring=_coerce_str_tuple(item.get("minimal_wiring", ())),
                 required_companions=_coerce_str_tuple(item.get("required_companions", ())),

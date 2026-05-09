@@ -49,6 +49,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
     context_provides = (KEY_PHASE, KEY_STRATEGY, KEY_STRATEGY_ID)
     context_mutates = ()
     context_cache = ()
+    phase_out = (KEY_PHASE,)
     context_notes = ("Serial phase scheduler; delegates propose/update to active adapter.",)
     state_recovery_level = "L2"
     state_recovery_notes = "Restores current phase index, per-phase step counter, and child adapter states."

@@ -9,6 +9,10 @@ _REQUIRES_ATTRS = ("context_requires", "requires_context_keys", "runtime_require
 _PROVIDES_ATTRS = ("context_provides", "provides_context_keys", "runtime_provides")
 _MUTATES_ATTRS = ("context_mutates", "mutates_context_keys", "runtime_mutates")
 _CACHE_ATTRS = ("context_cache", "cache_context_keys", "runtime_cache")
+_ARTIFACT_REQUIRES_ATTRS = ("artifact_requires",)
+_ARTIFACT_PROVIDES_ATTRS = ("artifact_provides",)
+_PHASE_IN_ATTRS = ("phase_in",)
+_PHASE_OUT_ATTRS = ("phase_out",)
 _NOTES_ATTRS = (
     "context_notes",
     "recommended_mutators",
@@ -105,6 +109,10 @@ class ContextContract:
     provides: Sequence[str] = field(default_factory=tuple)
     mutates: Sequence[str] = field(default_factory=tuple)
     cache: Sequence[str] = field(default_factory=tuple)
+    artifact_requires: Sequence[str] = field(default_factory=tuple)
+    artifact_provides: Sequence[str] = field(default_factory=tuple)
+    phase_in: Sequence[str] = field(default_factory=tuple)
+    phase_out: Sequence[str] = field(default_factory=tuple)
     notes: Optional[str] = None
 
     def normalized(self) -> "ContextContract":
@@ -113,6 +121,10 @@ class ContextContract:
             provides=_normalize_fields(self.provides),
             mutates=_normalize_fields(self.mutates),
             cache=_normalize_fields(self.cache),
+            artifact_requires=_normalize_fields(self.artifact_requires),
+            artifact_provides=_normalize_fields(self.artifact_provides),
+            phase_in=_normalize_fields(self.phase_in),
+            phase_out=_normalize_fields(self.phase_out),
             notes=self.notes,
         )
 
@@ -123,6 +135,10 @@ class ContextContract:
             "provides": list(norm.provides),
             "mutates": list(norm.mutates),
             "cache": list(norm.cache),
+            "artifact_requires": list(norm.artifact_requires),
+            "artifact_provides": list(norm.artifact_provides),
+            "phase_in": list(norm.phase_in),
+            "phase_out": list(norm.phase_out),
             "notes": norm.notes,
         }
 
@@ -134,6 +150,10 @@ class ContextContract:
             provides=sorted(set(a.provides) | set(b.provides)),
             mutates=sorted(set(a.mutates) | set(b.mutates)),
             cache=sorted(set(a.cache) | set(b.cache)),
+            artifact_requires=sorted(set(a.artifact_requires) | set(b.artifact_requires)),
+            artifact_provides=sorted(set(a.artifact_provides) | set(b.artifact_provides)),
+            phase_in=sorted(set(a.phase_in) | set(b.phase_in)),
+            phase_out=sorted(set(a.phase_out) | set(b.phase_out)),
             notes=None,
         )
 
@@ -175,6 +195,10 @@ def get_component_contract(obj: Any) -> Optional[ContextContract]:
                 + list(value.get("context_cache", ()) or ())
                 + list(value.get("cache_context_keys", ()) or ())
                 + list(value.get("runtime_cache", ()) or ()),
+                artifact_requires=list(value.get("artifact_requires", ()) or ()),
+                artifact_provides=list(value.get("artifact_provides", ()) or ()),
+                phase_in=list(value.get("phase_in", ()) or ()),
+                phase_out=list(value.get("phase_out", ()) or ()),
                 notes=notes,
             ).normalized()
 
@@ -182,14 +206,34 @@ def get_component_contract(obj: Any) -> Optional[ContextContract]:
     provides_values = _collect_attrs(obj, _PROVIDES_ATTRS)
     mutates_values = _collect_attrs(obj, _MUTATES_ATTRS)
     cache_values = _collect_attrs(obj, _CACHE_ATTRS)
+    artifact_requires_values = _collect_attrs(obj, _ARTIFACT_REQUIRES_ATTRS)
+    artifact_provides_values = _collect_attrs(obj, _ARTIFACT_PROVIDES_ATTRS)
+    phase_in_values = _collect_attrs(obj, _PHASE_IN_ATTRS)
+    phase_out_values = _collect_attrs(obj, _PHASE_OUT_ATTRS)
     notes = _merge_notes(*_collect_attrs(obj, _NOTES_ATTRS))
 
-    if any([requires_values, provides_values, mutates_values, cache_values, notes]):
+    if any(
+        [
+            requires_values,
+            provides_values,
+            mutates_values,
+            cache_values,
+            artifact_requires_values,
+            artifact_provides_values,
+            phase_in_values,
+            phase_out_values,
+            notes,
+        ]
+    ):
         return ContextContract(
             requires=_flatten_values(requires_values),
             provides=_flatten_values(provides_values),
             mutates=_flatten_values(mutates_values),
             cache=_flatten_values(cache_values),
+            artifact_requires=_flatten_values(artifact_requires_values),
+            artifact_provides=_flatten_values(artifact_provides_values),
+            phase_in=_flatten_values(phase_in_values),
+            phase_out=_flatten_values(phase_out_values),
             notes=notes,
         ).normalized()
     return None

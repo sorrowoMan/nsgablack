@@ -98,6 +98,7 @@ class ContextDispatchMutator(RepresentationComponentContract):
     context_provides = ()
     context_mutates = ()
     context_cache = ()
+    phase_in = (KEY_PHASE,)
     context_notes = (
         "Reads a selector key from context and dispatches mutator by route name.",
     )

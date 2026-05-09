@@ -10,8 +10,21 @@ it only makes components discoverable.
 """
 
 from .registry import CatalogEntry, get_catalog
+from .facade import (
+    catalog_facets,
+    catalog_neighbors,
+    catalog_schema,
+    catalog_source_info,
+    catalog_summary,
+    catalog_ui_snapshot,
+    field_values,
+    list_entries,
+    search_entries,
+    show_entry,
+)
 from .usage import CatalogUsage, build_usage_profile, enrich_context_contracts, enrich_usage_contracts
-from .sync import build_catalog_bundle
+from .sync import build_catalog_bundle, cleanup_postgres_legacy_catalog, materialize_catalog_to_db, materialize_catalog_to_mysql
+from .relations import build_catalog_relation_bundle, export_catalog_relations
 from .api_index import (
     build_api_index_bundle,
     export_api_index_docs,
@@ -34,6 +47,16 @@ from .export import export_catalog_docs, export_default_docs
 __all__ = [
     "CatalogEntry",
     "get_catalog",
+    "list_entries",
+    "search_entries",
+    "show_entry",
+    "catalog_source_info",
+    "catalog_neighbors",
+    "catalog_facets",
+    "catalog_ui_snapshot",
+    "catalog_summary",
+    "catalog_schema",
+    "field_values",
     "search_catalog",
     "list_catalog",
     "get_entry",
@@ -43,6 +66,11 @@ __all__ = [
     "enrich_context_contracts",
     "enrich_usage_contracts",
     "build_catalog_bundle",
+    "build_catalog_relation_bundle",
+    "cleanup_postgres_legacy_catalog",
+    "export_catalog_relations",
+    "materialize_catalog_to_db",
+    "materialize_catalog_to_mysql",
     "build_api_index_bundle",
     "audit_catalog",
     "audit_catalog_to_mysql",

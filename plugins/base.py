@@ -32,6 +32,10 @@ class Plugin(ABC):
     context_provides = ()
     context_mutates = ()
     context_cache = ()
+    artifact_requires = ()
+    artifact_provides = ()
+    phase_in = ()
+    phase_out = ()
     context_notes = None
 
     def __init__(self, name: str, solver=None, priority: int = 0):
@@ -61,6 +65,10 @@ class Plugin(ABC):
             "provides": getattr(self, "context_provides", ()),
             "mutates": getattr(self, "context_mutates", ()),
             "cache": getattr(self, "context_cache", ()),
+            "artifact_requires": getattr(self, "artifact_requires", ()),
+            "artifact_provides": getattr(self, "artifact_provides", ()),
+            "phase_in": getattr(self, "phase_in", ()),
+            "phase_out": getattr(self, "phase_out", ()),
             "notes": getattr(self, "context_notes", None),
         }
 

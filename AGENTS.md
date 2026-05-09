@@ -9,6 +9,13 @@
 2. 再看 `5/6/7`（数据协议 + API 契约 + catalog 口径）
 3. 最后按 `9/12` 跑命令与提交检查
 
+新增协作硬规则：
+
+- **在任何代码改动、测试执行、benchmark 运行、批量脚本落地之前，必须先得到用户明确允许**
+- 在未获允许前，只允许做：代码阅读、结果分析、机制讨论、方案草案、文档整理
+- 不得因为“已经判断出根因”或“只差最后一步”而直接落代码
+- 若用户只是在讨论机制、诊断病因、比较路线，默认仍视为**未授权改代码**
+
 ---
 
 ## 1) 项目定位（第一原则）
@@ -206,6 +213,8 @@
 - 小步提交：一次只改一层主职责
 - 保持 `context_keys`、`extension_contracts`、`doctor` 规则一致
 - 改 `catalog` 时优先改 `catalog/registry.py` 的 profile/filter，不在调用侧散落 if/else
+- 新增或修改 `example/demo/benchmark runner` 时，必须走标准项目脚手架形态，不要在例子里私搭第二套运行入口
+- **先获用户许可，再动代码、跑测试、跑 benchmark；未获许可时只做分析与方案整理**
 
 涉及评估链改动后，至少验证：
 
@@ -216,7 +225,44 @@
 
 ---
 
-## 9) 常用开发命令（Windows PowerShell）
+## 9) 示例组装规则（必须遵守）
+
+如果要新增或修改示例、演示或 benchmark runner，必须使用标准项目脚手架形态来组装。
+
+这里的“标准脚手架”不是指必须字面落在某个固定目录，也不是强制所有 case 都落进仓库根部的 `my_project/`。它指的是必须具备类似 `my_project` 的正式项目结构与职责分层：
+
+- `problem/`：问题定义、目标、约束、数据/场景契约
+- `pipeline/`：候选流转、representation、evaluation chain、数据处理链
+- `config/`：可声明、可复现的装配配置
+- `build_solver.py` / `run_solver.py`：正式组装入口与运行入口
+- `plugins/` / `bias/` / `reporting/`：按能力边界落位
+- `registry` / `catalog`：需要被发现的正式组件必须可索引
+
+示例文件本身只能是薄入口、兼容层或教学调用层。真实装配逻辑必须进入上述标准项目结构，而不是堆在 `examples/.../*.py` 里。
+
+允许：
+
+- 优先复用正式 `solver / adapter / representation / plugin` 装配路径
+- 优先复用项目内已有的 `my_project/*`、`examples/cases/*` 中已经标准化的项目脚手架、CLI、workflow、标准 capability 装配协议
+- 让示例反映正式产品面，而不是写成只在示例里成立的私有捷径
+
+禁止：
+
+- 为了省事，在示例里手写一套绕过正式装配协议的运行入口
+- 在 example 中直接拼隐式状态，导致主干能力无法复用/审计
+- 让示例和正式框架表面长期分叉
+- 在 `examples/cases/<case>/build_solver.py` 里长期堆放 problem、pipeline、adapter、bias、plugin、reporting 的全部装配细节
+
+跨框架规则：
+
+- 如果示例用到 `nsgablack`，`nsgablack` 侧必须采用标准 nsgablack 项目脚手架形态组装外层 solver、adapter、representation、plugin、bias 与 runtime surface。
+- 如果示例同时用到 `mlblack`，`mlblack` 侧也必须通过 mlblack 的标准项目脚手架形态暴露 evaluation proxy、inner fitter、artifact builder 与 audit/report surface。
+- 跨框架示例只能组合两个正式脚手架 surface，不能绕过任一侧的正式装配边界。
+- 过渡期保留的旧 example 必须标注为 compatibility/thin wrapper，新增机制不得继续落在旧 example 文件内。
+
+---
+
+## 10) 常用开发命令（Windows PowerShell）
 
 ```powershell
 # 在项目根目录
@@ -242,7 +288,7 @@ python -m nsgablack catalog list --profile framework-core --kind example
 
 ---
 
-## 10) 快速接入模板（新增项目）
+## 11) 快速接入模板（新增项目）
 
 优先参考：
 
@@ -255,7 +301,7 @@ python -m nsgablack catalog list --profile framework-core --kind example
 
 ---
 
-## 11) 结语（给自动化协作 Agent）
+## 12) 结语（给自动化协作 Agent）
 
 - 先读 `core/` 与 `core/state/`，再动 `adapters/plugins`
 - 改动前确认不破坏 snapshot 引用策略与 context 契约
@@ -263,10 +309,11 @@ python -m nsgablack catalog list --profile framework-core --kind example
 
 ---
 
-## 12) 提交前最小检查清单（建议复制到 PR）
+## 13) 提交前最小检查清单（建议复制到 PR）
 
 - [ ] 是否保持四层边界（Solver / Adapter / Representation / Plugin）
 - [ ] 是否避免大对象直写 context（改为 snapshot + ref）
 - [ ] 若改评估链，是否验证单点/批量/插件短路三路径
 - [ ] 若改 catalog，是否验证 `default` 与 `framework-core` 双口径
+- [ ] 若新增/修改 example 或 demo，是否确认仍走标准脚手架/正式组装路径
 - [ ] 是否运行 `project doctor --strict --format problem` 并确认无新增错误

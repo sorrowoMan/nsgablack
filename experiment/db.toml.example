@@ -1,0 +1,16 @@
+[postgres]
+enabled = true
+mode = "prefer"
+readonly = false
+host = "localhost"
+port = 5432
+user = "postgres"
+password = ""
+database = "nsgablack"
+connect_timeout = 10
+
+[sqlite]
+enabled = false
+mode = "prefer"
+readonly = false
+path = "./runs/runtime_surface.sqlite3"

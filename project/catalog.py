@@ -11,7 +11,7 @@ import sys
 
 from ..catalog import get_catalog
 from ..catalog.registry import Catalog, CatalogEntry, _parse_entries_from_toml
-from ..catalog.usage import enrich_usage_contracts
+from ..catalog.usage import enrich_context_contracts, enrich_usage_contracts
 
 try:  # py>=3.11
     import tomllib as _toml
@@ -70,6 +70,10 @@ def _normalize_project_entries(entries: Iterable[CatalogEntry]) -> List[CatalogE
                 context_mutates=tuple(getattr(e, "context_mutates", ()) or ()),
                 context_cache=tuple(getattr(e, "context_cache", ()) or ()),
                 context_notes=tuple(getattr(e, "context_notes", ()) or ()),
+                artifact_requires=tuple(getattr(e, "artifact_requires", ()) or ()),
+                artifact_provides=tuple(getattr(e, "artifact_provides", ()) or ()),
+                phase_in=tuple(getattr(e, "phase_in", ()) or ()),
+                phase_out=tuple(getattr(e, "phase_out", ()) or ()),
                 use_when=tuple(getattr(e, "use_when", ()) or ()),
                 minimal_wiring=tuple(getattr(e, "minimal_wiring", ()) or ()),
                 required_companions=tuple(getattr(e, "required_companions", ()) or ()),
@@ -140,13 +144,21 @@ def load_project_entries(project_root: Path | str) -> List[CatalogEntry]:
 
 def load_project_catalog(project_root: Path | str, *, include_global: bool = False) -> Catalog:
     """Build Catalog for a project; optionally merge global catalog."""
-    local_entries = enrich_usage_contracts(load_project_entries(project_root))
+    local_entries = enrich_context_contracts(
+        load_project_entries(project_root),
+        kinds=("plugin", "adapter", "bias", "representation"),
+    )
+    local_entries = enrich_usage_contracts(local_entries)
     if not include_global:
         return Catalog(local_entries)
 
     global_entries = get_catalog().list()
     local_keys = {e.key for e in local_entries}
     merged = list(local_entries) + [e for e in global_entries if e.key not in local_keys]
+    merged = enrich_context_contracts(
+        merged,
+        kinds=("plugin", "adapter", "bias", "representation"),
+    )
     return Catalog(enrich_usage_contracts(merged))
 
 

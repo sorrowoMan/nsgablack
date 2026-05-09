@@ -45,6 +45,7 @@ class OrchestrationPolicy(RepresentationComponentContract):
     context_provides = ()
     context_mutates = ()
     context_cache = ()
+    phase_in = (KEY_PHASE,)
     context_notes = (
         "Unified representation orchestration policy for serial/switch/router/dynamic modes.",
     )
@@ -73,6 +74,7 @@ class PipelineOrchestrator(RepresentationComponentContract):
     context_provides = ()
     context_mutates = ()
     context_cache = ()
+    phase_in = (KEY_PHASE,)
     context_notes = (
         "Unifies ContextSwitch/Router/Serial/Dynamic orchestration into one representation controller.",
     )

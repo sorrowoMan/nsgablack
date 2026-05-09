@@ -34,6 +34,12 @@ class DecisionTracePlugin(Plugin):
     context_provides = ("decision_trace_ref",)
     context_mutates = ("decision_trace_ref",)
     context_cache = ()
+    artifact_provides = (
+        KEY_DECISION_TRACE_REF,
+        "decision_trace_jsonl",
+        "decision_trace_summary",
+        "decision_trace_count",
+    )
     context_notes = (
         "Records deterministic decision events with reason/evidence for replay and audit.",
     )

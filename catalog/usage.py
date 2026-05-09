@@ -5,6 +5,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable, Sequence, Tuple
 
+from .contract_relations import _entry_field_values
+from ..utils.context.context_contracts import get_component_contract
+
 
 @dataclass(frozen=True)
 class CatalogUsage:
@@ -177,6 +180,38 @@ def build_usage_profile(entry) -> CatalogUsage:
     )
 
 
+def _callable_has_no_required_args(obj: object) -> bool:
+    try:
+        sig = inspect.signature(obj)
+    except Exception:
+        return False
+    for param in sig.parameters.values():
+        if param.kind in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}:
+            continue
+        if param.default is inspect._empty:
+            return False
+    return True
+
+
+def _load_runtime_context_contract(symbol: object):
+    contract = get_component_contract(symbol)
+    if contract is not None:
+        return contract
+
+    instance = None
+    try:
+        if inspect.isclass(symbol) and _callable_has_no_required_args(symbol):
+            instance = symbol()
+        elif callable(symbol) and _callable_has_no_required_args(symbol):
+            instance = symbol()
+    except Exception:
+        instance = None
+
+    if instance is None:
+        return None
+    return get_component_contract(instance)
+
+
 def enrich_context_contracts(entries: Sequence, *, kinds: Sequence[str] = ("plugin",)) -> list:
     """Fill missing context_* fields from symbol class-level declarations."""
     target_kinds = {str(k).strip().lower() for k in kinds if str(k).strip()}
@@ -191,8 +226,12 @@ def enrich_context_contracts(entries: Sequence, *, kinds: Sequence[str] = ("plug
         mut = _normalize_values(getattr(entry, "context_mutates", ()))
         cache = _normalize_values(getattr(entry, "context_cache", ()))
         notes = _normalize_context_notes(getattr(entry, "context_notes", ()))
+        artifact_requires = _normalize_values(getattr(entry, "artifact_requires", ()))
+        artifact_provides = _normalize_values(getattr(entry, "artifact_provides", ()))
+        phase_in = _normalize_values(getattr(entry, "phase_in", ()))
+        phase_out = _normalize_values(getattr(entry, "phase_out", ()))
 
-        if req and prov and mut and cache and notes:
+        if req and prov and mut and cache and notes and artifact_requires and artifact_provides and phase_in and phase_out:
             out.append(entry)
             continue
 
@@ -212,15 +251,51 @@ def enrich_context_contracts(entries: Sequence, *, kinds: Sequence[str] = ("plug
                 cache = _normalize_values(getattr(symbol, "context_cache", ()))
             if not notes:
                 notes = _normalize_context_notes(getattr(symbol, "context_notes", ()))
+            if not artifact_requires:
+                artifact_requires = _normalize_values(getattr(symbol, "artifact_requires", ()))
+            if not artifact_provides:
+                artifact_provides = _normalize_values(getattr(symbol, "artifact_provides", ()))
+            if not phase_in:
+                phase_in = _normalize_values(getattr(symbol, "phase_in", ()))
+            if not phase_out:
+                phase_out = _normalize_values(getattr(symbol, "phase_out", ()))
+            if not (req and prov and mut and cache and notes):
+                runtime_contract = _load_runtime_context_contract(symbol)
+                if runtime_contract is not None:
+                    if not req:
+                        req = _normalize_values(runtime_contract.requires)
+                    if not prov:
+                        prov = _normalize_values(runtime_contract.provides)
+                    if not mut:
+                        mut = _normalize_values(runtime_contract.mutates)
+                    if not cache:
+                        cache = _normalize_values(runtime_contract.cache)
+                    if not artifact_requires:
+                        artifact_requires = _normalize_values(getattr(runtime_contract, "artifact_requires", ()))
+                    if not artifact_provides:
+                        artifact_provides = _normalize_values(getattr(runtime_contract, "artifact_provides", ()))
+                    if not phase_in:
+                        phase_in = _normalize_values(getattr(runtime_contract, "phase_in", ()))
+                    if not phase_out:
+                        phase_out = _normalize_values(getattr(runtime_contract, "phase_out", ()))
+                    if not notes:
+                        notes = _normalize_context_notes(runtime_contract.notes)
 
+        base_entry = replace(
+            entry,
+            context_requires=tuple(req),
+            context_provides=tuple(prov),
+            context_mutates=tuple(mut),
+            context_cache=tuple(cache),
+            context_notes=tuple(notes),
+        )
         out.append(
             replace(
-                entry,
-                context_requires=tuple(req),
-                context_provides=tuple(prov),
-                context_mutates=tuple(mut),
-                context_cache=tuple(cache),
-                context_notes=tuple(notes),
+                base_entry,
+                artifact_requires=artifact_requires or _entry_field_values(base_entry, "artifact_requires"),
+                artifact_provides=artifact_provides or _entry_field_values(base_entry, "artifact_provides"),
+                phase_in=phase_in or _entry_field_values(base_entry, "phase_in"),
+                phase_out=phase_out or _entry_field_values(base_entry, "phase_out"),
             )
         )
     return out

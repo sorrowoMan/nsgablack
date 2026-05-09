@@ -20,6 +20,10 @@ class AlgorithmAdapter(ABC):
     context_provides = ()
     context_mutates = ()
     context_cache = ()
+    artifact_requires = ()
+    artifact_provides = ()
+    phase_in = ()
+    phase_out = ()
     context_notes = None
     state_recovery_level = "L0"
     state_recovery_notes = "No adapter-owned runtime state is guaranteed to roundtrip."
@@ -164,6 +168,10 @@ class AlgorithmAdapter(ABC):
         provides = list(getattr(self, "context_provides", ()) or ())
         mutates = list(getattr(self, "context_mutates", ()) or ())
         cache = list(getattr(self, "context_cache", ()) or ())
+        artifact_requires = list(getattr(self, "artifact_requires", ()) or ())
+        artifact_provides = list(getattr(self, "artifact_provides", ()) or ())
+        phase_in = list(getattr(self, "phase_in", ()) or ())
+        phase_out = list(getattr(self, "phase_out", ()) or ())
 
         # Backward compatibility: legacy adapter declarations.
         requires.extend(list(getattr(self, "requires_context_keys", ()) or ()))
@@ -199,6 +207,10 @@ class AlgorithmAdapter(ABC):
             "provides": provides,
             "mutates": mutates,
             "cache": cache,
+            "artifact_requires": artifact_requires,
+            "artifact_provides": artifact_provides,
+            "phase_in": phase_in,
+            "phase_out": phase_out,
             "notes": " | ".join(notes_parts) if notes_parts else None,
         }
 

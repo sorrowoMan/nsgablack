@@ -32,6 +32,7 @@ class ModuleReportPlugin(Plugin):
     context_provides = ()
     context_mutates = ()
     context_cache = ()
+    artifact_provides = ("modules_report_json", "bias_report_json", "bias_report_md")
     context_notes = (
         "Builds module/bias reports from solver state and writes JSON/Markdown artifacts."
     )

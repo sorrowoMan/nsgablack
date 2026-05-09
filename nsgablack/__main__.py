@@ -196,14 +196,15 @@ def _print_usage_fields(e) -> None:
 
 
 def _cmd_catalog_search(args: argparse.Namespace) -> int:
-    from .catalog import get_catalog
+    from .catalog import search_entries
 
-    c = get_catalog(profile=args.profile)
-    entries = c.search(
+    entries = search_entries(
         args.query,
-        kinds=args.kind,
+        profile=args.profile,
+        scope="framework",
+        kind=args.kind[0] if args.kind and len(args.kind) == 1 else None,
         tags=args.tag,
-        fields=args.field,
+        field=args.field,
         limit=args.limit,
     )
     print(f"Catalog search: {args.query!r}  (hits={len(entries)})")
@@ -218,16 +219,18 @@ def _cmd_catalog_search(args: argparse.Namespace) -> int:
 
 
 def _cmd_catalog_list(args: argparse.Namespace) -> int:
-    from .catalog import get_catalog
+    from .catalog import list_entries
 
-    c = get_catalog(profile=args.profile)
-    entries = c.list()
-    if args.kind:
+    entries = list_entries(
+        profile=args.profile,
+        scope="framework",
+        kind=args.kind[0] if args.kind and len(args.kind) == 1 else None,
+        tags=args.tag,
+        limit=None,
+    )
+    if args.kind and len(args.kind) > 1:
         kind_set = {str(k).strip().lower() for k in args.kind}
         entries = [e for e in entries if e.kind in kind_set]
-    if args.tag:
-        tag_set = {str(t).strip().lower() for t in args.tag}
-        entries = [e for e in entries if tag_set.issubset({x.lower() for x in e.tags})]
     label = ",".join(args.kind) if args.kind else "ALL"
     print(f"Catalog list: kind={label!r}  (count={len(entries)})")
     _print_entries(
@@ -241,10 +244,9 @@ def _cmd_catalog_list(args: argparse.Namespace) -> int:
 
 
 def _cmd_catalog_show(args: argparse.Namespace) -> int:
-    from .catalog import get_catalog
+    from .catalog import show_entry
 
-    c = get_catalog(profile=args.profile)
-    e = c.get(args.key)
+    e = show_entry(args.key, profile=args.profile, scope="framework")
     if e is None:
         print(f"catalog: key not found: {args.key}", file=sys.stderr)
         return 2
@@ -262,11 +264,64 @@ def _cmd_catalog_show(args: argparse.Namespace) -> int:
     if e.companions:
         print("companions:")
         for ck in e.companions:
-            ce = c.get(ck)
+            ce = show_entry(ck, profile=args.profile, scope="framework")
             if ce is None:
                 print(f"  - {ck} (missing)")
             else:
                 print(f"  - {ce.key} ({ce.kind}) -> {ce.import_path}")
+    return 0
+
+
+def _cmd_catalog_materialize(args: argparse.Namespace) -> int:
+    from .catalog import materialize_catalog_to_db
+
+    result = materialize_catalog_to_db(
+        profile=args.profile,
+        runtime=bool(args.runtime),
+        db_url=args.db_url,
+    )
+    backend = str(result.get("backend", "db"))
+    print(f"catalog {backend} materialized")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _cmd_catalog_cleanup_legacy_postgres(args: argparse.Namespace) -> int:
+    if bool(args.execute) and not bool(args.yes):
+        print("catalog cleanup: add --yes together with --execute to confirm PostgreSQL legacy table removal", file=sys.stderr)
+        return 2
+
+    from .catalog import cleanup_postgres_legacy_catalog
+
+    result = cleanup_postgres_legacy_catalog(
+        profile=args.profile,
+        db_url=args.db_url,
+        execute=bool(args.execute),
+    )
+    status = "executed" if bool(result.get("executed")) else "dry-run"
+    print(f"catalog postgresql legacy cleanup {status}")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _cmd_catalog_export_relations(args: argparse.Namespace) -> int:
+    from .catalog import export_catalog_relations
+
+    result = export_catalog_relations(
+        output_path=args.output,
+        formats=args.format,
+        profile=args.profile,
+        scope=args.scope,
+        project_path=args.project_path,
+        include_global=bool(args.include_global),
+        kind=None if args.kind == "all" else args.kind,
+        query=args.query,
+        search_field=args.field,
+        db_path=args.db_path,
+        source_mode=args.source_mode,
+    )
+    print("catalog relation export completed")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -295,6 +350,63 @@ def _cmd_catalog_add(args: argparse.Namespace) -> int:
     upsert_catalog_entry(Path(args.file), payload, replace=not bool(args.no_replace))
     print(f"catalog entry upserted: {payload['key']} -> {args.file}")
     return 0
+
+
+def _cmd_catalog_ui(args: argparse.Namespace) -> int:
+    from .catalog.dashboard import launch_catalog_dashboard
+
+    return int(
+        launch_catalog_dashboard(
+            profile=args.profile,
+            scope=args.scope,
+            kind=args.kind,
+            query=args.query,
+            field=args.field,
+            project_path=args.project_path,
+            include_global=bool(args.include_global),
+            db_path=args.db_path,
+            source_mode=args.source_mode,
+            column_mode=str(args.column_mode),
+            page_size=int(args.page_size),
+            results_collapse=str(args.results_collapse),
+            host=args.host,
+            port=args.port,
+            headless=bool(args.headless),
+        )
+    )
+
+
+def _cmd_ui(args: argparse.Namespace) -> int:
+    from .ui.dashboard import launch_ui_dashboard
+
+    return int(
+        launch_ui_dashboard(
+            surface=str(args.surface),
+            profile=args.profile,
+            scope=args.scope,
+            kind=args.kind,
+            query=args.query,
+            field=args.field,
+            project_path=args.project_path,
+            include_global=bool(args.include_global),
+            db_path=args.db_path,
+            source_mode=args.source_mode,
+            experiment_db=args.experiment_db,
+            limit=int(args.limit),
+            column_mode=str(args.column_mode),
+            page_size=int(args.page_size),
+            results_collapse=str(args.results_collapse),
+            host=args.host,
+            port=args.port,
+            headless=bool(args.headless),
+        )
+    )
+
+
+def _cmd_experiment(argv) -> int:
+    from .experiment.cli import main as experiment_main
+
+    return int(experiment_main(list(argv)))
 
 
 def _cmd_run_inspector(args: argparse.Namespace) -> int:
@@ -643,6 +755,216 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("--no-replace", action="store_true", help="Append instead of replacing existing key")
     p_add.set_defaults(func=_cmd_catalog_add)
 
+    p_materialize = sub_cat.add_parser("materialize", help="Materialize catalog contracts into the configured SQL catalog store")
+    p_materialize.add_argument(
+        "--profile",
+        choices=("default", "framework-core"),
+        default="default",
+        help="Catalog profile to materialize (default: default)",
+    )
+    p_materialize.add_argument("--runtime", action="store_true", help="Import runtime symbols for richer method/health extraction")
+    p_materialize.add_argument("--db-url", default=None, help="Optional explicit SQL URL (mysql:// or postgresql://); otherwise use env/catalog db config")
+    p_materialize.set_defaults(func=_cmd_catalog_materialize)
+
+    p_cleanup_pg = sub_cat.add_parser(
+        "cleanup-legacy-postgres",
+        help="Inspect or drop legacy decomposed PostgreSQL catalog tables after formal surface materialization",
+    )
+    p_cleanup_pg.add_argument(
+        "--profile",
+        choices=("default", "framework-core"),
+        default="framework-core",
+        help="Formal catalog profile that must already exist before cleanup",
+    )
+    p_cleanup_pg.add_argument("--db-url", default=None, help="Optional explicit PostgreSQL URL; otherwise use env/catalog db config")
+    p_cleanup_pg.add_argument("--execute", action="store_true", help="Actually drop the legacy PostgreSQL catalog tables")
+    p_cleanup_pg.add_argument("--yes", action="store_true", help="Required with --execute to confirm the destructive cleanup")
+    p_cleanup_pg.set_defaults(func=_cmd_catalog_cleanup_legacy_postgres)
+
+    p_export_rel = sub_cat.add_parser(
+        "export-relations",
+        help="Export catalog companions / linked_by structure as table or graph files",
+    )
+    p_export_rel.add_argument(
+        "--profile",
+        choices=("default", "framework-core"),
+        default="framework-core",
+        help="Catalog profile to export (default: framework-core)",
+    )
+    p_export_rel.add_argument(
+        "--scope",
+        choices=("framework", "project"),
+        default="framework",
+        help="Export framework catalog or project catalog",
+    )
+    p_export_rel.add_argument(
+        "--kind",
+        choices=("all", "adapter", "plugin", "bias", "representation", "suite", "tool", "doc", "example"),
+        default="all",
+        help="Optional kind filter before exporting relations",
+    )
+    p_export_rel.add_argument("--query", default="", help="Optional query to export only matching entries")
+    p_export_rel.add_argument(
+        "--field",
+        choices=("all", "name", "tag", "context", "usage"),
+        default="all",
+        help="Search field to use together with --query",
+    )
+    p_export_rel.add_argument("--project-path", default=None, help="Project root or child path when scope=project")
+    p_export_rel.add_argument(
+        "--include-global",
+        action="store_true",
+        help="When scope=project, merge global framework entries into the same exported relation surface",
+    )
+    p_export_rel.add_argument("--db-path", default=None, help="Optional explicit SQL URL; leave empty to use catalog/db.toml or env config")
+    p_export_rel.add_argument(
+        "--source-mode",
+        choices=("prefer", "only", "off"),
+        default=None,
+        help="Framework catalog read mode; omitted means follow configured catalog DB mode",
+    )
+    p_export_rel.add_argument(
+        "--format",
+        action="append",
+        default=None,
+        choices=("json", "table-csv", "edge-csv", "key-csv", "dot", "mermaid", "family-dot", "family-mermaid", "all"),
+        help="Repeatable output format. Default writes table-csv + edge-csv + key-csv + dot + mermaid + family-separated dot/mermaid.",
+    )
+    p_export_rel.add_argument(
+        "--output",
+        default=None,
+        help="Output base path. Example: out/catalog_relations/framework_core",
+    )
+    p_export_rel.set_defaults(func=_cmd_catalog_export_relations)
+
+    p_ui = sub_cat.add_parser("ui", help="Launch standalone catalog browser (Streamlit)")
+    p_ui.add_argument(
+        "--profile",
+        choices=("default", "framework-core"),
+        default="framework-core",
+        help="Catalog profile for the browser (default: framework-core)",
+    )
+    p_ui.add_argument(
+        "--scope",
+        choices=("framework", "project"),
+        default="framework",
+        help="Initial browser scope",
+    )
+    p_ui.add_argument(
+        "--kind",
+        choices=("all", "adapter", "plugin", "bias", "representation", "suite", "tool", "doc", "example"),
+        default="all",
+        help="Initial kind tab",
+    )
+    p_ui.add_argument("--query", default="", help="Initial search query")
+    p_ui.add_argument(
+        "--field",
+        choices=("all", "name", "tag", "context", "usage"),
+        default="all",
+        help="Initial search scope",
+    )
+    p_ui.add_argument("--project-path", default=None, help="Project root or child path for project scope")
+    p_ui.add_argument(
+        "--include-global",
+        action="store_true",
+        help="When scope=project, merge global framework catalog entries into the same view",
+    )
+    p_ui.add_argument("--db-path", default=None, help="Optional explicit SQL URL for DB-backed framework catalog reads; leave empty to use catalog/db.toml or env config")
+    p_ui.add_argument(
+        "--source-mode",
+        choices=("prefer", "only", "off"),
+        default=None,
+        help="Framework catalog read mode: prefer DB, force DB only, or disable DB reads",
+    )
+    p_ui.add_argument(
+        "--column-mode",
+        choices=("compact", "standard", "full"),
+        default="standard",
+        help="Initial results table column layout",
+    )
+    p_ui.add_argument("--page-size", type=int, default=50, help="Initial visible result count window")
+    p_ui.add_argument(
+        "--results-collapse",
+        choices=("expanded", "collapsed"),
+        default="expanded",
+        help="Initial state of the results expander",
+    )
+    p_ui.add_argument("--host", default=None, help="Optional Streamlit bind address")
+    p_ui.add_argument("--port", type=int, default=None, help="Optional Streamlit bind port")
+    p_ui.add_argument("--headless", action="store_true", help="Launch Streamlit in headless mode")
+    p_ui.set_defaults(func=_cmd_catalog_ui)
+
+    p_workspace_ui = sub.add_parser("ui", help="Launch unified catalog / experiment workspace (Streamlit)")
+    p_workspace_ui.add_argument(
+        "--surface",
+        choices=("home", "catalog", "experiment"),
+        default="home",
+        help="Initial workspace surface",
+    )
+    p_workspace_ui.add_argument(
+        "--profile",
+        choices=("default", "framework-core"),
+        default="framework-core",
+        help="Default catalog profile when entering the catalog surface",
+    )
+    p_workspace_ui.add_argument(
+        "--scope",
+        choices=("framework", "project"),
+        default="framework",
+        help="Default catalog scope when entering the catalog surface",
+    )
+    p_workspace_ui.add_argument(
+        "--kind",
+        choices=("all", "adapter", "plugin", "bias", "representation", "suite", "tool", "doc", "example"),
+        default="all",
+        help="Default catalog kind tab when entering the catalog surface",
+    )
+    p_workspace_ui.add_argument("--query", default="", help="Default query for catalog or experiment entry")
+    p_workspace_ui.add_argument(
+        "--field",
+        choices=("all", "name", "tag", "context", "usage"),
+        default="all",
+        help="Default catalog search field when entering the catalog surface",
+    )
+    p_workspace_ui.add_argument("--project-path", default=None, help="Default project path for catalog project scope")
+    p_workspace_ui.add_argument(
+        "--include-global",
+        action="store_true",
+        help="When scope=project, merge global framework entries into the catalog surface",
+    )
+    p_workspace_ui.add_argument("--db-path", default=None, help="Optional explicit SQL URL for the catalog surface")
+    p_workspace_ui.add_argument(
+        "--source-mode",
+        choices=("prefer", "only", "off"),
+        default=None,
+        help="Catalog source mode for the catalog surface",
+    )
+    p_workspace_ui.add_argument(
+        "--experiment-db",
+        default=None,
+        help="Optional explicit experiment DB target for the experiment surface",
+    )
+    p_workspace_ui.add_argument("--limit", type=int, default=500, help="Default experiment query row limit")
+    p_workspace_ui.add_argument(
+        "--column-mode",
+        choices=("compact", "standard", "full"),
+        default="standard",
+        help="Initial result table column layout for child surfaces",
+    )
+    p_workspace_ui.add_argument("--page-size", type=int, default=50, help="Initial visible result count window")
+    p_workspace_ui.add_argument(
+        "--results-collapse",
+        choices=("expanded", "collapsed"),
+        default="expanded",
+        help="Initial state of the child-surface results expander",
+    )
+    p_workspace_ui.add_argument("--host", default=None, help="Optional Streamlit bind address")
+    p_workspace_ui.add_argument("--port", type=int, default=None, help="Optional Streamlit bind port")
+    p_workspace_ui.add_argument("--headless", action="store_true", help="Launch Streamlit in headless mode")
+    p_workspace_ui.set_defaults(func=_cmd_ui)
+
+    sub.add_parser("experiment", help="Runtime run/artifact experiment surface")
+
     # run_inspector
     p_inspect = sub.add_parser("run_inspector", help="Launch Run Inspector (Tk UI)")
     p_inspect.add_argument("--entry", default="", help="path/to/script.py:build_solver")
@@ -729,8 +1051,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[list[str]] = None) -> int:
     _ensure_utf8_io()
+    raw = list(argv) if argv is not None else sys.argv[1:]
+    if raw and raw[0] == "experiment":
+        return _cmd_experiment(raw[1:])
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw)
     func = getattr(args, "func", None)
     if func is None:
         parser.print_help()

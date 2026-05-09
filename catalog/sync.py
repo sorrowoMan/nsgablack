@@ -19,6 +19,7 @@ from .contracts import (
     UsageContract,
 )
 from .registry import CatalogEntry, get_catalog
+from .store import resolve_catalog_store
 from .usage import build_usage_profile
 from ..utils.context.context_keys import CANONICAL_CONTEXT_KEYS
 
@@ -484,6 +485,10 @@ def _build_context_contract(entry: CatalogEntry) -> ContextContract:
         mutates=_coerce_tuple(getattr(entry, "context_mutates", ())),
         cache=_coerce_tuple(getattr(entry, "context_cache", ())),
         notes=_coerce_tuple(getattr(entry, "context_notes", ())),
+        artifact_requires=_coerce_tuple(getattr(entry, "artifact_requires", ())),
+        artifact_provides=_coerce_tuple(getattr(entry, "artifact_provides", ())),
+        phase_in=_coerce_tuple(getattr(entry, "phase_in", ())),
+        phase_out=_coerce_tuple(getattr(entry, "phase_out", ())),
     )
 
 
@@ -619,3 +624,50 @@ def build_catalog_bundle(*, profile: str, runtime: bool = False) -> CatalogBundl
         methods=methods,
         health=health,
     )
+
+
+def materialize_catalog_to_mysql(
+    *,
+    profile: str,
+    runtime: bool = False,
+    db_url: str | None = None,
+) -> dict[str, int]:
+    result = materialize_catalog_to_db(profile=profile, runtime=runtime, db_url=db_url)
+    result.pop("backend", None)
+    return result
+
+
+def materialize_catalog_to_db(
+    *,
+    profile: str,
+    runtime: bool = False,
+    db_url: str | None = None,
+) -> dict[str, int | str]:
+    bundle = build_catalog_bundle(profile=profile, runtime=runtime)
+    store = resolve_catalog_store(url=db_url, readonly=False)
+    store.sync_bundle(bundle, profile=profile)
+    return {
+        "backend": str(getattr(store, "backend", "db")),
+        "components": len(bundle.components),
+        "contexts": len(bundle.contexts),
+        "usages": len(bundle.usages),
+        "params": len(bundle.params),
+        "methods": len(bundle.methods),
+        "health": len(bundle.health),
+    }
+
+
+def cleanup_postgres_legacy_catalog(
+    *,
+    profile: str | None = None,
+    db_url: str | None = None,
+    execute: bool = False,
+) -> dict[str, object]:
+    store = resolve_catalog_store(url=db_url)
+    backend = str(getattr(store, "backend", "") or "").strip().lower()
+    if backend != "postgresql":
+        raise RuntimeError("Catalog legacy cleanup currently only supports PostgreSQL targets.")
+    cleanup = getattr(store, "cleanup_legacy_tables", None)
+    if cleanup is None:
+        raise RuntimeError("Resolved PostgreSQL catalog store does not expose legacy cleanup support.")
+    return cleanup(profile=profile, execute=execute)

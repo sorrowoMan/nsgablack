@@ -8,6 +8,12 @@ Purpose: runnable demos (minimal to end-to-end).
 Boundary: demos are not API.
 Example: `end_to_end_workflow_demo.py`.
 
+## Experiment surface starter
+
+- `examples/_misc_examples/plugin_gallery_demo.py`
+- By default it now mounts `RuntimeSurfaceTrackerPlugin` and writes formal runtime surfaces into the resolved `experiment/db.toml` or environment-backed DB target.
+- After one demo run you can open `python -m nsgablack experiment ui` to inspect the generated run / artifact surface.
+
 ## Migration workshops
 
 - `migration_lab/README.md`: traditional script -> framework migration labs

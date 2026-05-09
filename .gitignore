@@ -124,12 +124,25 @@ test_*.py
 # Temporary files
 *.tmp
 *.temp
+tmp_*
+.tmp_*
+tmp-*
+.tmp-*
 .DS_Store
 Thumbs.db
 catalog/db.toml
+experiment/db.toml
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.duckdb
+*.duckdb-*
 
 # Local runs/artifacts
 runs/
+out/
 artifacts/
 !artifacts/.gitkeep
 results/test_runs/
@@ -155,6 +168,8 @@ data/visualizations/
 
 # IDE
 .idea/
+.vscode/
+*.code-workspace
 *.swp
 *.swo
 
@@ -167,6 +182,7 @@ README_part*.md
 *_UPDATE_SUMMARY.md
 *_COMPLETION_REPORT.md
 *_CLEANUP_REPORT.md
+*_recovered.py
 
 # Temporary documentation directories
 docs/reports/

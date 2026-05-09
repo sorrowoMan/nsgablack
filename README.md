@@ -82,3 +82,10 @@ python build_solver.py
 - `framework-core`：主干口径（排除 example/doc）
 
 架构审计与主干盘点请显式带 `--profile framework-core`。
+
+---
+
+## 相关项目
+
+- `mlblack`：代理模型与学习流程装配框架，用作内层 evaluation proxy、fitter、artifact builder 与 audit surface。
+  仓库：<https://github.com/sorrowoMan/mlblack>

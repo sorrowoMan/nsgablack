@@ -46,6 +46,10 @@ from .solver_backends.backend_contract import (
 )
 from .solver_backends.ngspice_backend import NgspiceBackend, NgspiceBackendConfig
 from .solver_backends.copt_backend import CoptBackend, CoptBackendConfig
+from .solver_backends.mlblack_symbolic_consensus_backend import (
+    MlblackSymbolicConsensusBackend,
+    MlblackSymbolicConsensusBackendConfig,
+)
 from .solver_backends.contract_bridge import ContractBridgePlugin, BridgeRule
 from .solver_backends.timeout_budget import TimeoutBudgetPlugin, TimeoutBudgetConfig
 from .runtime.pareto_archive import ParetoArchivePlugin, ParetoArchiveConfig
@@ -58,6 +62,17 @@ from .ops.otel_tracing import OpenTelemetryTracingPlugin, OpenTelemetryTracingCo
 from .ops.decision_trace import DecisionTracePlugin, DecisionTraceConfig
 from .ops.sequence_graph import SequenceGraphPlugin, SequenceGraphConfig
 from .storage.mysql_run_logger import MySQLRunLoggerPlugin, MySQLRunLoggerConfig
+from .storage.runtime_surface_tracker import (
+    RuntimeSurfaceTrackerConfig,
+    RuntimeSurfaceTrackerPlugin,
+    build_runtime_surface_tracker_plugin,
+    list_runtime_artifact_surfaces,
+    list_runtime_run_surfaces,
+    runtime_surface_filter_values,
+    runtime_surface_summary,
+    show_runtime_artifact_surface,
+    show_runtime_run_surface,
+)
 from .system.async_event_hub import AsyncEventHubPlugin, AsyncEventHubConfig
 from .system.boundary_guard import BoundaryGuardPlugin, BoundaryGuardConfig
 from .system.checkpoint_resume import CheckpointResumePlugin, CheckpointResumeConfig
@@ -94,6 +109,8 @@ __all__ = [
     'NgspiceBackendConfig',
     'CoptBackend',
     'CoptBackendConfig',
+    'MlblackSymbolicConsensusBackend',
+    'MlblackSymbolicConsensusBackendConfig',
     'ContractBridgePlugin',
     'BridgeRule',
     'TimeoutBudgetPlugin',
@@ -118,6 +135,15 @@ __all__ = [
     'SequenceGraphConfig',
     'MySQLRunLoggerPlugin',
     'MySQLRunLoggerConfig',
+    'RuntimeSurfaceTrackerConfig',
+    'RuntimeSurfaceTrackerPlugin',
+    'build_runtime_surface_tracker_plugin',
+    'list_runtime_run_surfaces',
+    'list_runtime_artifact_surfaces',
+    'show_runtime_run_surface',
+    'show_runtime_artifact_surface',
+    'runtime_surface_summary',
+    'runtime_surface_filter_values',
     'AsyncEventHubPlugin',
     'AsyncEventHubConfig',
     'BoundaryGuardPlugin',

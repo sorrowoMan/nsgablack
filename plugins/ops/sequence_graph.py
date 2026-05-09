@@ -40,6 +40,7 @@ class SequenceGraphPlugin(Plugin):
     context_provides = (KEY_SEQUENCE_GRAPH_REF,)
     context_mutates = (KEY_SEQUENCE_GRAPH_REF,)
     context_cache = ()
+    artifact_provides = (KEY_SEQUENCE_GRAPH_REF, "sequence_graph_json")
     context_notes = (
         "Records unique component interaction sequences and writes a compact graph JSON artifact.",
     )

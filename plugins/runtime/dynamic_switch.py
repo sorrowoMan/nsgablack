@@ -15,6 +15,7 @@ class DynamicSwitchPlugin(DynamicSwitchBase):
     context_provides = (KEY_DYNAMIC, KEY_PHASE_ID)
     context_mutates = (KEY_DYNAMIC, KEY_PHASE_ID)
     context_cache = ()
+    phase_out = (KEY_PHASE_ID,)
     context_notes = (
         "Builds runtime switch context with dynamic signals and phase id; "
         "applies soft/hard switch callbacks and syncs solver dynamic state."
