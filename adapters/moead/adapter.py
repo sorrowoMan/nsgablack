@@ -115,12 +115,14 @@ class MOEADAdapter(AlgorithmAdapter):
     # Lifecycle
     # ------------------------------------------------------------------
     def setup(self, solver: Any) -> None:
-        # MOEA/D adapter is intended for composable/blank solver runtimes.
-        # Reject legacy NSGA-II loop solvers to avoid state ownership races.
+        # MOEA/D is intended for composable/blank solver runtimes.
+        # On EvolutionSolver, NSGA2 methods exist but are unused when MOEAD is set.
+        import warnings
         if hasattr(solver, "selection") and hasattr(solver, "environmental_selection"):
-            raise TypeError(
-                "MOEADAdapter requires a composable solver runtime. "
-                "Do not attach it to legacy NSGA-II loop solvers."
+            warnings.warn(
+                "MOEADAdapter on EvolutionSolver: NSGA2 selection present but unused. "
+                "Use ComposableSolver for lighter runtime.",
+                RuntimeWarning, stacklevel=2,
             )
 
         self._m = int(getattr(solver, "num_objectives", 1) or 1)
