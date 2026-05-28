@@ -105,18 +105,17 @@ class EvolutionSolver(ComposableSolver):
         self.enable_progress_log = bool(enable_progress_log)
         self.report_interval = int(report_interval)
 
-        nsga2_cfg = NSGA2Config(
+        self._nsga2_config = NSGA2Config(
             population_size=self.pop_size,
             offspring_size=self.pop_size,
             crossover_rate=self.crossover_rate,
             objective_aggregation=str(objective_aggregation),
         )
-        self._default_nsga2_adapter = NSGA2Adapter(config=nsga2_cfg)
         self._objective_aggregation = str(objective_aggregation)
 
         super().__init__(
             problem=problem,
-            adapter=adapter if adapter is not None else self._default_nsga2_adapter,
+            adapter=adapter if adapter is not None else self._build_default_adapter(),
             bias_module=bias_module,
             representation_pipeline=representation_pipeline,
             ignore_constraint_violation_when_bias=ignore_constraint_violation_when_bias,
@@ -193,6 +192,9 @@ class EvolutionSolver(ComposableSolver):
     @representation_pipeline.setter
     def representation_pipeline(self, value):
         self._representation_internal = value
+
+    def _build_default_adapter(self) -> NSGA2Adapter:
+        return NSGA2Adapter(config=self._nsga2_config)
 
     def _sync_nsga2_adapter_config(self) -> None:
         adapter = getattr(self, "adapter", None)
