@@ -53,6 +53,10 @@ def build_solver(
     apply_solver_profile(solver, cfg, "default")
     solver.set_max_steps(2)  # quick demo
 
+    # Trust Region DFO adapter (replaces default NSGA2)
+    from nsgablack.adapters import TrustRegionDFOAdapter, TrustRegionDFOConfig
+    solver.set_adapter(TrustRegionDFOAdapter(TrustRegionDFOConfig()))
+
     # --- Search orchestration (built-in) ------------------------------
     if strategy_key not in {"", "default", "none"}:
         search_adapter = build_search(cfg.adapters, primary_key=strategy_key, mode="single")

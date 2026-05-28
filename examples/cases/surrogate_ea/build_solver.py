@@ -53,6 +53,15 @@ def build_solver(
     apply_solver_profile(solver, cfg, "default")
     solver.set_max_steps(2)  # quick demo
 
+    # L4 surrogate evaluation: RandomForest surrogate reduces expensive true evals
+    from nsgablack.plugins import SurrogateEvaluationProviderPlugin, SurrogateEvaluationConfig
+    from nsgablack.adapters import VNSAdapter
+    solver.set_adapter(VNSAdapter())
+    cfg_surr = SurrogateEvaluationConfig(min_train_samples=20, topk_exploit=4, topk_explore=4, min_true_evals=4)
+    solver.register_evaluation_provider(
+        SurrogateEvaluationProviderPlugin(config=cfg_surr, model_type="rf").create_provider()
+    )
+
     # --- Search orchestration (built-in) ------------------------------
     if strategy_key not in {"", "default", "none"}:
         search_adapter = build_search(cfg.adapters, primary_key=strategy_key, mode="single")
