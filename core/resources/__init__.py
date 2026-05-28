@@ -64,7 +64,7 @@ from .probe import (
     detect_local_resource_offer,
     detect_total_memory_mb,
 )
-from ..solver_manager import (
+from .storage.lease import (
     InMemoryLeaseStore,
     InMemoryMessageQueue,
     ResourceAllocator,
