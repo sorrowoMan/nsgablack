@@ -23,15 +23,10 @@ from nsgablack.core.resources.backends import (  # type: ignore[attr-defined]
     FilesystemArtifactBackend,
 )
 from nsgablack.core.resources.backends_s3 import S3ArtifactBackend  # type: ignore[attr-defined]
-from nsgablack.core.solver_manager import (  # type: ignore[attr-defined]
-    ResourceAllocator,
-    ResourceLease,
-    ResourceOffer,
-    ResourceRequest,
-    ResourcePolicy,
-    ResourceBudgetError,
-    InMemoryLeaseStore,
-    SQLiteLeaseStore,
+from .lease import (
+    ResourceAllocator, ResourceLease, ResourceOffer, ResourceRequest,
+    ResourcePolicy, ResourceBudgetError, InMemoryLeaseStore, SQLiteLeaseStore,
+    ResourceEvent, InMemoryMessageQueue, SQLiteMessageQueue,
 )
 
 __all__ = [
