@@ -1,3 +1,4 @@
+"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
 """Trust-region DFO demo (local search)."""
 
 import numpy as np

@@ -1,4 +1,5 @@
-ï»¿"""Multi-strategy cooperation demo (VNS + SA, direct wiring)."""
+"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
+"""Multi-strategy cooperation demo (VNS + SA, direct wiring)."""
 
 import numpy as np
 

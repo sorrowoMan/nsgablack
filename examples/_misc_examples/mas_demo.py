@@ -1,3 +1,4 @@
+"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
 """MAS (model-and-search) demo."""
 
 import numpy as np

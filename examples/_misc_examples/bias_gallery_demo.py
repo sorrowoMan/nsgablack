@@ -1,4 +1,5 @@
-ï»¿"""Bias gallery demo: choose a bias by catalog key and run a tiny solver."""
+"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
+"""Bias gallery demo: choose a bias by catalog key and run a tiny solver."""
 
 import argparse
 import numpy as np

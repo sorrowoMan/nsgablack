@@ -1,3 +1,4 @@
+"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
 """NSGA-II solver demo with engineering suite wiring."""
 
 import numpy as np

@@ -1,3 +1,4 @@
+"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
 """Subspace trust-region demo (CUATRO_PLS-style)."""
 
 import numpy as np

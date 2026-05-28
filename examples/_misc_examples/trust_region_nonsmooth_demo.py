@@ -1,3 +1,4 @@
+"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
 """Non-smooth trust-region demo."""
 
 import numpy as np

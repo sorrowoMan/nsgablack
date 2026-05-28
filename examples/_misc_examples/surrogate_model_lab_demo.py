@@ -1,4 +1,5 @@
-ï»¿from __future__ import annotations
+"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
+from __future__ import annotations
 
 import numpy as np
 

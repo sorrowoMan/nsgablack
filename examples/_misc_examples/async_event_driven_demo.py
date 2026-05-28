@@ -1,3 +1,4 @@
+"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
 """Async event-driven optimization demo.
 
 Shows how to combine:

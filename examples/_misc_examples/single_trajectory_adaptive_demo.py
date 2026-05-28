@@ -1,3 +1,4 @@
+"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
 """Single-trajectory adaptive search demo."""
 
 from __future__ import annotations

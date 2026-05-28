@@ -1,4 +1,5 @@
-﻿"""Dynamic + Multi-Strategy showcase.
+"""MIGRATED to examples/cases/ �� see scaffold case for maintained version."""
+"""Dynamic + Multi-Strategy showcase.
 
 This example demonstrates:
 - StrategyRouterAdapter (cooperative strategies)
@@ -264,9 +265,9 @@ if __name__ == "__main__":
     else:
         solver = build_solver()
         result = solver.run()
-        print("杩愯鐘舵€?", result["status"], "steps:", result["steps"])
+        print("运行状�?", result["status"], "steps:", result["steps"])
         if solver.best_x is not None:
-            print("鏈€浼樼洰鏍囧€?", f"{solver.best_objective:.6f}")
-            print("鏈€浼樿В:", solver.best_x)
+            print("最优目标�?", f"{solver.best_objective:.6f}")
+            print("最优解:", solver.best_x)
 
 

@@ -1,4 +1,5 @@
-ï»¿"""ParallelRepair demo: wrap repair in thread/process parallelism."""
+"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
+"""ParallelRepair demo: wrap repair in thread/process parallelism."""
 
 import numpy as np
 

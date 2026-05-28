@@ -1,4 +1,5 @@
-﻿from __future__ import annotations
+"""MIGRATED to examples/cases/ �� see scaffold case for maintained version."""
+from __future__ import annotations
 
 import numpy as np
 
@@ -47,7 +48,7 @@ def build_solver():
 def main():
     solver = build_solver()
     result = solver.run(max_generations=40, seed=7)
-    print("杩愯鐘舵€?", result.get("status"))
+    print("运行状�?", result.get("status"))
     print("best_objective:", result.get("best_objective"))
 
 
