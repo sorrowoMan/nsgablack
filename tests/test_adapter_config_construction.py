@@ -170,3 +170,39 @@ def test_multi_strategy_control_rules_dsl_without_lambda():
     assert len(cands) > 0
     assert all(float(c[0]) == pytest.approx(2.0) for c in cands)
 
+
+def test_async_event_driven_event_case_routes_by_signal_priority():
+    from nsgablack.adapters import AsyncEventDrivenAdapter, EventCaseSpec
+
+    adapter = AsyncEventDrivenAdapter(
+        strategies=[
+            EventCaseSpec(
+                adapter=_DummyAdapter(1.0, name="default"),
+                name="default_explore",
+                when=lambda ctx: True,
+                priority=0,
+                report_fields=("signal.resource.gpu_pressure",),
+            ),
+            EventCaseSpec(
+                adapter=_DummyAdapter(2.0, name="cheap"),
+                name="cheap_when_resource_pressure",
+                when_dsl={"eq": ["$signal.resource.gpu_pressure", True]},
+                priority=80,
+                report_fields=("signal.resource.gpu_pressure",),
+            ),
+        ],
+        total_batch_size=4,
+        target_queue_size=4,
+    )
+
+    adapter.setup(None)
+    cands = adapter.propose(None, {"generation": 0, "signal.resource.gpu_pressure": True})
+
+    assert len(cands) > 0
+    assert all(float(c[0]) == pytest.approx(2.0) for c in cands)
+    projection = adapter.get_runtime_context_projection(None)
+    decision = projection["event_shared"]["event_decision"]
+    assert decision["active_case"] == "cheap_when_resource_pressure"
+    assert decision["matched_cases"] == ["cheap_when_resource_pressure", "default_explore"]
+    assert decision["report_fields"]["signal.resource.gpu_pressure"] is True
+

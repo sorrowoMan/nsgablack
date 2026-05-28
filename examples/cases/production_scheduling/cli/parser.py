@@ -184,6 +184,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="How to pick Pareto schedules to export.",
     )
     parser.add_argument(
+        "--pareto-archive-size",
+        type=int,
+        default=512,
+        help="Max runtime Pareto archive size (<=0 keeps the archive unbounded).",
+    )
+    parser.add_argument(
+        "--pareto-archive-update-every",
+        type=int,
+        default=5,
+        help="Update runtime Pareto archive every N generations; finish always forces a final update.",
+    )
+    parser.add_argument(
         "--coverage-bonus",
         type=float,
         default=300.0,

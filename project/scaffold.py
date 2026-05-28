@@ -15,7 +15,7 @@ _FOLDERS = [
     "bias",
     "adapter",
     "solver",
-    "acceleration",
+    "runtime",
     "evaluation",
     "plugins",
     "assets",
@@ -32,7 +32,7 @@ _FOLDER_DESCRIPTIONS: Dict[str, str] = {
     "bias": "Bias layer: soft preference and search tendency.",
     "adapter": "Strategy layer: propose/update orchestration.",
     "solver": "Solver core profiles and runtime governance.",
-    "acceleration": "L0 acceleration backends (thread/process/GPU).",
+    "runtime": "L0 runtime profiles: resources, workers, queues, stores, artifacts and transport.",
     "evaluation": "L4 evaluation runtime providers (optional).",
     "plugins": "Engineering layer: logging, replay, diagnostics, storage.",
     "assets": "Output artifacts: charts, reports, exported files.",
@@ -78,7 +78,7 @@ def _root_readme(project_name: str) -> str:
         - `assembly.py`: attach/build helpers
         - `config.py`: project registries
         - `problem/`, `pipeline/`, `bias/`, `adapter/`, `solver/`
-        - `acceleration/` (L0), `evaluation/` (L4)
+        - `runtime/` (L0), `evaluation/` (L4)
         - `plugins/` (governance/ops/observability)
         - `catalog/entries.toml`: local catalog entries
 
@@ -709,17 +709,17 @@ def _assembly_template() -> str:
         from nsgablack.core.evolution_solver import EvolutionSolver
         from nsgablack.utils.wiring import attach_checkpoint_resume, attach_observability_profile
 
-        from acceleration.config import apply_acceleration_backends
         from bias.domain.config import build_bias
         from evaluation.config import register_evaluation_runtime
         from pipeline.config import build_pipeline
         from plugins.config import (
-            build_governance_plugins,
-            build_ops_plugins,
+            attach_governance_plugins,
+            attach_ops_plugins,
             get_checkpoint_spec,
             get_observability_spec,
         )
         from problem.config import build_problem
+        from runtime.config import apply_runtime_profile
         from solver.config import apply_solver_profile as apply_solver_profile_cfg
 
 
@@ -739,8 +739,8 @@ def _assembly_template() -> str:
                 solver.set_adapter(adapter)
 
 
-        def attach_acceleration(solver: EvolutionSolver, cfg, keys) -> None:
-            apply_acceleration_backends(solver, cfg.acceleration, keys)
+        def attach_runtime(solver: EvolutionSolver, cfg, profile_key: str = "local_cpu", backend_keys=()) -> None:
+            apply_runtime_profile(solver, cfg.runtime, profile_key, backend_keys)
 
 
         def attach_evaluation(solver: EvolutionSolver, cfg, keys) -> None:
@@ -761,13 +761,11 @@ def _assembly_template() -> str:
 
 
         def attach_governance(solver: EvolutionSolver, cfg, keys) -> None:
-            for plugin in build_governance_plugins(cfg.governance_plugins, keys):
-                solver.add_plugin(plugin)
+            attach_governance_plugins(solver, cfg.governance_plugins, keys)
 
 
         def attach_ops(solver: EvolutionSolver, cfg, keys) -> None:
-            for plugin in build_ops_plugins(cfg.ops_plugins, keys):
-                solver.add_plugin(plugin)
+            attach_ops_plugins(solver, cfg.ops_plugins, keys)
 
 
         def attach_checkpoint(solver: EvolutionSolver, cfg, key: str) -> None:
@@ -799,7 +797,7 @@ def _project_config_template() -> str:
         from bias.domain.config import BiasRegistry
         from adapter.config import AdapterRegistry
         from solver.config import RuntimeGovernanceRegistry, SolverProfileRegistry, StoreProfileRegistry
-        from acceleration.config import AccelerationRegistry
+        from runtime.config import RuntimeRegistry
         from evaluation.config import EvaluationRegistry
         from plugins.config import GovernancePluginRegistry, OpsPluginRegistry, ObservabilityRegistry, CheckpointRegistry
 
@@ -815,7 +813,7 @@ def _project_config_template() -> str:
             solver_profiles: SolverProfileRegistry
             store_profiles: StoreProfileRegistry
             runtime_governance: RuntimeGovernanceRegistry
-            acceleration: AccelerationRegistry
+            runtime: RuntimeRegistry
             evaluation: EvaluationRegistry
             governance_plugins: GovernancePluginRegistry
             ops_plugins: OpsPluginRegistry
@@ -824,7 +822,6 @@ def _project_config_template() -> str:
 
 
         def get_project_config() -> ProjectConfig:
-            from acceleration.config import get_acceleration_registry
             from adapter.config import get_adapter_registry
             from bias.domain.config import get_bias_registry
             from evaluation.config import get_evaluation_registry
@@ -836,6 +833,7 @@ def _project_config_template() -> str:
                 get_ops_plugin_registry,
             )
             from problem.config import get_problem_registry
+            from runtime.config import get_runtime_registry
             from solver.config import get_solver_profile_registry
             from solver.config import get_store_profile_registry
             from solver.config import get_runtime_governance_registry
@@ -848,7 +846,7 @@ def _project_config_template() -> str:
                 solver_profiles=get_solver_profile_registry(),
                 store_profiles=get_store_profile_registry(),
                 runtime_governance=get_runtime_governance_registry(),
-                acceleration=get_acceleration_registry(),
+                runtime=get_runtime_registry(),
                 evaluation=get_evaluation_registry(),
                 governance_plugins=get_governance_plugin_registry(),
                 ops_plugins=get_ops_plugin_registry(),
@@ -1292,6 +1290,7 @@ def _adapter_config_template() -> str:
         from nsgablack.adapters import (
             AsyncEventDrivenAdapter,
             AsyncEventDrivenConfig,
+            EventCaseSpec,
             EventStrategySpec,
             MultiStrategyConfig,
             SerialPhaseSpec,
@@ -1403,8 +1402,11 @@ def _adapter_config_template() -> str:
 
 
         def _ctx_get(ctx: dict, path: str) -> Any:
+            text = str(path)
+            if isinstance(ctx, dict) and text in ctx:
+                return ctx.get(text)
             cur: Any = ctx
-            for part in str(path).split("."):
+            for part in text.split("."):
                 if isinstance(cur, dict) and part in cur:
                     cur = cur.get(part)
                     continue
@@ -1496,14 +1498,44 @@ def _adapter_config_template() -> str:
             return StrategyChainAdapter(phases=items, config=base_cfg, name=str(name))
 
 
+        def event_case(
+            name: str,
+            adapter: object,
+            *,
+            when: Cond | None = None,
+            when_dsl: Dict[str, Any] | None = None,
+            priority: int = 0,
+            cooldown_generations: int = 0,
+            min_active_generations: int = 0,
+            report_fields: Sequence[str] = (),
+            weight: float = 1.0,
+            enabled: bool = True,
+        ) -> EventCaseSpec:
+            fields = (report_fields,) if isinstance(report_fields, str) else tuple(report_fields or ())
+            return EventCaseSpec(
+                adapter=adapter,
+                name=str(name),
+                weight=float(weight),
+                enabled=bool(enabled),
+                when=when,
+                when_dsl=when_dsl,
+                priority=int(priority),
+                cooldown_generations=int(cooldown_generations),
+                min_active_generations=int(min_active_generations),
+                report_fields=fields,
+            )
+
+
         def event(registry: AdapterRegistry, name: str, adapters: Sequence[object]) -> object:
             items = [a for a in adapters if a is not None]
-            if len(items) == 1:
+            if len(items) == 1 and not isinstance(items[0], EventStrategySpec):
                 return items[0]
-            specs = [
-                EventStrategySpec(adapter=a, name=getattr(a, "name", f"adapter_{i}"), weight=1.0, enabled=True)
-                for i, a in enumerate(items)
-            ]
+            specs = []
+            for i, item in enumerate(items):
+                if isinstance(item, EventStrategySpec):
+                    specs.append(item)
+                    continue
+                specs.append(EventStrategySpec(adapter=item, name=getattr(item, "name", f"adapter_{i}"), weight=1.0, enabled=True))
             base_cfg = registry.orchestration.event or AsyncEventDrivenConfig()
             return AsyncEventDrivenAdapter(strategies=specs, config=base_cfg, name=str(name))
 
@@ -1528,48 +1560,152 @@ def _adapter_config_template() -> str:
     )
 
 
-def _acceleration_config_template() -> str:
+def _runtime_config_template() -> str:
     return dedent(
         """\
         # -*- coding: utf-8 -*-
-        # L0 acceleration configuration for this project (registry only).
+        # L0 runtime profiles for this project.
 
         from __future__ import annotations
 
         from dataclasses import dataclass
         from dataclasses import field
-        from typing import Any, Dict, Sequence
+        from typing import Any, Dict, Mapping, Sequence
 
         from nsgablack.core import GpuBackend, ProcessPoolBackend, ThreadPoolBackend
+        from nsgablack.core.resources import ResourceRequirement
 
 
         @dataclass(frozen=True)
-        class AccelerationSpec:
+        class RuntimeBackendSpec:
             key: str
+            kind: str
             params: Dict[str, Any] = field(default_factory=dict)
 
 
         @dataclass(frozen=True)
-        class AccelerationRegistry:
-            registry: tuple[AccelerationSpec, ...] = ()
+        class RuntimeProfile:
+            key: str
+            summary: str = ""
+            executor_backend: str = "local"
+            resource_backend: str = "local"
+            backend_keys: tuple[str, ...] = ()
+            default_backend: str | None = None
+            task_requirement: ResourceRequirement = field(default_factory=ResourceRequirement)
+            queue_backend: str = "memory"
+            result_backend: str = "memory"
+            state_backend: str = "memory"
+            worker_registry_backend: str = "memory"
+            artifact_backend: str = "filesystem"
+            data_transport_backend: str = "inline"
+            lease_store: str = "memory"
+            metadata: Mapping[str, Any] = field(default_factory=dict)
+
+            def as_dict(self) -> Dict[str, Any]:
+                return {
+                    "key": str(self.key),
+                    "summary": str(self.summary),
+                    "executor_backend": str(self.executor_backend),
+                    "resource_backend": str(self.resource_backend),
+                    "backend_keys": [str(x) for x in self.backend_keys],
+                    "default_backend": self.default_backend,
+                    "task_requirement": self.task_requirement.as_dict(),
+                    "queue_backend": str(self.queue_backend),
+                    "result_backend": str(self.result_backend),
+                    "state_backend": str(self.state_backend),
+                    "worker_registry_backend": str(self.worker_registry_backend),
+                    "artifact_backend": str(self.artifact_backend),
+                    "data_transport_backend": str(self.data_transport_backend),
+                    "lease_store": str(self.lease_store),
+                    "metadata": dict(self.metadata),
+                }
 
 
-        def get_acceleration_registry() -> AccelerationRegistry:
-            return AccelerationRegistry(
-                registry=(
-                    AccelerationSpec(key="thread", params={"scope": "evaluation", "workers": None}),
-                    AccelerationSpec(key="process", params={"scope": "evaluation", "workers": None}),
-                    AccelerationSpec(key="gpu", params={"scope": "evaluation", "gpu_backend": "auto", "gpu_device": "cuda:0"}),
+        @dataclass(frozen=True)
+        class RuntimeRegistry:
+            profiles: tuple[RuntimeProfile, ...] = ()
+            backends: tuple[RuntimeBackendSpec, ...] = ()
+
+
+        def get_runtime_registry() -> RuntimeRegistry:
+            return RuntimeRegistry(
+                profiles=(
+                    RuntimeProfile(
+                        key="local_cpu",
+                        summary="Default local CPU runtime; no explicit parallel backend.",
+                        task_requirement=ResourceRequirement(
+                            threads=1,
+                            gpus=0,
+                            capabilities=("local_cpu",),
+                            metadata={"role": "default_project_runtime"},
+                        ),
+                    ),
+                    RuntimeProfile(
+                        key="threaded_cpu",
+                        summary="Local thread pool for parallel evaluation.",
+                        executor_backend="thread",
+                        backend_keys=("thread",),
+                        default_backend="thread",
+                        task_requirement=ResourceRequirement(
+                            threads=1,
+                            capabilities=("local_cpu", "parallel_eval"),
+                        ),
+                    ),
+                    RuntimeProfile(
+                        key="process_cpu",
+                        summary="Local process pool. Prefer SQLite lease store when GPU is involved.",
+                        executor_backend="process",
+                        backend_keys=("process",),
+                        default_backend="process",
+                        lease_store="sqlite",
+                        task_requirement=ResourceRequirement(
+                            threads=1,
+                            capabilities=("local_cpu", "process_eval"),
+                        ),
+                    ),
+                    RuntimeProfile(
+                        key="local_gpu",
+                        summary="Local GPU-aware profile with explicit device token.",
+                        executor_backend="gpu",
+                        backend_keys=("gpu",),
+                        default_backend="gpu",
+                        lease_store="sqlite",
+                        data_transport_backend="artifact_ref",
+                        task_requirement=ResourceRequirement(
+                            threads=2,
+                            gpus=1,
+                            device_tokens=("cuda:0",),
+                            capabilities=("cuda", "gpu_eval"),
+                            metadata={"gpu_sharing": "exclusive"},
+                        ),
+                    ),
+                ),
+                backends=(
+                    RuntimeBackendSpec(key="thread", kind="executor", params={"scope": "evaluation", "workers": None}),
+                    RuntimeBackendSpec(key="process", kind="executor", params={"scope": "evaluation", "workers": None}),
+                    RuntimeBackendSpec(
+                        key="gpu",
+                        kind="executor",
+                        params={"scope": "evaluation", "gpu_backend": "auto", "gpu_device": "cuda:0"},
+                    ),
                 )
             )
 
 
-        def _find_spec(registry: AccelerationRegistry, key: str) -> AccelerationSpec:
+        def resolve_runtime_profile(registry: RuntimeRegistry, key: str = "local_cpu") -> RuntimeProfile:
             lookup = str(key).strip().lower()
-            for spec in tuple(registry.registry or ()):
+            for profile in tuple(registry.profiles or ()):
+                if str(profile.key).strip().lower() == lookup:
+                    return profile
+            raise ValueError(f"Runtime profile not registered: {key}")
+
+
+        def _find_backend_spec(registry: RuntimeRegistry, key: str) -> RuntimeBackendSpec:
+            lookup = str(key).strip().lower()
+            for spec in tuple(registry.backends or ()):
                 if str(spec.key).strip().lower() == lookup:
                     return spec
-            raise ValueError(f"Acceleration key not registered: {key}")
+            raise ValueError(f"Runtime backend not registered: {key}")
 
 
         def _set_default_backend(solver, scope: str, backend: str) -> None:
@@ -1578,26 +1714,29 @@ def _acceleration_config_template() -> str:
                 setter(scope=scope, backend=backend)
 
 
-        def _register_backend(solver, spec: AccelerationSpec) -> tuple[str, str] | None:
+        def _register_executor_backend(solver, spec: RuntimeBackendSpec) -> tuple[str, str] | None:
             key = str(spec.key).strip().lower()
             params = dict(spec.params or {})
             scope = str(params.pop("scope", "evaluation"))
+            register = getattr(solver, "register_acceleration_backend", None)
+            if not callable(register):
+                return None
             if key == "thread":
-                solver.register_acceleration_backend(
+                register(
                     scope=scope,
                     backend="thread",
                     factory=lambda: ThreadPoolBackend(max_workers=params.get("workers")),
                 )
                 return scope, "thread"
             if key == "process":
-                solver.register_acceleration_backend(
+                register(
                     scope=scope,
                     backend="process",
                     factory=lambda: ProcessPoolBackend(max_workers=params.get("workers")),
                 )
                 return scope, "process"
             if key == "gpu":
-                solver.register_acceleration_backend(
+                register(
                     scope=scope,
                     backend="gpu",
                     factory=lambda: GpuBackend(
@@ -1606,32 +1745,681 @@ def _acceleration_config_template() -> str:
                     ),
                 )
                 return scope, "gpu"
-            if key == "none":
-                return None
-            raise ValueError(f"Unknown acceleration backend key: {spec.key}")
+            raise ValueError(f"Unknown runtime executor backend key: {spec.key}")
 
 
-        def apply_acceleration_backends(
+        def apply_runtime_profile(
             solver,
-            registry: AccelerationRegistry,
-            keys: Sequence[str],
-        ) -> None:
-            default_set = False
-            first_registered: tuple[str, str] | None = None
-            for key in keys:
-                spec = _find_spec(registry, key)
-                reg = _register_backend(solver, spec)
-                if reg is None:
+            registry: RuntimeRegistry,
+            profile_key: str = "local_cpu",
+            backend_keys: Sequence[str] = (),
+        ) -> RuntimeProfile:
+            profile = resolve_runtime_profile(registry, profile_key)
+            requested_backend_keys = tuple(str(x) for x in (backend_keys or profile.backend_keys))
+            registered: list[dict[str, str]] = []
+            default_registered: tuple[str, str] | None = None
+            for key in requested_backend_keys:
+                spec = _find_backend_spec(registry, key)
+                registration = _register_executor_backend(solver, spec)
+                if registration is None:
                     continue
-                if first_registered is None:
-                    first_registered = reg
-                params = dict(spec.params or {})
-                if bool(params.get("default")):
-                    _set_default_backend(solver, scope=reg[0], backend=reg[1])
-                    default_set = True
-            if not default_set and first_registered is not None:
-                _set_default_backend(solver, scope=first_registered[0], backend=first_registered[1])
+                registered.append({"scope": registration[0], "backend": registration[1]})
+                if registration[1] == profile.default_backend:
+                    default_registered = registration
+            if default_registered is None and registered:
+                first = registered[0]
+                default_registered = (first["scope"], first["backend"])
+            if default_registered is not None:
+                _set_default_backend(solver, scope=default_registered[0], backend=default_registered[1])
+            summary = {
+                "profile": profile.as_dict(),
+                "registered_executor_backends": list(registered),
+                "effective_default_backend": None
+                if default_registered is None
+                else {"scope": default_registered[0], "backend": default_registered[1]},
+            }
+            setattr(solver, "l0_runtime_profile", profile)
+            setattr(solver, "l0_runtime_summary", summary)
+            return profile
         """
+    )
+
+
+def _runtime_graph_template() -> str:
+    return dedent(
+        """\
+        # -*- coding: utf-8 -*-
+        # Static execution-plan graph for resource planning.
+
+        from __future__ import annotations
+
+        from dataclasses import dataclass
+        from dataclasses import field
+        from typing import Any, Dict, Mapping, Sequence
+
+
+        @dataclass(frozen=True)
+        class ExecutionGraphNode:
+            node_id: str
+            label: str
+            kind: str
+            metadata: Mapping[str, Any] = field(default_factory=dict)
+            children: tuple["ExecutionGraphNode", ...] = ()
+
+            def as_dict(self) -> Dict[str, Any]:
+                return {
+                    "id": str(self.node_id),
+                    "label": str(self.label),
+                    "kind": str(self.kind),
+                    "metadata": dict(self.metadata or {}),
+                    "children": [child.as_dict() for child in self.children],
+                }
+
+
+        @dataclass(frozen=True)
+        class ExecutionGraph:
+            root: ExecutionGraphNode
+
+            def as_dict(self) -> Dict[str, Any]:
+                return self.root.as_dict()
+
+
+        def build_execution_plan_graph(solver, *, run_id: str = "planned") -> ExecutionGraph:
+            problem = getattr(solver, "problem", None)
+            pipeline = getattr(solver, "representation_pipeline", None)
+            adapter = getattr(solver, "adapter", None)
+            plugin_manager = getattr(solver, "plugin_manager", None)
+            plugins = _list_plugins(plugin_manager)
+            runtime_summary = dict(getattr(solver, "l0_runtime_summary", {}) or {})
+
+            return ExecutionGraph(
+                root=ExecutionGraphNode(
+                    node_id=f"run:{run_id}",
+                    label=str(run_id),
+                    kind="run",
+                    metadata={"graph_type": "static_execution_plan"},
+                    children=(
+                        ExecutionGraphNode(
+                            node_id="modeling",
+                            label="modeling",
+                            kind="stage",
+                            children=(_object_node("problem", problem), _pipeline_node(pipeline)),
+                        ),
+                        ExecutionGraphNode(
+                            node_id="search",
+                            label="search",
+                            kind="stage",
+                            children=(_object_node("adapter", adapter),),
+                        ),
+                        _runtime_node(runtime_summary),
+                        ExecutionGraphNode(
+                            node_id="plugins",
+                            label="plugins",
+                            kind="stage",
+                            metadata={"count": len(plugins)},
+                            children=tuple(_object_node(f"plugin:{i}", plugin) for i, plugin in enumerate(plugins)),
+                        ),
+                    ),
+                )
+            )
+
+
+        def _object_node(node_id: str, obj: object | None) -> ExecutionGraphNode:
+            if obj is None:
+                return ExecutionGraphNode(node_id=node_id, label="none", kind="empty")
+            return ExecutionGraphNode(
+                node_id=node_id,
+                label=type(obj).__name__,
+                kind="component",
+                metadata={"module": type(obj).__module__, "name": str(getattr(obj, "name", ""))},
+            )
+
+
+        def _pipeline_node(pipeline: object | None) -> ExecutionGraphNode:
+            if pipeline is None:
+                return ExecutionGraphNode(node_id="pipeline", label="none", kind="empty")
+            children = tuple(_object_node(f"pipeline:{attr}", getattr(pipeline, attr, None)) for attr in ("initializer", "mutator", "repair", "encoder"))
+            return ExecutionGraphNode(
+                node_id="pipeline",
+                label=type(pipeline).__name__,
+                kind="component",
+                metadata={"module": type(pipeline).__module__},
+                children=children,
+            )
+
+
+        def _runtime_node(summary: Mapping[str, Any]) -> ExecutionGraphNode:
+            profile = dict(summary.get("profile", {}) or {})
+            return ExecutionGraphNode(
+                node_id="runtime",
+                label=str(profile.get("key", "unconfigured")),
+                kind="l0_runtime",
+                metadata={
+                    "summary": str(profile.get("summary", "")),
+                    "executor_backend": str(profile.get("executor_backend", "")),
+                    "resource_backend": str(profile.get("resource_backend", "")),
+                    "queue_backend": str(profile.get("queue_backend", "")),
+                    "result_backend": str(profile.get("result_backend", "")),
+                    "artifact_backend": str(profile.get("artifact_backend", "")),
+                    "data_transport_backend": str(profile.get("data_transport_backend", "")),
+                    "lease_store": str(profile.get("lease_store", "")),
+                    "registered_executor_backends": list(summary.get("registered_executor_backends", []) or []),
+                    "effective_default_backend": summary.get("effective_default_backend"),
+                },
+                children=(
+                    ExecutionGraphNode(
+                        node_id="runtime:task_requirement",
+                        label="task_requirement",
+                        kind="resource_requirement",
+                        metadata=dict(profile.get("task_requirement", {}) or {}),
+                    ),
+                ),
+            )
+
+
+        def _list_plugins(plugin_manager: object | None) -> Sequence[object]:
+            if plugin_manager is None:
+                return ()
+            list_plugins = getattr(plugin_manager, "list_plugins", None)
+            if callable(list_plugins):
+                try:
+                    return tuple(list_plugins(enabled_only=False))
+                except TypeError:
+                    return tuple(list_plugins())
+            return tuple(getattr(plugin_manager, "plugins", ()) or ())
+
+
+        def build_execution_lifecycle_graph(solver, *, run_id: str = "planned") -> ExecutionGraph:
+            problem = getattr(solver, "problem", None)
+            pipeline = getattr(solver, "representation_pipeline", None)
+            adapter = getattr(solver, "adapter", None)
+            plugins = _list_plugins(getattr(solver, "plugin_manager", None))
+            runtime_summary = dict(getattr(solver, "l0_runtime_summary", {}) or {})
+
+            lifecycle = ExecutionGraphNode(
+                node_id=f"lifecycle:{run_id}",
+                label=str(run_id),
+                kind="lifecycle_run",
+                metadata={"graph_type": "lifecycle_execution_plan"},
+                children=(
+                    ExecutionGraphNode(
+                        node_id="lifecycle:init",
+                        label="on_solver_init",
+                        kind="lifecycle_stage",
+                        children=(
+                            _object_node("problem", problem),
+                            _pipeline_node(pipeline),
+                            _runtime_node(runtime_summary),
+                        ),
+                    ),
+                    ExecutionGraphNode(
+                        node_id="lifecycle:population_init",
+                        label="on_population_init",
+                        kind="lifecycle_stage",
+                        children=(
+                            _object_node("adapter", adapter),
+                            _plugins_hook_node("on_population_init", plugins),
+                        ),
+                    ),
+                    ExecutionGraphNode(
+                        node_id="lifecycle:generation_loop",
+                        label="generation_loop",
+                        kind="lifecycle_stage",
+                        children=(
+                            ExecutionGraphNode(
+                                node_id="lifecycle:generation_start",
+                                label="on_generation_start",
+                                kind="lifecycle_hook",
+                                children=(_plugins_hook_node("on_generation_start", plugins),),
+                            ),
+                            ExecutionGraphNode(
+                                node_id="lifecycle:propose",
+                                label="adapter.propose",
+                                kind="evaluation_chain",
+                            ),
+                            ExecutionGraphNode(
+                                node_id="lifecycle:representation",
+                                label="representation",
+                                kind="evaluation_chain",
+                                children=tuple(
+                                    _object_node(f"pipeline:{attr}", getattr(pipeline, attr, None))
+                                    for attr in ("repair", "encoder")
+                                ),
+                            ),
+                            ExecutionGraphNode(
+                                node_id="lifecycle:evaluate",
+                                label="evaluate_population / evaluate_individual",
+                                kind="evaluation_chain",
+                            ),
+                            ExecutionGraphNode(
+                                node_id="lifecycle:update",
+                                label="adapter.update",
+                                kind="evaluation_chain",
+                            ),
+                            ExecutionGraphNode(
+                                node_id="lifecycle:generation_end",
+                                label="on_generation_end",
+                                kind="lifecycle_hook",
+                                children=(_plugins_hook_node("on_generation_end", plugins),),
+                            ),
+                        ),
+                    ),
+                    ExecutionGraphNode(
+                        node_id="lifecycle:finish",
+                        label="on_solver_finish",
+                        kind="lifecycle_stage",
+                        children=(_plugins_hook_node("on_solver_finish", plugins),),
+                    ),
+                ),
+            )
+            return ExecutionGraph(root=lifecycle)
+
+
+        def _plugins_hook_node(hook_name: str, plugins: Sequence[object]) -> ExecutionGraphNode:
+            children = tuple(
+                ExecutionGraphNode(
+                    node_id=f"hook:{hook_name}:{i}",
+                    label=type(plugin).__name__,
+                    kind="plugin",
+                    metadata={"hook": str(hook_name), "name": str(getattr(plugin, "name", ""))},
+                )
+                for i, plugin in enumerate(plugins)
+            )
+            return ExecutionGraphNode(
+                node_id=f"hook:{hook_name}",
+                label=str(hook_name),
+                kind="plugin_hook",
+                metadata={"count": len(children)},
+                children=children,
+            )
+        """
+    )
+
+
+def _runtime_exporters_template() -> str:
+    return dedent(
+        """\
+        # -*- coding: utf-8 -*-
+        # Export static execution graph as JSON / Mermaid / HTML.
+
+        from __future__ import annotations
+
+        import hashlib
+        import html
+        import json
+        import re
+        from pathlib import Path
+        from typing import Any, Mapping
+
+        FINGERPRINT_VERSION = "l0-runtime-graph-v1"
+        VOLATILE_METADATA_KEYS = {
+            "run_id",
+            "started_at",
+            "finished_at",
+            "created_at",
+            "updated_at",
+            "timestamp",
+            "time",
+        }
+
+
+        def export_execution_graph(
+            graph: object,
+            output_path: str | Path,
+            *,
+            format: str | None = None,
+            skip_if_unchanged: bool = True,
+            fingerprint_scope: str = "structure",
+        ) -> Path:
+            path = Path(output_path)
+            fmt = _detect_format(path, format)
+            payload = graph_to_dict(graph)
+            if skip_if_unchanged and _is_same_fingerprint(path, payload, scope=fingerprint_scope):
+                return path
+            if fmt == "json":
+                out = write_execution_graph_json(payload, path)
+            elif fmt in {"mmd", "mermaid"}:
+                out = write_execution_graph_mermaid(payload, path)
+            elif fmt in {"html", "htm"}:
+                out = write_execution_graph_html(payload, path)
+            else:
+                raise ValueError(f"Unsupported execution graph export format: {fmt}")
+            _write_fingerprint(path, payload, scope=fingerprint_scope)
+            return out
+
+
+        def export_execution_graph_if_changed(
+            graph: object,
+            output_path: str | Path,
+            *,
+            format: str | None = None,
+            fingerprint_scope: str = "structure",
+        ) -> tuple[Path, bool]:
+            path = Path(output_path)
+            fmt = _detect_format(path, format)
+            payload = graph_to_dict(graph)
+            if _is_same_fingerprint(path, payload, scope=fingerprint_scope):
+                return path, False
+            if fmt == "json":
+                out = write_execution_graph_json(payload, path)
+            elif fmt in {"mmd", "mermaid"}:
+                out = write_execution_graph_mermaid(payload, path)
+            elif fmt in {"html", "htm"}:
+                out = write_execution_graph_html(payload, path)
+            else:
+                raise ValueError(f"Unsupported execution graph export format: {fmt}")
+            _write_fingerprint(path, payload, scope=fingerprint_scope)
+            return out, True
+
+
+        def write_execution_graph_json(graph: object, output_path: str | Path) -> Path:
+            path = Path(output_path)
+            payload = graph_to_dict(graph)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            return path
+
+
+        def write_execution_graph_mermaid(graph: object, output_path: str | Path) -> Path:
+            path = Path(output_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(graph_to_mermaid(graph), encoding="utf-8")
+            return path
+
+
+        def write_execution_graph_html(graph: object, output_path: str | Path) -> Path:
+            path = Path(output_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(graph_to_html(graph), encoding="utf-8")
+            return path
+
+
+        def graph_to_dict(graph: object) -> dict[str, Any]:
+            return _graph_payload(graph)
+
+
+        def graph_fingerprint(graph: object, *, scope: str = "structure") -> str:
+            payload = graph_to_dict(graph)
+            if str(scope).lower() == "exact":
+                normalized = payload
+            else:
+                normalized = _normalize_graph_for_structure_fingerprint(payload, depth=0)
+            fingerprint_payload = {
+                "version": FINGERPRINT_VERSION,
+                "scope": str(scope).lower(),
+                "graph": normalized,
+            }
+            raw = json.dumps(fingerprint_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+        def graph_to_mermaid(graph: object) -> str:
+            payload = graph_to_dict(graph)
+            lines = ["flowchart TD"]
+            _append_mermaid_node(lines, payload, parent_id=None, seen={})
+            return "\\n".join(lines) + "\\n"
+
+
+        def graph_to_html(graph: object) -> str:
+            mermaid = graph_to_mermaid(graph)
+            payload = graph_to_dict(graph)
+            title = str(payload.get("label") or payload.get("id") or "execution graph")
+            return f\"\"\"<!doctype html>
+        <html lang="zh-CN">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>{html.escape(title)} - L0 Runtime Graph</title>
+          <style>
+            body {{
+              margin: 0;
+              padding: 32px;
+              font-family: Georgia, 'Times New Roman', serif;
+              color: #1d2a24;
+              background:
+                radial-gradient(circle at 18% 12%, rgba(66, 148, 110, 0.16), transparent 28rem),
+                linear-gradient(135deg, #f6f1e5 0%, #dfe9da 100%);
+            }}
+            main {{
+              max-width: 1180px;
+              margin: 0 auto;
+              padding: 28px;
+              background: rgba(255, 252, 244, 0.82);
+              border: 1px solid rgba(68, 94, 75, 0.18);
+              border-radius: 24px;
+              box-shadow: 0 24px 80px rgba(43, 61, 51, 0.16);
+            }}
+            h1 {{
+              margin: 0 0 8px;
+              font-size: clamp(28px, 4vw, 48px);
+              letter-spacing: -0.04em;
+            }}
+            p {{
+              margin: 0 0 24px;
+              color: #526358;
+            }}
+            .diagram {{
+              overflow: auto;
+              padding: 18px;
+              border-radius: 18px;
+              background: #fffaf0;
+            }}
+            details {{
+              margin-top: 22px;
+            }}
+            pre {{
+              overflow: auto;
+              padding: 16px;
+              border-radius: 14px;
+              background: #17211c;
+              color: #f4f1e8;
+            }}
+          </style>
+        </head>
+        <body>
+          <main>
+            <h1>{html.escape(title)}</h1>
+            <p>Static execution plan generated from the project L0 runtime graph.</p>
+            <div class="diagram">
+              <pre class="mermaid">{html.escape(mermaid)}</pre>
+            </div>
+            <details>
+              <summary>Mermaid source</summary>
+              <pre>{html.escape(mermaid)}</pre>
+            </details>
+          </main>
+          <script type="module">
+            import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+            mermaid.initialize({{ startOnLoad: true, theme: 'neutral' }});
+          </script>
+        </body>
+        </html>
+        \"\"\"
+
+
+        # Backward-compatible aliases for early local experiments.
+        execution_graph_to_mermaid = graph_to_mermaid
+        execution_graph_to_html = graph_to_html
+
+
+        def _detect_format(path: Path, explicit: str | None) -> str:
+            if explicit:
+                return str(explicit).strip().lower().lstrip(".")
+            suffix = path.suffix.lower().lstrip(".")
+            return suffix or "json"
+
+
+        def _graph_payload(graph: object) -> dict[str, Any]:
+            if isinstance(graph, Mapping):
+                return dict(graph)
+            as_dict = getattr(graph, "as_dict", None)
+            if callable(as_dict):
+                return dict(as_dict())
+            raise TypeError("graph must be a mapping or expose as_dict()")
+
+
+        def _is_same_fingerprint(path: Path, payload: Mapping[str, Any], *, scope: str) -> bool:
+            if not path.exists():
+                return False
+            marker = _fingerprint_marker_path(path)
+            if not marker.exists():
+                return False
+            try:
+                stored = json.loads(marker.read_text(encoding="utf-8"))
+            except Exception:
+                return False
+            stored_scope = str(stored.get("scope", "")).lower()
+            expected_scope = str(scope).lower()
+            if stored_scope != expected_scope:
+                return False
+            expected = graph_fingerprint(payload, scope=scope)
+            return str(stored.get("fingerprint", "")) == expected
+
+
+        def _write_fingerprint(path: Path, payload: Mapping[str, Any], *, scope: str) -> None:
+            marker = _fingerprint_marker_path(path)
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(
+                json.dumps(
+                    {
+                        "version": FINGERPRINT_VERSION,
+                        "scope": str(scope).lower(),
+                        "fingerprint": graph_fingerprint(payload, scope=scope),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+
+        def _fingerprint_marker_path(path: Path) -> Path:
+            return path.with_suffix(path.suffix + ".fingerprint.json")
+
+
+        def _normalize_graph_for_structure_fingerprint(node: Mapping[str, Any], *, depth: int) -> dict[str, Any]:
+            kind = str(node.get("kind") or "")
+            label = str(node.get("label") or "")
+            if depth == 0 or kind in {"run", "lifecycle_run"}:
+                label = "__root__"
+            metadata = _normalize_metadata(node.get("metadata", {}))
+            children = [
+                _normalize_graph_for_structure_fingerprint(child, depth=depth + 1)
+                for child in tuple(node.get("children", ()) or ())
+                if isinstance(child, Mapping)
+            ]
+            payload: dict[str, Any] = {
+                "kind": kind,
+                "label": label,
+                "children": children,
+            }
+            if metadata:
+                payload["metadata"] = metadata
+            return payload
+
+
+        def _normalize_metadata(value: Any) -> Any:
+            if isinstance(value, Mapping):
+                out: dict[str, Any] = {}
+                for key, item in sorted(value.items(), key=lambda kv: str(kv[0])):
+                    key_text = str(key)
+                    if key_text.lower() in VOLATILE_METADATA_KEYS:
+                        continue
+                    out[key_text] = _normalize_metadata(item)
+                return out
+            if isinstance(value, (list, tuple)):
+                return [_normalize_metadata(item) for item in value]
+            return value
+
+
+        def _append_mermaid_node(
+            lines: list[str],
+            node: Mapping[str, Any],
+            *,
+            parent_id: str | None,
+            seen: dict[str, int],
+        ) -> None:
+            raw_id = str(node.get("id") or node.get("label") or "node")
+            node_id = _safe_node_id(raw_id)
+            if node_id in seen:
+                seen[node_id] += 1
+                node_id = f"{node_id}_{seen[node_id]}"
+            else:
+                seen[node_id] = 0
+
+            label = _node_label(node)
+            lines.append(f'  {node_id}["{label}"]')
+            if parent_id:
+                lines.append(f"  {parent_id} --> {node_id}")
+
+            for child in tuple(node.get("children", ()) or ()):
+                if isinstance(child, Mapping):
+                    _append_mermaid_node(lines, child, parent_id=node_id, seen=seen)
+
+
+        def _node_label(node: Mapping[str, Any]) -> str:
+            label = str(node.get("label") or node.get("id") or "node")
+            kind = str(node.get("kind") or "")
+            if kind:
+                label = f"{label}\\\\n({kind})"
+            return label.replace('"', '\\\\\"')
+
+
+        def _safe_node_id(value: str) -> str:
+            text = re.sub(r"[^0-9a-zA-Z_]+", "_", value).strip("_")
+            if not text:
+                text = "node"
+            if text[0].isdigit():
+                text = f"n_{text}"
+            return text
+        """
+    )
+
+
+def _runtime_init_template() -> str:
+    return (
+        '"""Project L0 runtime profiles and execution-plan graph helpers."""\n\n'
+        "from .config import (\n"
+        "    RuntimeBackendSpec,\n"
+        "    RuntimeProfile,\n"
+        "    RuntimeRegistry,\n"
+        "    apply_runtime_profile,\n"
+        "    get_runtime_registry,\n"
+        "    resolve_runtime_profile,\n"
+        ")\n"
+        "from .exporters import (\n"
+        "    export_execution_graph,\n"
+        "    export_execution_graph_if_changed,\n"
+        "    graph_fingerprint,\n"
+        "    graph_to_dict,\n"
+        "    graph_to_html,\n"
+        "    graph_to_mermaid,\n"
+        ")\n"
+        "from .graph import (\n"
+        "    ExecutionGraph,\n"
+        "    ExecutionGraphNode,\n"
+        "    build_execution_lifecycle_graph,\n"
+        "    build_execution_plan_graph,\n"
+        ")\n"
+        "\n"
+        "__all__ = [\n"
+        '    "ExecutionGraph",\n'
+        '    "ExecutionGraphNode",\n'
+        '    "RuntimeBackendSpec",\n'
+        '    "RuntimeProfile",\n'
+        '    "RuntimeRegistry",\n'
+        '    "apply_runtime_profile",\n'
+        '    "build_execution_lifecycle_graph",\n'
+        '    "build_execution_plan_graph",\n'
+        '    "export_execution_graph",\n'
+        '    "export_execution_graph_if_changed",\n'
+        '    "get_runtime_registry",\n'
+        '    "graph_fingerprint",\n'
+        '    "graph_to_dict",\n'
+        '    "graph_to_html",\n'
+        '    "graph_to_mermaid",\n'
+        '    "resolve_runtime_profile",\n'
+        "]\n"
     )
 
 
@@ -1809,10 +2597,12 @@ def _solver_config_template() -> str:
 
 
         def apply_solver_core_config(solver, cfg: SolverCoreConfig) -> None:
-            solver.pop_size = int(cfg.pop_size)
-            solver.max_generations = int(cfg.max_generations)
-            solver.mutation_rate = float(cfg.mutation_rate)
-            solver.crossover_rate = float(cfg.crossover_rate)
+            solver.set_solver_hyperparams(
+                pop_size=int(cfg.pop_size),
+                max_generations=int(cfg.max_generations),
+                mutation_rate=float(cfg.mutation_rate),
+                crossover_rate=float(cfg.crossover_rate),
+            )
             solver.enable_progress_log = bool(cfg.enable_progress_log)
             solver.report_interval = int(cfg.report_interval)
             solver.parallel_thread_bias_isolation = str(cfg.thread_bias_isolation)
@@ -2143,6 +2933,18 @@ def _plugins_config_template() -> str:
             return plugins
 
 
+        def attach_governance_plugins(solver, registry, keys: Sequence[str]) -> None:
+            plugins = build_governance_plugins(registry, keys)
+            for plugin in plugins:
+                solver.add_plugin(plugin)
+
+
+        def attach_ops_plugins(solver, registry, keys: Sequence[str]) -> None:
+            plugins = build_ops_plugins(registry, keys)
+            for plugin in plugins:
+                solver.add_plugin(plugin)
+
+
         # --- Observability + checkpoint registries ---------------------------------
         @dataclass(frozen=True)
         class ObservabilitySpec:
@@ -2395,12 +3197,12 @@ def _build_solver_template() -> str:
         from adapter.config import event, group, phase, serial
         from assembly import (
             apply_solver_profile,
-            attach_acceleration,
             attach_checkpoint,
             attach_evaluation,
             attach_governance,
             attach_observability,
             attach_ops,
+            attach_runtime,
             attach_search,
             build_modeling,
         )
@@ -2444,7 +3246,7 @@ def _build_solver_template() -> str:
                 attach_search(solver, search_adapter)
 
             # --- L0 -----------------------------------------------------------
-            attach_acceleration(solver, cfg, ())
+            attach_runtime(solver, cfg, "local_cpu")
 
             # --- L4 -----------------------------------------------------------
             attach_evaluation(solver, cfg, ())
@@ -2551,7 +3353,7 @@ def _build_solver_registration_guide_template() -> str:
         3. apply store + runtime governance profiles
         4. apply solver profile
         5. attach search adapter (optional)
-        6. attach acceleration (L0)
+        6. attach runtime profile (L0)
         7. attach evaluation runtime (L4)
         8. attach governance plugins (L3)
         9. attach observability + ops plugins (L1/L2)
@@ -2765,7 +3567,10 @@ def init_project(target_dir: Path | str, *, force: bool = False) -> Path:
     _write_file(root / "adapter" / "example_adapter.py", _adapter_example_template(), overwrite=force)
     _write_file(root / "adapter" / "template_adapter.py", _adapter_class_template(), overwrite=force)
 
-    _write_file(root / "acceleration" / "config.py", _acceleration_config_template(), overwrite=force)
+    _write_file(root / "runtime" / "config.py", _runtime_config_template(), overwrite=force)
+    _write_file(root / "runtime" / "graph.py", _runtime_graph_template(), overwrite=force)
+    _write_file(root / "runtime" / "exporters.py", _runtime_exporters_template(), overwrite=force)
+    _write_file(root / "runtime" / "__init__.py", _runtime_init_template(), overwrite=force)
     _write_file(root / "evaluation" / "config.py", _evaluation_config_template(), overwrite=force)
     _write_file(root / "solver" / "config.py", _solver_config_template(), overwrite=force)
 

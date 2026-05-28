@@ -34,6 +34,29 @@
 - 不把运行时能力（日志、恢复、审计）硬塞进 `Adapter`
 - 不把业务策略硬塞进 `repair`
 
+### 1.1 统一框架栈规则（nsgablack + mlblack）
+
+`nsgablack` 和 `mlblack` 应被视为一个统一框架栈的不同层，而不是两个孤立项目。新增组件、模型族、provider、runtime、示例或跨框架能力前，必须同时判断两边职责边界。
+
+统一分工：
+
+- `nsgablack` 负责外层控制、搜索、编排、solver lifecycle、multi-objective/Pareto、nested evaluation、L0 resource scheduling。
+- `mlblack` 负责 ML 语义组件、DataView、Spec、Codec、Head、Problem、Trainer、Provider、Artifact、backend capability。
+- 外部 domain backend（数值求解器、仿真器、数据库、向量索引、对象存储、Ray/K8s/云服务）只能通过正式 bridge/provider/runtime surface 接入，不应污染两边核心职责。
+
+新增能力前必须先分类：
+
+- 属于 `nsgablack orchestration`：阶段、并行、outer search、多 solver、Pareto、嵌套评估、资源授权。
+- 属于 `mlblack semantic component`：数据视图、模型语义、head、训练/评估、artifact、capability contract。
+- 属于外部 domain backend：数值求解器、仿真器、索引、数据库、对象存储。
+- 属于 cross-framework scaffold：通过两边正式脚手架 surface 组合，而不是在 example 里私接胶水。
+
+硬规则：
+
+- 不允许为单个模型族或机制私造 `mlblack Workflow/Runtime`；如果需要阶段、并行、外层搜索或资源编排，应上升到 `nsgablack`。
+- 不允许 `nsgablack` 硬编码 `mlblack` trainer/provider 内部细节；只能通过 `component_overrides`、inner task payload、`ResourceContext`、artifact/result payload 通信。
+- PINN、Neural ODE、时序、多模态、符号学习、推荐、科学计算等能力必须综合考虑 `nsgablack + mlblack` 的统一分工，不能只在一个仓库里局部堆实现。
+
 ---
 
 ## 2) 架构总览（必须先理解）
@@ -229,7 +252,13 @@
 
 如果要新增或修改示例、演示或 benchmark runner，必须使用标准项目脚手架形态来组装。
 
-这里的“标准脚手架”不是指必须字面落在某个固定目录，也不是强制所有 case 都落进仓库根部的 `my_project/`。它指的是必须具备类似 `my_project` 的正式项目结构与职责分层：
+这里的“标准脚手架”首先是**正式职责分层**，其次是**正式落点**：
+
+- 对于 `example / demo / benchmark runner / cross-framework case`，完整脚手架必须优先落在 `examples/cases/<case>/` 或同级 `examples/*` 正式示例命名空间
+- **禁止**继续把这类完整示例脚手架默认落进仓库根部 `my_project/`
+- `my_project/` 只可作为框架级起步模板、参考骨架、兼容层或用户私有项目孵化位，**不是**示例案例的长期堆放区
+
+标准脚手架本身应具备如下正式项目结构与职责分层：
 
 - `problem/`：问题定义、目标、约束、数据/场景契约
 - `pipeline/`：候选流转、representation、evaluation chain、数据处理链
@@ -243,7 +272,8 @@
 允许：
 
 - 优先复用正式 `solver / adapter / representation / plugin` 装配路径
-- 优先复用项目内已有的 `my_project/*`、`examples/cases/*` 中已经标准化的项目脚手架、CLI、workflow、标准 capability 装配协议
+- 优先复用项目内已有的 `examples/cases/*` 标准脚手架、CLI、workflow、标准 capability 装配协议
+- 允许把 `my_project/*` 当作模板、参考实现或兼容层来抽取公共装配模式，但不要把新的完整 case 直接落进去
 - 让示例反映正式产品面，而不是写成只在示例里成立的私有捷径
 
 禁止：
@@ -251,6 +281,7 @@
 - 为了省事，在示例里手写一套绕过正式装配协议的运行入口
 - 在 example 中直接拼隐式状态，导致主干能力无法复用/审计
 - 让示例和正式框架表面长期分叉
+- 把新的完整标准脚手架长期种在 `my_project/`，导致 `my_project` 被案例代码污染
 - 在 `examples/cases/<case>/build_solver.py` 里长期堆放 problem、pipeline、adapter、bias、plugin、reporting 的全部装配细节
 
 跨框架规则：
@@ -259,6 +290,15 @@
 - 如果示例同时用到 `mlblack`，`mlblack` 侧也必须通过 mlblack 的标准项目脚手架形态暴露 evaluation proxy、inner fitter、artifact builder 与 audit/report surface。
 - 跨框架示例只能组合两个正式脚手架 surface，不能绕过任一侧的正式装配边界。
 - 过渡期保留的旧 example 必须标注为 compatibility/thin wrapper，新增机制不得继续落在旧 example 文件内。
+
+跨框架 L0 资源边界：
+
+- `mlblack` L0 owns intra-evaluation compute backend.
+- `nsgablack` L0 owns inter-solver and outer-evaluation resource scheduling.
+- When nested, `mlblack` L0 must obey the `ResourceContext` injected by `nsgablack` L0.
+- `nsgablack` 只负责把外层授权、设备池、solver fanout 和 outer evaluation budget 注入为资源上下文；不得把 mlblack 内部 trainer/proxy 的业务 backend 细节硬编码进 nsgablack 示例。
+- 跨框架项目必须通过正式 scaffold surface 传递 `ResourceContext`，不能在 example/case 文件里私下改写 `cuda:0`、线程数或 inner backend。
+- 跨框架运行入口必须在命令行与 summary/runtime_state 中打印“生效后的资源上下文、启用组件、后端与命名空间”，避免出现“配置存在但不可审计”的黑盒状态。
 
 ---
 
@@ -296,8 +336,14 @@ python -m nsgablack catalog list --profile framework-core --kind example
 - `my_project/problem/example_problem.py`
 - `my_project/pipeline/example_pipeline.py`
 - `my_project/plugins/example_plugin.py`
+- `examples/cases/*/build_solver.py`
+- `examples/cases/*/run_solver.py`
 
-建议路径：先跑通 `problem + pipeline + solver + observability suite`，再引入 bias 与复杂 adapter。
+建议路径：
+
+- 若做正式 example/case：先在 `examples/cases/<case>/` 下跑通 `problem + pipeline + solver + observability suite`
+- 若做框架模板或用户私有工程孵化：再考虑 `my_project/`
+- 完整示例不要反向回灌到 `my_project/`
 
 ---
 

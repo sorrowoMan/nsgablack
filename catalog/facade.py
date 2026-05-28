@@ -59,6 +59,8 @@ _DEFAULT_FACET_FIELDS: dict[str, tuple[str, ...]] = {
     "plugin": ("tags", "companions", "context_requires", "context_provides", "artifact_provides", "phase_out"),
     "bias": ("tags", "companions", "required_companions", "context_provides", "artifact_provides", "phase_out"),
     "representation": ("tags", "companions", "context_requires", "context_provides", "artifact_requires", "phase_in"),
+    "resource": ("tags", "companions", "context_provides", "artifact_provides"),
+    "backend": ("tags", "companions", "context_provides", "artifact_provides"),
     "suite": ("tags", "companions", "required_companions"),
     "tool": ("tags", "companions"),
     "doc": ("tags",),
@@ -493,10 +495,12 @@ def _sort_entries(entries: Iterable[CatalogEntry]) -> list[CatalogEntry]:
         "plugin": 1,
         "bias": 2,
         "representation": 3,
-        "suite": 4,
-        "tool": 5,
-        "doc": 6,
-        "example": 7,
+        "resource": 4,
+        "backend": 5,
+        "suite": 6,
+        "tool": 7,
+        "doc": 8,
+        "example": 9,
     }
     return sorted(entries, key=lambda entry: (kind_order.get(entry.kind, 99), entry.key))
 

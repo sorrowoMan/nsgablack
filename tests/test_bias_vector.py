@@ -39,3 +39,22 @@ def test_compute_bias_batch_shapes():
 
     out = bias.compute_bias_batch(xs, objectives, contexts=contexts)
     assert out.shape == objectives.shape
+
+
+def test_bias_cache_accepts_none_generation_from_parallel_context():
+    bias = BiasModule()
+
+    def penalty(x, constraints, context):
+        _ = (x, constraints, context)
+        return {"penalty": 1.0}
+
+    bias.add(CallableBias(name="p", func=penalty, weight=1.0, mode="penalty"))
+
+    value = bias.compute_bias(
+        np.array([1.0, 2.0]),
+        10.0,
+        individual_id=0,
+        context={"constraints": [], "generation": None, "constraint_violation": 0.0},
+    )
+
+    assert float(value) == 11.0

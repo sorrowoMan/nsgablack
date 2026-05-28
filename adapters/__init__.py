@@ -24,7 +24,7 @@ from .trust_region_mo_dfo import TrustRegionMODFOAdapter, TrustRegionMODFOConfig
 from .trust_region_subspace import TrustRegionSubspaceAdapter, TrustRegionSubspaceConfig
 from .trust_region_nonsmooth import TrustRegionNonSmoothAdapter, TrustRegionNonSmoothConfig
 from .mas import MASAdapter, MASConfig
-from .async_event_driven import AsyncEventDrivenAdapter, AsyncEventDrivenConfig, EventStrategySpec
+from .async_event_driven import AsyncEventDrivenAdapter, AsyncEventDrivenConfig, EventCaseSpec, EventStrategySpec
 from .single_trajectory_adaptive import SingleTrajectoryAdaptiveAdapter, SingleTrajectoryAdaptiveConfig
 from .differential_evolution import DifferentialEvolutionAdapter, DEConfig
 from .gradient_descent import GradientDescentAdapter, GradientDescentConfig
@@ -68,6 +68,7 @@ __all__ = [
     "MASConfig",
     "AsyncEventDrivenAdapter",
     "AsyncEventDrivenConfig",
+    "EventCaseSpec",
     "EventStrategySpec",
     "SingleTrajectoryAdaptiveAdapter",
     "SingleTrajectoryAdaptiveConfig",

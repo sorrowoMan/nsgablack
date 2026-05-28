@@ -571,9 +571,13 @@ CREATE TABLE IF NOT EXISTS catalog_field_value (
                 cur.execute(stmt)
             except Exception as exc:
                 msg = str(exc).lower()
-                if "already exists" in msg or "duplicate" in msg:
+                if "already exists" in msg or "duplicate" in msg or "已经存在" in msg:
+                    cur.execute("ROLLBACK TO SAVEPOINT safe_mig;")
+                    cur.execute("SAVEPOINT safe_mig;")
                     return
                 raise
+
+        cur.execute("SAVEPOINT safe_mig;")
 
         migrations: List[tuple[int, Sequence[str]]] = []
         if not legacy_retired:

@@ -1,0 +1,67 @@
+# 分布式模拟：DB + Redis + 3 个 worker
+# 启动：docker compose -f docker-compose.distributed.yml up -d
+# 在同一台机器上模拟多节点 L0 任务调度
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: nsgablack
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: nsgablack_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nsgablack"]
+      interval: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+
+  worker-1:
+    build: .
+    command: python examples/cases/l0_distributed_worker/build_solver.py --id worker-1 --cycles 0
+    environment:
+      NSGABLACK_L0_PG_URL: postgresql://postgres:nsgablack_dev@postgres:5432/nsgablack
+      NSGABLACK_L0_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker-2:
+    build: .
+    command: python examples/cases/l0_distributed_worker/build_solver.py --id worker-2 --cycles 0
+    environment:
+      NSGABLACK_L0_PG_URL: postgresql://postgres:nsgablack_dev@postgres:5432/nsgablack
+      NSGABLACK_L0_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker-3:
+    build: .
+    command: python examples/cases/l0_distributed_worker/build_solver.py --id worker-3 --cycles 0
+    environment:
+      NSGABLACK_L0_PG_URL: postgresql://postgres:nsgablack_dev@postgres:5432/nsgablack
+      NSGABLACK_L0_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:

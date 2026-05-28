@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional
 import numpy as np
 
 from nsgablack.plugins import Plugin
+from reporting import write_schedule_audit_report
 
 ExtractParetoFn = Callable[[Any], tuple[Optional[np.ndarray], Optional[np.ndarray]]]
 ChooseParetoFn = Callable[[Any, np.ndarray, np.ndarray], list[tuple[str, np.ndarray, np.ndarray]]]
@@ -172,6 +173,11 @@ class ProductionExportPlugin(Plugin):
                 total_output=total_output,
                 days=int(schedule.shape[1]),
             )
+            audit_path = export_path.with_suffix(".audit.json")
+            try:
+                write_schedule_audit_report(self.problem, schedule, audit_path, label=label)
+            except Exception as exc:
+                print(f"[audit] {label}: failed to write schedule audit ({exc!r})")
             print(
                 f"[export] saved {label}: {export_path} "
                 f"feasible={is_feasible} total_output={total_output:.6g} "

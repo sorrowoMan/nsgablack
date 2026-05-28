@@ -89,17 +89,19 @@ def build_solver_profile(registry: SolverProfileRegistry, key: str) -> SolverCor
 
 
 def apply_solver_core_config(solver, cfg: SolverCoreConfig) -> None:
-    solver.pop_size = int(cfg.pop_size)
-    solver.max_generations = int(cfg.max_generations)
-    solver.mutation_rate = float(cfg.mutation_rate)
-    solver.crossover_rate = float(cfg.crossover_rate)
+    solver.set_solver_hyperparams(
+        pop_size=int(cfg.pop_size),
+        max_generations=int(cfg.max_generations),
+        mutation_rate=float(cfg.mutation_rate),
+        crossover_rate=float(cfg.crossover_rate),
+    )
     solver.enable_progress_log = bool(cfg.enable_progress_log)
     solver.report_interval = int(cfg.report_interval)
     solver.parallel_thread_bias_isolation = str(cfg.thread_bias_isolation)
     if hasattr(solver, "plugin_manager") and getattr(solver, "plugin_manager", None) is not None:
         try:
             solver.plugin_manager.strict = bool(cfg.plugin_strict)
-        except Exception:
+        except AttributeError:
             pass
 
 

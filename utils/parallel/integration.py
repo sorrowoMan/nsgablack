@@ -10,15 +10,22 @@ Users can opt-in by wrapping a solver class:
 
 from __future__ import annotations
 
+import warnings
 from typing import Any, Dict, Literal, Optional, Type, TypeVar, Union
 
 import numpy as np
 
 from .evaluator import ParallelEvaluator, Backend, ProblemFactory, ContextBuilder
 
-BackendLike = Union[Backend, Literal["auto"]]
+BackendLike = Union[Backend, Literal["auto", "redis"]]
 
 T = TypeVar("T")
+
+
+def _has_problem_inner_runtime_evaluator(solver: Any) -> bool:
+    problem = getattr(solver, "problem", None)
+    evaluator = getattr(problem, "inner_runtime_evaluator", None) if problem is not None else None
+    return callable(getattr(evaluator, "evaluate", None))
 
 
 def with_parallel_evaluation(
@@ -82,7 +89,13 @@ def with_parallel_evaluation(
             if self.parallel_evaluator is not None:
                 return self.parallel_evaluator
             cfg = self._parallel_cfg
-            backend = cfg["backend"]
+            backend = str(cfg["backend"] or "process").lower()
+            if backend == "redis":
+                msg = "parallel_backend='redis' is only supported for nested inner-runtime evaluation"
+                if bool(cfg.get("strict", False)):
+                    raise ValueError(msg)
+                warnings.warn(f"{msg}; falling back to {cfg.get('fallback_backend', 'thread')!r}")
+                backend = str(cfg.get("fallback_backend", "thread") or "thread").lower()
             if backend == "auto":
                 from .evaluator import SmartEvaluatorSelector
                 self.parallel_evaluator = SmartEvaluatorSelector.select_evaluator(
@@ -124,6 +137,8 @@ def with_parallel_evaluation(
             return self.parallel_evaluator
 
         def evaluate_population(self, population: np.ndarray, *args: Any, **kwargs: Any):
+            if _has_problem_inner_runtime_evaluator(self):
+                return super().evaluate_population(population, *args, **kwargs)
             evaluator = self._ensure_parallel_evaluator()
             if evaluator is None:
                 return super().evaluate_population(population, *args, **kwargs)

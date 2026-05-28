@@ -570,9 +570,10 @@ def _build_health(
     )
 
 
-def build_catalog_bundle(*, profile: str, runtime: bool = False) -> CatalogBundle:
-    c = get_catalog(profile=profile)
-    entries = c.list()
+def build_catalog_bundle(*, profile: str, runtime: bool = False, entries: List | None = None) -> CatalogBundle:
+    if entries is None:
+        c = get_catalog(profile=profile)
+        entries = c.list()
     components: List[CatalogComponentContract] = []
     contexts: List[ContextContract] = []
     usages: List[UsageContract] = []
@@ -643,7 +644,23 @@ def materialize_catalog_to_db(
     runtime: bool = False,
     db_url: str | None = None,
 ) -> dict[str, int | str]:
-    bundle = build_catalog_bundle(profile=profile, runtime=runtime)
+    from .registry import _default_entries, _discover_python_entries, _load_external_entries, _load_entrypoint_entries
+
+    base = _default_entries()
+    discovered = _discover_python_entries()
+    extra = _load_external_entries()
+    eps = _load_entrypoint_entries()
+
+    merged: dict[str, Any] = {e.key: e for e in base}
+    for e in discovered:
+        merged[e.key] = e
+    for e in extra:
+        merged[e.key] = e
+    for e in eps:
+        merged[e.key] = e
+    entries = list(merged.values())
+
+    bundle = build_catalog_bundle(profile=profile, runtime=runtime, entries=entries)
     store = resolve_catalog_store(url=db_url, readonly=False)
     store.sync_bundle(bundle, profile=profile)
     return {

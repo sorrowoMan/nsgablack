@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
+from urllib.error import URLError
+from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+from uuid import uuid4
 
 if __package__ in {None, ""}:
     _ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +44,10 @@ _SURFACE_LABELS: dict[str, str] = {
 }
 _SURFACE_STATE_KEY = "nsgablack_ui_surface"
 _SURFACE_WIDGET_KEY = "nsgablack_ui_surface_widget"
+_AI_SESSION_KEY = "nsgablack_ui_ai_session_id"
+_AI_HISTORY_PREFIX = "nsgablack_ui_ai_history"
+_AI_SERVICE_URL_ENV = "NSGABLACK_AI_ASSISTANT_URL"
+_ASSISTANT_AUTOSTARTED: set[str] = set()
 _SHELL_QUERY_KEYS: tuple[str, ...] = ("surface",)
 _CATALOG_MARKER_KEYS: tuple[str, ...] = (
     "profile",
@@ -271,6 +281,209 @@ def _inject_style() -> None:
   font-size: 0.81rem;
   margin-top: 0.55rem;
 }}
+/* AI 悬浮对话框容器 */
+.ai-chat-container {{
+    position: fixed;
+    right: 1.5rem;
+    bottom: 2rem;
+    z-index: 9999;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
+}}
+
+/* 浮窗主体 */
+.ai-chat-box {{
+    width: 360px;
+    max-height: 520px;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(30, 64, 175, 0.20), 0 2px 8px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgba(200, 210, 240, 0.4);
+}}
+
+/* 消息历史区域 */
+.ai-chat-messages {{
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+    background: #fafbff;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}}
+
+.ai-chat-messages::-webkit-scrollbar {{
+    width: 6px;
+}}
+
+.ai-chat-messages::-webkit-scrollbar-track {{
+    background: transparent;
+}}
+
+.ai-chat-messages::-webkit-scrollbar-thumb {{
+    background: rgba(100, 120, 180, 0.3);
+    border-radius: 3px;
+}}
+
+.ai-chat-messages::-webkit-scrollbar-thumb:hover {{
+    background: rgba(100, 120, 180, 0.5);
+}}
+
+/* 消息气泡 */
+.ai-msg-user {{
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.3rem;
+}}
+
+.ai-msg-user-bubble {{
+    background: linear-gradient(135deg, #1f3c88, #3454b0);
+    color: #ffffff;
+    padding: 0.65rem 0.95rem;
+    border-radius: 12px 4px 12px 12px;
+    max-width: 75%;
+    word-wrap: break-word;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}}
+
+.ai-msg-assistant {{
+    display: flex;
+    justify-content: flex-start;
+    margin-bottom: 0.3rem;
+}}
+
+.ai-msg-assistant-bubble {{
+    background: #e8eef8;
+    color: #1f3c88;
+    padding: 0.65rem 0.95rem;
+    border-radius: 4px 12px 12px 12px;
+    max-width: 75%;
+    word-wrap: break-word;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}}
+
+/* 输入框区域 */
+.ai-chat-input-area {{
+    padding: 0.8rem;
+    background: #ffffff;
+    border-top: 1px solid rgba(200, 210, 240, 0.3);
+    display: flex;
+    gap: 0.5rem;
+}}
+
+.ai-chat-input {{
+    flex: 1;
+    border: 1px solid rgba(100, 140, 200, 0.3);
+    border-radius: 6px;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.9rem;
+    font-family: inherit;
+    resize: none;
+    max-height: 80px;
+    outline: none;
+}}
+
+.ai-chat-input:focus {{
+    border-color: rgba(31, 60, 136, 0.5);
+    box-shadow: 0 0 0 2px rgba(31, 60, 136, 0.08);
+}}
+
+.ai-chat-btn {{
+    background: linear-gradient(135deg, #1f3c88, #3454b0);
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 0.55rem 1rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}}
+
+.ai-chat-btn:hover {{
+    background: linear-gradient(135deg, #263d80, #3d5ac0);
+    box-shadow: 0 4px 12px rgba(31, 60, 136, 0.20);
+}}
+
+.ai-chat-btn:active {{
+    transform: scale(0.98);
+}}
+
+.ai-chat-btn.clear {{
+    background: rgba(200, 100, 100, 0.6);
+    padding: 0.55rem 0.7rem;
+}}
+
+.ai-chat-btn.clear:hover {{
+    background: rgba(200, 100, 100, 0.8);
+}}
+
+/* 浮窗触发按钮 */
+.ai-chat-toggle-btn {{
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 50%;
+    border: none;
+    background: linear-gradient(135deg, rgba(31, 60, 136, 0.96), rgba(52, 84, 176, 0.98));
+    color: #ffffff;
+    box-shadow: 0 4px 16px rgba(30, 64, 175, 0.32);
+    font-size: 1.3rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+}}
+
+.ai-chat-toggle-btn:hover {{
+    transform: scale(1.08);
+    box-shadow: 0 6px 20px rgba(30, 64, 175, 0.40);
+}}
+
+.ai-chat-toggle-btn:active {{
+    transform: scale(0.95);
+}}
+
+/* 对话框头部 */
+.ai-chat-header {{
+    background: linear-gradient(135deg, #1f3c88, #3454b0);
+    color: #ffffff;
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}}
+
+.ai-chat-header-title {{
+    font-weight: 800;
+    font-size: 0.95rem;
+}}
+
+.ai-chat-close-btn {{
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: #ffffff;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    transition: background 0.2s;
+}}
+
+.ai-chat-close-btn:hover {{
+    background: rgba(255, 255, 255, 0.3);
+}}
 </style>
 """,
         unsafe_allow_html=True,
@@ -367,6 +580,360 @@ def _experiment_argv(args: argparse.Namespace) -> list[str]:
     return out
 
 
+def _assistant_service_base_url() -> str:
+    import os
+
+    return str(os.getenv(_AI_SERVICE_URL_ENV, "http://127.0.0.1:5001") or "http://127.0.0.1:5001").rstrip("/")
+
+
+def _assistant_service_health_url(service_base_url: str) -> str:
+    return f"{service_base_url.rstrip('/')}/health"
+
+
+def _assistant_service_script_path() -> Path:
+    return Path(__file__).resolve().parents[2] / "mlblack" / "examples" / "catalog_assistant" / "server.py"
+
+
+def _assistant_service_is_local(service_base_url: str) -> bool:
+    parsed = urlsplit(service_base_url)
+    return parsed.scheme in {"http", "https"} and parsed.hostname in {"127.0.0.1", "localhost"} and parsed.port == 5001
+
+
+def _assistant_service_is_ready(service_base_url: str) -> bool:
+    request = Request(_assistant_service_health_url(service_base_url), method="GET")
+    try:
+        with urlopen(request, timeout=2) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            return isinstance(payload, dict) and payload.get("status") == "ok"
+    except Exception:
+        return False
+
+
+def _assistant_try_autostart(service_base_url: str) -> bool:
+    if not _assistant_service_is_local(service_base_url):
+        return False
+    if service_base_url in _ASSISTANT_AUTOSTARTED and not _assistant_service_is_ready(service_base_url):
+        return False
+
+    script_path = _assistant_service_script_path()
+    if not script_path.is_file():
+        return False
+
+    if _assistant_service_is_ready(service_base_url):
+        return True
+
+    _ASSISTANT_AUTOSTARTED.add(service_base_url)
+    try:
+        subprocess.Popen(
+            [sys.executable, str(script_path)],
+            cwd=str(script_path.parent),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception:
+        return False
+
+    for _ in range(20):
+        if _assistant_service_is_ready(service_base_url):
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def _assistant_session_id() -> str:
+    session_id = str(st.session_state.get(_AI_SESSION_KEY) or "").strip()
+    if not session_id:
+        session_id = uuid4().hex
+        st.session_state[_AI_SESSION_KEY] = session_id
+    return session_id
+
+
+def _assistant_history_key(surface: str) -> str:
+    return f"{_AI_HISTORY_PREFIX}::{surface}"
+
+
+def _assistant_history(surface: str) -> list[dict[str, str]]:
+    raw = st.session_state.get(_assistant_history_key(surface), [])
+    if not isinstance(raw, list):
+        return []
+    history: list[dict[str, str]] = []
+    for item in raw:
+        if isinstance(item, Mapping):
+            role = str(item.get("role", "") or "").strip()
+            content = str(item.get("content", "") or "").strip()
+            if role and content:
+                history.append({"role": role, "content": content})
+    return history
+
+
+def _assistant_set_history(surface: str, history: list[dict[str, str]]) -> None:
+    st.session_state[_assistant_history_key(surface)] = history[-12:]
+
+
+def _assistant_is_transient_transport_error(exc: Exception) -> bool:
+    if isinstance(exc, URLError):
+        reason = getattr(exc, "reason", None)
+        if isinstance(reason, (ConnectionResetError, BrokenPipeError, TimeoutError)):
+            return True
+        if isinstance(reason, OSError) and getattr(reason, "winerror", None) == 10054:
+            return True
+        message = str(reason or exc)
+    else:
+        message = str(exc)
+        if isinstance(exc, (ConnectionResetError, BrokenPipeError, TimeoutError)):
+            return True
+        if isinstance(exc, OSError) and getattr(exc, "winerror", None) == 10054:
+            return True
+    lowered = message.lower()
+    return "10054" in lowered or "connection reset" in lowered or "远程主机强迫关闭" in message
+
+
+def _assistant_call_api(query: str, history: list[dict[str, str]]) -> dict[str, Any]:
+    payload = json.dumps({"query": query, "session_id": _assistant_session_id()}).encode("utf-8")
+    service_base_url = _assistant_service_base_url()
+    if not _assistant_service_is_ready(service_base_url):
+        _assistant_try_autostart(service_base_url)
+
+    def _post_once() -> dict[str, Any] | None:
+        request = Request(
+            f"{service_base_url}/chat",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=30) as response:
+            text = response.read().decode("utf-8")
+            result = json.loads(text)
+            if isinstance(result, dict):
+                return result
+        return None
+
+    try:
+        result = _post_once()
+        if result is not None:
+            return result
+    except Exception as exc:
+        if _assistant_is_transient_transport_error(exc):
+            _assistant_try_autostart(service_base_url)
+            try:
+                result = _post_once()
+                if result is not None:
+                    return result
+            except Exception as retry_exc:
+                exc = retry_exc
+
+        return {
+            "reply": f"AI 服务响应异常：{exc}\n\n已尝试自动启动 `catalog_assistant`，如果仍失败，请手动运行：`python c:\\Users\\hp\\Desktop\\mlblack\\examples\\catalog_assistant\\server.py`",
+            "entries": [],
+            "service_url": service_base_url,
+        }
+    return {"reply": "AI 服务返回空结果。", "entries": [], "service_url": service_base_url}
+
+
+def _render_history_message(role: str, content: str) -> None:
+    if hasattr(st, "chat_message"):
+        with st.chat_message(role if role in {"user", "assistant"} else "assistant"):
+            st.markdown(content)
+        return
+    prefix = "用户" if role == "user" else "助手"
+    st.markdown(f"**{prefix}**：{content}")
+
+
+def _render_ai_panel(surface: str) -> None:
+    """渲染紧凑型 AI 对话面板。"""
+    history = _assistant_history(surface)
+    st.caption(f"Catalog Assistant · {_assistant_service_base_url()}/chat")
+    draft_key = f"{_assistant_history_key(surface)}::draft"
+    clear_draft_key = f"{_assistant_history_key(surface)}::clear_draft"
+
+    if bool(st.session_state.pop(clear_draft_key, False)):
+        st.session_state[draft_key] = ""
+    
+    # 消息显示区域
+    st.markdown('<div class="ai-chat-messages">', unsafe_allow_html=True)
+    if not history:
+        st.markdown(
+            '<div style="text-align: center; color: #999; padding: 0.9rem 0.4rem; font-size: 0.82rem;">'
+            '👋 欢迎使用AI助手，请输入你的问题'
+            '</div>',
+            unsafe_allow_html=True
+        )
+    else:
+        for item in history:
+            role = item.get("role", "assistant")
+            content = item.get("content", "")
+            if role == "user":
+                st.markdown(
+                    f'<div class="ai-msg-user"><div class="ai-msg-user-bubble">{content}</div></div>',
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    f'<div class="ai-msg-assistant"><div class="ai-msg-assistant-bubble">{content}</div></div>',
+                    unsafe_allow_html=True
+                )
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # 输入和操作区域
+    st.markdown('<div class="ai-chat-input-area">', unsafe_allow_html=True)
+    col1, col2 = st.columns([4, 1])
+    
+    prompt = col1.text_area(
+        "输入问题",
+        key=draft_key,
+        height=72,
+        label_visibility="collapsed",
+        placeholder="输入问题..."
+    )
+    
+    send_clicked = col2.button(
+        "发送",
+        key=f"{_assistant_history_key(surface)}::send",
+        use_container_width=True,
+        help="发送问题给AI"
+    )
+    
+    if send_clicked:
+        if not str(prompt or "").strip():
+            st.warning("请输入内容后再发送。")
+        else:
+            history.append({"role": "user", "content": str(prompt).strip()})
+            result = _assistant_call_api(str(prompt).strip(), history)
+            reply = str(result.get("reply", "")).strip() or "AI 没有返回内容。"
+            history.append({"role": "assistant", "content": reply})
+            _assistant_set_history(surface, history)
+            st.session_state[clear_draft_key] = True
+            _shared.rerun(st)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def _render_ai_floating_window(surface: str) -> None:
+    """渲染右侧固定的小图标浮窗，并在展开时显示紧凑对话框。"""
+    st.markdown(
+        """
+<style>
+.ai-float-shell {
+    position: fixed;
+    right: 0.9rem;
+    top: 52%;
+    transform: translateY(-50%);
+    z-index: 9999;
+}
+.ai-float-shell [data-testid="stPopover"] > button {
+    width: 3.15rem;
+    height: 3.15rem;
+    min-width: 3.15rem !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 999px !important;
+    font-size: 1rem !important;
+    font-weight: 800 !important;
+    background: linear-gradient(135deg, rgba(31, 60, 136, 0.98), rgba(52, 84, 176, 0.98)) !important;
+    color: #fff !important;
+    box-shadow: 0 10px 20px rgba(30, 64, 175, 0.28) !important;
+}
+.ai-float-shell [data-testid="stPopover"] > button:hover {
+    transform: scale(1.06);
+}
+.ai-float-shell [data-testid="stPopover"] {
+    min-width: 0 !important;
+}
+.ai-float-popover {
+    width: min(22rem, 82vw) !important;
+}
+.ai-chat-box {
+    width: 100%;
+    max-width: 22rem;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(140, 160, 220, 0.16);
+    box-shadow: 0 16px 36px rgba(30, 64, 175, 0.16);
+}
+.ai-chat-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.72rem 0.82rem;
+    background: linear-gradient(135deg, rgba(31, 60, 136, 0.98), rgba(52, 84, 176, 0.98));
+    color: #fff;
+}
+.ai-chat-header-title {
+    font-size: 0.92rem;
+    font-weight: 800;
+}
+.ai-chat-status {
+    font-size: 0.71rem;
+    opacity: 0.84;
+    margin-top: 0.05rem;
+}
+.ai-chat-messages {
+    max-height: 16rem;
+    overflow: auto;
+    padding: 0.68rem;
+    background: #f8fbff;
+}
+.ai-chat-input-area {
+    padding: 0.68rem;
+    border-top: 1px solid rgba(140, 160, 220, 0.12);
+    background: #fff;
+}
+.ai-msg-user, .ai-msg-assistant {
+    display: flex;
+    margin-bottom: 0.4rem;
+}
+.ai-msg-user { justify-content: flex-end; }
+.ai-msg-assistant { justify-content: flex-start; }
+.ai-msg-user-bubble, .ai-msg-assistant-bubble {
+    max-width: 90%;
+    padding: 0.45rem 0.68rem;
+    border-radius: 12px;
+    font-size: 0.84rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.ai-msg-user-bubble {
+    background: linear-gradient(135deg, #1f3c88, #3454b0);
+    color: #fff;
+    border-bottom-right-radius: 4px;
+}
+.ai-msg-assistant-bubble {
+    background: #e8eef8;
+    color: #203562;
+    border-bottom-left-radius: 4px;
+}
+</style>
+    """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown('<div class="ai-float-shell">', unsafe_allow_html=True)
+    if hasattr(st, "popover"):
+        with st.popover("💬", use_container_width=False):
+            st.markdown('<div class="ai-float-popover">', unsafe_allow_html=True)
+            st.markdown('<div class="ai-chat-box">', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="ai-chat-header"><div><div class="ai-chat-header-title">🤖 AI 助手</div><div class="ai-chat-status">Catalog Assistant · {_assistant_service_base_url()}</div></div></div>',
+                unsafe_allow_html=True,
+            )
+            _render_ai_panel(surface)
+            st.markdown('</div></div>', unsafe_allow_html=True)
+    else:
+        with st.expander("💬", expanded=False):
+            st.markdown('<div class="ai-float-popover">', unsafe_allow_html=True)
+            st.markdown('<div class="ai-chat-box">', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="ai-chat-header"><div><div class="ai-chat-header-title">🤖 AI 助手</div><div class="ai-chat-status">Catalog Assistant · {_assistant_service_base_url()}</div></div></div>',
+                unsafe_allow_html=True,
+            )
+            _render_ai_panel(surface)
+            st.markdown('</div></div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
 def _render_shell_bar(surface: str) -> str:
     st.markdown(
         (
@@ -392,14 +959,17 @@ def _render_shell_bar(surface: str) -> str:
         options=_SURFACE_OPTIONS,
         index=_SURFACE_OPTIONS.index(surface if surface in _SURFACE_OPTIONS else "home"),
         format_func=lambda value: _SURFACE_LABELS.get(str(value), str(value)),
-        key=_SURFACE_WIDGET_KEY,
         horizontal=True,
     )
-    action_cols = st.columns((0.9, 3.1))
-    if action_cols[0].button("回到首页 / Home", key="nsgablack_ui_home", width="stretch"):
+    action_cols = st.columns((0.9, 1.1, 2.0))
+    if action_cols[0].button("回到首页 / Home", key="nsgablack_ui_home", use_container_width=True):
         _set_shell_surface("home", clear_query=True)
         _shared.rerun(st)
-    action_cols[1].caption("提示：切换工作面会同步到 URL；子页面自己的 deep-link 仍然可用，统一壳也会根据 query 参数自动推断当前应该回到 catalog 还是 experiment。")
+    action_cols[2].caption("提示：切换工作面会同步到 URL；子页面自己的 deep-link 仍然可用，统一壳也会根据 query 参数自动推断当前应该回到 catalog 还是 experiment。")
+    
+    # 在页面底部渲染AI浮窗
+    _render_ai_floating_window(surface)
+    
     return str(selected_surface)
 
 
@@ -455,10 +1025,10 @@ def _render_home(args: argparse.Namespace) -> None:
         unsafe_allow_html=True,
     )
     action_cols = st.columns((1.0, 1.0, 2.0))
-    if action_cols[0].button("打开 Catalog", key="nsgablack_ui_open_catalog", width="stretch"):
+    if action_cols[0].button("打开 Catalog", key="nsgablack_ui_open_catalog", use_container_width=True):
         _set_shell_surface("catalog", clear_query=False)
         _shared.rerun(st)
-    if action_cols[1].button("打开 Experiment", key="nsgablack_ui_open_experiment", width="stretch"):
+    if action_cols[1].button("打开 Experiment", key="nsgablack_ui_open_experiment", use_container_width=True):
         _set_shell_surface("experiment", clear_query=False)
         _shared.rerun(st)
     action_cols[2].caption(
@@ -476,9 +1046,6 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
     if current_surface not in _SURFACE_OPTIONS or (query_params and inferred_surface != current_surface):
         st.session_state[_SURFACE_STATE_KEY] = inferred_surface
     current_surface = str(st.session_state.get(_SURFACE_STATE_KEY) or inferred_surface)
-    widget_surface = str(st.session_state.get(_SURFACE_WIDGET_KEY) or "").strip()
-    if widget_surface not in _SURFACE_OPTIONS or widget_surface != current_surface:
-        st.session_state[_SURFACE_WIDGET_KEY] = current_surface
     surface = _render_shell_bar(current_surface)
     if surface != current_surface:
         _set_shell_surface(surface, clear_query=bool(surface == "home"))

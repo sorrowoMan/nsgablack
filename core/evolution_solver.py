@@ -7,9 +7,11 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 import numpy as np
 from ..adapters import NSGA2Adapter, NSGA2Config
 from .composable_solver import ComposableSolver
+from .resources import RedisL0RuntimeBackend
 from .solver_helpers import format_run_result
 from ..utils.engineering.error_policy import report_soft_error
 from ..utils.parallel.evaluator import ParallelEvaluator
+from ..utils.parallel.nested import NestedParallelEvaluator, RedisNestedDistributedEvaluator
 from ..utils.performance.fast_non_dominated_sort import FastNonDominatedSort
 from .runtime_governance import (
     AdaptiveParametersConfig,
@@ -19,6 +21,12 @@ from .runtime_governance import (
 
 _MIN_POP_FOR_PARALLEL = 1
 logger = logging.getLogger(__name__)
+
+
+def _has_problem_inner_runtime_evaluator(solver: Any) -> bool:
+    problem = getattr(solver, "problem", None)
+    evaluator = getattr(problem, "inner_runtime_evaluator", None) if problem is not None else None
+    return callable(getattr(evaluator, "evaluate", None))
 
 
 class EvolutionSolver(ComposableSolver):
@@ -62,7 +70,7 @@ class EvolutionSolver(ComposableSolver):
         enable_parallel: Optional[bool] = None,
         parallel: Optional[bool] = None,
         enable_parallel_evaluation: Optional[bool] = None,
-        parallel_backend: Literal["process", "thread", "ray", "auto"] = "process",
+        parallel_backend: Literal["process", "thread", "ray", "auto", "redis"] = "process",
         parallel_max_workers: Optional[int] = None,
         parallel_chunk_size: Optional[int] = None,
         parallel_load_balancing: bool = True,
@@ -152,7 +160,9 @@ class EvolutionSolver(ComposableSolver):
         if enabled_parallel is None:
             enabled_parallel = enable_parallel_evaluation
         self.enable_parallel_evaluation = bool(enabled_parallel)
+        self._parallel_backend_type = "auto"  # "l0" | "legacy" | "auto"
         self.parallel_evaluator: Optional[ParallelEvaluator] = None
+        self.nested_parallel_evaluator: Optional[Any] = None
         self._parallel_cfg = {
             "backend": parallel_backend,
             "max_workers": parallel_max_workers,
@@ -268,13 +278,54 @@ class EvolutionSolver(ComposableSolver):
             max_payload_bytes=max_payload_bytes,
         )
 
+    @staticmethod
+    def _detect_l0_pool(solver) -> Optional[Any]:
+        """Return a PoolScheduler if one is attached, else None."""
+        try:
+            pool = getattr(solver, "l0_pool", None)
+            if pool is not None and hasattr(pool, "as_executor"):
+                return pool
+        except Exception:
+            pass
+        return None
+
     def _ensure_parallel_evaluator(self) -> Optional[ParallelEvaluator]:
         if not self.enable_parallel_evaluation:
             return None
         if self.parallel_evaluator is not None:
             return self.parallel_evaluator
+
+        # L0 pooled path (preferred)
+        l0_pool = self._detect_l0_pool(self)
+        if l0_pool is not None:
+            cfg = self._parallel_cfg
+            self.parallel_evaluator = ParallelEvaluator(
+                backend="thread",
+                max_workers=cfg["max_workers"],
+                pool=l0_pool,
+                precheck=cfg["precheck"],
+                strict=cfg["strict"],
+                verbose=cfg["verbose"],
+            )
+            return self.parallel_evaluator
+
+        # Legacy path (own-process executor)
         cfg = self._parallel_cfg
-        backend = cfg["backend"]
+        backend = str(cfg["backend"] or "process").lower()
+        if backend == "redis":
+            msg = "parallel_backend='redis' is only supported for nested inner-runtime evaluation"
+            if bool(cfg.get("strict", False)):
+                raise ValueError(msg)
+            report_soft_error(
+                component="EvolutionSolver",
+                event="configure_parallel_evaluator.redis_non_nested_fallback",
+                exc=ValueError(msg),
+                logger=logger,
+                context_store=self.context_store,
+                strict=False,
+                level="warning",
+            )
+            backend = str(cfg.get("fallback_backend", "thread") or "thread").lower()
         if backend == "auto":
             from ..utils.parallel.evaluator import SmartEvaluatorSelector
 
@@ -324,7 +375,61 @@ class EvolutionSolver(ComposableSolver):
         )
         return self.parallel_evaluator
 
+    def _ensure_nested_parallel_evaluator(self) -> Optional[Any]:
+        if not self.enable_parallel_evaluation:
+            return None
+        if bool(getattr(self, "enable_bias", False)) and getattr(self, "bias_module", None) is not None:
+            return None
+        if self.nested_parallel_evaluator is not None:
+            return self.nested_parallel_evaluator
+        cfg = self._parallel_cfg
+        backend = str(cfg.get("backend", "thread") or "thread").lower()
+        if backend == "redis":
+            extra = dict(cfg.get("extra_context") or {})
+            queue = RedisL0RuntimeBackend(
+                redis_url=str(extra.get("redis_url", "redis://localhost:6379/0")),
+                namespace=str(extra.get("namespace", "nsgablack:nested")),
+                queue_scope=str(extra.get("queue_scope", "global")),
+                result_ttl_seconds=extra.get("result_ttl_seconds", 86_400),
+                artifact_base_dir=str(extra.get("artifact_base_dir", "runs/l0_artifacts")),
+            )
+            self.nested_parallel_evaluator = RedisNestedDistributedEvaluator(
+                queue=queue,
+                run_id=extra.get("run_id"),
+                timeout_seconds=float(extra.get("timeout_seconds", 3600.0)),
+                poll_interval_seconds=float(extra.get("poll_interval_seconds", 1.0)),
+                strict=bool(cfg.get("strict", False)),
+                verbose=bool(cfg.get("verbose", False)),
+            )
+            return self.nested_parallel_evaluator
+        if backend not in ("thread", "auto"):
+            if bool(cfg.get("strict", False)):
+                raise ValueError("nested parallel evaluation requires backend='thread', 'auto', or 'redis'")
+            backend = "thread"
+        _ = backend
+        self.nested_parallel_evaluator = NestedParallelEvaluator(
+            max_workers=cfg.get("max_workers"),
+            strict=bool(cfg.get("strict", False)),
+            verbose=bool(cfg.get("verbose", False)),
+            task_timeout_seconds=(dict(cfg.get("extra_context") or {}).get("task_timeout_seconds")),
+        )
+        return self.nested_parallel_evaluator
+
     def evaluate_population(self, population: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        if _has_problem_inner_runtime_evaluator(self):
+            nested = self._ensure_nested_parallel_evaluator()
+            if nested is not None:
+                pop = np.asarray(population)
+                if pop.ndim == 1:
+                    pop = pop.reshape(1, -1)
+                if pop.shape[0] >= int(_MIN_POP_FOR_PARALLEL):
+                    objectives, violations = nested.evaluate_population(self, pop)
+                    try:
+                        self.evaluation_count += int(pop.shape[0])
+                    except Exception:
+                        pass
+                    return np.asarray(objectives, dtype=float), np.asarray(violations, dtype=float).reshape(-1)
+            return super().evaluate_population(population)
         evaluator = self._ensure_parallel_evaluator()
         if evaluator is not None:
             pop = np.asarray(population)
@@ -679,7 +784,17 @@ class EvolutionSolver(ComposableSolver):
         ).reshape(-1)
         if vio.shape[0] != obj.shape[0]:
             vio = np.zeros((obj.shape[0],), dtype=float)
-        score = np.sum(obj, axis=1) + (1e6 * vio)
+        scalarizer = getattr(self, "objective_scalarizer", None)
+        if callable(scalarizer):
+            scores = []
+            for i in range(obj.shape[0]):
+                try:
+                    scores.append(float(scalarizer(obj, vio, i)))
+                except Exception:
+                    scores.append(float(np.sum(obj[i])) + (1e6 * float(vio[i])))
+            score = np.asarray(scores, dtype=float)
+        else:
+            score = np.sum(obj, axis=1) + (1e6 * vio)
         idx = int(np.argmin(score))
         return pop[idx], float(score[idx])
 

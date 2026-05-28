@@ -43,7 +43,7 @@ from nsgablack.adapters import (  # noqa: E402
     VNSConfig,
 )
 from nsgablack.core.composable_solver import ComposableSolver  # noqa: E402
-from nsgablack.plugins import ParetoArchivePlugin  # noqa: E402
+from nsgablack.plugins import ParetoArchiveConfig, ParetoArchivePlugin  # noqa: E402
 from nsgablack.utils.parallel import with_parallel_evaluation  # noqa: E402
 from nsgablack.utils.wiring import attach_default_observability_plugins  # noqa: E402
 from nsgablack.utils.viz import launch_from_builder  # noqa: E402
@@ -113,7 +113,17 @@ def _attach_observability_plugins(solver, args) -> None:
 
 def _register_case_plugins(solver, problem, args) -> None:
     """Explicit plugin registration zone."""
-    solver.add_plugin(ParetoArchivePlugin())
+    archive_size = int(getattr(args, "pareto_archive_size", 512) or 0)
+    archive_max_size = None if archive_size <= 0 else archive_size
+    archive_update_every = max(1, int(getattr(args, "pareto_archive_update_every", 5) or 1))
+    solver.add_plugin(
+        ParetoArchivePlugin(
+            config=ParetoArchiveConfig(
+                max_size=archive_max_size,
+                update_every=archive_update_every,
+            )
+        )
+    )
     solver.add_plugin(ConsoleProgressPlugin(report_every=args.report_every))
     solver.add_plugin(
         ProductionExportPlugin(

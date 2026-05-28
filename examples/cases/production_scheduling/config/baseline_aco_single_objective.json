@@ -1,0 +1,25 @@
+﻿{
+  "schema": "nsgablack.case_preset.v1",
+  "case": "production_scheduling",
+  "name": "baseline_aco_single_objective",
+  "layer": "L1",
+  "purpose": "ACO baseline to compare constructive heuristic search against multi-agent MOEA/D+VNS.",
+  "entrypoint": "solver/run_case.py",
+  "argv": [
+    "--solver", "baseline-aco",
+    "--single-objective",
+    "--aco-ants", "64",
+    "--generations", "20",
+    "--parallel",
+    "--parallel-backend", "thread",
+    "--parallel-workers", "8",
+    "--pareto-export", "6",
+    "--sanity-check-export"
+  ],
+  "compare_metrics": [
+    "audit.production.total",
+    "audit.production.daily_cv",
+    "audit.machine_usage.switches_total",
+    "audit.material_flow.materials_with_shortage"
+  ]
+}

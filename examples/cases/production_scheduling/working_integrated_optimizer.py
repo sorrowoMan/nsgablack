@@ -37,15 +37,15 @@ def run_nsga2(problem, args):
 
 
 def build_multi_agent_solver(problem, args):
-    return _assembly_build_multi_agent_solver(problem, args, case_root=_THIS_DIR)
+    return _assembly_build_multi_agent_solver(problem, args)
 
 
 def run_multi_agent(problem, args):
-    return _assembly_run_multi_agent(problem, args, case_root=_THIS_DIR)
+    return _assembly_run_multi_agent(problem, args)
 
 
 def _build_solver_from_args(args):
-    return _assembly_build_solver_from_args(args, case_root=_THIS_DIR)
+    return _assembly_build_solver_from_args(args)
 
 
 def build_solver(argv: Optional[list] = None):

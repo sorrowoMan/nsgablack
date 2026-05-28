@@ -963,6 +963,28 @@ def build_parser() -> argparse.ArgumentParser:
     p_workspace_ui.add_argument("--headless", action="store_true", help="Launch Streamlit in headless mode")
     p_workspace_ui.set_defaults(func=_cmd_ui)
 
+    # webui alias
+    p_webui = sub.add_parser("webui", help="Launch unified workspace (alias for 'ui')")
+    p_webui.add_argument("--surface", choices=("home", "catalog", "experiment"), default="home")
+    p_webui.add_argument("--profile", choices=("default", "framework-core"), default="framework-core")
+    p_webui.add_argument("--scope", choices=("framework", "project"), default="framework")
+    p_webui.add_argument("--kind", default="all")
+    p_webui.add_argument("--query", default="")
+    p_webui.add_argument("--field", choices=("all", "name", "tag", "context", "usage"), default="all")
+    p_webui.add_argument("--project-path", default=None)
+    p_webui.add_argument("--include-global", action="store_true")
+    p_webui.add_argument("--db-path", default=None)
+    p_webui.add_argument("--source-mode", choices=("prefer", "only", "off"), default="prefer")
+    p_webui.add_argument("--experiment-db", default=None)
+    p_webui.add_argument("--limit", type=int, default=500)
+    p_webui.add_argument("--column-mode", choices=("compact", "standard", "full"), default="standard")
+    p_webui.add_argument("--page-size", type=int, default=50)
+    p_webui.add_argument("--results-collapse", choices=("expanded", "collapsed"), default="expanded")
+    p_webui.add_argument("--host", default=None)
+    p_webui.add_argument("--port", type=int, default=None)
+    p_webui.add_argument("--headless", action="store_true")
+    p_webui.set_defaults(func=_cmd_ui)
+
     sub.add_parser("experiment", help="Runtime run/artifact experiment surface")
 
     # run_inspector

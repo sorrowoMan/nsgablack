@@ -74,6 +74,16 @@ KEY_COMPANION_TRIGGER_REASON = "companion_trigger_reason"
 KEY_COMPANION_NEXT_ELIGIBLE_GENERATION = "companion_next_eligible_generation"
 KEY_COMPANION_PHASE_COUNT_USED = "companion_phase_count_used"
 
+# Stage orchestration (solver/trainer control plane)
+KEY_STAGE_INDEX = "stage_index"
+KEY_STAGE_NAME = "stage_name"
+KEY_STAGE_TOTAL = "stage_total"
+KEY_STAGE_ARTIFACTS = "stage_artifacts"
+KEY_STAGE_ARTIFACT_PREFIX = "stage_artifact."
+KEY_STAGE_STATUS = "stage_status"
+KEY_STAGE_INPUT_ARTIFACTS = "stage_input_artifacts"
+KEY_STAGE_OUTPUT_ARTIFACTS = "stage_output_artifacts"
+
 # Advanced cooperation: phase + region + seeding
 KEY_PHASE = "phase"
 KEY_REGION_ID = "region_id"
@@ -201,6 +211,14 @@ CANONICAL_CONTEXT_KEYS = {
     KEY_COMPANION_TRIGGER_REASON,
     KEY_COMPANION_NEXT_ELIGIBLE_GENERATION,
     KEY_COMPANION_PHASE_COUNT_USED,
+    KEY_STAGE_INDEX,
+    KEY_STAGE_NAME,
+    KEY_STAGE_TOTAL,
+    KEY_STAGE_ARTIFACTS,
+    KEY_STAGE_ARTIFACT_PREFIX,
+    KEY_STAGE_STATUS,
+    KEY_STAGE_INPUT_ARTIFACTS,
+    KEY_STAGE_OUTPUT_ARTIFACTS,
     KEY_PHASE,
     KEY_REGION_ID,
     KEY_REGION_BOUNDS,

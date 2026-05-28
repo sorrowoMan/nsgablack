@@ -16,6 +16,7 @@ from typing import Any, Callable, Dict, Optional, Sequence
 from nsgablack.adapters import (
     AsyncEventDrivenAdapter,
     AsyncEventDrivenConfig,
+    EventCaseSpec,
     EventStrategySpec,
     MultiStrategyConfig,
     SerialPhaseSpec,
@@ -111,7 +112,7 @@ def _safe(op: Callable[[Any, Any], bool], left: ValueRef, right: ValueRef) -> Co
     def _fn(c: dict) -> bool:
         try:
             return bool(op(_resolve(left, c), _resolve(right, c)))
-        except Exception:
+        except (TypeError, ValueError, KeyError, AttributeError):
             return False
 
     return _fn
@@ -130,8 +131,11 @@ def not_(cond: Cond) -> Cond:
 
 
 def _ctx_get(ctx: dict, path: str) -> Any:
+    text = str(path)
+    if isinstance(ctx, dict) and text in ctx:
+        return ctx.get(text)
     cur: Any = ctx
-    for part in str(path).split("."):
+    for part in text.split("."):
         if isinstance(cur, dict) and part in cur:
             cur = cur.get(part)
             continue
@@ -223,14 +227,44 @@ def serial(registry: AdapterRegistry, name: str, phases: Sequence[SerialPhaseSpe
     return StrategyChainAdapter(phases=items, config=base_cfg, name=str(name))
 
 
+def event_case(
+    name: str,
+    adapter: object,
+    *,
+    when: Cond | None = None,
+    when_dsl: Dict[str, Any] | None = None,
+    priority: int = 0,
+    cooldown_generations: int = 0,
+    min_active_generations: int = 0,
+    report_fields: Sequence[str] = (),
+    weight: float = 1.0,
+    enabled: bool = True,
+) -> EventCaseSpec:
+    fields = (report_fields,) if isinstance(report_fields, str) else tuple(report_fields or ())
+    return EventCaseSpec(
+        adapter=adapter,
+        name=str(name),
+        weight=float(weight),
+        enabled=bool(enabled),
+        when=when,
+        when_dsl=when_dsl,
+        priority=int(priority),
+        cooldown_generations=int(cooldown_generations),
+        min_active_generations=int(min_active_generations),
+        report_fields=fields,
+    )
+
+
 def event(registry: AdapterRegistry, name: str, adapters: Sequence[object]) -> object:
     items = [a for a in adapters if a is not None]
-    if len(items) == 1:
+    if len(items) == 1 and not isinstance(items[0], EventStrategySpec):
         return items[0]
-    specs = [
-        EventStrategySpec(adapter=a, name=getattr(a, "name", f"adapter_{i}"), weight=1.0, enabled=True)
-        for i, a in enumerate(items)
-    ]
+    specs = []
+    for i, item in enumerate(items):
+        if isinstance(item, EventStrategySpec):
+            specs.append(item)
+            continue
+        specs.append(EventStrategySpec(adapter=item, name=getattr(item, "name", f"adapter_{i}"), weight=1.0, enabled=True))
     base_cfg = registry.orchestration.event or AsyncEventDrivenConfig()
     return AsyncEventDrivenAdapter(strategies=specs, config=base_cfg, name=str(name))
 

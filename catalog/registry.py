@@ -24,7 +24,7 @@ class CatalogEntry:
 
     key: str
     title: str
-    kind: str  # "bias" | "adapter" | "plugin" | "representation" | "suite" | "tool" | "example" | "doc"
+    kind: str  # "bias" | "adapter" | "plugin" | "representation" | "suite" | "tool" | "example" | "doc" | "resource" | "backend"
     import_path: str  # "pkg.mod:Symbol"
     tags: Tuple[str, ...] = ()
     summary: str = ""
@@ -143,9 +143,11 @@ class Catalog:
                 "plugin": 1,
                 "bias": 2,
                 "representation": 3,
-                "tool": 4,
-                "doc": 5,
-                "example": 6,
+                "resource": 4,
+                "backend": 5,
+                "tool": 6,
+                "doc": 7,
+                "example": 8,
             }
             return (int(kind_order.get(e.kind, 99)), e.key)
 
@@ -2397,6 +2399,163 @@ def _default_entries() -> List[CatalogEntry]:
             ),
             example_entry='C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\dynamic_cli_signal_demo.py:build_solver',
         ),
+        CatalogEntry(
+            key="backend.artifact_s3",
+            kind="backend",
+            title="S3ArtifactBackend",
+            import_path="nsgablack.core.resources:S3ArtifactBackend",
+            tags=("backend", "l0", "artifact", "s3", "cloud", "storage"),
+            summary="S3 产物后端：大产物（模型/报告/parquet）写入 S3/MinIO。 / S3 artifact backend for large artifacts on S3/MinIO.",
+            use_when=(
+                "产物需要持久化到 S3 / MinIO 时。 / Artifacts need S3/MinIO persistence.",
+                "云存储场景。 / Cloud storage scenarios.",
+            ),
+            minimal_wiring=(
+                "from nsgablack.core.resources import S3ArtifactBackend",
+                "backend = S3ArtifactBackend(bucket='my-bucket', prefix='l0_artifacts')",
+            ),
+            required_companions=(
+                "(none)",
+            ),
+            config_keys=(
+                "bucket",
+                "prefix",
+                "endpoint_url",
+                "access_key",
+                "secret_key",
+                "region",
+            ),
+            companions=(
+                "backend.artifact_fs",
+                "backend.data_artifact",
+            ),
+            example_entry="docs/architecture/L0_TASK_RESOURCE_BACKEND_ARCHITECTURE.md",
+        ),
+        CatalogEntry(
+            key="example.l0_distributed_worker",
+            kind="example",
+            title="L0 Distributed Worker",
+            import_path="examples.cases.l0_distributed_worker.build_solver:build_solver",
+            tags=("example", "l0", "distributed", "worker", "scaffold"),
+            summary="Standard scaffold example: L0 distributed workers using PostgreSQL-backed task queue with concurrent-safe dequeue.",
+            use_when=("需要验证 L0 分布式调度时。 / Need to verify L0 distributed scheduling.",),
+            minimal_wiring=(
+                "python examples/cases/l0_distributed_worker/build_solver.py --id worker-1",
+                "docker compose -f docker-compose.distributed.yml up -d",
+            ),
+            required_companions=("backend.l0_postgres",),
+            config_keys=("pg_url", "namespace", "worker_id", "max_cycles"),
+            companions=("backend.l0_postgres",),
+            example_entry="examples/cases/l0_distributed_worker/START_HERE.md",
+        ),
+        CatalogEntry(
+            key="example.residual_boosting",
+            kind="example",
+            title="Residual Boosting",
+            import_path="examples.cases.residual_boosting.build_solver:build_solver",
+            tags=("example", "mlblack", "residual", "boosting", "serial-trainer", "integration", "scaffold"),
+            summary="Hybrid capability case: nsgablack searches residual boosting recipe variables while mlblack runs serial base/residual training and additive prediction integration.",
+            use_when=(
+                "需要验证 nsgablack 外层多目标搜索 + mlblack 内层序列训练/残差目标组合时。 / Need to validate nsgablack outer search with mlblack serial residual training.",
+            ),
+            minimal_wiring=(
+                "python examples/cases/residual_boosting/run_solver.py --check",
+                "python examples/cases/residual_boosting/run_solver.py --quickstart",
+            ),
+            required_companions=("solver.nsga2", "repr.pipeline"),
+            config_keys=("n_samples", "valid_ratio", "seed", "pop_size", "max_generations", "mutation_sigma"),
+            companions=("solver.nsga2", "repr.pipeline"),
+            example_entry="examples/cases/residual_boosting/START_HERE.md",
+        ),
+        CatalogEntry(
+            key="example.classification_threshold_calibration",
+            kind="example",
+            title="Classification Threshold Calibration",
+            import_path="examples.cases.classification_threshold_calibration.build_solver:build_solver",
+            tags=("example", "mlblack", "classification", "threshold", "calibration", "operating-point", "scaffold"),
+            summary="Hybrid capability case: nsgablack searches classification threshold/temperature while mlblack evaluates supervised classification metrics.",
+            use_when=(
+                "需要验证 nsgablack 外层 operating-point 搜索 + mlblack 分类概率指标评估时。 / Need to validate nsgablack operating-point search with mlblack classification feedback.",
+            ),
+            minimal_wiring=(
+                "python examples/cases/classification_threshold_calibration/run_solver.py --check",
+                "python examples/cases/classification_threshold_calibration/run_solver.py --quickstart",
+            ),
+            required_companions=("solver.nsga2", "repr.pipeline"),
+            config_keys=("n_samples", "valid_ratio", "seed", "pop_size", "max_generations", "mutation_sigma"),
+            companions=("solver.nsga2", "repr.pipeline"),
+            example_entry="examples/cases/classification_threshold_calibration/START_HERE.md",
+        ),
+        CatalogEntry(
+            key="example.gmm_em_vs_de",
+            kind="example",
+            title="GMM: EM vs DE-VNS Strategy Chain",
+            import_path="examples.cases.gmm_em_vs_de.build_solver:build_solver",
+            tags=("example", "gmm", "clustering", "de", "vns", "strategy_chain", "nelder_mead"),
+            summary="Gaussian Mixture Model fitting as black-box optimization. DE global search chained with VNS local refinement via StrategyChainAdapter, NelderMeadBias for simplex push. vs sklearn EM baseline.",
+            use_when=("需要以黑盒优化方式拟合 GMM 时。 / Need GMM fitting as black-box optimization.",),
+            minimal_wiring=("python examples/cases/gmm_em_vs_de/run_solver.py",),
+            required_companions=("adapter.de", "adapter.vns", "bias.local_nelder_mead"),
+            config_keys=("n_components", "n_samples", "seed"),
+            companions=("adapter.de", "adapter.vns", "bias.local_nelder_mead"),
+            example_entry="examples/cases/gmm_em_vs_de/START_HERE.md",
+        ),
+        CatalogEntry(
+            key="example.causal_discovery_pc_lingam",
+            kind="example",
+            title="Causal Discovery: PC + LiNGAM as DE Search",
+            import_path="examples.cases.causal_discovery.build_solver:build_solver",
+            tags=("example", "causal", "dag", "pcalg", "lingam", "de", "callable_bias", "graph_sparsity"),
+            summary="Causal structure discovery as black-box optimization. DE searches DAG adjacency matrices, CallableBias (Kahn) enforces acyclicity, SparsityBias prefers parsimonious graphs.",
+            use_when=("需要以黑盒优化方式发现因果结构时。 / Need causal structure discovery as black-box optimization.",),
+            minimal_wiring=("python examples/cases/causal_discovery/run_solver.py",),
+            required_companions=("adapter.de", "bias.callable", "bias.graph_sparsity"),
+            config_keys=("n_vars", "n_samples", "seed"),
+            companions=("adapter.de", "bias.callable", "bias.graph_sparsity"),
+            example_entry="examples/cases/causal_discovery/START_HERE.md",
+        ),
+        CatalogEntry(
+            key="example.anomaly_detection_de",
+            kind="example",
+            title="Anomaly Detection: LOF/IsolationForest as DE Search",
+            import_path="examples.cases.anomaly_detection.build_solver:build_solver",
+            tags=("example", "anomaly", "lof", "isolation_forest", "de", "constraint_bias"),
+            summary="Anomaly detection hyperparameter optimization as black-box search. DE tunes LOF/IsolationForest params, ConstraintBias enforces contamination range. vs sklearn defaults.",
+            use_when=("需要以黑盒优化方式调参异常检测时。 / Need anomaly detection hyperparameter tuning as black-box optimization.",),
+            minimal_wiring=("python examples/cases/anomaly_detection/run_solver.py",),
+            required_companions=("adapter.de", "bias.constraint"),
+            config_keys=("n_samples", "contamination", "seed"),
+            companions=("adapter.de", "bias.constraint"),
+            example_entry="examples/cases/anomaly_detection/START_HERE.md",
+        ),
+        CatalogEntry(
+            key="example.tsp_permutation_sa",
+            kind="example",
+            title="TSP/VRP: Permutation Search with Graph Constraints",
+            import_path="examples.cases.tsp_vrp.build_solver:build_solver",
+            tags=("example", "tsp", "vrp", "permutation", "sa", "tsp_constraint", "hamiltonian"),
+            summary="TSP as permutation optimization with SA. Framework repr.permutation encoder + TSPConstraintBias + HamiltonianPathConstraintBias. vs Nearest-Neighbor greedy baseline.",
+            use_when=("需要以排列优化方式求解 TSP/VRP 时。 / Need TSP/VRP as permutation optimization.",),
+            minimal_wiring=("python examples/cases/tsp_vrp/run_solver.py",),
+            required_companions=("adapter.sa", "repr.permutation"),
+            config_keys=("n_cities", "seed"),
+            companions=("adapter.sa", "repr.permutation"),
+            example_entry="examples/cases/tsp_vrp/START_HERE.md",
+        ),
+        CatalogEntry(
+            key="example.arima_order_search_de",
+            kind="example",
+            title="ARIMA Order Selection as DE Search",
+            import_path="examples.cases.arima_order_search.build_solver:build_solver",
+            tags=("example", "arima", "time_series", "order_search", "de", "integer"),
+            summary="ARIMA(p,d,q) order selection as black-box optimization. DE searches over integer orders, problem evaluates via statsmodels AIC. vs exhaustive grid search.",
+            use_when=("需要以黑盒优化方式选择 ARIMA 阶数时。 / Need ARIMA order selection as black-box optimization.",),
+            minimal_wiring=("python examples/cases/arima_order_search/run_solver.py",),
+            required_companions=("adapter.de",),
+            config_keys=("max_p", "max_d", "max_q", "n_samples", "seed"),
+            companions=("adapter.de",),
+            example_entry="examples/cases/arima_order_search/START_HERE.md",
+        ),
     ]
 
 
@@ -2694,6 +2853,29 @@ def get_catalog(*, refresh: bool = False, profile: Optional[str] = None) -> Cata
     profile_name = _normalize_catalog_profile(profile)
     if refresh or profile_name not in _CATALOG_BY_PROFILE:
         from .usage import enrich_context_contracts, enrich_usage_contracts
+
+        # PostgreSQL "only" mode — all entries from DB, zero memory overhead.
+        try:
+            from .store.postgres import postgres_config_enabled, postgres_config_mode
+            from .providers.postgres_provider import PostgresCatalogProvider
+        except Exception:
+            postgres_config_enabled = None
+            postgres_config_mode = None
+            PostgresCatalogProvider = None
+
+        if postgres_config_enabled and postgres_config_mode and PostgresCatalogProvider:
+            if postgres_config_enabled() and postgres_config_mode() == "only":
+                pg_entries = PostgresCatalogProvider().load()
+                profiled_entries = _apply_catalog_profile(list(pg_entries), profile_name)
+                enriched = enrich_context_contracts(
+                    profiled_entries,
+                    kinds=("plugin", "adapter", "bias", "representation", "resource", "backend"),
+                )
+                enriched = enrich_usage_contracts(enriched)
+                _CATALOG_BY_PROFILE[profile_name] = Catalog(enriched)
+                return _CATALOG_BY_PROFILE[profile_name]
+
+        # MySQL "only" mode — same pattern.
         try:
             from .store.mysql import mysql_config_enabled, mysql_config_mode
             from .providers.mysql_provider import MySQLCatalogProvider
@@ -2708,7 +2890,7 @@ def get_catalog(*, refresh: bool = False, profile: Optional[str] = None) -> Cata
                 profiled_entries = _apply_catalog_profile(list(mysql_entries), profile_name)
                 enriched = enrich_context_contracts(
                     profiled_entries,
-                    kinds=("plugin", "adapter", "bias", "representation"),
+                    kinds=("plugin", "adapter", "bias", "representation", "resource", "backend"),
                 )
                 enriched = enrich_usage_contracts(enriched)
                 _CATALOG_BY_PROFILE[profile_name] = Catalog(enriched)
@@ -2731,7 +2913,7 @@ def get_catalog(*, refresh: bool = False, profile: Optional[str] = None) -> Cata
 
         enriched = enrich_context_contracts(
             profiled_entries,
-            kinds=("plugin", "adapter", "bias", "representation"),
+            kinds=("plugin", "adapter", "bias", "representation", "resource", "backend"),
         )
         enriched = enrich_usage_contracts(enriched)
         _CATALOG_BY_PROFILE[profile_name] = Catalog(enriched)

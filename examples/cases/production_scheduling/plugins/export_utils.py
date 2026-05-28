@@ -10,6 +10,8 @@ from typing import Callable, Optional
 
 import numpy as np
 
+from reporting import write_schedule_audit_report
+
 
 def choose_pareto_solutions(problem, individuals: np.ndarray, objectives: np.ndarray):
     if individuals is None or len(individuals) == 0:
@@ -110,6 +112,10 @@ def export_pareto_batch(
         summary = problem.summarize_schedule(schedule)
         export_path = export_root / f"{label}{ext}"
         export_schedule(export_path, schedule)
+        try:
+            write_schedule_audit_report(problem, schedule, export_path.with_suffix(".audit.json"), label=label)
+        except Exception as exc:
+            print(f"[audit] {label}: failed to write Pareto schedule audit ({exc!r})")
         row = {"label": label, "file": str(export_path)}
         for j, value in enumerate(obj_vals):
             row[f"obj{j}"] = float(value)

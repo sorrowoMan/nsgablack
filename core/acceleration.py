@@ -11,6 +11,7 @@ from concurrent.futures import (
 from dataclasses import dataclass, field
 import importlib
 import pickle
+import threading
 from threading import RLock
 import time
 from typing import Any, Callable, Dict, Mapping, Optional, Protocol, Tuple
@@ -413,6 +414,13 @@ def _call_task_ref_map(task_ref: str, item: Any, args: tuple, kwargs: dict) -> A
     if not callable(fn):
         raise RuntimeError(f"task_ref '{task_ref}' is not callable")
     return fn(item, *args, **kwargs)
+
+
+# L0 PoolScheduler — canonical location: core.resources.compute.pool
+# Re-exported here for backward compatibility.
+from .resources.compute.pool import (  # noqa: E402,F401
+    PoolScheduler, PoolTask, PoolResult,
+)
 
 
 class ThreadPoolBackend:

@@ -1,0 +1,25 @@
+{
+  "schema": "nsgablack.case_preset.v1",
+  "case": "supply_adjustment_nested",
+  "name": "l1_supply_shift_l2_production_realistic",
+  "layer": "L1_L2",
+  "purpose": "Shift whole supply events earlier, then evaluate each candidate through the inner production scheduler.",
+  "entrypoint": "solver/run_case.py",
+  "argv": [
+    "--pop-size", "48",
+    "--generations", "24",
+    "--hybrid-refine-pop-size", "24",
+    "--hybrid-refine-generations", "3",
+    "--max-moved-events", "100",
+    "--parallel",
+    "--parallel-backend", "thread",
+    "--parallel-workers", "8"
+  ],
+  "compare_metrics": [
+    "audit.objectives",
+    "audit.move_summary.moved_events",
+    "audit.move_summary.moved_quantity_days",
+    "audit.supply_conservation.material_total_max_abs_delta",
+    "audit.timing_profile.daily_supply_delta"
+  ]
+}

@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from nsgablack.core.base import BlackBoxProblem
+from nsgablack.core.resources import ResourceRequirement
 
 from inner_solver import InnerProductionSolverConfig, build_inner_production_solver, extract_total_output
 
@@ -46,6 +47,8 @@ class SupplyEventShiftProblem(BlackBoxProblem):
         material_ids: np.ndarray | None = None,
         material_blacklist: np.ndarray | list[int] | set[int] | None = None,
         max_moved_events: int | None = None,
+        outer_task_requirement: ResourceRequirement | dict | None = None,
+        inner_resource_requirement: ResourceRequirement | dict | None = None,
     ) -> None:
         self.base_supply = np.asarray(base_supply, dtype=float)
         if self.base_supply.ndim != 2:
@@ -55,6 +58,19 @@ class SupplyEventShiftProblem(BlackBoxProblem):
         self.bom_matrix = np.asarray(bom_matrix, dtype=float)
         self.production_case_dir = Path(production_case_dir).resolve()
         self.inner_solver_cfg = inner_solver_cfg or InnerProductionSolverConfig()
+        self.outer_task_requirement = _coerce_requirement(
+            outer_task_requirement,
+            fallback=ResourceRequirement(
+                threads=1,
+                capabilities=("nested_eval",),
+                metadata={"layer": "L1", "source": "supply_adjustment_nested.outer_task"},
+            ),
+        )
+        self.outer_resource_requirement = self.outer_task_requirement
+        self.inner_resource_requirement = _coerce_requirement(
+            inner_resource_requirement,
+            fallback=self.inner_solver_cfg.effective_resource_requirement(),
+        )
         self.max_moved_events = (
             None
             if max_moved_events is None or int(max_moved_events) <= 0
@@ -119,12 +135,18 @@ class SupplyEventShiftProblem(BlackBoxProblem):
             moved_idx = np.flatnonzero(shifts > 0)
             k = int(self.max_moved_events)
             if moved_idx.size > k:
-                # Keep the most impactful shifts (larger moved quantity * moved days).
-                score = np.array(
+                # Keep lower-disruption moves first. The previous strategy kept
+                # high quantity*days moves, which systematically favored large
+                # pull-forward gaps. Ties still prefer larger quantity so small
+                # day shifts can retain useful production impact.
+                shift_days = np.array([float(shifts[i]) for i in moved_idx], dtype=float)
+                quantity_days = np.array(
                     [float(self.events[i].quantity) * float(shifts[i]) for i in moved_idx],
                     dtype=float,
                 )
-                keep_local = np.argsort(-score)[:k]
+                quantities = np.array([float(self.events[i].quantity) for i in moved_idx], dtype=float)
+                order = np.lexsort((-quantities, quantity_days, shift_days))
+                keep_local = order[:k]
                 keep_idx = set(int(moved_idx[i]) for i in keep_local)
                 for i in moved_idx:
                     if int(i) not in keep_idx:
@@ -182,9 +204,14 @@ class SupplyEventShiftProblem(BlackBoxProblem):
                 "objective": float(-total_output),
                 "objectives": np.array([-total_output], dtype=float),
                 "total_output": float(total_output),
+                "resource_context": dict(_ctx.get("resource_context", {})),
+                "inner_resource_requirement": self.inner_resource_requirement.as_dict(),
             }
 
-        return {"run_inner": _run_inner}
+        return {
+            "run_inner": _run_inner,
+            "resource_requirement": self.inner_resource_requirement.as_dict(),
+        }
 
     def evaluate_from_inner_result(self, x: np.ndarray, inner_result: dict, eval_context: dict):
         _ = eval_context
@@ -236,6 +263,7 @@ class SupplyEventShiftProblem(BlackBoxProblem):
                     "from_day": int(ev.day),
                     "to_day": int(ev.day - s),
                     "moved_days": s,
+                    "quantity_days": float(ev.quantity) * float(s),
                 }
             )
         df = pd.DataFrame(rows)
@@ -245,3 +273,11 @@ class SupplyEventShiftProblem(BlackBoxProblem):
         else:
             df.to_csv(path, index=False)
         return df
+
+
+def _coerce_requirement(value: ResourceRequirement | dict | None, *, fallback: ResourceRequirement) -> ResourceRequirement:
+    if isinstance(value, ResourceRequirement):
+        return value
+    if isinstance(value, dict):
+        return ResourceRequirement.from_dict(value)
+    return fallback

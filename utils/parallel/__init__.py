@@ -9,6 +9,12 @@ Canonical imports:
 from .evaluator import ParallelEvaluator, SmartEvaluatorSelector, create_parallel_evaluator
 from .integration import with_parallel_evaluation
 from .batch import BatchEvaluator, create_batch_evaluator
+from .nested import (
+    NestedParallelEvaluator,
+    RedisNestedDistributedEvaluator,
+    run_nested_redis_worker,
+    run_nested_redis_worker_once,
+)
 
 __all__ = [
     "ParallelEvaluator",
@@ -17,6 +23,10 @@ __all__ = [
     "with_parallel_evaluation",
     "BatchEvaluator",
     "create_batch_evaluator",
+    "NestedParallelEvaluator",
+    "RedisNestedDistributedEvaluator",
+    "run_nested_redis_worker",
+    "run_nested_redis_worker_once",
     "run_headless_in_parallel",
     "run_vns_in_parallel",
 ]

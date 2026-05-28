@@ -228,6 +228,8 @@ class BiasModule:
             context = {}
         context.setdefault(KEY_CONSTRAINTS, [])
         context.setdefault(KEY_GENERATION, 0)
+        if context.get(KEY_GENERATION) is None:
+            context[KEY_GENERATION] = 0
 
         x_bytes = None
         if self.cache_enabled:
@@ -262,6 +264,8 @@ class BiasModule:
             context = {}
         context.setdefault(KEY_CONSTRAINTS, [])
         context.setdefault(KEY_GENERATION, 0)
+        if context.get(KEY_GENERATION) is None:
+            context[KEY_GENERATION] = 0
 
         obj_arr = np.asarray(objective_values, dtype=float).reshape(-1)
         out = obj_arr.copy()
@@ -403,7 +407,7 @@ class BiasModule:
     ) -> Any:
         bias_name = str(getattr(self, "_name", "BiasModule"))
         version = int(self._bias_cache_version)
-        generation = int(context.get(KEY_GENERATION, 0)) if self.cache_include_generation else None
+        generation = self._context_generation(context) if self.cache_include_generation else None
         ctx_fp = self._build_context_fingerprint(context)
         x_hash = self._hash_bytes(x_bytes if x_bytes is not None else np.asarray(x).tobytes())
         obj = float(objective_value)
@@ -439,6 +443,18 @@ class BiasModule:
             generation,
             ctx_fp,
         )
+
+    @staticmethod
+    def _context_generation(context: Optional[Dict[str, Any]]) -> int:
+        if not isinstance(context, dict):
+            return 0
+        raw = context.get(KEY_GENERATION, 0)
+        if raw is None:
+            return 0
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return 0
 
     def _build_context_fingerprint(self, context: Optional[Dict[str, Any]]) -> str:
         if not isinstance(context, dict):
@@ -546,7 +562,7 @@ class BiasModule:
                 metrics.update(extra_metrics)
 
                 self._context_cache = OptimizationContext(
-                    generation=context.get(KEY_GENERATION, 0),
+                    generation=self._context_generation(context),
                     individual=x,
                     population=snapshot_payload.get(KEY_POPULATION, []),
                     metrics=metrics,
@@ -558,7 +574,7 @@ class BiasModule:
 
         try:
             ctx = copy.copy(self._context_cache)
-            setattr(ctx, "generation", context.get(KEY_GENERATION, 0))
+            setattr(ctx, "generation", self._context_generation(context))
             setattr(ctx, "individual", x)
             setattr(ctx, "population", snapshot_payload.get(KEY_POPULATION, []))
             metrics = {

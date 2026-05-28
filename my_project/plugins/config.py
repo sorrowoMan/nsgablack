@@ -155,20 +155,81 @@ def _build_plugin_from_spec(spec: PluginSpec, builders: Dict[str, PluginBuilder]
     return builder(params)
 
 
-def build_flow_plugins(registry: FlowPluginRegistry, keys: Sequence[str]) -> list[object]:
+def _merge_component_override_params(
+    *,
+    kind: str,
+    key: str,
+    params: Dict[str, Any],
+    component_overrides: Dict[str, Dict[str, Any]] | None,
+) -> Dict[str, Any]:
+    merged = dict(params or {})
+    for path, payload in dict(component_overrides or {}).items():
+        raw = str(path or "").strip().lower()
+        if raw in {str(kind).strip().lower(), f"{str(kind).strip().lower()}.{str(key).strip().lower()}"}:
+            merged.update(dict(payload or {}))
+    return merged
+
+
+def build_flow_plugins(
+    registry: FlowPluginRegistry,
+    keys: Sequence[str],
+    *,
+    component_overrides: Dict[str, Dict[str, Any]] | None = None,
+) -> list[object]:
     plugins: list[object] = []
     for key in keys:
         spec = _find_spec(registry.registry, key)
-        plugins.append(_build_plugin_from_spec(spec, _FLOW_PLUGIN_BUILDERS))
+        merged = _merge_component_override_params(
+            kind="flow_plugin",
+            key=str(spec.key),
+            params=dict(spec.params or {}),
+            component_overrides=component_overrides,
+        )
+        plugins.append(_build_plugin_from_spec(PluginSpec(key=str(spec.key), params=merged), _FLOW_PLUGIN_BUILDERS))
     return plugins
 
 
-def build_ops_plugins(registry: OpsPluginRegistry, keys: Sequence[str]) -> list[object]:
+def build_ops_plugins(
+    registry: OpsPluginRegistry,
+    keys: Sequence[str],
+    *,
+    component_overrides: Dict[str, Dict[str, Any]] | None = None,
+) -> list[object]:
     plugins: list[object] = []
     for key in keys:
         spec = _find_spec(registry.registry, key)
-        plugins.append(_build_plugin_from_spec(spec, _OPS_PLUGIN_BUILDERS))
+        merged = _merge_component_override_params(
+            kind="ops_plugin",
+            key=str(spec.key),
+            params=dict(spec.params or {}),
+            component_overrides=component_overrides,
+        )
+        plugins.append(_build_plugin_from_spec(PluginSpec(key=str(spec.key), params=merged), _OPS_PLUGIN_BUILDERS))
     return plugins
+
+
+def attach_flow_plugins(
+    solver,
+    registry,
+    keys: Sequence[str],
+    *,
+    component_overrides: Dict[str, Dict[str, Any]] | None = None,
+) -> None:
+    plugins = build_flow_plugins(registry, keys, component_overrides=component_overrides)
+    for plugin in plugins:
+        solver.add_plugin(plugin)
+
+
+def attach_ops_plugins(
+    solver,
+    registry,
+    keys: Sequence[str],
+    *,
+    component_overrides: Dict[str, Dict[str, Any]] | None = None,
+) -> None:
+    plugins = build_ops_plugins(registry, keys, component_overrides=component_overrides)
+    for plugin in plugins:
+        solver.add_plugin(plugin)
 
 
 # --- Observability + checkpoint registries ---------------------------------

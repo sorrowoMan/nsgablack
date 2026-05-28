@@ -1,0 +1,30 @@
+{
+  "schema": "nsgablack.case_preset.v1",
+  "case": "supply_adjustment_nested",
+  "name": "l0_blacklist_l1_l2_design_realistic",
+  "layer": "L0_L1_L2",
+  "purpose": "Outer design search over material blacklist, with nested supply-shift and production-scheduling evaluation.",
+  "entrypoint": "solver/run_blacklist_case.py",
+  "argv": [
+    "--no-baseline",
+    "--max-moved-events", "100",
+    "--l0-pop-size", "12",
+    "--l0-generations", "8",
+    "--l1-pop-size", "10",
+    "--l1-generations", "6",
+    "--final-l1-pop-size", "24",
+    "--final-l1-generations", "16",
+    "--parallel",
+    "--parallel-backend", "thread",
+    "--parallel-workers", "8",
+    "--parallel-thread-bias-isolation", "disable_cache"
+  ],
+  "compare_metrics": [
+    "l0.min_runtime",
+    "l0.min_quality_gap",
+    "l0.min_blacklist_size",
+    "best_blacklist.count",
+    "final_l1.moved_events",
+    "final_l1.moved_days"
+  ]
+}

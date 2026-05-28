@@ -1,0 +1,25 @@
+﻿{
+  "schema": "nsgablack.case_preset.v1",
+  "case": "production_scheduling",
+  "name": "baseline_greedy_single_objective",
+  "layer": "L1",
+  "purpose": "Fast deterministic baseline for total production under schedule repair.",
+  "entrypoint": "solver/run_case.py",
+  "argv": [
+    "--solver", "baseline-greedy",
+    "--single-objective",
+    "--generations", "12",
+    "--parallel",
+    "--parallel-backend", "thread",
+    "--parallel-workers", "8",
+    "--pareto-export", "4",
+    "--sanity-check-export"
+  ],
+  "compare_metrics": [
+    "audit.production.total",
+    "audit.feasible",
+    "audit.max_positive_violation",
+    "audit.machine_usage.active_daily_mean",
+    "audit.material_flow.shortage_total"
+  ]
+}

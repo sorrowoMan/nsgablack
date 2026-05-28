@@ -1,0 +1,40 @@
+{
+  "schema": "nsgablack.case_preset.v1",
+  "case": "production_scheduling",
+  "name": "multi_agent_moead_vns_realistic",
+  "layer": "L1",
+  "purpose": "Primary non-toy production planning run: MOEA/D explorer + VNS exploiter + repair/bias/audit plugins.",
+  "entrypoint": "solver/run_case.py",
+  "argv": [
+    "--solver", "multi-agent",
+    "--pop-size", "160",
+    "--generations", "36",
+    "--moead-pop-size", "80",
+    "--vns-batch-size", "64",
+    "--material-cap-ratio", "2.4",
+    "--daily-cap-ratio", "2.7",
+    "--daily-floor-ratio", "0.38",
+    "--reserve-ratio", "0.45",
+    "--smooth-strength", "0.35",
+    "--smooth-passes", "2",
+    "--parallel",
+    "--parallel-backend", "process",
+    "--parallel-workers", "8",
+    "--pareto-export", "12",
+    "--pareto-export-mode", "crowding",
+    "--pareto-archive-size", "512",
+    "--pareto-archive-update-every", "5",
+    "--sanity-check-export"
+  ],
+  "compare_metrics": [
+    "audit.objectives",
+    "audit.production.total",
+    "audit.production.daily_cv",
+    "audit.machine_usage.switches_total",
+    "audit.material_flow.shortage_total",
+    "run_logs.benchmark.csv",
+    "run_logs.decision_trace"
+  ]
+}
+
+

@@ -154,6 +154,7 @@ class ParallelEvaluator:
         max_retries: int = 3,
         verbose: bool = False,
         *,
+        pool: Any = None,  # PoolScheduler (L0 shared pool)
         precheck: bool = True,
         strict: bool = False,
         fallback_backend: Backend = "thread",
@@ -190,7 +191,9 @@ class ParallelEvaluator:
             "retry_count": 0,
         }
 
+        self._pool = pool  # L0 PoolScheduler (shared thread pool)
         self._executor: Optional[Any] = None
+        self._pool_ctx: Optional[Any] = None  # _PoolExecutor context manager if using pool
 
     def _get_default_workers(self, backend: Backend) -> int:
         if backend == "process":
@@ -201,6 +204,11 @@ class ParallelEvaluator:
 
     def _create_executor(self):
         if self._executor is not None:
+            return self._executor
+
+        if self._pool is not None and hasattr(self._pool, "as_executor"):
+            self._pool_ctx = self._pool.as_executor(self.max_workers)
+            self._executor = self._pool_ctx.__enter__()
             return self._executor
 
         if self.backend == "process":
@@ -373,7 +381,11 @@ class ParallelEvaluator:
                     setattr(bias_module, "cache_enabled", bool(restore_cache_enabled))
                 except Exception:
                     pass
-            if self._executor is not None and hasattr(self._executor, "shutdown"):
+            if self._pool_ctx is not None:
+                self._pool_ctx.__exit__(None, None, None)
+                self._pool_ctx = None
+                self._executor = None
+            elif self._executor is not None and hasattr(self._executor, "shutdown"):
                 try:
                     self._executor.shutdown(wait=False)
                 finally:

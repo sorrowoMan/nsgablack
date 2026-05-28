@@ -1,0 +1,7 @@
+[[entry]]
+key = "example.tsp_permutation_sa"
+title = "TSP/VRP: Permutation Search with Graph Constraints"
+kind = "example"
+import_path = "examples.cases.tsp_vrp.build_solver:build_solver"
+tags = ["example", "tsp", "vrp", "permutation", "sa", "tsp_constraint", "hamiltonian"]
+summary = "TSP as permutation optimization with SA. Framework repr.permutation encoder + TSPConstraintBias + HamiltonianPathConstraintBias. vs Nearest-Neighbor greedy baseline."

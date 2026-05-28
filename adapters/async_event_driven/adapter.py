@@ -14,7 +14,7 @@ event semantics explicit in context/state.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -25,6 +25,7 @@ from ...utils.context.context_keys import (
     KEY_EVENT_INFLIGHT,
     KEY_EVENT_QUEUE,
     KEY_EVENT_SHARED,
+    KEY_GENERATION,
 )
 
 
@@ -36,6 +37,27 @@ class EventStrategySpec:
     name: str
     weight: float = 1.0
     enabled: bool = True
+
+
+@dataclass
+class EventCaseSpec(EventStrategySpec):
+    """One signal-driven event router case.
+
+    `EventStrategySpec` keeps the legacy queue-based semantics: enabled
+    strategies are sampled into the event queue by weight.
+
+    `EventCaseSpec` adds rule-router semantics on top of the same event queue:
+    at each propose step, the adapter evaluates enabled cases against the
+    runtime context, selects the highest-priority eligible case, then fills the
+    queue with events for that selected case only.
+    """
+
+    when: Optional[Callable[[Dict[str, Any]], bool]] = None
+    when_dsl: Optional[Dict[str, Any]] = None
+    priority: int = 0
+    cooldown_generations: int = 0
+    min_active_generations: int = 0
+    report_fields: Sequence[str] = ()
 
 
 @dataclass
@@ -126,6 +148,10 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         self._stats: Dict[str, Dict[str, float]] = {}
         self._solver_ref: Optional[Any] = None
         self._last_runtime_projection: Dict[str, Any] = {}
+        self._active_case_name: Optional[str] = None
+        self._active_case_since: Optional[int] = None
+        self._case_last_exit: Dict[str, int] = {}
+        self._last_event_decision: Dict[str, Any] = {}
         self._rng = np.random.default_rng()
 
     def setup(self, solver: Any) -> None:
@@ -139,6 +165,10 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         self.shared_state = {}
         self._stats = {}
         self._last_runtime_projection = {}
+        self._active_case_name = None
+        self._active_case_since = None
+        self._case_last_exit = {}
+        self._last_event_decision = {}
         for spec in self.strategies:
             self._stats[spec.name] = {
                 "proposed": 0.0,
@@ -146,7 +176,8 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
                 "best_score": float("inf"),
             }
             spec.adapter.setup(solver)
-        self._seed_queue()
+        if not self._uses_event_cases():
+            self._seed_queue()
         self._publish_state(solver)
 
     def teardown(self, solver: Any) -> None:
@@ -155,13 +186,23 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         self._solver_ref = None
 
     def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
-        self._topup_queue()
+        active_specs = self._enabled_specs()
+        if self._uses_event_cases():
+            active_specs, decision = self._select_event_case(context)
+            self._last_event_decision = decision
+            self._log_event("decision", **decision)
+            active_names = {str(spec.name) for spec in active_specs}
+            if set(self._event_strategy_names()) != active_names:
+                self._queue = []
+            self._topup_queue(active_specs)
+        else:
+            self._topup_queue(active_specs)
 
         batch = int(max(1, int(self.cfg.total_batch_size)))
         dispatch_count = min(batch, len(self._queue))
         out: List[np.ndarray] = []
         inflight: List[Dict[str, Any]] = []
-        by_name = {s.name: s for s in self.strategies if s.enabled}
+        by_name = {s.name: s for s in active_specs if s.enabled}
 
         for _ in range(dispatch_count):
             event = self._queue.pop(0)
@@ -176,6 +217,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             local_ctx = dict(context)
             local_ctx["event_shared"] = self.shared_state
             local_ctx["event"] = dict(event)
+            local_ctx["event_case"] = event.get("case")
             local_ctx["strategy"] = strategy_name
             local_ctx["step"] = int(self._step)
 
@@ -189,6 +231,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
                     {
                         "event_id": int(event["event_id"]),
                         "strategy": strategy_name,
+                        "case": str(event.get("case", strategy_name)),
                         "dispatch_step": int(self._step),
                     }
                 )
@@ -210,7 +253,8 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
     ) -> None:
         if candidates is None or len(candidates) == 0:
             self._step += 1
-            self._topup_queue()
+            if not self._uses_event_cases():
+                self._topup_queue()
             self._publish_state(solver)
             return
 
@@ -226,6 +270,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             record = {
                 "event_id": int(info.get("event_id", -1)),
                 "strategy": strategy_name,
+                "case": str(info.get("case", strategy_name)),
                 "step": int(self._step),
                 "score": float(score),
                 "violation": float(vio),
@@ -269,7 +314,8 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
 
         self._inflight = []
         self._step += 1
-        self._topup_queue()
+        if not self._uses_event_cases():
+            self._topup_queue()
         self._publish_state(solver)
 
     def _score(self, objectives_row: np.ndarray, violation: float) -> float:
@@ -279,23 +325,203 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             obj = float(np.sum(objectives_row))
         return float(violation) * float(self.cfg.violation_penalty) + obj
 
+    def _uses_event_cases(self) -> bool:
+        return any(isinstance(s, EventCaseSpec) for s in self.strategies)
+
     def _enabled_specs(self) -> List[EventStrategySpec]:
         return [s for s in self.strategies if bool(s.enabled)]
+
+    @staticmethod
+    def _get_by_path(obj: Any, path: str, default: Any = None) -> Any:
+        if path is None:
+            return default
+        text = str(path).strip()
+        if not text:
+            return default
+        if isinstance(obj, dict) and text in obj:
+            return obj.get(text)
+        cur = obj
+        for part in text.split("."):
+            if isinstance(cur, dict):
+                if part not in cur:
+                    return default
+                cur = cur.get(part)
+                continue
+            if hasattr(cur, part):
+                cur = getattr(cur, part)
+                continue
+            return default
+        return cur
+
+    def _resolve_condition_token(self, token: Any, context: Dict[str, Any]) -> Any:
+        if isinstance(token, dict) and "var" in token:
+            return self._get_by_path(context, str(token.get("var")), None)
+        if isinstance(token, str) and token.startswith("$"):
+            return self._get_by_path(context, token[1:], None)
+        return token
+
+    def _eval_condition_dsl(self, expr: Any, context: Dict[str, Any]) -> bool:
+        if expr is None:
+            return True
+        if not isinstance(expr, dict):
+            return bool(self._resolve_condition_token(expr, context))
+        if "all" in expr:
+            return all(self._eval_condition_dsl(item, context) for item in list(expr.get("all") or []))
+        if "any" in expr:
+            return any(self._eval_condition_dsl(item, context) for item in list(expr.get("any") or []))
+        if "not" in expr:
+            return not self._eval_condition_dsl(expr.get("not"), context)
+
+        op_map = {
+            "eq": lambda a, b: a == b,
+            "ne": lambda a, b: a != b,
+            "gt": lambda a, b: a > b,
+            "ge": lambda a, b: a >= b,
+            "lt": lambda a, b: a < b,
+            "le": lambda a, b: a <= b,
+            "in": lambda a, b: a in b,
+            "not_in": lambda a, b: a not in b,
+        }
+        for op, fn in op_map.items():
+            if op not in expr:
+                continue
+            pair = expr.get(op)
+            if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+                return False
+            left = self._resolve_condition_token(pair[0], context)
+            right = self._resolve_condition_token(pair[1], context)
+            try:
+                return bool(fn(left, right))
+            except Exception:
+                return False
+        return bool(expr)
+
+    def _case_matches(self, spec: EventStrategySpec, context: Dict[str, Any]) -> bool:
+        if not bool(getattr(spec, "enabled", True)):
+            return False
+        if not isinstance(spec, EventCaseSpec):
+            return True
+        if callable(spec.when):
+            try:
+                return bool(spec.when(dict(context)))
+            except Exception:
+                return False
+        if isinstance(spec.when_dsl, dict):
+            try:
+                return bool(self._eval_condition_dsl(spec.when_dsl, dict(context)))
+            except Exception:
+                return False
+        return True
+
+    def _event_generation(self, context: Dict[str, Any]) -> int:
+        raw = context.get(KEY_GENERATION, self._step)
+        try:
+            return int(raw)
+        except Exception:
+            return int(self._step)
+
+    def _event_case_priority(self, spec: EventStrategySpec) -> int:
+        return int(getattr(spec, "priority", 0) or 0)
+
+    def _event_case_report(self, spec: EventStrategySpec, context: Dict[str, Any]) -> Dict[str, Any]:
+        fields = tuple(getattr(spec, "report_fields", ()) or ())
+        return {str(field): self._get_by_path(context, str(field), None) for field in fields}
+
+    def _event_strategy_names(self) -> Tuple[str, ...]:
+        return tuple(str(item.get("strategy", "")) for item in self._queue if str(item.get("strategy", "")))
+
+    def _select_event_case(self, context: Dict[str, Any]) -> Tuple[List[EventStrategySpec], Dict[str, Any]]:
+        enabled = self._enabled_specs()
+        generation = self._event_generation(context)
+        matched = [spec for spec in enabled if self._case_matches(spec, context)]
+        order = {id(spec): idx for idx, spec in enumerate(enabled)}
+        matched_sorted = sorted(
+            matched,
+            key=lambda spec: (self._event_case_priority(spec), -int(order.get(id(spec), 0))),
+            reverse=True,
+        )
+
+        blocked: List[Dict[str, Any]] = []
+        selected: Optional[EventStrategySpec] = None
+        selected_reason = "matched"
+
+        current = next((s for s in enabled if str(s.name) == str(self._active_case_name)), None)
+        current_name = None if current is None else str(current.name)
+        current_since = self._active_case_since
+        if current is not None and current_since is not None:
+            min_active = int(getattr(current, "min_active_generations", 0) or 0)
+            if min_active > 0 and int(generation) < int(current_since) + min_active:
+                selected = current
+                selected_reason = "min_active_generations"
+
+        if selected is None:
+            for spec in matched_sorted:
+                name = str(spec.name)
+                if name == current_name:
+                    selected = spec
+                    selected_reason = "already_active"
+                    break
+                cooldown = int(getattr(spec, "cooldown_generations", 0) or 0)
+                last_exit = self._case_last_exit.get(name)
+                if cooldown > 0 and last_exit is not None and int(generation) < int(last_exit) + cooldown:
+                    blocked.append(
+                        {
+                            "name": name,
+                            "reason": "cooldown",
+                            "remaining": int(last_exit) + int(cooldown) - int(generation),
+                        }
+                    )
+                    continue
+                selected = spec
+                selected_reason = "priority"
+                break
+
+        if selected is None and current is not None:
+            selected = current
+            selected_reason = "fallback_current"
+        if selected is None and enabled:
+            selected = enabled[0]
+            selected_reason = "fallback_first_enabled"
+
+        if selected is not None:
+            selected_name = str(selected.name)
+            if self._active_case_name != selected_name:
+                if self._active_case_name:
+                    self._case_last_exit[str(self._active_case_name)] = int(generation)
+                self._active_case_name = selected_name
+                self._active_case_since = int(generation)
+        active_specs = [] if selected is None else [selected]
+
+        decision = {
+            "generation": int(generation),
+            "matched_cases": [str(s.name) for s in matched_sorted],
+            "blocked_cases": blocked,
+            "active_case": None if selected is None else str(selected.name),
+            "active_adapter_group": None if selected is None else str(getattr(selected.adapter, "name", selected.name)),
+            "selected_priority": None if selected is None else self._event_case_priority(selected),
+            "selected_reason": selected_reason,
+            "report_fields": {} if selected is None else self._event_case_report(selected, context),
+            "cooldown": {
+                "active_since": self._active_case_since,
+                "last_exit": dict(self._case_last_exit),
+            },
+        }
+        return active_specs, decision
 
     def _seed_queue(self) -> None:
         enabled = self._enabled_specs()
         for spec in enabled:
             count = int(max(1, int(self.cfg.bootstrap_events_per_strategy)))
             for _ in range(count):
-                self._enqueue_propose(strategy=spec.name, budget=1, source="bootstrap")
+                self._enqueue_propose(strategy=spec.name, budget=1, source="bootstrap", case=spec.name)
 
-    def _topup_queue(self) -> None:
+    def _topup_queue(self, enabled: Optional[Sequence[EventStrategySpec]] = None) -> None:
         target = int(max(1, int(self.cfg.target_queue_size)))
         missing = max(0, target - len(self._queue))
         if missing <= 0:
             return
 
-        enabled = self._enabled_specs()
+        enabled = list(enabled if enabled is not None else self._enabled_specs())
         if not enabled:
             return
         weights = np.asarray([max(0.0, float(s.weight)) for s in enabled], dtype=float)
@@ -306,9 +532,9 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         for _ in range(missing):
             idx = int(self._rng.choice(len(enabled), p=probs))
             spec = enabled[idx]
-            self._enqueue_propose(strategy=spec.name, budget=1, source="topup")
+            self._enqueue_propose(strategy=spec.name, budget=1, source="topup", case=spec.name)
 
-    def _enqueue_propose(self, *, strategy: str, budget: int, source: str) -> None:
+    def _enqueue_propose(self, *, strategy: str, budget: int, source: str, case: Optional[str] = None) -> None:
         max_q = int(max(1, int(self.cfg.max_queue_size)))
         if len(self._queue) >= max_q:
             if str(self.cfg.overflow_policy).lower() == "drop_new":
@@ -322,6 +548,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             "event_id": int(self._event_id),
             "type": "propose",
             "strategy": str(strategy),
+            "case": str(case if case is not None else strategy),
             "budget": int(max(1, int(budget))),
             "source": str(source),
             "created_step": int(self._step),
@@ -370,6 +597,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
                 "event_id": int(e.get("event_id", -1)),
                 "type": str(e.get("type", "")),
                 "strategy": str(e.get("strategy", "")),
+                "case": str(e.get("case", e.get("strategy", ""))),
                 "budget": int(e.get("budget", 1)),
                 "source": str(e.get("source", "")),
             }
@@ -380,6 +608,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             {
                 "event_id": int(a.get("event_id", -1)),
                 "strategy": str(a.get("strategy", "")),
+                "case": str(a.get("case", a.get("strategy", ""))),
                 "step": int(a.get("step", -1)),
                 "score": float(a.get("score", float("inf"))),
                 "violation": float(a.get("violation", 0.0)),
@@ -407,6 +636,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             "queue": queue_snapshot,
             "inflight": inflight_snapshot,
             "archive": archive_snapshot,
+            "event_decision": dict(self._last_event_decision),
         }
         _ = solver
         self._last_runtime_projection = {
@@ -435,6 +665,10 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             "archive": list(self.archive),
             "event_history": list(self.event_history),
             "stats": dict(self._stats),
+            "active_case_name": self._active_case_name,
+            "active_case_since": self._active_case_since,
+            "case_last_exit": dict(self._case_last_exit),
+            "last_event_decision": dict(self._last_event_decision),
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
@@ -445,3 +679,9 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         self.archive = list(state.get("archive", []))
         self.event_history = list(state.get("event_history", []))
         self._stats = dict(state.get("stats", {}))
+        active = state.get("active_case_name", None)
+        self._active_case_name = None if active is None else str(active)
+        since = state.get("active_case_since", None)
+        self._active_case_since = None if since is None else int(since)
+        self._case_last_exit = {str(k): int(v) for k, v in dict(state.get("case_last_exit", {})).items()}
+        self._last_event_decision = dict(state.get("last_event_decision", {}))

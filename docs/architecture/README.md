@@ -93,6 +93,8 @@
 
 - `START_HERE.md`
 - `WORKFLOW_END_TO_END.md`
+- `docs/architecture/L0_TASK_RESOURCE_BACKEND_ARCHITECTURE.md`
+- `docs/architecture/L0_RESOURCE_ORCHESTRATION.md`
 - `docs/architecture/COPT_INTEGRATION.md`
 - `docs/architecture/SOLVER_ORCHESTRATION.md`
 

@@ -3724,7 +3724,7 @@ kind = "example"
 import_path = "my_project.phi_bundle_image_search.build_solver:build_phi_bundle_image_search_solver"
 tags = ["project", "example", "mlblack", "representation", "phi_bundle", "outer_search"]
 summary = "Standard project scaffold where nsgablack searches PhiBundle representation formula collections and mlblack evaluates generated image representation objects."
-companions = ["adapter.nsga2", "representation.pipeline"]
+companions = ["adapter.nsga2", "repr.pipeline"]
 context_requires = []
 context_provides = ["phi_bundle_outer_search_records"]
 context_mutates = []
@@ -3732,6 +3732,387 @@ context_cache = []
 context_notes = ["Outer solver searches formula bundles; inner mlblack proxy owns fitting, source governance, and metrics."]
 use_when = ["Search representation formula collections instead of point-prediction expressions."]
 minimal_wiring = ["python my_project\\phi_bundle_image_search\\run_solver.py --check", "python my_project\\phi_bundle_image_search\\run_solver.py --suite-id digits_phi_outer_v1"]
-required_companions = ["adapter.nsga2", "representation.pipeline"]
+required_companions = ["adapter.nsga2", "repr.pipeline"]
 config_keys = ["dataset_key", "max_rows", "pop_size", "generations", "mutation_sigma"]
 example_entry = "python my_project\\phi_bundle_image_search\\run_solver.py --suite-id digits_phi_outer_v1"
+
+# ── L0 Resource / Backend ─────────────────────────────────────────────
+
+[[entry]]
+key = "resource.allocator"
+title = "ResourceAllocator"
+kind = "resource"
+import_path = "nsgablack.core.resources:ResourceAllocator"
+tags = ["resource", "l0", "lease", "gpu", "scheduling", "allocator"]
+summary = "L0 资源分配器：根据 offer/request/policy 发放 ResourceLease。 / L0 resource allocator: grants ResourceLease from offer, request, and policy."
+use_when = [
+  "外层多候选 evaluation 需要统一管理 CPU/GPU 资源时。 / When outer multi-candidate evaluation needs unified CPU/GPU resource management.",
+  "需要防止多个 inner evaluation 抢占同一 GPU 时。 / When multiple inner evaluations must not contend for the same GPU.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import ResourceAllocator, ResourceOffer, ResourcePolicy, ResourceRequest",
+  "allocator = ResourceAllocator(offer=ResourceOffer(threads=8, device_tokens=('cuda:0',)), policy=ResourcePolicy(mode='strict', gpu_sharing='exclusive'))",
+  "lease = allocator.acquire(ResourceRequest(threads=2, gpus=1), owner_id='trial_0')",
+  "resource_context = lease.resource_context(compute_backend='torch', device='auto')",
+  "allocator.release(lease)",
+]
+required_companions = ["resource.lease_store_sqlite", "resource.lease_store_inmem"]
+config_keys = ["mode", "gpu_sharing", "lease_ttl_seconds", "heartbeat_interval_seconds", "max_jobs_per_gpu", "gpu_memory_fraction"]
+companions = ["resource.lease_store_sqlite", "resource.lease_store_inmem", "resource.message_queue_sqlite"]
+example_entry = "docs/architecture/L0_RESOURCE_ORCHESTRATION.md"
+context_provides = ["resource.lease", "resource.context"]
+context_notes = [
+  "Central L0 entry point; all GPU/CPU scheduling flows through allocator.acquire / release.",
+]
+
+[[entry]]
+key = "resource.lease_store_sqlite"
+title = "SQLiteLeaseStore"
+kind = "resource"
+import_path = "nsgablack.core.resources:SQLiteLeaseStore"
+tags = ["resource", "l0", "lease", "sqlite", "cross-process", "gpu"]
+summary = "SQLite lease store：本机跨进程 GPU 互斥。 / SQLite-backed lease store for local cross-process GPU mutual exclusion."
+use_when = [
+  "多个 Python 进程共享 GPU 且需要跨进程互斥时。 / Multiple Python processes share GPUs and need cross-process mutual exclusion.",
+  "process backend 或 Ray local mode 时。 / Process backend or Ray local mode.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import SQLiteLeaseStore, ResourceAllocator",
+  "store = SQLiteLeaseStore('runs/resource_leases.sqlite3')",
+  "allocator = ResourceAllocator(..., lease_store=store)",
+]
+required_companions = ["resource.allocator"]
+config_keys = ["db_path"]
+companions = ["resource.allocator", "resource.message_queue_sqlite"]
+example_entry = "docs/architecture/L0_RESOURCE_ORCHESTRATION.md"
+
+[[entry]]
+key = "resource.lease_store_inmem"
+title = "InMemoryLeaseStore"
+kind = "resource"
+import_path = "nsgablack.core.resources:InMemoryLeaseStore"
+tags = ["resource", "l0", "lease", "inmem", "single-process"]
+summary = "内存 lease store：单进程默认后端。 / In-memory lease store: default single-process backend."
+use_when = [
+  "单进程调试或 thread/serial backend 时。 / Single-process debugging or thread/serial backend.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import InMemoryLeaseStore, ResourceAllocator",
+  "allocator = ResourceAllocator(..., lease_store=InMemoryLeaseStore())",
+]
+required_companions = ["resource.allocator"]
+config_keys = ["(none)"]
+companions = ["resource.allocator", "resource.lease_store_sqlite"]
+example_entry = "docs/architecture/L0_RESOURCE_ORCHESTRATION.md"
+
+[[entry]]
+key = "resource.message_queue_sqlite"
+title = "SQLiteMessageQueue"
+kind = "resource"
+import_path = "nsgablack.core.resources:SQLiteMessageQueue"
+tags = ["resource", "l0", "message-queue", "sqlite", "cross-process", "event"]
+summary = "SQLite 消息队列：本机跨进程资源事件通知。 / SQLite message queue for local cross-process resource event notification."
+use_when = [
+  "多进程需要感知资源 acquire/release/conflict 事件时。 / Multiple processes need to observe resource acquire/release/conflict events.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import SQLiteMessageQueue, SQLiteLeaseStore, ResourceAllocator",
+  "queue = SQLiteMessageQueue('runs/resource_l0.sqlite3')",
+  "store = SQLiteLeaseStore('runs/resource_l0.sqlite3', message_queue=queue)",
+  "allocator = ResourceAllocator(..., lease_store=store)",
+]
+required_companions = ["resource.lease_store_sqlite"]
+config_keys = ["db_path"]
+companions = ["resource.lease_store_sqlite", "resource.allocator"]
+example_entry = "docs/architecture/L0_RESOURCE_ORCHESTRATION.md"
+context_notes = [
+  "Message queue is event notification only; it does NOT replace lease store for mutual exclusion.",
+]
+
+[[entry]]
+key = "resource.message_queue_inmem"
+title = "InMemoryMessageQueue"
+kind = "resource"
+import_path = "nsgablack.core.resources:InMemoryMessageQueue"
+tags = ["resource", "l0", "message-queue", "inmem", "single-process"]
+summary = "内存消息队列：单进程资源事件通知。 / In-memory message queue for single-process resource event notification."
+use_when = [
+  "单进程调试或 thread/serial backend 时。 / Single-process debugging or thread/serial backend.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import InMemoryMessageQueue",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+companions = ["resource.message_queue_sqlite"]
+example_entry = "docs/architecture/L0_RESOURCE_ORCHESTRATION.md"
+
+[[entry]]
+key = "resource.probe"
+title = "LocalResourceProbe"
+kind = "resource"
+import_path = "nsgablack.core.resources:build_local_worker_descriptor"
+tags = ["resource", "l0", "probe", "gpu", "cuda", "hardware", "detection"]
+summary = "本地资源探测：检测 CPU/GPU/内存并构建 WorkerDescriptor。 / Local resource probe: detect CPU/GPU/memory and build WorkerDescriptor."
+use_when = [
+  "需要自动检测本地硬件资源时。 / Need automatic local hardware resource detection.",
+  "构建 worker descriptor 用于 L0 调度时。 / Building worker descriptors for L0 scheduling.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import build_local_worker_descriptor, detect_cuda_devices, detect_local_resource_offer",
+  "offer = detect_local_resource_offer()",
+  "worker = build_local_worker_descriptor(worker_id='local-1', capabilities=('nested_eval',))",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+companions = ["resource.allocator", "backend.worker_registry_inmem"]
+example_entry = "docs/architecture/L0_TASK_RESOURCE_BACKEND_ARCHITECTURE.md"
+context_notes = [
+  "Exports: build_local_worker_descriptor, detect_cuda_devices, detect_local_resource_offer, detect_total_memory_mb.",
+]
+
+[[entry]]
+key = "backend.l0_inmem"
+title = "InMemoryL0RuntimeBackend"
+kind = "backend"
+import_path = "nsgablack.core.resources:InMemoryL0RuntimeBackend"
+tags = ["backend", "l0", "inmem", "single-process", "runtime"]
+summary = "内存 L0 运行时后端：组合 queue/result/state/worker 的单进程实现。 / In-memory L0 runtime backend: composite single-process implementation of queue/result/state/worker."
+use_when = [
+  "单进程调试或本地串行执行时。 / Single-process debugging or local serial execution.",
+  "不需要分布式时。 / When distribution is not needed.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import InMemoryL0RuntimeBackend",
+  "backend = InMemoryL0RuntimeBackend()",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+companions = ["backend.l0_redis", "backend.scheduler_inmem", "backend.worker_registry_inmem"]
+example_entry = "docs/architecture/L0_TASK_RESOURCE_BACKEND_ARCHITECTURE.md"
+
+[[entry]]
+key = "backend.l0_redis"
+title = "RedisL0RuntimeBackend"
+kind = "backend"
+import_path = "nsgablack.core.resources:RedisL0RuntimeBackend"
+tags = ["backend", "l0", "redis", "distributed", "runtime"]
+summary = "Redis L0 运行时后端：组合 queue/result/state/worker 的分布式实现。 / Redis L0 runtime backend: composite distributed implementation of queue/result/state/worker."
+use_when = [
+  "跨进程/跨机器分布式执行时。 / Cross-process / cross-machine distributed execution.",
+  "需要通过 Redis 提交 TaskEnvelope 并收集 TaskResult 时。 / Need to submit TaskEnvelope and collect TaskResult via Redis.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import RedisL0RuntimeBackend",
+  "backend = RedisL0RuntimeBackend(redis_url='redis://127.0.0.1:6379/0')",
+]
+required_companions = ["(none)"]
+config_keys = ["redis_url", "key_prefix", "ttl_seconds"]
+companions = ["backend.l0_inmem", "backend.scheduler_inmem"]
+example_entry = "docs/architecture/L0_TASK_RESOURCE_BACKEND_ARCHITECTURE.md"
+context_notes = [
+  "Uses Redis for queue, result, state, and worker heartbeat. Does NOT replace lease store for mutual exclusion.",
+]
+
+[[entry]]
+key = "backend.artifact_fs"
+title = "FilesystemArtifactBackend"
+kind = "backend"
+import_path = "nsgablack.core.resources:FilesystemArtifactBackend"
+tags = ["backend", "l0", "artifact", "filesystem", "storage"]
+summary = "文件系统产物后端：大产物（模型/报告/parquet）落盘。 / Filesystem artifact backend for large artifacts (models, reports, parquet)."
+use_when = [
+  "产物需要持久化到文件系统时。 / Artifacts need filesystem persistence.",
+  "checkpoint/model/report 等大对象存储时。 / Storing large objects like checkpoints, models, reports.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import FilesystemArtifactBackend",
+  "backend = FilesystemArtifactBackend(base_dir='runs')",
+]
+required_companions = ["(none)"]
+config_keys = ["base_dir"]
+companions = ["backend.artifact_inmem", "backend.data_artifact"]
+example_entry = "docs/architecture/L0_TASK_RESOURCE_BACKEND_ARCHITECTURE.md"
+
+[[entry]]
+key = "backend.artifact_inmem"
+title = "InMemoryArtifactBackend"
+kind = "backend"
+import_path = "nsgablack.core.resources:InMemoryArtifactBackend"
+tags = ["backend", "l0", "artifact", "inmem", "storage"]
+summary = "内存产物后端：小产物/调试用。 / In-memory artifact backend for small artifacts and debugging."
+use_when = [
+  "调试或小产物不需要持久化时。 / Debugging or small artifacts that don't need persistence.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import InMemoryArtifactBackend",
+  "backend = InMemoryArtifactBackend()",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+companions = ["backend.artifact_fs"]
+example_entry = "docs/architecture/L0_TASK_RESOURCE_BACKEND_ARCHITECTURE.md"
+
+[[entry]]
+key = "backend.data_inline"
+title = "InlineDataTransportBackend"
+kind = "backend"
+import_path = "nsgablack.core.resources:InlineDataTransportBackend"
+tags = ["backend", "l0", "data-transport", "inline", "json"]
+summary = "内联数据传输：小候选向量直接 JSON 序列化。 / Inline data transport: small candidate vectors serialized directly as JSON."
+use_when = [
+  "候选向量/小 payload 直接传输时。 / Small candidate vectors / payloads transmitted directly.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import InlineDataTransportBackend",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+companions = ["backend.data_artifact"]
+example_entry = "docs/architecture/L0_TASK_RESOURCE_BACKEND_ARCHITECTURE.md"
+
+[[entry]]
+key = "backend.data_artifact"
+title = "ArtifactDataTransportBackend"
+kind = "backend"
+import_path = "nsgablack.core.resources:ArtifactDataTransportBackend"
+tags = ["backend", "l0", "data-transport", "artifact", "ref"]
+summary = "引用数据传输：大数据通过 DataRef/artifact 传递。 / Artifact-ref data transport: large data passed via DataRef / artifact references."
+use_when = [
+  "数据集/模型等大对象不应 inline 传输时。 / Datasets, models, or other large objects should not be transmitted inline.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import ArtifactDataTransportBackend",
+]
+required_companions = ["backend.artifact_fs"]
+config_keys = ["(none)"]
+companions = ["backend.data_inline", "backend.artifact_fs"]
+example_entry = "docs/architecture/L0_TASK_RESOURCE_BACKEND_ARCHITECTURE.md"
+
+[[entry]]
+key = "backend.scheduler_inmem"
+title = "InMemoryResourceScheduler"
+kind = "backend"
+import_path = "nsgablack.core.resources:InMemoryResourceScheduler"
+tags = ["backend", "l0", "scheduler", "inmem", "task"]
+summary = "内存资源调度器：匹配 TaskEnvelope 到 WorkerDescriptor。 / In-memory resource scheduler: matches TaskEnvelope to WorkerDescriptor."
+use_when = [
+  "单进程内需要 task → worker 调度时。 / Single-process task-to-worker scheduling.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import InMemoryResourceScheduler",
+  "scheduler = InMemoryResourceScheduler()",
+]
+required_companions = ["backend.worker_registry_inmem"]
+config_keys = ["(none)"]
+companions = ["backend.worker_registry_inmem", "backend.l0_inmem"]
+example_entry = "docs/architecture/L0_TASK_RESOURCE_BACKEND_ARCHITECTURE.md"
+
+[[entry]]
+key = "backend.worker_registry_inmem"
+title = "InMemoryWorkerRegistry"
+kind = "backend"
+import_path = "nsgablack.core.resources:InMemoryWorkerRegistry"
+tags = ["backend", "l0", "worker", "registry", "inmem"]
+summary = "内存 worker 注册表：管理 worker 描述符与心跳。 / In-memory worker registry: manages worker descriptors and heartbeats."
+use_when = [
+  "单进程内需要 worker 注册/发现时。 / Single-process worker registration and discovery.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import InMemoryWorkerRegistry",
+  "registry = InMemoryWorkerRegistry()",
+  "registry.register(worker_descriptor)",
+]
+required_companions = ["(none)"]
+config_keys = ["(none)"]
+companions = ["backend.scheduler_inmem", "resource.probe"]
+example_entry = "docs/architecture/L0_TASK_RESOURCE_BACKEND_ARCHITECTURE.md"
+
+# ── L0 PostgreSQL backends ──────────────────────────────────────────
+
+[[entry]]
+key = "backend.l0_postgres"
+title = "PostgresL0RuntimeBackend"
+kind = "backend"
+import_path = "nsgablack.core.resources:PostgresL0RuntimeBackend"
+tags = ["backend", "l0", "postgres", "postgresql", "db", "distributed", "runtime"]
+summary = "PostgreSQL L0 运行时后端：组合 queue/result/state/worker 的 DB 原生实现。 / PostgreSQL L0 runtime backend: composite DB-native implementation of queue/result/state/worker."
+use_when = [
+  "需要以 PostgreSQL 为主后端的 L0 运行时时。 / When PostgreSQL is the primary backend for L0 runtime.",
+  "多 worker / 跨进程共享 task queue/result/state 时。 / Multi-worker / cross-process shared task queue, result, and state.",
+  "不需要额外部署 Redis 时。 / When you don't want to deploy Redis alongside PostgreSQL.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import PostgresL0RuntimeBackend",
+  "backend = PostgresL0RuntimeBackend(pg_url='postgresql://127.0.0.1:5432/postgres')",
+  "backend.submit(task_envelope)",
+  "claimed = backend.claim(run_id='demo')",
+]
+required_companions = ["(none)"]
+config_keys = ["pg_url", "namespace", "queue_scope"]
+companions = ["backend.l0_inmem", "backend.l0_redis", "backend.scheduler_inmem"]
+example_entry = "docs/architecture/L0_TASK_RESOURCE_BACKEND_ARCHITECTURE.md"
+context_notes = [
+  "Uses SELECT ... FOR UPDATE SKIP LOCKED for task queue — safe for concurrent consumers.",
+  "Auto-creates tables on first use; schema migrations are versioned.",
+]
+
+[[entry]]
+key = "backend.postgres_task_queue"
+title = "PostgresTaskQueueBackend"
+kind = "backend"
+import_path = "nsgablack.core.resources:PostgresTaskQueueBackend"
+tags = ["backend", "l0", "postgres", "task-queue", "db"]
+summary = "PostgreSQL 任务队列：SKIP LOCKED 并发安全出队。 / PostgreSQL task queue with SKIP LOCKED for concurrent-safe dequeue."
+use_when = [
+  "需要 PostgreSQL 原生的任务队列（无需 Redis/RabbitMQ）时。 / Need PostgreSQL-native task queue without Redis or RabbitMQ.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import PostgresTaskQueueBackend",
+  "queue = PostgresTaskQueueBackend(pg_url='postgresql://127.0.0.1:5432/postgres')",
+  "queue.submit(task_envelope)",
+]
+required_companions = ["(none)"]
+config_keys = ["pg_url", "namespace", "queue_scope"]
+companions = ["backend.l0_postgres", "backend.postgres_task_result"]
+example_entry = "docs/architecture/L0_TASK_RESOURCE_BACKEND_ARCHITECTURE.md"
+
+[[entry]]
+key = "backend.postgres_task_result"
+title = "PostgresTaskResultBackend"
+kind = "backend"
+import_path = "nsgablack.core.resources:PostgresTaskResultBackend"
+tags = ["backend", "l0", "postgres", "task-result", "db"]
+summary = "PostgreSQL 任务结果存储。 / PostgreSQL task result store."
+use_when = [
+  "需要 PostgreSQL 持久化 task result 时。 / Need PostgreSQL to persist task results.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import PostgresTaskResultBackend",
+  "results = PostgresTaskResultBackend(pg_url='postgresql://127.0.0.1:5432/postgres')",
+]
+required_companions = ["(none)"]
+config_keys = ["pg_url", "namespace"]
+companions = ["backend.l0_postgres", "backend.postgres_task_queue"]
+example_entry = "docs/architecture/L0_TASK_RESOURCE_BACKEND_ARCHITECTURE.md"
+
+[[entry]]
+key = "backend.postgres_worker_registry"
+title = "PostgresWorkerRegistryBackend"
+kind = "backend"
+import_path = "nsgablack.core.resources:PostgresWorkerRegistryBackend"
+tags = ["backend", "l0", "postgres", "worker", "registry", "db"]
+summary = "PostgreSQL worker 注册表与心跳。 / PostgreSQL worker registry with heartbeat TTL."
+use_when = [
+  "需要 PostgreSQL 持久化 worker registry 时。 / Need PostgreSQL to persist worker registry.",
+  "跨机器 worker 发现与心跳。 / Cross-machine worker discovery and heartbeat.",
+]
+minimal_wiring = [
+  "from nsgablack.core.resources import PostgresWorkerRegistryBackend",
+  "registry = PostgresWorkerRegistryBackend(pg_url='postgresql://127.0.0.1:5432/postgres')",
+  "registry.register(worker_descriptor)",
+]
+required_companions = ["(none)"]
+config_keys = ["pg_url", "namespace"]
+companions = ["backend.l0_postgres", "backend.worker_registry_inmem"]
+example_entry = "docs/architecture/L0_TASK_RESOURCE_BACKEND_ARCHITECTURE.md"

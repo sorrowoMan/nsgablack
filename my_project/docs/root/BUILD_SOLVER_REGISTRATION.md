@@ -19,8 +19,8 @@ Component parameters live in layer config registries; `build_solver.py` only sel
 4. L3 Flow Plugins
    - `reg_flow(solver, cfg, keys=[...])`
 
-5. L0 Acceleration
-   - `reg_acceleration(solver, cfg, keys=[...])`
+5. L0 Runtime
+   - `reg_runtime(solver, cfg, profile_key="local_cpu", backend_keys=[...])`
 
 6. L4 Evaluation Runtime
    - `reg_evaluation(solver, cfg, keys=[...])`
@@ -46,6 +46,7 @@ Component parameters live in layer config registries; `build_solver.py` only sel
 ## Folder Placement Notes
 - L4 evaluation registry lives in `evaluation/config.py` (problem-owned assets can live under `problem/evaluation/`)
 - L1/L2 ops/observability + checkpoint registries live in `plugins/config.py`
+- L0 runtime profiles live in `runtime/config.py`; static execution graph helpers live in `runtime/graph.py`
 - problem-local data lives under `problem/data/`
 
 ## Example: VNS Wiring (Registry + Selection)

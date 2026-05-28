@@ -6,7 +6,6 @@ from __future__ import annotations
 from nsgablack.core.evolution_solver import EvolutionSolver
 from nsgablack.utils.wiring import attach_checkpoint_resume, attach_observability_profile
 
-from acceleration.config import apply_acceleration_backends
 from bias.domain.config import build_bias
 from evaluation.config import register_evaluation_runtime
 from pipeline.config import build_pipeline
@@ -17,13 +16,14 @@ from plugins.config import (
     get_observability_spec,
 )
 from problem.config import build_problem
+from runtime.config import apply_runtime_profile
 from solver.config import apply_solver_profile
 
 
-def reg_modeling(cfg, *, problem_key: str, pipeline_key: str, bias_key: str):
+def reg_modeling(cfg, *, problem_key: str, pipeline_key: str, bias_key: str, component_overrides=None):
     problem = build_problem(cfg.problems, problem_key)
     pipeline = build_pipeline(cfg.pipelines, pipeline_key)
-    bias_module = build_bias(cfg.biases, bias_key)
+    bias_module = build_bias(cfg.biases, bias_key, component_overrides=component_overrides)
     return problem, pipeline, bias_module
 
 
@@ -36,8 +36,8 @@ def reg_search(solver: EvolutionSolver, adapter: object | None = None) -> None:
         solver.set_adapter(adapter)
 
 
-def reg_acceleration(solver: EvolutionSolver, cfg, keys) -> None:
-    apply_acceleration_backends(solver, cfg.acceleration, keys)
+def reg_runtime(solver: EvolutionSolver, cfg, profile_key: str = "local_cpu", backend_keys=()) -> None:
+    apply_runtime_profile(solver, cfg.runtime, profile_key, backend_keys)
 
 
 def reg_evaluation(solver: EvolutionSolver, cfg, keys) -> None:
@@ -57,13 +57,13 @@ def reg_observability(solver: EvolutionSolver, cfg, run_id: str, key: str) -> No
     )
 
 
-def reg_flow(solver: EvolutionSolver, cfg, keys) -> None:
-    for plugin in build_flow_plugins(cfg.flow_plugins, keys):
+def reg_flow(solver: EvolutionSolver, cfg, keys, *, component_overrides=None) -> None:
+    for plugin in build_flow_plugins(cfg.flow_plugins, keys, component_overrides=component_overrides):
         solver.add_plugin(plugin)
 
 
-def reg_ops(solver: EvolutionSolver, cfg, keys) -> None:
-    for plugin in build_ops_plugins(cfg.ops_plugins, keys):
+def reg_ops(solver: EvolutionSolver, cfg, keys, *, component_overrides=None) -> None:
+    for plugin in build_ops_plugins(cfg.ops_plugins, keys, component_overrides=component_overrides):
         solver.add_plugin(plugin)
 
 

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Mapping, Optional, Tuple
 
 import numpy as np
+
+from nsgablack.core.resources import ResourceRequirement
 
 
 @dataclass(frozen=True)
@@ -19,6 +21,34 @@ class InnerProductionSolverConfig:
     parallel_chunk_size: int | None = None
     parallel_strict: bool = False
     parallel_thread_bias_isolation: str = "disable_cache"
+    resource_requirement: ResourceRequirement | Mapping[str, object] | None = None
+
+    def effective_resource_requirement(self) -> ResourceRequirement:
+        if isinstance(self.resource_requirement, ResourceRequirement):
+            base = self.resource_requirement
+        elif isinstance(self.resource_requirement, Mapping):
+            base = ResourceRequirement.from_dict(self.resource_requirement)
+        else:
+            base = ResourceRequirement(
+                threads=int(max(1, self.parallel_workers)),
+                capabilities=("production_inner", "nested_eval"),
+                metadata={"layer": "L2", "source": "supply_adjustment_nested.inner"},
+            )
+        caps = tuple(dict.fromkeys(tuple(base.capabilities) + ("production_inner", "nested_eval")))
+        metadata = dict(base.metadata)
+        metadata.setdefault("layer", "L2")
+        metadata.setdefault("source", "supply_adjustment_nested.inner")
+        return ResourceRequirement(
+            threads=int(base.threads),
+            gpus=int(base.gpus),
+            resource_backend=str(base.resource_backend),
+            device_tokens=tuple(base.device_tokens),
+            memory_mb=base.memory_mb,
+            gpu_memory_mb=base.gpu_memory_mb,
+            capabilities=caps,
+            timeout_seconds=base.timeout_seconds,
+            metadata=metadata,
+        )
 
 
 def build_inner_production_solver(
@@ -41,6 +71,9 @@ def build_inner_production_solver(
         "adapter",
         "bias",
         "pipeline",
+        "reporting",
+        "solver",
+        "cli",
         "refactor_data",
         "build_solver",
         "working_integrated_optimizer",
@@ -87,6 +120,7 @@ def build_inner_production_solver(
     class _Args:
         pass
 
+    req = cfg.effective_resource_requirement()
     a = _Args()
     a.material_cap_ratio = 2.0
     a.daily_floor_ratio = 0.7
@@ -119,7 +153,7 @@ def build_inner_production_solver(
     a.allow_infeasible_update = False
     a.parallel = bool(cfg.parallel)
     a.parallel_backend = str(cfg.parallel_backend)
-    a.parallel_workers = int(max(1, cfg.parallel_workers))
+    a.parallel_workers = int(max(1, req.threads))
     a.parallel_chunk_size = cfg.parallel_chunk_size
     a.parallel_verbose = False
     a.parallel_no_precheck = False
@@ -151,6 +185,9 @@ def build_inner_production_solver(
     a.penalty_scale = 0.001
 
     solver = build_multi_agent_solver(problem, a)
+    solver.l0_resource_requirement = req
+    solver.resource_request = req.to_resource_request(label="supply_adjustment_inner")
+    solver.accepted_parent_contracts = ("outer.default", "supply_adjustment_nested.outer")
     solver.set_max_steps(int(a.generations))
     return solver, problem
 

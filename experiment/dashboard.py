@@ -56,10 +56,8 @@ else:
 
 try:
     import streamlit as st
-except Exception as exc:  # pragma: no cover
-    raise SystemExit(
-        "streamlit is required for the nsgablack experiment dashboard. Install with: python -m pip install streamlit"
-    ) from exc
+except Exception:  # pragma: no cover
+    st = None
 
 
 _VIEW_OPTIONS: tuple[str, ...] = ("run_catalog", "artifact_catalog")

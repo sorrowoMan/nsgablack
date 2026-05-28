@@ -14,6 +14,8 @@ from nsgablack.bias import BiasModule
 @dataclass(frozen=True)
 class BiasConfig:
     enable_bias: bool = False
+    diversity_weight: float = 0.10
+    diversity_metric: str = "euclidean"
 
 
 @dataclass(frozen=True)
@@ -70,11 +72,37 @@ def _build_bias_from_spec(spec: BiasSpec) -> object:
     return builder(dict(spec.params or {}))
 
 
-def build_bias(registry: BiasRegistry, key: str) -> object:
+def _merge_component_override_params(
+    *,
+    kind: str,
+    key: str,
+    params: Dict[str, Any],
+    component_overrides: Dict[str, Dict[str, Any]] | None,
+) -> Dict[str, Any]:
+    merged = dict(params or {})
+    for path, payload in dict(component_overrides or {}).items():
+        raw = str(path or "").strip().lower()
+        if raw in {str(kind).strip().lower(), f"{str(kind).strip().lower()}.{str(key).strip().lower()}"}:
+            merged.update(dict(payload or {}))
+    return merged
+
+
+def build_bias(
+    registry: BiasRegistry,
+    key: str,
+    *,
+    component_overrides: Dict[str, Dict[str, Any]] | None = None,
+) -> object:
     lookup = str(key).strip().lower()
     for spec in tuple(registry.registry or ()):
         if str(spec.key).strip().lower() == lookup:
-            return _build_bias_from_spec(spec)
+            merged = _merge_component_override_params(
+                kind="bias",
+                key=str(spec.key),
+                params=dict(spec.params or {}),
+                component_overrides=component_overrides,
+            )
+            return _build_bias_from_spec(BiasSpec(key=str(spec.key), params=merged))
     raise ValueError(f"Bias key not registered: {key}")
 
 

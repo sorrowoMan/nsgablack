@@ -87,7 +87,7 @@ class ExampleProblem(BlackBoxProblem):
         if selected is not None:
             try:
                 return self.evaluate_gpu_batch(pop, backend=selected, device=device)
-            except Exception:
+            except (RuntimeError, MemoryError, OSError):
                 # Fallback to CPU path on any GPU failure.
                 pass
         return self.evaluate_batch(pop)
@@ -107,6 +107,6 @@ class ExampleProblem(BlackBoxProblem):
                     import cupy  # type: ignore  # noqa: F401
 
                     return "cupy"
-            except Exception:
+            except ImportError:
                 continue
         return None
