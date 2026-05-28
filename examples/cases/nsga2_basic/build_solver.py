@@ -44,10 +44,10 @@ def build_solver(
         pipeline_key="default",
         bias_key="none",
     )
-    solver = build_evolution_solver(problem, bias_module=bias_module)
-    apply_store_profile(solver, cfg.store_profiles, "default")
-    apply_runtime_governance(solver, cfg.runtime_governance, "default")
-    solver.set_representation_pipeline(pipeline)
+    from nsgablack.core.composable_solver import ComposableSolver
+    solver = ComposableSolver(problem=problem, representation_pipeline=pipeline)
+    from nsgablack.adapters import NSGA2Adapter
+    solver.set_adapter(NSGA2Adapter())
 
     # --- Core ---------------------------------------------------------
     apply_solver_profile(solver, cfg, "default")
