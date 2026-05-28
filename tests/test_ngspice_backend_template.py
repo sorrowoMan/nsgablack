@@ -4,8 +4,8 @@ import numpy as np
 
 
 def test_ngspice_backend_mock_mode_runs_without_binary():
-    from nsgablack.plugins.solver_backends.backend_contract import BackendSolveRequest
-    from nsgablack.plugins.solver_backends.ngspice_backend import NgspiceBackend, NgspiceBackendConfig
+    from nsgablack.plugins.domain_backends.backend_contract import BackendSolveRequest
+    from nsgablack.plugins.domain_backends.ngspice_backend import NgspiceBackend, NgspiceBackendConfig
 
     backend = NgspiceBackend(
         config=NgspiceBackendConfig(
@@ -22,9 +22,9 @@ def test_ngspice_backend_mock_mode_runs_without_binary():
 
 
 def test_ngspice_backend_error_output_decode_fallback(monkeypatch):
-    from nsgablack.plugins.solver_backends.backend_contract import BackendSolveRequest
-    from nsgablack.plugins.solver_backends.ngspice_backend import NgspiceBackend, NgspiceBackendConfig
-    import nsgablack.plugins.solver_backends.ngspice_backend as ng_mod
+    from nsgablack.plugins.domain_backends.backend_contract import BackendSolveRequest
+    from nsgablack.plugins.domain_backends.ngspice_backend import NgspiceBackend, NgspiceBackendConfig
+    import nsgablack.plugins.domain_backends.ngspice_backend as ng_mod
 
     class _Proc:
         returncode = 1

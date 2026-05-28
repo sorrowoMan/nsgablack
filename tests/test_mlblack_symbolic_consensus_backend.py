@@ -14,7 +14,7 @@ def _mlblack_root() -> Path:
 
 
 def _small_backend_config(tmp_path: Path):
-    from nsgablack.plugins.solver_backends.mlblack_symbolic_consensus_backend import (
+    from nsgablack.plugins.domain_backends.mlblack_symbolic_consensus_backend import (
         MlblackSymbolicConsensusBackendConfig,
     )
 
@@ -57,8 +57,8 @@ def _small_backend_config(tmp_path: Path):
 
 
 def test_mlblack_symbolic_consensus_backend_smoke(tmp_path):
-    from nsgablack.plugins.solver_backends.backend_contract import BackendSolveRequest
-    from nsgablack.plugins.solver_backends.mlblack_symbolic_consensus_backend import (
+    from nsgablack.plugins.domain_backends.backend_contract import BackendSolveRequest
+    from nsgablack.plugins.domain_backends.mlblack_symbolic_consensus_backend import (
         MlblackSymbolicConsensusBackend,
     )
     from nsgablack.plugins.storage.runtime_surface_tracker import (
@@ -212,7 +212,7 @@ def test_mlblack_symbolic_consensus_inner_runtime_provider_smoke(tmp_path):
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.core.nested_solver import InnerRuntimeConfig, TaskInnerRuntimeEvaluator
     from nsgablack.plugins import EvaluationModelConfig, EvaluationModelProviderPlugin
-    from nsgablack.plugins.solver_backends.mlblack_symbolic_consensus_backend import (
+    from nsgablack.plugins.domain_backends.mlblack_symbolic_consensus_backend import (
         MlblackSymbolicConsensusBackend,
     )
 
@@ -303,8 +303,8 @@ def test_mlblack_symbolic_consensus_inner_runtime_provider_smoke(tmp_path):
 
 
 def test_mlblack_symbolic_consensus_backend_arrhenius_mechanism_hints(tmp_path):
-    from nsgablack.plugins.solver_backends.backend_contract import BackendSolveRequest
-    from nsgablack.plugins.solver_backends.mlblack_symbolic_consensus_backend import (
+    from nsgablack.plugins.domain_backends.backend_contract import BackendSolveRequest
+    from nsgablack.plugins.domain_backends.mlblack_symbolic_consensus_backend import (
         MlblackSymbolicConsensusBackend,
     )
 

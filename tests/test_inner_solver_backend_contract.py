@@ -8,7 +8,7 @@ def test_inner_solver_backend_retry_and_timeout_strategy():
     from nsgablack.core.base import BlackBoxProblem
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.core.nested_solver import InnerRuntimeConfig, TaskInnerRuntimeEvaluator
-    from nsgablack.plugins.solver_backends.backend_contract import BackendSolveRequest
+    from nsgablack.plugins.domain_backends.backend_contract import BackendSolveRequest
 
     class _RetryBackend:
         def __init__(self) -> None:

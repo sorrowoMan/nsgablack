@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.plugins.solver_backends.mlblack_symbolic_consensus_backend import (
+from nsgablack.plugins.domain_backends.mlblack_symbolic_consensus_backend import (
     MlblackSymbolicConsensusBackendConfig,
 )
 

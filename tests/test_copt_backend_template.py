@@ -4,8 +4,8 @@ import numpy as np
 
 
 def test_copt_backend_mock_when_module_unavailable(monkeypatch):
-    from nsgablack.plugins.solver_backends.backend_contract import BackendSolveRequest
-    from nsgablack.plugins.solver_backends.copt_backend import CoptBackend, CoptBackendConfig
+    from nsgablack.plugins.domain_backends.backend_contract import BackendSolveRequest
+    from nsgablack.plugins.domain_backends.copt_backend import CoptBackend, CoptBackendConfig
 
     backend = CoptBackend(config=CoptBackendConfig(mock_when_unavailable=True, mock_objective_scale=3.0))
     monkeypatch.setattr(backend, "_load_copt_module", lambda: (_ for _ in ()).throw(ImportError("no coptpy")))
@@ -18,8 +18,8 @@ def test_copt_backend_mock_when_module_unavailable(monkeypatch):
 
 
 def test_copt_backend_custom_solve_fn_path(monkeypatch):
-    from nsgablack.plugins.solver_backends.backend_contract import BackendSolveRequest
-    from nsgablack.plugins.solver_backends.copt_backend import CoptBackend
+    from nsgablack.plugins.domain_backends.backend_contract import BackendSolveRequest
+    from nsgablack.plugins.domain_backends.copt_backend import CoptBackend
 
     backend = CoptBackend()
 
@@ -50,8 +50,8 @@ def test_copt_backend_custom_solve_fn_path(monkeypatch):
 
 
 def test_copt_backend_template_linear_inline_spec(monkeypatch):
-    from nsgablack.plugins.solver_backends.backend_contract import BackendSolveRequest
-    from nsgablack.plugins.solver_backends.copt_backend import CoptBackend
+    from nsgablack.plugins.domain_backends.backend_contract import BackendSolveRequest
+    from nsgablack.plugins.domain_backends.copt_backend import CoptBackend
 
     class _FakeVar:
         def __init__(self):
@@ -137,8 +137,8 @@ def test_copt_backend_template_linear_inline_spec(monkeypatch):
 
 
 def test_copt_backend_template_unknown_template_strict(monkeypatch):
-    from nsgablack.plugins.solver_backends.backend_contract import BackendSolveRequest
-    from nsgablack.plugins.solver_backends.copt_backend import CoptBackend
+    from nsgablack.plugins.domain_backends.backend_contract import BackendSolveRequest
+    from nsgablack.plugins.domain_backends.copt_backend import CoptBackend
 
     class _CP:
         pass
@@ -160,8 +160,8 @@ def test_copt_backend_template_unknown_template_strict(monkeypatch):
 
 
 def test_copt_backend_template_qp_inline_spec(monkeypatch):
-    from nsgablack.plugins.solver_backends.backend_contract import BackendSolveRequest
-    from nsgablack.plugins.solver_backends.copt_backend import CoptBackend
+    from nsgablack.plugins.domain_backends.backend_contract import BackendSolveRequest
+    from nsgablack.plugins.domain_backends.copt_backend import CoptBackend
 
     class _FakeVar:
         def __init__(self):

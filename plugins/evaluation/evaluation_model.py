@@ -8,7 +8,7 @@ import numpy as np
 from ...utils.context.context_keys import KEY_METRICS
 from ...core.state.context_schema import build_minimal_context
 from ...utils.extension_contracts import normalize_objectives, normalize_violation
-from ..solver_backends.backend_contract import BackendSolveRequest, normalize_backend_output
+from ..domain_backends.backend_contract import BackendSolveRequest, normalize_backend_output
 from .provider_plugin_base import EvaluationProviderPluginBase
 
 

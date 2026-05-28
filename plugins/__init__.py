@@ -35,7 +35,7 @@ from .evaluation.gpu_evaluation_template import (
     GpuEvaluationTemplateProviderPlugin,
 )
 from .evaluation.evaluation_model import EvaluationModelProviderPlugin, EvaluationModelConfig
-from .solver_backends.backend_contract import (
+from .domain_backends.backend_contract import (
     BackendCapabilities,
     BackendSolveRequest,
     BackendSolver,
@@ -44,14 +44,14 @@ from .solver_backends.backend_contract import (
     SolutionPoolSpec,
     WarmStartSpec,
 )
-from .solver_backends.ngspice_backend import NgspiceBackend, NgspiceBackendConfig
-from .solver_backends.copt_backend import CoptBackend, CoptBackendConfig
-from .solver_backends.mlblack_symbolic_consensus_backend import (
+from .domain_backends.ngspice_backend import NgspiceBackend, NgspiceBackendConfig
+from .domain_backends.copt_backend import CoptBackend, CoptBackendConfig
+from .domain_backends.mlblack_symbolic_consensus_backend import (
     MlblackSymbolicConsensusBackend,
     MlblackSymbolicConsensusBackendConfig,
 )
-from .solver_backends.contract_bridge import ContractBridgePlugin, BridgeRule
-from .solver_backends.timeout_budget import TimeoutBudgetPlugin, TimeoutBudgetConfig
+from .domain_backends.contract_bridge import ContractBridgePlugin, BridgeRule
+from .domain_backends.timeout_budget import TimeoutBudgetPlugin, TimeoutBudgetConfig
 from .runtime.pareto_archive import ParetoArchivePlugin, ParetoArchiveConfig
 from .ops.benchmark_harness import BenchmarkHarnessPlugin, BenchmarkHarnessConfig
 from .ops.module_report import ModuleReportPlugin, ModuleReportConfig

@@ -14,8 +14,8 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 
 import numpy as np
 
-from nsgablack.plugins.solver_backends.backend_contract import BackendSolveRequest
-from nsgablack.plugins.solver_backends.copt_backend import CoptBackend, CoptBackendConfig
+from nsgablack.plugins.domain_backends.backend_contract import BackendSolveRequest
+from nsgablack.plugins.domain_backends.copt_backend import CoptBackend, CoptBackendConfig
 
 
 class CoptHandoffProvider:

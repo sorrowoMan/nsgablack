@@ -17,7 +17,7 @@ from nsgablack.plugins import (
     TimeoutBudgetConfig,
     TimeoutBudgetPlugin,
 )
-from nsgablack.plugins.solver_backends.mlblack_symbolic_consensus_backend import (
+from nsgablack.plugins.domain_backends.mlblack_symbolic_consensus_backend import (
     MlblackSymbolicConsensusBackend,
     MlblackSymbolicConsensusBackendConfig,
 )

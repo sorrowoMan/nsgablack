@@ -6,7 +6,7 @@ from nsgablack.adapters import AlgorithmAdapter
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.core.composable_solver import ComposableSolver
 from nsgablack.core.nested_solver import InnerRuntimeConfig, TaskInnerRuntimeEvaluator
-from nsgablack.plugins.solver_backends.ngspice_backend import NgspiceBackend, NgspiceBackendConfig
+from nsgablack.plugins.domain_backends.ngspice_backend import NgspiceBackend, NgspiceBackendConfig
 
 
 class NgspiceOuterProblem(BlackBoxProblem):

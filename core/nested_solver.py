@@ -363,7 +363,7 @@ class TaskInnerRuntimeEvaluator(InnerRuntimeEvaluator):
                         evaluator = plugin
                         break
         if evaluator is not None and callable(getattr(evaluator, "evaluate_model", None)):
-            from ..plugins.solver_backends.backend_contract import BackendSolveRequest, normalize_backend_output
+            from ..plugins.domain_backends.backend_contract import BackendSolveRequest, normalize_backend_output
 
             req = BackendSolveRequest(
                 candidate=np.asarray(eval_ctx["candidate"], dtype=float).reshape(-1),
@@ -376,7 +376,7 @@ class TaskInnerRuntimeEvaluator(InnerRuntimeEvaluator):
             return dict(normalize_backend_output(out))
         backend = task.get("inner_backend")
         if backend is not None and callable(getattr(backend, "solve", None)):
-            from ..plugins.solver_backends.backend_contract import BackendSolveRequest, normalize_backend_output
+            from ..plugins.domain_backends.backend_contract import BackendSolveRequest, normalize_backend_output
 
             req = BackendSolveRequest(
                 candidate=np.asarray(eval_ctx["candidate"], dtype=float).reshape(-1),
