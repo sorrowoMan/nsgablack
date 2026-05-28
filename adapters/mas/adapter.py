@@ -60,6 +60,14 @@ class MASAdapter(AlgorithmAdapter):
         self._surrogate: Optional[VectorSurrogate] = None
         self._X: list[np.ndarray] = []
         self._Y: list[np.ndarray] = []
+        self.solver: Any = None
+
+    def setup(self, solver: Any) -> None:
+        self.solver = solver
+        self._center = None
+        self._surrogate = None
+        self._X.clear()
+        self._Y.clear()
 
     def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self._center is None:

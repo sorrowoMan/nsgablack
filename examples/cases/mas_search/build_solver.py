@@ -51,7 +51,7 @@ def build_solver(
 
     # --- Core ---------------------------------------------------------
     apply_solver_profile(solver, cfg, "default")
-    solver.set_max_steps(2)
+    solver.set_max_steps(1)
 
     # Model-and-Search adapter
     from nsgablack.adapters import MASAdapter, MASConfig
