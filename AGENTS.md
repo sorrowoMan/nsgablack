@@ -81,10 +81,14 @@
 
 - `core/`：求解器主干与运行语义
 - `adapters/`：算法策略（NSGA2/3、SPEA2、MOEAD、VNS、SA、DE、TR、A*、MAS 等）
-- `plugins/`：能力层（runtime/evaluation/system/ops/storage/backends/models）
+- `plugins/`：能力层（runtime/evaluation/system/ops/storage/domain_backends）
 - `representation/`：表示组件与 pipeline
 - `bias/`：偏置系统（algorithmic/domain/surrogate + facade/manager）
-- `core/state/`：context key/schema/contracts/store/snapshot/events（对外主入口）
+- `core/state/`：context key/schema/contracts/store/snapshot/events（公共 API 入口；实现在 utils/context/）
+- `core/resources/`：L0 资源层
+  - `compute/` — 执行加速（PoolScheduler, ParallelEvaluator 重导出）
+  - `storage/` — 状态持久化（ContextStore, SnapshotStore, ArtifactBackend, lease）
+  - `transport/` — 消息/队列/传输（TaskQueue, MessageQueue, L0RuntimeBackend）
 - `catalog/`：可发现性索引与 profile/filter 规则
 - `project/doctor*`：项目规则检查与健康诊断
 

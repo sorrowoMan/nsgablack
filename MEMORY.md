@@ -80,6 +80,7 @@
 | anomaly_detection | ✅ 已注册 catalog |
 | tsp_vrp | ✅ 已注册 catalog |
 | arima_order_search | ✅ 已注册 catalog |
+| pooled_backend_handoff | ✅ L0 PoolScheduler + CoptBackend 线程手递手 |
 
 ## 常用命令
 ```powershell
