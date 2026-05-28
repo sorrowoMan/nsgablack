@@ -1,21 +1,52 @@
-# trust_region_dfo
+# trust_region_dfo（Trust Region DFO 适配器）
 
-NSGABlack scaffold (my_project-style layout).
+验证非默认 Adapter——使用 TrustRegionDFOAdapter 替代 NSGA2，证明 Solver 与 Adapter 的解耦。
 
-## Quickstart
-1. `python -m nsgablack project doctor --path . --build`
-2. `python run_solver.py --check`
-3. `python run_solver.py`
+## 是否使用 mlblack
 
-## Structure
-- `build_solver.py`: main assembly entry
-- `assembly.py`: attach/build helpers
-- `config.py`: project registries
-- `problem/`, `pipeline/`, `bias/`, `adapter/`, `solver/`
-- `runtime/` (L0), `evaluation/` (L4)
-- `plugins/` (governance/ops/observability)
-- `catalog/entries.toml`: local catalog entries
+不使用。纯 nsgablack。
 
-## Notes
-- Parameters live in registries; selection happens in `build_solver.py`.
-- Use `project doctor` to validate contracts early.
+## 这个 case 验证什么
+
+Adapter 层的可替换性：
+- 单目标 Sphere 问题
+- 不使用默认 NSGA2 Adapter，改用 TrustRegionDFOAdapter
+- `solver.set_adapter()` 在 assembly 层注入
+
+能力信号：Solver 不绑定特定 Adapter。任何符合 `AlgorithmAdapter` 契约的适配器都可以通过 scaffold 的标准装配路径接入。
+
+## 搜索向量
+
+| 变量 | 含义 | 范围 |
+|---|---|---|
+| x_i | 第 i 维连续变量 | [-5.0, 5.0] |
+
+## 目标和指标
+
+| 目标 | 方向 | 含义 |
+|---|---|---|
+| sphere | minimize | Σ x_i² |
+
+## 组件组合
+
+| 层 | 组件 | 来源 |
+|---|---|---|
+| Problem | SphereProblem | 自定义（继承 BlackBoxProblem） |
+| Representation | RepresentationPipeline (GaussianMutation) | 框架 representation/ |
+| Adapter | TrustRegionDFOAdapter | 框架 adapters/trust_region_dfo |
+
+## 结构
+
+| 路径 | 作用 |
+|---|---|
+| `problem/example_problem.py` | SphereProblem 定义 |
+| `problem/config.py` | 注册 `sphere` key |
+| `build_solver.py` | Scaffold 装配入口 |
+
+## 运行和验证
+
+```powershell
+cd C:\Users\hp\Desktop\nsgablack
+python examples\cases\trust_region_dfo\run_solver.py --check
+python examples\cases\trust_region_dfo\run_solver.py
+```
