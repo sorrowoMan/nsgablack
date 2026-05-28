@@ -910,17 +910,16 @@ def _run_solver_template() -> str:
                     f"plugins={plugin_count}"
                 )
                 return
-            result = solver.run(return_dict=True)
-            pareto_payload = result.get("pareto_solutions", None)
-            if isinstance(pareto_payload, dict):
-                objs = pareto_payload.get("objectives")
-            else:
+            result = solver.run()
+            if isinstance(result, dict):
                 objs = result.get("pareto_objectives", None)
+            else:
+                objs = None
             if objs is not None and len(objs) > 0:
                 best_f1 = min(float(row[0]) for row in objs)
                 print(f"[example] best_objective_0={best_f1:.6f}")
             else:
-                print("[example] run finished but no pareto objectives were returned")
+                print("[example] run finished")
 
 
         if __name__ == "__main__":
@@ -2770,6 +2769,15 @@ def _solver_config_template() -> str:
             )
 
 
+        def build_composable_solver(
+            problem: Any,
+            *,
+            adapter: Any = None,
+        ):
+            from nsgablack.core.composable_solver import ComposableSolver
+            return ComposableSolver(problem=problem, adapter=adapter)
+
+
         def apply_store_profile(solver, registry: StoreProfileRegistry, key: str) -> None:
             store = build_store_profile(registry, key)
             setter_ctx = getattr(solver, "set_context_store_backend", None)
@@ -3207,7 +3215,7 @@ def _build_solver_template() -> str:
             build_modeling,
         )
         from config import get_project_config
-        from solver.config import apply_runtime_governance, apply_store_profile, build_evolution_solver
+        from solver.config import apply_runtime_governance, apply_store_profile, build_composable_solver, build_evolution_solver
 
 
         def _normalize_strategy(value: str | None) -> str:
@@ -3232,10 +3240,15 @@ def _build_solver_template() -> str:
                 pipeline_key="default",
                 bias_key="none",
             )
-            solver = build_evolution_solver(problem, bias_module=bias_module)
-            apply_store_profile(solver, cfg.store_profiles, "default")
-            apply_runtime_governance(solver, cfg.runtime_governance, "default")
-            solver.set_representation_pipeline(pipeline)
+            from nsgablack.core.composable_solver import ComposableSolver
+            from nsgablack.adapters import NSGA2Adapter
+            solver = build_composable_solver(problem, adapter=NSGA2Adapter())
+            if hasattr(solver, 'set_representation_pipeline'):
+                solver.set_representation_pipeline(pipeline)
+            if hasattr(solver, 'set_context_store_backend'):
+                apply_store_profile(solver, cfg.store_profiles, "default")
+            if hasattr(solver, 'runtime_controller'):
+                apply_runtime_governance(solver, cfg.runtime_governance, "default")
 
             # --- Core ---------------------------------------------------------
             apply_solver_profile(solver, cfg, "default")
@@ -3321,17 +3334,16 @@ def _build_solver_template() -> str:
                     f"plugins={plugin_count}"
                 )
                 return
-            result = solver.run(return_dict=True)
-            pareto_payload = result.get("pareto_solutions", None)
-            if isinstance(pareto_payload, dict):
-                objs = pareto_payload.get("objectives")
-            else:
+            result = solver.run()
+            if isinstance(result, dict):
                 objs = result.get("pareto_objectives", None)
+            else:
+                objs = None
             if objs is not None and len(objs) > 0:
                 best_f1 = min(float(row[0]) for row in objs)
                 print(f"[example] best_objective_0={best_f1:.6f}")
             else:
-                print("[example] run finished but no pareto objectives were returned")
+                print("[example] run finished")
 
 
         if __name__ == "__main__":
