@@ -287,6 +287,7 @@
 - 让示例和正式框架表面长期分叉
 - 把新的完整标准脚手架长期种在 `my_project/`，导致 `my_project` 被案例代码污染
 - 在 `examples/cases/<case>/build_solver.py` 里长期堆放 problem、pipeline、adapter、bias、plugin、reporting 的全部装配细节
+- **挂羊头卖狗肉：** 示例声称演示组件 X，但 `build_solver.py` 实际未装配 X。`--check` 输出中的 adapter/providers/plugins 必须与 README.md 的组件组合表一致
 
 跨框架规则：
 
@@ -366,4 +367,5 @@ python -m nsgablack catalog list --profile framework-core --kind example
 - [ ] 若改评估链，是否验证单点/批量/插件短路三路径
 - [ ] 若改 catalog，是否验证 `default` 与 `framework-core` 双口径
 - [ ] 若新增/修改 example 或 demo，是否确认仍走标准脚手架/正式组装路径
+- [ ] 若示例声称演示组件 X，`--check` 输出是否确实包含 X（禁止挂羊头卖狗肉）
 - [ ] 是否运行 `project doctor --strict --format problem` 并确认无新增错误
