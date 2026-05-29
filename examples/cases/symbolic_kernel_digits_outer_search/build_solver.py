@@ -56,4 +56,11 @@ def build_symbolic_kernel_digits_outer_search_solver(
     return solver
 
 
-__all__ = ["SymbolicKernelDigitsOuterSearchConfig", "build_symbolic_kernel_digits_outer_search_solver"]
+
+
+def build_solver(cfg=None, *, suite_id: str = "doctor_smoke"):
+    """Canonical scaffold entry; delegates to build_symbolic_kernel_digits_outer_search_solver()."""
+
+    return build_symbolic_kernel_digits_outer_search_solver(cfg, suite_id=suite_id)
+
+__all__ = ["SymbolicKernelDigitsOuterSearchConfig", "build_solver", "build_symbolic_kernel_digits_outer_search_solver"]

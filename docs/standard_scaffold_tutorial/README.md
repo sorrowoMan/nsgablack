@@ -46,7 +46,14 @@ problem
 5. [04_validation_catalog_and_evolution.md](04_validation_catalog_and_evolution.md)：doctor、catalog、Run Inspector、snapshot/context 审计、长期扩展检查清单。
 6. [05_cross_framework_coordination.md](05_cross_framework_coordination.md)：`nsgablack` outer 与 `mlblack` inner 的职责边界、payload、report 和失败模式。
 7. [06_l0_parallel_resource_patterns.md](06_l0_parallel_resource_patterns.md)：L0 task/resource/backend 协议、并行组装、CPU/GPU 资源、Redis worker、artifact/data transport、TTL/heartbeat。
-8. [../architecture/L0_RESOURCE_ORCHESTRATION.md](../architecture/L0_RESOURCE_ORCHESTRATION.md)：L0 资源层、GPU lease、SQLiteLeaseStore 和跨框架 `ResourceContext` 注入。
+8. **[07_nested_orchestration_standard.md](07_nested_orchestration_standard.md)：嵌套编排标准规范（推荐最先读！）**
+   - 统一的嵌套编排模式：无论内层是 nsgablack/mlblack/任意系统，都遵循同一套分工
+   - 标准脚手架结构的层次关系
+   - 外层短路调用内层的 Problem.evaluate() 模式
+   - 资源上下文（ResourceContext）从外层传入内层
+   - 多内层协作场景（多 Trainer、多 Solver 并行）
+   - 可观测性、审计、检查清单
+9. [../architecture/L0_RESOURCE_ORCHESTRATION.md](../architecture/L0_RESOURCE_ORCHESTRATION.md)：L0 资源层、GPU lease、SQLiteLeaseStore 和跨框架 `ResourceContext` 注入。
 
 ## 标准 API 语言
 

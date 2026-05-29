@@ -1,0 +1,37 @@
+"""
+{build_solver | build_trainer} assembly entry.
+
+This is the single canonical assembly entry for this case.
+Solver and Trainer are the same abstraction level — the only
+structural difference is whether the pipeline includes model-level
+encode/decode (trainer) or search-space encode/decode (solver).
+
+=== nsgablack Solver pattern ===
+    from nsgablack.core import ComposableSolver
+    from nsgablack.adapters import RandomSearchAdapter
+    from nsgablack.representation import RepresentationPipeline, RealValueRepresentation
+
+    solver = ComposableSolver(
+        problem=problem,
+        representation_pipeline=pipeline,
+        adapter=adapter,
+    )
+
+=== mlblack Trainer pattern ===
+    from mlblack.core.trainer import ComposableTrainer
+    from mlblack.adapters.gradient_descent import GradientDescentAdapter
+
+    trainer = ComposableTrainer(
+        problem=problem,
+        representation=representation,
+        adapter=adapter,
+    )
+
+Both follow the same assembly contract. The caller (CLI, outer solver, or
+project orchestrator) does not need to know which framework is used internally.
+"""
+
+
+def build_solver():
+    """Assemble and return the solver (or trainer — same contract)."""
+    raise NotImplementedError("TODO: implement build_solver")

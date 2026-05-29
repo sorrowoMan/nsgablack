@@ -88,7 +88,11 @@ def run_solver_loop(solver: Any, *, max_steps: Optional[int] = None) -> Dict[str
             apply_pending_order()
         apply_runtime_control_slot(solver, slot="gen_start")
         solver.plugin_manager.on_generation_start(solver.generation)
-        solver.step()
+        try:
+            solver.step()
+        except Exception as exc:
+            solver.plugin_manager.on_error(exc, {"generation": solver.generation})
+            raise
         # Keep on_step semantics consistent even when subclasses override step().
         solver.plugin_manager.on_step(solver, solver.generation)
         solver.plugin_manager.on_generation_end(solver.generation)

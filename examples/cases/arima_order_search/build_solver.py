@@ -117,6 +117,12 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_solver():
+    """Canonical scaffold entry for this script-style case."""
+
+    return main
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = _build_parser()
     args = parser.parse_args(argv)

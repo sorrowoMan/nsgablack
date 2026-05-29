@@ -1,0 +1,5 @@
+"""Trainer CLI alias — delegates to run_solver."""
+from .run_solver import main
+
+if __name__ == "__main__":
+    main()

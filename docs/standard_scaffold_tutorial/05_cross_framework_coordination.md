@@ -134,8 +134,8 @@ def build_flow(
         "nested": True,
         "outer_framework": "nsgablack",
     })
-    for capability in cfg.capabilities:
-        flow.add_capability(capability.key, params=capability.params)
+    for plugin_spec in cfg.plugins:
+        flow.add_plugin(plugin_spec.key, params=plugin_spec.params)
     flow.set_output_dir(cfg.output_dir)
     return flow
 ```

@@ -57,6 +57,99 @@
 - 不允许 `nsgablack` 硬编码 `mlblack` trainer/provider 内部细节；只能通过 `component_overrides`、inner task payload、`ResourceContext`、artifact/result payload 通信。
 - PINN、Neural ODE、时序、多模态、符号学习、推荐、科学计算等能力必须综合考虑 `nsgablack + mlblack` 的统一分工，不能只在一个仓库里局部堆实现。
 
+## 1.2 Project / Case / Scaffold directory rule
+
+Projects must follow a three-layer structure: Project -> Case -> Standard Scaffold. `Solver` and `Trainer` are the same abstraction level and share the same Case scaffold. The only difference is catalog semantics (`kind=solver` vs `kind=trainer`), not directory shape.
+
+### 1.2.1 Three layers
+
+1. **Project**
+   - Owns cross-case orchestration, resource allocation, and the top-level run entry.
+   - Contains `run_project.py`, `project_config.py`, and `cases/`.
+
+2. **Case**
+   - A self-contained runnable unit, usually one Solver or Trainer.
+   - Lives under `cases/<case_name>/` and is itself a complete standard scaffold.
+
+3. **Standard Scaffold**
+   - Implements one Solver/Trainer: problem, pipeline, adapter, plugins, runtime, and entrypoints.
+   - Uses `build_solver.py` as the canonical assembly entry.
+
+### 1.2.2 Unified Case template
+
+```text
+case_name/
+  __init__.py
+  build_solver.py           # canonical assembly entry
+  build_trainer.py          # alias only: from .build_solver import build_solver as build_trainer
+  run_solver.py             # canonical CLI entry
+  run_trainer.py            # alias only: from .run_solver import main
+  config.py                 # component registry aggregation
+  problem/
+  pipeline/                 # all encode/decode/init/mutate/repair + data pipeline components
+  adapter/
+  bias/
+  plugins/                  # unified capability layer; mlblack capabilities are Plugin-compatible
+  evaluation/
+  runtime/
+  solver/
+```
+
+Hard rules:
+
+- `build_solver.py` is the only canonical assembly entry; `build_trainer.py` must remain a thin alias.
+- `run_solver.py` is the only canonical CLI entry; `run_trainer.py` must remain a thin alias.
+- `representation/` is not a Case-level directory; model encoding/decoding belongs inside `pipeline/`.
+- `assembly/scaffold.json` is not a formal assembly entry; assembly logic belongs in `build_solver.py`.
+- `capabilities/` is not a Case-level capability directory; use `plugins/`.
+- One Solver/Trainer lives in one independent Case folder; registration, assembly, and entries must close inside that Case.
+
+### 1.2.3 Unified Plugin / Capability lifecycle
+
+mlblack `Capability` maps into the unified nsgablack `Plugin` lifecycle. `nsgablack.plugins.base.Plugin` is the shared superset and includes:
+
+| Hook | Source | Timing |
+|---|---|---|
+| `on_solver_init` | nsgablack / mlblack `on_fit_start` | run start |
+| `on_population_init` | nsgablack | after initial population |
+| `on_generation_start` | nsgablack / mlblack `on_step_start` | generation/step start |
+| `on_evaluate_start` | mlblack / unified | before candidate evaluation |
+| `on_evaluate_end` | mlblack / unified | after candidate evaluation |
+| `on_step` | nsgablack | after generation step |
+| `on_generation_end` | nsgablack / mlblack `on_step_end` | generation/step end |
+| `on_solver_finish` | nsgablack / mlblack `on_fit_end` | run finish |
+| `on_error` | mlblack / unified | error handling |
+| `on_context_build` | nsgablack | context construction |
+
+### 1.2.4 Project shape
+
+```text
+<project_root>/
+  project_config.py
+  run_project.py
+  README.md
+  cases/
+    __init__.py
+    <case_a>/
+      __init__.py
+      build_solver.py
+      run_solver.py
+      problem/
+      pipeline/
+      adapter/
+      ...
+    <case_b>/
+      ...
+```
+
+Collaboration rules:
+
+- Each Case must be independently runnable and testable.
+- Cross-case order, parallelism, and resource allocation belong in `project_config.py` / `run_project.py`, not inside a Case.
+- `cases/` and every `cases/<case_name>/` must include `__init__.py`.
+- Case dependencies must pass through Artifact/Snapshot references injected by the top-level orchestrator.
+- New multi-Solver or multi-Trainer projects must use this three-layer structure.
+
 ---
 
 ## 2) 架构总览（必须先理解）

@@ -30,6 +30,7 @@ from .doctor_core.rules import (
     check_registry as _check_registry_rule,
     check_runtime_governance_runtime_state as _check_runtime_governance_runtime_state_rule,
     check_runtime_private_surface as _check_runtime_private_surface_rule,
+    check_standard_case_scaffolds as _check_standard_case_scaffolds_rule,
     check_structure as _check_structure_rule,
     check_snapshot_refs as _check_snapshot_refs_rule,
     check_snapshot_store_policy as _check_snapshot_store_policy_rule,
@@ -60,6 +61,12 @@ from ..core.state.context_keys import (
 
 _REQUIRED_DIRS = ("problem", "pipeline", "bias", "adapter", "plugins")
 _REQUIRED_FILES = ("README.md", "build_solver.py", "project_registry.py")
+# Unified multi-case project: required at project root level
+_PROJECT_REQUIRED_DIRS = ("cases",)
+_PROJECT_REQUIRED_FILES = ("README.md", "project_config.py", "run_project.py")
+# Case-level (inside cases/<name>/): required per case
+_CASE_REQUIRED_DIRS = ("problem", "pipeline", "adapter", "plugins")
+_CASE_REQUIRED_FILES = ("build_solver.py", "config.py")
 _CORE_CONTRACT_KEYS = {"context_requires", "context_provides", "context_mutates", "context_cache"}
 _USAGE_KEYS = {"use_when", "minimal_wiring", "required_companions", "config_keys", "example_entry"}
 _CONTEXT_ENTRY_KEYS = {"context_requires", "context_provides", "context_mutates", "context_cache", "context_notes"}
@@ -193,13 +200,39 @@ def _looks_like_scaffold_project(root: Path) -> bool:
 
 
 def _check_structure(root: Path, diags: List[DoctorDiagnostic]) -> None:
-    _check_structure_rule(
-        root=root,
-        diags=diags,
-        add=_add,
-        required_dirs=_REQUIRED_DIRS,
-        required_files=_REQUIRED_FILES,
-    )
+    # Unified multi-case project: check project-level structure
+    if (root / "project_config.py").is_file() and (root / "cases").is_dir():
+        _check_structure_rule(
+            root=root,
+            diags=diags,
+            add=_add,
+            required_dirs=_PROJECT_REQUIRED_DIRS,
+            required_files=_PROJECT_REQUIRED_FILES,
+        )
+        # Also check each case directory
+        cases_dir = root / "cases"
+        for case_dir in sorted(cases_dir.iterdir()):
+            if case_dir.is_dir() and (case_dir / "build_solver.py").is_file():
+                _check_structure_rule(
+                    root=case_dir,
+                    diags=diags,
+                    add=_add,
+                    required_dirs=_CASE_REQUIRED_DIRS,
+                    required_files=_CASE_REQUIRED_FILES,
+                )
+    else:
+        # Legacy single-solver scaffold
+        _check_structure_rule(
+            root=root,
+            diags=diags,
+            add=_add,
+            required_dirs=_REQUIRED_DIRS,
+            required_files=_REQUIRED_FILES,
+        )
+
+
+def _check_standard_case_scaffolds(root: Path, diags: List[DoctorDiagnostic]) -> None:
+    _check_standard_case_scaffolds_rule(root=root, diags=diags, add=_add)
 
 
 def _check_registry(root: Path, diags: List[DoctorDiagnostic]) -> None:
@@ -469,6 +502,7 @@ def run_project_doctor(
 
     diags: List[DoctorDiagnostic] = []
     _check_structure(root, diags)
+    _check_standard_case_scaffolds(root, diags)
     _check_registry(root, diags)
     _check_build_solver(root, diags, instantiate=instantiate_solver, strict=bool(strict))
     _check_contract_source(root, diags, strict=bool(strict))

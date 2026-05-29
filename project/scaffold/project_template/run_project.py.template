@@ -1,0 +1,26 @@
+"""
+Main entry point for running the project.
+"""
+import argparse
+import importlib
+from pathlib import Path
+
+def run_project(group_name: str = "default"):
+    """
+    Runs the project based on the specified group.
+    """
+    print(f"Running project group: {group_name}")
+    # In a real implementation, this would use a proper orchestration engine from nsgablack.
+    print("Project run finished (simulation).")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run a multi-case project.")
+    parser.add_argument(
+        "--group",
+        type=str,
+        default="default",
+        help="The name of the execution group to run from project_config.py",
+    )
+    args = parser.parse_args()
+    run_project(args.group)

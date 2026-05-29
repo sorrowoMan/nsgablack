@@ -19,7 +19,7 @@ from .runtime_governance import (
     check_no_plugin_evaluation_short_circuit,
     check_runtime_governance_runtime_state,
 )
-from .scaffold import check_structure, looks_like_scaffold_project
+from .scaffold import check_standard_case_scaffolds, check_structure, looks_like_scaffold_project
 from .snapshot_context_policy import (
     check_context_store_policy,
     check_large_objects_in_context,
@@ -43,6 +43,7 @@ __all__ = [
     "check_runtime_private_surface",
     "check_no_plugin_evaluation_short_circuit",
     "check_runtime_governance_runtime_state",
+    "check_standard_case_scaffolds",
     "check_structure",
     "check_snapshot_refs",
     "check_snapshot_store_policy",

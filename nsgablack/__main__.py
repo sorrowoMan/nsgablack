@@ -426,8 +426,33 @@ def _cmd_project_init(args: argparse.Namespace) -> int:
     print(f"Project created at: {root}")
     print("Next:")
     print(f"  cd {root}")
+    print("  python -m nsgablack project add-case <name> --type solver")
     print("  python -m nsgablack project doctor --path . --build")
-    print("  python build_solver.py")
+    return 0
+
+
+def _cmd_project_new(args: argparse.Namespace) -> int:
+    from .project import init_project
+
+    root = init_project(Path(args.project_name), force=bool(args.force))
+    print(f"Project '{args.project_name}' created at: {root}")
+    print("Next:")
+    print(f"  cd {args.project_name}")
+    print(f"  python -m nsgablack project add-case <case_name> --type solver  (or --type trainer)")
+    print(f"  python -m nsgablack project doctor --path . --build")
+    return 0
+
+
+def _cmd_project_add_case(args: argparse.Namespace) -> int:
+    from .project import add_case
+
+    add_case(args.case_name, args.type)
+    print("Next:")
+    print(f"  cd cases/{args.case_name}")
+    print("  # Edit build_solver.py to define your solver/trainer")
+    print("  python run_solver.py --check")
+    print(f"  cd ../..")
+    print(f"  python run_project.py  # Run from project root!")
     return 0
 
 
@@ -998,10 +1023,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_project = sub.add_parser("project", help="Project scaffold & local catalog")
     sub_project = p_project.add_subparsers(dest="project_cmd", required=True)
 
-    p_init = sub_project.add_parser("init", help="Create a local project scaffold")
+    p_init = sub_project.add_parser("init", help="Create a local project scaffold (legacy alias for 'new')")
     p_init.add_argument("path", help="Target directory for the project")
-    p_init.add_argument("--force", action="store_true", help="Overwrite existing template files")
+    p_init.add_argument("--force", action="store_true", help="Overwrite existing directory")
     p_init.set_defaults(func=_cmd_project_init)
+
+    p_new = sub_project.add_parser("new", help="Create a new project scaffold in current directory")
+    p_new.add_argument("project_name", help="Name of the new project directory")
+    p_new.add_argument("--force", action="store_true", help="Overwrite existing directory")
+    p_new.set_defaults(func=_cmd_project_new)
+
+    p_add = sub_project.add_parser("add-case", help="Add a solver/trainer case to current project")
+    p_add.add_argument("case_name", help="Name of the new case directory")
+    p_add.add_argument("--type", choices=("solver", "trainer"), required=True, help="Case type (affects catalog kind)")
+    p_add.set_defaults(func=_cmd_project_add_case)
 
     p_doctor = sub_project.add_parser("doctor", help="Check project structure, imports, and contracts")
     p_doctor.add_argument("--path", type=str, default=None, help="Project root (defaults to cwd)")

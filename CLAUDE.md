@@ -82,25 +82,31 @@ cd C:\Users\hp\Desktop\mlblack && python -m mlblack catalog show <key>
 | 控制平面 | Solver | Trainer | 生命周期，不含算法策略 |
 | 策略 | Adapter | OptimizerAdapter | propose/update，不含运行时/日志 |
 | 表示 | Representation | ModelRepresentation + Codec + Head | 编码/解码/修复，不含业务策略 |
-| 能力 | Plugin | Capability | 工程能力，不改写算法语义 |
+| 能力 | Plugin | Plugin（统一） | 工程能力，不改写算法语义。mlblack Capability 已归入 Plugin 体系 |
 | 软引导 | Bias | OptimizationBias | 软偏好，不替代硬约束 |
 
 ## 标准脚手架（强制）
 
-**任何新 example/demo/benchmark 必须走标准脚手架，禁止手创文件：**
+**任何新 example/demo/benchmark 必须走标准脚手架，禁止手创文件。**
+**Solver 和 Trainer 使用完全一致统一模板。**
 
 ```powershell
-# 1. 生成标准项目结构
-python -m nsgablack project init examples/cases/<case_name> --force
+# 1. 创建项目
+python -m nsgablack project new <project_name>
 
-# 2. 标准结构（自动生成）:
-#   build_solver.py    — 唯一装配入口
+# 2. 添加 case（solver 或 trainer，模板一致）
+cd <project_name>
+python -m nsgablack project add-case <case_name> --type solver
+python -m nsgablack project add-case <case_name> --type trainer
+
+# 3. 标准结构（自动生成，solver/trainer 完全一致）:
+#   build_solver.py    — canonical 装配入口
+#   build_trainer.py   — 别名: from .build_solver import build_solver as build_trainer
 #   run_solver.py      — CLI 薄入口
-#   assembly.py        — 装配函数
+#   run_trainer.py     — 别名
 #   config.py          — 组件注册
-#   project_registry.py — catalog entries
 #   problem/           — Problem 定义
-#   pipeline/          — Representation 管线
+#   pipeline/          — 管线（encode/decode/init/mutate/repair + data）
 #   adapter/           — Adapter 配置/编排
 #   bias/              — 自定义 Bias
 #   plugins/           — 自定义 Plugin
@@ -117,6 +123,15 @@ python build_solver.py --check
 ```
 
 **禁止：手动 mkdir + 手写 build_solver.py、把一个 case 的所有代码挤在单个 run_all.py 里。**
+
+## 统一架构规则（新增）
+
+- Solver = Trainer：同一抽象层级，共享统一脚手架模板。差异仅在 catalog `kind` 字段。
+- `build_solver.py` 是唯一 canonical 装配入口；`build_trainer.py` 是薄别名（`from .build_solver import build_solver as build_trainer`）。
+- `representation/` 不作为独立目录存在；模型编解码器是 `pipeline/` 的内部组件。
+- `assembly/scaffold.json` 已移除；装配逻辑全部进入 `build_solver.py`。
+- 统一 Plugin 体系：`nsgablack.plugins.base.Plugin` 包含 10 个钩子超集（含 mlblack 的 `on_evaluate_start/end`、`on_error`）。mlblack 的 `Capability` 已归入 Plugin 体系。
+- mlblack 脚手架完全复用 nsgablack 的 `project/scaffold/`，`scaffold_legacy.py` 已删除。
 
 ## 边界规则
 
@@ -161,3 +176,7 @@ mlblack/
 - 在 `my_project/` 放置 example/case
 - Adapter 里写日志/IO；Plugin 里改写搜索语义
 - 在 nsgablack 层硬编码 mlblack 的 DataView/Spec/Codec 内部细节
+- 把 solver 和 trainer 当成不同目录结构处理（统一模板，`build_solver.py` canonical）
+- 创建独立的 `representation/` 目录（编解码器进 `pipeline/`）
+- 使用 `assembly/scaffold.json` 配置装配（装配逻辑进 `build_solver.py`）
+- 在 mlblack 中使用遗留的 `Capability` 类（统一走 `Plugin`）

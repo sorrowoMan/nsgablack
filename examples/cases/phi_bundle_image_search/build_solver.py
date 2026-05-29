@@ -43,5 +43,12 @@ def build_phi_bundle_image_search_solver(
     return solver
 
 
-__all__ = ["PhiBundleImageSearchConfig", "build_phi_bundle_image_search_solver"]
+
+
+def build_solver(cfg=None, *, suite_id: str = "doctor_smoke"):
+    """Canonical scaffold entry; delegates to build_phi_bundle_image_search_solver()."""
+
+    return build_phi_bundle_image_search_solver(cfg, suite_id=suite_id)
+
+__all__ = ["PhiBundleImageSearchConfig", "build_solver", "build_phi_bundle_image_search_solver"]
 

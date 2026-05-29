@@ -139,6 +139,22 @@ class Plugin(ABC):
     def on_solver_finish(self, result: Dict[str, Any]):
         return None
 
+    def on_context_build(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Inject keys into the solver context dict. Return the (possibly modified) context."""
+        return context
+
+    def on_evaluate_start(self, candidate, context: Optional[Dict[str, Any]] = None):
+        """Called before evaluating a single candidate (mlblack origin; also usable by nsgablack)."""
+        return None
+
+    def on_evaluate_end(self, candidate, feedback, context: Optional[Dict[str, Any]] = None):
+        """Called after evaluating a single candidate (mlblack origin; also usable by nsgablack)."""
+        return None
+
+    def on_error(self, error: BaseException, context: Optional[Dict[str, Any]] = None):
+        """Called when an exception is raised during the run loop (mlblack origin; also usable by nsgablack)."""
+        return None
+
     def get_report(self) -> Optional[Dict[str, Any]]:
         """Return a small algorithmic report; tool-only plugins should return None."""
         if not bool(getattr(self, "is_algorithmic", False)):
@@ -718,6 +734,22 @@ class PluginManager:
 
     def on_solver_finish(self, result: Dict[str, Any]):
         self.trigger("on_solver_finish", result)
+
+    def on_context_build(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Dispatch context build to all plugins; returns the last non-None result."""
+        return self.dispatch("on_context_build", context)
+
+    def on_evaluate_start(self, candidate, context: Optional[Dict[str, Any]] = None):
+        """Notify plugins that evaluation of a single candidate is starting."""
+        self.trigger("on_evaluate_start", candidate, context)
+
+    def on_evaluate_end(self, candidate, feedback, context: Optional[Dict[str, Any]] = None):
+        """Notify plugins that evaluation of a single candidate has finished."""
+        self.trigger("on_evaluate_end", candidate, feedback, context)
+
+    def on_error(self, error: BaseException, context: Optional[Dict[str, Any]] = None):
+        """Notify plugins that an error occurred during the run loop."""
+        self.trigger("on_error", error, context)
 
     def list_plugins(self, enabled_only: bool = False) -> list:
         """List plugins, optionally only enabled ones."""

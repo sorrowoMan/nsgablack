@@ -27,18 +27,39 @@ def evaluate_individual_with_plugins_and_bias(
     individual_id: Optional[int] = None,
 ) -> Tuple[np.ndarray, float]:
     mediator = getattr(solver, "evaluation_mediator", None)
-    if mediator is not None and hasattr(mediator, "evaluate_individual"):
-        providers = getattr(mediator, "list_providers", None)
-        has_provider = callable(providers) and len(tuple(providers())) > 0
-        if has_provider:
-            return mediator.evaluate_individual(
-                solver,
-                x,
-                individual_id=individual_id,
-                context={"individual_id": individual_id},
-                fallback=lambda: _evaluate_individual_via_problem(solver, x, individual_id),
-            )
-    return _evaluate_individual_via_problem(solver, x, individual_id)
+    context = {"individual_id": individual_id}
+
+    # --- on_evaluate_start hook (unified: nsgablack + mlblack) ---
+    manager = getattr(solver, "plugin_manager", None)
+    if manager is not None:
+        manager.on_evaluate_start(x, context)
+
+    try:
+        if mediator is not None and hasattr(mediator, "evaluate_individual"):
+            providers = getattr(mediator, "list_providers", None)
+            has_provider = callable(providers) and len(tuple(providers())) > 0
+            if has_provider:
+                result = mediator.evaluate_individual(
+                    solver,
+                    x,
+                    individual_id=individual_id,
+                    context=context,
+                    fallback=lambda: _evaluate_individual_via_problem(solver, x, individual_id),
+                )
+            else:
+                result = _evaluate_individual_via_problem(solver, x, individual_id)
+        else:
+            result = _evaluate_individual_via_problem(solver, x, individual_id)
+
+        # --- on_evaluate_end hook (unified: nsgablack + mlblack) ---
+        if manager is not None:
+            manager.on_evaluate_end(x, result, context)
+
+        return result
+    except Exception as exc:
+        if manager is not None:
+            manager.on_error(exc, context)
+        raise
 
 
 def _evaluate_individual_via_problem(
