@@ -154,13 +154,19 @@ def _index_framework(
 
 
 def _index_docs(root: Path, framework: str, store: RagStore, embedder: Embedder) -> int:
-    """Index Markdown tutorial docs."""
-    docs_dir = root / "docs" / "standard_scaffold_tutorial"
-    if not docs_dir.is_dir():
+    """Index all Markdown docs under docs/ (recursively)."""
+    docs_root = root / "docs"
+    if not docs_root.is_dir():
         return 0
 
     count = 0
-    for md_path in sorted(docs_dir.glob("*.md")):
+    for md_path in sorted(docs_root.rglob("*.md")):
+        # Skip empty files and known non-doc paths
+        if md_path.stat().st_size < 50:
+            continue
+        if ".git" in md_path.parts or "__pycache__" in md_path.parts:
+            continue
+
         try:
             text = md_path.read_text(encoding="utf-8")
         except Exception:
