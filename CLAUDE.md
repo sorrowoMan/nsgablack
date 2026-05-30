@@ -55,17 +55,22 @@ python -m nsgablack catalog materialize --profile default
 
 | 意图 | 做法 | 禁止 |
 |---|---|---|
+| 语义搜索 | `rag search "<query>" --kind <kind>` | 全量扫源文件 |
 | 了解组件 | `catalog show <key>` | Read 整个源文件 |
 | 发现同类 | `catalog list --kind <kind>` | grep/glob 扫描源码 |
-| 搜索功能 | `catalog search "<query>"` | Read `entries.toml` 全文 |
+| 精确搜索 | `catalog search "<query>"` | Read `entries.toml` 全文 |
 | 看算法内部逻辑 | Read 具体文件的具体行范围 | — |
 
-**Explore agent / Plan agent 必须指示用 catalog 命令，禁止扫描完整源文件。**
+**探索/调研流程：先用 RAG 语义搜索 → 再用 catalog 精确查询 → 最后才 Read 具体行。**
 
 ## 常用命令
 
 ```
 python -m pytest tests/ -x -q
+python -m nsgablack rag search "<query>" --kind <kind>           # RAG 语义搜索（优先）
+python -m nsgablack rag search "<query>" --framework mlblack     # 跨框架搜索
+python -m nsgablack rag index --profile framework-core           # 构建/刷新索引
+python -m nsgablack rag status                                   # 索引状态
 python -m nsgablack catalog list --kind <kind> --profile framework-core
 python -m nsgablack catalog search <query> --profile framework-core
 python -m nsgablack catalog show <key> --profile framework-core

@@ -419,6 +419,97 @@ def _cmd_run_inspector(args: argparse.Namespace) -> int:
     return int(launch_empty(workspace=args.workspace or None))
 
 
+# ---------------------------------------------------------------------------
+# rag
+# ---------------------------------------------------------------------------
+
+
+def _cmd_rag_index(args: argparse.Namespace) -> int:
+    from .rag import build_index, RagConfig
+
+    config = RagConfig()
+    if not config.pg_available:
+        print("RAG index:  (not configured — set NSGABLACK_CATALOG_DB_URL to enable)")
+        print("Required:   PostgreSQL with pgvector extension + pip install pgvector")
+        return 1
+
+    frameworks = [f.strip() for f in args.frameworks.split(",") if f.strip()]
+    result = build_index(
+        frameworks=frameworks,
+        profile=args.profile,
+        local_embed=bool(args.local),
+        include_docs=not bool(args.no_docs),
+    )
+    for fw, count in result.items():
+        print(f"{fw}: {count} chunks indexed")
+    return 0
+
+
+def _cmd_rag_search(args: argparse.Namespace) -> int:
+    from .rag import format_results, search, RagConfig
+
+    config = RagConfig()
+    if not config.pg_available:
+        print("RAG search:  (not configured — check catalog PG config and run 'rag index')")
+        print("Fallback:    use 'python -m nsgablack catalog search <query>' instead")
+        return 1
+
+    tags = [t.strip() for t in (args.tags or "").split(",") if t.strip()] if args.tags else None
+    results = search(
+        args.query,
+        kind=args.kind,
+        tags=tags,
+        framework=args.framework,
+        top_k=args.top_k,
+        threshold=args.threshold,
+        local_embed=bool(args.local),
+    )
+    print(format_results(results))
+    return 0
+
+
+def _cmd_rag_status(args: argparse.Namespace) -> int:
+    from .rag import RagStore, RagConfig
+
+    config = RagConfig()
+    if not config.pg_available:
+        print("RAG store:  (not configured — check catalog PG config)")
+        return 1
+
+    store = RagStore(config)
+    try:
+        store.init_tables()
+    except Exception:
+        pass  # may already exist
+    total = store.chunk_count()
+    nsga_count = store.chunk_count(framework="nsgablack")
+    ml_count = store.chunk_count(framework="mlblack")
+    last_ts = store.last_indexed_at()
+
+    print(f"Total chunks:  {total}")
+    print(f"  nsgablack:   {nsga_count}")
+    print(f"  mlblack:     {ml_count}")
+    if last_ts:
+        print(f"Last indexed:  {last_ts}")
+    else:
+        print("Last indexed:  (never — run 'python -m nsgablack rag index')")
+    return 0
+
+
+def _cmd_rag_clear(args: argparse.Namespace) -> int:
+    from .rag import RagStore
+
+    if not args.yes:
+        print("This will drop all RAG index tables. Add --yes to confirm.")
+        return 1
+
+    store = RagStore()
+    store.drop_tables()
+    store.init_tables()
+    print("RAG index cleared and tables re-initialized.")
+    return 0
+
+
 def _cmd_project_init(args: argparse.Namespace) -> int:
     from .project import init_project
 
@@ -1102,6 +1193,38 @@ def build_parser() -> argparse.ArgumentParser:
     p_proj_show.add_argument("--path", type=str, default=None, help="Project root (defaults to cwd)")
     p_proj_show.add_argument("--global", dest="global_catalog", action="store_true", help="Include global catalog")
     p_proj_show.set_defaults(func=_cmd_project_catalog_show)
+
+    # rag
+    p_rag = sub.add_parser("rag", help="RAG semantic search over framework knowledge")
+    sub_rag = p_rag.add_subparsers(dest="rag_cmd", required=True)
+
+    p_rag_index = sub_rag.add_parser("index", help="Build/refresh the RAG index")
+    p_rag_index.add_argument("--profile", type=str, default="framework-core", help="Catalog profile")
+    p_rag_index.add_argument(
+        "--frameworks", type=str, default="nsgablack,mlblack",
+        help="Comma-separated frameworks to index"
+    )
+    p_rag_index.add_argument("--local", action="store_true", help="Use local sentence-transformers embedding")
+    p_rag_index.add_argument("--no-docs", action="store_true", help="Skip indexing tutorial docs")
+    p_rag_index.set_defaults(func=_cmd_rag_index)
+
+    p_rag_search = sub_rag.add_parser("search", help="Semantic search")
+    p_rag_search.add_argument("query", help="Natural language query")
+    p_rag_search.add_argument("--kind", type=str, default=None, help="Filter by component kind")
+    p_rag_search.add_argument("--framework", type=str, default=None, help="Filter by framework (nsgablack/mlblack)")
+    p_rag_search.add_argument("--tags", type=str, default=None, help="Comma-separated tags filter")
+    p_rag_search.add_argument("--top-k", type=int, default=5, help="Max results")
+    p_rag_search.add_argument("--threshold", type=float, default=0.5, help="Min similarity (0-1)")
+    p_rag_search.add_argument("--local", action="store_true", help="Use local embedding")
+    p_rag_search.set_defaults(func=_cmd_rag_search)
+
+    p_rag_status = sub_rag.add_parser("status", help="Show index status")
+    p_rag_status.add_argument("--framework", type=str, default=None, help="Filter by framework")
+    p_rag_status.set_defaults(func=_cmd_rag_status)
+
+    p_rag_clear = sub_rag.add_parser("clear", help="Drop the RAG index tables")
+    p_rag_clear.add_argument("--yes", action="store_true", help="Confirm deletion")
+    p_rag_clear.set_defaults(func=_cmd_rag_clear)
 
     return parser
 
