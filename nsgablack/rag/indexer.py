@@ -79,7 +79,13 @@ def _index_framework(
     for e in catalog_entries:
         ip = e.get("import_path", "")
         if ip:
-            module_path = ip.split(":")[0].replace(".", "/") + ".py"
+            # Convert "nsgablack.adapters.nsga2" -> "adapters/nsga2.py"
+            # For mlblack: strip "mlblack." prefix since mlblack repo root IS the package
+            module = ip.split(":")[0]
+            parts = module.split(".")
+            if framework == "mlblack" and parts[0] == "mlblack":
+                parts = parts[1:]  # strip mlblack. prefix
+            module_path = "/".join(parts) + ".py"
             by_file.setdefault(module_path, []).append(e)
 
     batch_chunks: list[RagChunk] = []
@@ -194,18 +200,43 @@ def _index_docs(root: Path, framework: str, store: RagStore, embedder: Embedder)
 
 def _load_catalog(framework: str, profile: str) -> list[dict]:
     """Load catalog entries for a framework."""
+    import sys
+    from pathlib import Path
+
     entries: list[dict] = []
     try:
         if framework == "nsgablack":
             from nsgablack.catalog import get_catalog
-
             cat = get_catalog()
-            entries = [e.to_dict() if hasattr(e, "to_dict") else dict(e.__dict__) for e in cat._entries]
         else:
+            # Ensure mlblack is importable
+            ml_root = Path(MLBLACK_ROOT)
+            if str(ml_root.parent) not in sys.path:
+                sys.path.insert(0, str(ml_root.parent))
             from mlblack.catalog import get_catalog as get_mlblack_catalog
-
             cat = get_mlblack_catalog()
-            entries = [e.to_dict() if hasattr(e, "to_dict") else dict(e.__dict__) for e in cat._entries]
+
+        # Convert entries to dicts (handle both CatalogEntry objects and dicts)
+        raw = []
+        if hasattr(cat, '_entries'):
+            raw = list(cat._entries)
+        elif hasattr(cat, 'list_all'):
+            raw = list(cat.list_all())
+
+        for e in raw:
+            if hasattr(e, 'to_dict'):
+                entries.append(e.to_dict())
+            elif isinstance(e, dict):
+                entries.append(e)
+            else:
+                d = {}
+                for attr in ('key', 'kind', 'title', 'import_path', 'tags', 'summary', 'companions'):
+                    if hasattr(e, attr):
+                        val = getattr(e, attr)
+                        if attr == 'tags' and isinstance(val, (list, tuple)):
+                            val = list(val)
+                        d[attr] = val
+                entries.append(d)
     except Exception as exc:
         logger.warning("Cannot load %s catalog: %s", framework, exc)
 

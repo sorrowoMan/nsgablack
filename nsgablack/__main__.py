@@ -425,15 +425,21 @@ def _cmd_run_inspector(args: argparse.Namespace) -> int:
 
 
 def _cmd_rag_index(args: argparse.Namespace) -> int:
+    import sys
     from .rag import build_index, RagConfig
+
+    # Ensure mlblack is importable
+    ml_root = __import__("pathlib").Path("C:/Users/hp/Desktop/mlblack")
+    if str(ml_root.parent) not in sys.path:
+        sys.path.insert(0, str(ml_root.parent))
 
     config = RagConfig()
     if not config.pg_available:
-        print("RAG index:  (not configured — set NSGABLACK_CATALOG_DB_URL to enable)")
-        print("Required:   PostgreSQL with pgvector extension + pip install pgvector")
+        print("RAG index:  (PG not configured — check catalog config)")
         return 1
 
     frameworks = [f.strip() for f in args.frameworks.split(",") if f.strip()]
+    print(f"Indexing frameworks: {frameworks}  (profile={args.profile})")
     result = build_index(
         frameworks=frameworks,
         profile=args.profile,
@@ -441,7 +447,7 @@ def _cmd_rag_index(args: argparse.Namespace) -> int:
         include_docs=not bool(args.no_docs),
     )
     for fw, count in result.items():
-        print(f"{fw}: {count} chunks indexed")
+        print(f"  {fw}: {count} chunks indexed")
     return 0
 
 
@@ -1214,7 +1220,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_rag_search.add_argument("--framework", type=str, default=None, help="Filter by framework (nsgablack/mlblack)")
     p_rag_search.add_argument("--tags", type=str, default=None, help="Comma-separated tags filter")
     p_rag_search.add_argument("--top-k", type=int, default=5, help="Max results")
-    p_rag_search.add_argument("--threshold", type=float, default=0.5, help="Min similarity (0-1)")
+    p_rag_search.add_argument("--threshold", type=float, default=0.2, help="Min similarity (0-1)")
     p_rag_search.add_argument("--local", action="store_true", help="Use local embedding")
     p_rag_search.set_defaults(func=_cmd_rag_search)
 

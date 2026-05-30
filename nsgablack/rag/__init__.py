@@ -11,6 +11,7 @@ Usage:
 
 from .chunker import Chunk, chunk_document, chunk_module
 from .config import RagConfig
+from .embed import Embedder
 from .indexer import build_index
 from .retriever import format_results, search
 from .store import RagChunk, RagResult, RagStore
@@ -23,6 +24,7 @@ __all__ = [
     "RagStore",
     "RagChunk",
     "RagResult",
+    "Embedder",
     "Chunk",
     "chunk_module",
     "chunk_document",

@@ -66,7 +66,7 @@ class RagConfig:
 
     # Retrieval
     default_top_k: int = 5
-    similarity_threshold: float = 0.5
+    similarity_threshold: float = 0.2  # Lower for MiniLM; higher (0.5) if using OpenAI
 
     @property
     def pg_available(self) -> bool:
