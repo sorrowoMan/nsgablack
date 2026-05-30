@@ -79,14 +79,10 @@ def _index_framework(
     for e in catalog_entries:
         ip = e.get("import_path", "")
         if ip:
-            # Convert "nsgablack.adapters.nsga2" -> "adapters/nsga2.py"
-            # For mlblack: strip "mlblack." prefix since mlblack repo root IS the package
             module = ip.split(":")[0]
-            parts = module.split(".")
-            if framework == "mlblack" and parts[0] == "mlblack":
-                parts = parts[1:]  # strip mlblack. prefix
-            module_path = "/".join(parts) + ".py"
-            by_file.setdefault(module_path, []).append(e)
+            resolved = _resolve_module_path(module, root, framework)
+            if resolved:
+                by_file.setdefault(resolved, []).append(e)
 
     batch_chunks: list[RagChunk] = []
 
@@ -244,6 +240,47 @@ def _load_catalog(framework: str, profile: str) -> list[dict]:
     if profile == "framework-core":
         entries = [e for e in entries if "example" not in (e.get("tags") or []) and "doc" not in (e.get("tags") or [])]
     return entries
+
+
+def _resolve_module_path(module: str, root: Path, framework: str) -> str | None:
+    """Resolve a dotted module name to a relative file path under root.
+
+    Handles both regular modules (foo/bar.py) and packages (foo/bar/__init__.py).
+    Uses importlib for the most reliable resolution.
+    """
+    # Try importlib first
+    try:
+        from importlib.util import find_spec
+
+        spec = find_spec(module)
+        if spec and spec.origin:
+            origin = Path(spec.origin)
+            try:
+                return str(origin.relative_to(root))
+            except ValueError:
+                # origin is outside root — try path-based fallback
+                pass
+    except Exception:
+        pass
+
+    # Path-based fallback
+    parts = module.split(".")
+    if framework == "mlblack" and parts[0] == "mlblack":
+        parts = parts[1:]
+    elif framework == "nsgablack" and parts[0] == "nsgablack":
+        parts = parts[1:]
+
+    # Try foo/bar.py
+    py_path = "/".join(parts) + ".py"
+    if (root / py_path).is_file():
+        return py_path
+
+    # Try foo/bar/__init__.py (package)
+    init_path = "/".join(parts) + "/__init__.py"
+    if (root / init_path).is_file():
+        return init_path
+
+    return None
 
 
 def _collect_tags(entries: list[dict]) -> list[str]:
