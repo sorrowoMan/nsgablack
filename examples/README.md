@@ -1,21 +1,24 @@
 # examples
 
-用途：可运行示例集合（从最小示例到端到端流程）。
-边界：示例不作为框架 API。
-示例：`end_to_end_workflow_demo.py`。
+Purpose: runnable demonstrations, from lightweight compatibility snippets to
+formal Project / Case / Scaffold examples.
 
-Purpose: runnable demos (minimal to end-to-end).
-Boundary: demos are not API.
-Example: `end_to_end_workflow_demo.py`.
+Boundary: examples are not framework API. New mechanisms should become formal
+examples only when they can be expressed through the shared substrate.
 
-## Experiment surface starter
+## Current Example Surface
 
-- `examples/_misc_examples/plugin_gallery_demo.py`
-- By default it now mounts `RuntimeSurfaceTrackerPlugin` and writes formal runtime surfaces into the resolved `experiment/db.toml` or environment-backed DB target.
-- After one demo run you can open `python -m nsgablack experiment ui` to inspect the generated run / artifact surface.
+- Formal examples live under `examples/cases/<project>/`.
+- Each formal example exposes `project_config.py` and `run_project.py` at the
+  Project root.
+- Runnable solver/trainer units live under
+  `examples/cases/<project>/cases/<case>/`.
+- `examples/_misc_examples/` is compatibility and teaching material, not the
+  preferred landing zone for new mechanisms.
+- Runtime/artifact surface inspection should be wired through standard Case
+  plugins and Project reports.
 
-## Migration workshops
+## Migration Workshops
 
 - `migration_lab/README.md`: traditional script -> framework migration labs
 - `migration_lab/ga_single_objective/`: first workshop (single-objective GA)
-

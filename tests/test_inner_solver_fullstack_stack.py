@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import numpy as np
 
@@ -14,16 +14,16 @@ def test_inner_solver_can_run_inner_adapter_pipeline_bias_and_plugin():
         def __init__(self):
             super().__init__(name="inner_problem", dimension=1, bounds={"x0": (-1.0, 1.0)})
 
-        def evaluate(self, x):
-            arr = np.asarray(x, dtype=float).reshape(-1)
+        def evaluate(self, candidate):
+            arr = np.asarray(candidate, dtype=float).reshape(-1)
             return np.array([float(arr[0] ** 2)], dtype=float)
 
     class OuterProblem(BlackBoxProblem):
         def __init__(self):
             super().__init__(name="outer_problem", dimension=1, bounds={"x0": (-3.0, 3.0)})
 
-        def evaluate(self, x):
-            _ = x
+        def evaluate(self, candidate):
+            _ = candidate
             return 999.0
 
         def build_inner_task(self, x, eval_context):
@@ -34,10 +34,13 @@ def test_inner_solver_can_run_inner_adapter_pipeline_bias_and_plugin():
                 def __init__(self):
                     super().__init__(name="inner_adapter")
 
-                def propose(self, solver, context):
-                    _ = (solver, context)
+                def propose(self, control, context):
+                    _ = (control, context)
                     # Intentionally out-of-bound to verify inner pipeline repair is active.
                     return [np.array([2.0], dtype=float)]
+
+                def update(self, control, candidates, feedback, context):
+                    _ = (control, candidates, feedback, context)
 
             class ClipRepair:
                 def repair(self, candidate, context=None):
@@ -88,14 +91,17 @@ def test_inner_solver_can_run_inner_adapter_pipeline_bias_and_plugin():
         def __init__(self):
             super().__init__(name="outer_adapter")
 
-        def propose(self, solver, context):
-            _ = (solver, context)
+        def propose(self, control, context):
+            _ = (control, context)
             return [np.array([0.0], dtype=float)]
 
-    solver = ComposableSolver(problem=OuterProblem(), adapter=OuterAdapter())
-    solver.max_steps = 1
-    solver.pop_size = 1
-    solver.add_plugin(
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
+
+    control = ComposableSolver(problem=OuterProblem(), adapter=OuterAdapter())
+    control.max_steps = 1
+    control.pop_size = 1
+    control.add_plugin(
         ContractBridgePlugin(
             rules=[
                 BridgeRule("inner_finished", "inner_finished", target_layer="L1"),
@@ -103,13 +109,13 @@ def test_inner_solver_can_run_inner_adapter_pipeline_bias_and_plugin():
             ]
         )
     )
-    solver.problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(config=InnerRuntimeConfig(source_layer="L2", target_layer="L1"))
-    solver.run()
+    control.problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(config=InnerRuntimeConfig(source_layer="L2", target_layer="L1"))
+    control.run()
 
     # inner objective = clipped(2.0)->1.0, evaluate 1.0, then bias +0.5 -> 1.5
-    assert solver.best_objective is not None
-    assert abs(float(solver.best_objective) - 1.5) < 1e-8
-    layers = getattr(solver, "_layer_contexts", {})
+    assert control.best_objective is not None
+    assert abs(float(control.best_objective) - 1.5) < 1e-8
+    layers = getattr(control, "_layer_contexts", {})
     assert layers.get("L1", {}).get("inner_finished") is True
     assert int(layers.get("L1", {}).get("inner_steps", 0)) == 1
 
@@ -130,25 +136,31 @@ def test_inner_solver_can_run_inner_multi_strategy_stack():
         def __init__(self):
             super().__init__(name="inner_problem_multi", dimension=1, bounds={"x0": (-1.0, 1.0)})
 
-        def evaluate(self, x):
-            arr = np.asarray(x, dtype=float).reshape(-1)
+        def evaluate(self, candidate):
+            arr = np.asarray(candidate, dtype=float).reshape(-1)
             return np.array([float(arr[0] ** 2)], dtype=float)
 
     class _Explorer(AlgorithmAdapter):
         def __init__(self):
             super().__init__(name="explorer")
 
-        def propose(self, solver, context):
-            _ = (solver, context)
+        def propose(self, control, context):
+            _ = (control, context)
             return [np.array([0.8], dtype=float)]
+
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
 
     class _Exploiter(AlgorithmAdapter):
         def __init__(self):
             super().__init__(name="exploiter")
 
-        def propose(self, solver, context):
-            _ = (solver, context)
+        def propose(self, control, context):
+            _ = (control, context)
             return [np.array([-0.8], dtype=float)]
+
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
 
     class _InnerCounterPlugin(Plugin):
         def __init__(self):
@@ -169,8 +181,8 @@ def test_inner_solver_can_run_inner_multi_strategy_stack():
         def __init__(self):
             super().__init__(name="outer_problem_multi", dimension=1, bounds={"x0": (-3.0, 3.0)})
 
-        def evaluate(self, x):
-            _ = x
+        def evaluate(self, candidate):
+            _ = candidate
             return 999.0
 
         def build_inner_task(self, x, eval_context):
@@ -211,14 +223,17 @@ def test_inner_solver_can_run_inner_multi_strategy_stack():
         def __init__(self):
             super().__init__(name="outer_adapter_multi")
 
-        def propose(self, solver, context):
-            _ = (solver, context)
+        def propose(self, control, context):
+            _ = (control, context)
             return [np.array([0.0], dtype=float)]
 
-    solver = ComposableSolver(problem=OuterProblem(), adapter=OuterAdapter())
-    solver.max_steps = 1
-    solver.pop_size = 1
-    solver.add_plugin(
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
+
+    control = ComposableSolver(problem=OuterProblem(), adapter=OuterAdapter())
+    control.max_steps = 1
+    control.pop_size = 1
+    control.add_plugin(
         ContractBridgePlugin(
             rules=[
                 BridgeRule("inner_generations", "inner_generations", target_layer="L1"),
@@ -226,13 +241,13 @@ def test_inner_solver_can_run_inner_multi_strategy_stack():
             ]
         )
     )
-    solver.problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(config=InnerRuntimeConfig(source_layer="L2", target_layer="L1"))
-    solver.run()
+    control.problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(config=InnerRuntimeConfig(source_layer="L2", target_layer="L1"))
+    control.run()
 
     # inner: x=卤0.8 -> objective 0.64, then bias +0.25 => 0.89
-    assert solver.best_objective is not None
-    assert abs(float(solver.best_objective) - 0.89) < 1e-8
-    layers = getattr(solver, "_layer_contexts", {})
+    assert control.best_objective is not None
+    assert abs(float(control.best_objective) - 0.89) < 1e-8
+    layers = getattr(control, "_layer_contexts", {})
     assert int(layers.get("L1", {}).get("inner_generations", 0)) == 1
     assert int(layers.get("L1", {}).get("inner_steps", 0)) == 1
 
@@ -277,8 +292,8 @@ def test_three_layer_inner_with_multi_strategy_pipeline_bias_plugin():
         def __init__(self):
             super().__init__(name="l3_problem", dimension=1, bounds={"x0": (0.0, 5.0)})
 
-        def evaluate(self, x):
-            arr = np.asarray(x, dtype=float).reshape(-1)
+        def evaluate(self, candidate):
+            arr = np.asarray(candidate, dtype=float).reshape(-1)
             return np.array([float(arr[0])], dtype=float)
 
     class _L3Adapter(AlgorithmAdapter):
@@ -286,17 +301,20 @@ def test_three_layer_inner_with_multi_strategy_pipeline_bias_plugin():
             super().__init__(name="l3_adapter")
             self.target = float(target)
 
-        def propose(self, solver, context):
-            _ = (solver, context)
+        def propose(self, control, context):
+            _ = (control, context)
             # Include one out-of-bound candidate to confirm inner pipeline repair can handle it.
             return [np.array([self.target], dtype=float), np.array([9.0], dtype=float)]
+
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
 
     class _L2Problem(BlackBoxProblem):
         def __init__(self):
             super().__init__(name="l2_problem", dimension=1, bounds={"x0": (-1.0, 1.0)})
 
-        def evaluate(self, x):
-            _ = x
+        def evaluate(self, candidate):
+            _ = candidate
             return np.array([999.0], dtype=float)
 
         def build_inner_task(self, x, eval_context):
@@ -333,24 +351,30 @@ def test_three_layer_inner_with_multi_strategy_pipeline_bias_plugin():
         def __init__(self):
             super().__init__(name="l2_explorer")
 
-        def propose(self, solver, context):
-            _ = (solver, context)
+        def propose(self, control, context):
+            _ = (control, context)
             return [np.array([2.0], dtype=float)]
+
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
 
     class _L2Exploiter(AlgorithmAdapter):
         def __init__(self):
             super().__init__(name="l2_exploiter")
 
-        def propose(self, solver, context):
-            _ = (solver, context)
+        def propose(self, control, context):
+            _ = (control, context)
             return [np.array([-2.0], dtype=float)]
+
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
 
     class _L1Problem(BlackBoxProblem):
         def __init__(self):
             super().__init__(name="l1_problem", dimension=1, bounds={"x0": (-2.0, 2.0)})
 
-        def evaluate(self, x):
-            _ = x
+        def evaluate(self, candidate):
+            _ = candidate
             return np.array([99999.0], dtype=float)
 
         def build_inner_task(self, x, eval_context):
@@ -393,9 +417,12 @@ def test_three_layer_inner_with_multi_strategy_pipeline_bias_plugin():
         def __init__(self):
             super().__init__(name="l1_adapter")
 
-        def propose(self, solver, context):
-            _ = (solver, context)
+        def propose(self, control, context):
+            _ = (control, context)
             return [np.array([0.0], dtype=float)]
+
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
 
     l1 = ComposableSolver(problem=_L1Problem(), adapter=_L1Adapter())
     l1.max_steps = 1

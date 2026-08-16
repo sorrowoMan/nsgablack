@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
+from blackbase.contracts import BatchDisposition
 
 from ..algorithm_adapter import AlgorithmAdapter
 from ...utils.context.context_keys import KEY_PHASE, KEY_STRATEGY, KEY_STRATEGY_ID
@@ -80,25 +81,25 @@ class StrategyChainAdapter(AlgorithmAdapter):
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
-    def setup(self, solver: Any) -> None:
+    def setup(self, control: Any) -> None:
         self._materialize_adapters()
         self._phase_steps = [int(p.steps) for p in self.phases]
         self._current_idx = 0
         self._step_in_phase = 0
         if self._adapters:
-            self._adapters[self._current_idx].setup(solver)
+            self._adapters[self._current_idx].setup(control)
 
-    def teardown(self, solver: Any) -> None:
+    def teardown(self, control: Any) -> None:
         for adapter in self._adapters:
             try:
-                adapter.teardown(solver)
+                adapter.teardown(control)
             except Exception:
                 continue
 
     # ------------------------------------------------------------------
     # Propose/Update
     # ------------------------------------------------------------------
-    def propose(self, solver: Any, context: Dict[str, Any]):
+    def propose(self, control: Any, context: Dict[str, Any]):
         adapter = self._current_adapter()
         if adapter is None:
             return []
@@ -106,48 +107,63 @@ class StrategyChainAdapter(AlgorithmAdapter):
         ctx[KEY_PHASE] = self._current_phase_name()
         ctx[KEY_STRATEGY] = adapter.name
         ctx[KEY_STRATEGY_ID] = int(self._current_idx)
-        return adapter.propose(solver, ctx)
+        return adapter.propose(control, ctx)
 
     def update(
         self,
-        solver: Any,
+        control: Any,
         candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        feedback: Tuple[np.ndarray, np.ndarray],
         context: Dict[str, Any],
     ) -> None:
+        objectives, violations = feedback
         adapter = self._current_adapter()
         if adapter is None:
             return
         ctx = dict(context or {})
         # Provide commonly-needed runtime fields for advance_when.
         try:
-            ctx.setdefault("generation", int(getattr(solver, "generation", 0)))
+            ctx.setdefault("generation", int(getattr(control, "generation", 0)))
         except Exception:
             pass
         try:
             if "best_objective" not in ctx:
-                ctx["best_objective"] = getattr(solver, "best_objective", None)
+                ctx["best_objective"] = getattr(control, "best_objective", None)
         except Exception:
             pass
         try:
             if "best_x" not in ctx:
-                ctx["best_x"] = getattr(solver, "best_x", None)
+                ctx["best_x"] = getattr(control, "best_x", None)
         except Exception:
             pass
         try:
             if "evaluation_count" not in ctx:
-                ctx["evaluation_count"] = getattr(solver, "evaluation_count", None)
+                ctx["evaluation_count"] = getattr(control, "evaluation_count", None)
         except Exception:
             pass
         ctx[KEY_PHASE] = self._current_phase_name()
         ctx[KEY_STRATEGY] = adapter.name
         ctx[KEY_STRATEGY_ID] = int(self._current_idx)
-        adapter.update(solver, candidates, objectives, violations, ctx)
+        adapter.update(control, candidates, (objectives, violations), ctx)
 
         self._step_in_phase += 1
         if self._should_advance(ctx):
-            self._advance_phase(solver)
+            self._advance_phase(control)
+
+    def on_proposal_disposition(
+        self,
+        control: Any,
+        disposition: BatchDisposition,
+        context: Dict[str, Any],
+    ) -> None:
+        adapter = self._current_adapter()
+        if adapter is None:
+            raise RuntimeError("proposal disposition requires an active serial phase")
+        ctx = dict(context)
+        ctx[KEY_PHASE] = self._current_phase_name()
+        ctx[KEY_STRATEGY] = adapter.name
+        ctx[KEY_STRATEGY_ID] = int(self._current_idx)
+        adapter.on_proposal_disposition(control, disposition, ctx)
 
     # ------------------------------------------------------------------
     # State
@@ -230,7 +246,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
             return False
         return self._step_in_phase >= steps
 
-    def _advance_phase(self, solver: Any) -> None:
+    def _advance_phase(self, control: Any) -> None:
         if not self.phases:
             return
         old_idx = int(self._current_idx)
@@ -243,12 +259,12 @@ class StrategyChainAdapter(AlgorithmAdapter):
             self._step_in_phase = 0
             return
         try:
-            self._adapters[old_idx].teardown(solver)
+            self._adapters[old_idx].teardown(control)
         except Exception:
             pass
         self._current_idx = next_idx
         self._step_in_phase = 0
         try:
-            self._adapters[self._current_idx].setup(solver)
+            self._adapters[self._current_idx].setup(control)
         except Exception:
             pass

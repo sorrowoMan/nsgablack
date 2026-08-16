@@ -117,7 +117,8 @@ Context 契约之上，还有一层更底层的状态治理规则——它约束
 - **写入**：统一使用 `commit_population_snapshot(solver, ...)`（adapter-first：有 adapter 时写 adapter，无 adapter 时同步写 solver）
 - **禁止**：Plugin / Adapter 不得直接写 `solver.population = ...` 等镜像字段（Doctor `--strict` 会检查 `solver-mirror-write` 和 `plugin-direct-solver-state-access`）
 
-> 参考：`docs/development/DEVELOPER_CONVENTIONS.md` 第 1 节「State Governance」
+> 参考：`docs/user_guide/CONTEXT_FIELD_RULES.md` 与
+> `docs/standard_scaffold_tutorial/04_validation_catalog_and_evolution.md`
 
 ---
 

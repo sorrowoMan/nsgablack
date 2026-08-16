@@ -33,13 +33,13 @@ class KnapsackProblem(BlackBoxProblem):
         self.weights = np.asarray(weights, dtype=float)
         self.capacity = float(capacity)
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=int)
-        total_weight = float(np.dot(x, self.weights))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=int)
+        total_weight = float(np.dot(candidate, self.weights))
         if total_weight > self.capacity:
             # this should be rare if repair is enabled
             return float(1e6 + total_weight)
-        total_value = float(np.dot(x, self.values))
+        total_value = float(np.dot(candidate, self.values))
         return -total_value  # maximize value -> minimize negative
 
 

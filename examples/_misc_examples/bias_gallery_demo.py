@@ -1,4 +1,4 @@
-"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
+ï»¿"""MIGRATED to examples/cases/ - see scaffold case for maintained version."""
 """Bias gallery demo: choose a bias by catalog key and run a tiny solver."""
 
 import argparse
@@ -38,9 +38,9 @@ class Sphere(BlackBoxProblem):
         self.low = low
         self.high = high
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        return float(np.sum(x * x))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        return float(np.sum(candidate * candidate))
 
 
 def _make_bias(key: str, dimension: int):
@@ -125,4 +125,5 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 

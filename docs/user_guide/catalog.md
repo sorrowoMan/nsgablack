@@ -1,55 +1,56 @@
-# Catalog 与 Wiring 使用指南
+# Catalog And Wiring Guide
 
-当你不确定“组件在哪、该怎么装、是否漏配”时，先用 `Catalog` 定位，再用 `Wiring` 装配。
+Use Catalog when you need to answer:
 
-## 1. Catalog 是什么
-`nsgablack.catalog` 是轻量组件索引层，回答：`where is X?`
+- where is a component?
+- what kind of component is it?
+- which import path loads it?
+- which companions are usually mounted with it?
+- is this a framework-core entry or an example/doc entry?
 
-它主要提供：
-- 稳定 `key`（可搜索、可引用）
-- 组件类型 `kind`（problem/representation/bias/adapter/plugin/tool/doc/example）
-- 推荐搭配 `companions`
+## Profiles
 
-它不做依赖注入，只做可发现性。
+`nsgablack` uses two catalog profiles:
 
-## 2. Python 用法
+| Profile | Meaning |
+| --- | --- |
+| `framework-core` | framework components only; use for architecture audits |
+| `default` | full index including docs and examples |
+
+Architecture conclusions must use `framework-core`:
+
+```powershell
+python -m nsgablack catalog list --profile framework-core --kind adapter
+python -m nsgablack catalog search nsga2 --profile framework-core --limit 20
+python -m nsgablack catalog show adapter.nsga2 --profile framework-core
+```
+
+Use `default` when looking for tutorials or example entries:
+
+```powershell
+python -m nsgablack catalog list --profile default --kind example
+```
+
+## Python Usage
+
 ```python
 from nsgablack.catalog import get_catalog
 
-catalog = get_catalog()
+catalog = get_catalog(profile="framework-core")
 
-for e in catalog.search("vns"):
-    print(e.key, e.kind, e.title)
-
-for e in catalog.list(kind="plugin"):
-    print(e.key)
+for entry in catalog.search("vns"):
+    print(entry.key, entry.kind, entry.title)
 
 entry = catalog.get("adapter.vns")
 adapter_cls = entry.load()
 ```
 
-## 3. CLI 用法
-```bash
-python -m nsgablack catalog search vns
-python -m nsgablack catalog list --kind adapter
-python -m nsgablack catalog show adapter.vns
-python -m nsgablack catalog show adapter.multi_strategy
-```
+## Wiring
 
-## 4. Run Inspector 联动
-Run Inspector 会基于 Catalog 的 `companions` 给出 wiring 提示。
+Wiring helpers are official assembly shortcuts for common capability bundles. They should still be called from standard Case assembly, usually `build_solver.py`.
 
-```bash
-python -m nsgablack run_inspector --entry examples/dynamic_multi_strategy_demo.py:build_solver
-```
+Examples:
 
-## 5. Wiring 是什么
-`Wiring` 是“权威装配入口”，适合成套能力：
-- benchmark + report + profiler
-- 多策略控制 + archive + 观测
-- 并行评估 + 容错参数 + 工程护栏
-
-示例：
 ```python
 from nsgablack.utils.wiring import attach_benchmark_harness, attach_module_report
 
@@ -57,22 +58,15 @@ attach_benchmark_harness(solver)
 attach_module_report(solver)
 ```
 
-## 6. 如何新增 Catalog 条目
-在 `catalog/entries.toml` 增加条目，再执行：
+Wiring helpers must not become private orchestration systems. Cross-Case order and resource allocation belong to Project / L0.
 
-```bash
-python -m nsgablack catalog reload
+## Adding Entries
+
+Add framework entries to the registry source, then verify both profiles:
+
+```powershell
+python -m nsgablack catalog list --profile framework-core --kind adapter
+python -m nsgablack catalog list --profile default --kind example
 ```
 
-示例：
-```toml
-[[entry]]
-key = "adapter.my_algo"
-title = "MyAlgoAdapter"
-kind = "adapter"
-import_path = "nsgablack.adapters.my_algo:MyAlgoAdapter"
-tags = ["my_algo", "hybrid"]
-summary = "自定义策略内核。"
-companions = ["plugin.pareto_archive", "plugin.benchmark_harness"]
-```
-
+If an entry is a formal example, it should point to `examples/cases/<project>/run_project.py` or to a nested `cases/<case>/build_solver.py` import path inside that Project, not a compatibility wrapper.

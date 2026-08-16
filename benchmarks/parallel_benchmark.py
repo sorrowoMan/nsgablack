@@ -42,11 +42,11 @@ class SphereProblem(BlackBoxProblem):
         self.sleep_ms = float(sleep_ms)
         self.bounds = [(-5.0, 5.0)] * self.dim
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
         if self.sleep_ms > 0:
             time.sleep(self.sleep_ms / 1000.0)
-        return [float(np.sum(x * x))]
+        return [float(np.sum(candidate * candidate))]
 
 
 @dataclass

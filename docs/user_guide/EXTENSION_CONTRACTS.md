@@ -1,4 +1,4 @@
-# 扩展点契约（可执行护栏）
+﻿# 扩展点契约（可执行护栏）
 
 框架不限制你如何拆解算法（同一算法可同时偏置化/管线化/适配器化/插件化），但为了避免“自由发挥把系统拆坏”，在关键边界提供最小的可执行契约。
 
@@ -26,7 +26,10 @@
 ## 5) 解构算法的工程清单（强烈建议遵守）
 
 - 当你要把传统算法拆成 Bias/Representation/Adapter/Plugin/Wiring 时，建议按工程清单执行，避免“组件找不到 / 忘配套导致静默退化”。
-- 参考：`docs/development/DECOMPOSITION_CHECKLIST.md`
+- 参考：
+  - `docs/project/DECOMPOSITION_RULES.md`
+  - `docs/standard_scaffold_tutorial/04_validation_catalog_and_evolution.md`
+  - `docs/project/AUTHORITATIVE_EXAMPLES.md`
 
 ## 工程实现
 

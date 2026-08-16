@@ -12,21 +12,24 @@ def test_composable_solver_rejects_wrong_candidate_shape():
         def __init__(self):
             super().__init__(name="p", dimension=3, bounds={f"x{i}": (-1.0, 1.0) for i in range(3)})
 
-        def evaluate(self, x):
-            x = np.asarray(x, dtype=float)
-            return float(np.sum(x * x))
+        def evaluate(self, candidate):
+            candidate = np.asarray(candidate, dtype=float)
+            return float(np.sum(candidate * candidate))
 
     class BadAdapter(AlgorithmAdapter):
         def __init__(self):
             super().__init__(name="bad")
 
-        def propose(self, solver, context):
+        def propose(self, control, context):
             return [np.zeros(2)]  # wrong length
 
-    solver = ComposableSolver(problem=P(), adapter=BadAdapter())
-    solver.max_steps = 1
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
+
+    control = ComposableSolver(problem=P(), adapter=BadAdapter())
+    control.max_steps = 1
     with pytest.raises(ContractError):
-        solver.run()
+        control.run()
 
 
 def test_plugin_return_value_warns_by_default():

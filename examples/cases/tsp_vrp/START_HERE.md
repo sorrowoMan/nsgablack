@@ -1,34 +1,27 @@
 # START_HERE
 
-## 1) 这个 case 验证什么
+`tsp_vrp` ????? Project / Case / Scaffold / L0 substrate?
 
-`tsp_vrp` 验证 combinatorial route optimization 可以作为 black-box optimization。
-
-- nsgablack 用 SA 搜索 city visitation permutation。
-- Random-keys encoding 保证 valid permutation，无需 explicit repair。
-- 当前 runtime path 不使用 mlblack。
-
-指标、结构、mlblack 状态和能力信号见 `README.md`。
-
-## 2) 验证 assembly
+## 1) ???????
 
 ```powershell
-python run_solver.py --check
+python examples/cases/tsp_vrp/run_project.py --check
 ```
 
-## 3) 运行
+## 2) ??? Project ??
 
 ```powershell
-python build_solver.py --n-cities 20 --pop-size 30 --max-steps 2000
+python examples/cases/tsp_vrp/run_project.py
 ```
 
-## 4) 关键指标
+## 3) ??????
 
-| 指标 | 含义 |
-|---|---|
-| 总里程 | 访问所有城市并返回起点的总路径长度。 |
-| vs Nearest-Neighbor | 相对于贪心基线的改进百分比。 |
+- Project ???? Case ?????????????
+- Case ??????? `build_solver.py` / `run_solver.py` surface?
+- `ResourceContext` ? Project L0 grant???? Case ???
 
-## 5) 预期信号
+## 4) ????
 
-有效运行应该让 SA 路线明显短于 Nearest-Neighbor 贪心基线。
+- `README.md`????????
+- `cases/tsp_vrp/README.md`?? Case ????????
+- `cases/tsp_vrp/START_HERE.md`?Case ?????

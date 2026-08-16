@@ -4,9 +4,6 @@ import json
 from pathlib import Path
 
 import numpy as np
-import pytest
-
-pytestmark = pytest.mark.skip(reason="mlblack module structure was refactored; backend imports (from config import ...) are stale. Backend integration code needs updating.")
 
 
 def _mlblack_root() -> Path:
@@ -61,10 +58,6 @@ def test_mlblack_symbolic_consensus_backend_smoke(tmp_path):
     from nsgablack.plugins.domain_backends.mlblack_symbolic_consensus_backend import (
         MlblackSymbolicConsensusBackend,
     )
-    from nsgablack.plugins.storage.runtime_surface_tracker import (
-        list_runtime_run_surfaces,
-        runtime_surface_filter_values,
-    )
 
     if not _mlblack_root().exists():
         raise AssertionError(f"mlblack repo not found: {_mlblack_root()}")
@@ -76,134 +69,43 @@ def test_mlblack_symbolic_consensus_backend_smoke(tmp_path):
         inner_problem={
             "benchmark_key": "ohm_like",
             "run_label": "pytest_direct",
-            "trainer_params_overrides": {
-                "orth_candidate_limit": 20,
-                "orth_group_count": 5,
-                "orth_seed_candidate_count": 5,
-                "orth_min_basis_count": 2,
-                "orth_max_basis_count": 3,
-                "greedy_choice_topk": 2,
-                "random_group_trials": 1,
-                "orth_assembler_max_added_terms": 2,
-                "orth_assembler_topk_features": 2,
-                "orth_assembler_max_pair_terms": 2,
-                "orth_assembler_max_candidates_per_iter": 16,
-                "orth_assembler_candidate_keep_top": 3,
-                "orth_assembler_max_expr_depth": 4,
-            },
-            "vanilla_runs": 1,
-            "locked_runs": 1,
-            "core_min_support_rate": 0.5,
-            "core_max_terms": 3,
+            "consensus_cycles": 2,
+            "unlocked_runs_per_cycle": 1,
+            "locked_runs_per_cycle": 1,
         },
     )
 
     result = dict(backend.solve(request))
 
     assert result["status"] == "ok"
+    assert result["protocol"] == "nsgablack_mlblack_symbolic_bridge_v3"
+    assert result["benchmark_key"] == "ohm_like"
     assert float(result["best_test_rmse"]) >= 0.0
     assert float(result["best_exact_term_recovery_score"]) >= 0.0
-    assert int(result["total_inner_runs"]) >= 1
+    assert int(result["total_inner_runs"]) == 4
     assert int(result["consensus_cycles"]) == 2
     assert len(list(result["cycle_reports"])) == 2
-    assert len(list(result["stage_reports"])) == 6
-    assert Path(str(result["summary_path"])).exists()
-    assert Path(str(result["comparison_path"])).exists()
-    assert Path(str(result["core_selection_path"])).exists()
-    cycle_reports = list(result["cycle_reports"])
-    locked_best_run = dict(cycle_reports[0].get("locked_best_run") or {})
-    assert str(locked_best_run.get("phase")) == "locked_core"
-    locked_meta_path = Path(str(locked_best_run.get("output_dir"))) / "artifact" / "meta.json"
-    assert locked_meta_path.exists()
-    locked_meta = json.loads(locked_meta_path.read_text(encoding="utf-8"))
-    locked_metadata = dict(locked_meta.get("metadata", {}) or {})
-    assert len(list(locked_metadata.get("consensus_prior_rows") or ())) >= 1
-    symbolic = dict(locked_metadata.get("symbolic", {}) or {})
-    structure_engine = dict(symbolic.get("structure_engine", {}) or {})
-    assert str(structure_engine.get("search_driver")) == "orthogonal_basis_set_search"
-    assert (
-        str(structure_engine.get("screening_protocol"))
-        == "target_corr+residual_gain+semantic_novelty+consensus_prior"
-    )
-    assert str(structure_engine.get("outer_search_protocol")) == "beam_basis_set_structure_search"
-    assert str(locked_metadata.get("structure_head")) == "expression"
-    assert str(locked_metadata.get("search_input_space")) == "basis_object_space"
-    assert str(locked_metadata.get("pool_expansion_unit")) == "basis_object"
-    assert str(locked_metadata.get("gradient_guidance_mode")) == "basis_object_gradient"
-    assert str(locked_metadata.get("basis_binding_mode")) == "defining"
-    assert str(locked_metadata.get("escape_policy")) == "forbid"
-    assert dict(locked_metadata.get("basis_object_gradient_pool", {}) or {}).get("protocol") == "basis_object_gradient_pool_expansion_v1"
-    run_rows = list_runtime_run_surfaces(tmp_path / "mlblack_tracker.sqlite3", limit=50)
-    assert len(run_rows) >= 10
-    surface_kinds = {str(row.get("surface_kind")) for row in run_rows}
-    assert "flow" in surface_kinds
-    assert "solver" in surface_kinds
-    flow_rows = [dict(row) for row in run_rows if str(row.get("surface_kind")) == "flow"]
-    assert flow_rows
-    locked_flow_rows = [row for row in flow_rows if str(row.get("screening_protocol") or "").strip()]
-    assert locked_flow_rows
-    assert any(
-        str(row.get("screening_protocol"))
-        == "target_corr+residual_gain+semantic_novelty+consensus_prior"
-        for row in locked_flow_rows
-    )
-    assert any(
-        "beam_basis_set_structure_search" in str(row.get("outer_search_protocol") or "")
-        or "orthogonal_structure_search_with_budgeted_symbolic_assembler" in str(row.get("outer_search_protocol") or "")
-        for row in locked_flow_rows
-    )
-    assert any(str(row.get("structure_head") or "") == "expression" for row in locked_flow_rows)
-    assert any(str(row.get("search_input_space") or "") == "basis_object_space" for row in locked_flow_rows)
-    assert any(str(row.get("pool_expansion_unit") or "") == "basis_object" for row in locked_flow_rows)
-    assert any(str(row.get("gradient_guidance_mode") or "") == "basis_object_gradient" for row in locked_flow_rows)
-    assert any(str(row.get("basis_binding_mode") or "") == "defining" for row in locked_flow_rows)
-    assert any(str(row.get("escape_policy") or "") == "forbid" for row in locked_flow_rows)
-    assert any(
-        dict(row.get("result_json", {}) or {}).get("basis_object_gradient_pool")
-        or dict(dict(row.get("result_json", {}) or {}).get("run_summary", {}) or {}).get("basis_object_gradient_pool")
-        or dict(dict(row.get("result_json", {}) or {}).get("best_run", {}) or {}).get("basis_object_gradient_pool")
-        or dict(dict(row.get("result_json", {}) or {}).get("locked_best_run", {}) or {}).get("basis_object_gradient_pool")
-        or dict(dict(dict(row.get("result_json", {}) or {}).get("payload", {}) or {}).get("run_summary", {}) or {}).get("basis_object_gradient_pool")
-        for row in locked_flow_rows
-    )
-    consensus_rows = [
-        dict(row)
-        for row in run_rows
-        if str(row.get("surface_key") or "").endswith(".consensus")
-    ]
-    assert consensus_rows
-    assert any(float(row.get("joint_core_score") or 0.0) > 0.0 for row in consensus_rows)
-    filter_values = runtime_surface_filter_values(tmp_path / "mlblack_tracker.sqlite3")
-    assert "target_corr+residual_gain+semantic_novelty+consensus_prior" in list(
-        filter_values.get("run_screening_protocol", [])
-    )
-    assert "expression" in list(filter_values.get("run_structure_head", []))
-    assert "basis_object_space" in list(filter_values.get("run_search_input_space", []))
-    assert "basis_object" in list(filter_values.get("run_pool_expansion_unit", []))
-    assert "basis_object_gradient" in list(filter_values.get("run_gradient_guidance_mode", []))
-    assert "defining" in list(filter_values.get("run_basis_binding_mode", []))
-    assert "forbid" in list(filter_values.get("run_escape_policy", []))
-    assert list_runtime_run_surfaces(
-        tmp_path / "mlblack_tracker.sqlite3",
-        screening_protocol="target_corr+residual_gain+semantic_novelty+consensus_prior",
-        limit=20,
-    )
-    assert list_runtime_run_surfaces(
-        tmp_path / "mlblack_tracker.sqlite3",
-        structure_head="expression",
-        search_input_space="basis_object_space",
-        pool_expansion_unit="basis_object",
-        gradient_guidance_mode="basis_object_gradient",
-        basis_binding_mode="defining",
-        escape_policy="forbid",
-        limit=20,
-    )
-    assert list_runtime_run_surfaces(
-        tmp_path / "mlblack_tracker.sqlite3",
-        joint_core_score_min=0.1,
-        limit=20,
-    )
-    assert "payload" in result
+    assert len(list(result["stage_reports"])) == 4
+    assert {
+        str(row["stage"])
+        for row in result["stage_reports"]
+    } == {"orthogonal_basis", "basis_conditioned_task"}
+    assert all(int(row["unlocked_run_count"]) == 1 for row in result["cycle_reports"])
+    assert all(int(row["locked_run_count"]) == 1 for row in result["cycle_reports"])
+    assert all(dict(row["unlocked_best_run"]).get("metrics") for row in result["cycle_reports"])
+    assert all(dict(row["locked_best_run"]).get("metrics") for row in result["cycle_reports"])
+
+    for key in ("summary_path", "comparison_path", "core_selection_path"):
+        assert Path(str(result[key])).is_file()
+    summary = json.loads(Path(str(result["summary_path"])).read_text(encoding="utf-8"))
+    assert summary["protocol"] == result["protocol"]
+    assert len(summary["cycle_reports"]) == 2
+    assert len(summary["stage_reports"]) == 4
+    assert summary["basis_artifact"]["artifact_id"] == result["payload"]["basis_artifact_id"]
+    assert summary["task_artifact"]["artifact_id"] == result["payload"]["task_artifact_id"]
+    assert set(result["artifact_refs"]) == {"summary", "comparison", "core_selection"}
+    assert len(result["objectives"]) == 4
+    assert "truth_contract_recovery" in result["payload"]
 
 
 def test_mlblack_symbolic_consensus_inner_runtime_provider_smoke(tmp_path):
@@ -231,8 +133,8 @@ def test_mlblack_symbolic_consensus_inner_runtime_provider_smoke(tmp_path):
             )
             self.last_inner_result: dict[str, object] | None = None
 
-        def evaluate(self, x):
-            _ = x
+        def evaluate(self, candidate):
+            _ = candidate
             return np.array([1.0, 1.0, 1e6], dtype=float)
 
         def build_inner_problem(self, x, eval_context):
@@ -275,34 +177,37 @@ def test_mlblack_symbolic_consensus_inner_runtime_provider_smoke(tmp_path):
         def __init__(self) -> None:
             super().__init__(name="fixed")
 
-        def propose(self, solver, context):
-            _ = (solver, context)
+        def propose(self, control, context):
+            _ = (control, context)
             return [np.array([0.0], dtype=float)]
 
-    solver = ComposableSolver(problem=_Problem(), adapter=_Adapter())
-    solver.set_max_steps(1)
-    solver.set_solver_hyperparams(pop_size=1)
-    solver.register_evaluation_provider(
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
+
+    control = ComposableSolver(problem=_Problem(), adapter=_Adapter())
+    control.set_max_steps(1)
+    control.set_solver_hyperparams(pop_size=1)
+    control.register_evaluation_provider(
         EvaluationModelProviderPlugin(
             config=EvaluationModelConfig(scope="inner", warn_on_failure=False),
             backend_factory=lambda _problem, _ctx: backend,
         ).create_provider()
     )
-    solver.problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(
+    control.problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(
         config=InnerRuntimeConfig(source_layer="L2", target_layer="L1", fallback_penalty=1e6)
     )
 
-    solver.run()
+    control.run()
 
-    assert solver.best_objective is not None
-    assert np.isfinite(float(solver.best_objective))
-    assert isinstance(solver.problem.last_inner_result, dict)
-    assert solver.problem.last_inner_result["benchmark_key"] == "ohm_like"
-    assert len(list(solver.problem.last_inner_result["cycle_reports"])) == 2
-    assert Path(str(solver.problem.last_inner_result["summary_path"])).exists()
+    assert control.best_objective is not None
+    assert np.isfinite(float(control.best_objective))
+    assert isinstance(control.problem.last_inner_result, dict)
+    assert control.problem.last_inner_result["benchmark_key"] == "ohm_like"
+    assert len(list(control.problem.last_inner_result["cycle_reports"])) == 2
+    assert Path(str(control.problem.last_inner_result["summary_path"])).exists()
 
 
-def test_mlblack_symbolic_consensus_backend_arrhenius_mechanism_hints(tmp_path):
+def test_mlblack_symbolic_consensus_backend_arrhenius_contract(tmp_path):
     from nsgablack.plugins.domain_backends.backend_contract import BackendSolveRequest
     from nsgablack.plugins.domain_backends.mlblack_symbolic_consensus_backend import (
         MlblackSymbolicConsensusBackend,
@@ -313,44 +218,54 @@ def test_mlblack_symbolic_consensus_backend_arrhenius_mechanism_hints(tmp_path):
 
     backend = MlblackSymbolicConsensusBackend(config=_small_backend_config(tmp_path))
     backend._ensure_mlblack_imports()
-    request = BackendSolveRequest(
-        candidate=np.array([24.0, 6.0, 4.0, 2.0, 2.0, 1.0, 0.5, 3.0], dtype=float),
-        eval_context={"scope": "inner", "generation": 0, "individual_id": 0},
-        inner_problem={"benchmark_key": "arrhenius_gate_like", "run_label": "pytest_arrhenius_hints"},
-    )
-    base_plan = backend._resolve_plan(request)
-    _definition, bundle, _truth = backend._ml["build_known_relation_bundle"](
-        benchmark_key="arrhenius_gate_like",
-        n_total=int(base_plan["n_total"]),
-        train_ratio=float(base_plan["train_ratio"]),
-        noise_std=float(base_plan["noise_std"]),
-        seed=int(base_plan["dataset_seed"]),
-    )
-    merged_plan = backend._apply_orchestrator_hints(plan=base_plan, bundle_metadata=dict(bundle.metadata))
-    lane_specs = backend._normalize_lane_specs(plan=merged_plan)
-    lane_summary = backend._lane_summary(lane_specs)
-    search_hints = dict(bundle.metadata.get("search_hints", {}) or {})
-    params = backend._orthogonal_params(
-        plan=merged_plan,
-        gate_feature_names=tuple(search_hints.get("gate_feature_names", ()) or ()),
-        enable_piecewise_basis=bool(search_hints.get("enable_piecewise_basis")),
-        search_seed=123,
-        lock_seed_basis=False,
-        artifact_id="pytest_arrhenius_mechanism",
+    build_data = backend._ml["build_symbolic_benchmark_data"]
+    data = build_data(
+        "arrhenius_gate_like",
+        n_total=32,
+        train_ratio=0.75,
+        noise_std=0.01,
+        seed=7,
     )
 
-    assert int(params["gate_candidate_screen_reserve"]) == 3
-    assert bool(params["require_gate_candidate_in_group"]) is True
-    assert int(params["min_gate_basis_terms"]) == 1
-    assert len(lane_specs) == 3
-    assert bool(lane_summary["multi_lane_enabled"]) is True
-    assert int(lane_summary["lane_count"]) == 3
-    assert "mechanistic_gate_lane" in list(lane_summary["lane_ids"])
-    assert tuple(tuple(group) for group in tuple(params["mechanistic_feature_groups"])) == (
-        ("activation_energy", "temperature"),
+    assert tuple(data.effective_feature_names) == (
+        "temperature",
+        "activation_energy",
+        "catalyst_bias",
     )
-    assert float(params["mechanistic_screen_bonus"]) == 0.8
-    assert float(params["mechanistic_group_bonus"]) == 0.3
-    assert str(params["assembler_basis_binding_mode"]) == "bound"
-    assert str(params["assembler_escape_policy"]) == "budgeted_escape"
-    assert tuple(params["assembler_escape_feature_names"]) == ("catalyst_bias",)
+    assert tuple(data.metadata["truth_contracts"]) == (
+        "activation_energy/temperature",
+        "catalyst_bias",
+    )
+
+    request = BackendSolveRequest(
+        candidate=np.array([24.0, 6.0, 4.0, 2.0], dtype=float),
+        eval_context={"scope": "inner", "generation": 0, "individual_id": 0},
+        inner_problem={
+            "benchmark_key": "arrhenius_gate_like",
+            "n_total": 32,
+            "dataset_seed": 7,
+            "consensus_cycles": 1,
+            "unlocked_runs_per_cycle": 1,
+            "locked_runs_per_cycle": 1,
+            "force_recompute": True,
+        },
+    )
+    plan = backend._resolve_plan(request)
+
+    assert plan["benchmark_key"] == "arrhenius_gate_like"
+    assert plan["pool_max_terms"] == 24
+    assert plan["basis_size"] == 2
+
+    result = dict(backend.solve(request))
+    summary = json.loads(Path(str(result["summary_path"])).read_text(encoding="utf-8"))
+    stage_metadata = dict(summary["basis_artifact"]["metadata"]["stage_metadata"])
+
+    assert result["status"] == "ok"
+    assert result["benchmark_key"] == "arrhenius_gate_like"
+    assert result["total_inner_runs"] == 2
+    assert tuple(stage_metadata["truth_contracts"]) == (
+        "activation_energy/temperature",
+        "catalyst_bias",
+    )
+    assert summary["plan"]["basis_size"] == 2
+    assert summary["plan"]["pool_max_terms"] == 24

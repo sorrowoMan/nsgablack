@@ -16,23 +16,21 @@
 
 ## 入口与导览
 
-- `START_HERE.md` — 入口地图 [layer:docs] [goal:index]
+- `docs/README.md` — 文档入口地图 [layer:docs] [goal:index]
 - `README.md` — 项目总览 [layer:docs] [goal:overview]
 - `__init__.py` — 对外入口聚合 [layer:entry] [goal:api]
 - `__main__.py` — 脚本入口 [layer:entry] [goal:cli]
 - `docs/user_guide/external_api_navigation.md` — 外部入口清单 [layer:docs] [goal:api]
-- `docs/INDEX_MANUAL.md` — 极详细说明书 [layer:docs] [goal:overview]
+- `docs/indexes/INDEX_MANUAL.md` — 极详细说明书 [layer:docs] [goal:overview]
 
 ---
 
 ## 核心问题与求解器内核
 
 - `core/base.py` — 黑箱问题接口 [layer:core] [goal:problem]
-- `core/solver.py` — NSGA-II 内核 + 偏置注入 [layer:core] [goal:nsga2] [cap:convergence]
+- `core/evolution_solver.py` — 进化式求解器预置 [layer:core] [goal:nsga2] [cap:convergence]
 - `core/config.py` — 求解器配置 schema（稳定） [layer:core] [goal:config]
-- `core/solver.py` 内联能力：多样性初始化 + 历史去重 [layer:core] [cap:diversity] [cap:history]
-- `core/solver.py` 内联能力：精英保留 + 智能历史 [layer:core] [cap:elite] [cap:history]
-- `core/solver.py` 内联能力：收敛检测 [layer:core] [cap:convergence]
+- 多样性、精英保留、收敛监控等能力优先通过 `plugins/` 或 `bias/` 显式装配 [layer:plugin] [cap:diversity] [cap:elite] [cap:convergence]
 - ~~`deprecated/legacy/core/problems.py`~~ — 基准问题集合（目录已清理；如需追溯请查看 git 历史） [layer:legacy] [goal:benchmark]
 
 ---
@@ -60,21 +58,21 @@
 - `representation/matrix.py` — 矩阵变量 [layer:representation] [var:matrix]
 - `representation/graph.py` — 图结构变量 [layer:representation] [var:graph]
 - `docs/indexes/REPRESENTATION_INDEX.md` — 表征索引 [layer:docs] [goal:index]
-- `docs/architecture/representation_pipeline.md` — 表征流水线详解 [layer:docs] [goal:tutorial]
+- `docs/guides/DECOUPLING_REPRESENTATION.md` — 表征流水线边界说明 [layer:docs] [goal:tutorial]
 
 ---
 
-## 求解器入口（Core / Experimental / Legacy）
+## 求解器入口（Core / Compatibility）
 
 Core（推荐）
 
-- `core/solver.py` — NSGA-II 底座（`EvolutionSolver`）[layer:core] [goal:nsga2]
-- `core/blank_solver.py` — 空白底座（`SolverBase`）[layer:core] [goal:custom_workflow]
+- `core/evolution_solver.py` — 进化式底座（`EvolutionSolver`）[layer:core] [goal:nsga2]
+- `core/blank_solver.py` — 空白底座（`SolverBase`）[layer:core] [goal:custom_solver]
 - `core/composable_solver.py` — Adapter 驱动底座（`ComposableSolver`）[layer:core] [goal:composition]
 - `adapters/` — 策略内核（VNS/MOEA-D/SA/角色控制等）[layer:core] [goal:adapter]
 - `utils/wiring/` — 权威组合（attach_* 一键装配）[layer:utils] [goal:wiring]
 
-历史/实验目录已清理（降低维护成本）。如需追溯请查看 git 历史。
+历史/实验目录已清理（降低维护成本）。正式入口只看 Core、Adapter、Wiring 与标准 Case；如需追溯请查看 git 历史。
 
 ---
 
@@ -95,7 +93,7 @@ Core（推荐）
 
 文档
 
-- `docs/user_guide/surrogate_workflow.md` — 代理流程 [layer:docs] [goal:tutorial]
+- `docs/user_guide/SURROGATE_CAPABILITY_PATTERN.md` — 代理能力模式 [layer:docs] [goal:tutorial]
 - `docs/user_guide/surrogate_cheatsheet.md` — 代理速查 [layer:docs] [goal:index]
 
 ---
@@ -128,4 +126,4 @@ Core（推荐）
 - `docs/indexes/TOOLS_INDEX.md` — 工具索引 [layer:docs] [goal:index]
 - `docs/user_guide/bias_system.md` — 偏置系统指南 [layer:docs] [goal:index]
 - `docs/concepts/FRAMEWORK_OVERVIEW.md` — 框架总览（当前）[layer:docs] [goal:overview]
-- `docs/INDEX_MANUAL.md` — 极详细说明书 [layer:docs] [goal:overview]
+- `docs/indexes/INDEX_MANUAL.md` — 极详细说明书 [layer:docs] [goal:overview]

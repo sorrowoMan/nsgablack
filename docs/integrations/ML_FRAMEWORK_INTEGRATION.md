@@ -1,60 +1,81 @@
-﻿# ML Framework Integration
+# ML / Surrogate Integration
 
-本项目不把“代理模型/ML”当成框架目标，而是把它当成一种能力：需要时接入，不需要时不污染底座。
+本页说明 `nsgablack` 如何与 ML 能力集成。当前口径是统一框架栈：
 
-这一页讲的是工程集成思路：你怎么把 PyTorch / TensorFlow / Optuna / Ray Tune 这类工具接进来，并且仍然遵守 NSGABlack 的解耦原则。
+- `nsgablack` 是优化搜索语义层。
+- `mlblack` 是机器学习语义层。
+- Project / Case / Scaffold / L0 / ResourceContext / Artifact ref 属于共享 substrate。
+- 编排与资源授权不属于任一语义层的私有能力。
 
-## 1. 总原则
+因此，ML 集成不应写成“nsgablack 私有插件里直接训练模型”的路线。正式路线是：ML trainer、surrogate evaluator、artifact builder 都暴露为标准 Case surface，外层通过 payload、artifact ref、component_overrides 和 ResourceContext 调用。
 
-- Problem 只负责 `evaluate(x)`：给定解 x，返回 objectives/constraints
-- 表示/修复走 `RepresentationPipeline`
-- 业务倾向/软约束走 `BiasModule`
-- 并行/记录/短路评估/缓存/代理模型走 Plugin
-- 容易漏配的组合收敛成 Wiring
+## 1. 推荐形态
 
-你会发现：ML/代理模型天然更像 Plugin，而不是算法策略本身。
+### 外层优化调用内层 ML Case
 
-## 2. 典型集成场景
+适用场景：
 
-### 2.1 用深度学习当评估函数的一部分（最常见）
+- 外层搜索模型结构、特征组合、训练超参或 surrogate 选择。
+- 内层训练/评估由 `mlblack` Trainer Case 完成。
+- 外层只关心稳定 result payload，不读取 trainer 私有对象。
 
-例如：你的 `evaluate(x)` 内部会跑一个模型前向，或用模型预测某个指标。
+标准流：
 
-建议做法：
-- 模型加载放在 Problem 的 `__init__`（一次加载，多次复用）
-- `evaluate(x)` 保持“无副作用 + 可并行”（不要在里面写文件/画图）
-- 统计/日志交给 Plugin（避免并行时输出混乱）
+```text
+Project L0 grant
+  -> outer optimization Case
+      -> Problem.evaluate(candidate)
+          -> decode component_overrides
+          -> call inner ML Case build_solver/build_trainer alias
+          -> receive metrics/artifact refs/result
+      -> project objective / constraint projection
+```
 
-### 2.2 用 Optuna/Ray Tune 做“外层超参搜索”
+### ML 作为评估代理
 
-把 NSGABlack 视作一个“可调用的求解器”，外层工具负责调参/调组合。
+适用场景：
 
-建议做法：
-- 把 solver 的关键参数抽成 config（seed/budget/adapter/bias/wiring helpers）
-- 外层只改 config，不改算法代码
-- 每次 trial 统一挂 BenchmarkHarnessPlugin，输出到独立 run_id 目录
+- expensive simulator / true evaluator 太慢。
+- ML surrogate 可以短路一部分评估。
 
-### 2.3 用代理模型做评估短路（surrogate / cache）
+要求：
 
-这类能力更适合放在 Plugin，因为它属于“评估过程的能力层”：
-- 命中缓存/代理模型时：短路返回预测值
-- 否则：走真实评估，并把真实数据回写缓存/训练集
+- surrogate 的训练数据、模型 artifact、校准结果写入 Artifact 或 Snapshot。
+- 短路评估必须返回与真实评估相同 shape 的 objective / violation payload。
+- nsgablack Plugin 可以负责缓存、审计、短路 hook，但不要拥有 trainer 业务逻辑。
 
-建议做法：
-- 使用框架提供的“评估短路插槽”接口（只扩展接口，不内置 surrogate 逻辑）
-- 将“训练/更新/持久化”也放在 Plugin/Wiring 中组织
+## 2. 与第三方 ML 工具集成
 
-## 3. 推荐的落地路径
+PyTorch、TensorFlow、sklearn、statsmodels、Optuna、Ray Tune 等工具应作为 ML Case 内部的 provider/backend 使用：
 
-1) 先把纯 `evaluate(x)` 跑通（见 `WORKFLOW_END_TO_END.md`）
-2) 再加 BenchmarkHarnessPlugin 统一实验口径（CSV/JSON）
-3) 再加并行评估（如果慢）
-4) 最后再考虑 surrogate/ML（可选能力）
+- provider/backend 选择写在 inner Case config 或 component_overrides 中。
+- Project L0 发放 CPU/GPU/thread/device token。
+- inner Case 根据 ResourceContext 选择实际执行 backend，并输出 audit。
+- outer Case 不硬编码 `cuda:0`、trainer 类路径或 provider 私有参数。
+
+## 3. nsgablack 插件仍然适合做什么
+
+插件适合做横切能力：
+
+- evaluation cache
+- decision trace
+- benchmark / module report
+- artifact ref 记录
+- timeout / budget gate
+- surrogate short-circuit audit
+
+插件不适合做：
+
+- 直接实现完整 trainer。
+- 私下分配 GPU 或 worker。
+- 解析内层 trainer 私有对象。
+- 承担跨 Case 编排。
 
 ## 4. 参考入口
 
-- 端到端流程：`WORKFLOW_END_TO_END.md`
-- Catalog/Wiring Helpers：`docs/user_guide/catalog.md`
-- 插件系统：`docs/user_guide/PLUGIN_SYSTEM.md`
-- 核心边界：`docs/CORE_STABILITY.md`
+- `../standard_scaffold_tutorial/05_cross_framework_coordination.md`
+- `../standard_scaffold_tutorial/07_nested_orchestration_standard.md`
+- `../standard_scaffold_tutorial/06_l0_parallel_resource_patterns.md`
+- `../user_guide/SURROGATE_CAPABILITY_PATTERN.md`
+- `../architecture/L0_RESOURCE_ORCHESTRATION.md`
 

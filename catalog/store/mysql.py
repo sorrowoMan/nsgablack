@@ -1236,6 +1236,15 @@ ON DUPLICATE KEY UPDATE
 
         raw_query = str(query or "").strip().lower()
         tokens = [token for token in raw_query.split() if token]
+        use_context_in_all = normalized_field == "all" and any(
+            ("context" in token)
+            or token in {"requires", "provides", "mutates", "cache", "contract", "contracts", "artifact", "artifacts", "phase"}
+            for token in tokens
+        )
+        use_usage_in_all = normalized_field == "all" and any(
+            token in {"use", "usage", "wiring", "wire", "companion", "companions", "config", "example"}
+            for token in tokens
+        )
         for token_group in _expand_token_groups(tokens):
             alias_clauses: List[str] = []
             for alias in token_group:
@@ -1269,27 +1278,35 @@ ON DUPLICATE KEY UPDATE
                     )
                     params.extend(list(_USAGE_FIELD_NAMES) + [pattern])
                 else:
-                    alias_clauses.append(
-                        "("
-                        "LOWER(c.`key`) LIKE %s OR LOWER(c.title) LIKE %s OR LOWER(c.kind) LIKE %s "
-                        "OR LOWER(c.import_path) LIKE %s OR LOWER(c.summary) LIKE %s "
-                        "OR EXISTS (SELECT 1 FROM catalog_field_value fv_search "
-                        "WHERE fv_search.component_id = c.id AND fv_search.field_name IN ("
-                        + ", ".join(["%s"] * len(_SEARCHABLE_FIELD_NAMES))
-                        + ") AND fv_search.field_value_norm LIKE %s)"
-                        ")"
-                    )
-                    params.extend(
-                        [
-                            pattern,
-                            pattern,
-                            pattern,
-                            pattern,
-                            pattern,
-                            *_SEARCHABLE_FIELD_NAMES,
-                            pattern,
-                        ]
-                    )
+                    all_clauses = [
+                        "LOWER(c.`key`) LIKE %s",
+                        "LOWER(c.title) LIKE %s",
+                        "LOWER(c.kind) LIKE %s",
+                        "LOWER(c.summary) LIKE %s",
+                        "EXISTS (SELECT 1 FROM catalog_field_value fv_search "
+                        "WHERE fv_search.component_id = c.id AND fv_search.field_name = 'tags' "
+                        "AND fv_search.field_value_norm LIKE %s)",
+                    ]
+                    params.extend([pattern] * 5)
+                    if use_context_in_all:
+                        placeholders = ", ".join(["%s"] * len(_CONTEXT_FIELD_NAMES))
+                        all_clauses.append(
+                            "EXISTS (SELECT 1 FROM catalog_field_value fv_search "
+                            "WHERE fv_search.component_id = c.id "
+                            f"AND fv_search.field_name IN ({placeholders}) "
+                            "AND fv_search.field_value_norm LIKE %s)"
+                        )
+                        params.extend([*_CONTEXT_FIELD_NAMES, pattern])
+                    if use_usage_in_all:
+                        placeholders = ", ".join(["%s"] * len(_USAGE_FIELD_NAMES))
+                        all_clauses.append(
+                            "EXISTS (SELECT 1 FROM catalog_field_value fv_search "
+                            "WHERE fv_search.component_id = c.id "
+                            f"AND fv_search.field_name IN ({placeholders}) "
+                            "AND fv_search.field_value_norm LIKE %s)"
+                        )
+                        params.extend([*_USAGE_FIELD_NAMES, pattern])
+                    alias_clauses.append("(" + " OR ".join(all_clauses) + ")")
             if alias_clauses:
                 clauses.append("(" + " OR ".join(alias_clauses) + ")")
 

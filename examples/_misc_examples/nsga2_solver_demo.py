@@ -1,4 +1,4 @@
-"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
+ï»¿"""MIGRATED to examples/cases/ - see scaffold case for maintained version."""
 """NSGA-II solver demo with engineering suite wiring."""
 
 import numpy as np
@@ -25,10 +25,10 @@ class BiObjectiveSphere:
     def get_num_objectives(self):
         return 2
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        f1 = float(np.sum(x * x))
-        f2 = float(np.sum((x - 1.5) ** 2))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        f1 = float(np.sum(candidate * candidate))
+        f2 = float(np.sum((candidate - 1.5) ** 2))
         return np.array([f1, f2], dtype=float)
 
 
@@ -50,4 +50,5 @@ if __name__ == "__main__":
     result = solver.run(max_generations=40, seed=3)
     print("status:", result.get("status"))
     print("best objective:", result.get("best_objective"))
+
 

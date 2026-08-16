@@ -55,8 +55,8 @@ class BiObjectiveShiftedSphere(BlackBoxProblem):
             objectives=['f1_sphere', 'f2_shifted_sphere'],
         )
 
-    def evaluate(self, x):
-        arr = np.asarray(x, dtype=float)
+    def evaluate(self, candidate):
+        arr = np.asarray(candidate, dtype=float)
         f1 = float(np.sum(arr ** 2))
         f2 = float(np.sum((arr - 2.0) ** 2))
         return np.array([f1, f2], dtype=float)

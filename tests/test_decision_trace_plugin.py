@@ -12,10 +12,10 @@ class _PM:
 
 
 class _Adapter:
-    def propose(self, solver):
+    def propose(self, control):
         return [0.0]
 
-    def update(self, solver, new_population, new_objectives):
+    def update(self, control, new_population, new_objectives):
         return True
 
 

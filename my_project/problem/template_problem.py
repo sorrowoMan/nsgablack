@@ -21,14 +21,14 @@ class ProblemTemplate(BlackBoxProblem):
             objectives=["obj_0", "obj_1"],
         )
 
-    def evaluate(self, x: np.ndarray) -> np.ndarray:
+    def evaluate(self, candidate: np.ndarray) -> np.ndarray:
         # 目标函数示例：f1=平方和，f2=绝对值和
-        arr = np.asarray(x, dtype=float).reshape(-1)
+        arr = np.asarray(candidate, dtype=float).reshape(-1)
         obj_0 = float(np.sum(arr ** 2))
         obj_1 = float(np.sum(np.abs(arr)))
         return np.array([obj_0, obj_1], dtype=float)
 
-    def evaluate_constraints(self, x: np.ndarray) -> np.ndarray:
+    def evaluate_constraints(self, candidate: np.ndarray) -> np.ndarray:
         # 约束示例：默认无硬约束，返回空向量
-        _ = x
+        _ = candidate
         return np.zeros(0, dtype=float)

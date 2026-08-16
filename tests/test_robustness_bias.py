@@ -16,11 +16,11 @@ def test_robustness_bias_penalizes_high_mc_std():
                 bounds={f"x{i}": (-2.0, 2.0) for i in range(dim)},
             )
 
-        def evaluate(self, x):
-            x = np.asarray(x, dtype=float)
-            base = float(np.sum(x * x))
+        def evaluate(self, candidate):
+            candidate = np.asarray(candidate, dtype=float)
+            base = float(np.sum(candidate * candidate))
             # Noise grows with |x0| -> higher mc_std for candidates with larger |x0|
-            sigma = 0.05 + 0.5 * float(abs(x[0]))
+            sigma = 0.05 + 0.5 * float(abs(candidate[0]))
             noise = np.random.normal(0.0, sigma)
             return base + noise
 
@@ -28,25 +28,28 @@ def test_robustness_bias_penalizes_high_mc_std():
         def __init__(self):
             super().__init__(name="two_candidates")
 
-        def propose(self, solver, context):
+        def propose(self, control, context):
             # low-noise vs high-noise
             return [np.array([0.0, 0.0], dtype=float), np.array([1.5, 0.0], dtype=float)]
+
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
 
     problem = HeteroscedasticNoisySphere()
     bias = BiasModule()
     bias.add(RobustnessBias(weight=0.5, aggregate="mean"))
 
-    solver = ComposableSolver(problem=problem, adapter=TwoCandidatesOnce(), bias_module=bias)
-    solver.max_steps = 1
-    solver.add_plugin(
+    control = ComposableSolver(problem=problem, adapter=TwoCandidatesOnce(), bias_module=bias)
+    control.max_steps = 1
+    control.add_plugin(
         MonteCarloEvaluationProviderPlugin(
             config=MonteCarloEvaluationConfig(mc_samples=64, reduce="mean", random_seed=0)
         )
     )
-    solver.run()
+    control.run()
 
     # Candidate[1] has larger |x0| -> larger noise sigma -> should get larger robustness penalty
-    assert solver.objectives[1, 0] > solver.objectives[0, 0]
+    assert control.objectives[1, 0] > control.objectives[0, 0]
 
 
 def test_robustness_bias_is_noop_without_mc_stats():
@@ -60,9 +63,9 @@ def test_robustness_bias_is_noop_without_mc_stats():
         def __init__(self, dim=2):
             super().__init__(name="sphere", dimension=dim, bounds={f"x{i}": (-1.0, 1.0) for i in range(dim)})
 
-        def evaluate(self, x):
-            x = np.asarray(x, dtype=float)
-            return float(np.sum(x * x))
+        def evaluate(self, candidate):
+            candidate = np.asarray(candidate, dtype=float)
+            return float(np.sum(candidate * candidate))
 
     bias = RobustnessBias(weight=1.0)
     ctx = OptimizationContext(generation=0, individual=np.zeros(2), population=[], metrics={})
@@ -90,27 +93,30 @@ def test_direct_wiring_monte_carlo_robustness_runs():
         def __init__(self, dim=2):
             super().__init__(name="noisy", dimension=dim, bounds={f"x{i}": (-1.0, 1.0) for i in range(dim)})
 
-        def evaluate(self, x):
-            x = np.asarray(x, dtype=float)
+        def evaluate(self, candidate):
+            candidate = np.asarray(candidate, dtype=float)
             noise = np.random.normal(0.0, 0.1)
-            return float(np.sum(x * x) + noise)
+            return float(np.sum(candidate * candidate) + noise)
 
     class Fixed(AlgorithmAdapter):
         def __init__(self):
             super().__init__(name="fixed")
 
-        def propose(self, solver, context):
-            return [np.zeros(solver.dimension) for _ in range(4)]
+        def propose(self, control, context):
+            return [np.zeros(control.dimension) for _ in range(4)]
+
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
 
     bias = BiasModule()
     bias.add(RobustnessBias(weight=0.2))
-    solver = ComposableSolver(problem=NoisySphere(), adapter=Fixed(), bias_module=bias)
-    solver.max_steps = 1
-    solver.add_plugin(
+    control = ComposableSolver(problem=NoisySphere(), adapter=Fixed(), bias_module=bias)
+    control.max_steps = 1
+    control.add_plugin(
         MonteCarloEvaluationProviderPlugin(
             config=MonteCarloEvaluationConfig(mc_samples=8, reduce="mean", random_seed=0)
         )
     )
-    solver.run()
-    assert solver.objectives is not None
+    control.run()
+    assert control.objectives is not None
 

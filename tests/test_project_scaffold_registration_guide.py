@@ -1,36 +1,59 @@
-from nsgablack.project import init_project, run_project_doctor
+from nsgablack.project import add_case, init_project, run_project_doctor
 
 
-def test_init_project_creates_component_registration_guide(tmp_path):
-    root = init_project(tmp_path / "demo_project")
+def _init_case(path):
+    project_root = init_project(path)
+    case_root = add_case("doctor_case", "solver", project_root=project_root)
+    (case_root / ".nsgablack-project").write_text("framework = nsgablack\n", encoding="utf-8")
+    (case_root / "COMPONENT_REGISTRATION.md").write_text(
+        "# Component registration\n\nRegister discoverable Case components in the local Catalog.\n",
+        encoding="utf-8",
+    )
+    contract_dir = case_root / "docs" / "contracts"
+    contract_dir.mkdir(parents=True, exist_ok=True)
+    (contract_dir / "COMPONENT_CONTRACT_TEMPLATE.md").write_text(
+        "# Component contract template\n",
+        encoding="utf-8",
+    )
+    matrix_dir = case_root / "tests" / "templates"
+    matrix_dir.mkdir(parents=True, exist_ok=True)
+    (matrix_dir / "README.md").write_text("# Component test matrix\n", encoding="utf-8")
+    return case_root
+
+
+def _mark_case_root(path):
+    (path / "build_solver.py").write_text(
+        "def build_solver(config=None, *, resource_context=None, component_overrides=None):\n"
+        "    return None\n",
+        encoding="utf-8",
+    )
+
+
+def test_init_project_and_add_case_create_unified_scaffold(tmp_path):
+    root = _init_case(tmp_path / "demo_project")
     guide = root / "COMPONENT_REGISTRATION.md"
     build_solver = root / "build_solver.py"
-    start_here = root / "START_HERE.md"
     marker = root / ".nsgablack-project"
     assert guide.is_file()
     assert build_solver.is_file()
-    assert start_here.is_file()
     assert marker.is_file()
     text = guide.read_text(encoding="utf-8")
     build_solver_py = build_solver.read_text(encoding="utf-8")
-    start_here_text = start_here.read_text(encoding="utf-8")
-    assert "Why register components" in text
-    assert "project_registry.py" in text
-    assert "build_search" in build_solver_py
+    assert "Component registration" in text
     assert "build_solver" in build_solver_py
-    assert "# --- L3" in build_solver_py
-    assert "Define the Core Layers" in start_here_text
-    assert "Wire the Assembly" in start_here_text
+    assert "resource_context" in build_solver_py
+    assert "component_overrides" in build_solver_py
+    assert (root / "pipeline" / "main.py").is_file()
 
 
 def test_init_project_creates_contract_and_test_matrix_templates(tmp_path):
-    root = init_project(tmp_path / "demo_project")
+    root = _init_case(tmp_path / "demo_project")
     assert (root / "docs" / "contracts" / "COMPONENT_CONTRACT_TEMPLATE.md").is_file()
     assert (root / "tests" / "templates" / "README.md").is_file()
 
 
 def test_project_doctor_warns_when_registration_guide_missing(tmp_path):
-    root = init_project(tmp_path / "demo_project")
+    root = _init_case(tmp_path / "demo_project")
     guide = root / "COMPONENT_REGISTRATION.md"
     guide.unlink()
 
@@ -40,7 +63,7 @@ def test_project_doctor_warns_when_registration_guide_missing(tmp_path):
 
 
 def test_project_doctor_warns_when_component_contract_template_missing(tmp_path):
-    root = init_project(tmp_path / "demo_project")
+    root = _init_case(tmp_path / "demo_project")
     path = root / "docs" / "contracts" / "COMPONENT_CONTRACT_TEMPLATE.md"
     path.unlink()
 
@@ -50,7 +73,7 @@ def test_project_doctor_warns_when_component_contract_template_missing(tmp_path)
 
 
 def test_project_doctor_warns_when_component_test_matrix_template_missing(tmp_path):
-    root = init_project(tmp_path / "demo_project")
+    root = _init_case(tmp_path / "demo_project")
     path = root / "tests" / "templates" / "README.md"
     path.unlink()
 
@@ -97,7 +120,7 @@ def test_project_doctor_warns_when_core_contract_keys_missing(tmp_path):
     source = (
         "class DemoAdapter:\n"
         "    context_notes = ('demo',)\n"
-        "    def propose(self, solver, context):\n"
+        "    def propose(self, control, context):\n"
         "        return []\n"
     )
     (adapter_dir / "demo_adapter.py").write_text(source, encoding="utf-8")
@@ -130,6 +153,7 @@ def test_project_doctor_strict_blocks_template_not_implemented(tmp_path):
 
 
 def test_project_doctor_strict_blocks_solver_mirror_writes(tmp_path):
+    _mark_case_root(tmp_path)
     adapter_dir = tmp_path / "adapter"
     adapter_dir.mkdir(parents=True)
     source = (
@@ -151,6 +175,7 @@ def test_project_doctor_strict_blocks_solver_mirror_writes(tmp_path):
 
 
 def test_project_doctor_non_strict_warns_solver_mirror_writes(tmp_path):
+    _mark_case_root(tmp_path)
     adapter_dir = tmp_path / "adapter"
     adapter_dir.mkdir(parents=True)
     source = (
@@ -172,6 +197,7 @@ def test_project_doctor_non_strict_warns_solver_mirror_writes(tmp_path):
 
 
 def test_project_doctor_strict_blocks_runtime_bypass_writes(tmp_path):
+    _mark_case_root(tmp_path)
     adapter_dir = tmp_path / "adapter"
     adapter_dir.mkdir(parents=True)
     source = (
@@ -202,8 +228,8 @@ def test_project_doctor_strict_allows_runtime_api_calls(tmp_path):
         "    context_mutates = ()\n"
         "    context_cache = ()\n"
         "    context_notes = 'ok'\n"
-        "    def update(self, solver):\n"
-        "        solver.write_population_snapshot([[0.0]], [[0.0]], [0.0])\n"
+        "    def update(self, control):\n"
+        "        control.write_population_snapshot([[0.0]], [[0.0]], [0.0])\n"
     )
     (adapter_dir / "demo_adapter_ok.py").write_text(source, encoding="utf-8")
 
@@ -213,6 +239,7 @@ def test_project_doctor_strict_allows_runtime_api_calls(tmp_path):
 
 
 def test_project_doctor_strict_blocks_runtime_private_calls(tmp_path):
+    _mark_case_root(tmp_path)
     adapter_dir = tmp_path / "adapter"
     adapter_dir.mkdir(parents=True)
     source = (
@@ -334,7 +361,7 @@ def test_project_doctor_accepts_examples_using_solver_control_plane_methods(tmp_
 
 
 def test_project_doctor_strict_blocks_missing_metrics_provider(tmp_path):
-    root = init_project(tmp_path / "metrics_project")
+    root = _init_case(tmp_path / "metrics_project")
     (root / "build_solver.py").write_text(
         "from types import SimpleNamespace\n"
         "\n"
@@ -372,7 +399,7 @@ def test_project_doctor_strict_blocks_missing_metrics_provider(tmp_path):
 
 
 def test_project_doctor_allows_requires_metrics_with_explicit_fallback(tmp_path):
-    root = init_project(tmp_path / "metrics_fallback_project")
+    root = _init_case(tmp_path / "metrics_fallback_project")
     (root / "build_solver.py").write_text(
         "from types import SimpleNamespace\n"
         "\n"
@@ -409,7 +436,7 @@ def test_project_doctor_allows_requires_metrics_with_explicit_fallback(tmp_path)
 
 
 def test_project_doctor_does_not_treat_notes_as_metrics_fallback(tmp_path):
-    root = init_project(tmp_path / "metrics_notes_only_project")
+    root = _init_case(tmp_path / "metrics_notes_only_project")
     (root / "build_solver.py").write_text(
         "from types import SimpleNamespace\n"
         "\n"
@@ -487,7 +514,7 @@ def test_project_doctor_strict_blocks_nonliteral_metrics_fallback(tmp_path):
 
 
 def test_project_doctor_strict_blocks_invalid_metrics_fallback_in_build_solver(tmp_path):
-    root = init_project(tmp_path / "metrics_bad_fallback_project")
+    root = _init_case(tmp_path / "metrics_bad_fallback_project")
     (root / "build_solver.py").write_text(
         "from types import SimpleNamespace\n"
         "\n"
@@ -526,7 +553,7 @@ def test_project_doctor_strict_blocks_invalid_metrics_fallback_in_build_solver(t
 
 
 def test_project_doctor_strict_blocks_process_like_algorithm_as_bias(tmp_path):
-    root = init_project(tmp_path / "process_like_bias_project")
+    root = _init_case(tmp_path / "process_like_bias_project")
     (root / "build_solver.py").write_text(
         "from types import SimpleNamespace\n"
         "\n"
@@ -572,7 +599,7 @@ def test_project_doctor_strict_blocks_process_like_algorithm_as_bias(tmp_path):
 
 
 def test_project_doctor_does_not_flag_normal_bias_as_process_like(tmp_path):
-    root = init_project(tmp_path / "normal_bias_project")
+    root = _init_case(tmp_path / "normal_bias_project")
     (root / "build_solver.py").write_text(
         "from types import SimpleNamespace\n"
         "\n"
@@ -615,7 +642,7 @@ def test_project_doctor_does_not_flag_normal_bias_as_process_like(tmp_path):
 
 
 def test_project_doctor_strict_blocks_redis_key_prefix_without_project_token(tmp_path):
-    root = init_project(tmp_path / "redis_guard_project")
+    root = _init_case(tmp_path / "redis_guard_project")
     (root / "build_solver.py").write_text(
         "from types import SimpleNamespace\n"
         "\n"
@@ -638,7 +665,7 @@ def test_project_doctor_strict_blocks_redis_key_prefix_without_project_token(tmp
 
 
 def test_project_doctor_warns_when_redis_ttl_policy_is_implicit(tmp_path):
-    root = init_project(tmp_path / "redis_ttl_policy_project")
+    root = _init_case(tmp_path / "redis_ttl_policy_project")
     (root / "build_solver.py").write_text(
         "from types import SimpleNamespace\n"
         "\n"
@@ -661,7 +688,7 @@ def test_project_doctor_warns_when_redis_ttl_policy_is_implicit(tmp_path):
 
 
 def test_project_doctor_strict_blocks_framework_component_missing_catalog_entry(tmp_path):
-    root = init_project(tmp_path / "framework_catalog_guard_project")
+    root = _init_case(tmp_path / "framework_catalog_guard_project")
     (root / "build_solver.py").write_text(
         "from types import SimpleNamespace\n"
         "\n"
@@ -689,7 +716,7 @@ def test_project_doctor_strict_blocks_framework_component_missing_catalog_entry(
 
 
 def test_project_doctor_reports_unregistered_project_components_as_info(tmp_path):
-    root = init_project(tmp_path / "project_unregistered_component_info")
+    root = _init_case(tmp_path / "project_unregistered_component_info")
     (root / "build_solver.py").write_text(
         "from types import SimpleNamespace\n"
         "\n"
@@ -783,7 +810,7 @@ def test_project_doctor_warns_large_object_context_write(tmp_path):
 
 
 def test_project_doctor_warns_snapshot_ref_unreadable(tmp_path):
-    root = init_project(tmp_path / "snapshot_ref_consistency_project")
+    root = _init_case(tmp_path / "snapshot_ref_consistency_project")
     (root / "build_solver.py").write_text(
         "class DemoSolver:\n"
         "    def __init__(self):\n"
@@ -818,7 +845,7 @@ def test_project_doctor_warns_snapshot_ref_unreadable(tmp_path):
 
 
 def test_project_doctor_warns_snapshot_payload_shape_mismatch(tmp_path):
-    root = init_project(tmp_path / "snapshot_payload_integrity_project")
+    root = _init_case(tmp_path / "snapshot_payload_integrity_project")
     (root / "build_solver.py").write_text(
         "class DemoSolver:\n"
         "    def __init__(self):\n"

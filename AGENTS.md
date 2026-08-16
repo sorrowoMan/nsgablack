@@ -16,6 +16,12 @@
 - 不得因为“已经判断出根因”或“只差最后一步”而直接落代码
 - 若用户只是在讨论机制、诊断病因、比较路线，默认仍视为**未授权改代码**
 
+文档语言规则（新增）：
+
+- 教程与介绍类文档默认以**中文**为主版本（尤其 `docs/standard_scaffold_tutorial`）。
+- 英文版本允许保留，但必须另起独立文件（如 `*_EN.md`），不得覆盖中文主文档。
+- 若新增章节，先补中文主文档，再按需要补英文版。
+
 ---
 
 ## 1) 项目定位（第一原则）
@@ -40,7 +46,11 @@
 
 统一分工：
 
-- `nsgablack` 负责外层控制、搜索、编排、solver lifecycle、multi-objective/Pareto、nested evaluation、L0 resource scheduling。
+- `nsgablack` 和 `mlblack` 共享统一的 Project / Case / Scaffold / L0 substrate。编排属于 substrate，不属于任一语义层的私有能力。
+- 所有标准 Case 都可以作为外层或内层；外层 Case 通过 `evaluate()`、stage runner 或 project runner 短路调用内层标准脚手架。
+- 所有标准 Case 都可以声明资源需求；只有 Project-level L0 substrate 发放 `ResourceContext` grant。Case-level `runtime/` 只负责 requirement/profile/audit，不直接拥有全局 lease。
+
+- `nsgablack` 负责优化搜索语义：solver lifecycle、candidate search、multi-objective/Pareto、adapter strategy、objective/constraint optimization。
 - `mlblack` 负责 ML 语义组件、DataView、Spec、Codec、Head、Problem、Trainer、Provider、Artifact、backend capability。
 - 外部 domain backend（数值求解器、仿真器、数据库、向量索引、对象存储、Ray/K8s/云服务）只能通过正式 bridge/provider/runtime surface 接入，不应污染两边核心职责。
 
@@ -52,8 +62,6 @@
 - 属于 cross-framework scaffold：通过两边正式脚手架 surface 组合，而不是在 example 里私接胶水。
 
 硬规则：
-
-- 不允许为单个模型族或机制私造 `mlblack Workflow/Runtime`；如果需要阶段、并行、外层搜索或资源编排，应上升到 `nsgablack`。
 - 不允许 `nsgablack` 硬编码 `mlblack` trainer/provider 内部细节；只能通过 `component_overrides`、inner task payload、`ResourceContext`、artifact/result payload 通信。
 - PINN、Neural ODE、时序、多模态、符号学习、推荐、科学计算等能力必须综合考虑 `nsgablack + mlblack` 的统一分工，不能只在一个仓库里局部堆实现。
 
@@ -64,7 +72,7 @@ Projects must follow a three-layer structure: Project -> Case -> Standard Scaffo
 ### 1.2.1 Three layers
 
 1. **Project**
-   - Owns cross-case orchestration, resource allocation, and the top-level run entry.
+   - Coordinates cross-case orchestration, resource allocation, and the top-level run entry.
    - Contains `run_project.py`, `project_config.py`, and `cases/`.
 
 2. **Case**
@@ -250,7 +258,9 @@ Collaboration rules:
 ### 6.1 Adapter API（必备）
 
 - `propose(self, solver, context) -> Sequence[np.ndarray]`
-- `update(self, solver, candidates, objectives, violations, context) -> None`
+- `update(self, solver, candidates, feedback, context) -> None`
+
+其中 `feedback` 的正式形态为 `(objectives, violations)`；不再支持拆分参数的旧签名。
 
 建议实现：
 
@@ -391,11 +401,11 @@ Collaboration rules:
 
 跨框架 L0 资源边界：
 
-- `mlblack` L0 owns intra-evaluation compute backend.
-- `nsgablack` L0 owns inter-solver and outer-evaluation resource scheduling.
-- When nested, `mlblack` L0 must obey the `ResourceContext` injected by `nsgablack` L0.
-- `nsgablack` 只负责把外层授权、设备池、solver fanout 和 outer evaluation budget 注入为资源上下文；不得把 mlblack 内部 trainer/proxy 的业务 backend 细节硬编码进 nsgablack 示例。
-- 跨框架项目必须通过正式 scaffold surface 传递 `ResourceContext`，不能在 example/case 文件里私下改写 `cuda:0`、线程数或 inner backend。
+- Project L0 is the authority for resource authorization, lease, fanout limits, worker namespace, and effective `ResourceContext`.
+- nsgablack/mlblack standard cases may declare requirements and component intents; they do not directly allocate global resources.
+- When nested, child cases must obey the parent-derived `ResourceContext`.
+- `nsgablack` 只负责优化搜索语义；不得把 mlblack 内部 trainer/proxy 的业务 backend 细节硬编码进 nsgablack 示例。
+- 跨框架项目必须通过正式 scaffold surface 传递 `ResourceContext`，不能在 example/case 文件里私下改写逻辑设备 token、线程数或 inner backend。
 - 跨框架运行入口必须在命令行与 summary/runtime_state 中打印“生效后的资源上下文、启用组件、后端与命名空间”，避免出现“配置存在但不可审计”的黑盒状态。
 
 ---

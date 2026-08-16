@@ -9,10 +9,10 @@ class BrokenConstraintProblem(BlackBoxProblem):
         bounds = {f"x{i}": (-5, 5) for i in range(dimension)}
         super().__init__(dimension=dimension, objectives=["minimize"], bounds=bounds)
 
-    def evaluate(self, x):
-        return float(np.sum(np.asarray(x, dtype=float) ** 2))
+    def evaluate(self, candidate):
+        return float(np.sum(np.asarray(candidate, dtype=float) ** 2))
 
-    def evaluate_constraints(self, x):
+    def evaluate_constraints(self, candidate):
         raise RuntimeError("constraint failure")
 
 

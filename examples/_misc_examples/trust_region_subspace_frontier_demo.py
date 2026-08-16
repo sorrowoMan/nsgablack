@@ -1,4 +1,4 @@
-"""MIGRATED to examples/cases/ �� see scaffold case for maintained version."""
+﻿"""MIGRATED to examples/cases/ - see scaffold case for maintained version."""
 from __future__ import annotations
 
 import numpy as np
@@ -14,9 +14,9 @@ class HighDimProblem:
         self.dimension = int(dimension)
         self.bounds = [(-5.0, 5.0)] * self.dimension
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        return float(np.sum(x * x))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        return float(np.sum(candidate * candidate))
 
 
 def build_solver():
@@ -39,11 +39,12 @@ def build_solver():
 def main():
     solver = build_solver()
     result = solver.run(max_generations=40, seed=7)
-    print("运行状�?", result.get("status"))
+    print("杩愯鐘舵€?", result.get("status"))
     print("best_objective:", result.get("best_objective"))
 
 
 if __name__ == "__main__":
     main()
+
 
 

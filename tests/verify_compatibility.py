@@ -19,13 +19,13 @@ class SimpleProblem:
         self.dimension = 2
         self.bounds = [(0, 1), (0, 1)]
 
-    def evaluate(self, x):
-        """目标函数：x[0]^2 + x[1]^2"""
-        return x[0]**2 + x[1]**2
+    def evaluate(self, candidate):
+        """目标函数：candidate[0]^2 + candidate[1]^2"""
+        return candidate[0]**2 + candidate[1]**2
 
-    def evaluate_constraints(self, x):
-        """约束：x[0] + x[1] <= 1"""
-        return np.array([x[0] + x[1] - 1])
+    def evaluate_constraints(self, candidate):
+        """约束：candidate[0] + candidate[1] <= 1"""
+        return np.array([candidate[0] + candidate[1] - 1])
 
 
 def test_bias_module_import():
@@ -199,8 +199,8 @@ def test_solver_integration():
             def __init__(self):
                 super().__init__(name="test", dimension=2, bounds=[(0, 1), (0, 1)])
 
-            def evaluate(self, x):
-                return x[0]**2 + x[1]**2
+            def evaluate(self, candidate):
+                return candidate[0]**2 + candidate[1]**2
 
         # 创建问题和求解器
         problem = TestProblem()

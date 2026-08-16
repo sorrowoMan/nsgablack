@@ -29,4 +29,4 @@ Bias 不等于“作弊”。Bias 是你把偏好、软约束、搜索倾向写�
 - 偏置系统入口/索引：`docs/indexes/BIAS_INDEX.md`
 - 信号驱动偏置规范：`docs/user_guide/signal_driven_bias.md`
 - 偏置实现：`bias/`
-- 真实用法：`WORKFLOW_END_TO_END.md`
+- 真实用法：`docs/standard_scaffold_tutorial/02_component_configuration.md`

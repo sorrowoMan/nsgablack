@@ -14,9 +14,9 @@ class _TwoObjectiveSphere(BlackBoxProblem):
     def get_num_objectives(self):
         return 2
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        return np.asarray([np.sum((x - 1.0) ** 2), np.sum((x + 1.0) ** 2)], dtype=float)
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        return np.asarray([np.sum((candidate - 1.0) ** 2), np.sum((candidate + 1.0) ** 2)], dtype=float)
 
 
 def _grid_neighbors(state, _context):
@@ -40,7 +40,7 @@ def test_astar_adapter_smoke_run(sample_problem):
     solver = ComposableSolver(problem=sample_problem, adapter=adapter)
     solver.set_max_steps(12)
     result = solver.run()
-    assert result["status"] == "completed"
+    assert result["status"] == "ok"
     assert solver.best_objective is not None
 
 
@@ -59,7 +59,7 @@ def test_astar_adapter_contract_propose_update_and_checkpoint_roundtrip(sample_p
     assert candidates
     pop = np.asarray(candidates, dtype=float)
     objectives, violations = solver.evaluate_population(pop)
-    adapter.update(solver, candidates, objectives, violations, context)
+    adapter.update(solver, candidates, (objectives, violations), context)
 
     state = adapter.get_state()
     clone = AStarAdapter(
@@ -105,7 +105,7 @@ def test_moa_star_adapter_smoke_and_checkpoint_roundtrip():
     solver = ComposableSolver(problem=problem, adapter=adapter)
     solver.set_max_steps(8)
     result = solver.run()
-    assert result["status"] == "completed"
+    assert result["status"] == "ok"
 
     state = adapter.get_state()
     clone = MOAStarAdapter(

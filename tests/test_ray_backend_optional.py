@@ -16,9 +16,9 @@ def test_parallel_evaluator_ray_backend_smoke():
         dimension = 3
         bounds = {f"x{i}": (-5.0, 5.0) for i in range(dimension)}
 
-        def evaluate(self, x):
-            x = np.asarray(x, dtype=float)
-            return float(np.sum(x * x))
+        def evaluate(self, candidate):
+            candidate = np.asarray(candidate, dtype=float)
+            return float(np.sum(candidate * candidate))
 
         def get_num_objectives(self):
             return 1

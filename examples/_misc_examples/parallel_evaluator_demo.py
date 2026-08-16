@@ -20,9 +20,9 @@ class Sphere(BlackBoxProblem):
         self.low = low
         self.high = high
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        return float(np.sum(x * x))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        return float(np.sum(candidate * candidate))
 
 
 def main():

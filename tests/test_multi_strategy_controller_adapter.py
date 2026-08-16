@@ -1,4 +1,4 @@
-﻿import numpy as np
+import numpy as np
 
 
 def test_multi_strategy_controller_runs_and_broadcasts_shared_state(sample_problem):
@@ -145,16 +145,19 @@ def test_multi_strategy_phase_and_region_tasks_are_dispatched(sample_problem):
                     super().__init__(name=nm)
                     self.outer = outer
 
-                def propose(self, solver, context):
+                def propose(self, control, context):
                     task = context.get("task", {})
                     self.outer.last_tasks.append(task)
                     # simple proposals using pipeline helpers
                     k = int(task.get("budget", 1))
                     out = []
                     for _ in range(max(1, k)):
-                        x = solver.init_candidate(context)
-                        out.append(solver.mutate_candidate(x, context))
+                        x = control.init_candidate(context)
+                        out.append(control.mutate_candidate(x, context))
                     return out
+
+                def update(self, control, candidates, feedback, context):
+                    _ = (control, candidates, feedback, context)
 
             self.adapter = _A(self, name)
             self.last_tasks = []
@@ -183,16 +186,16 @@ def test_multi_strategy_phase_and_region_tasks_are_dispatched(sample_problem):
     )
     controller = StrategyRouterAdapter(roles=roles, config=cfg)
 
-    solver = ComposableSolver(problem=sample_problem, adapter=controller, representation_pipeline=pipeline)
-    solver.max_steps = 5
-    solver.run()
+    control = ComposableSolver(problem=sample_problem, adapter=controller, representation_pipeline=pipeline)
+    control.max_steps = 5
+    control.run()
 
-    ctx = solver.get_context()
+    ctx = control.get_context()
     shared = ctx.get("shared", {}) or {}
     assert shared.get("phase") in {"explore", "exploit"}
     assert isinstance(shared.get("regions"), list)
     assert len(shared["regions"]) == 4
-    ctx = solver.get_context()
+    ctx = control.get_context()
     unit_tasks = ctx.get("unit_tasks")
     assert isinstance(unit_tasks, dict)
     # verify some task contains phase/region/seeds keys

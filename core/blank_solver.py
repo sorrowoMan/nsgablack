@@ -15,7 +15,12 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 from .acceleration import AccelerationFacade, ExecutionResult
 from .acceleration_helpers import maybe_accel_map, maybe_accel_run
 from .config import StorageConfig, _apply_storage_config
-from .control_plane import BaseController, ControlArbiter, RuntimeController
+from .control_plane import (
+    BaseController,
+    ControlArbiter,
+    EvaluationBudgetExceeded,
+    RuntimeController,
+)
 from .evaluation_runtime import EvaluationMediator, EvaluationMediatorConfig, EvaluationProvider
 from .runtime_governance import (
     AdaptiveParametersConfig,
@@ -28,6 +33,14 @@ from .runtime_governance import (
 
 import numpy as np
 
+from blackbase.resources import (
+    BudgetAccount,
+    BudgetClaim,
+    ResourceContext,
+    SharedBudgetExceeded,
+    coerce_resource_context,
+)
+
 from .base import BlackBoxProblem
 from .interfaces import (
     BiasInterface,
@@ -35,7 +48,6 @@ from .interfaces import (
     has_bias_module,
     has_numba,
     load_bias_module,
-    load_representation_pipeline,
 )
 from .solver_helpers import (
     ComponentDependencyScheduler,
@@ -109,6 +121,7 @@ class SolverBase:
         ignore_constraint_violation_when_bias: bool = False,
         plugin_strict: bool = False,
         snapshot_strict: bool = False,
+        resource_context: Optional[Mapping[str, Any] | ResourceContext] = None,
         # ----------------------------------------------------------------
         # Preferred: pass a single StorageConfig instead of the flat args.
         # If storage_config is provided, its fields override the flat args.
@@ -155,6 +168,12 @@ class SolverBase:
             snapshot_schema = _sc.get("snapshot_schema", snapshot_schema)
         # Keep reference so callers can introspect / rebuild config.
         self._storage_config = storage_config
+
+        self._resource_context_explicit = resource_context is not None
+        self.resource_context = coerce_resource_context(
+            resource_context if resource_context is not None else {"scope": "optimization"}
+        )
+        self.case_runtime: Any | None = None
 
         self.problem = problem
         self.dimension = problem.dimension
@@ -211,6 +230,10 @@ class SolverBase:
 
         self.generation = 0
         self.evaluation_count = 0
+        self._evaluation_budget = BudgetAccount.from_resource_context(
+            "evaluations",
+            self.resource_context,
+        )
         self.running = False
         self.stop_requested = False
         self.max_steps = 1
@@ -274,6 +297,98 @@ class SolverBase:
 
     def set_snapshot_store(self, store: SnapshotStore) -> None:
         self.snapshot_store = store
+
+    def set_resource_context(
+        self,
+        context: Optional[Mapping[str, Any] | ResourceContext],
+    ) -> "SolverBase":
+        """Consume the Project L0 grant without allocating resources locally."""
+
+        with self._evaluation_budget.locked():
+            if self._evaluation_budget.active_claim_count > 0:
+                raise RuntimeError(
+                    "cannot replace ResourceContext while evaluation budget reservations are active"
+                )
+            self._resource_context_explicit = context is not None
+            self.resource_context = coerce_resource_context(
+                context if context is not None else {"scope": "optimization"}
+            )
+            self._evaluation_budget = BudgetAccount.from_resource_context(
+                "evaluations",
+                self.resource_context,
+            )
+        self._apply_resource_context_to_runtime()
+        return self
+
+    def shared_evaluation_budget_status(self) -> Optional[Dict[str, Any]]:
+        """Return the current Project-wide evaluation budget audit view."""
+
+        status = self._evaluation_budget.shared_status()
+        if status is None:
+            return None
+        return dict(status.as_dict())
+
+    @property
+    def evaluation_budget_reserved(self) -> int:
+        """Return unconsumed units held by active evaluation claims."""
+
+        return int(self._evaluation_budget.active_reserved)
+
+    def reset_evaluation_budget(self) -> None:
+        """Cancel every unfinished claim before starting a fresh run."""
+
+        self._evaluation_budget.cancel_all()
+
+    def get_resource_context(self) -> ResourceContext:
+        return self.resource_context
+
+    def set_case_runtime(self, runtime: Any) -> "SolverBase":
+        """Accept the shared Case runtime without importing Project internals."""
+
+        self.case_runtime = runtime
+        return self
+
+    def checkpoint_case_runtime(self) -> None:
+        runtime = self.case_runtime
+        checkpoint = getattr(runtime, "checkpoint", None)
+        if callable(checkpoint):
+            checkpoint()
+
+    def get_resource_context_items(self) -> Dict[str, Any]:
+        payload = self.resource_context.as_dict()
+        return {
+            "resource_context": payload,
+            **self.resource_context.context_items(prefix="resource"),
+        }
+
+    def limit_workers_by_resource_context(self, requested: Optional[int]) -> Optional[int]:
+        """Cap a Case-local worker request by the Project grant when one exists."""
+
+        if not bool(self._resource_context_explicit):
+            return requested
+        granted = max(1, int(self.resource_context.threads or 1))
+        if requested is None:
+            return granted
+        return max(1, min(int(requested), granted))
+
+    def _apply_resource_context_to_runtime(self) -> None:
+        cfg = getattr(self, "_parallel_cfg", None)
+        if not isinstance(cfg, dict):
+            return
+        requested = getattr(self, "_parallel_requested_max_workers", cfg.get("max_workers"))
+        cfg["max_workers"] = self.limit_workers_by_resource_context(requested)
+        extra_context = dict(cfg.get("extra_context") or {})
+        extra_context.update(self.get_resource_context_items())
+        cfg["extra_context"] = extra_context
+        evaluator = getattr(self, "parallel_evaluator", None)
+        if evaluator is not None:
+            if hasattr(evaluator, "max_workers"):
+                evaluator.max_workers = cfg["max_workers"]
+            if hasattr(evaluator, "extra_context"):
+                evaluator.extra_context = dict(extra_context)
+        nested = getattr(self, "nested_parallel_evaluator", None)
+        if nested is not None and hasattr(nested, "max_workers"):
+            nested.max_workers = cfg["max_workers"]
 
     def set_context_store_backend(
         self,
@@ -378,17 +493,11 @@ class SolverBase:
 
     @property
     def representation_pipeline(self) -> Optional[RepresentationInterface]:
-        if self._representation_internal is not None:
-            return self._representation_internal
-        if not hasattr(self, "_representation_cached"):
-            self._representation_cached = load_representation_pipeline()
-        return self._representation_cached
+        return self._representation_internal
 
     @representation_pipeline.setter
     def representation_pipeline(self, value: Optional[RepresentationInterface]) -> None:
         self._representation_internal = value
-        if value is not None and hasattr(self, "_representation_cached"):
-            delattr(self, "_representation_cached")
 
     def enable_bias_module(self, enable: bool = True) -> None:
         self.enable_bias = enable
@@ -456,10 +565,8 @@ class SolverBase:
                 f"Plugin '{plugin_name}' order constraints invalid: {exc}"
             ) from exc
         
-        attach_success = False
         try:
             plugin.attach(self)
-            attach_success = True
         except Exception as exc:
             error_msg = f"Plugin '{plugin_name}' attach failed: {exc}"
             
@@ -485,36 +592,9 @@ class SolverBase:
                     f"Plugin '{plugin_name}' registered but attach failed. "
                     f"It will be skipped during lifecycle hooks. Error: {exc}"
                 )
-        
-        # Call on_solver_init only if attach succeeded
-        if attach_success:
-            try:
-                if hasattr(plugin, "on_solver_init"):
-                    plugin.on_solver_init(self)
-            except Exception as exc:
-                strict_init = bool(getattr(plugin, "raise_on_init_error", False)) or bool(
-                    getattr(plugin, "strict_init", False)
-                )
-                if strict_init:
-                    raise
-                try:
-                    import warnings
 
-                    warnings.warn(
-                        f"Plugin '{plugin_name}' init failed: {exc}",
-                        RuntimeWarning,
-                        stacklevel=2,
-                    )
-                except Exception as warn_exc:
-                    report_soft_error(
-                        component="SolverBase",
-                        event="plugin_init_warning_emit",
-                        exc=warn_exc,
-                        logger=logger,
-                        context_store=self.context_store,
-                        strict=False,
-                        level="debug",
-                    )
+        # Registration/attachment is assembly-time work.  ``on_solver_init`` is
+        # a run lifecycle hook and is dispatched exactly once by ``run()``.
         
         return self
 
@@ -678,6 +758,120 @@ class SolverBase:
 
     def register_controller(self, controller: BaseController) -> None:
         self.runtime_controller.register_controller(controller)
+
+    def evaluation_batch_allowance(
+        self,
+        requested: int,
+        *,
+        context: Optional[Mapping[str, Any]] = None,
+    ) -> int:
+        """Return the controller-approved size for one evaluation batch."""
+        requested_count = int(requested)
+        if requested_count < 0:
+            raise ValueError("requested evaluation count must be non-negative")
+        with self._evaluation_budget.locked():
+            ctx = dict(context) if context is not None else dict(self.build_context())
+            ctx["evaluation_count"] = int(self.evaluation_count) + int(
+                self._evaluation_budget.active_reserved
+            )
+            local_limit = int(
+                self.runtime_controller.evaluation_allowance(
+                    self,
+                    requested=requested_count,
+                    context=ctx,
+                )
+            )
+            return self._evaluation_budget.allowance(
+                requested_count,
+                local_limit=local_limit,
+            )
+
+    def reserve_evaluation_batch(
+        self,
+        requested: int,
+        *,
+        context: Optional[Mapping[str, Any]] = None,
+    ) -> BudgetClaim:
+        """Atomically reserve hard-budget capacity before evaluation starts."""
+        requested_count = int(requested)
+        if requested_count < 0:
+            raise ValueError("requested evaluation count must be non-negative")
+        with self._evaluation_budget.locked():
+            allowed = self.evaluation_batch_allowance(requested_count, context=context)
+            if allowed < requested_count:
+                raise EvaluationBudgetExceeded(
+                    "evaluation request exceeds the remaining hard budget: "
+                    f"requested={requested_count}, allowed={allowed}, "
+                    f"evaluation_count={int(self.evaluation_count)}"
+                )
+            try:
+                return self._evaluation_budget.reserve(requested_count)
+            except SharedBudgetExceeded as exc:
+                raise EvaluationBudgetExceeded(str(exc)) from exc
+
+    def complete_evaluation_batch(
+        self,
+        claim: BudgetClaim,
+    ) -> None:
+        """Close a claim after every dispatched unit has been consumed."""
+
+        self._evaluation_budget.complete(claim)
+
+    def consume_evaluation_batch(
+        self,
+        claim: BudgetClaim,
+        amount: int = 1,
+    ) -> None:
+        """Commit units immediately before evaluation work is dispatched."""
+
+        consumed_now = int(amount)
+        if consumed_now < 0:
+            raise ValueError("consumed evaluation count must be non-negative")
+        if consumed_now == 0:
+            return
+        with self._evaluation_budget.locked():
+            self._evaluation_budget.consume(claim, consumed_now)
+            self.increment_evaluation_count(consumed_now)
+
+    def cancel_evaluation_batch(
+        self,
+        claim: BudgetClaim,
+    ) -> None:
+        """Release capacity after a failed or cancelled evaluation batch."""
+
+        self._evaluation_budget.cancel(claim)
+
+    def _evaluate_population_with_budget_retry(
+        self,
+        population: Any,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, bool]:
+        """Converge a lifecycle-owned batch after losing a shared-budget race.
+
+        Direct ``evaluate_population`` calls remain strict. Solver lifecycle
+        code may use this helper to shrink a batch to the newly visible global
+        allowance or stop cleanly when another Case won the final units.
+        """
+
+        current = np.asarray(population, dtype=float)
+        if current.ndim == 1:
+            current = current.reshape(1, -1) if current.size else current.reshape(0, self.dimension)
+        truncated = False
+        while int(current.shape[0]) > 0:
+            try:
+                objectives, violations = self.evaluate_population(current)
+                return current, objectives, violations, truncated
+            except EvaluationBudgetExceeded:
+                allowed = self.evaluation_batch_allowance(int(current.shape[0]))
+                if allowed >= int(current.shape[0]):
+                    raise
+                truncated = True
+                current = current[: max(0, int(allowed))]
+        return (
+            np.empty((0, int(self.dimension)), dtype=float),
+            np.empty((0, int(self.num_objectives)), dtype=float),
+            np.empty((0,), dtype=float),
+            truncated,
+        )
 
     def register_evaluation_provider(self, provider: EvaluationProvider) -> None:
         self.evaluation_mediator.register_provider(provider)
@@ -865,16 +1059,28 @@ class SolverBase:
     # ------------------------------------------------------------------
     def init_candidate(self, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         pipeline = self.representation_pipeline
-        initializer = getattr(pipeline, "initializer", None) if pipeline is not None else None
+        initializer = None
+        if pipeline is not None:
+            initializer = getattr(pipeline, "initializer", None)
+            if initializer is None:
+                initializer = getattr(pipeline, "_initializer", None)
         if pipeline is not None and initializer is not None:
-            cand = pipeline.init(self.problem, context)
+            init_fn = getattr(pipeline, "initialize", None)
+            if not callable(init_fn):
+                init_fn = getattr(pipeline, "init", None)
+            cand = init_fn(self.problem, context) if callable(init_fn) else self._random_candidate()
         else:
             cand = self._random_candidate()
         return normalize_candidate(cand, dimension=self.dimension, name="init_candidate")
 
     def mutate_candidate(self, x: np.ndarray, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         pipeline = self.representation_pipeline
-        if pipeline is not None and getattr(pipeline, "mutator", None) is not None:
+        mutator = None
+        if pipeline is not None:
+            mutator = getattr(pipeline, "mutator", None)
+            if mutator is None:
+                mutator = getattr(pipeline, "_mutator", None)
+        if pipeline is not None and mutator is not None:
             out = pipeline.mutate(x, context)
         else:
             out = x
@@ -883,7 +1089,11 @@ class SolverBase:
     def repair_candidate(self, x: np.ndarray, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         pipeline = self.representation_pipeline
         if pipeline is not None and getattr(pipeline, "repair", None) is not None:
-            out = pipeline.repair_one(x, context)
+            repair_one = getattr(pipeline, "repair_one", None)
+            if callable(repair_one):
+                out = repair_one(x, context)
+            else:
+                out = pipeline.repair(x, context)
         else:
             out = x
         return normalize_candidate(out, dimension=self.dimension, name="repair_candidate")
@@ -924,13 +1134,28 @@ class SolverBase:
         context: Optional[Dict[str, Any]] = None,
     ) -> np.ndarray:
         size = int(pop_size or getattr(self, "pop_size", 0) or self.max_steps)
+        if evaluate:
+            size = self.evaluation_batch_allowance(size, context=context)
         population = []
         for _ in range(size):
             population.append(self.init_candidate(context))
-        self.population = stack_population(population, name="initialize_population.population")
+        if population:
+            self.population = stack_population(
+                population,
+                name="initialize_population.population",
+            )
+        else:
+            self.population = np.empty((0, int(self.dimension)), dtype=float)
 
         if evaluate:
-            self.objectives, self.constraint_violations = self.evaluate_population(self.population)
+            (
+                self.population,
+                self.objectives,
+                self.constraint_violations,
+                budget_truncated,
+            ) = self._evaluate_population_with_budget_retry(self.population)
+            if budget_truncated and int(self.population.shape[0]) == 0:
+                self.request_stop()
             self.plugin_manager.on_population_init(
                 self.population, self.objectives, self.constraint_violations
             )
@@ -1094,6 +1319,8 @@ class SolverBase:
             history=history,
             decision_trace=decision_trace,
         )
+        # Cancellation/deadline must win before a durable snapshot commit.
+        self.checkpoint_case_runtime()
         try:
             handle = store.write(
                 payload,
@@ -1211,6 +1438,10 @@ class SolverBase:
         self.random_seed = None if seed is None else int(seed)
         self._rng = np.random.default_rng(self.random_seed)
         self._rng_streams = {}
+        representation = getattr(self, "representation_pipeline", None)
+        representation_seed = getattr(representation, "set_random_seed", None)
+        if callable(representation_seed):
+            representation_seed(self.random_seed)
         if self.random_seed is not None:
             try:
                 random.seed(self.random_seed)
@@ -1359,11 +1590,65 @@ class SolverBase:
             logger=logger,
         )
 
+    def _dispatch_error_once(
+        self,
+        error: BaseException,
+        *,
+        phase: Optional[str] = None,
+        context: Optional[Mapping[str, Any]] = None,
+    ) -> None:
+        """Dispatch one lifecycle error at most once across nested boundaries."""
+
+        if bool(getattr(error, "_nsgablack_error_dispatched", False)):
+            return
+        try:
+            setattr(error, "_nsgablack_error_dispatched", True)
+        except Exception:
+            pass
+        if phase and not getattr(error, "_nsgablack_error_phase", None):
+            try:
+                setattr(error, "_nsgablack_error_phase", str(phase))
+            except Exception:
+                pass
+        try:
+            error_context = dict(self.build_context() or {})
+        except Exception:
+            error_context = {}
+        error_context.update(dict(context or {}))
+        error_phase = getattr(error, "_nsgablack_error_phase", None)
+        if error_phase:
+            error_context["error_phase"] = str(error_phase)
+        error_context.update(
+            dict(getattr(error, "_nsgablack_error_context", {}) or {})
+        )
+        manager = getattr(self, "plugin_manager", None)
+        on_error = getattr(manager, "on_error", None)
+        if callable(on_error):
+            on_error(error, error_context)
+
     def evaluate_individual(self, x: np.ndarray, individual_id: Optional[int] = None) -> Tuple[np.ndarray, float]:
-        return evaluate_individual_with_plugins_and_bias(self, x, individual_id)
+        try:
+            self.checkpoint_case_runtime()
+            result = evaluate_individual_with_plugins_and_bias(self, x, individual_id)
+            self.checkpoint_case_runtime()
+            return result
+        except BaseException as exc:
+            self._dispatch_error_once(
+                exc,
+                phase="evaluate_individual",
+                context={"individual_id": individual_id},
+            )
+            raise
 
     def evaluate_population(self, population: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        return evaluate_population_with_plugins_and_bias(self, population)
+        try:
+            self.checkpoint_case_runtime()
+            result = evaluate_population_with_plugins_and_bias(self, population)
+            self.checkpoint_case_runtime()
+            return result
+        except BaseException as exc:
+            self._dispatch_error_once(exc, phase="evaluate_population")
+            raise
 
     def _apply_bias(
         self,

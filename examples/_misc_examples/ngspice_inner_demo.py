@@ -13,9 +13,9 @@ class NgspiceOuterProblem(BlackBoxProblem):
     def __init__(self) -> None:
         super().__init__(name="ngspice_outer_demo", dimension=1, bounds={"x0": (-5.0, 5.0)})
 
-    def evaluate(self, x):
+    def evaluate(self, candidate):
         # Outer direct evaluate is bypassed by problem.inner_runtime_evaluator.
-        _ = x
+        _ = candidate
         return 1e9
 
     def build_inner_problem(self, x, eval_context):
@@ -38,9 +38,12 @@ class FixedAdapter(AlgorithmAdapter):
     def __init__(self) -> None:
         super().__init__(name="fixed_adapter")
 
-    def propose(self, solver, context):
-        _ = (solver, context)
+    def propose(self, control, context):
+        _ = (control, context)
         return [np.array([2.0], dtype=float)]
+
+    def update(self, control, candidates, feedback, context):
+        _ = (control, candidates, feedback, context)
 
 
 def build_solver() -> ComposableSolver:

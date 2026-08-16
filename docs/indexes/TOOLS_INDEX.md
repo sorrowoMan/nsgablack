@@ -55,4 +55,4 @@ python -m nsgablack catalog show adapter.sa
 - Core（稳定承诺）：`core/`、`representation/`、`bias/`、`utils/`、`catalog/`
 - 历史/实验内容：本仓库已清理相关目录以降低维护成本；如需追溯请查看 git 历史
 
-边界说明见：`docs/CORE_STABILITY.md`
+边界说明见：`docs/project/CORE_STABILITY.md`

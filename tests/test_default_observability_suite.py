@@ -11,8 +11,8 @@ class _ToyProblem(BlackBoxProblem):
     def __init__(self):
         super().__init__(name="toy", dimension=2, bounds=[(-1.0, 1.0), (-1.0, 1.0)])
 
-    def evaluate(self, x):
-        arr = np.asarray(x, dtype=float)
+    def evaluate(self, candidate):
+        arr = np.asarray(candidate, dtype=float)
         return float(np.sum(arr * arr))
 
 

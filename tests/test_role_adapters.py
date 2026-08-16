@@ -8,13 +8,16 @@ def test_role_adapter_contract_strict_requires_keys():
         def __init__(self):
             super().__init__(name="dummy")
 
-        def propose(self, solver, context):
+        def propose(self, control, context):
             return []
+
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
 
     role = RoleAdapter(
         "tester",
         Dummy(),
-        requires_context_keys=("need_this",),
+        context_requires=("need_this",),
         strict_contract=True,
     )
 
@@ -37,25 +40,31 @@ def test_multi_role_controller_adapter_runs_with_composable_solver():
             super().__init__(name="sphere", dimension=dim, bounds={f"x{i}": (low, high) for i in range(dim)})
             self.low, self.high = low, high
 
-        def evaluate(self, x):
-            x = np.asarray(x, dtype=float)
-            return float(np.sum(x * x))
+        def evaluate(self, candidate):
+            candidate = np.asarray(candidate, dtype=float)
+            return float(np.sum(candidate * candidate))
 
     class Explorer(AlgorithmAdapter):
         def __init__(self):
             super().__init__(name="explorer_inner")
 
-        def propose(self, solver, context):
-            return [solver.mutate_candidate(solver.init_candidate(context), context) for _ in range(8)]
+        def propose(self, control, context):
+            return [control.mutate_candidate(control.init_candidate(context), context) for _ in range(8)]
+
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
 
     class Exploiter(AlgorithmAdapter):
         def __init__(self):
             super().__init__(name="exploiter_inner")
 
-        def propose(self, solver, context):
-            if solver.best_x is None:
-                return [solver.init_candidate(context) for _ in range(8)]
-            return [solver.mutate_candidate(solver.best_x, context) for _ in range(8)]
+        def propose(self, control, context):
+            if control.best_x is None:
+                return [control.init_candidate(context) for _ in range(8)]
+            return [control.mutate_candidate(control.best_x, context) for _ in range(8)]
+
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
 
     problem = Sphere()
     pipeline = RepresentationPipeline(
@@ -71,12 +80,12 @@ def test_multi_role_controller_adapter_runs_with_composable_solver():
         ]
     )
 
-    solver = ComposableSolver(problem=problem, adapter=controller, representation_pipeline=pipeline)
-    solver.max_steps = 5
-    result = solver.run()
+    control = ComposableSolver(problem=problem, adapter=controller, representation_pipeline=pipeline)
+    control.max_steps = 5
+    result = control.run()
 
-    assert result["status"] in {"completed", "stopped"}
-    assert solver.best_objective is not None
-    ctx = solver.get_context()
+    assert result["status"] in {"ok", "stopped"}
+    assert control.best_objective is not None
+    ctx = control.get_context()
     assert isinstance(ctx.get("candidate_roles"), list)
     assert isinstance(ctx.get("role_reports"), dict)

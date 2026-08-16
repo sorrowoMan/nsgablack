@@ -52,10 +52,10 @@ class ExpensiveSphere(BlackBoxProblem):
         bounds = {f"x{i}": [-5.0, 5.0] for i in range(dim)}
         super().__init__(name="expensive_sphere", dimension=dim, bounds=bounds, objectives=["min"])
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
         # keep it deterministic and quick; pretend this is expensive
-        return float(np.sum(x * x))
+        return float(np.sum(candidate * candidate))
 
 
 def _build_solver(*, enable_surrogate: bool, out_dir: str, run_id: str) -> ComposableSolver:

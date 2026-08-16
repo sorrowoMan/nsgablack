@@ -1,4 +1,4 @@
-"""MIGRATED to examples/cases/ �� see scaffold case for maintained version."""
+﻿"""MIGRATED to examples/cases/ - see scaffold case for maintained version."""
 from __future__ import annotations
 
 import numpy as np
@@ -15,10 +15,10 @@ class SymmetricMOProblem:
         self.dimension = int(dimension)
         self.bounds = [(-2.0, 2.0)] * self.dimension
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        f1 = float(np.sum(x * x))
-        f2 = float(np.sum((x + 0.5) ** 2))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        f1 = float(np.sum(candidate * candidate))
+        f2 = float(np.sum((candidate + 0.5) ** 2))
         return np.array([f1, f2], dtype=float)
 
 
@@ -47,12 +47,13 @@ def build_solver():
 def main():
     solver = build_solver()
     result = solver.run(max_generations=40, seed=7)
-    print("运行状�?", result.get("status"))
+    print("杩愯鐘舵€?", result.get("status"))
     print("best_objective:", result.get("best_objective"))
 
 
 if __name__ == "__main__":
     main()
+
 
 
 

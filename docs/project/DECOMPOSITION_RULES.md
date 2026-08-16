@@ -1,4 +1,4 @@
-# 算法拆解原则（Adapter / Plugin / Bias / Pipeline / Wiring）
+﻿# 算法拆解原则（Adapter / Plugin / Bias / Pipeline / Wiring）
 
 这一页是“可快速查找”的总纲：你不需要记住所有文件在哪，但需要记住**拆解边界**与**配套规则**，这样无论你怎么拆，都不会把系统拆坏。
 
@@ -58,9 +58,11 @@
 
 ## 5. 更细的工程检查清单
 
-如果你要“按规范落地一个新拆解算法”，用这份逐项 checklist：
+如果你要“按规范落地一个新拆解算法”，优先按这些入口逐项检查：
 
-- `docs/development/DECOMPOSITION_CHECKLIST.md`
+- `docs/user_guide/EXTENSION_CONTRACTS.md`
+- `docs/standard_scaffold_tutorial/04_validation_catalog_and_evolution.md`
+- `docs/project/AUTHORITATIVE_EXAMPLES.md`
 
 
 ## 6. Catalog 搜索的中英文支持（开发约定）

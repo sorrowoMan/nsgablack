@@ -7,9 +7,16 @@ Orthogonal to Adapter-level orchestration (serial_strategy, multi_strategy).
 
 from __future__ import annotations
 
+import inspect
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Mapping, Optional
+
+from blackbase.context import (
+    GENERIC_SNAPSHOT_SCHEMA,
+    unwrap_snapshot_payload,
+    wrap_snapshot_payload,
+)
 
 from ..utils.context.context_events import record_context_event
 from ..utils.context.context_keys import (
@@ -91,6 +98,9 @@ class ArtifactRef:
                 f"Artifact '{self.key}' not found at uri '{self.uri}'"
             )
         payload = record.data if hasattr(record, "data") else record
+        payload = unwrap_snapshot_payload(payload)
+        if isinstance(payload, Mapping) and set(payload) == {"data"}:
+            return payload["data"]
         return payload
 
 
@@ -154,6 +164,7 @@ class StageRunner:
         context_store: Optional[Any] = None,
         snapshot_store: Optional[Any] = None,
         global_metadata: Optional[Dict[str, Any]] = None,
+        resource_context: Optional[Mapping[str, Any]] = None,
         strict: bool = False,
     ) -> None:
         self._stages: List[StageSpec] = [s for s in stages if s.enabled]
@@ -163,6 +174,7 @@ class StageRunner:
         self._context_store = context_store
         self._snapshot_store = snapshot_store
         self._global_metadata = dict(global_metadata or {})
+        self._resource_context = dict(resource_context or {})
         self._strict = bool(strict)
         self._results: List[Dict[str, Any]] = []
 
@@ -196,7 +208,7 @@ class StageRunner:
     def _run_single_stage(
         self, stage: StageSpec, stage_index: int, stage_total: int
     ) -> Dict[str, Any]:
-        solver = stage.factory()
+        solver = self._build_stage_solver(stage)
 
         # 1. Inject stage metadata into solver context
         self._inject_stage_meta(solver, stage, stage_index, stage_total)
@@ -209,17 +221,18 @@ class StageRunner:
 
         # 4. Run
         start_time = time.time()
-        result = self._run_solver(solver, stage)
+        try:
+            result = self._run_solver(solver, stage)
+
+            # 5. Extract declared output artifacts
+            self._extract_artifacts(solver, stage, stage_index)
+
+            # 6. Record stage_complete event
+            self._record_stage_event(solver, stage, stage_index, "stage_complete")
+        except BaseException:
+            self._record_stage_event(solver, stage, stage_index, "stage_error")
+            raise
         elapsed = time.time() - start_time
-
-        # 5. Extract declared output artifacts
-        self._extract_artifacts(solver, stage, stage_index)
-
-        # 6. Record stage_complete event
-        self._record_stage_event(solver, stage, stage_index, "stage_complete")
-
-        # 7. Teardown solver safely
-        self._safe_teardown(solver)
 
         return {
             "stage_name": stage.name,
@@ -232,6 +245,22 @@ class StageRunner:
         }
 
     # -- solver lifecycle ------------------------------------------------
+
+    def _build_stage_solver(self, stage: StageSpec) -> Any:
+        factory = stage.factory
+        kwargs: Dict[str, Any] = {}
+        try:
+            signature = inspect.signature(factory)
+        except (TypeError, ValueError):
+            signature = None
+        if signature is not None and "resource_context" in signature.parameters:
+            kwargs["resource_context"] = dict(self._resource_context)
+        solver = factory(**kwargs)
+        if not kwargs and self._resource_context:
+            setter = getattr(solver, "set_resource_context", None)
+            if callable(setter):
+                setter(dict(self._resource_context))
+        return solver
 
     def _run_solver(self, solver: Any, stage: StageSpec) -> Dict[str, Any]:
         """Detect and run the solver/trainer. Supports run(), fit(), or step loop."""
@@ -255,21 +284,29 @@ class StageRunner:
             raw = solver.run()
             return dict(raw) if isinstance(raw, (dict, Mapping)) else {"raw": raw}
 
-        # step-loop path: manually iterate
+        # run()/fit() own their complete lifecycle.  For a bare step-only
+        # object StageRunner owns setup/teardown because no lifecycle entrypoint
+        # exists.
         if has_step:
-            start_time = time.time()
-            step = 0
-            while True:
-                if solver.stop_requested if hasattr(solver, "stop_requested") else False:
-                    break
-                ctx: Dict[str, Any] = {}
-                if stage.completion.is_complete(
-                    step=step, elapsed=time.time() - start_time, solver=solver, ctx=ctx
-                ):
-                    break
-                solver.step()
-                step += 1
-            return {"steps": step}
+            setup = getattr(solver, "setup", None)
+            if callable(setup):
+                setup()
+            try:
+                start_time = time.time()
+                step = 0
+                while True:
+                    if solver.stop_requested if hasattr(solver, "stop_requested") else False:
+                        break
+                    ctx: Dict[str, Any] = {}
+                    if stage.completion.is_complete(
+                        step=step, elapsed=time.time() - start_time, solver=solver, ctx=ctx
+                    ):
+                        break
+                    solver.step()
+                    step += 1
+                return {"steps": step}
+            finally:
+                self._safe_teardown(solver)
 
         raise RuntimeError(
             f"Stage '{stage.name}' solver has no run(), fit(), or step()"
@@ -394,9 +431,9 @@ class StageRunner:
                         snap_key = f"stage_{stage_index}.{artifact_key}"
                         try:
                             handle = self._snapshot_store.write(
-                                {"data": attr},
+                                wrap_snapshot_payload(attr),
                                 key=snap_key,
-                                schema="artifact_v1",
+                                schema=GENERIC_SNAPSHOT_SCHEMA,
                             )
                             ref = ArtifactRef(
                                 key=artifact_key,
@@ -508,6 +545,7 @@ class SerialStageSolver:
         artifact_registry: Optional[Dict[str, ArtifactRef]] = None,
         context_store: Optional[Any] = None,
         snapshot_store: Optional[Any] = None,
+        resource_context: Optional[Mapping[str, Any]] = None,
         strict: bool = False,
         accepted_parent_contracts: Optional[tuple[str, ...]] = None,
     ) -> None:
@@ -516,6 +554,7 @@ class SerialStageSolver:
         self._artifact_registry = dict(artifact_registry or {})
         self.context_store = context_store
         self.snapshot_store = snapshot_store
+        self.resource_context = dict(resource_context or {})
         self._strict = bool(strict)
         self.accepted_parent_contracts = tuple(
             accepted_parent_contracts or ("outer.default",)
@@ -534,8 +573,12 @@ class SerialStageSolver:
             context_store=self.context_store,
             snapshot_store=self.snapshot_store,
             global_metadata={"solver_name": self.name},
+            resource_context=self.resource_context,
             strict=self._strict,
         )
+
+    def set_resource_context(self, context: Optional[Mapping[str, Any]]) -> None:
+        self.resource_context = dict(context or {})
 
     def step(self) -> None:
         self.step_count += 1

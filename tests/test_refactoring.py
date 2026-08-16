@@ -12,8 +12,8 @@ class SimpleTestProblem(BlackBoxProblem):
     def __init__(self):
         super().__init__(name="SimpleTest", dimension=2)
 
-    def evaluate(self, x):
-        return [x[0] ** 2 + x[1] ** 2]
+    def evaluate(self, candidate):
+        return [candidate[0] ** 2 + candidate[1] ** 2]
 
 
 class MockBiasModule:

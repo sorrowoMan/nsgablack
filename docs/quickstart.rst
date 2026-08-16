@@ -1,35 +1,40 @@
 Quickstart
 ==========
 
-This project intentionally keeps the top-level namespace small.
-The recommended workflow is:
+The current recommended workflow is the standard Project / Case / Scaffold /
+L0 substrate.
 
-- discover wiring via :code:`python -m nsgablack catalog ...`
-- use :code:`ComposableSolver + Wiring + Plugin` as the main path
+Read first
+----------
+
+- ``docs/standard_scaffold_tutorial/README.md``
+- ``docs/standard_scaffold_tutorial/01_create_and_run.md``
 
 Install
 -------
 
-From source (recommended for development)::
+From source::
 
    git clone https://github.com/sorrowoMan/nsgablack.git
    cd nsgablack
    pip install -e .
 
-First Run (Authoritative)
+Create a standard project
 -------------------------
 
-1) Read the end-to-end walkthrough:
+::
 
-- :code:`WORKFLOW_END_TO_END.md` (repo root)
+   python -m nsgablack project new my_project
+   cd my_project
+   python -m nsgablack project add-case my_case --type solver
+   python -m nsgablack project doctor --path . --build --strict
+   python run_project.py
 
-2) Run a runnable demo (creates unified CSV + summary JSON outputs)::
+Discover components
+-------------------
 
-   python examples/end_to_end_workflow_demo.py
+::
 
-3) Discover components::
-
-   python -m nsgablack catalog search vns
-   python -m nsgablack catalog search plugin
-   python -m nsgablack catalog show adapter.moead
-
+   python -m nsgablack catalog search vns --profile framework-core
+   python -m nsgablack catalog search plugin --profile framework-core
+   python -m nsgablack catalog show adapter.moead --profile framework-core

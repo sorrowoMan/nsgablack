@@ -8,11 +8,11 @@
 
 1) 手把手总入口（强烈推荐）
 
-- `docs/ALGORITHM_DECOMPOSITION_HANDS_ON.md`
+- `docs/guides/ALGORITHM_DECOMPOSITION_HANDS_ON.md`
 
 2) 手把手落地真实问题（强烈推荐）
 
-- `WORKFLOW_END_TO_END.md`
+- `docs/standard_scaffold_tutorial/01_create_and_run.md`
 
 3) 五个解耦对象导读（你会越用越依赖）
 
@@ -24,7 +24,7 @@
 
 4) 权威示例（参数命名/组合方式事实标准）
 
-- `docs/AUTHORITATIVE_EXAMPLES.md`
+- `docs/project/AUTHORITATIVE_EXAMPLES.md`
 
 5) 案例（当你需要“像真实业务”的东西）
 

@@ -84,7 +84,7 @@ solver.add_plugin(ParetoArchivePlugin())  # optional
 两者可以叠加：
 
 - 多策略：用 `ComposableSolver + StrategyRouterAdapter`
-- 并行：用 `with_parallel_evaluation(ComposableSolver)` 或在 wiring 中装配并行能力
+- 并行：正式项目通过 Project L0 发放 `ResourceContext`，Case 内 wiring 消费 grant；本地 `with_parallel_evaluation(...)` 仅作为单 Case 调试/兼容 helper
 
 并行评估的详细用法见：`docs/user_guide/parallel_evaluation.md`
 

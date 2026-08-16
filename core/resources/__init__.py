@@ -1,12 +1,36 @@
-"""L0 resource, task and worker orchestration surface.
+"""Stable nsgablack L0 surface backed by the shared blackbase substrate."""
 
-This package is the stable import surface for nsgablack L0 concepts. The
-legacy lease primitives still live in ``core.solver_manager`` for backward
-compatibility; this module re-exports them and adds the missing task/worker
-protocol objects.
-"""
-
-from __future__ import annotations
+from blackbase.resources import (
+    ClaimedTask,
+    DataRef,
+    InMemoryLeaseStore,
+    InMemoryResourceScheduler,
+    InMemoryWorkerRegistry,
+    ResourceAllocator,
+    ResourceBudgetError,
+    ResourceLease,
+    ResourceOffer,
+    ResourcePolicy,
+    ResourceRequest,
+    ResourceRequirement,
+    RedisTaskTransport,
+    ScheduledTask,
+    TaskEnvelope,
+    TaskResult,
+    TaskLeaseError,
+    TaskRecord,
+    TaskTransport,
+    TaskTransportError,
+    WorkerDescriptor,
+    ResourceContext,
+    ResourceEvent,
+    ResourceAudit,
+    coerce_resource_context,
+    detect_total_memory_mb,
+    detect_cuda_devices,
+    detect_local_resource_offer,
+    build_local_worker_descriptor,
+)
 
 from .backends import (
     ArtifactBackend,
@@ -39,7 +63,6 @@ from .backends import (
     task_from_json,
     task_to_json,
 )
-from .backends_s3 import S3ArtifactBackend
 from .backends_postgres import (
     PostgresL0RuntimeBackend,
     PostgresTaskQueueBackend,
@@ -47,79 +70,73 @@ from .backends_postgres import (
     PostgresTaskStateBackend,
     PostgresWorkerRegistryBackend,
 )
-from .model import (
-    DataRef,
-    InMemoryResourceScheduler,
-    InMemoryWorkerRegistry,
-    ResourceRequirement,
-    ScheduledTask,
-    TaskEnvelope,
-    TaskResult,
-    WorkerDescriptor,
-)
-from .compute.pool import PoolScheduler, PoolTask, PoolResult
-from .probe import (
-    build_local_worker_descriptor,
-    detect_cuda_devices,
-    detect_local_resource_offer,
-    detect_total_memory_mb,
-)
-from .storage.lease import (
-    InMemoryLeaseStore,
-    InMemoryMessageQueue,
-    ResourceAllocator,
-    ResourceBudgetError,
-    ResourceEvent,
-    ResourceLease,
-    ResourceOffer,
-    ResourcePolicy,
-    ResourceRequest,
-    SQLiteLeaseStore,
-    SQLiteMessageQueue,
-)
+from .backends_s3 import S3ArtifactBackend
+from .compute.pool import PoolResult, PoolScheduler, PoolTask, PoolTaskResult
+from ..solver_manager import InMemoryMessageQueue, SQLiteLeaseStore, SQLiteMessageQueue
 
 __all__ = [
+    "ClaimedTask",
     "ArtifactBackend",
     "ArtifactDataTransportBackend",
-    "S3ArtifactBackend",
-    "DataTransportBackend",
     "DataRef",
+    "DataTransportBackend",
     "FilesystemArtifactBackend",
     "InMemoryArtifactBackend",
     "InMemoryL0RuntimeBackend",
+    "InMemoryLeaseStore",
+    "InMemoryMessageQueue",
     "InMemoryResourceScheduler",
     "InMemoryTaskQueueBackend",
     "InMemoryTaskResultBackend",
     "InMemoryTaskStateBackend",
-    "InMemoryWorkerRegistryBackend",
     "InMemoryWorkerRegistry",
+    "InMemoryWorkerRegistryBackend",
     "InlineDataTransportBackend",
     "L0RuntimeBackend",
+    "PoolResult",
     "PoolScheduler",
     "PoolTask",
-    "PoolResult",
+    "PoolTaskResult",
     "PostgresL0RuntimeBackend",
     "PostgresTaskQueueBackend",
     "PostgresTaskResultBackend",
     "PostgresTaskStateBackend",
     "PostgresWorkerRegistryBackend",
     "RedisL0RuntimeBackend",
+    "RedisTaskTransport",
     "RedisTaskQueueBackend",
     "RedisTaskResultBackend",
     "RedisTaskStateBackend",
     "RedisWorkerRegistryBackend",
+    "ResourceAllocator",
+    "ResourceAudit",
+    "ResourceBudgetError",
+    "ResourceContext",
+    "ResourceEvent",
+    "ResourceLease",
+    "ResourceOffer",
+    "ResourcePolicy",
+    "ResourceRequest",
     "ResourceRequirement",
+    "S3ArtifactBackend",
     "ScheduledTask",
+    "SQLiteLeaseStore",
+    "SQLiteMessageQueue",
     "TASK_ENVELOPE_SCHEMA",
     "TASK_RESULT_SCHEMA",
     "TaskEnvelope",
+    "TaskLeaseError",
     "TaskQueueBackend",
     "TaskResult",
+    "TaskRecord",
+    "TaskTransport",
+    "TaskTransportError",
     "TaskResultBackend",
     "TaskStateBackend",
     "WorkerDescriptor",
     "WorkerRegistryBackend",
     "build_local_worker_descriptor",
+    "coerce_resource_context",
     "detect_cuda_devices",
     "detect_local_resource_offer",
     "detect_total_memory_mb",
@@ -129,15 +146,4 @@ __all__ = [
     "result_to_json",
     "task_from_json",
     "task_to_json",
-    "ResourceAllocator",
-    "ResourceBudgetError",
-    "ResourceEvent",
-    "ResourceLease",
-    "ResourceOffer",
-    "ResourcePolicy",
-    "ResourceRequest",
-    "InMemoryLeaseStore",
-    "InMemoryMessageQueue",
-    "SQLiteLeaseStore",
-    "SQLiteMessageQueue",
 ]

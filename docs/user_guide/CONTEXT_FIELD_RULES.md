@@ -1,7 +1,7 @@
 ﻿# Context 字段命名与新增规则
 
-> context_field_schema_name: context_field_schema  
-> context_field_schema_version: 2
+> context_field_schema_name: blackbase.context_field.v1  
+> context_field_schema_version: 1.0.0
 
 本规范用于约束 Context 字段治理，避免同义字段漂移、隐式写入和不可审计状态。
 
@@ -97,7 +97,7 @@ This document defines hard governance rules for Context key lifecycle and compat
 
 ## Versioning
 
-- `context_field_schema_name = context_field_schema`
-- `context_field_schema_version = 2`
+- `context_field_schema_name = blackbase.context_field.v1`
+- `context_field_schema_version = 1.0.0`
 
 When semantics break compatibility, bump schema version and provide migration guidance.

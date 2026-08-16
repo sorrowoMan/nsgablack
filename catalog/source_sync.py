@@ -78,7 +78,9 @@ def _marker_meta(class_node: ast.ClassDef) -> tuple[bool, str | None]:
 def _is_scaffold_project_root(root: Path) -> bool:
     req_files = ("project_registry.py", "build_solver.py")
     req_dirs = ("problem", "pipeline", "bias", "adapter", "plugins")
-    return all((root / f).is_file() for f in req_files) and all((root / d).is_dir() for d in req_dirs)
+    legacy = all((root / f).is_file() for f in req_files) and all((root / d).is_dir() for d in req_dirs)
+    unified = (root / "project_config.py").is_file() and (root / "run_project.py").is_file() and (root / "cases").is_dir()
+    return legacy or unified
 
 
 def _is_framework_root(root: Path) -> bool:
@@ -307,15 +309,16 @@ def _build_template_block(kind: str, class_name: str) -> tuple[list[str], str]:
             "        # TODO(中/EN): 设置稳定适配器名 / set a stable adapter name.\n"
             f'        super().__init__(name="{class_name.lower()}")\n'
             "\n"
-            "    def propose(self, solver, context):\n"
+            "    def propose(self, control, context):\n"
             "        # TODO(中/EN): 生成候选解 / generate candidate solutions.\n"
-            "        _ = solver\n"
+            "        _ = control\n"
             "        _ = context\n"
             "        raise NotImplementedError\n"
             "\n"
-            "    def update(self, solver, candidates, objectives, violations, context):\n"
+            "    def update(self, control, candidates, feedback, context):\n"
+            "        objectives, violations = feedback\n"
             "        # TODO(中/EN): 用评估反馈更新状态 / update state with evaluation feedback.\n"
-            "        _ = solver\n"
+            "        _ = control\n"
             "        _ = candidates\n"
             "        _ = objectives\n"
             "        _ = violations\n"

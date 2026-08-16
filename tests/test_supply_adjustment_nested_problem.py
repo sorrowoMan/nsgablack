@@ -7,7 +7,18 @@ import numpy as np
 
 
 def _case_dir() -> Path:
-    return Path(__file__).resolve().parents[1] / "examples" / "cases" / "supply_adjustment_nested"
+    return (
+        Path(__file__).resolve().parents[1]
+        / "examples"
+        / "cases"
+        / "supply_adjustment_nested"
+        / "cases"
+        / "supply_adjustment_nested"
+    )
+
+
+def _production_case_dir() -> Path:
+    return _case_dir().parents[2] / "production_scheduling" / "cases" / "production_scheduling"
 
 
 def _import_case_modules():
@@ -51,7 +62,7 @@ def test_supply_shift_cap_prefers_small_day_gap_moves():
     problem = SupplyEventShiftProblem(
         base_supply=supply,
         bom_matrix=np.ones((1, 1), dtype=float),
-        production_case_dir=_case_dir().parent / "production_scheduling",
+        production_case_dir=_production_case_dir(),
         max_moved_events=2,
     )
 
@@ -69,7 +80,7 @@ def test_supply_adjustment_audit_reports_step_gap_metrics():
     problem = SupplyEventShiftProblem(
         base_supply=supply,
         bom_matrix=np.ones((1, 1), dtype=float),
-        production_case_dir=_case_dir().parent / "production_scheduling",
+        production_case_dir=_production_case_dir(),
         max_moved_events=100,
     )
 
@@ -97,7 +108,7 @@ def test_supply_adjustment_problem_keeps_l0_resource_requirements():
     problem = SupplyEventShiftProblem(
         base_supply=supply,
         bom_matrix=np.ones((1, 1), dtype=float),
-        production_case_dir=_case_dir().parent / "production_scheduling",
+        production_case_dir=_production_case_dir(),
         inner_solver_cfg=cfg,
         outer_task_requirement=outer_req,
         inner_resource_requirement=inner_req,

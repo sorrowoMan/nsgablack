@@ -24,9 +24,9 @@ class SimpleSphere(BlackBoxProblem):
             bounds=[(-10, 10)] * dimension
         )
 
-    def evaluate(self, x):
-        """Sphere函数：f(x) = sum(x^2)。"""
-        return np.sum(x**2)
+    def evaluate(self, candidate):
+        """Sphere函数：f(candidate) = sum(candidate^2)。"""
+        return np.sum(candidate**2)
 
 
 class SimpleRastrigin(BlackBoxProblem):
@@ -39,10 +39,10 @@ class SimpleRastrigin(BlackBoxProblem):
             bounds=[(-5.12, 5.12)] * dimension
         )
 
-    def evaluate(self, x):
+    def evaluate(self, candidate):
         """Rastrigin函数。"""
         A = 10
-        return A * len(x) + np.sum(x**2 - A * np.cos(2 * np.pi * x))
+        return A * len(candidate) + np.sum(candidate**2 - A * np.cos(2 * np.pi * candidate))
 
 
 class TestBlackBoxProblem:

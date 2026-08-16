@@ -66,6 +66,7 @@ def with_parallel_evaluation(
                 enabled = enable_parallel_evaluation
             self.enable_parallel_evaluation = bool(enabled)
             self.parallel_evaluator: Optional[ParallelEvaluator] = None
+            self._parallel_requested_max_workers = parallel_max_workers
             self._parallel_cfg = {
                 "backend": parallel_backend,
                 "max_workers": parallel_max_workers,
@@ -82,6 +83,9 @@ def with_parallel_evaluation(
                 "context_builder": parallel_context_builder,
                 "extra_context": parallel_extra_context,
             }
+            apply_resources = getattr(self, "_apply_resource_context_to_runtime", None)
+            if callable(apply_resources):
+                apply_resources()
 
         def _ensure_parallel_evaluator(self) -> Optional[ParallelEvaluator]:
             if not self.enable_parallel_evaluation:

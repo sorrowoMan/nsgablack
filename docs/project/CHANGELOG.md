@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to this project will be documented in this file.
 
@@ -14,7 +14,7 @@ The format is based on Keep a Changelog, and this project aims to follow SemVer.
 - Fixed baseline benchmark runner (`benchmarks/fixed_baseline_runner.py`) and evidence protocol doc.
 - Repro package builder (`tools/release/make_v010_repro_package.py`).
 - Run Inspector Context regression tests (`tests/test_context_view_flow.py`).
-- `docs/development/DEVELOPER_CONVENTIONS.md`：State Governance + RNG 规范 + Bias 统一 apply 规则。
+- State Governance + RNG 规范 + Bias 统一 apply 规则已收敛到 `docs/project/CORE_STABILITY.md`、`docs/user_guide/CONTEXT_CONTRACTS.md` 和 `docs/user_guide/CONTEXT_FIELD_RULES.md`。
 - `docs/concepts/CONTEXT_SCHEMA.md`：修复乱码，重写为可读中文。
 
 ### Changed

@@ -54,8 +54,8 @@ class ShiftedSphereProblem(BlackBoxProblem):
             objectives=['shifted_sphere'],
         )
 
-    def evaluate(self, x):
-        arr = np.asarray(x, dtype=float)
+    def evaluate(self, candidate):
+        arr = np.asarray(candidate, dtype=float)
         return float(np.sum((arr - 2.0) ** 2))
 
 

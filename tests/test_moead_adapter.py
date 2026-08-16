@@ -20,10 +20,10 @@ def test_moead_adapter_runs_and_updates_archive():
             )
             self.low, self.high = low, high
 
-        def evaluate(self, x):
-            x = np.asarray(x, dtype=float)
-            f1 = float(np.sum(x * x))
-            f2 = float(np.sum((x - 2.0) ** 2))
+        def evaluate(self, candidate):
+            candidate = np.asarray(candidate, dtype=float)
+            f1 = float(np.sum(candidate * candidate))
+            f2 = float(np.sum((candidate - 2.0) ** 2))
             return np.array([f1, f2], dtype=float)
 
     problem = BiSphere()

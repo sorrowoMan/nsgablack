@@ -7,7 +7,7 @@ Use this as the definitive map for import paths and stable entrypoints.
 
 ## 1) Core solver entrypoints
 
-- `core/solver.py`
+- `core/evolution_solver.py`
   - `EvolutionSolver`
 - `core/composable_solver.py`
   - `ComposableSolver`

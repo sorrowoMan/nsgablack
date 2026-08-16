@@ -1,33 +1,27 @@
 # START_HERE
 
-## 1) 这个 case 验证什么
+`shap` ????? Project / Case / Scaffold / L0 substrate?
 
-`shap` 验证 Kernel SHAP 可以作为 black-box attribution optimization problem。
-
-- nsgablack 搜索 attribution vector `phi`。
-- prediction model 只要暴露 `predict`，可以来自 mlblack 或 scikit-learn。
-- 当前 runtime path 中 mlblack 只是 optional upstream。
-
-指标、结构、mlblack 状态、analytical baseline 和能力信号见 `README.md`。
-
-## 2) 验证 assembly
+## 1) ???????
 
 ```powershell
-python run_solver.py --check
+python examples/cases/shap/run_project.py --check
 ```
 
-## 3) 运行
+## 2) ??? Project ??
 
 ```powershell
-python run_solver.py
+python examples/cases/shap/run_project.py
 ```
 
-## 4) 关键指标
+## 3) ??????
 
-| 指标 | 含义 |
-|---|---|
-| weighted reconstruction error | sampled coalitions 上的 Shapley-kernel-weighted error。 |
+- Project ???? Case ?????????????
+- Case ??????? `build_solver.py` / `run_solver.py` surface?
+- `ResourceContext` ? Project L0 grant???? Case ???
 
-## 5) 预期信号
+## 4) ????
 
-有效运行应该接近 closed-form weighted least-squares solution，并产生稳定的 feature attribution ranking。
+- `README.md`????????
+- `cases/shap/README.md`?? Case ????????
+- `cases/shap/START_HERE.md`?Case ?????

@@ -31,8 +31,8 @@ class Sphere(BlackBoxProblem):
         self.low = float(low)
         self.high = float(high)
 
-    def evaluate(self, x):
-        arr = np.asarray(x, dtype=float)
+    def evaluate(self, candidate):
+        arr = np.asarray(candidate, dtype=float)
         return float(np.sum(arr * arr))
 
 

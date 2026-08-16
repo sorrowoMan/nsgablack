@@ -17,9 +17,22 @@ from .base import BlackBoxProblem
 from .blank_solver import SolverBase
 from .composable_solver import ComposableSolver
 from .config import StorageConfig, _apply_storage_config
-from .control_plane import BaseController, ControlArbiter, ControlDecision, RuntimeController
+from .control_plane import (
+    BaseController,
+    BudgetController,
+    ControlArbiter,
+    ControlDecision,
+    EvaluationBudgetExceeded,
+    RuntimeController,
+    StopController,
+)
 from .evolution_solver import EvolutionSolver
-from .evaluation_runtime import EvaluationMediator, EvaluationMediatorConfig, EvaluationProvider
+from .evaluation_runtime import (
+    EvaluationMediator,
+    EvaluationMediatorConfig,
+    EvaluationProvider,
+    EvaluationProviderContractError,
+)
 from .nested_solver import (
     InnerRuntimeConfig,
     InnerRuntimeEvaluator,
@@ -113,12 +126,16 @@ __all__ = [
     "VisualizationInterface",
     "PluginInterface",
     "BaseController",
+    "BudgetController",
     "ControlDecision",
     "ControlArbiter",
+    "EvaluationBudgetExceeded",
     "RuntimeController",
+    "StopController",
     "EvaluationMediator",
     "EvaluationMediatorConfig",
     "EvaluationProvider",
+    "EvaluationProviderContractError",
     "InnerSolveRequest",
     "InnerSolveResult",
     "InnerRuntimeEvaluator",

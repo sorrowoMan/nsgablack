@@ -25,8 +25,8 @@ class SimpleProblem(BlackBoxProblem):
         super().__init__(dimension=2, bounds=[(-1, 1), (-1, 1)])
         self.name = "SimpleProblem"
     
-    def evaluate(self, x: np.ndarray) -> np.ndarray:
-        return np.array([np.sum(x**2)])
+    def evaluate(self, candidate: np.ndarray) -> np.ndarray:
+        return np.array([np.sum(candidate**2)])
     
     def get_num_objectives(self) -> int:
         return 1
@@ -97,12 +97,13 @@ class FixedAdapter(AlgorithmAdapter):
         super().__init__("fixed_adapter")
         self.n_candidates = int(n_candidates)
 
-    def propose(self, solver: Any, context: Dict[str, Any]):
+    def propose(self, control: Any, context: Dict[str, Any]):
         _ = context
-        return [np.zeros((solver.dimension,), dtype=float) for _ in range(self.n_candidates)]
+        return [np.zeros((control.dimension,), dtype=float) for _ in range(self.n_candidates)]
 
-    def update(self, solver: Any, candidates, objectives, violations, context):
-        _ = (solver, candidates, objectives, violations, context)
+    def update(self, control: Any, candidates, feedback, context):
+        objectives, violations = feedback
+        _ = (control, candidates, objectives, violations, context)
         return None
 
 
@@ -114,11 +115,11 @@ class FaultyProblem(BlackBoxProblem):
         self.name = "FaultyProblem"
         self.eval_count = 0
     
-    def evaluate(self, x: np.ndarray) -> np.ndarray:
+    def evaluate(self, candidate: np.ndarray) -> np.ndarray:
         self.eval_count += 1
         if self.eval_count % 3 == 0:
             raise RuntimeError(f"Simulated failure at eval {self.eval_count}")
-        return np.array([np.sum(x**2)])
+        return np.array([np.sum(candidate**2)])
     
     def get_num_objectives(self) -> int:
         return 1

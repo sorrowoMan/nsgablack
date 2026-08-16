@@ -38,9 +38,9 @@ class SimpleSphereProblem(BlackBoxProblem):
         self.low = low
         self.high = high
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        return float(np.sum(x ** 2))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        return float(np.sum(candidate ** 2))
 
 
 class RandomWalkPlugin(Plugin):

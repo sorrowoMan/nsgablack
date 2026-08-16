@@ -176,7 +176,7 @@ def _print_contract_fields(e) -> None:
 
 
 def _print_usage_fields(e) -> None:
-    from .catalog import build_usage_profile
+    from nsgablack.catalog import build_usage_profile
 
     usage = build_usage_profile(e)
 
@@ -196,7 +196,7 @@ def _print_usage_fields(e) -> None:
 
 
 def _cmd_catalog_search(args: argparse.Namespace) -> int:
-    from .catalog import search_entries
+    from nsgablack.catalog import search_entries
 
     entries = search_entries(
         args.query,
@@ -219,7 +219,7 @@ def _cmd_catalog_search(args: argparse.Namespace) -> int:
 
 
 def _cmd_catalog_list(args: argparse.Namespace) -> int:
-    from .catalog import list_entries
+    from nsgablack.catalog import list_entries
 
     entries = list_entries(
         profile=args.profile,
@@ -244,7 +244,7 @@ def _cmd_catalog_list(args: argparse.Namespace) -> int:
 
 
 def _cmd_catalog_show(args: argparse.Namespace) -> int:
-    from .catalog import show_entry
+    from nsgablack.catalog import show_entry
 
     e = show_entry(args.key, profile=args.profile, scope="framework")
     if e is None:
@@ -273,7 +273,7 @@ def _cmd_catalog_show(args: argparse.Namespace) -> int:
 
 
 def _cmd_catalog_materialize(args: argparse.Namespace) -> int:
-    from .catalog import materialize_catalog_to_db
+    from nsgablack.catalog import materialize_catalog_to_db
 
     result = materialize_catalog_to_db(
         profile=args.profile,
@@ -291,7 +291,7 @@ def _cmd_catalog_cleanup_legacy_postgres(args: argparse.Namespace) -> int:
         print("catalog cleanup: add --yes together with --execute to confirm PostgreSQL legacy table removal", file=sys.stderr)
         return 2
 
-    from .catalog import cleanup_postgres_legacy_catalog
+    from nsgablack.catalog import cleanup_postgres_legacy_catalog
 
     result = cleanup_postgres_legacy_catalog(
         profile=args.profile,
@@ -305,7 +305,7 @@ def _cmd_catalog_cleanup_legacy_postgres(args: argparse.Namespace) -> int:
 
 
 def _cmd_catalog_export_relations(args: argparse.Namespace) -> int:
-    from .catalog import export_catalog_relations
+    from nsgablack.catalog import export_catalog_relations
 
     result = export_catalog_relations(
         output_path=args.output,
@@ -326,7 +326,7 @@ def _cmd_catalog_export_relations(args: argparse.Namespace) -> int:
 
 
 def _cmd_catalog_add(args: argparse.Namespace) -> int:
-    from .catalog.quick_add import build_entry_payload, upsert_catalog_entry
+    from nsgablack.catalog.quick_add import build_entry_payload, upsert_catalog_entry
 
     payload = build_entry_payload(
         key=args.key,
@@ -353,7 +353,10 @@ def _cmd_catalog_add(args: argparse.Namespace) -> int:
 
 
 def _cmd_catalog_ui(args: argparse.Namespace) -> int:
-    from .catalog.dashboard import launch_catalog_dashboard
+    # Use the public package path so the development shim and installed wheel
+    # resolve the same dashboard module instead of creating a duplicate nested
+    # module under ``nsgablack.nsgablack``.
+    from nsgablack.catalog.dashboard import launch_catalog_dashboard
 
     return int(
         launch_catalog_dashboard(
@@ -377,10 +380,14 @@ def _cmd_catalog_ui(args: argparse.Namespace) -> int:
 
 
 def _cmd_ui(args: argparse.Namespace) -> int:
-    from .ui.dashboard import launch_ui_dashboard
+    # Resolve through the public package module.  The editable-install shim
+    # extends ``nsgablack.__path__`` to the repository root, so importing a
+    # function relatively can otherwise create a second dashboard module in
+    # some test/runner layouts and bypass module-level instrumentation.
+    from nsgablack.ui import dashboard as ui_dashboard
 
     return int(
-        launch_ui_dashboard(
+        ui_dashboard.launch_ui_dashboard(
             surface=str(args.surface),
             profile=args.profile,
             scope=args.scope,
@@ -543,14 +550,52 @@ def _cmd_project_new(args: argparse.Namespace) -> int:
 def _cmd_project_add_case(args: argparse.Namespace) -> int:
     from .project import add_case
 
-    add_case(args.case_name, args.type)
+    add_case(args.case_name, args.type, framework=args.framework)
     print("Next:")
     print(f"  cd cases/{args.case_name}")
-    print("  # Edit build_solver.py to define your solver/trainer")
-    print("  python run_solver.py --check")
+    if args.type == "trainer":
+        print("  # Edit build_trainer.py to define your trainer")
+        print("  python run_trainer.py --check")
+    else:
+        print("  # Edit build_solver.py to define your solver")
+        print("  python run_solver.py --check")
     print(f"  cd ../..")
     print(f"  python run_project.py  # Run from project root!")
     return 0
+
+
+def _cmd_project_add_component(args: argparse.Namespace) -> int:
+    from .project import add_component
+
+    out = add_component(
+        args.name,
+        args.kind,
+        case_name=args.case_name,
+        slot=args.slot,
+    )
+    if out is None:
+        return 1
+    print("Next:")
+    print(f"  # Edit {out}")
+    print("  python -m nsgablack project doctor --path . --build")
+    return 0
+
+
+def _cmd_project_run(args: argparse.Namespace) -> int:
+    from .project import run_project
+
+    case_args = tuple(getattr(args, "case_args", ()) or ())
+    if case_args and case_args[0] == "--":
+        case_args = case_args[1:]
+    return int(
+        run_project(
+            Path(args.path) if args.path else Path.cwd(),
+            group=str(args.group),
+            check=bool(args.check),
+            build_check=bool(args.build_check),
+            case_args=case_args,
+        )
+    )
 
 
 def _doctor_extract_line_column(message: str) -> tuple[int | None, int | None]:
@@ -1133,14 +1178,67 @@ def build_parser() -> argparse.ArgumentParser:
     p_add = sub_project.add_parser("add-case", help="Add a solver/trainer case to current project")
     p_add.add_argument("case_name", help="Name of the new case directory")
     p_add.add_argument("--type", choices=("solver", "trainer"), required=True, help="Case type (affects catalog kind)")
+    p_add.add_argument(
+        "--framework",
+        choices=("nsgablack", "mlblack"),
+        default="nsgablack",
+        help="Template family for case-level semantics.",
+    )
     p_add.set_defaults(func=_cmd_project_add_case)
+
+    p_add_component = sub_project.add_parser(
+        "add-component",
+        help="Add one component file into the matching case component folder",
+    )
+    p_add_component.add_argument(
+        "--case",
+        dest="case_name",
+        default=None,
+        help="Target case name (required when running from project root with multiple cases)",
+    )
+    p_add_component.add_argument(
+        "--kind",
+        choices=("problem", "pipeline", "adapter", "bias", "plugin"),
+        required=True,
+        help="Component kind mapped to problem/pipeline/adapter/bias/plugins folder",
+    )
+    p_add_component.add_argument(
+        "--name",
+        required=True,
+        help="Component file name (without .py), e.g. my_adapter",
+    )
+    p_add_component.add_argument(
+        "--slot",
+        default=None,
+        help=(
+            "Optional pipeline slot when --kind pipeline. "
+            "Common values: main, init, mutate, repair, encode, decode, codec, head, transform."
+        ),
+    )
+    p_add_component.set_defaults(func=_cmd_project_add_component)
+
+    p_run_project = sub_project.add_parser("run", help="Run a standard Project/Case scaffold")
+    p_run_project.add_argument("--path", type=str, default=None, help="Project root (defaults to cwd)")
+    p_run_project.add_argument("--group", default="default", help="Execution group from project_config.py")
+    p_run_project.add_argument("--check", action="store_true", help="Print assembly/resource audit without running cases")
+    p_run_project.add_argument(
+        "--build-check",
+        action="store_true",
+        help="In --check mode, instantiate each case builder or CLI check surface",
+    )
+    p_run_project.add_argument(
+        "case_args",
+        nargs=argparse.REMAINDER,
+        help="Optional arguments forwarded to CLI-mode cases after '--'.",
+    )
+    p_run_project.set_defaults(func=_cmd_project_run)
 
     p_doctor = sub_project.add_parser("doctor", help="Check project structure, imports, and contracts")
     p_doctor.add_argument("--path", type=str, default=None, help="Project root (defaults to cwd)")
     p_doctor.add_argument(
         "--build",
         action="store_true",
-        help="Call build_solver() to validate solver assembly and collect contracts",
+        help="Call the case primary build entry by kind to validate assembly and collect contracts",
     )
     p_doctor.add_argument(
         "--strict",

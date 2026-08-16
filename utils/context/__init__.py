@@ -1,30 +1,39 @@
 """
 Context helpers (canonical keys + minimal evaluation schema + lifecycle + replay).
 
-Recommended imports:
-- `from nsgablack.core.state import context_keys as CK`
-- `from nsgablack.core.state.context_schema import build_minimal_context`
+All symbols are now re-exported from blackbase.context for seamless migration.
+Prefer importing from nsgablack.core.state or blackbase.context directly.
 """
 
 from __future__ import annotations
 
 from . import context_keys
-from .context_events import ContextEvent, apply_context_event, record_context_event, replay_context
-from .context_contracts import (
+
+from blackbase.context import (
+    # Events
+    ContextEvent,
+    apply_context_event,
+    record_context_event,
+    replay_context,
+    # Contracts
     ContextContract,
     collect_solver_contracts,
     detect_context_conflicts,
     get_component_contract,
     validate_context_contracts,
-)
-from .context_field_governance import (
+    # Field governance
     CONTEXT_FIELD_SCHEMA_NAME,
     CONTEXT_FIELD_SCHEMA_VERSION,
     context_field_schema_dict,
     is_canonical_context_key,
     schema_meta,
-)
-from .context_schema import (
+    # Schema
+    CATEGORY_CACHE,
+    CATEGORY_DERIVED,
+    CATEGORY_EVENT,
+    CATEGORY_INPUT,
+    CATEGORY_OUTPUT,
+    CATEGORY_RUNTIME,
     ContextField,
     ContextSchema,
     MinimalEvaluationContext,
@@ -35,20 +44,18 @@ from .context_schema import (
     strip_context_for_replay,
     validate_context,
     validate_minimal_context,
-)
-from .context_store import (
+    # Store
     ContextStore,
     InMemoryContextStore,
     RedisContextStore,
     create_context_store,
-)
-from .snapshot_store import (
+    # Snapshot
     SnapshotHandle,
     SnapshotRecord,
     SnapshotStore,
+    FileSnapshotStore,
     InMemorySnapshotStore,
     RedisSnapshotStore,
-    FileSnapshotStore,
     create_snapshot_store,
     make_snapshot_key,
 )
@@ -64,6 +71,17 @@ __all__ = [
     "detect_context_conflicts",
     "get_component_contract",
     "validate_context_contracts",
+    "CONTEXT_FIELD_SCHEMA_NAME",
+    "CONTEXT_FIELD_SCHEMA_VERSION",
+    "context_field_schema_dict",
+    "is_canonical_context_key",
+    "schema_meta",
+    "CATEGORY_CACHE",
+    "CATEGORY_DERIVED",
+    "CATEGORY_EVENT",
+    "CATEGORY_INPUT",
+    "CATEGORY_OUTPUT",
+    "CATEGORY_RUNTIME",
     "ContextField",
     "ContextSchema",
     "MinimalEvaluationContext",
@@ -74,11 +92,6 @@ __all__ = [
     "strip_context_for_replay",
     "validate_context",
     "validate_minimal_context",
-    "CONTEXT_FIELD_SCHEMA_NAME",
-    "CONTEXT_FIELD_SCHEMA_VERSION",
-    "context_field_schema_dict",
-    "is_canonical_context_key",
-    "schema_meta",
     "ContextStore",
     "InMemoryContextStore",
     "RedisContextStore",
@@ -86,9 +99,9 @@ __all__ = [
     "SnapshotHandle",
     "SnapshotRecord",
     "SnapshotStore",
+    "FileSnapshotStore",
     "InMemorySnapshotStore",
     "RedisSnapshotStore",
-    "FileSnapshotStore",
     "create_snapshot_store",
     "make_snapshot_key",
 ]

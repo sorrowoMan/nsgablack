@@ -105,6 +105,9 @@ def _find_module_source(import_path: str) -> tuple[Optional[Path], str]:
     mod_path, _, symbol = str(import_path).partition(":")
     if not mod_path or not symbol:
         return None, ""
+    local_path = _example_case_module_source(mod_path)
+    if local_path is not None:
+        return local_path, symbol.split(".")[-1]
     try:
         spec = importlib.util.find_spec(mod_path)
     except Exception:
@@ -115,6 +118,34 @@ def _find_module_source(import_path: str) -> tuple[Optional[Path], str]:
     if not path.exists() or path.suffix.lower() != ".py":
         return None, symbol
     return path, symbol.split(".")[-1]
+
+
+def _example_case_module_source(module_path: str) -> Optional[Path]:
+    parts = str(module_path).split(".")
+    if len(parts) < 6 or parts[:2] != ["examples", "cases"]:
+        return None
+    try:
+        cases_index = parts.index("cases", 2)
+    except ValueError:
+        return None
+    if cases_index + 1 >= len(parts):
+        return None
+    project_name = parts[2]
+    case_name = parts[cases_index + 1]
+    rel = parts[cases_index + 2 :]
+    if not rel:
+        return None
+    repo_root = Path(__file__).resolve().parent.parent
+    path = repo_root / "examples" / "cases" / project_name / "cases" / case_name
+    for item in rel:
+        path = path / item
+    py_file = path.with_suffix(".py")
+    init_file = path / "__init__.py"
+    if py_file.is_file():
+        return py_file
+    if init_file.is_file():
+        return init_file
+    return None
 
 
 def _load_module_ast(path: Path) -> ast.Module:

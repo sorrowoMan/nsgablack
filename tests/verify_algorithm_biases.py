@@ -79,7 +79,7 @@ def test_all_process_algorithms_run_as_adapters():
         candidates = list(adapter.propose(solver, context))
         assert len(candidates) > 0
         objectives, violations = _eval(candidates)
-        adapter.update(solver, candidates, objectives, violations, context)
+        adapter.update(solver, candidates, (objectives, violations), context)
         projection = adapter.get_runtime_context_projection(solver)
         assert isinstance(projection, dict)
 

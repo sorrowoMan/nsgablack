@@ -55,7 +55,12 @@ def test_moead_update_uses_per_candidate_modes_and_projection_is_batch() -> None
     candidates = np.array([[10.0], [11.0]], dtype=float)
     objectives = np.array([[1.0, 1.0], [9.0, 9.0]], dtype=float)
     violations = np.zeros(2, dtype=float)
-    adapter.update(solver=None, candidates=candidates, objectives=objectives, violations=violations, context={})
+    adapter.update(
+        control=None,
+        candidates=candidates,
+        feedback=(objectives, violations),
+        context={},
+    )
 
     # First candidate must run in global mode and replace all three entries.
     assert np.allclose(adapter.pop_F, np.array([[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]], dtype=float))

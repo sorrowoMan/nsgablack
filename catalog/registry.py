@@ -53,8 +53,36 @@ class CatalogEntry:
         mod_path, _, sym = self.import_path.partition(":")
         if not mod_path or not sym:
             raise ValueError(f"Invalid import_path: {self.import_path!r}")
+        project_context = _example_project_context(mod_path)
+        if project_context is not None:
+            project_root, case_name = project_context
+            from blackbase.project.runtime import case_import_context
+
+            with case_import_context(project_root, case_name):
+                mod = importlib.import_module(mod_path)
+                return getattr(mod, sym)
         mod = importlib.import_module(mod_path)
         return getattr(mod, sym)
+
+
+def _example_project_context(module_path: str) -> tuple[Path, str] | None:
+    parts = str(module_path).split(".")
+    if len(parts) < 6 or parts[:2] != ["examples", "cases"]:
+        return None
+    try:
+        cases_index = parts.index("cases", 2)
+    except ValueError:
+        return None
+    if cases_index + 1 >= len(parts):
+        return None
+    project_name = parts[2]
+    case_name = parts[cases_index + 1]
+    here = Path(__file__).resolve()
+    repo_root = here.parent.parent
+    project_root = repo_root / "examples" / "cases" / project_name
+    if (project_root / "project_config.py").is_file() and (project_root / "cases" / case_name).is_dir():
+        return project_root, case_name
+    return None
 
 
 class Catalog:
@@ -2435,12 +2463,12 @@ def _default_entries() -> List[CatalogEntry]:
             key="example.l0_distributed_worker",
             kind="example",
             title="L0 Distributed Worker",
-            import_path="examples.cases.l0_distributed_worker.build_solver:build_solver",
+            import_path="examples.cases.l0_distributed_worker.cases.l0_distributed_worker.build_solver:build_solver",
             tags=("example", "l0", "distributed", "worker", "scaffold"),
             summary="Standard scaffold example: L0 distributed workers using PostgreSQL-backed task queue with concurrent-safe dequeue.",
             use_when=("需要验证 L0 分布式调度时。 / Need to verify L0 distributed scheduling.",),
             minimal_wiring=(
-                "python examples/cases/l0_distributed_worker/build_solver.py --id worker-1",
+                "python examples/cases/l0_distributed_worker/run_project.py --check",
                 "docker compose -f docker-compose.distributed.yml up -d",
             ),
             required_companions=("backend.l0_postgres",),
@@ -2452,15 +2480,15 @@ def _default_entries() -> List[CatalogEntry]:
             key="example.residual_boosting",
             kind="example",
             title="Residual Boosting",
-            import_path="examples.cases.residual_boosting.build_solver:build_solver",
+            import_path="examples.cases.residual_boosting.cases.residual_boosting.build_solver:build_solver",
             tags=("example", "mlblack", "residual", "boosting", "serial-trainer", "integration", "scaffold"),
             summary="Hybrid capability case: nsgablack searches residual boosting recipe variables while mlblack runs serial base/residual training and additive prediction integration.",
             use_when=(
                 "需要验证 nsgablack 外层多目标搜索 + mlblack 内层序列训练/残差目标组合时。 / Need to validate nsgablack outer search with mlblack serial residual training.",
             ),
             minimal_wiring=(
-                "python examples/cases/residual_boosting/run_solver.py --check",
-                "python examples/cases/residual_boosting/run_solver.py --quickstart",
+                "python examples/cases/residual_boosting/run_project.py --check",
+                "python examples/cases/residual_boosting/run_project.py --build-check --check",
             ),
             required_companions=("solver.nsga2", "repr.pipeline"),
             config_keys=("n_samples", "valid_ratio", "seed", "pop_size", "max_generations", "mutation_sigma"),
@@ -2471,15 +2499,15 @@ def _default_entries() -> List[CatalogEntry]:
             key="example.classification_threshold_calibration",
             kind="example",
             title="Classification Threshold Calibration",
-            import_path="examples.cases.classification_threshold_calibration.build_solver:build_solver",
+            import_path="examples.cases.classification_threshold_calibration.cases.classification_threshold_calibration.build_solver:build_solver",
             tags=("example", "mlblack", "classification", "threshold", "calibration", "operating-point", "scaffold"),
             summary="Hybrid capability case: nsgablack searches classification threshold/temperature while mlblack evaluates supervised classification metrics.",
             use_when=(
                 "需要验证 nsgablack 外层 operating-point 搜索 + mlblack 分类概率指标评估时。 / Need to validate nsgablack operating-point search with mlblack classification feedback.",
             ),
             minimal_wiring=(
-                "python examples/cases/classification_threshold_calibration/run_solver.py --check",
-                "python examples/cases/classification_threshold_calibration/run_solver.py --quickstart",
+                "python examples/cases/classification_threshold_calibration/run_project.py --check",
+                "python examples/cases/classification_threshold_calibration/run_project.py --build-check --check",
             ),
             required_companions=("solver.nsga2", "repr.pipeline"),
             config_keys=("n_samples", "valid_ratio", "seed", "pop_size", "max_generations", "mutation_sigma"),
@@ -2490,11 +2518,11 @@ def _default_entries() -> List[CatalogEntry]:
             key="example.gmm_em_vs_de",
             kind="example",
             title="GMM: EM vs DE-VNS Strategy Chain",
-            import_path="examples.cases.gmm_em_vs_de.build_solver:build_solver",
+            import_path="examples.cases.gmm_em_vs_de.cases.gmm_em_vs_de.build_solver:build_solver",
             tags=("example", "gmm", "clustering", "de", "vns", "strategy_chain", "nelder_mead"),
             summary="Gaussian Mixture Model fitting as black-box optimization. DE global search chained with VNS local refinement via StrategyChainAdapter, NelderMeadBias for simplex push. vs sklearn EM baseline.",
             use_when=("需要以黑盒优化方式拟合 GMM 时。 / Need GMM fitting as black-box optimization.",),
-            minimal_wiring=("python examples/cases/gmm_em_vs_de/run_solver.py",),
+            minimal_wiring=("python examples/cases/gmm_em_vs_de/run_project.py --check",),
             required_companions=("adapter.de", "adapter.vns", "bias.local_nelder_mead"),
             config_keys=("n_components", "n_samples", "seed"),
             companions=("adapter.de", "adapter.vns", "bias.local_nelder_mead"),
@@ -2504,11 +2532,11 @@ def _default_entries() -> List[CatalogEntry]:
             key="example.causal_discovery_pc_lingam",
             kind="example",
             title="Causal Discovery: PC + LiNGAM as DE Search",
-            import_path="examples.cases.causal_discovery.build_solver:build_solver",
+            import_path="examples.cases.causal_discovery.cases.causal_discovery.build_solver:build_solver",
             tags=("example", "causal", "dag", "pcalg", "lingam", "de", "callable_bias", "graph_sparsity"),
             summary="Causal structure discovery as black-box optimization. DE searches DAG adjacency matrices, CallableBias (Kahn) enforces acyclicity, SparsityBias prefers parsimonious graphs.",
             use_when=("需要以黑盒优化方式发现因果结构时。 / Need causal structure discovery as black-box optimization.",),
-            minimal_wiring=("python examples/cases/causal_discovery/run_solver.py",),
+            minimal_wiring=("python examples/cases/causal_discovery/run_project.py --check",),
             required_companions=("adapter.de", "bias.callable", "bias.graph_sparsity"),
             config_keys=("n_vars", "n_samples", "seed"),
             companions=("adapter.de", "bias.callable", "bias.graph_sparsity"),
@@ -2518,11 +2546,11 @@ def _default_entries() -> List[CatalogEntry]:
             key="example.anomaly_detection_de",
             kind="example",
             title="Anomaly Detection: LOF/IsolationForest as DE Search",
-            import_path="examples.cases.anomaly_detection.build_solver:build_solver",
+            import_path="examples.cases.anomaly_detection.cases.anomaly_detection.build_solver:build_solver",
             tags=("example", "anomaly", "lof", "isolation_forest", "de", "constraint_bias"),
             summary="Anomaly detection hyperparameter optimization as black-box search. DE tunes LOF/IsolationForest params, ConstraintBias enforces contamination range. vs sklearn defaults.",
             use_when=("需要以黑盒优化方式调参异常检测时。 / Need anomaly detection hyperparameter tuning as black-box optimization.",),
-            minimal_wiring=("python examples/cases/anomaly_detection/run_solver.py",),
+            minimal_wiring=("python examples/cases/anomaly_detection/run_project.py --check",),
             required_companions=("adapter.de", "bias.constraint"),
             config_keys=("n_samples", "contamination", "seed"),
             companions=("adapter.de", "bias.constraint"),
@@ -2532,11 +2560,11 @@ def _default_entries() -> List[CatalogEntry]:
             key="example.tsp_permutation_sa",
             kind="example",
             title="TSP/VRP: Permutation Search with Graph Constraints",
-            import_path="examples.cases.tsp_vrp.build_solver:build_solver",
+            import_path="examples.cases.tsp_vrp.cases.tsp_vrp.build_solver:build_solver",
             tags=("example", "tsp", "vrp", "permutation", "sa", "tsp_constraint", "hamiltonian"),
             summary="TSP as permutation optimization with SA. Framework repr.permutation encoder + TSPConstraintBias + HamiltonianPathConstraintBias. vs Nearest-Neighbor greedy baseline.",
             use_when=("需要以排列优化方式求解 TSP/VRP 时。 / Need TSP/VRP as permutation optimization.",),
-            minimal_wiring=("python examples/cases/tsp_vrp/run_solver.py",),
+            minimal_wiring=("python examples/cases/tsp_vrp/run_project.py --check",),
             required_companions=("adapter.sa", "repr.permutation"),
             config_keys=("n_cities", "seed"),
             companions=("adapter.sa", "repr.permutation"),
@@ -2546,11 +2574,11 @@ def _default_entries() -> List[CatalogEntry]:
             key="example.arima_order_search_de",
             kind="example",
             title="ARIMA Order Selection as DE Search",
-            import_path="examples.cases.arima_order_search.build_solver:build_solver",
+            import_path="examples.cases.arima_order_search.cases.arima_order_search.build_solver:build_solver",
             tags=("example", "arima", "time_series", "order_search", "de", "integer"),
             summary="ARIMA(p,d,q) order selection as black-box optimization. DE searches over integer orders, problem evaluates via statsmodels AIC. vs exhaustive grid search.",
             use_when=("需要以黑盒优化方式选择 ARIMA 阶数时。 / Need ARIMA order selection as black-box optimization.",),
-            minimal_wiring=("python examples/cases/arima_order_search/run_solver.py",),
+            minimal_wiring=("python examples/cases/arima_order_search/run_project.py --check",),
             required_companions=("adapter.de",),
             config_keys=("max_p", "max_d", "max_q", "n_samples", "seed"),
             companions=("adapter.de",),
@@ -2918,3 +2946,7 @@ def get_catalog(*, refresh: bool = False, profile: Optional[str] = None) -> Cata
         enriched = enrich_usage_contracts(enriched)
         _CATALOG_BY_PROFILE[profile_name] = Catalog(enriched)
     return _CATALOG_BY_PROFILE[profile_name]
+
+
+# Alias: CatalogRegistry is the historical name for Catalog
+CatalogRegistry = Catalog

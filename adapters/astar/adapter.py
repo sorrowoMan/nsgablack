@@ -15,6 +15,8 @@ import heapq
 
 import numpy as np
 
+from blackbase.contracts import BatchDisposition
+
 from ..algorithm_adapter import AlgorithmAdapter
 
 
@@ -120,7 +122,7 @@ class AStarAdapter(AlgorithmAdapter):
         self.best_score: Optional[float] = None
         self.best_state: Optional[State] = None
 
-    def setup(self, solver: Any) -> None:
+    def setup(self, control: Any) -> None:
         self._open = []
         self._closed = {}
         self._pending = []
@@ -130,16 +132,16 @@ class AStarAdapter(AlgorithmAdapter):
         self.best_score = None
         self.best_state = None
 
-        start = self._resolve_start_state(solver, {})
+        start = self._resolve_start_state(control, {})
         if start is not None:
             self._push_open(start, g=0.0, context={})
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self.found:
             return []
 
         if not self._open:
-            start = self._resolve_start_state(solver, context)
+            start = self._resolve_start_state(control, context)
             if start is not None:
                 self._push_open(start, g=0.0, context=context)
             if not self._open:
@@ -189,31 +191,44 @@ class AStarAdapter(AlgorithmAdapter):
 
         return candidates
 
-    def update(
+    def on_proposal_disposition(
         self,
-        solver: Any,
-        candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        control: Any,
+        disposition: BatchDisposition,
         context: Dict[str, Any],
     ) -> None:
-        if candidates is None:
-            return
-        try:
-            candidate_count = len(candidates)
-        except Exception:
-            candidates = [candidates]  # type: ignore[list-item]
-            candidate_count = 1
+        del control, context
+        if disposition.proposed_count != len(self._pending):
+            raise ValueError(
+                "A* proposal disposition does not match pending path metadata: "
+                f"proposed_count={disposition.proposed_count}, "
+                f"pending_count={len(self._pending)}"
+            )
+        self._pending = [self._pending[index] for index in disposition.accepted_indices]
+
+    def update(
+        self,
+        control: Any,
+        candidates: Sequence[np.ndarray],
+        feedback: Tuple[np.ndarray, np.ndarray],
+        context: Dict[str, Any],
+    ) -> None:
+        objectives, violations = feedback
+        candidate_count = len(candidates)
         if candidate_count <= 0:
             return
+        if candidate_count != len(self._pending):
+            raise ValueError("A* feedback must align with pending path metadata")
 
         obj = np.asarray(objectives, dtype=float)
         if obj.ndim == 1:
             obj = obj.reshape(-1, 1)
         vio = np.asarray(violations, dtype=float).reshape(-1)
+        if obj.shape[0] != candidate_count or vio.shape[0] != candidate_count:
+            raise ValueError("A* candidate, objective, and violation counts must match")
 
         for i, cand in enumerate(candidates):
-            meta = self._pending[i] if i < len(self._pending) else {}
+            meta = self._pending[i]
             cand_arr = np.asarray(cand)
             key = self.state_key(cand_arr)
 
@@ -221,7 +236,7 @@ class AStarAdapter(AlgorithmAdapter):
                 continue
 
             obj_cost = self._aggregate_objective(obj[i])
-            penalty = float(self.cfg.violation_penalty) * float(vio[i]) if i < len(vio) else 0.0
+            penalty = float(self.cfg.violation_penalty) * float(vio[i])
 
             if self.cfg.path_cost_mode == "objective":
                 g = float(obj_cost) + penalty
@@ -238,13 +253,13 @@ class AStarAdapter(AlgorithmAdapter):
                 self.best_score = score
                 self.best_state = np.asarray(cand_arr)
 
-    def _resolve_start_state(self, solver: Any, context: Dict[str, Any]) -> Optional[State]:
+    def _resolve_start_state(self, control: Any, context: Dict[str, Any]) -> Optional[State]:
         if callable(self.start_state):
             return np.asarray(self.start_state(context))
         if self.start_state is not None:
             return np.asarray(self.start_state)
         try:
-            return np.asarray(solver.init_candidate(context))
+            return np.asarray(control.init_candidate(context))
         except Exception:
             return None
 

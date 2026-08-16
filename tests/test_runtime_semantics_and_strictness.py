@@ -14,17 +14,20 @@ def test_composable_solver_always_triggers_on_step():
         def __init__(self):
             super().__init__(name="p", dimension=1, bounds={"x0": (-1.0, 1.0)})
 
-        def evaluate(self, x):
-            arr = np.asarray(x, dtype=float).reshape(-1)
+        def evaluate(self, candidate):
+            arr = np.asarray(candidate, dtype=float).reshape(-1)
             return np.array([float(arr[0] ** 2)], dtype=float)
 
     class _Adapter(AlgorithmAdapter):
         def __init__(self):
             super().__init__(name="a")
 
-        def propose(self, solver, context):
-            _ = (solver, context)
+        def propose(self, control, context):
+            _ = (control, context)
             return [np.array([0.2], dtype=float)]
+
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
 
     class _StepCounter(Plugin):
         def __init__(self):

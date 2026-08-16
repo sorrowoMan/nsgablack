@@ -2,29 +2,37 @@
 Algorithm adapter interface for composable solvers.
 
 Adapters provide candidate proposals and consume evaluation feedback.
+Inherits the unified AdapterBase from blackbase and adds nsgablack-specific
+enhancements (numpy RNG, strict snapshot validation, extended contract).
 """
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
+from blackbase.abc import AdapterBase
+from blackbase.contracts import BatchDisposition
 
-class AlgorithmAdapter(ABC):
-    """Base adapter for integrating arbitrary optimization logic."""
 
-    # Optional context contract (class-level defaults)
-    context_requires = ()
-    context_provides = ()
-    context_mutates = ()
-    context_cache = ()
+class AlgorithmAdapter(AdapterBase):
+    """Base adapter for integrating arbitrary optimization logic.
+
+    Inherits AdapterBase and adds nsgablack-specific:
+    - create_local_rng: numpy Generator (instead of stdlib Random)
+    - validate_population_snapshot: strict numpy shape validation
+    - coerce_candidates: numpy-aware candidate normalization
+    - get_context_contract: extended with artifact_requires/provides, phase_in/out
+    - get_runtime_context_projection / get_runtime_context_projection_sources
+    - resolve_config: adapter config normalization helper
+    """
+
+    # Extended context contract (nsgablack-specific)
     artifact_requires = ()
     artifact_provides = ()
     phase_in = ()
     phase_out = ()
-    context_notes = None
     state_recovery_level = "L0"
     state_recovery_notes = "No adapter-owned runtime state is guaranteed to roundtrip."
 
@@ -40,13 +48,7 @@ class AlgorithmAdapter(ABC):
         config_kwargs: Optional[Dict[str, Any]] = None,
         adapter_name: str = "adapter",
     ) -> Any:
-        """Normalize adapter config from explicit config or inline kwargs.
-
-        Rules:
-        - Use either `config` or `config_kwargs`, not both.
-        - If `config` is provided it must be an instance of `config_cls`.
-        - If `config` is omitted, build `config_cls(**config_kwargs)` (or defaults).
-        """
+        """Normalize adapter config from explicit config or inline kwargs."""
         kwargs = dict(config_kwargs or {})
         if config is not None and kwargs:
             raise ValueError(
@@ -60,8 +62,10 @@ class AlgorithmAdapter(ABC):
             )
         return config
 
+    # --- Override: numpy-aware RNG ---
+
     def create_local_rng(self, solver: Any = None, seed: Optional[int] = None) -> np.random.Generator:
-        """Create a component-local RNG.
+        """Create a component-local numpy RNG.
 
         Priority:
         1) explicit seed
@@ -81,37 +85,20 @@ class AlgorithmAdapter(ABC):
                     pass
         return np.random.default_rng()
 
-    def setup(self, solver: Any) -> None:
-        """Called once before run()."""
-        return None
+    # --- Override: numpy-aware candidate normalization ---
 
-    @abstractmethod
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
-        """Return a list of candidate solutions."""
-        ...
+    @staticmethod
+    def coerce_candidates(value: Any) -> List[Any]:
+        """Normalize propose() output without relying on ambiguous truthiness."""
+        if value is None:
+            return []
+        if isinstance(value, np.ndarray):
+            if value.ndim <= 1:
+                return [value]
+            return [np.asarray(row) for row in value]
+        return list(value)
 
-    def update(
-        self,
-        solver: Any,
-        candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
-        context: Dict[str, Any],
-    ) -> None:
-        """Consume evaluation feedback for candidates."""
-        return None
-
-    def teardown(self, solver: Any) -> None:
-        """Called once after run()."""
-        return None
-
-    def get_state(self) -> Dict[str, Any]:
-        """Return serializable adapter state."""
-        return {}
-
-    def set_state(self, state: Dict[str, Any]) -> None:
-        """Restore adapter state."""
-        return None
+    # --- Override: strict numpy snapshot validation ---
 
     @staticmethod
     def validate_population_snapshot(
@@ -143,25 +130,14 @@ class AlgorithmAdapter(ABC):
             )
         return pop, obj, vio
 
-    def set_population(self, population: np.ndarray, objectives: np.ndarray, violations: np.ndarray) -> bool:
-        """Optional population write-back contract for runtime plugins.
+    # --- Override: population write-back with validation ---
 
-        Adapters that own population/objective state should override this and
-        return True when write-back succeeds. Default returns False (unsupported).
-        """
+    def set_population(self, population: np.ndarray, objectives: np.ndarray, violations: np.ndarray) -> bool:
+        """Optional population write-back contract for runtime plugins."""
         _ = self.validate_population_snapshot(population, objectives, violations)
         return False
 
-    @staticmethod
-    def coerce_candidates(value: Any) -> List[Any]:
-        """Normalize propose() output without relying on ambiguous truthiness."""
-        if value is None:
-            return []
-        if isinstance(value, np.ndarray):
-            if value.ndim <= 1:
-                return [value]
-            return [np.asarray(row) for row in value]
-        return list(value)
+    # --- Override: extended context contract ---
 
     def get_context_contract(self) -> Dict[str, Any]:
         requires = list(getattr(self, "context_requires", ()) or ())
@@ -172,16 +148,6 @@ class AlgorithmAdapter(ABC):
         artifact_provides = list(getattr(self, "artifact_provides", ()) or ())
         phase_in = list(getattr(self, "phase_in", ()) or ())
         phase_out = list(getattr(self, "phase_out", ()) or ())
-
-        # Backward compatibility: legacy adapter declarations.
-        requires.extend(list(getattr(self, "requires_context_keys", ()) or ()))
-        requires.extend(list(getattr(self, "runtime_requires", ()) or ()))
-        provides.extend(list(getattr(self, "provides_context_keys", ()) or ()))
-        provides.extend(list(getattr(self, "runtime_provides", ()) or ()))
-        mutates.extend(list(getattr(self, "mutates_context_keys", ()) or ()))
-        mutates.extend(list(getattr(self, "runtime_mutates", ()) or ()))
-        cache.extend(list(getattr(self, "cache_context_keys", ()) or ()))
-        cache.extend(list(getattr(self, "runtime_cache", ()) or ()))
 
         notes_parts: List[str] = []
         for attr in ("context_notes", "recommended_mutators", "recommended_plugins", "companions", "recommended_suite"):
@@ -214,6 +180,8 @@ class AlgorithmAdapter(ABC):
             "notes": " | ".join(notes_parts) if notes_parts else None,
         }
 
+    # --- nsgablack-specific: runtime context projection ---
+
     def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
         """Return best-effort runtime fields to expose in solver.get_context()."""
         return {}
@@ -239,16 +207,16 @@ class CompositeAdapter(AlgorithmAdapter):
         self.adapters = list(adapters)
         self._last_ranges: List[Tuple[AlgorithmAdapter, int, int]] = []
 
-    def setup(self, solver: Any) -> None:
+    def setup(self, control: Any) -> None:
         for adapter in self.adapters:
-            adapter.setup(solver)
+            adapter.setup(control)
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         candidates: List[np.ndarray] = []
         self._last_ranges = []
         for adapter in self.adapters:
             start = len(candidates)
-            proposed = self.coerce_candidates(adapter.propose(solver, context))
+            proposed = self.coerce_candidates(adapter.propose(control, context))
             candidates.extend(proposed)
             end = len(candidates)
             self._last_ranges.append((adapter, start, end))
@@ -256,30 +224,58 @@ class CompositeAdapter(AlgorithmAdapter):
 
     def update(
         self,
-        solver: Any,
+        control: Any,
         candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        feedback: Tuple[np.ndarray, np.ndarray],
         context: Dict[str, Any],
     ) -> None:
+        objectives, violations = feedback
         if not self._last_ranges:
-            for adapter in self.adapters:
-                adapter.update(solver, candidates, objectives, violations, context)
-            return
+            if len(candidates) == 0:
+                return
+            raise RuntimeError("CompositeAdapter.update requires a preceding propose call")
+        expected_count = sum(end - start for _adapter, start, end in self._last_ranges)
+        if len(candidates) != expected_count:
+            raise ValueError(
+                "composite feedback does not match child proposal ranges: "
+                f"candidates={len(candidates)}, allocated={expected_count}"
+            )
+        if len(objectives) != expected_count or len(violations) != expected_count:
+            raise ValueError("composite candidate, objective, and violation counts must match")
         for adapter, start, end in self._last_ranges:
             if start == end:
                 continue
             adapter.update(
-                solver,
+                control,
                 candidates[start:end],
-                objectives[start:end],
-                violations[start:end],
+                (objectives[start:end], violations[start:end]),
                 context,
             )
 
-    def teardown(self, solver: Any) -> None:
+    def on_proposal_disposition(
+        self,
+        control: Any,
+        disposition: BatchDisposition,
+        context: Dict[str, Any],
+    ) -> None:
+        reconciled: List[Tuple[AlgorithmAdapter, int, int]] = []
+        cursor = 0
+        for adapter, start, end in self._last_ranges:
+            child_disposition = disposition.for_range(start, end)
+            adapter.on_proposal_disposition(
+                control,
+                child_disposition,
+                context,
+            )
+            if child_disposition.accepted_count > 0:
+                next_cursor = cursor + child_disposition.accepted_count
+                reconciled.append((adapter, cursor, next_cursor))
+                cursor = next_cursor
+        self._last_ranges = reconciled
+
+    def teardown(self, control: Any) -> None:
         for adapter in self.adapters:
-            adapter.teardown(solver)
+            adapter.teardown(control)
 
     def get_state(self) -> Dict[str, Any]:
         return {adapter.name: adapter.get_state() for adapter in self.adapters}

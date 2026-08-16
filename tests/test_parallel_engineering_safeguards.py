@@ -12,8 +12,8 @@ def test_parallel_process_precheck_falls_back_to_thread_when_unpicklable():
             bounds = {f"x{i}": (-5, 5) for i in range(dimension)}
             super().__init__(dimension=dimension, objectives=["minimize"], bounds=bounds)
 
-        def evaluate(self, x):
-            return float(np.sum(np.asarray(x, dtype=float) ** 2))
+        def evaluate(self, candidate):
+            return float(np.sum(np.asarray(candidate, dtype=float) ** 2))
 
     problem = LocalSphere()
     population = np.array(
@@ -50,8 +50,8 @@ def test_parallel_process_precheck_strict_raises_when_unpicklable():
             bounds = {f"x{i}": (-5, 5) for i in range(dimension)}
             super().__init__(dimension=dimension, objectives=["minimize"], bounds=bounds)
 
-        def evaluate(self, x):
-            return float(np.sum(np.asarray(x, dtype=float) ** 2))
+        def evaluate(self, candidate):
+            return float(np.sum(np.asarray(candidate, dtype=float) ** 2))
 
     problem = LocalSphere()
     population = np.array(
@@ -80,8 +80,8 @@ def test_thread_backend_deepcopy_bias_isolation_keeps_original_state():
         def __init__(self):
             super().__init__(dimension=2, objectives=["minimize"], bounds={"x0": (-5, 5), "x1": (-5, 5)})
 
-        def evaluate(self, x):
-            return float(np.sum(np.asarray(x, dtype=float) ** 2))
+        def evaluate(self, candidate):
+            return float(np.sum(np.asarray(candidate, dtype=float) ** 2))
 
     class CountingBias:
         def __init__(self):
@@ -113,8 +113,8 @@ def test_thread_backend_disable_cache_temporarily_and_restore():
         def __init__(self):
             super().__init__(dimension=2, objectives=["minimize"], bounds={"x0": (-5, 5), "x1": (-5, 5)})
 
-        def evaluate(self, x):
-            return float(np.sum(np.asarray(x, dtype=float) ** 2))
+        def evaluate(self, candidate):
+            return float(np.sum(np.asarray(candidate, dtype=float) ** 2))
 
     class CountingBias:
         def __init__(self):

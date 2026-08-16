@@ -1,41 +1,21 @@
-﻿from __future__ import annotations
+"""Forwarding module for context field governance (legacy path).
 
-from dataclasses import dataclass
-from typing import Dict
+This module re-exports from blackbase for seamless migration.
+Prefer importing from nsgablack.core.state.context_field_governance or blackbase.context.
+"""
 
-from .context_keys import CANONICAL_CONTEXT_KEYS, normalize_context_key
+from blackbase.context import (
+    CONTEXT_FIELD_SCHEMA_NAME,
+    CONTEXT_FIELD_SCHEMA_VERSION,
+    context_field_schema_dict,
+    is_canonical_context_key,
+    schema_meta,
+)
 
-
-CONTEXT_FIELD_SCHEMA_NAME = "context_field_schema"
-CONTEXT_FIELD_SCHEMA_VERSION = 2
-
-
-@dataclass(frozen=True)
-class ContextFieldSchemaMeta:
-    schema_name: str
-    schema_version: int
-
-
-def schema_meta() -> ContextFieldSchemaMeta:
-    return ContextFieldSchemaMeta(
-        schema_name=CONTEXT_FIELD_SCHEMA_NAME,
-        schema_version=int(CONTEXT_FIELD_SCHEMA_VERSION),
-    )
-
-
-def is_canonical_context_key(key: str) -> bool:
-    text = str(key).strip()
-    if not text:
-        return False
-    normalized = normalize_context_key(text)
-    if normalized.startswith("metrics."):
-        return True
-    return normalized in CANONICAL_CONTEXT_KEYS and normalized == text.lower()
-
-
-def context_field_schema_dict() -> Dict[str, object]:
-    meta = schema_meta()
-    return {
-        "schema_name": meta.schema_name,
-        "schema_version": meta.schema_version,
-    }
+__all__ = [
+    "CONTEXT_FIELD_SCHEMA_NAME",
+    "CONTEXT_FIELD_SCHEMA_VERSION",
+    "context_field_schema_dict",
+    "is_canonical_context_key",
+    "schema_meta",
+]

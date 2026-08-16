@@ -4,7 +4,7 @@
 - 让使用者知道“哪些东西可以放心依赖”
 - 让维护者在演进架构时有明确边界，避免无意破坏用户代码
 
-本文件与 `docs/CORE_STABILITY.md` 一致：`wiring + plugin + adapter + representation + bias` 是主路径；历史 `deprecated/legacy/` 内容已从仓库清理（如需追溯请查看 git 历史），不做稳定性承诺。
+本文件与 `docs/project/CORE_STABILITY.md` 一致：`wiring + plugin + adapter + representation + bias` 是主路径；历史 `deprecated/legacy/` 内容已从仓库清理（如需追溯请查看 git 历史），不做稳定性承诺。
 
 ## 1. API 分级
 
@@ -12,7 +12,7 @@
 
 满足以下任一条件，视为 Stable：
 - 在 `catalog/registry.py` 中作为“权威推荐入口”出现的条目（尤其是 `plugin.*` / `adapter.*`）
-- 在 `docs/CORE_STABILITY.md` 中列为 core promise 的能力层/装配层
+- 在 `docs/project/CORE_STABILITY.md` 中列为 core promise 的能力层/装配层
 - 明确写入本文件的稳定入口
 
 Stable 的含义：
@@ -41,7 +41,7 @@ Stable 的含义：
 默认规则：
 - 历史 `deprecated/legacy/`（已从仓库清理）：明确不承诺稳定
 - 以 `_` 开头的符号：内部实现细节
-- `core/solver.py` 内部字段/非公开方法：内部实现细节（除非明确列为 Stable）
+- solver 内部字段/非公开方法：内部实现细节（除非明确列为 Stable）
 
 对 Experimental / Internal：
 - 可以随时更改/删除

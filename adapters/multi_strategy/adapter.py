@@ -19,6 +19,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 import math
 
 import numpy as np
+from blackbase.contracts import BatchDisposition
 
 from ..algorithm_adapter import AlgorithmAdapter
 from ...utils.context.context_keys import (
@@ -233,6 +234,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         # Unit-level reports (exposed via runtime context projection).
         self.unit_reports: Dict[Tuple[str, int], Dict[str, Any]] = {}
         self._unit_tasks: Dict[Tuple[str, int], Dict[str, Any]] = {}
+        self._unit_proposal_contexts: Dict[Tuple[str, int], Dict[str, Any]] = {}
         self._last_task_projection: Dict[str, Any] = {}
         self._last_projection_writers: Dict[str, str] = {}
         self._runtime_shared_projection: Dict[str, Any] = {}
@@ -248,8 +250,8 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         if self.roles and self.strategies:
             raise ValueError("StrategyRouterAdapter: provide either strategies=... or roles=..., not both.")
 
-    def setup(self, solver: Any) -> None:
-        self._rng = self.create_local_rng(solver)
+    def setup(self, control: Any) -> None:
+        self._rng = self.create_local_rng(control)
         self._step = 0
         self._best_score.clear()
         self._ema_score.clear()
@@ -257,6 +259,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self._last_allocations.clear()
         self.unit_reports.clear()
         self._unit_tasks.clear()
+        self._unit_proposal_contexts.clear()
         self._last_task_projection = {}
         self._last_projection_writers = {}
         self._runtime_shared_projection = {}
@@ -278,11 +281,11 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         }
 
         for unit in self.units:
-            unit.adapter.setup(solver)
+            unit.adapter.setup(control)
 
-    def teardown(self, solver: Any) -> None:
+    def teardown(self, control: Any) -> None:
         for unit in self.units:
-            unit.adapter.teardown(solver)
+            unit.adapter.teardown(control)
 
     def _build_units(self) -> List[UnitSpec]:
         # StrategySpec mode
@@ -367,27 +370,27 @@ class StrategyRouterAdapter(AlgorithmAdapter):
 
     def _build_runtime_rule_context(
         self,
-        solver: Any,
+        control: Any,
         context: Dict[str, Any],
         *,
         phase: str,
         phase_step: int,
     ) -> Dict[str, Any]:
-        out = self._build_policy_context(solver, context, phase=phase, phase_step=phase_step)
+        out = self._build_policy_context(control, context, phase=phase, phase_step=phase_step)
         try:
-            out.setdefault("generation", int(getattr(solver, "generation", context.get(KEY_GENERATION, 0))))
+            out.setdefault("generation", int(getattr(control, "generation", context.get(KEY_GENERATION, 0))))
         except Exception:
             pass
         try:
-            out.setdefault("best_objective", getattr(solver, "best_objective", None))
+            out.setdefault("best_objective", getattr(control, "best_objective", None))
         except Exception:
             pass
         try:
-            out.setdefault("best_x", getattr(solver, "best_x", None))
+            out.setdefault("best_x", getattr(control, "best_x", None))
         except Exception:
             pass
         try:
-            out.setdefault("evaluation_count", getattr(solver, "evaluation_count", None))
+            out.setdefault("evaluation_count", getattr(control, "evaluation_count", None))
         except Exception:
             pass
         return out
@@ -575,7 +578,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
 
     def _build_policy_context(
         self,
-        solver: Any,
+        control: Any,
         context: Dict[str, Any],
         *,
         phase: str,
@@ -587,7 +590,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             "phase": str(phase),
             "phase_step": int(phase_step),
             "shared": self.shared_state,
-            "solver": solver,
+            "solver": control,
             "context": context,
         }
 
@@ -708,20 +711,20 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 out[(role, uid)] = int(base + (1 if i < rem else 0))
         return out
 
-    def _maybe_refresh_regions(self, solver: Any) -> None:
+    def _maybe_refresh_regions(self, control: Any) -> None:
         if not self.cfg.enable_regions:
             self._regions = []
             return
         interval = int(max(0, int(self.cfg.region_update_interval)))
         if self._regions and interval > 0 and (int(self._step) % interval) != 0:
             return
-        self._regions = self._default_region_partition(solver, int(max(1, int(self.cfg.n_regions))))
+        self._regions = self._default_region_partition(control, int(max(1, int(self.cfg.n_regions))))
 
-    def _default_region_partition(self, solver: Any, n_regions: int) -> List[Dict[str, Any]]:
+    def _default_region_partition(self, control: Any, n_regions: int) -> List[Dict[str, Any]]:
         # Minimal, representation-agnostic default:
         # - If problem bounds are available, split along the first variable into N intervals (+ overlap).
         # - Otherwise return N empty region descriptors (still usable as tags/ids).
-        problem = getattr(solver, "problem", None)
+        problem = getattr(control, "problem", None)
         bounds = getattr(problem, "bounds", None)
         if not isinstance(bounds, dict) or not bounds:
             return [{"id": i, "bounds": None} for i in range(int(n_regions))]
@@ -770,12 +773,12 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             for i, key in enumerate(unit_keys):
                 self._unit_region[key] = int(i % len(self._regions))
 
-    def _select_seeds(self, solver: Any, k: int) -> List[np.ndarray]:
+    def _select_seeds(self, control: Any, k: int) -> List[np.ndarray]:
         k = int(max(0, int(k)))
         if k <= 0:
             return []
         if str(self.cfg.seeds_source) == "pareto":
-            X = getattr(solver, "pareto_solutions", None)
+            X = getattr(control, "pareto_solutions", None)
             if X is not None:
                 X = np.asarray(X)
                 if X.ndim == 1:
@@ -788,19 +791,19 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             return []
         return [np.asarray(best) for _ in range(int(k))]
 
-    def _broadcast_state(self, solver: Any) -> None:
-        _ = solver
+    def _broadcast_state(self, control: Any) -> None:
+        _ = control
         self._runtime_shared_projection = {
             KEY_SHARED: self.shared_state,
             KEY_ROLE_REPORTS: self.shared_state.get(KEY_ROLE_REPORTS),
             KEY_PHASE: self.shared_state.get(KEY_PHASE),
         }
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         # phase bookkeeping
         phase, phase_step = self._phase_for_step(int(self._step))
         pre_policy_ctx = self._build_policy_context(
-            solver,
+            control,
             context,
             phase=str(phase),
             phase_step=int(phase_step),
@@ -811,7 +814,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             pre_policy_ctx,
         )
         rule_ctx = self._build_runtime_rule_context(
-            solver,
+            control,
             context,
             phase=str(phase),
             phase_step=int(phase_step),
@@ -822,11 +825,11 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self._current_phase_name = str(phase)
         self._phase_step = int(phase_step)
 
-        self._maybe_refresh_regions(solver)
+        self._maybe_refresh_regions(control)
         self._assign_regions_to_units()
 
         policy_ctx = self._build_policy_context(
-            solver,
+            control,
             context,
             phase=self._current_phase_name,
             phase_step=self._phase_step,
@@ -856,7 +859,8 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         role_index = {name: i for i, name in enumerate(role_names)}
 
         self._unit_tasks = {}
-        for sid, unit in enumerate(self.units):
+        self._unit_proposal_contexts = {}
+        for unit in self.units:
             if not unit.enabled:
                 continue
             k = int(unit_budgets.get((unit.role, int(unit.unit_id)), 0))
@@ -867,7 +871,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             ctx[KEY_SHARED] = shared
             # Strategy keys (strategy == role)
             ctx[KEY_STRATEGY] = unit.role
-            ctx[KEY_STRATEGY_ID] = int(sid)
+            ctx[KEY_STRATEGY_ID] = int(unit.unit_id)
             # Role keys
             ctx[KEY_ROLE] = unit.role
             ctx[KEY_ROLE_INDEX] = int(role_index.get(unit.role, 0))
@@ -879,7 +883,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
 
             seeds = []
             if self._current_phase_name != "explore":
-                seeds = self._select_seeds(solver, int(self.cfg.seeds_per_task))
+                seeds = self._select_seeds(control, int(self.cfg.seeds_per_task))
 
             task = {
                 "budget": int(k),
@@ -897,13 +901,15 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             ctx[KEY_REGION_BOUNDS] = region_bounds
             ctx[KEY_SEEDS] = seeds
             ctx[KEY_TASK] = task
-            self._unit_tasks[(unit.role, int(unit.unit_id))] = dict(task)
+            unit_key = (unit.role, int(unit.unit_id))
+            self._unit_tasks[unit_key] = dict(task)
+            self._unit_proposal_contexts[unit_key] = dict(ctx)
             self._last_task_projection = {
                 KEY_ROLE: unit.role,
                 KEY_ROLE_INDEX: int(role_index.get(unit.role, 0)),
                 KEY_ROLE_ADAPTER: getattr(unit.adapter, "name", f"{unit.role}:{unit.unit_id}"),
                 KEY_STRATEGY: unit.role,
-                KEY_STRATEGY_ID: int(sid),
+                KEY_STRATEGY_ID: int(unit.unit_id),
                 KEY_PHASE: self._current_phase_name,
                 KEY_REGION_ID: task["region_id"],
                 KEY_REGION_BOUNDS: region_bounds,
@@ -911,13 +917,27 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 KEY_TASK: dict(task),
             }
 
-            proposed = self.coerce_candidates(unit.adapter.propose(solver, ctx))
+            proposed = self.coerce_candidates(unit.adapter.propose(control, ctx))
             if not proposed:
                 continue
 
-            # budget is a hint; strategies may return more/less
+            selected = proposed[:k]
+            if len(selected) < len(proposed):
+                unit.adapter.on_proposal_disposition(
+                    control,
+                    BatchDisposition.prefix(
+                        proposed_count=len(proposed),
+                        accepted_count=len(selected),
+                        reason="strategy_allocation",
+                        metadata={
+                            "role": unit.role,
+                            "unit_id": int(unit.unit_id),
+                        },
+                    ),
+                    ctx,
+                )
             start = cursor
-            for cand in proposed[:k]:
+            for cand in selected:
                 candidates.append(np.asarray(cand))
                 cursor += 1
             end = cursor
@@ -929,29 +949,97 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             KEY_CANDIDATE_UNITS: [int(uid) for (_r, uid, s, e) in allocations for _ in range(e - s)],
             KEY_UNIT_TASKS: dict(self._unit_tasks),
         }
-        self._broadcast_state(solver)
+        self._broadcast_state(control)
         return candidates
+
+    def on_proposal_disposition(
+        self,
+        control: Any,
+        disposition: BatchDisposition,
+        context: Dict[str, Any],
+    ) -> None:
+        by_key = {(u.role, int(u.unit_id)): u for u in self.units}
+        reconciled: List[Tuple[str, int, int, int]] = []
+        retained_tasks: Dict[Tuple[str, int], Dict[str, Any]] = {}
+        retained_contexts: Dict[Tuple[str, int], Dict[str, Any]] = {}
+        cursor = 0
+        for role, unit_id, start, end in self._last_allocations:
+            child_disposition = disposition.for_range(start, end)
+            unit = by_key.get((role, int(unit_id)))
+            if unit is None:
+                raise RuntimeError(
+                    f"proposal allocation references missing strategy unit {role}:{unit_id}"
+                )
+            task_key = (role, int(unit_id))
+            proposal_context = self._unit_proposal_contexts.get(task_key)
+            if proposal_context is None:
+                raise RuntimeError(
+                    f"proposal allocation has no context for strategy unit {role}:{unit_id}"
+                )
+            child_context = dict(context)
+            child_context.update(proposal_context)
+            unit.adapter.on_proposal_disposition(
+                control,
+                child_disposition,
+                child_context,
+            )
+            if child_disposition.accepted_count <= 0:
+                continue
+            new_end = cursor + child_disposition.accepted_count
+            reconciled.append((role, int(unit_id), cursor, new_end))
+            task = dict(self._unit_tasks.get(task_key, {}))
+            task["budget"] = child_disposition.accepted_count
+            task["accepted_indices"] = list(child_disposition.accepted_indices)
+            task["disposition_reason"] = disposition.reason
+            retained_tasks[task_key] = task
+            retained_contexts[task_key] = proposal_context
+            cursor = new_end
+
+        self._last_allocations = reconciled
+        self._unit_tasks = retained_tasks
+        self._unit_proposal_contexts = retained_contexts
+        self._runtime_meta_projection = {
+            KEY_CANDIDATE_ROLES: [
+                role for role, _unit_id, start, end in reconciled for _ in range(end - start)
+            ],
+            KEY_CANDIDATE_UNITS: [
+                int(unit_id)
+                for _role, unit_id, start, end in reconciled
+                for _ in range(end - start)
+            ],
+            KEY_UNIT_TASKS: dict(self._unit_tasks),
+        }
 
     def update(
         self,
-        solver: Any,
+        control: Any,
         candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        feedback: Tuple[np.ndarray, np.ndarray],
         context: Dict[str, Any],
     ) -> None:
+        objectives, violations = feedback
         # Update per-strategy + global best
         global_best_score = self.shared_state.get("best_score")
         global_best_x = self.shared_state.get("best_x")
 
-        if candidates is None or len(candidates) == 0:
+        expected_count = sum(end - start for _role, _unit_id, start, end in self._last_allocations)
+        if len(candidates) != expected_count:
+            raise ValueError(
+                "multi-strategy feedback does not match proposal allocations: "
+                f"candidates={len(candidates)}, allocated={expected_count}"
+            )
+        if len(objectives) != expected_count or len(violations) != expected_count:
+            raise ValueError(
+                "multi-strategy candidate, objective, and violation counts must match"
+            )
+        if len(candidates) == 0:
             self._step += 1
             return
 
         # compute scalar scores for each candidate
         scores = []
         for i in range(len(candidates)):
-            vio = float(violations[i]) if violations is not None else 0.0
+            vio = float(violations[i])
             scores.append(self._score(objectives[i], vio))
         scores_arr = np.asarray(scores, dtype=float)
 
@@ -966,7 +1054,9 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         for role, unit_id, start, end in list(self._last_allocations):
             unit = by_key.get((role, int(unit_id)))
             if unit is None:
-                continue
+                raise RuntimeError(
+                    f"feedback allocation references missing strategy unit {role}:{unit_id}"
+                )
             sub_cands = candidates[start:end]
             sub_obj = objectives[start:end]
             sub_vio = violations[start:end]
@@ -986,7 +1076,14 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 self._ema_score[role] = float((1.0 - a) * float(ema) + a * float(sub_best))
 
             # role/unit-scoped context for update
-            ctx = dict(context)
+            task_key = (role, int(unit_id))
+            proposal_context = self._unit_proposal_contexts.get(task_key)
+            if proposal_context is None:
+                raise RuntimeError(
+                    f"feedback allocation has no context for strategy unit {role}:{unit_id}"
+                )
+            ctx = dict(proposal_context)
+            ctx.update(context)
             ctx[KEY_SHARED] = {
                 "best_x": global_best_x,
                 "best_score": global_best_score,
@@ -996,9 +1093,9 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             ctx[KEY_STRATEGY] = role
             ctx[KEY_ROLE] = role
             ctx[KEY_STRATEGY_ID] = int(unit_id)
-            ctx[KEY_TASK] = {"unit_id": int(unit_id), "role": role, "step": int(self._step)}
+            ctx[KEY_TASK] = dict(self._unit_tasks[task_key])
 
-            unit.adapter.update(solver, sub_cands, sub_obj, sub_vio, ctx)
+            unit.adapter.update(control, sub_cands, (sub_obj, sub_vio), ctx)
             self._record_unit_report(role, int(unit_id), sub_cands, sub_obj, sub_vio, scores_arr[start:end])
 
         # decision: adapt strategy weights
@@ -1010,11 +1107,12 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self.shared_state["best_score"] = global_best_score
         self.shared_state["strategies"] = self._build_strategy_stats()
         self.shared_state["units"] = self._build_unit_stats()
-        self.shared_state[KEY_ROLE_REPORTS] = self._collect_role_reports(solver)
+        self.shared_state[KEY_ROLE_REPORTS] = self._collect_role_reports(control)
         self.shared_state["phase"] = self._current_phase_name
         self.shared_state["regions"] = self._build_region_stats()
-        self._broadcast_state(solver)
+        self._broadcast_state(control)
 
+        self._unit_proposal_contexts = {}
         self._step += 1
 
     def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
@@ -1095,9 +1193,9 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             "best_score": best_score,
         }
 
-    def _collect_role_reports(self, solver: Any) -> Dict[str, Any]:
+    def _collect_role_reports(self, control: Any) -> Dict[str, Any]:
         # Prefer RoleAdapter reports if present (more informative).
-        reports = getattr(solver, "role_reports", None)
+        reports = getattr(control, "role_reports", None)
         if isinstance(reports, dict):
             return reports
         # Otherwise summarize from unit reports.

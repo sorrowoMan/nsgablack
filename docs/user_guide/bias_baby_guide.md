@@ -1,4 +1,4 @@
-﻿# 偏置系统宝宝级教程
+# 偏置系统宝宝级教程
 
 本教程按“偏置类型”来讲，告诉你**怎么写**、**怎么接**、**什么时候用**。  
 一句话记住：**偏置就是给优化过程一个额外的“倾向”**。
@@ -146,18 +146,18 @@ from nsgablack.utils.plugins import SurrogateEvaluationProviderPlugin, Surrogate
 class MyProblem(BlackBoxProblem):
     def __init__(self, dim=10):
         super().__init__(name="my_problem", dimension=dim, bounds={f"x{i}": (-5.0, 5.0) for i in range(dim)})
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
+    def evaluate(self, candidate):
+        x = np.asarray(candidate, dtype=float)
         return float(np.sum(x * x))
 
 class RandomBatch(AlgorithmAdapter):
     def __init__(self, n=64):
         super().__init__(name="random_batch")
         self.n = int(n)
-    def propose(self, solver, context):
-        lows = np.array([solver.var_bounds[f\"x{i}\"][0] for i in range(solver.dimension)], dtype=float)
-        highs = np.array([solver.var_bounds[f\"x{i}\"][1] for i in range(solver.dimension)], dtype=float)
-        return [np.random.uniform(lows, highs, size=solver.dimension) for _ in range(self.n)]
+    def propose(self, control, context):
+        lows = np.array([control.var_bounds[f\"x{i}\"][0] for i in range(control.dimension)], dtype=float)
+        highs = np.array([control.var_bounds[f\"x{i}\"][1] for i in range(control.dimension)], dtype=float)
+        return [np.random.uniform(lows, highs, size=control.dimension) for _ in range(self.n)]
 
 solver = ComposableSolver(problem=MyProblem(dim=16), adapter=RandomBatch(n=64))
 solver.max_steps = 20

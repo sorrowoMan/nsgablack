@@ -15,6 +15,8 @@ import heapq
 
 import numpy as np
 
+from blackbase.contracts import BatchDisposition
+
 from ..algorithm_adapter import AlgorithmAdapter
 
 
@@ -131,7 +133,7 @@ class MOAStarAdapter(AlgorithmAdapter):
         self.pareto_states: List[State] = []
         self.pareto_costs: List[np.ndarray] = []
 
-    def setup(self, solver: Any) -> None:
+    def setup(self, control: Any) -> None:
         self._open = []
         self._labels = {}
         self._state_labels = {}
@@ -143,22 +145,22 @@ class MOAStarAdapter(AlgorithmAdapter):
         self.pareto_costs = []
 
         try:
-            self.num_objectives = int(getattr(solver, "num_objectives", None) or 1)
+            self.num_objectives = int(getattr(control, "num_objectives", None) or 1)
         except Exception:
             self.num_objectives = 1
 
-        start = self._resolve_start_state(solver, {})
+        start = self._resolve_start_state(control, {})
         if start is not None:
             g0 = np.zeros(self.num_objectives, dtype=float)
             h0 = self._heuristic_vec(start, {})
             self._push_open(start, g=g0, h=h0, parent_key=None)
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self.found and self.cfg.stop_on_goal:
             return []
 
         if not self._open:
-            start = self._resolve_start_state(solver, context)
+            start = self._resolve_start_state(control, context)
             if start is not None:
                 g0 = np.zeros(self.num_objectives or 1, dtype=float)
                 h0 = self._heuristic_vec(start, context)
@@ -203,38 +205,51 @@ class MOAStarAdapter(AlgorithmAdapter):
 
         return candidates
 
-    def update(
+    def on_proposal_disposition(
         self,
-        solver: Any,
-        candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        control: Any,
+        disposition: BatchDisposition,
         context: Dict[str, Any],
     ) -> None:
-        if candidates is None:
-            return
-        try:
-            candidate_count = len(candidates)
-        except Exception:
-            candidates = [candidates]  # type: ignore[list-item]
-            candidate_count = 1
+        del control, context
+        if disposition.proposed_count != len(self._pending):
+            raise ValueError(
+                "MOA* proposal disposition does not match pending path metadata: "
+                f"proposed_count={disposition.proposed_count}, "
+                f"pending_count={len(self._pending)}"
+            )
+        self._pending = [self._pending[index] for index in disposition.accepted_indices]
+
+    def update(
+        self,
+        control: Any,
+        candidates: Sequence[np.ndarray],
+        feedback: Tuple[np.ndarray, np.ndarray],
+        context: Dict[str, Any],
+    ) -> None:
+        objectives, violations = feedback
+        candidate_count = len(candidates)
         if candidate_count <= 0:
             return
+        if candidate_count != len(self._pending):
+            raise ValueError("MOA* feedback must align with pending path metadata")
 
         obj = np.asarray(objectives, dtype=float)
         if obj.ndim == 1:
             obj = obj.reshape(-1, 1)
         vio = np.asarray(violations, dtype=float).reshape(-1)
+        if obj.shape[0] != candidate_count or vio.shape[0] != candidate_count:
+            raise ValueError("MOA* candidate, objective, and violation counts must match")
 
         if self.num_objectives is None:
             self.num_objectives = int(obj.shape[1])
 
         for i, cand in enumerate(candidates):
-            meta = self._pending[i] if i < len(self._pending) else {}
+            meta = self._pending[i]
             cand_arr = np.asarray(cand)
 
             obj_vec = obj[i]
-            penalty = float(self.cfg.violation_penalty) * float(vio[i]) if i < len(vio) else 0.0
+            penalty = float(self.cfg.violation_penalty) * float(vio[i])
             pen_vec = np.full(obj_vec.shape, penalty, dtype=float)
 
             if self.cfg.path_cost_mode == "objective":
@@ -309,13 +324,13 @@ class MOAStarAdapter(AlgorithmAdapter):
         self.pareto_costs = new_costs
         self.pareto_states = new_states
 
-    def _resolve_start_state(self, solver: Any, context: Dict[str, Any]) -> Optional[State]:
+    def _resolve_start_state(self, control: Any, context: Dict[str, Any]) -> Optional[State]:
         if callable(self.start_state):
             return np.asarray(self.start_state(context))
         if self.start_state is not None:
             return np.asarray(self.start_state)
         try:
-            return np.asarray(solver.init_candidate(context))
+            return np.asarray(control.init_candidate(context))
         except Exception:
             return None
 

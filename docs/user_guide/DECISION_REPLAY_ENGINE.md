@@ -61,8 +61,21 @@ for e in engine.iter(event_type="fallback"):
     print(e["generation"], e["decision"], e["reason_code"])
 ```
 
-## Demo
+## Standard Case Usage
+
+Add the plugin in the Case `build_solver.py`, then run the Case through the
+Project entry:
 
 ```powershell
-python examples/decision_trace_demo.py
+python run_project.py
 ```
+
+For a Case-level wiring check:
+
+```powershell
+python cases\<case>\run_solver.py --check
+```
+
+Formal examples should live under `examples/cases/<project>/` or a documented
+Project example namespace. Compatibility scripts are not authoritative replay
+contracts.

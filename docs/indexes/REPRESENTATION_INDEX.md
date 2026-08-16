@@ -29,7 +29,7 @@
 
 所有 representation 模块使用 **实例级 RNG**（`self._rng = np.random.default_rng()`），禁止全局 `np.random`。
 
-> 参考：`docs/development/DEVELOPER_CONVENTIONS.md` 第 2 节
+> 参考：`docs/guides/DECOUPLING_REPRESENTATION.md`
 
 ## 入口
 

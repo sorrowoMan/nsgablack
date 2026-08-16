@@ -1,8 +1,8 @@
 # docs/project
 
-用途：项目治理与发布流程。
-边界：项目管理文档。
-示例：RELEASE_PROCESS, CONTRIBUTING。
+用途：项目治理、发布流程、稳定性策略、ADR、catalog DB 协议与 run surface contract。
+边界：不放研究白皮书、案例叙事、概念对齐表、简历型技术栈材料。
+示例：RELEASE_PROCESS, CONTRIBUTING, RUN_SURFACE_CONTRACT, ENGINEERING_SURFACE。
 
 ## ADR（草案）
 
@@ -13,3 +13,5 @@
 Purpose: project governance docs.
 Boundary: project/process only.
 Example: RELEASE_PROCESS, CONTRIBUTING.
+
+研究/机制叙事材料已迁到 `docs/research/`。概念对齐材料已迁到 `docs/concepts/`。

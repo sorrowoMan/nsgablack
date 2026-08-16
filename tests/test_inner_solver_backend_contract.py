@@ -25,8 +25,8 @@ def test_inner_solver_backend_retry_and_timeout_strategy():
         def __init__(self):
             super().__init__(name="p", dimension=1, bounds={"x0": (-1.0, 1.0)})
 
-        def evaluate(self, x):
-            _ = x
+        def evaluate(self, candidate):
+            _ = candidate
             return 9999.0
 
         def build_inner_problem(self, x, eval_context):
@@ -37,20 +37,23 @@ def test_inner_solver_backend_retry_and_timeout_strategy():
         def __init__(self):
             super().__init__(name="a")
 
-        def propose(self, solver, context):
-            _ = (solver, context)
+        def propose(self, control, context):
+            _ = (control, context)
             return [np.array([0.0], dtype=float)]
 
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
+
     backend = _RetryBackend()
-    solver = ComposableSolver(problem=_Problem(), adapter=_Adapter())
-    solver.max_steps = 1
-    solver.pop_size = 1
-    solver.problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(
+    control = ComposableSolver(problem=_Problem(), adapter=_Adapter())
+    control.max_steps = 1
+    control.pop_size = 1
+    control.problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator(
         config=InnerRuntimeConfig(max_retries=1, retry_backoff_ms=0.0),
         inner_backend_factory=lambda _p, _ctx: backend,
     )
-    solver.run()
-    assert solver.best_objective is not None
-    assert abs(float(solver.best_objective) - 0.25) < 1e-12
+    control.run()
+    assert control.best_objective is not None
+    assert abs(float(control.best_objective) - 0.25) < 1e-12
     assert backend.calls == 2
 

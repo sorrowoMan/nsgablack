@@ -12,7 +12,7 @@ import logging
 import time
 from typing import Any, Dict, Optional
 
-from ..context.context_keys import KEY_METRICS, KEY_METRICS_SOFT_ERROR_COUNT, KEY_METRICS_SOFT_ERROR_LAST
+from nsgablack.core.state.context_keys import KEY_METRICS, KEY_METRICS_SOFT_ERROR_COUNT, KEY_METRICS_SOFT_ERROR_LAST
 
 _SOFT_ERROR_LAST_EMIT_AT: Dict[str, float] = {}
 

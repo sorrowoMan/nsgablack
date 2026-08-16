@@ -13,10 +13,10 @@ class MultiFidelityProblem:
         self.dimension = int(dimension)
         self.bounds = [(-3.0, 3.0)] * self.dimension
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
         # high-fidelity
-        return float(np.sum(x * x) + 0.05 * np.sin(np.sum(x)))
+        return float(np.sum(candidate * candidate) + 0.05 * np.sin(np.sum(candidate)))
 
     def evaluate_low_fidelity(self, x):
         x = np.asarray(x, dtype=float)

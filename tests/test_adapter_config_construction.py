@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Any, Dict, Sequence
 
@@ -13,10 +13,13 @@ class _DummyAdapter(AlgorithmAdapter):
         super().__init__(name=name)
         self._value = float(value)
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
-        _ = solver
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+        _ = control
         budget = int((context.get("task") or {}).get("budget", 1))
         return [np.asarray([self._value], dtype=float) for _ in range(max(1, budget))]
+
+    def update(self, control, candidates, feedback, context) -> None:
+        _ = (control, candidates, feedback, context)
 
 
 def test_vns_supports_inline_config_kwargs():

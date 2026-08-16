@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import warnings
 
 import numpy as np
+from blackbase.contracts import BatchDisposition
 
 from ..algorithm_adapter import AlgorithmAdapter
 from ...utils.context.context_keys import (
@@ -33,7 +34,6 @@ class RoleAdapter(AlgorithmAdapter):
     role: str = "role"
     inner: Optional[AlgorithmAdapter] = None
     max_candidates: Optional[int] = None
-    requires_context_keys: Tuple[str, ...] = ()
     companions: Tuple[str, ...] = ()
     recommended_suite: Optional[str] = None
     strict_contract: bool = False
@@ -53,7 +53,7 @@ class RoleAdapter(AlgorithmAdapter):
         name: Optional[str] = None,
         priority: int = 0,
         max_candidates: Optional[int] = None,
-        requires_context_keys: Sequence[str] = (),
+        context_requires: Sequence[str] = (),
         companions: Sequence[str] = (),
         recommended_suite: Optional[str] = None,
         strict_contract: bool = False,
@@ -61,8 +61,10 @@ class RoleAdapter(AlgorithmAdapter):
         super().__init__(name=name or f"role:{role}", priority=priority)
         self.role = str(role)
         self.inner = inner
-        self.max_candidates = max_candidates
-        self.requires_context_keys = tuple(str(k) for k in (requires_context_keys or ()))
+        if max_candidates is not None and int(max_candidates) < 0:
+            raise ValueError("max_candidates must be non-negative")
+        self.max_candidates = None if max_candidates is None else int(max_candidates)
+        self.context_requires = tuple(str(k) for k in (context_requires or ()))
         self.companions = tuple(str(c) for c in (companions or ()))
         self.recommended_suite = recommended_suite
         self.strict_contract = bool(strict_contract)
@@ -77,7 +79,7 @@ class RoleAdapter(AlgorithmAdapter):
         self._warned.add(key)
 
     def _check_contract(self, context: Dict[str, Any]) -> None:
-        missing = [k for k in self.requires_context_keys if k not in context]
+        missing = [k for k in self.context_requires if k not in context]
         if missing:
             msg = (
                 f"RoleAdapter '{self.name}' (role='{self.role}') missing required context keys: {missing}. "
@@ -95,46 +97,71 @@ class RoleAdapter(AlgorithmAdapter):
             )
             self._warn_once("companions", hint)
 
-    def setup(self, solver: Any) -> None:
+    def setup(self, control: Any) -> None:
         if self.inner is not None:
-            self.inner.setup(solver)
+            self.inner.setup(control)
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self.inner is None:
             return []
         self._check_contract(context)
         ctx = dict(context)
         ctx[KEY_ROLE] = self.role
         ctx[KEY_ROLE_ADAPTER] = self.name
-        proposed = self.coerce_candidates(self.inner.propose(solver, ctx))
+        proposed = self.coerce_candidates(self.inner.propose(control, ctx))
+        proposed_count = len(proposed)
         if self.max_candidates is not None:
             proposed = proposed[: int(self.max_candidates)]
+        if len(proposed) < proposed_count:
+            self.inner.on_proposal_disposition(
+                control,
+                BatchDisposition.prefix(
+                    proposed_count=proposed_count,
+                    accepted_count=len(proposed),
+                    reason="role_candidate_limit",
+                    metadata={"role": self.role},
+                ),
+                ctx,
+            )
         return proposed
+
+    def on_proposal_disposition(
+        self,
+        control: Any,
+        disposition: BatchDisposition,
+        context: Dict[str, Any],
+    ) -> None:
+        if self.inner is None:
+            raise RuntimeError(f"RoleAdapter '{self.name}' has no inner adapter")
+        ctx = dict(context)
+        ctx[KEY_ROLE] = self.role
+        ctx[KEY_ROLE_ADAPTER] = self.name
+        self.inner.on_proposal_disposition(control, disposition, ctx)
 
     def update(
         self,
-        solver: Any,
+        control: Any,
         candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        feedback: Tuple[np.ndarray, np.ndarray],
         context: Dict[str, Any],
     ) -> None:
+        objectives, violations = feedback
         if self.inner is None:
             return
         self._check_contract(context)
         ctx = dict(context)
         ctx[KEY_ROLE] = self.role
         ctx[KEY_ROLE_ADAPTER] = self.name
-        self.inner.update(solver, candidates, objectives, violations, ctx)
-        self._update_report(solver, candidates, objectives, violations, context)
+        self.inner.update(control, candidates, (objectives, violations), ctx)
+        self._update_report(control, candidates, objectives, violations, context)
 
-    def teardown(self, solver: Any) -> None:
+    def teardown(self, control: Any) -> None:
         if self.inner is not None:
-            self.inner.teardown(solver)
+            self.inner.teardown(control)
 
     def _update_report(
         self,
-        solver: Any,
+        control: Any,
         candidates: Sequence[np.ndarray],
         objectives: np.ndarray,
         violations: np.ndarray,
@@ -195,7 +222,7 @@ class RoleAdapter(AlgorithmAdapter):
                 "best_violation": best_vio,
                 "step": context.get(KEY_STEP),
             }
-        _ = solver
+        _ = control
 
     def get_state(self) -> Dict[str, Any]:
         inner = self.inner.get_state() if self.inner is not None else {}
@@ -203,7 +230,7 @@ class RoleAdapter(AlgorithmAdapter):
             "role": self.role,
             "name": self.name,
             "max_candidates": self.max_candidates,
-            "requires_context_keys": list(self.requires_context_keys),
+            "context_requires": list(self.context_requires),
             "companions": list(self.companions),
             "recommended_suite": self.recommended_suite,
             "strict_contract": self.strict_contract,
@@ -217,8 +244,8 @@ class RoleAdapter(AlgorithmAdapter):
             self.role = str(state["role"])
         if "max_candidates" in state:
             self.max_candidates = state["max_candidates"]
-        if "requires_context_keys" in state and isinstance(state["requires_context_keys"], (list, tuple)):
-            self.requires_context_keys = tuple(str(k) for k in state["requires_context_keys"])
+        if "context_requires" in state and isinstance(state["context_requires"], (list, tuple)):
+            self.context_requires = tuple(str(k) for k in state["context_requires"])
         if "companions" in state and isinstance(state["companions"], (list, tuple)):
             self.companions = tuple(str(c) for c in state["companions"])
         if "recommended_suite" in state:
@@ -230,10 +257,6 @@ class RoleAdapter(AlgorithmAdapter):
 
     def get_context_contract(self) -> Dict[str, Any]:
         contract = super().get_context_contract()
-        requires = list(contract.get("requires", ()) or ())
-        requires.extend(list(self.requires_context_keys or ()))
-        provides = list(contract.get("provides", ()) or ())
-        provides.extend([KEY_ROLE, KEY_ROLE_ADAPTER])
         notes = list()
         base_notes = contract.get("notes")
         if base_notes:
@@ -243,10 +266,7 @@ class RoleAdapter(AlgorithmAdapter):
         if self.recommended_suite:
             notes.append(f"recommended_suite={self.recommended_suite}")
         return {
-            "requires": requires,
-            "provides": provides,
-            "mutates": contract.get("mutates", ()) or (),
-            "cache": contract.get("cache", ()) or (),
+            **contract,
             "notes": " | ".join(notes) if notes else None,
         }
 
@@ -281,12 +301,12 @@ class RoleRouterAdapter(AlgorithmAdapter):
     state_recovery_level = "L1"
     state_recovery_notes = "Restores child role adapter snapshots keyed by role name."
 
-    def setup(self, solver: Any) -> None:
+    def setup(self, control: Any) -> None:
         self._runtime_projection = {}
         for role in self.roles:
-            role.setup(solver)
+            role.setup(control)
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         candidates: List[np.ndarray] = []
         self._last_ranges = []
         self.last_candidate_roles = []
@@ -296,7 +316,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
             ctx = dict(context)
             ctx[KEY_ROLE] = role.role
             ctx[KEY_ROLE_INDEX] = idx
-            proposed = self.coerce_candidates(role.propose(solver, ctx))
+            proposed = self.coerce_candidates(role.propose(control, ctx))
             candidates.extend(proposed)
             end = len(candidates)
             self._last_ranges.append((role, start, end))
@@ -304,22 +324,53 @@ class RoleRouterAdapter(AlgorithmAdapter):
 
         self._runtime_projection[KEY_CANDIDATE_ROLES] = list(self.last_candidate_roles)
         self._runtime_projection[KEY_ROLE_REPORTS] = self._collect_role_reports()
-
         return candidates
+
+    def on_proposal_disposition(
+        self,
+        control: Any,
+        disposition: BatchDisposition,
+        context: Dict[str, Any],
+    ) -> None:
+        reconciled: List[Tuple[RoleAdapter, int, int]] = []
+        candidate_roles: List[str] = []
+        cursor = 0
+        for idx, (role, start, end) in enumerate(self._last_ranges):
+            child = disposition.for_range(start, end)
+            ctx = dict(context)
+            ctx[KEY_ROLE] = role.role
+            ctx[KEY_ROLE_INDEX] = idx
+            role.on_proposal_disposition(control, child, ctx)
+            if child.accepted_count == 0:
+                continue
+            next_cursor = cursor + child.accepted_count
+            reconciled.append((role, cursor, next_cursor))
+            candidate_roles.extend([role.role] * child.accepted_count)
+            cursor = next_cursor
+        self._last_ranges = reconciled
+        self.last_candidate_roles = candidate_roles
+        self._runtime_projection[KEY_CANDIDATE_ROLES] = list(candidate_roles)
 
     def update(
         self,
-        solver: Any,
+        control: Any,
         candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        feedback: Tuple[np.ndarray, np.ndarray],
         context: Dict[str, Any],
     ) -> None:
+        objectives, violations = feedback
         if not self._last_ranges:
-            # Fallback: dispatch full batch to all roles.
-            for role in self.roles:
-                role.update(solver, candidates, objectives, violations, context)
-            return
+            if len(candidates) == 0:
+                return
+            raise RuntimeError("RoleRouterAdapter.update requires a preceding propose call")
+        expected_count = sum(end - start for _role, start, end in self._last_ranges)
+        if len(candidates) != expected_count:
+            raise ValueError(
+                "role-router feedback does not match role proposal ranges: "
+                f"candidates={len(candidates)}, allocated={expected_count}"
+            )
+        if len(objectives) != expected_count or len(violations) != expected_count:
+            raise ValueError("role-router candidate, objective, and violation counts must match")
 
         for idx, (role, start, end) in enumerate(self._last_ranges):
             if start == end:
@@ -328,18 +379,17 @@ class RoleRouterAdapter(AlgorithmAdapter):
             ctx[KEY_ROLE] = role.role
             ctx[KEY_ROLE_INDEX] = idx
             role.update(
-                solver,
+                control,
                 candidates[start:end],
-                objectives[start:end],
-                violations[start:end],
+                (objectives[start:end], violations[start:end]),
                 ctx,
             )
         self._runtime_projection[KEY_CANDIDATE_ROLES] = list(self.last_candidate_roles)
         self._runtime_projection[KEY_ROLE_REPORTS] = self._collect_role_reports()
 
-    def teardown(self, solver: Any) -> None:
+    def teardown(self, control: Any) -> None:
         for role in self.roles:
-            role.teardown(solver)
+            role.teardown(control)
 
     def get_state(self) -> Dict[str, Any]:
         return {

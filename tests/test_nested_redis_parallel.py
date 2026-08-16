@@ -5,7 +5,13 @@ import time
 
 import numpy as np
 
-from nsgablack.core.resources import RedisL0RuntimeBackend, ResourceRequirement, TaskEnvelope, TaskResult
+from nsgablack.core.resources import (
+    RedisL0RuntimeBackend,
+    ResourceContext,
+    ResourceRequirement,
+    TaskEnvelope,
+    TaskResult,
+)
 from nsgablack.utils.parallel import (
     RedisNestedDistributedEvaluator,
     run_nested_redis_worker_once,
@@ -17,32 +23,90 @@ class _FakePipeline:
         self.client = client
         self.ops = []
 
-    def rpush(self, key, value):
-        self.ops.append(("rpush", key, value))
-        return self
+    def __getattr__(self, name):
+        def enqueue(*args):
+            self.ops.append((name, args))
+            return self
+
+        return enqueue
 
     def execute(self):
-        for op, key, value in self.ops:
-            if op == "rpush":
-                self.client.rpush(key, value)
-        return [1 for _ in self.ops]
+        with self.client._cond:
+            return [getattr(self.client, name)(*args) for name, args in self.ops]
+
+
+class _FakeLock:
+    def __init__(self, lock):
+        self.lock = lock
+
+    def acquire(self, blocking=True):
+        return self.lock.acquire(blocking=blocking)
+
+    def release(self):
+        self.lock.release()
 
 
 class _FakeRedis:
     def __init__(self):
         self._lists = {}
         self._values = {}
+        self._sets = {}
+        self._locks = {}
         self._cond = threading.Condition()
 
     def pipeline(self, transaction=False):
         _ = transaction
         return _FakePipeline(self)
 
+    def lock(self, name, timeout=None, blocking_timeout=None):
+        _ = timeout, blocking_timeout
+        with self._cond:
+            lock = self._locks.setdefault(str(name), threading.RLock())
+        return _FakeLock(lock)
+
     def rpush(self, key, value):
         with self._cond:
             self._lists.setdefault(str(key), []).append(value)
             self._cond.notify_all()
         return 1
+
+    def lrange(self, key, start, end):
+        with self._cond:
+            values = list(self._lists.get(str(key), []))
+        stop = len(values) if int(end) == -1 else int(end) + 1
+        return values[int(start):stop]
+
+    def lrem(self, key, count, value):
+        with self._cond:
+            values = self._lists.setdefault(str(key), [])
+            limit = abs(int(count))
+            removed = 0
+            output = []
+            for item in values:
+                if item == value and (limit == 0 or removed < limit):
+                    removed += 1
+                else:
+                    output.append(item)
+            self._lists[str(key)] = output
+            return removed
+
+    def sadd(self, key, *values):
+        with self._cond:
+            target = self._sets.setdefault(str(key), set())
+            before = len(target)
+            target.update(values)
+            return len(target) - before
+
+    def srem(self, key, *values):
+        with self._cond:
+            target = self._sets.setdefault(str(key), set())
+            before = len(target)
+            target.difference_update(values)
+            return before - len(target)
+
+    def smembers(self, key):
+        with self._cond:
+            return set(self._sets.get(str(key), set()))
 
     def blpop(self, key, timeout=1):
         key = str(key)
@@ -70,6 +134,10 @@ class _FakeRedis:
     def get(self, key):
         with self._cond:
             return self._values.get(str(key))
+
+    def delete(self, key):
+        with self._cond:
+            return int(self._values.pop(str(key), None) is not None)
 
 
 def test_redis_l0_backend_uses_task_envelope_and_task_result(tmp_path):
@@ -124,15 +192,31 @@ def test_redis_nested_distributed_evaluator_uses_external_worker_loop_with_l0_pr
         problem = _Problem()
         num_objectives = 2
         generation = 7
+        _resource_context_explicit = True
+        resource_context = ResourceContext.from_mapping(
+            {
+                "threads": 1,
+                "namespace": "project.outer",
+                "grant": {"threads": 1, "workers": 1},
+                "lease": {"lease_id": "project-lease", "owner_id": "outer"},
+            }
+        )
 
+        @classmethod
+        def get_resource_context(cls):
+            return cls.resource_context
+
+    seen_resource_contexts = []
     def task_runner(task: TaskEnvelope):
         candidate = np.asarray(task.payload["candidate"], dtype=float)
         total = float(np.sum(candidate))
+        seen_resource_contexts.append(dict(task.payload["resource_context"]))
         return TaskResult(
             task_id=task.task_id,
             status="ok",
             objectives=(total, float(task.payload["index"])),
             violations=(0.0,),
+            resource_context=dict(task.payload["resource_context"]),
             metadata={
                 "run_id": task.payload["run_id"],
                 "index": task.payload["index"],
@@ -155,8 +239,11 @@ def test_redis_nested_distributed_evaluator_uses_external_worker_loop_with_l0_pr
 
     assert np.allclose(objectives, [[3.0, 0.0], [7.0, 1.0], [11.0, 2.0]])
     assert np.allclose(violations, [0.0, 0.0, 0.0])
+    assert len(seen_resource_contexts) == int(population.shape[0])
+    assert all(item["lease"]["lease_id"] == "project-lease" for item in seen_resource_contexts)
     assert len(evaluator.last_task_results) == int(population.shape[0])
     for item in evaluator.last_task_results:
         assert item["lease_id"]
         assert item["resource_context"]["lease"]["lease_id"] == item["lease_id"]
         assert item["resource_context"]["task_id"] == item["task_id"]
+        assert item["resource_context"]["metadata"]["local_execution_lease"]["lease_id"]

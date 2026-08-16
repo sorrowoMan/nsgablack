@@ -393,6 +393,11 @@ def _sync_session_state_from_query(args: argparse.Namespace, query_params: Mappi
         st.session_state["experiment_ui_query"] = str(base_params["query"])
         st.session_state["experiment_ui_view"] = view_mode
         st.session_state["experiment_ui_selected"] = str(base_params["selected"])
+        # A deep-link navigation is authoritative. The quick-selection widgets
+        # otherwise retain their values across Streamlit reruns and can write the
+        # previous selection back over the new ``selected`` query parameter.
+        st.session_state.pop(f"experiment_ui_selection_hook::{view_mode}", None)
+        st.session_state.pop(f"experiment_ui_selection_jump::{view_mode}", None)
         st.session_state[detail_tab_key] = str(base_params["detail_tab"])
         st.session_state[column_mode_key] = str(base_params["column_mode"])
         st.session_state[page_size_key] = int(base_params["page_size"])
@@ -695,11 +700,11 @@ def _render_selection_nav_links(
         if int(row_index) > 0:
             prev_key = str(rows[int(row_index) - 1].get("selection_key") or "")
             prev_query = _build_deep_link_query(base_params={**dict(base_params), "selected": prev_key}, field_filters=field_filters)
-            prev_html = f"<a class='selection-link-chip' href='{escape(prev_query)}'>{escape(_PREV_LINK_LABEL)}</a>"
+            prev_html = f"<a class='selection-link-chip' href='{escape(prev_query)}' target='_self'>{escape(_PREV_LINK_LABEL)}</a>"
         if int(row_index) < len(rows) - 1:
             next_key = str(rows[int(row_index) + 1].get("selection_key") or "")
             next_query = _build_deep_link_query(base_params={**dict(base_params), "selected": next_key}, field_filters=field_filters)
-            next_html = f"<a class='selection-link-chip' href='{escape(next_query)}'>{escape(_NEXT_LINK_LABEL)}</a>"
+            next_html = f"<a class='selection-link-chip' href='{escape(next_query)}' target='_self'>{escape(_NEXT_LINK_LABEL)}</a>"
     st.markdown(f"<div class='selection-link-row'>{prev_html}{next_html}</div>", unsafe_allow_html=True)
 
 
@@ -1664,7 +1669,12 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
     }
     _write_query_params(base_params=base_params, field_filters=field_filters)
     _render_selection_nav_links(rows=rows, selection=selection, base_params=base_params, field_filters=field_filters)
-    st.text_input(_DEEPLINK_LABEL, value=_build_deep_link_query(base_params=base_params, field_filters=field_filters), key=f"experiment_ui_deeplink::{view_mode}")
+    deep_link_key = f"experiment_ui_deeplink::{view_mode}"
+    st.session_state[deep_link_key] = _build_deep_link_query(
+        base_params=base_params,
+        field_filters=field_filters,
+    )
+    st.text_input(_DEEPLINK_LABEL, key=deep_link_key)
 
     _page.render_section_header(
         st,

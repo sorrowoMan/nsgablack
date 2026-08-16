@@ -465,11 +465,33 @@ def _check_class_template_not_implemented(
     strict: bool,
     add: Callable[[List[DoctorDiagnostic], str, str, str, Path | None], None],
 ) -> None:
+    allowed_methods: set[str] = set()
+    for node in class_node.body:
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else (node.target,)
+        if not any(
+            isinstance(target, ast.Name) and target.id == "doctor_allow_not_implemented"
+            for target in targets
+        ):
+            continue
+        value_node = node.value
+        try:
+            raw = ast.literal_eval(value_node)
+        except (ValueError, TypeError):
+            raw = ()
+        if isinstance(raw, str):
+            allowed_methods.add(raw)
+        elif isinstance(raw, (tuple, list, set)):
+            allowed_methods.update(str(item) for item in raw)
+
     hits: List[str] = []
     for stmt in class_node.body:
         if not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         if _has_abstractmethod_decorator(stmt):
+            continue
+        if stmt.name in allowed_methods:
             continue
         for n in ast.walk(stmt):
             if _is_not_implemented_raise(n):

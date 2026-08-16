@@ -102,7 +102,11 @@ obj = data.get("objectives", [])
 vio = data.get("constraint_violations", [])
 ```
 
-详见 `docs/development/DEVELOPER_CONVENTIONS.md`。
+相关规则见：
+
+- `docs/user_guide/CONTEXT_CONTRACTS.md`
+- `docs/user_guide/CONTEXT_FIELD_RULES.md`
+- `docs/standard_scaffold_tutorial/04_validation_catalog_and_evolution.md`
 
 ---
 

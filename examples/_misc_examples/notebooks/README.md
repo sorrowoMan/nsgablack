@@ -2,8 +2,8 @@
 
 用途：Notebook 形式的交互式示例。
 边界：仅用于教学/演示。
-示例：workflow_end_to_end_portfolio.ipynb。
+示例：legacy_portfolio_notebook.ipynb。
 
 Purpose: interactive notebook demos.
 Boundary: demo only.
-Example: workflow_end_to_end_portfolio.ipynb.
+Example: legacy_portfolio_notebook.ipynb.

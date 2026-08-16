@@ -8,6 +8,10 @@ from typing import Any, Callable, Dict, Mapping, Optional, Protocol, Sequence, T
 import numpy as np
 
 
+class EvaluationProviderContractError(RuntimeError):
+    """Raised when an accepting provider fails to return an evaluation result."""
+
+
 class EvaluationProvider(Protocol):
     name: str
     semantic_mode: str  # exact | equivalent | approximate
@@ -21,7 +25,7 @@ class EvaluationProvider(Protocol):
         x: np.ndarray,
         context: Mapping[str, Any],
         individual_id: Optional[int] = None,
-    ) -> Optional[Tuple[np.ndarray, float]]:
+    ) -> Tuple[np.ndarray, float]:
         ...
 
     def can_handle_population(self, solver: Any, population: np.ndarray, context: Mapping[str, Any]) -> bool:
@@ -32,7 +36,7 @@ class EvaluationProvider(Protocol):
         solver: Any,
         population: np.ndarray,
         context: Mapping[str, Any],
-    ) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         ...
 
 
@@ -120,8 +124,15 @@ class EvaluationMediator:
         individual_id: Optional[int] = None,
         context: Optional[Mapping[str, Any]] = None,
         fallback: Callable[[], Tuple[np.ndarray, float]],
+        on_dispatch: Optional[Callable[[str], None]] = None,
     ) -> Tuple[np.ndarray, float]:
         ctx = dict(context or {})
+
+        def run_fallback() -> Tuple[np.ndarray, float]:
+            if on_dispatch is not None:
+                on_dispatch("fallback")
+            return fallback()
+
         candidates: list[EvaluationProvider] = []
         for p in self._providers:
             can_fn = getattr(p, "can_handle_individual", None)
@@ -134,7 +145,7 @@ class EvaluationMediator:
                 continue
 
         if not candidates:
-            return fallback()
+            return run_fallback()
 
         if not bool(self.config.allow_approximate):
             filtered = []
@@ -146,20 +157,26 @@ class EvaluationMediator:
                 filtered.append(p)
             candidates = filtered
             if not candidates:
-                return fallback()
+                return run_fallback()
 
         chosen = self._select_provider(candidates)
         mode = str(getattr(chosen, "semantic_mode", "approximate")).strip().lower()
         if mode == "approximate" and not bool(self.config.allow_approximate):
             self._warn_approximate_blocked(chosen)
-            return fallback()
+            return run_fallback()
 
         eval_fn = getattr(chosen, "evaluate_individual", None)
         if not callable(eval_fn):
-            return fallback()
+            return run_fallback()
+        if on_dispatch is not None:
+            on_dispatch("provider")
         out = eval_fn(solver, x, ctx, individual_id=individual_id)
         if out is None:
-            return fallback()
+            raise EvaluationProviderContractError(
+                f"evaluation provider '{getattr(chosen, 'name', type(chosen).__name__)}' "
+                "accepted an individual request but returned None; providers must "
+                "decline in can_handle_individual() before dispatch"
+            )
         return out
 
     def evaluate_population(
@@ -169,8 +186,15 @@ class EvaluationMediator:
         *,
         context: Optional[Mapping[str, Any]] = None,
         fallback: Callable[[], Tuple[np.ndarray, np.ndarray]],
+        on_dispatch: Optional[Callable[[str], None]] = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
         ctx = dict(context or {})
+
+        def run_fallback() -> Tuple[np.ndarray, np.ndarray]:
+            if on_dispatch is not None:
+                on_dispatch("fallback")
+            return fallback()
+
         candidates: list[EvaluationProvider] = []
         for p in self._providers:
             try:
@@ -180,7 +204,7 @@ class EvaluationMediator:
                 continue
 
         if not candidates:
-            return fallback()
+            return run_fallback()
 
         if not bool(self.config.allow_approximate):
             filtered = []
@@ -192,15 +216,21 @@ class EvaluationMediator:
                 filtered.append(p)
             candidates = filtered
             if not candidates:
-                return fallback()
+                return run_fallback()
 
         chosen = self._select_provider(candidates)
         mode = str(getattr(chosen, "semantic_mode", "approximate")).strip().lower()
         if mode == "approximate" and not bool(self.config.allow_approximate):
             self._warn_approximate_blocked(chosen)
-            return fallback()
+            return run_fallback()
 
+        if on_dispatch is not None:
+            on_dispatch("provider")
         out = chosen.evaluate_population(solver, population, ctx)
         if out is None:
-            return fallback()
+            raise EvaluationProviderContractError(
+                f"evaluation provider '{getattr(chosen, 'name', type(chosen).__name__)}' "
+                "accepted a population request but returned None; providers must "
+                "decline in can_handle_population() before dispatch"
+            )
         return out

@@ -6,13 +6,17 @@ This solver delegates the optimization logic to AlgorithmAdapter instances.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+
+from blackbase.resources import ResourceContext
+from blackbase.contracts import BatchDisposition
 
 import numpy as np
 
 from ..adapters import AlgorithmAdapter, CompositeAdapter
 from .blank_solver import SolverBase
 from ..core.state.context_keys import KEY_STEP
+from .runtime_governance import commit_population_snapshot, resolve_population_snapshot
 from ..utils.extension_contracts import normalize_candidates, stack_population
 
 
@@ -28,6 +32,7 @@ class ComposableSolver(SolverBase):
         ignore_constraint_violation_when_bias: bool = False,
         plugin_strict: bool = False,
         snapshot_strict: bool = False,
+        resource_context: Optional[Mapping[str, Any] | ResourceContext] = None,
         context_store_backend: str = "memory",
         context_store_ttl_seconds: Optional[float] = None,
         context_store_redis_url: str = "redis://localhost:6379/0",
@@ -56,6 +61,7 @@ class ComposableSolver(SolverBase):
             ignore_constraint_violation_when_bias=ignore_constraint_violation_when_bias,
             plugin_strict=bool(plugin_strict),
             snapshot_strict=bool(snapshot_strict),
+            resource_context=resource_context,
             context_store_backend=context_store_backend,
             context_store_ttl_seconds=context_store_ttl_seconds,
             context_store_redis_url=context_store_redis_url,
@@ -99,50 +105,138 @@ class ComposableSolver(SolverBase):
         if self.adapter is not None:
             self.adapter.teardown(self)
 
-    def step(self) -> None:
+    def _notify_proposal_disposition(
+        self,
+        *,
+        proposed_count: int,
+        accepted_count: int,
+        context: Dict[str, Any],
+        reason: str,
+    ) -> None:
+        proposed = int(proposed_count)
+        accepted = int(accepted_count)
+        if accepted == proposed:
+            return
+        disposition = BatchDisposition.prefix(
+            proposed_count=proposed,
+            accepted_count=accepted,
+            reason=reason,
+            metadata={"control": type(self).__name__},
+        )
         if self.adapter is None:
+            raise RuntimeError("proposal disposition requires an attached adapter")
+        self.adapter.on_proposal_disposition(
+            self,
+            disposition,
+            context,
+        )
+
+    def step(self) -> None:
+        if self.adapter is None or bool(getattr(self, "stop_requested", False)):
             return
 
-        context = self.build_context()
-        context[KEY_STEP] = self.generation
+        propose_context = self.build_context()
+        propose_context[KEY_STEP] = self.generation
 
-        proposed = self.adapter.coerce_candidates(self.adapter.propose(self, context))
+        proposed = self.adapter.coerce_candidates(self.adapter.propose(self, propose_context))
         candidates = normalize_candidates(
             proposed,
             dimension=self.dimension,
             owner=getattr(self.adapter, "name", "adapter"),
         )
+        requested_count = len(candidates)
+        approved_count = self.evaluation_batch_allowance(
+            requested_count,
+            context=propose_context,
+        )
+        if approved_count <= 0:
+            if requested_count > 0:
+                self._notify_proposal_disposition(
+                    proposed_count=requested_count,
+                    accepted_count=0,
+                    context=propose_context,
+                    reason="evaluation_budget_exhausted",
+                )
+                self.last_step_summary = {
+                    "num_proposed": int(requested_count),
+                    "num_candidates": 0,
+                    "budget_truncated": True,
+                }
+                self.request_stop()
+            return
+        if approved_count < requested_count:
+            candidates = candidates[:approved_count]
         # If a representation pipeline is attached, enforce a repair pass so
         # all adapter-produced candidates go through the main pipeline.
         if len(candidates) > 0 and self.representation_pipeline is not None:
             repair = getattr(self.representation_pipeline, "repair", None)
             if repair is not None:
                 if hasattr(self.representation_pipeline, "repair_batch"):
-                    contexts = [context] * len(candidates)
-                    candidates = self.representation_pipeline.repair_batch(candidates, contexts=contexts)
+                    candidates = self.representation_pipeline.repair_batch(candidates, context=propose_context)
                 else:
-                    candidates = [self.repair_candidate(cand, context) for cand in candidates]
-        if candidates is None:
-            return
-        try:
-            candidate_count = len(candidates)
-        except Exception:
-            candidates = [candidates]  # type: ignore[list-item]
-            candidate_count = 1
-        if candidate_count <= 0:
-            return
+                    candidates = [self.repair_candidate(cand, propose_context) for cand in candidates]
+        candidate_count = len(candidates)
+        if candidate_count != approved_count:
+            raise ValueError(
+                "Representation repair must preserve candidate count: "
+                f"expected={approved_count}, actual={candidate_count}"
+            )
 
         self.population = stack_population(candidates, name="ComposableSolver.population")
-        self.objectives, self.constraint_violations = self.evaluate_population(self.population)
-        self.last_step_summary = self._summarize_step(self.objectives, self.constraint_violations)
-
-        self._update_best(self.population, self.objectives, self.constraint_violations)
-        self.adapter.update(
-            self,
+        (
             self.population,
             self.objectives,
             self.constraint_violations,
-            context,
+            reservation_truncated,
+        ) = self._evaluate_population_with_budget_retry(self.population)
+        accepted_count = int(self.population.shape[0])
+        self._notify_proposal_disposition(
+            proposed_count=requested_count,
+            accepted_count=accepted_count,
+            context=propose_context,
+            reason=(
+                "evaluation_budget_race"
+                if reservation_truncated
+                else "evaluation_budget_allowance"
+            ),
+        )
+        if accepted_count == 0:
+            self.last_step_summary = {
+                "num_proposed": int(requested_count),
+                "num_candidates": 0,
+                "budget_truncated": True,
+            }
+            self.request_stop()
+            return
+        self.last_step_summary = self._summarize_step(self.objectives, self.constraint_violations)
+        self.last_step_summary.update(
+            {
+                "num_proposed": int(requested_count),
+                "budget_truncated": bool(
+                    approved_count < requested_count
+                    or reservation_truncated
+                ),
+            }
+        )
+
+        self._update_best(self.population, self.objectives, self.constraint_violations)
+        update_context = self.build_context()
+        update_context[KEY_STEP] = self.generation
+        self.adapter.update(
+            self,
+            self.population,
+            (self.objectives, self.constraint_violations),
+            update_context,
+        )
+        authoritative_population, authoritative_objectives, authoritative_violations = (
+            resolve_population_snapshot(self, prefer_adapter=True)
+        )
+        commit_population_snapshot(
+            self,
+            authoritative_population,
+            authoritative_objectives,
+            authoritative_violations,
+            strict=True,
         )
 
     def select_best(self, objectives: np.ndarray, violations: np.ndarray) -> int:

@@ -35,8 +35,8 @@ class AssignmentProblem(BlackBoxProblem):
         self.cost = np.asarray(cost, dtype=float)
         self.matrix_shape = (n, n)
 
-    def evaluate(self, x):
-        mat = np.asarray(x, dtype=float).reshape(self.matrix_shape)
+    def evaluate(self, candidate):
+        mat = np.asarray(candidate, dtype=float).reshape(self.matrix_shape)
         return float(np.sum(mat * self.cost))
 
 

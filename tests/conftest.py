@@ -29,8 +29,8 @@ def sample_problem():
                 bounds=[(-10, 10)] * 2
             )
 
-        def evaluate(self, x):
-            return np.sum(x**2)
+        def evaluate(self, candidate):
+            return np.sum(candidate**2)
 
     return SimpleSphere()
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Deque, Dict, Optional, Sequence
+from typing import Any, Deque, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -88,7 +88,7 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
         self.step_count: int = 0
         self._rng = np.random.default_rng()
 
-    def setup(self, solver: Any) -> None:
+    def setup(self, control: Any) -> None:
         self.current_x = None
         self.current_score = None
         self.best_x = None
@@ -116,27 +116,27 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
         }
         return ctx
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self.current_x is None:
-            self.current_x = np.asarray(solver.init_candidate(context), dtype=float)
+            self.current_x = np.asarray(control.init_candidate(context), dtype=float)
 
         ctx = self._build_context(context)
         out = []
         k = int(max(1, int(self.cfg.batch_size)))
         for _ in range(k):
-            cand = solver.mutate_candidate(self.current_x, ctx)
-            cand = solver.repair_candidate(cand, ctx)
+            cand = control.mutate_candidate(self.current_x, ctx)
+            cand = control.repair_candidate(cand, ctx)
             out.append(np.asarray(cand, dtype=float))
         return out
 
     def update(
         self,
-        solver: Any,
+        control: Any,
         candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        feedback: Tuple[np.ndarray, np.ndarray],
         context: Dict[str, Any],
     ) -> None:
+        objectives, violations = feedback
         self.step_count += 1
         if candidates is None or len(candidates) == 0:
             return
@@ -180,7 +180,7 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
         self.sigma = float(np.clip(self.sigma * scale, float(self.cfg.min_sigma), float(self.cfg.max_sigma)))
 
         if self.no_improve_steps >= int(max(1, int(self.cfg.restart_patience))):
-            self.current_x = np.asarray(solver.init_candidate(context), dtype=float)
+            self.current_x = np.asarray(control.init_candidate(context), dtype=float)
             self.current_score = None
             self.no_improve_steps = 0
 

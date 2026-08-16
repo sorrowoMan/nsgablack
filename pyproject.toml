@@ -30,8 +30,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -40,8 +38,9 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Mathematics",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
+    "blackbase>=0.2.0,<0.3.0",
     "numpy>=1.20.0",
     "scipy>=1.7.0",
     "scikit-learn>=1.0.0",
@@ -84,13 +83,64 @@ Repository = "https://github.com/sorrowoMan/nsgablack.git"
 nsgablack = "nsgablack.__main__:main"
 
 [tool.setuptools]
+include-package-data = false
 
 [tool.setuptools.packages.find]
-exclude = ["test*", "docs*", "examples*"]
+include = [
+    "adapters*",
+    "bias*",
+    "catalog*",
+    "core*",
+    "experiment*",
+    "nsgablack*",
+    "plugins*",
+    "project*",
+    "representation*",
+    "ui*",
+    "utils*",
+]
+exclude = [
+    "build*",
+    "dist*",
+    "docs*",
+    "examples*",
+    "out*",
+    "project_template_base*",
+    "tests*",
+]
+namespaces = true
+
+[tool.setuptools.package-data]
+"catalog" = [
+    "DASHBOARD_PROTOCOL.md",
+    "db.toml.example",
+    "entries.toml",
+    "entries/*.toml",
+]
+"experiment" = ["db.toml.example"]
+"project.scaffold" = [
+    "project_template/*.md",
+    "project_template/*.template",
+    "project_template/cases/*.md",
+]
+"project.scaffold.case_template" = ["*.template"]
+"project.scaffold.case_template_solver" = [
+    "*.template",
+    "pipeline/*.template",
+    "pipeline/operators/.gitkeep",
+]
+"project.scaffold.case_template_trainer" = [
+    "*.template",
+    "pipeline/*.template",
+    "pipeline/operators/.gitkeep",
+]
+
+[tool.setuptools_scm]
+fallback_version = "0.0.0"
 
 [tool.black]
 line-length = 100
-target-version = ['py38', 'py39', 'py310', 'py311', 'py312', 'py313']
+target-version = ['py310', 'py311', 'py312', 'py313']
 include = '\.pyi?$'
 extend-exclude = '''
 /(

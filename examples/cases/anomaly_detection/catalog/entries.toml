@@ -1,7 +1,0 @@
-[[entry]]
-key = "example.anomaly_detection_de"
-title = "Anomaly Detection: LOF/IsolationForest as DE Search"
-kind = "example"
-import_path = "examples.cases.anomaly_detection.build_solver:build_solver"
-tags = ["example", "anomaly", "lof", "isolation_forest", "de", "constraint_bias"]
-summary = "Anomaly detection hyperparameter optimization as black-box search. DE tunes LOF/IsolationForest params, ConstraintBias enforces contamination range. vs sklearn defaults."

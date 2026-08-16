@@ -1,85 +1,67 @@
-"""Bias integration helpers used by SolverBase."""
+"""Bias module helper utilities."""
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Mapping, Optional
 
 import numpy as np
 
 
-def _report_debug_soft_error(
-    *,
-    solver: Any,
-    report_soft_error_fn: Callable[..., Any],
-    logger: Any,
-    event: str,
-    exc: Exception,
-) -> None:
-    report_soft_error_fn(
-        component="SolverBase",
-        event=event,
-        exc=exc,
-        logger=logger,
-        context_store=getattr(solver, "context_store", None),
-        strict=False,
-        level="debug",
-    )
-
-
 def apply_bias_module(
     solver: Any,
-    obj: np.ndarray,
-    x: np.ndarray,
-    individual_id: Optional[int],
-    context: Dict[str, Any],
+    objectives: Any,
+    x: Any = None,
+    individual_id: Optional[int] = None,
+    context: Optional[Mapping[str, Any]] = None,
     *,
-    report_soft_error_fn: Callable[..., Any],
-    logger: Any,
-    normalize_bias_output_fn: Callable[..., float],
+    report_soft_error_fn: Any = None,
+    logger: Any = None,
+    normalize_bias_output_fn: Any = None,
 ) -> np.ndarray:
+    """Apply a solver bias module to an objective vector."""
     bias_module = getattr(solver, "bias_module", None)
+    obj_arr = np.asarray(objectives, dtype=float).reshape(-1)
     if bias_module is None:
-        return obj
+        return obj_arr
+    ctx = dict(context or {})
+    try:
+        vector_fn = getattr(bias_module, "compute_bias_vector", None)
+        if callable(vector_fn):
+            return np.asarray(
+                vector_fn(x, obj_arr, individual_id=individual_id, context=ctx),
+                dtype=float,
+            ).reshape(-1)
 
-    setter = getattr(bias_module, "set_context_store", None)
-    if callable(setter):
-        try:
-            setter(getattr(solver, "context_store", None))
-        except Exception as exc:
-            _report_debug_soft_error(
-                solver=solver,
-                report_soft_error_fn=report_soft_error_fn,
-                logger=logger,
-                event="bias_set_context_store",
+        scalar_fn = getattr(bias_module, "compute_bias", None)
+        if callable(scalar_fn):
+            out = [
+                scalar_fn(x, float(value), individual_id=individual_id, context=ctx)
+                for value in obj_arr
+            ]
+            return np.asarray(out, dtype=float).reshape(-1)
+
+        apply_fn = getattr(bias_module, "apply", None)
+        if callable(apply_fn):
+            try:
+                out = apply_fn(obj_arr, context=ctx)
+            except TypeError:
+                out = apply_fn(obj_arr)
+            return np.asarray(out, dtype=float).reshape(-1)
+    except Exception as exc:
+        if callable(report_soft_error_fn):
+            report_soft_error_fn(
+                component="SolverBase",
+                event="apply_bias_module",
                 exc=exc,
-            )
-
-    snapshot_setter = getattr(bias_module, "set_snapshot_store", None)
-    if callable(snapshot_setter):
-        try:
-            snapshot_setter(getattr(solver, "snapshot_store", None))
-        except Exception as exc:
-            _report_debug_soft_error(
-                solver=solver,
-                report_soft_error_fn=report_soft_error_fn,
                 logger=logger,
-                event="bias_set_snapshot_store",
-                exc=exc,
+                context_store=getattr(solver, "context_store", None),
+                strict=bool(getattr(solver, "plugin_strict", False)),
             )
+        if bool(getattr(solver, "plugin_strict", False)):
+            raise
+    return obj_arr
 
-    if not hasattr(bias_module, "compute_bias"):
-        return obj
 
-    if obj.size == 1:
-        biased = bias_module.compute_bias(x, float(obj[0]), individual_id, context=context)
-        return np.array([normalize_bias_output_fn(biased, name="bias.compute_bias")], dtype=float)
-
-    out = []
-    for idx in range(obj.size):
-        out.append(
-            normalize_bias_output_fn(
-                bias_module.compute_bias(x, float(obj[idx]), individual_id, context=context),
-                name="bias.compute_bias",
-            )
-        )
-    return np.asarray(out, dtype=float)
+__all__ = [
+    "apply_bias_module",
+]

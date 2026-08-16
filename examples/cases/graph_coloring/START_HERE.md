@@ -1,33 +1,27 @@
 # START_HERE
 
-## 1) 这个 case 验证什么
+`graph_coloring` ????? Project / Case / Scaffold / L0 substrate?
 
-`graph_coloring` 验证 discrete graph assignment 可以作为 black-box optimization。
-
-- nsgablack 为每个 node 搜索一个 color coordinate。
-- Objective 先惩罚 edge conflicts，再惩罚 color count。
-- 该问题没有 ML evaluation/training component，因此不使用 mlblack。
-
-指标、结构、mlblack 状态和能力信号见 `README.md`。
-
-## 2) 验证 assembly
+## 1) ???????
 
 ```powershell
-python run_solver.py --check
+python examples/cases/graph_coloring/run_project.py --check
 ```
 
-## 3) 运行
+## 2) ??? Project ??
 
 ```powershell
-python run_solver.py
+python examples/cases/graph_coloring/run_project.py
 ```
 
-## 4) 关键指标
+## 3) ??????
 
-| 指标 | 含义 |
-|---|---|
-| `conflicts * 1000 + n_colors` | Scalar penalty：优先 feasible coloring，然后减少 colors。 |
+- Project ???? Case ?????????????
+- Case ??????? `build_solver.py` / `run_solver.py` surface?
+- `ResourceContext` ? Project L0 grant???? Case ???
 
-## 5) 预期信号
+## 4) ????
 
-有效运行应该先把 conflicts 推向 0，再减少使用的颜色数量。
+- `README.md`????????
+- `cases/graph_coloring/README.md`?? Case ????????
+- `cases/graph_coloring/START_HERE.md`?Case ?????

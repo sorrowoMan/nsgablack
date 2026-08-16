@@ -4,8 +4,8 @@
 
 因此本页收敛为指向：
 
-- 拆解规范（交付物/伙伴组件/收敛到 wiring helpers）：`DECOMPOSITION_RULES.md`
-- 拆解检查清单（开发时照着过一遍）：`docs/development/DECOMPOSITION_CHECKLIST.md`
-- 端到端落地（把拆解变成可跑配置）：`WORKFLOW_END_TO_END.md`
-- 权威示例（事实标准）：`docs/AUTHORITATIVE_EXAMPLES.md`
+- 拆解规范（交付物/伙伴组件/收敛到 wiring helpers）：`docs/project/DECOMPOSITION_RULES.md`
+- 扩展点契约（开发时照着过一遍）：`docs/user_guide/EXTENSION_CONTRACTS.md`
+- 端到端落地（把拆解变成可跑配置）：`docs/standard_scaffold_tutorial/01_create_and_run.md`
+- 示例迁移与标准落点：`docs/project/AUTHORITATIVE_EXAMPLES.md`
 

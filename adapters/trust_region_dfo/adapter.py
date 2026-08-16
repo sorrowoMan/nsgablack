@@ -54,19 +54,19 @@ class TrustRegionDFOAdapter(TrustRegionBaseAdapter):
         super().__init__(cfg, name=name, priority=priority, random_seed=cfg.random_seed)
         self.config = self.cfg
 
-    def _sample_delta(self, solver: Any, context: Dict[str, Any]) -> np.ndarray:
-        _ = solver, context
+    def _sample_delta(self, control: Any, context: Dict[str, Any]) -> np.ndarray:
+        _ = control, context
         assert self._center is not None
         return self._rng.uniform(low=-1.0, high=1.0, size=self._center.shape)
 
     def _score(
         self,
-        solver: Any,
+        control: Any,
         objectives: np.ndarray,
         violations: np.ndarray,
         context: Dict[str, Any],
     ) -> np.ndarray:
-        _ = solver, context
+        _ = control, context
         obj = np.asarray(objectives, dtype=float)
         if obj.ndim == 1:
             obj = obj.reshape(-1, 1)

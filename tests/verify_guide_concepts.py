@@ -66,8 +66,8 @@ try:
                 start_idx = end_idx
             return routes
 
-        def evaluate(self, x):
-            routes = self.decode_solution(x)
+        def evaluate(self, candidate):
+            routes = self.decode_solution(candidate)
             total_distance = 0
             for route in routes:
                 if len(route) > 0:

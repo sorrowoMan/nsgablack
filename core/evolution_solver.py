@@ -3,12 +3,12 @@
 from __future__ import annotations
 import logging
 import random
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple
 import numpy as np
 from ..adapters import NSGA2Adapter, NSGA2Config
 from .composable_solver import ComposableSolver
 from .resources import RedisL0RuntimeBackend
-from .solver_helpers import format_run_result
+from .solver_helpers import evaluate_external_population_with_contract, format_run_result
 from ..utils.engineering.error_policy import report_soft_error
 from ..utils.parallel.evaluator import ParallelEvaluator
 from ..utils.parallel.nested import NestedParallelEvaluator, RedisNestedDistributedEvaluator
@@ -17,9 +17,9 @@ from .runtime_governance import (
     AdaptiveParametersConfig,
     CompanionOrchestratorConfig,
     ConvergenceConfig,
+    commit_population_snapshot,
 )
 
-_MIN_POP_FOR_PARALLEL = 1
 logger = logging.getLogger(__name__)
 
 
@@ -41,6 +41,7 @@ class EvolutionSolver(ComposableSolver):
         ignore_constraint_violation_when_bias: bool = False,
         plugin_strict: bool = False,
         snapshot_strict: bool = False,
+        resource_context: Optional[Mapping[str, Any]] = None,
         context_store_backend: str = "memory",
         context_store_ttl_seconds: Optional[float] = None,
         context_store_redis_url: str = "redis://localhost:6379/0",
@@ -121,6 +122,7 @@ class EvolutionSolver(ComposableSolver):
             ignore_constraint_violation_when_bias=ignore_constraint_violation_when_bias,
             plugin_strict=bool(plugin_strict),
             snapshot_strict=bool(snapshot_strict),
+            resource_context=resource_context,
             context_store_backend=context_store_backend,
             context_store_ttl_seconds=context_store_ttl_seconds,
             context_store_redis_url=context_store_redis_url,
@@ -162,6 +164,7 @@ class EvolutionSolver(ComposableSolver):
         self._parallel_backend_type = "auto"  # "l0" | "legacy" | "auto"
         self.parallel_evaluator: Optional[ParallelEvaluator] = None
         self.nested_parallel_evaluator: Optional[Any] = None
+        self._parallel_requested_max_workers = parallel_max_workers
         self._parallel_cfg = {
             "backend": parallel_backend,
             "max_workers": parallel_max_workers,
@@ -178,6 +181,7 @@ class EvolutionSolver(ComposableSolver):
             "context_builder": parallel_context_builder,
             "extra_context": parallel_extra_context,
         }
+        self._apply_resource_context_to_runtime()
 
         self.set_random_seed(random_seed)
         if bias_module is None:
@@ -418,35 +422,39 @@ class EvolutionSolver(ComposableSolver):
         return self.nested_parallel_evaluator
 
     def evaluate_population(self, population: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        if _has_problem_inner_runtime_evaluator(self):
-            nested = self._ensure_nested_parallel_evaluator()
-            if nested is not None:
-                pop = np.asarray(population)
-                if pop.ndim == 1:
-                    pop = pop.reshape(1, -1)
-                if pop.shape[0] >= int(_MIN_POP_FOR_PARALLEL):
-                    objectives, violations = nested.evaluate_population(self, pop)
-                    try:
-                        self.evaluation_count += int(pop.shape[0])
-                    except Exception:
-                        pass
-                    return np.asarray(objectives, dtype=float), np.asarray(violations, dtype=float).reshape(-1)
-            return super().evaluate_population(population)
-        evaluator = self._ensure_parallel_evaluator()
-        if evaluator is not None:
-            pop = np.asarray(population)
-            if pop.ndim == 1:
-                pop = pop.reshape(1, -1)
-            if pop.shape[0] >= int(_MIN_POP_FOR_PARALLEL):
-                objectives, violations = evaluator.evaluate_population(
-                    population=pop,
-                    problem=self.problem,
-                    enable_bias=bool(getattr(self, "enable_bias", False)),
-                    bias_module=getattr(self, "bias_module", None),
-                    return_detailed=False,
+        try:
+            if _has_problem_inner_runtime_evaluator(self):
+                nested = self._ensure_nested_parallel_evaluator()
+                if nested is not None:
+                    return evaluate_external_population_with_contract(
+                        self,
+                        population,
+                        lambda candidates: nested.evaluate_population(self, candidates),
+                        context_name="evolution.parallel_nested",
+                        bias_already_applied=False,
+                    )
+                return super().evaluate_population(population)
+            evaluator = self._ensure_parallel_evaluator()
+            if evaluator is not None:
+                bias_module = getattr(self, "bias_module", None)
+                enable_bias = bool(getattr(self, "enable_bias", False))
+                return evaluate_external_population_with_contract(
+                    self,
+                    population,
+                    lambda candidates: evaluator.evaluate_population(
+                        population=candidates,
+                        problem=self.problem,
+                        enable_bias=enable_bias,
+                        bias_module=bias_module,
+                        return_detailed=False,
+                    ),
+                    context_name="evolution.parallel",
+                    bias_already_applied=enable_bias and bias_module is not None,
                 )
-                return np.asarray(objectives, dtype=float), np.asarray(violations, dtype=float).reshape(-1)
-        return super().evaluate_population(population)
+            return super().evaluate_population(population)
+        except BaseException as exc:
+            self._dispatch_error_once(exc, phase="evaluate_population")
+            raise
 
     def initialize_population(
         self,
@@ -464,6 +472,7 @@ class EvolutionSolver(ComposableSolver):
             if not self.history:
                 self.record_history()
             self._refresh_best()
+            self._commit_evolution_runtime_state()
         return population
 
     def setup(self) -> None:
@@ -489,16 +498,18 @@ class EvolutionSolver(ComposableSolver):
 
         super().setup()
 
-        if not resume_loaded:
-            self.history = []
-            if self.population is None or self.objectives is None or self.constraint_violations is None:
-                self.initialize_population(pop_size=self.pop_size, evaluate=True)
-            else:
-                self._sync_adapter_from_solver()
-                self.update_pareto_solutions()
-                if not self.history:
-                    self.record_history()
-                self._refresh_best()
+    def _initialize_run_state(self) -> None:
+        """Initialize fresh population state after run-start plugins have fired."""
+        self.history = []
+        if self.population is None or self.objectives is None or self.constraint_violations is None:
+            self.initialize_population(pop_size=self.pop_size, evaluate=True)
+        else:
+            self._sync_adapter_from_solver()
+            self.update_pareto_solutions()
+            if not self.history:
+                self.record_history()
+            self._refresh_best()
+            self._commit_evolution_runtime_state()
 
     def step(self) -> None:
         self._sync_nsga2_adapter_config()
@@ -510,9 +521,22 @@ class EvolutionSolver(ComposableSolver):
         self.update_pareto_solutions()
         self.record_history()
         self._refresh_best()
+        self._commit_evolution_runtime_state()
         if self.enable_progress_log and self.report_interval > 0:
             if (int(self.generation) + 1) % int(self.report_interval) == 0:
                 self._log_progress()
+
+    def _commit_evolution_runtime_state(self) -> None:
+        """Persist authoritative population plus current Pareto/history fields."""
+        if self.population is None or self.objectives is None or self.constraint_violations is None:
+            return
+        commit_population_snapshot(
+            self,
+            self.population,
+            self.objectives,
+            self.constraint_violations,
+            strict=True,
+        )
 
     def _sync_adapter_from_solver(self) -> None:
         adapter = getattr(self, "adapter", None)

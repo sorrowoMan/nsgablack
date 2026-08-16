@@ -21,6 +21,7 @@ from ...core.resources import (
     InMemoryResourceScheduler,
     L0RuntimeBackend,
     ResourceRequirement,
+    coerce_resource_context,
     TaskEnvelope,
     TaskResult,
     WorkerDescriptor,
@@ -75,6 +76,12 @@ def _clone_evaluator(evaluator: Any) -> Any:
             return evaluator
 
 
+def _solver_resource_context(solver: Any):
+    getter = getattr(solver, "get_resource_context", None)
+    value = getter() if callable(getter) else getattr(solver, "resource_context", None)
+    return coerce_resource_context(value)
+
+
 def _build_nested_task_envelope(
     solver: Any,
     x: np.ndarray,
@@ -85,6 +92,7 @@ def _build_nested_task_envelope(
     executor_backend: str = "thread",
     metadata: Optional[Dict[str, Any]] = None,
 ) -> TaskEnvelope:
+    resolved_task_id = str(task_id or f"task_{uuid4().hex[:16]}")
     n_obj = int(getattr(solver, "num_objectives", 1) or 1)
     problem = getattr(solver, "problem", None)
     generation = int(getattr(solver, "generation", 0))
@@ -98,17 +106,33 @@ def _build_nested_task_envelope(
     if metadata:
         task_meta.update(dict(metadata))
     requirement = _resolve_nested_task_requirement(solver)
+    payload: Dict[str, Any] = {
+        "candidate": candidate,
+        "index": int(idx),
+        "run_id": str(run_id),
+        "generation": generation,
+        "num_objectives": n_obj,
+        "problem_name": str(getattr(problem, "name", "")),
+    }
+    if bool(getattr(solver, "_resource_context_explicit", False)):
+        parent_resource = _solver_resource_context(solver)
+        child_resource = parent_resource.derive_child(
+            scope="inner_evaluation",
+            namespace_suffix=f"nested.{run_id}.{resolved_task_id}",
+            threads=int(requirement.threads),
+            execution_backend=str(executor_backend or parent_resource.execution_backend),
+            metadata={
+                "task_id": resolved_task_id,
+                "run_id": str(run_id),
+            },
+        )
+        payload["resource_context"] = child_resource.as_dict()
+        task_meta["parent_resource_namespace"] = str(parent_resource.namespace)
+        task_meta["parent_lease_id"] = str(dict(parent_resource.lease).get("lease_id", ""))
     return TaskEnvelope(
-        task_id=str(task_id or f"task_{uuid4().hex[:16]}"),
+        task_id=resolved_task_id,
         task_type="nested_candidate_eval",
-        payload={
-            "candidate": candidate,
-            "index": int(idx),
-            "run_id": str(run_id),
-            "generation": generation,
-            "num_objectives": n_obj,
-            "problem_name": str(getattr(problem, "name", "")),
-        },
+        payload=payload,
         requirement=requirement,
         executor_backend=str(executor_backend or "thread"),
         namespace=str(run_id),
@@ -137,8 +161,15 @@ def _resolve_nested_task_requirement(solver: Any) -> ResourceRequirement:
     caps = tuple(dict.fromkeys(tuple(base.capabilities) + ("nested_eval",)))
     metadata = dict(base.metadata)
     metadata.setdefault("source", "nsgablack.nested_runtime")
+    requested_threads = int(base.threads)
+    effective_threads = requested_threads
+    if bool(getattr(solver, "_resource_context_explicit", False)):
+        parent_resource = _solver_resource_context(solver)
+        effective_threads = min(requested_threads, int(parent_resource.threads))
+        metadata["requested_threads"] = requested_threads
+        metadata["parent_granted_threads"] = int(parent_resource.threads)
     return ResourceRequirement(
-        threads=int(base.threads),
+        threads=effective_threads,
         gpus=int(base.gpus),
         resource_backend=str(base.resource_backend),
         device_tokens=tuple(base.device_tokens),
@@ -188,6 +219,7 @@ def _attach_task_metadata_to_result(result: TaskResult, task: TaskEnvelope, *, w
         objectives=tuple(result.objectives),
         violations=tuple(result.violations),
         metrics=dict(result.metrics),
+        output=dict(result.output),
         artifact_refs=tuple(result.artifact_refs),
         worker_id=str(result.worker_id or worker_id),
         lease_id=str(result.lease_id),
@@ -197,6 +229,36 @@ def _attach_task_metadata_to_result(result: TaskResult, task: TaskEnvelope, *, w
         finished_at=float(result.finished_at),
         metadata=metadata,
     )
+
+
+def _distributed_result_resource_context(task: TaskEnvelope, scheduled: Any) -> tuple[Dict[str, Any], str]:
+    """Preserve the Project grant while retaining the worker-local lease for audit."""
+    scheduled_context = dict(scheduled.resource_context)
+    scheduled_lease_id = str(scheduled.lease.lease_id)
+    payload_context = dict(dict(task.payload).get("resource_context", {}) or {})
+    if not payload_context:
+        return scheduled_context, scheduled_lease_id
+
+    parent_lease_id = str(dict(payload_context.get("lease", {}) or {}).get("lease_id", ""))
+    metadata = dict(payload_context.get("metadata", {}) or {})
+    metadata.update(
+        {
+            "worker_id": str(scheduled.worker.worker_id),
+            "local_execution_lease": scheduled.lease.as_dict(),
+        }
+    )
+    payload_context["metadata"] = metadata
+    return payload_context, parent_lease_id or scheduled_lease_id
+
+
+def _merge_resource_context(base: Dict[str, Any], override: Any) -> Dict[str, Any]:
+    incoming = dict(override or {})
+    merged = {**dict(base), **incoming}
+    merged["metadata"] = {
+        **dict(dict(base).get("metadata", {}) or {}),
+        **dict(incoming.get("metadata", {}) or {}),
+    }
+    return merged
 
 
 class NestedParallelEvaluator:
@@ -243,6 +305,8 @@ class NestedParallelEvaluator:
         start = time.time()
         errors: list[str] = []
         workers = max(1, min(int(self.max_workers), n))
+        if bool(getattr(solver, "_resource_context_explicit", False)):
+            workers = min(workers, int(_solver_resource_context(solver).threads))
         if self.verbose:
             print(f"[nested-parallel] start n={n} workers={workers}")
 
@@ -343,6 +407,22 @@ class NestedParallelEvaluator:
         local_evaluator = _clone_evaluator(evaluator)
         x = _task_candidate(task)
         idx = _task_index(task)
+        resource_context = dict(scheduled.resource_context)
+        result_lease_id = str(scheduled.lease.lease_id)
+        parent_resource = _solver_resource_context(solver)
+        if bool(getattr(solver, "_resource_context_explicit", False)) or bool(parent_resource.lease):
+            local_lease = scheduled.lease.as_dict()
+            resource_context = parent_resource.derive_child(
+                scope="inner_evaluation",
+                namespace_suffix=f"nested.{_task_run_id(task)}.{task.task_id}",
+                threads=int(task.requirement.threads),
+                metadata={
+                    "task_id": str(task.task_id),
+                    "worker_id": str(scheduled.worker.worker_id),
+                    "local_execution_lease": local_lease,
+                },
+            ).as_dict()
+            result_lease_id = str(dict(parent_resource.lease).get("lease_id", "")) or result_lease_id
         try:
             nested = local_evaluator.evaluate(
                 solver=worker_solver,
@@ -352,7 +432,7 @@ class NestedParallelEvaluator:
                     "individual_id": int(idx),
                     "task_id": str(task.task_id),
                     "l0_task": task.as_dict(),
-                    "resource_context": dict(scheduled.resource_context),
+                    "resource_context": resource_context,
                 },
             )
             if nested is None:
@@ -378,8 +458,8 @@ class NestedParallelEvaluator:
                 objectives=tuple(float(v) for v in obj),
                 violations=(float(vio),),
                 worker_id=str(scheduled.worker.worker_id),
-                lease_id=str(scheduled.lease.lease_id),
-                resource_context=dict(scheduled.resource_context),
+                lease_id=result_lease_id,
+                resource_context=resource_context,
                 metrics={
                     "index": int(idx),
                     "generation": int(getattr(solver, "generation", 0)),
@@ -495,31 +575,62 @@ def run_nested_redis_worker_once(
     task_runner: Any,
     worker_id: Optional[str] = None,
     claim_timeout_seconds: int = 1,
+    task_lease_seconds: float = 30.0,
+    heartbeat_interval_seconds: float = 10.0,
+    include_cuda: bool = False,
+    worker_descriptor: Optional[WorkerDescriptor] = None,
 ) -> bool:
     """Run one Redis nested task with a case-provided task_runner.
 
     task_runner signature: fn(task: TaskEnvelope) -> TaskResult | mapping
+    CUDA discovery is opt-in because importing an optional ML runtime during
+    worker admission can consume the evaluator's queue timeout. Long-running
+    workers may pass one prebuilt descriptor to avoid repeated hardware probes.
     """
 
-    worker = str(worker_id or f"worker_{uuid4().hex[:8]}")
-    queue.heartbeat(worker, {"run_id": run_id})
-    task = queue.claim(run_id, timeout_seconds=int(claim_timeout_seconds))
-    if task is None:
-        return False
-    scheduler = InMemoryResourceScheduler(
-        workers=(
-            build_local_worker_descriptor(
-                worker_id=worker,
-                executor_backend="redis",
-                capabilities=("cpu", "numpy", "nested_eval"),
-                include_cuda=(
-                    int(task.requirement.gpus) > 0
-                    or bool(task.requirement.device_tokens)
-                    or task.requirement.gpu_memory_mb is not None
-                ),
-                max_inflight=1,
-            ),
+    descriptor = worker_descriptor
+    if descriptor is None:
+        worker = str(worker_id or f"worker_{uuid4().hex[:8]}")
+        descriptor = build_local_worker_descriptor(
+            worker_id=worker,
+            executor_backend="redis",
+            capabilities=("cpu", "numpy", "nested_eval"),
+            include_cuda=bool(include_cuda),
+            max_inflight=1,
         )
+    else:
+        worker = str(descriptor.worker_id)
+    claim = queue.claim_task(
+        descriptor,
+        run_id=run_id,
+        timeout_seconds=int(claim_timeout_seconds),
+        lease_seconds=max(0.1, float(task_lease_seconds)),
+        task_types=("nested_candidate_eval",),
+    )
+    if claim is None:
+        return False
+    task = claim.task
+    stop_heartbeat = threading.Event()
+    lease_lost = threading.Event()
+
+    def renew_task_lease() -> None:
+        interval = max(0.05, min(float(heartbeat_interval_seconds), float(task_lease_seconds) / 2.0))
+        while not stop_heartbeat.wait(interval):
+            if not queue.task_transport.heartbeat_task(
+                claim,
+                lease_seconds=max(0.1, float(task_lease_seconds)),
+            ):
+                lease_lost.set()
+                return
+
+    heartbeat_thread = threading.Thread(
+        target=renew_task_lease,
+        name=f"redis-task-heartbeat-{task.task_id}",
+        daemon=True,
+    )
+    heartbeat_thread.start()
+    scheduler = InMemoryResourceScheduler(
+        workers=(descriptor,)
     )
     scheduled = None
     try:
@@ -542,16 +653,19 @@ def run_nested_redis_worker_once(
             result = _attach_task_metadata_to_result(result, task, worker_id=worker)
         else:
             raise TypeError("task_runner must return TaskResult or mapping")
+        effective_context, effective_lease_id = _distributed_result_resource_context(task, scheduled)
+        project_grant_present = bool(dict(task.payload).get("resource_context"))
         result = TaskResult(
             task_id=str(result.task_id),
             status=str(result.status),
             objectives=tuple(result.objectives),
             violations=tuple(result.violations),
             metrics=dict(result.metrics),
+            output=dict(result.output),
             artifact_refs=tuple(result.artifact_refs),
             worker_id=str(result.worker_id or worker),
-            lease_id=str(result.lease_id or scheduled.lease.lease_id),
-            resource_context={**dict(scheduled.resource_context), **dict(result.resource_context or {})},
+            lease_id=str(effective_lease_id if project_grant_present else (result.lease_id or effective_lease_id)),
+            resource_context=_merge_resource_context(effective_context, result.resource_context),
             error=str(result.error or ""),
             started_at=float(result.started_at),
             finished_at=float(result.finished_at),
@@ -565,16 +679,19 @@ def run_nested_redis_worker_once(
         )
         result = _attach_task_metadata_to_result(result, task, worker_id=worker)
         if scheduled is not None:
+            effective_context, effective_lease_id = _distributed_result_resource_context(task, scheduled)
+            project_grant_present = bool(dict(task.payload).get("resource_context"))
             result = TaskResult(
                 task_id=str(result.task_id),
                 status=str(result.status),
                 objectives=tuple(result.objectives),
                 violations=tuple(result.violations),
                 metrics=dict(result.metrics),
+                output=dict(result.output),
                 artifact_refs=tuple(result.artifact_refs),
                 worker_id=str(result.worker_id or worker),
-                lease_id=str(result.lease_id or scheduled.lease.lease_id),
-                resource_context={**dict(scheduled.resource_context), **dict(result.resource_context or {})},
+                lease_id=str(effective_lease_id if project_grant_present else (result.lease_id or effective_lease_id)),
+                resource_context=_merge_resource_context(effective_context, result.resource_context),
                 error=str(result.error or ""),
                 started_at=float(result.started_at),
                 finished_at=float(result.finished_at),
@@ -583,7 +700,11 @@ def run_nested_redis_worker_once(
     finally:
         if scheduled is not None:
             scheduler.release(scheduled)
-    queue.complete(result)
+        stop_heartbeat.set()
+        heartbeat_thread.join(timeout=max(0.1, float(heartbeat_interval_seconds) * 2.0))
+    if lease_lost.is_set():
+        raise RuntimeError(f"Redis task lease was lost for task_id='{task.task_id}'")
+    queue.complete_claim(claim, result)
     return True
 
 
@@ -596,14 +717,23 @@ def run_nested_redis_worker(
     max_tasks: Optional[int] = None,
     idle_timeout_seconds: Optional[float] = None,
     claim_timeout_seconds: int = 1,
+    include_cuda: bool = False,
 ) -> Dict[str, Any]:
     """Run a simple blocking Redis nested worker loop.
 
     This is intentionally framework-level L0 plumbing. Case code supplies
-    task_runner so the queue does not know business semantics.
+    task_runner so the queue does not know business semantics. The local worker
+    descriptor is probed once and reused for every claimed task.
     """
 
     worker = str(worker_id or f"worker_{uuid4().hex[:8]}")
+    worker_descriptor = build_local_worker_descriptor(
+        worker_id=worker,
+        executor_backend="redis",
+        capabilities=("cpu", "numpy", "nested_eval"),
+        include_cuda=bool(include_cuda),
+        max_inflight=1,
+    )
     processed = 0
     idle_started = time.time()
     while True:
@@ -614,6 +744,7 @@ def run_nested_redis_worker(
             task_runner=task_runner,
             worker_id=worker,
             claim_timeout_seconds=int(claim_timeout_seconds),
+            worker_descriptor=worker_descriptor,
         )
         if did_work:
             processed += 1

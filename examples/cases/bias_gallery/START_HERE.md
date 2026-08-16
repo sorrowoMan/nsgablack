@@ -1,26 +1,27 @@
 # START_HERE
 
-## 1) Health Baseline
+`bias_gallery` ????? Project / Case / Scaffold / L0 substrate?
+
+## 1) ???????
+
 ```powershell
-python -m nsgablack project doctor --path . --build
+python examples/cases/bias_gallery/run_project.py --check
 ```
 
-## 2) Define the Core Layers
-- `problem/`: objective + constraints
-- `pipeline/`: init/mutate/repair
-- `bias/`: soft preferences (optional)
+## 2) ??? Project ??
 
-## 3) Wire the Assembly
-- `build_solver.py` is the only assembly entry
-- parameters in registries; selection in build_solver
-
-## 4) Run
 ```powershell
-python run_solver.py --check
-python run_solver.py
+python examples/cases/bias_gallery/run_project.py
 ```
 
-## 5) Optional
-```powershell
-python -m nsgablack run_inspector --entry build_solver.py:build_solver
-```
+## 3) ??????
+
+- Project ???? Case ?????????????
+- Case ??????? `build_solver.py` / `run_solver.py` surface?
+- `ResourceContext` ? Project L0 grant???? Case ???
+
+## 4) ????
+
+- `README.md`????????
+- `cases/bias_gallery/README.md`?? Case ????????
+- `cases/bias_gallery/START_HERE.md`?Case ?????

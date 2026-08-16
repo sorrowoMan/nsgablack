@@ -62,8 +62,8 @@ class NSGA2Adapter(AlgorithmAdapter):
         self._runtime_projection: Dict[str, Any] = {}
         self._rng = np.random.default_rng()
 
-    def setup(self, solver: Any) -> None:
-        self._rng = self.create_local_rng(solver)
+    def setup(self, control: Any) -> None:
+        self._rng = self.create_local_rng(control)
         self.population = None
         self.objectives = None
         self.violations = None
@@ -71,8 +71,8 @@ class NSGA2Adapter(AlgorithmAdapter):
         self._crowding = np.zeros(0, dtype=float)
         self._runtime_projection = {}
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
-        self._ensure_population(solver, context)
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+        self._ensure_population(control, context)
         if self.population is None or self.population.shape[0] == 0:
             return []
         self._refresh_ranking()
@@ -83,21 +83,21 @@ class NSGA2Adapter(AlgorithmAdapter):
             j = self._tournament_pick()
             p1 = np.asarray(self.population[i], dtype=float)
             p2 = np.asarray(self.population[j], dtype=float)
-            child = self._crossover(solver, p1, p2, context)
-            child = np.asarray(solver.mutate_candidate(child, context), dtype=float)
-            child = np.asarray(solver.repair_candidate(child, context), dtype=float)
+            child = self._crossover(control, p1, p2, context)
+            child = np.asarray(control.mutate_candidate(child, context), dtype=float)
+            child = np.asarray(control.repair_candidate(child, context), dtype=float)
             out.append(child)
         return out
 
     def update(
         self,
-        solver: Any,
+        control: Any,
         candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        feedback: Tuple[np.ndarray, np.ndarray],
         context: Dict[str, Any],
     ) -> None:
-        _ = solver
+        objectives, violations = feedback
+        _ = control
         _ = context
         if candidates is None or len(candidates) == 0:
             return
@@ -170,14 +170,14 @@ class NSGA2Adapter(AlgorithmAdapter):
         self._refresh_ranking()
         self._sync_runtime_projection()
 
-    def _ensure_population(self, solver: Any, context: Dict[str, Any]) -> None:
+    def _ensure_population(self, control: Any, context: Dict[str, Any]) -> None:
         if self.population is not None and self.population.shape[0] > 0:
             return
 
         pop = None
         obj = None
         vio = None
-        reader = getattr(solver, "read_snapshot", None)
+        reader = getattr(control, "read_snapshot", None)
         if callable(reader):
             try:
                 key = context.get(KEY_POPULATION_REF) or context.get(KEY_SNAPSHOT_KEY)
@@ -194,9 +194,9 @@ class NSGA2Adapter(AlgorithmAdapter):
                 vio = data.get(KEY_CONSTRAINT_VIOLATIONS)
 
         if pop is None:
-            pop = getattr(solver, "population", None)
-            obj = getattr(solver, "objectives", None)
-            vio = getattr(solver, "constraint_violations", None)
+            pop = getattr(control, "population", None)
+            obj = getattr(control, "objectives", None)
+            vio = getattr(control, "constraint_violations", None)
         if pop is not None:
             pop_arr = np.asarray(pop, dtype=float)
             if pop_arr.ndim == 2 and pop_arr.shape[0] > 0:
@@ -207,7 +207,7 @@ class NSGA2Adapter(AlgorithmAdapter):
                 return
 
         n = max(2, int(self.cfg.population_size))
-        created = [np.asarray(solver.init_candidate(context), dtype=float) for _ in range(n)]
+        created = [np.asarray(control.init_candidate(context), dtype=float) for _ in range(n)]
         self.population = np.asarray(created, dtype=float)
 
     def _refresh_ranking(self) -> None:
@@ -245,10 +245,10 @@ class NSGA2Adapter(AlgorithmAdapter):
         c_j = self._crowding[j] if self._crowding.size == n else 0.0
         return int(i if c_i >= c_j else j)
 
-    def _crossover(self, solver: Any, p1: np.ndarray, p2: np.ndarray, context: Dict[str, Any]) -> np.ndarray:
+    def _crossover(self, control: Any, p1: np.ndarray, p2: np.ndarray, context: Dict[str, Any]) -> np.ndarray:
         if self._rng.random() > float(self.cfg.crossover_rate):
             return np.array(p1, copy=True)
-        pipeline = getattr(solver, "representation_pipeline", None)
+        pipeline = getattr(control, "representation_pipeline", None)
         crossover = getattr(pipeline, "crossover", None) if pipeline is not None else None
         if crossover is not None and hasattr(crossover, "crossover"):
             try:

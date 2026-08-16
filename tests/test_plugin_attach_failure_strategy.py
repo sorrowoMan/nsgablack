@@ -16,8 +16,8 @@ class SimpleProblem(BlackBoxProblem):
     def __init__(self):
         super().__init__(dimension=2, bounds=[(-1, 1), (-1, 1)])
     
-    def evaluate(self, x: np.ndarray) -> np.ndarray:
-        return np.array([np.sum(x**2)])
+    def evaluate(self, candidate: np.ndarray) -> np.ndarray:
+        return np.array([np.sum(candidate**2)])
     
     def get_num_objectives(self) -> int:
         return 1
@@ -57,6 +57,20 @@ class WorkingPlugin(Plugin):
         self.start_count += 1
 
 
+class LifecycleCountingPlugin(Plugin):
+    def __init__(self):
+        super().__init__("LifecycleCounting")
+        self.attach_count = 0
+        self.init_count = 0
+
+    def attach(self, solver: Any) -> None:
+        self.attach_count += 1
+        super().attach(solver)
+
+    def on_solver_init(self, solver: Any) -> None:
+        self.init_count += 1
+
+
 def test_plugin_attach_failure_soft_mode():
     """Test plugin attach failure in soft mode (default)."""
     
@@ -77,6 +91,25 @@ def test_plugin_attach_failure_soft_mode():
     
     # on_solver_init should NOT have been called
     assert faulty_plugin.init_called is False
+
+
+def test_plugin_attach_is_assembly_time_and_init_is_run_time():
+    solver = SolverBase(problem=SimpleProblem())
+    plugin = LifecycleCountingPlugin()
+
+    solver.add_plugin(plugin)
+
+    assert plugin.attach_count == 1
+    assert plugin.init_count == 0
+
+    solver.set_max_steps(0)
+    solver.run()
+    assert plugin.attach_count == 1
+    assert plugin.init_count == 1
+
+    solver.run()
+    assert plugin.attach_count == 1
+    assert plugin.init_count == 2
 
 
 def test_plugin_attach_failure_strict_mode():

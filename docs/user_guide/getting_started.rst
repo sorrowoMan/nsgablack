@@ -1,16 +1,13 @@
 Getting Started
 ===============
 
-If you only read one thing, read the repo root guide:
+If you only read one thing, read:
 
-- ``WORKFLOW_END_TO_END.md``
+- ``docs/standard_scaffold_tutorial/README.md``
+- ``docs/standard_scaffold_tutorial/01_create_and_run.md``
 
-Why: it shows the canonical decomposition flow:
-
-- ``Problem`` (objectives only)
-- ``RepresentationPipeline`` (init/mutate/repair for feasibility)
-- ``BiasModule`` (soft preferences)
-- ``Wiring + Plugin`` (authoritative wiring + unified experiment protocol)
+Why: the canonical entry is now Project -> Case -> Standard Scaffold, with
+Project L0 granting ``ResourceContext`` to cases.
 
 Install
 -------
@@ -21,12 +18,15 @@ Editable install from repo root::
 
 Then verify Catalog works::
 
-   python -m nsgablack catalog search vns
+   python -m nsgablack catalog search vns --profile framework-core
 
-Runnable Examples
------------------
+Create and run
+--------------
 
-Run a complete end-to-end demo (writes outputs into ``runs/``)::
+::
 
-   python examples/end_to_end_workflow_demo.py
-
+   python -m nsgablack project new my_project
+   cd my_project
+   python -m nsgablack project add-case my_case --type solver
+   python -m nsgablack project doctor --path . --build --strict
+   python run_project.py

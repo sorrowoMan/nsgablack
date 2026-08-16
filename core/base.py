@@ -1,9 +1,24 @@
-class BlackBoxProblem:
+"""Black-box problem base class for nsgablack.
+
+Inherits the unified ProblemBase from blackbase and adds nsgablack-specific
+features (bounds, constraints, evaluation counting, multi-objective support).
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Optional, Sequence
+
+import numpy as np
+
+from blackbase.abc import ProblemBase
+
+
+class BlackBoxProblem(ProblemBase):
     """黑箱问题基类
 
     约定：
-    - ``evaluate(x)`` 返回目标值（标量或 ndarray）
-    - ``evaluate_constraints(x)`` 返回约束违背度数组 g(x) >= 0
+    - ``evaluate(candidate)`` 返回目标值（标量或 ndarray）
+    - ``evaluate_constraints(candidate)`` 返回约束违背度数组 g(candidate) >= 0
       （<=0 视为满足约束，>0 为违反约束的程度）。
     """
 
@@ -28,42 +43,38 @@ class BlackBoxProblem:
         if getattr(orig, "__nsgablack_evaluation_wrapped__", False):
             return
 
-        def _wrapped_evaluate(self, x, *args, **kwargs):
+        def _wrapped_evaluate(self, candidate, *args, **kwargs):
             try:
                 self.evaluation_count += 1
             except Exception:
                 # 保底：不让计数器影响评估流程
                 pass
-            return orig(self, x, *args, **kwargs)
+            return orig(self, candidate, *args, **kwargs)
 
         _wrapped_evaluate.__nsgablack_evaluation_wrapped__ = True
         setattr(cls, "evaluate", _wrapped_evaluate)
 
-    def evaluate(self, x):
+    def evaluate(self, candidate, context=None):
         raise NotImplementedError("子类必须实现evaluate方法")
 
     # ---- 约束相关统一接口 ----
-    def evaluate_constraints(self, x):
+    def evaluate_constraints(self, candidate):
         """返回约束违背度数组。
 
-        约定：g(x) <= 0 表示满足约束，g(x) > 0 表示违反约束的程度。
+        约定：g(candidate) <= 0 表示满足约束，g(candidate) > 0 表示违反约束的程度。
         默认无约束，返回全零；子类可按需重写。
         支持单点 (d,) 或批量 (n,d) 输入。
         """
-        import numpy as np
-
-        if hasattr(x, "shape") and len(x.shape) > 1:
+        if hasattr(candidate, "shape") and len(candidate.shape) > 1:
             # 批量输入：返回 (n, 0) 形状，方便后续 sum(axis=1)
-            n = x.shape[0]
+            n = candidate.shape[0]
             return np.zeros((n, 0), dtype=float)
         # 单点：返回长度 0 的一维向量
         return np.zeros(0, dtype=float)
 
-    def is_valid(self, x):
+    def is_valid(self, candidate):
         """Check bounds and constraints for a candidate solution."""
-        import numpy as np
-
-        arr = np.asarray(x, dtype=float)
+        arr = np.asarray(candidate, dtype=float)
         if arr.ndim == 0:
             return False
         if arr.ndim > 1:
@@ -97,6 +108,7 @@ class BlackBoxProblem:
             return False
 
         return True
+
     def get_num_objectives(self):
         if self.objectives is not None:
             return len(self.objectives)

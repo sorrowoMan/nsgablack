@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
@@ -40,6 +41,7 @@ class CoptBackendConfig:
     default_mip_gap: Optional[float] = None
     verbose: bool = False
     strict_template_selection: bool = True
+    reuse_env: bool = True
 
 
 class CoptBackend:
@@ -65,6 +67,9 @@ class CoptBackend:
         self.solve_fn = solve_fn
         self.linear_spec_builder = linear_spec_builder
         self.qp_spec_builder = qp_spec_builder
+        self._env_lock = threading.Lock()
+        self._copt_env: Any = None
+        self._copt_env_module_id: Optional[int] = None
         self.template_solvers: Dict[str, TemplateSolveFn] = dict(
             build_default_templates(
                 solve_linear_spec=self._solve_linear_spec,
@@ -129,6 +134,20 @@ class CoptBackend:
             return _COPT_MODULE
         raise ImportError("coptpy not importable")
 
+    def _get_copt_env(self, cp: Any) -> Any:
+        if not bool(self.cfg.reuse_env):
+            return cp.Envr()
+        module_id = id(cp)
+        with self._env_lock:
+            if self._copt_env is None or self._copt_env_module_id != module_id:
+                self._copt_env = cp.Envr()
+                self._copt_env_module_id = module_id
+            return self._copt_env
+
+    def _create_model(self, cp: Any, name: str) -> Any:
+        env = self._get_copt_env(cp)
+        return env.createModel(name)
+
     @staticmethod
     def _set_parameter(model: Any, name: str, value: Any) -> None:
         if value is None:
@@ -164,8 +183,7 @@ class CoptBackend:
         if len(vtypes) != n:
             raise ValueError("linear spec vtype length mismatch with c")
 
-        env = cp.Envr()
-        model = env.createModel("nsgablack_copt")
+        model = self._create_model(cp, "nsgablack_copt")
         self._set_parameter(model, "Logging", int(bool(self.cfg.verbose)))
         self._set_parameter(model, "TimeLimit", self.cfg.default_time_limit_sec)
         self._set_parameter(model, "RelGap", self.cfg.default_mip_gap)
@@ -288,8 +306,7 @@ class CoptBackend:
         if len(vtypes) != n:
             raise ValueError("qp spec vtype length mismatch with c")
 
-        env = cp.Envr()
-        model = env.createModel("nsgablack_copt_qp")
+        model = self._create_model(cp, "nsgablack_copt_qp")
         self._set_parameter(model, "Logging", int(bool(self.cfg.verbose)))
         self._set_parameter(model, "TimeLimit", self.cfg.default_time_limit_sec)
         self._set_parameter(model, "RelGap", self.cfg.default_mip_gap)

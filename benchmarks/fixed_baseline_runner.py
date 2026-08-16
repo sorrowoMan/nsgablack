@@ -41,11 +41,11 @@ class SphereProblem(BlackBoxProblem):
             bounds=bounds,
         )
 
-    def evaluate(self, x):
-        arr = np.asarray(x, dtype=float)
+    def evaluate(self, candidate):
+        arr = np.asarray(candidate, dtype=float)
         return np.array([float(np.sum(arr ** 2))], dtype=float)
 
-    def evaluate_constraints(self, x):
+    def evaluate_constraints(self, candidate):
         return np.zeros(0, dtype=float)
 
 

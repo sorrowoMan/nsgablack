@@ -56,11 +56,11 @@ class GraphPathProblem(BlackBoxProblem):
         rng = np.random.default_rng(0)
         self.edge_weights = rng.uniform(1.0, 10.0, size=edge_count)
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=int)
-        total_cost = float(np.dot(x, self.edge_weights))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=int)
+        total_cost = float(np.dot(candidate, self.edge_weights))
         # small penalty for too many edges (encourage path-like sparsity)
-        edge_count = int(np.sum(x))
+        edge_count = int(np.sum(candidate))
         penalty = max(0, edge_count - (self.num_nodes - 1)) * 2.0
         return total_cost + penalty
 

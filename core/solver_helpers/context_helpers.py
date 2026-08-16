@@ -1,189 +1,260 @@
-"""Context projection helpers used by SolverBase."""
+"""Context helper utilities for SolverBase."""
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 
-import numpy as np
-
-from ...core.state.context_keys import (
+from ..state.context_keys import (
     KEY_BEST_OBJECTIVE,
     KEY_BEST_X,
+    KEY_BOUNDS,
+    KEY_CONSTRAINT_VIOLATION,
+    KEY_CONSTRAINTS,
+    KEY_EVALUATION_COUNT,
+    KEY_GENERATION,
+    KEY_INDIVIDUAL,
+    KEY_INDIVIDUAL_ID,
+    KEY_OBJECTIVES,
+    KEY_OBJECTIVES_REF,
+    KEY_PARETO_OBJECTIVES,
+    KEY_PARETO_OBJECTIVES_REF,
+    KEY_PARETO_SOLUTIONS,
+    KEY_PARETO_SOLUTIONS_REF,
+    KEY_POPULATION,
+    KEY_POPULATION_REF,
     KEY_PROBLEM,
+    KEY_RESOURCE_CONTEXT,
+    KEY_RESOURCE_CONTEXT_SHORT,
     KEY_SNAPSHOT_KEY,
 )
-from ...core.state.context_store import RedisContextStore
 
 
-def _report_debug_soft_error(
-    *,
-    solver: Any,
-    report_soft_error_fn: Callable[..., Any],
-    logger: Any,
-    event: str,
-    exc: Exception,
-) -> None:
-    report_soft_error_fn(
-        component="SolverBase",
-        event=event,
-        exc=exc,
-        logger=logger,
-        context_store=getattr(solver, "context_store", None),
-        strict=False,
-        level="debug",
-    )
+def _store_snapshot(store: Any) -> Dict[str, Any]:
+    if store is None:
+        return {}
+    snap = getattr(store, "snapshot", None)
+    if callable(snap):
+        try:
+            return dict(snap())
+        except Exception:
+            return {}
+    if isinstance(store, Mapping):
+        return dict(store)
+    return {}
+
+
+def _set_store_values(store: Any, values: Mapping[str, Any]) -> None:
+    if store is None:
+        return
+    update = getattr(store, "update", None)
+    if callable(update):
+        try:
+            update(dict(values))
+            return
+        except Exception:
+            pass
+    set_fn = getattr(store, "set", None)
+    if callable(set_fn):
+        for key, value in values.items():
+            try:
+                set_fn(str(key), value)
+            except Exception:
+                continue
 
 
 def build_solver_context(
     solver: Any,
     *,
     individual_id: Optional[int] = None,
-    constraints: Optional[np.ndarray] = None,
+    constraints: Optional[Any] = None,
     violation: Optional[float] = None,
-    individual: Optional[np.ndarray] = None,
-    report_soft_error_fn: Callable[..., Any],
-    logger: Any,
+    individual: Optional[Any] = None,
+    report_soft_error_fn: Any = None,
+    logger: Any = None,
+    allow_snapshot_write: bool = True,
+    **legacy: Any,
 ) -> Dict[str, Any]:
-    ctx = {
-        KEY_PROBLEM: solver.problem,
-        "generation": solver.generation,
-        "constraints": (constraints.tolist() if constraints is not None else []),
-        "constraint_violation": float(violation or 0.0),
-        "individual_id": individual_id,
-    }
+    """Build a lightweight runtime context from a solver instance."""
+    if isinstance(solver, Mapping):
+        ctx = dict(solver)
+        ctx.setdefault(KEY_GENERATION, int(legacy.get("generation", 0) or 0))
+        ctx.setdefault(KEY_EVALUATION_COUNT, int(legacy.get("evaluation_count", 0) or 0))
+        return ctx
 
-    try:
-        persisted = solver.context_store.snapshot()
-        if persisted:
-            merged = dict(persisted)
-            merged.update(ctx)
-            ctx = merged
-    except Exception as exc:
-        _report_debug_soft_error(
-            solver=solver,
-            report_soft_error_fn=report_soft_error_fn,
-            logger=logger,
-            event="context_store_snapshot",
-            exc=exc,
-        )
-
-    solver._strip_large_context(ctx)
-    best_x, best_obj = solver._get_best_snapshot()
-    ctx[KEY_BEST_X] = best_x
-    ctx[KEY_BEST_OBJECTIVE] = best_obj
+    purge_large = getattr(solver, "_purge_large_context_store", None)
+    if callable(purge_large):
+        purge_large()
+    ctx = _store_snapshot(getattr(solver, "context_store", None))
+    strip_large = getattr(solver, "_strip_large_context", None)
+    if callable(strip_large):
+        strip_large(ctx)
+    problem = getattr(solver, "problem", None)
+    ctx.update(
+        {
+            KEY_PROBLEM: getattr(problem, "name", None),
+            KEY_BOUNDS: getattr(solver, "var_bounds", getattr(problem, "bounds", None)),
+            KEY_GENERATION: int(getattr(solver, "generation", 0) or 0),
+            KEY_EVALUATION_COUNT: int(getattr(solver, "evaluation_count", 0) or 0),
+        }
+    )
+    resource = getattr(solver, "resource_context", None)
+    if resource is not None:
+        as_dict = getattr(resource, "as_dict", None)
+        payload = dict(as_dict()) if callable(as_dict) else dict(resource)
+        context_items = getattr(resource, "context_items", None)
+        if callable(context_items):
+            ctx.update(dict(context_items(prefix="resource")))
+        ctx[KEY_RESOURCE_CONTEXT] = payload
+        ctx[KEY_RESOURCE_CONTEXT_SHORT] = payload
+    if individual_id is not None:
+        ctx[KEY_INDIVIDUAL_ID] = int(individual_id)
+    if constraints is not None:
+        ctx[KEY_CONSTRAINTS] = constraints
+    if violation is not None:
+        ctx[KEY_CONSTRAINT_VIOLATION] = float(violation)
     if individual is not None:
-        ctx["individual"] = individual
+        ctx[KEY_INDIVIDUAL] = individual
 
-    dynamic = getattr(solver, "dynamic_signals", None)
-    if dynamic is not None:
-        ctx["dynamic"] = dynamic
-    phase_id = getattr(solver, "dynamic_phase_id", None)
-    if phase_id is not None:
-        ctx["phase_id"] = phase_id
-
-    governance_hook = getattr(solver, "_apply_runtime_governance_context", None)
-    if callable(governance_hook):
+    attach = getattr(solver, "_attach_snapshot_refs", None)
+    if callable(attach):
         try:
-            ctx = governance_hook(ctx) or ctx
+            attach(ctx, allow_write=bool(allow_snapshot_write))
         except Exception as exc:
-            report_soft_error_fn(
-                component="SolverBase",
-                event="runtime_governance_context_hook",
-                exc=exc,
-                logger=logger,
-                context_store=getattr(solver, "context_store", None),
-                strict=False,
-                level="debug",
-            )
+            if callable(report_soft_error_fn):
+                report_soft_error_fn(
+                    component="SolverBase",
+                    event="context_attach_snapshot_refs",
+                    exc=exc,
+                    logger=logger,
+                    context_store=getattr(solver, "context_store", None),
+                    strict=False,
+                    level="debug",
+                )
+
+    governance = getattr(solver, "_apply_runtime_governance_context", None)
+    if callable(governance):
+        try:
+            ctx = governance(ctx) or ctx
+        except Exception as exc:
+            if callable(report_soft_error_fn):
+                report_soft_error_fn(
+                    component="SolverBase",
+                    event="context_runtime_governance",
+                    exc=exc,
+                    logger=logger,
+                    context_store=getattr(solver, "context_store", None),
+                    strict=bool(getattr(solver, "plugin_strict", False)),
+                )
 
     plugin_manager = getattr(solver, "plugin_manager", None)
-    if plugin_manager is not None:
+    hook = getattr(plugin_manager, "on_context_build", None)
+    if callable(hook):
         try:
-            ctx = plugin_manager.dispatch("on_context_build", ctx) or ctx
+            out = hook(ctx)
+            if isinstance(out, dict):
+                ctx = out
         except Exception as exc:
-            report_soft_error_fn(
-                component="SolverBase",
-                event="plugin_dispatch_on_context_build",
-                exc=exc,
-                logger=logger,
-                context_store=getattr(solver, "context_store", None),
-                strict=bool(getattr(plugin_manager, "strict", False)),
-            )
+            if bool(getattr(solver, "plugin_strict", False)):
+                raise
+            if callable(report_soft_error_fn):
+                report_soft_error_fn(
+                    component="SolverBase",
+                    event="context_plugin_build",
+                    exc=exc,
+                    logger=logger,
+                    context_store=getattr(solver, "context_store", None),
+                    strict=False,
+                )
 
-    solver._strip_large_context(ctx)
-    solver._attach_snapshot_refs(ctx, allow_write=True)
-    if bool(getattr(solver, "context_store_update_on_build", True)):
-        store_payload = ctx
-        store = getattr(solver, "context_store", None)
-        if isinstance(store, RedisContextStore):
-            if KEY_PROBLEM in store_payload:
-                store_payload = dict(store_payload)
-                store_payload.pop(KEY_PROBLEM, None)
-        try:
-            solver.context_store.update(store_payload, ttl_seconds=solver.context_store_ttl_seconds)
-        except Exception as exc:
-            _report_debug_soft_error(
-                solver=solver,
-                report_soft_error_fn=report_soft_error_fn,
-                logger=logger,
-                event="context_store_update_build_context",
-                exc=exc,
-            )
-    solver._purge_large_context_store()
+    if callable(strip_large):
+        strip_large(ctx)
+    if bool(getattr(solver, "context_store_update_on_build", False)):
+        _set_store_values(getattr(solver, "context_store", None), ctx)
+    if callable(purge_large):
+        purge_large()
+    return ctx
+
+
+def ensure_snapshot_readable(solver: Any, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Hydrate known snapshot refs into a context when a readable snapshot exists."""
+    if context is None and isinstance(solver, Mapping):
+        return dict(solver)
+    ctx = dict(context or {})
+    reader = getattr(solver, "read_snapshot", None)
+    if not callable(reader):
+        return ctx
+    key = ctx.get(KEY_SNAPSHOT_KEY) or ctx.get(KEY_POPULATION_REF) or ctx.get(KEY_OBJECTIVES_REF)
+    if not key:
+        return ctx
+    try:
+        payload = reader(str(key))
+    except Exception:
+        return ctx
+    if not isinstance(payload, Mapping):
+        return ctx
+    for key_name in (
+        KEY_POPULATION,
+        KEY_OBJECTIVES,
+        KEY_PARETO_SOLUTIONS,
+        KEY_PARETO_OBJECTIVES,
+    ):
+        if key_name not in ctx and key_name in payload:
+            ctx[key_name] = payload[key_name]
     return ctx
 
 
 def get_solver_context_view(
     solver: Any,
     *,
-    report_soft_error_fn: Callable[..., Any],
-    logger: Any,
+    report_soft_error_fn: Any = None,
+    logger: Any = None,
+    keys: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    ctx = solver.build_context()
-    ctx["evaluation_count"] = int(getattr(solver, "evaluation_count", 0))
+    """Return a current runtime context view for monitoring/reporting."""
+    if isinstance(solver, Mapping):
+        src = dict(solver)
+        key_map = dict(keys or {})
+        return {dst: src.get(src_key) for src_key, dst in key_map.items()} if key_map else src
 
-    for key, value in solver._collect_runtime_context_projection().items():
-        if value is None:
-            continue
-        ctx[key] = value
+    ctx = build_solver_context(
+        solver,
+        report_soft_error_fn=report_soft_error_fn,
+        logger=logger,
+        allow_snapshot_write=True,
+    )
+    runtime_projection = getattr(solver, "_collect_runtime_context_projection", None)
+    if callable(runtime_projection):
+        try:
+            for key, value in dict(runtime_projection() or {}).items():
+                if value is not None:
+                    ctx[str(key)] = value
+        except Exception as exc:
+            if callable(report_soft_error_fn):
+                report_soft_error_fn(
+                    component="SolverBase",
+                    event="context_runtime_projection",
+                    exc=exc,
+                    logger=logger,
+                    context_store=getattr(solver, "context_store", None),
+                    strict=False,
+                    level="debug",
+                )
+    if getattr(solver, "best_x", None) is not None:
+        ctx[KEY_BEST_X] = getattr(solver, "best_x", None)
+    if getattr(solver, "best_objective", None) is not None:
+        ctx[KEY_BEST_OBJECTIVE] = getattr(solver, "best_objective", None)
+    elif getattr(solver, "best_f", None) is not None:
+        ctx[KEY_BEST_OBJECTIVE] = getattr(solver, "best_f", None)
 
-    best_x, best_obj = solver._get_best_snapshot()
-    ctx[KEY_BEST_X] = best_x
-    ctx[KEY_BEST_OBJECTIVE] = best_obj
-    solver._strip_large_context(ctx)
-    solver._attach_snapshot_refs(ctx, allow_write=True)
-    if bool(getattr(solver, "snapshot_strict", False)):
-        ensure_snapshot_readable(solver, ctx)
-    store_payload = ctx
-    store = getattr(solver, "context_store", None)
-    if isinstance(store, RedisContextStore):
-        if KEY_PROBLEM in store_payload:
-            store_payload = dict(store_payload)
-            store_payload.pop(KEY_PROBLEM, None)
-    try:
-        solver.context_store.update(store_payload, ttl_seconds=solver.context_store_ttl_seconds)
-    except Exception as exc:
-        _report_debug_soft_error(
-            solver=solver,
-            report_soft_error_fn=report_soft_error_fn,
-            logger=logger,
-            event="context_store_update_get_context",
-            exc=exc,
-        )
-    solver._purge_large_context_store()
+    if getattr(solver, "pareto_solutions", None) is not None:
+        ctx.setdefault(KEY_PARETO_SOLUTIONS_REF, ctx.get(KEY_SNAPSHOT_KEY))
+    if getattr(solver, "pareto_objectives", None) is not None:
+        ctx.setdefault(KEY_PARETO_OBJECTIVES_REF, ctx.get(KEY_SNAPSHOT_KEY))
     return ctx
 
 
-def ensure_snapshot_readable(solver: Any, ctx: Dict[str, Any]) -> None:
-    key = ctx.get(KEY_SNAPSHOT_KEY)
-    if key is None or str(key).strip() == "":
-        has_state = any(
-            getattr(solver, attr, None) is not None
-            for attr in ("population", "objectives", "constraint_violations")
-        )
-        if has_state:
-            raise RuntimeError("snapshot_key missing while solver has population/objectives/violations")
-        return
-    payload = solver.read_snapshot(str(key))
-    if payload is None:
-        raise RuntimeError("snapshot_key present but snapshot_store returned None")
+__all__ = [
+    "build_solver_context",
+    "ensure_snapshot_readable",
+    "get_solver_context_view",
+]

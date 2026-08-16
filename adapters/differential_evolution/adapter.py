@@ -9,9 +9,10 @@ This module is adapter-first:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
+from blackbase.contracts import BatchDisposition
 
 from ..algorithm_adapter import AlgorithmAdapter
 from ...utils.context.context_keys import (
@@ -75,8 +76,8 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         self._runtime_projection: Dict[str, Any] = {}
         self._rng = np.random.default_rng()
 
-    def setup(self, solver: Any) -> None:
-        self._rng = self.create_local_rng(solver)
+    def setup(self, control: Any) -> None:
+        self._rng = self.create_local_rng(control)
         self.population = None
         self.objectives = None
         self.violations = None
@@ -84,8 +85,8 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         self._last_target_scores = np.zeros(0, dtype=float)
         self._runtime_projection = {KEY_STRATEGY_ID: str(self.cfg.strategy)}
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
-        self._ensure_population(solver, context)
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+        self._ensure_population(control, context)
         if self.population is None or self.population.shape[0] == 0:
             return []
 
@@ -98,7 +99,7 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
             target = np.asarray(self.population[idx], dtype=float)
             mutant = self._mutant_vector(idx)
             trial = self._binomial_crossover(target, mutant)
-            repaired = solver.repair_candidate(trial, context)
+            repaired = control.repair_candidate(trial, context)
             out.append(np.asarray(repaired, dtype=float))
 
         self._last_target_indices = target_indices
@@ -110,14 +111,14 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
 
     def update(
         self,
-        solver: Any,
+        control: Any,
         candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        feedback: Tuple[np.ndarray, np.ndarray],
         context: Dict[str, Any],
     ) -> None:
-        _ = solver
-        if candidates is None or len(candidates) == 0:
+        objectives, violations = feedback
+        _ = control
+        if len(candidates) == 0:
             return
 
         cand = np.asarray(candidates, dtype=float)
@@ -126,11 +127,12 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         cand_scores = self._scores(obj, vio)
 
         if self.population is None or self.population.shape[0] == 0:
-            self.population = cand.copy()
-            self.objectives = obj.copy()
-            self.violations = vio.copy()
-            self._sync_runtime_projection(context)
-            return
+            raise RuntimeError("DE.update requires population state created by propose()")
+
+        candidate_count = int(cand.shape[0])
+        objective_count = int(obj.shape[0]) if obj.ndim > 0 else 0
+        if objective_count != candidate_count or vio.shape[0] != candidate_count:
+            raise ValueError("DE candidate, objective, and violation counts must match")
 
         if self.objectives is None or self.violations is None:
             n = int(self.population.shape[0])
@@ -138,23 +140,47 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
             self.objectives = np.full((n, m), np.inf, dtype=float)
             self.violations = np.full(n, np.inf, dtype=float)
 
-        if not self._last_target_indices or len(self._last_target_indices) != cand.shape[0]:
-            keep = min(self.population.shape[0], cand.shape[0])
-            self.population[:keep] = cand[:keep]
-            self.objectives[:keep] = obj[:keep]
-            self.violations[:keep] = vio[:keep]
-            self._sync_runtime_projection(context)
-            return
+        if len(self._last_target_indices) != candidate_count:
+            raise ValueError("DE feedback must align with pending target indices")
+        if len(self._last_target_scores) != candidate_count:
+            raise ValueError("DE feedback must align with pending target scores")
 
         for j, target_idx in enumerate(self._last_target_indices):
             if target_idx >= self.population.shape[0]:
-                continue
-            target_score = float(self._last_target_scores[j]) if j < len(self._last_target_scores) else np.inf
+                raise ValueError(f"DE target index {target_idx} is outside the population")
+            target_score = float(self._last_target_scores[j])
             if float(cand_scores[j]) <= target_score:
                 self.population[target_idx] = cand[j]
                 self.objectives[target_idx] = obj[j]
                 self.violations[target_idx] = vio[j]
         self._sync_runtime_projection(context)
+
+    def on_proposal_disposition(
+        self,
+        control: Any,
+        disposition: BatchDisposition,
+        context: Dict[str, Any],
+    ) -> None:
+        del control, context
+        pending_count = len(self._last_target_indices)
+        if disposition.proposed_count != pending_count:
+            raise ValueError(
+                "DE proposal disposition does not match pending target state: "
+                f"proposed_count={disposition.proposed_count}, "
+                f"pending_count={pending_count}"
+            )
+        if len(self._last_target_scores) != pending_count:
+            raise ValueError(
+                "DE pending target indices and scores must have the same length"
+            )
+        accepted = disposition.accepted_indices
+        self._last_target_indices = [
+            self._last_target_indices[index] for index in accepted
+        ]
+        self._last_target_scores = np.asarray(
+            [self._last_target_scores[index] for index in accepted],
+            dtype=float,
+        )
 
     def set_population(self, population: np.ndarray, objectives: np.ndarray, violations: np.ndarray) -> bool:
         pop, obj, vio = self.validate_population_snapshot(population, objectives, violations)
@@ -201,14 +227,14 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         self.violations = None if vio is None else np.asarray(vio, dtype=float).reshape(-1)
         self._sync_runtime_projection({})
 
-    def _ensure_population(self, solver: Any, context: Dict[str, Any]) -> None:
+    def _ensure_population(self, control: Any, context: Dict[str, Any]) -> None:
         if self.population is not None and self.population.shape[0] > 0:
             return
 
         pop = None
         obj = None
         vio = None
-        reader = getattr(solver, "read_snapshot", None)
+        reader = getattr(control, "read_snapshot", None)
         if callable(reader):
             try:
                 key = context.get(KEY_POPULATION_REF) or context.get(KEY_SNAPSHOT_KEY)
@@ -225,9 +251,9 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
                 vio = data.get(KEY_CONSTRAINT_VIOLATIONS)
 
         if pop is None:
-            pop = getattr(solver, "population", None)
-            obj = getattr(solver, "objectives", None)
-            vio = getattr(solver, "constraint_violations", None)
+            pop = getattr(control, "population", None)
+            obj = getattr(control, "objectives", None)
+            vio = getattr(control, "constraint_violations", None)
         if pop is not None:
             pop_arr = np.asarray(pop, dtype=float)
             if pop_arr.ndim == 2 and pop_arr.shape[0] > 0:
@@ -239,7 +265,7 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
                 return
 
         init_n = max(2, int(self.cfg.population_size))
-        created = [np.asarray(solver.init_candidate(context), dtype=float) for _ in range(init_n)]
+        created = [np.asarray(control.init_candidate(context), dtype=float) for _ in range(init_n)]
         self.population = np.asarray(created, dtype=float)
         self.objectives = None
         self.violations = None

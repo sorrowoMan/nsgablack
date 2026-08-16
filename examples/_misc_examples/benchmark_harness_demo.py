@@ -46,9 +46,9 @@ class DemoSphere(BlackBoxProblem):
         bounds = {f"x{i}": [-5.0, 5.0] for i in range(dim)}
         super().__init__(name="demo_sphere", dimension=dim, bounds=bounds, objectives=["min"])
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        return float(np.sum(x * x))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        return float(np.sum(candidate * candidate))
 
 
 def main() -> None:

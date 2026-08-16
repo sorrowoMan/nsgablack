@@ -28,27 +28,33 @@ class Sphere(BlackBoxProblem):
         self.low = low
         self.high = high
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        return float(np.sum(x * x))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        return float(np.sum(candidate * candidate))
 
 
 class Explorer(AlgorithmAdapter):
     def __init__(self):
         super().__init__(name="explorer")
 
-    def propose(self, solver, context):
-        return [solver.mutate_candidate(solver.init_candidate(context), context) for _ in range(12)]
+    def propose(self, control, context):
+        return [control.mutate_candidate(control.init_candidate(context), context) for _ in range(12)]
+
+    def update(self, control, candidates, feedback, context):
+        _ = (control, candidates, feedback, context)
 
 
 class Exploiter(AlgorithmAdapter):
     def __init__(self):
         super().__init__(name="exploiter")
 
-    def propose(self, solver, context):
-        if solver.best_x is None:
-            return [solver.init_candidate(context) for _ in range(8)]
-        return [solver.mutate_candidate(solver.best_x, context) for _ in range(8)]
+    def propose(self, control, context):
+        if control.best_x is None:
+            return [control.init_candidate(context) for _ in range(8)]
+        return [control.mutate_candidate(control.best_x, context) for _ in range(8)]
+
+    def update(self, control, candidates, feedback, context):
+        _ = (control, candidates, feedback, context)
 
 
 def build_solver():

@@ -20,12 +20,12 @@ class _Problem(BlackBoxProblem):
             objectives=["f1"],
         )
 
-    def evaluate(self, x):
-        arr = np.asarray(x, dtype=float).reshape(-1)
+    def evaluate(self, candidate):
+        arr = np.asarray(candidate, dtype=float).reshape(-1)
         return np.array([float(np.sum(arr * arr))], dtype=float)
 
-    def evaluate_constraints(self, x):
-        _ = x
+    def evaluate_constraints(self, candidate):
+        _ = candidate
         return np.zeros(0, dtype=float)
 
 
@@ -36,8 +36,8 @@ class _StopCtl(BaseController):
     def __init__(self, name: str = "stop") -> None:
         super().__init__(name=name, priority=0)
 
-    def propose(self, solver, slot: str, context):
-        _ = solver
+    def propose(self, control, slot: str, context):
+        _ = control
         _ = context
         return ControlDecision(
             domain="stopping",

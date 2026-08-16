@@ -1,33 +1,27 @@
 # START_HERE
 
-## 1) 这个 case 验证什么
+`wrapper_fs` ????? Project / Case / Scaffold / L0 substrate?
 
-`wrapper_fs` 验证 nsgablack 的 wrapper feature selection。
-
-- nsgablack 搜索 binary feature mask。
-- scikit-learn 通过 cross-validation 评估选中的 feature subset。
-- 当前 runtime path 不使用 mlblack。
-
-指标、结构、mlblack 状态和能力信号见 `README.md`。
-
-## 2) 验证 assembly
+## 1) ???????
 
 ```powershell
-python run_solver.py --check
+python examples/cases/wrapper_fs/run_project.py --check
 ```
 
-## 3) 运行
+## 2) ??? Project ??
 
 ```powershell
-python run_solver.py
+python examples/cases/wrapper_fs/run_project.py
 ```
 
-## 4) 关键指标
+## 3) ??????
 
-| 指标 | 含义 |
-|---|---|
-| `-cv_score` | 选中 feature subset 的 negative mean cross-validation score。 |
+- Project ???? Case ?????????????
+- Case ??????? `build_solver.py` / `run_solver.py` surface?
+- `ResourceContext` ? Project L0 grant???? Case ???
 
-## 5) 预期信号
+## 4) ????
 
-有效运行应该在选择部分特征的同时降低 validation loss，并且 estimator logic 不进入 nsgablack Solver/Adapter。
+- `README.md`????????
+- `cases/wrapper_fs/README.md`?? Case ????????
+- `cases/wrapper_fs/START_HERE.md`?Case ?????

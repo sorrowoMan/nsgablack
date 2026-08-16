@@ -15,15 +15,15 @@ class SimpleConstrainedProblem:
         self.dimension = int(dimension)
         self.bounds = [(0.0, 1.0)] * self.dimension
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        return float(np.sum(x * x))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        return float(np.sum(candidate * candidate))
 
-    def evaluate_constraints(self, x):
-        x = np.asarray(x, dtype=float)
-        # constraint: sum(x)=1 and x>=0 (repair enforces, but bias can still penalize drift)
-        g_sum = abs(float(np.sum(x)) - 1.0)
-        g_neg = float(np.sum(np.maximum(0.0, -x)))
+    def evaluate_constraints(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        # constraint: sum(candidate)=1 and candidate>=0 (repair enforces, but bias can still penalize drift)
+        g_sum = abs(float(np.sum(candidate)) - 1.0)
+        g_neg = float(np.sum(np.maximum(0.0, -candidate)))
         return np.array([g_sum, g_neg], dtype=float)
 
 

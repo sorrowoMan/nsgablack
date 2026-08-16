@@ -73,7 +73,7 @@ def test_process_adapters_follow_propose_update_contract(adapter):
     assert len(candidates) > 0
     objectives, violations = _evaluate(candidates)
 
-    adapter.update(solver, candidates, objectives, violations, context)
+    adapter.update(solver, candidates, (objectives, violations), context)
     projection = adapter.get_runtime_context_projection(solver)
     assert isinstance(projection, dict)
 
@@ -106,7 +106,7 @@ def test_nsga3_projection_contains_reference_points():
     adapter.setup(solver)
     candidates = list(adapter.propose(solver, context))
     objectives, violations = _evaluate(candidates)
-    adapter.update(solver, candidates, objectives, violations, context)
+    adapter.update(solver, candidates, (objectives, violations), context)
 
     projection = adapter.get_runtime_context_projection(solver)
     assert "mo_weights" in projection

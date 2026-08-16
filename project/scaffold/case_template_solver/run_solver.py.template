@@ -1,0 +1,38 @@
+"""
+CLI entry point for running the solver.
+
+Usage:
+    python run_solver.py
+    python run_solver.py --check
+"""
+
+import argparse
+
+from blackbase.project import load_resource_context_from_env, print_resource_context_summary
+from .build_solver import build_solver
+from nsgablack.project.scaffold import print_solver_check
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Run the solver.")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Build and validate assembly only; do not run.",
+    )
+    args = parser.parse_args(argv)
+
+    resource_context = load_resource_context_from_env("nsgablack")
+    solver = build_solver(resource_context=resource_context)
+
+    if args.check:
+        print_solver_check(solver)
+        return
+
+    print_resource_context_summary(resource_context)
+    result = solver.run()
+    print(result)
+
+
+if __name__ == "__main__":
+    main()

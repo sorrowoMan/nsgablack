@@ -25,6 +25,7 @@ from .context_helpers import (
 )
 from .bias_helpers import apply_bias_module
 from .evaluation_helpers import (
+    evaluate_external_population_with_contract,
     evaluate_individual_with_plugins_and_bias,
     evaluate_population_with_plugins_and_bias,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "build_snapshot_store_or_memory",
     "collect_runtime_context_projection",
     "ensure_snapshot_readable",
+    "evaluate_external_population_with_contract",
     "evaluate_individual_with_plugins_and_bias",
     "evaluate_population_with_plugins_and_bias",
     "get_solver_context_view",

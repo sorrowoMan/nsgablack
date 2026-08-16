@@ -30,12 +30,12 @@ class _MinProblem(BlackBoxProblem):
             objectives=["sphere", "l1"],
         )
 
-    def evaluate(self, x):
-        arr = np.asarray(x, dtype=float).reshape(-1)
+    def evaluate(self, candidate):
+        arr = np.asarray(candidate, dtype=float).reshape(-1)
         return np.array([float(np.sum(arr**2)), float(np.sum(np.abs(arr)))], dtype=float)
 
-    def evaluate_constraints(self, x):
-        _ = x
+    def evaluate_constraints(self, candidate):
+        _ = candidate
         return np.zeros(0, dtype=float)
 
 

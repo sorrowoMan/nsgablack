@@ -25,7 +25,7 @@ Contract family:
 
 The experiment surface should answer four questions together:
 
-1. Which standard scaffold surface ran?
+1. Which standard Case surface ran?
 2. What assembly stack was actually mounted?
 3. What run result was produced?
 4. What concrete artifacts came out of that run?
@@ -65,7 +65,7 @@ Recommended minimum list fields for the run surface:
 - `surface_key`
 - `surface_kind`
 - `driver_ref`
-- `family_ref`
+- `semantic_layer`
 - `assembly_signature`
 - `primary_metric_name`
 - `primary_metric_value`
@@ -98,7 +98,8 @@ JSON projections should remain visible:
 
 Recommended mapping:
 
-- `surface_kind = solver`
+- `surface_kind = case`
+- `semantic_layer = optimization`
 - `driver_ref = adapter:<name>` or `solver:<name>`
 - `solver_ref`, `adapter_ref`, `representation_refs`, `bias_refs`,
   `provider_refs`, `plugin_refs` remain first-class through
@@ -108,9 +109,9 @@ Recommended mapping:
 
 Recommended mapping:
 
-- `surface_kind = flow`
+- `surface_kind = case`
+- `semantic_layer = ml`
 - `driver_ref = trainer:<name>`
-- `family_ref = family:<name>`
 - `preset_ref = preset:<name>`
 - `head_ref = head:<task>`
 
@@ -135,7 +136,7 @@ Facet-style filters use:
 Examples:
 
 - `f_run_status=completed`
-- `f_run_family_ref=family:symbolic`
+- `f_semantic_layer=ml`
 - `f_artifact_role=report`
 
 ### 5.1 `view`

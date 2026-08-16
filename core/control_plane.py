@@ -1,4 +1,4 @@
-﻿"""Controller control-plane primitives for L3 runtime governance."""
+"""Controller control-plane primitives for L3 runtime governance."""
 
 from __future__ import annotations
 
@@ -9,6 +9,10 @@ from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional,
 
 class ControlConflictError(RuntimeError):
     """Raised when decisions conflict under strict policy."""
+
+
+class EvaluationBudgetExceeded(RuntimeError):
+    """Raised before evaluation when a request would exceed the hard budget."""
 
 
 @dataclass(frozen=True)
@@ -163,3 +167,121 @@ class RuntimeController:
                         f"Domain '{owner_domain_text}' has multiple owners: {existing}, {controller.name}"
                     )
                 owners[owner_domain_text] = controller.name
+
+    def evaluation_allowance(
+        self,
+        solver: Any,
+        *,
+        requested: int,
+        context: Optional[Mapping[str, Any]] = None,
+    ) -> int:
+        """Return the maximum safe batch size under every active controller."""
+        allowed = max(0, int(requested))
+        ctx = dict(context or {})
+        for controller in sorted(
+            self._controllers,
+            key=lambda item: (int(item.priority), str(item.name)),
+        ):
+            if not bool(controller.enabled):
+                continue
+            limiter = getattr(controller, "evaluation_allowance", None)
+            if not callable(limiter):
+                continue
+            candidate = limiter(solver, requested=allowed, context=ctx)
+            if candidate is None:
+                continue
+            allowed = min(allowed, max(0, int(candidate)))
+        return allowed
+
+
+class BudgetController(BaseController):
+    """Concrete controller for budget-domain decisions (max generations, evaluations)."""
+
+    domain = "budget"
+    slots: Tuple[str, ...] = ("gen_start", "gen_end")
+    owns_domains: Tuple[str, ...] = ("budget",)
+
+    def __init__(self, *, max_generations: int | None = None, max_evaluations: int | None = None, name: str = "budget", priority: int = 0) -> None:
+        super().__init__(name=name, priority=priority)
+        self.max_generations = max_generations
+        self.max_evaluations = max_evaluations
+
+    def evaluation_allowance(
+        self,
+        solver: Any,
+        *,
+        requested: int,
+        context: Mapping[str, Any],
+    ) -> int:
+        """Cap one atomic evaluation batch without letting it cross the limit."""
+        if self.max_evaluations is None:
+            return max(0, int(requested))
+        evaluations = int(
+            context.get(
+                "evaluation_count",
+                context.get(
+                    "total_evaluations",
+                    getattr(solver, "evaluation_count", 0),
+                ),
+            )
+            or 0
+        )
+        remaining = max(0, int(self.max_evaluations) - evaluations)
+        return min(max(0, int(requested)), remaining)
+
+    def propose(self, solver: Any, slot: str, context: Mapping[str, Any]) -> Optional[ControlDecision]:
+        payload: Dict[str, float] = {}
+        if self.max_generations is not None and str(slot) == "gen_end":
+            gen = int(context.get("generation", 0))
+            if gen + 1 >= self.max_generations:
+                payload["stop"] = 1.0
+        if self.max_evaluations is not None:
+            evals = int(context.get("evaluation_count", context.get("total_evaluations", 0)))
+            payload["max_evaluations"] = float(self.max_evaluations)
+            payload["remaining_evaluations"] = float(
+                max(0, int(self.max_evaluations) - evals)
+            )
+            if evals >= self.max_evaluations:
+                payload["stop"] = 1.0
+        if not payload:
+            return None
+        reason = "budget exhausted" if bool(payload.get("stop", False)) else "budget active"
+        return ControlDecision(
+            domain="budget",
+            slot=slot,
+            controller=self.name,
+            payload=payload,
+            reason=reason,
+        )
+
+
+class StopController(BaseController):
+    """Concrete controller for stopping-domain decisions."""
+
+    domain = "stopping"
+    slots: Tuple[str, ...] = ("gen_end",)
+    owns_domains: Tuple[str, ...] = ("stopping",)
+
+    def __init__(self, *, patience: int | None = None, min_delta: float = 1e-8, name: str = "stop", priority: int = 0) -> None:
+        super().__init__(name=name, priority=priority)
+        self.patience = patience
+        self.min_delta = min_delta
+        self._best: float | None = None
+        self._stale: int = 0
+
+    def propose(self, solver: Any, slot: str, context: Mapping[str, Any]) -> Optional[ControlDecision]:
+        best_obj = context.get("best_objective")
+        if best_obj is None:
+            return None
+        try:
+            current = float(best_obj)
+        except (TypeError, ValueError):
+            return None
+        if self._best is None or current < self._best - self.min_delta:
+            self._best = current
+            self._stale = 0
+        else:
+            self._stale += 1
+        if self.patience is not None and self._stale >= self.patience:
+            return ControlDecision(domain="stopping", slot=slot, controller=self.name, payload={"stop": True}, reason="patience exhausted")
+        return None

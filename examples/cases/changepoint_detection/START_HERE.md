@@ -1,33 +1,27 @@
 # START_HERE
 
-## 1) 这个 case 验证什么
+`changepoint_detection` ????? Project / Case / Scaffold / L0 substrate?
 
-`changepoint_detection` 验证 nsgablack 通过 black-box search 做 time-series segmentation。
-
-- nsgablack 搜索 changepoint positions。
-- Objective 评估 segmented residual variance。
-- 当前 runtime path 不使用 mlblack。
-
-指标、结构、mlblack 状态和能力信号见 `README.md`。
-
-## 2) 验证 assembly
+## 1) ???????
 
 ```powershell
-python run_solver.py --check
+python examples/cases/changepoint_detection/run_project.py --check
 ```
 
-## 3) 运行
+## 2) ??? Project ??
 
 ```powershell
-python run_solver.py
+python examples/cases/changepoint_detection/run_project.py
 ```
 
-## 4) 关键指标
+## 3) ??????
 
-| 指标 | 含义 |
-|---|---|
-| segmented RSS / `n` | 在 proposed changepoints 切分信号后的 mean residual cost。 |
+- Project ???? Case ?????????????
+- Case ??????? `build_solver.py` / `run_solver.py` surface?
+- `ResourceContext` ? Project L0 grant???? Case ???
 
-## 5) 预期信号
+## 4) ????
 
-有效运行应该把 changepoints 放到接近 structural breaks 的位置，并相比任意切分点降低 segmented residual cost。
+- `README.md`????????
+- `cases/changepoint_detection/README.md`?? Case ????????
+- `cases/changepoint_detection/START_HERE.md`?Case ?????

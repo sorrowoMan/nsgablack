@@ -44,41 +44,41 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
         self._radius: float = float(getattr(self.cfg, "initial_radius", 0.5))
         self._best_score: Optional[float] = None
 
-    def setup(self, solver: Any) -> None:
+    def setup(self, control: Any) -> None:
         self._radius = float(getattr(self.cfg, "initial_radius", 0.5))
         self._center = None
         self._best_score = None
-        self._reset_internal_state(solver)
+        self._reset_internal_state(control)
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self._center is None:
-            self._center = self._init_center(solver, context)
+            self._center = self._init_center(control, context)
 
-        self._before_propose(solver, context)
+        self._before_propose(control, context)
         center = np.asarray(self._center, dtype=float)
         n = max(1, int(getattr(self.cfg, "batch_size", 1)))
         candidates: List[np.ndarray] = []
         if bool(getattr(self.cfg, "include_center", True)):
             candidates.append(center.copy())
         while len(candidates) < n:
-            delta = np.asarray(self._sample_delta(solver, context), dtype=float)
+            delta = np.asarray(self._sample_delta(control, context), dtype=float)
             cand = center + (delta * float(self._radius))
-            cand = self._clip_to_bounds(cand, solver)
+            cand = self._clip_to_bounds(cand, control)
             candidates.append(cand)
-        self._after_propose(solver, context)
+        self._after_propose(control, context)
         return candidates
 
     def update(
         self,
-        solver: Any,
+        control: Any,
         candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        feedback: Tuple[np.ndarray, np.ndarray],
         context: Dict[str, Any],
     ) -> None:
+        objectives, violations = feedback
         if candidates is None or len(candidates) == 0:
             return
-        scores = np.asarray(self._score(solver, objectives, violations, context), dtype=float).reshape(-1)
+        scores = np.asarray(self._score(control, objectives, violations, context), dtype=float).reshape(-1)
         if scores.size == 0:
             return
         best_idx = int(np.argmin(scores))
@@ -99,7 +99,7 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
                 float(self._radius) * float(getattr(self.cfg, "radius_shrink", 0.7)),
                 float(getattr(self.cfg, "min_radius", 1e-6)),
             )
-        self._after_update(solver, candidates, objectives, violations, context, improved=improved)
+        self._after_update(control, candidates, objectives, violations, context, improved=improved)
 
     def get_state(self) -> Dict[str, Any]:
         state: Dict[str, Any] = {
@@ -122,27 +122,27 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
         self._best_score = state.get("best_score")
         self._load_extra_state(state)
 
-    def _init_center(self, solver: Any, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+    def _init_center(self, control: Any, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         if isinstance(context, dict):
             best_ctx = context.get(KEY_BEST_X)
             if best_ctx is not None:
                 return np.asarray(best_ctx, dtype=float)
-        if getattr(solver, "best_x", None) is not None:
-            return np.asarray(solver.best_x, dtype=float)
-        pipeline = getattr(solver, "representation_pipeline", None)
+        if getattr(control, "best_x", None) is not None:
+            return np.asarray(control.best_x, dtype=float)
+        pipeline = getattr(control, "representation_pipeline", None)
         if pipeline is not None and hasattr(pipeline, "init"):
             try:
-                return np.asarray(pipeline.init(solver.problem, context=None), dtype=float)
+                return np.asarray(pipeline.init(control.problem, context=None), dtype=float)
             except Exception:
                 pass
-        low, high = self._extract_bounds(solver)
+        low, high = self._extract_bounds(control)
         if low is None or high is None:
-            dim = int(getattr(solver, "dimension", 1) or 1)
+            dim = int(getattr(control, "dimension", 1) or 1)
             return self._rng.uniform(low=-1.0, high=1.0, size=(dim,))
         return self._rng.uniform(low=low, high=high)
 
-    def _extract_bounds(self, solver: Any) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        bounds = getattr(getattr(solver, "problem", None), "bounds", None)
+    def _extract_bounds(self, control: Any) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        bounds = getattr(getattr(control, "problem", None), "bounds", None)
         if bounds is None:
             return None, None
         if isinstance(bounds, dict):
@@ -153,25 +153,25 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
         high = np.asarray([float(v[1]) for v in vals], dtype=float)
         return low, high
 
-    def _clip_to_bounds(self, x: np.ndarray, solver: Any) -> np.ndarray:
-        low, high = self._extract_bounds(solver)
+    def _clip_to_bounds(self, x: np.ndarray, control: Any) -> np.ndarray:
+        low, high = self._extract_bounds(control)
         if low is None or high is None:
             return x
         return np.minimum(np.maximum(x, low), high)
 
     # Hooks
-    def _reset_internal_state(self, solver: Any) -> None:
-        _ = solver
+    def _reset_internal_state(self, control: Any) -> None:
+        _ = control
 
-    def _before_propose(self, solver: Any, context: Dict[str, Any]) -> None:
-        _ = solver, context
+    def _before_propose(self, control: Any, context: Dict[str, Any]) -> None:
+        _ = control, context
 
-    def _after_propose(self, solver: Any, context: Dict[str, Any]) -> None:
-        _ = solver, context
+    def _after_propose(self, control: Any, context: Dict[str, Any]) -> None:
+        _ = control, context
 
     def _after_update(
         self,
-        solver: Any,
+        control: Any,
         candidates: Sequence[np.ndarray],
         objectives: np.ndarray,
         violations: np.ndarray,
@@ -179,7 +179,7 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
         *,
         improved: bool,
     ) -> None:
-        _ = solver, candidates, objectives, violations, context, improved
+        _ = control, candidates, objectives, violations, context, improved
 
     def _extra_state(self) -> Dict[str, Any]:
         return {}
@@ -189,13 +189,13 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
 
     # Required in subclasses
     @abstractmethod
-    def _sample_delta(self, solver: Any, context: Dict[str, Any]) -> np.ndarray:
+    def _sample_delta(self, control: Any, context: Dict[str, Any]) -> np.ndarray:
         raise NotImplementedError
 
     @abstractmethod
     def _score(
         self,
-        solver: Any,
+        control: Any,
         objectives: np.ndarray,
         violations: np.ndarray,
         context: Dict[str, Any],

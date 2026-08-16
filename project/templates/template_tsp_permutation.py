@@ -48,8 +48,8 @@ class TSPProblem(BlackBoxProblem):
                 dist[i, j] = float(np.linalg.norm(coords[i] - coords[j]))
         return dist
 
-    def evaluate(self, x):
-        perm = np.asarray(x, dtype=int)
+    def evaluate(self, candidate):
+        perm = np.asarray(candidate, dtype=int)
         total = 0.0
         for i in range(len(perm)):
             j = (i + 1) % len(perm)

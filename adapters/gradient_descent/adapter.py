@@ -5,9 +5,11 @@ Finite-difference Gradient Descent adapter.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
+
+from blackbase.contracts import BatchDisposition
 
 from ..algorithm_adapter import AlgorithmAdapter
 from ...utils.context.context_keys import KEY_ADAPTER_BEST_SCORE, KEY_MUTATION_SIGMA
@@ -51,21 +53,21 @@ class GradientDescentAdapter(AlgorithmAdapter):
         self.current_x: Optional[np.ndarray] = None
         self.current_score: Optional[float] = None
         self.learning_rate: float = float(self.cfg.learning_rate)
-        self._last_dims: np.ndarray = np.zeros(0, dtype=int)
+        self._pending_probes: List[Tuple[int, int]] = []
         self._runtime_projection: Dict[str, Any] = {}
         self._rng = np.random.default_rng()
 
-    def setup(self, solver: Any) -> None:
-        self._rng = self.create_local_rng(solver)
+    def setup(self, control: Any) -> None:
+        self._rng = self.create_local_rng(control)
         self.current_x = None
         self.current_score = None
         self.learning_rate = float(self.cfg.learning_rate)
-        self._last_dims = np.zeros(0, dtype=int)
+        self._pending_probes = []
         self._runtime_projection = {KEY_MUTATION_SIGMA: float(self.learning_rate)}
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self.current_x is None:
-            self.current_x = np.asarray(solver.init_candidate(context), dtype=float)
+            self.current_x = np.asarray(control.init_candidate(context), dtype=float)
         dim = int(self.current_x.shape[0])
         n_dirs = max(1, min(dim, int(self.cfg.max_directions)))
         dims = self._rng.choice(dim, size=n_dirs, replace=False)
@@ -76,41 +78,75 @@ class GradientDescentAdapter(AlgorithmAdapter):
             minus = np.array(self.current_x, copy=True)
             plus[d] += eps
             minus[d] -= eps
-            out.append(np.asarray(solver.repair_candidate(plus, context), dtype=float))
-            out.append(np.asarray(solver.repair_candidate(minus, context), dtype=float))
-        self._last_dims = np.asarray(dims, dtype=int)
+            out.append(np.asarray(control.repair_candidate(plus, context), dtype=float))
+            out.append(np.asarray(control.repair_candidate(minus, context), dtype=float))
+        self._pending_probes = [
+            (int(dimension), sign)
+            for dimension in dims
+            for sign in (1, -1)
+        ]
         self._runtime_projection = {KEY_MUTATION_SIGMA: float(self.learning_rate)}
         return out
 
-    def update(
+    def on_proposal_disposition(
         self,
-        solver: Any,
-        candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        control: Any,
+        disposition: BatchDisposition,
         context: Dict[str, Any],
     ) -> None:
-        _ = solver
-        _ = context
-        if candidates is None or len(candidates) == 0 or self.current_x is None:
+        del control, context
+        if disposition.proposed_count != len(self._pending_probes):
+            raise ValueError(
+                "Gradient-descent proposal disposition does not match pending probes: "
+                f"proposed_count={disposition.proposed_count}, "
+                f"pending_count={len(self._pending_probes)}"
+            )
+        self._pending_probes = [
+            self._pending_probes[index]
+            for index in disposition.accepted_indices
+        ]
+
+    def update(
+        self,
+        control: Any,
+        candidates: Sequence[np.ndarray],
+        feedback: Tuple[np.ndarray, np.ndarray],
+        context: Dict[str, Any],
+    ) -> None:
+        objectives, violations = feedback
+        if len(candidates) == 0:
             return
-        if self._last_dims.size == 0:
-            return
+        if self.current_x is None:
+            raise RuntimeError("GradientDescentAdapter.update requires a preceding propose call")
+        if not self._pending_probes:
+            raise RuntimeError("gradient-descent feedback has no pending finite-difference probes")
 
         scores = self._scores(objectives, violations)
-        if scores.size < (2 * self._last_dims.size):
+        if len(candidates) != len(self._pending_probes) or scores.size != len(self._pending_probes):
+            raise ValueError(
+                "Gradient-descent feedback must align with the accepted finite-difference probes"
+            )
+
+        # Estimate a gradient only from dimensions whose +/- probes both survived
+        # budget admission or another explicit upstream batch disposition.
+        paired_scores: Dict[int, Dict[int, float]] = {}
+        for (dimension, sign), score in zip(self._pending_probes, scores):
+            paired_scores.setdefault(int(dimension), {})[int(sign)] = float(score)
+        complete_pairs = {
+            dimension: values
+            for dimension, values in paired_scores.items()
+            if 1 in values and -1 in values
+        }
+        if not complete_pairs:
             return
 
-        # Estimate gradient along sampled coordinates from +/- epsilon pairs.
         grad = np.zeros_like(self.current_x, dtype=float)
         eps = max(float(self.cfg.epsilon), 1e-12)
-        for i, d in enumerate(self._last_dims.tolist()):
-            plus_score = float(scores[2 * i])
-            minus_score = float(scores[(2 * i) + 1])
-            grad[d] = (plus_score - minus_score) / (2.0 * eps)
+        for dimension, values in complete_pairs.items():
+            grad[dimension] = (values[1] - values[-1]) / (2.0 * eps)
 
         candidate = np.asarray(self.current_x - (self.learning_rate * grad), dtype=float)
-        candidate = np.asarray(solver.repair_candidate(candidate, context), dtype=float)
+        candidate = np.asarray(control.repair_candidate(candidate, context), dtype=float)
 
         # Use best observed directional score as acceptance proxy.
         best_score = float(np.min(scores))

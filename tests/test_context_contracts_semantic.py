@@ -1,4 +1,4 @@
-﻿from types import SimpleNamespace
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -10,32 +10,16 @@ from nsgablack.core.state.context_keys import KEY_MUTATION_SIGMA, KEY_VNS_K
 
 
 class _NoopAdapter(AlgorithmAdapter):
-    def propose(self, solver, context):
+    def propose(self, control, context):
         return []
 
-
-class _LegacyContractObject:
-    requires_context_keys = ("alpha", "beta")
-    provides_context_keys = ("gamma",)
-    mutates_context_keys = ("delta",)
-    cache_context_keys = ("memo",)
-    recommended_plugins = ("plugin.pareto_archive",)
+    def update(self, control, candidates, feedback, context):
+        del control, candidates, feedback, context
 
 
-def test_get_component_contract_supports_legacy_fields():
-    contract = get_component_contract(_LegacyContractObject())
-    assert contract is not None
-    assert set(contract.requires) == {"alpha", "beta"}
-    assert set(contract.provides) == {"gamma"}
-    assert set(contract.mutates) == {"delta"}
-    assert set(contract.cache) == {"memo"}
-    assert "plugin.pareto_archive" in str(contract.notes or "")
-
-
-def test_algorithm_adapter_contract_merges_legacy_and_context_fields():
+def test_algorithm_adapter_contract_uses_canonical_context_fields():
     adapter = _NoopAdapter(name="noop")
-    adapter.context_requires = ("generation",)
-    adapter.requires_context_keys = (KEY_VNS_K,)
+    adapter.context_requires = ("generation", KEY_VNS_K)
     adapter.context_provides = (KEY_MUTATION_SIGMA,)
     contract = get_component_contract(adapter)
     assert contract is not None

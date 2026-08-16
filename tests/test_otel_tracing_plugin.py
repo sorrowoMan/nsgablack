@@ -9,11 +9,11 @@ def test_otel_tracing_plugin_wraps_and_restores_methods():
     calls = {"eval_i": 0, "eval_p": 0, "propose": 0, "update": 0, "trigger": 0}
 
     class _Adapter:
-        def propose(self, solver):
+        def propose(self, control):
             calls["propose"] += 1
             return [1.0]
 
-        def update(self, solver, new_population, new_objectives):
+        def update(self, control, new_population, new_objectives):
             calls["update"] += 1
             return True
 

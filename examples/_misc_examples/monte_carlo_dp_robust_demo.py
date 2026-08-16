@@ -61,11 +61,11 @@ class StochasticGridPath(BlackBoxProblem):
         bounds = {f"x{i}": [0.0, 1.0] for i in range(steps)}
         super().__init__(name="stochastic_grid_path", dimension=steps, bounds=bounds, objectives=["min"])
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float).ravel()
-        if x.size != self.dimension:
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float).ravel()
+        if candidate.size != self.dimension:
             return 1e9
-        actions = (x >= 0.5).astype(int)  # 0=right, 1=down
+        actions = (candidate >= 0.5).astype(int)  # 0=right, 1=down
 
         r, c = 0, 0
         total = 0.0
@@ -89,8 +89,11 @@ class FixedPathAdapter(AlgorithmAdapter):
         super().__init__(name=name)
         self.path = np.asarray(path, dtype=float)
 
-    def propose(self, solver, context):
+    def propose(self, control, context):
         return [self.path]
+
+    def update(self, control, candidates, feedback, context):
+        _ = (control, candidates, feedback, context)
 
 
 def build_storm_grid(rows: int, cols: int) -> Tuple[np.ndarray, np.ndarray]:

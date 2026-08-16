@@ -1,4 +1,4 @@
-"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
+ï»¿"""MIGRATED to examples/cases/ - see scaffold case for maintained version."""
 """Multi-strategy cooperation demo (VNS + SA, direct wiring)."""
 
 import numpy as np
@@ -43,9 +43,9 @@ class SphereProblem(BlackBoxProblem):
         self.low = low
         self.high = high
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        return float(np.sum(x**2))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        return float(np.sum(candidate**2))
 
 
 def main():
@@ -81,4 +81,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

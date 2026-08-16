@@ -39,7 +39,7 @@ def test_trust_region_dfo_basic_cycle() -> None:
     assert len(cands) == 4
     objectives = np.array([[5.0, 5.0], [4.0, 4.0], [3.0, 3.0], [2.0, 2.0]], dtype=float)
     violations = np.zeros(4, dtype=float)
-    adapter.update(solver, cands, objectives, violations, context={})
+    adapter.update(solver, cands, (objectives, violations), context={})
     state = adapter.get_state()
     assert state["center"] is not None
     assert float(state["radius"]) > 0.5
@@ -54,7 +54,7 @@ def test_trust_region_nonsmooth_scores_linf() -> None:
     cands = adapter.propose(solver, context={})
     objectives = np.array([[2.0, 1.0], [1.0, 3.0], [0.5, 0.5]], dtype=float)
     violations = np.zeros(3, dtype=float)
-    adapter.update(solver, cands, objectives, violations, context={})
+    adapter.update(solver, cands, (objectives, violations), context={})
     state = adapter.get_state()
     assert state["best_score"] is not None
 
@@ -93,7 +93,7 @@ def test_trust_region_mo_dfo_uses_context_weights_and_persists_them() -> None:
     )
     violations = np.zeros(4, dtype=float)
     context = {KEY_MO_WEIGHTS: np.array([0.6, 0.3, 0.1], dtype=float)}
-    adapter.update(solver, cands, objectives, violations, context=context)
+    adapter.update(solver, cands, (objectives, violations), context=context)
     state = adapter.get_state()
     weights = np.asarray(state.get("weights"), dtype=float)
     assert weights.shape == (3,)

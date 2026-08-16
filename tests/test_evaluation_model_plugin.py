@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import numpy as np
 
@@ -26,8 +26,8 @@ def test_evaluation_model_plugin_outer_and_inner():
         def __init__(self):
             super().__init__(name="outer_eval_model", dimension=1, bounds={"x0": (-3.0, 3.0)})
 
-        def evaluate(self, x):
-            _ = x
+        def evaluate(self, candidate):
+            _ = candidate
             return 9999.0
 
         def build_inner_problem(self, x, eval_context):
@@ -42,24 +42,27 @@ def test_evaluation_model_plugin_outer_and_inner():
         def __init__(self):
             super().__init__(name="a")
 
-        def propose(self, solver, context):
-            _ = (solver, context)
+        def propose(self, control, context):
+            _ = (control, context)
             return [np.array([2.0], dtype=float)]
 
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
+
     backend = _Backend()
-    solver = ComposableSolver(problem=_OuterProblem(), adapter=_Adapter())
-    solver.max_steps = 1
-    solver.pop_size = 1
-    solver.register_evaluation_provider(
+    control = ComposableSolver(problem=_OuterProblem(), adapter=_Adapter())
+    control.max_steps = 1
+    control.pop_size = 1
+    control.register_evaluation_provider(
         EvaluationModelProviderPlugin(
             config=EvaluationModelConfig(scope="both", warn_on_failure=False),
             backend_factory=lambda _problem, _ctx: backend,
         ).create_provider()
     )
-    solver.run()
+    control.run()
     # outer objective path: 2^2 + 1.0 = 5.0
-    assert solver.best_objective is not None
-    assert abs(float(solver.best_objective) - 5.0) < 1e-12
+    assert control.best_objective is not None
+    assert abs(float(control.best_objective) - 5.0) < 1e-12
 
     # inner delegation path should use same evaluation model plugin.
     solver2 = ComposableSolver(problem=_OuterProblem(), adapter=_Adapter())

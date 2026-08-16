@@ -9,7 +9,7 @@ This adapter keeps the framework's philosophy:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -60,7 +60,6 @@ class VNSAdapter(AlgorithmAdapter):
     # VNS itself is representation-agnostic. It communicates neighborhood changes
     # via `context` and expects the representation pipeline's mutator (or a wrapper)
     # to consume these keys.
-    requires_context_keys = {KEY_VNS_K, KEY_MUTATION_SIGMA}
     recommended_mutators = ["ContextGaussianMutation", "ContextSelectMutator"]
 
     def __init__(
@@ -84,27 +83,28 @@ class VNSAdapter(AlgorithmAdapter):
         self._warned_missing_operator = False
         self._last_context_projection: Dict[str, Any] = {}
 
-    def setup(self, solver: Any) -> None:
+    def setup(self, control: Any) -> None:
         self.k = 0
         self.current_x = None
         self.current_score = None
-        self._warn_if_pipeline_does_not_consume_context(solver)
+        self._warn_if_pipeline_does_not_consume_context(control)
         self._last_context_projection = {
             KEY_VNS_K: int(self.k),
             KEY_MUTATION_SIGMA: float(self._current_sigma()),
         }
 
-    def _warn_if_pipeline_does_not_consume_context(self, solver: Any) -> None:
+    def _warn_if_pipeline_does_not_consume_context(self, control: Any) -> None:
         if self._warned_missing_operator:
             return
 
-        pipeline = getattr(solver, "representation_pipeline", None)
+        pipeline = getattr(control, "representation_pipeline", None)
         mutator = getattr(pipeline, "mutator", None) if pipeline is not None else None
         if mutator is None:
             warnings.warn(
-                "VNSAdapter 未检测到 representation_pipeline.mutator；VNS 只能产生固定邻域或直接失败。"
-                "请配置 RepresentationPipeline(mutator=...)，连续变量推荐 ContextGaussianMutation，"
-                "离散/排列推荐 ContextSelectMutator。",
+                "VNSAdapter 未检测到 representation_pipeline.mutator；"
+                "VNS 只能产生固定邻域或直接失败。"
+                "请配置 RepresentationPipeline(mutator=...)；"
+                "连续变量推荐 ContextGaussianMutation，离散/排列推荐 ContextSelectMutator。",
                 RuntimeWarning,
                 stacklevel=3,
             )
@@ -122,18 +122,20 @@ class VNSAdapter(AlgorithmAdapter):
 
         if not consumes:
             warnings.warn(
-                "VNSAdapter 检测到当前 mutator 可能不会消费 context（未发现 sigma_key/k_key 等属性）。"
+                "VNSAdapter 检测到当前 mutator 可能不会消费 context"
+                "（未发现 sigma_key/k_key 等属性）。"
                 "这会导致 VNS 的 k 邻域变化退化为“固定扰动”。"
-                "建议：连续变量用 ContextGaussianMutation(sigma_key='mutation_sigma')；"
-                "非连续/多邻域用 ContextSelectMutator(k_key='vns_k') 或自定义可读 context 的 mutator。",
+                "建议：连续变量使用 ContextGaussianMutation(sigma_key='mutation_sigma')；"
+                "非连续/多邻域使用 ContextSelectMutator(k_key='vns_k') "
+                "或自定义可读取 context 的 mutator。",
                 RuntimeWarning,
                 stacklevel=3,
             )
             self._warned_missing_operator = True
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self.current_x is None:
-            self.current_x = np.asarray(solver.init_candidate(context))
+            self.current_x = np.asarray(control.init_candidate(context))
 
         sigma = float(self._current_sigma())
         ctx = dict(context)
@@ -146,19 +148,19 @@ class VNSAdapter(AlgorithmAdapter):
 
         out = []
         for _ in range(int(self.cfg.batch_size)):
-            cand = solver.mutate_candidate(self.current_x, ctx)
-            cand = solver.repair_candidate(cand, ctx)
+            cand = control.mutate_candidate(self.current_x, ctx)
+            cand = control.repair_candidate(cand, ctx)
             out.append(np.asarray(cand))
         return out
 
     def update(
         self,
-        solver: Any,
+        control: Any,
         candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        feedback: Tuple[np.ndarray, np.ndarray],
         context: Dict[str, Any],
     ) -> None:
+        objectives, violations = feedback
         if candidates is None or len(candidates) == 0:
             return
 
@@ -188,7 +190,7 @@ class VNSAdapter(AlgorithmAdapter):
         if self.k > int(self.cfg.k_max):
             if bool(self.cfg.restart_on_stagnation):
                 self.k = 0
-                self.current_x = np.asarray(solver.init_candidate(context))
+                self.current_x = np.asarray(control.init_candidate(context))
                 self.current_score = None
             else:
                 self.k = int(self.cfg.k_max)

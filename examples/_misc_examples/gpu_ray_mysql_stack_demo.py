@@ -35,11 +35,11 @@ class DemoGpuProblem(BlackBoxProblem):
         bounds = {f"x{i}": (-5.0, 5.0) for i in range(int(dimension))}
         super().__init__(name="gpu_ray_mysql_demo_problem", dimension=int(dimension), bounds=bounds)
 
-    def evaluate(self, x):
-        arr = np.asarray(x, dtype=float).reshape(-1)
+    def evaluate(self, candidate):
+        arr = np.asarray(candidate, dtype=float).reshape(-1)
         return np.array([float(np.sum(arr * arr))], dtype=float)
 
-    def evaluate_gpu_batch(self, population: np.ndarray, *, backend: str, device: str = "cuda:0"):
+    def evaluate_gpu_batch(self, population: np.ndarray, *, backend: str, device: str = "auto"):
         pop = np.asarray(population, dtype=float)
         if str(backend) == "torch":
             import torch  # type: ignore
@@ -62,17 +62,18 @@ class RandomSearchAdapter(AlgorithmAdapter):
         super().__init__(name=name)
         self.rng = np.random.default_rng(int(seed))
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         _ = context
         out = []
-        lows = np.array([solver.var_bounds[f"x{i}"][0] for i in range(solver.dimension)], dtype=float)
-        highs = np.array([solver.var_bounds[f"x{i}"][1] for i in range(solver.dimension)], dtype=float)
-        for _ in range(int(getattr(solver, "pop_size", 32))):
+        lows = np.array([control.var_bounds[f"x{i}"][0] for i in range(control.dimension)], dtype=float)
+        highs = np.array([control.var_bounds[f"x{i}"][1] for i in range(control.dimension)], dtype=float)
+        for _ in range(int(getattr(control, "pop_size", 32))):
             out.append(self.rng.uniform(lows, highs).astype(float))
         return out
 
-    def update(self, solver: Any, candidates, objectives, violations, context: Dict[str, Any]) -> None:
-        _ = (solver, candidates, objectives, violations, context)
+    def update(self, control: Any, candidates, feedback, context: Dict[str, Any]) -> None:
+        objectives, violations = feedback
+        _ = (control, candidates, objectives, violations, context)
         return None
 
 
@@ -141,7 +142,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--dimension", type=int, default=16)
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--gpu-backend", choices=["auto", "torch", "cupy"], default="auto")
-    p.add_argument("--gpu-device", default="cuda:0")
+    p.add_argument("--gpu-device", default="auto")
     p.add_argument("--max-workers", type=int, default=4)
     p.add_argument(
         "--parallel-thread-bias-isolation",

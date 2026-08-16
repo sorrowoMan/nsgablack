@@ -16,7 +16,7 @@ Notes:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Tuple
 import math
 import warnings
 
@@ -62,7 +62,6 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
 
     # Soft partner contracts: SA communicates temperature and (optionally)
     # mutation scale via context. Representation mutator may consume these keys.
-    requires_context_keys = {KEY_TEMPERATURE}
     recommended_mutators = ["ContextGaussianMutation", "ContextSelectMutator"]
 
     def __init__(
@@ -94,20 +93,20 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
         # Derive seed from numpy global RNG state so np.random.seed(...) controls SA reproducibility.
         return np.random.default_rng(int(np.random.randint(0, 2**31 - 1)))
 
-    def setup(self, solver: Any) -> None:
+    def setup(self, control: Any) -> None:
         self.t0 = float(self.cfg.initial_temperature)
         self.temperature = float(self.cfg.initial_temperature)
         self.current_x = None
         self.current_score = None
-        self._rng = self._build_rng()
-        self._warn_if_pipeline_has_no_mutator(solver)
+        self._rng = self.create_local_rng(control, seed=self.cfg.random_seed)
+        self._warn_if_pipeline_has_no_mutator(control)
         self._last_runtime_projection = {}
 
-    def _warn_if_pipeline_has_no_mutator(self, solver: Any) -> None:
+    def _warn_if_pipeline_has_no_mutator(self, control: Any) -> None:
         if self._warned_missing_operator:
             return
 
-        pipeline = getattr(solver, "representation_pipeline", None)
+        pipeline = getattr(control, "representation_pipeline", None)
         mutator = getattr(pipeline, "mutator", None) if pipeline is not None else None
         if mutator is None:
             warnings.warn(
@@ -140,27 +139,27 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
             ctx[KEY_MUTATION_SIGMA] = float(sigma)
         return ctx
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self.current_x is None:
-            self.current_x = np.asarray(solver.init_candidate(context))
+            self.current_x = np.asarray(control.init_candidate(context))
 
         ctx = self._build_sa_context(context)
 
         out = []
         for _ in range(max(1, int(self.cfg.batch_size))):
-            cand = solver.mutate_candidate(self.current_x, ctx)
-            cand = solver.repair_candidate(cand, ctx)
+            cand = control.mutate_candidate(self.current_x, ctx)
+            cand = control.repair_candidate(cand, ctx)
             out.append(np.asarray(cand))
         return out
 
     def update(
         self,
-        solver: Any,
+        control: Any,
         candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        feedback: Tuple[np.ndarray, np.ndarray],
         context: Dict[str, Any],
     ) -> None:
+        objectives, violations = feedback
         if candidates is None or len(candidates) == 0:
             return
         if objectives is None or len(objectives) == 0:

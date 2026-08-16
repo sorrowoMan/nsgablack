@@ -118,6 +118,7 @@ _NON_CASE_DIR_NAMES = {
     "assets",
     "docs",
 }
+_PROJECT_MARKER_FILES = {"project_config.py", "run_project.py"}
 
 
 def check_standard_case_scaffolds(
@@ -156,6 +157,8 @@ def _iter_case_roots(container: Path) -> Iterable[Path]:
             continue
         child_files = {path.name for path in directory.iterdir() if path.is_file()}
         child_dirs = {path.name for path in directory.iterdir() if path.is_dir()}
+        if _PROJECT_MARKER_FILES.issubset(child_files) and "cases" in child_dirs:
+            continue
         if child_files & _CASE_MARKER_FILES or child_dirs & _CASE_MARKER_DIRS:
             yield directory
 
@@ -239,6 +242,17 @@ def _check_case_root_scaffold(
             "case-legacy-assembly-scaffold-json",
             "assembly/scaffold.json is forbidden; assembly logic belongs in build_solver.py.",
             legacy_scaffold_json,
+        )
+
+    pipeline_main = case_root / "pipeline" / "main.py"
+    pipeline_module = case_root / "pipeline.py"
+    if not pipeline_main.is_file() and not pipeline_module.is_file():
+        add(
+            diags,
+            "warn",
+            "case-pipeline-entry-recommended",
+            "Recommended: add one canonical pipeline entry (pipeline/main.py or pipeline.py) and compose operators inside it.",
+            case_root / "pipeline",
         )
 
 

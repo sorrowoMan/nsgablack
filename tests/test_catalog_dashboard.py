@@ -13,6 +13,7 @@ from nsgablack.catalog import (
     field_values,
     list_entries,
     search_entries,
+    show_entry,
 )
 from nsgablack.catalog.registry import CatalogEntry
 from nsgablack.catalog.dashboard import (
@@ -161,6 +162,44 @@ def test_framework_catalog_facade_routes_to_db_store(monkeypatch):
     assert any(name == "facets" for name, _ in fake_store.calls)
     assert any(name == "neighbors" for name, _ in fake_store.calls)
     assert "context_provides::population" in neighbors["relation_groups"]
+
+
+def test_preferred_db_entry_uses_installed_runtime_contracts(monkeypatch):
+    stale = CatalogEntry(
+        key="example.phi_bundle_image_search",
+        title="PhiBundleImageSearch",
+        kind="example",
+        import_path=(
+            "examples.cases.phi_bundle_image_search.cases.phi_bundle_image_search."
+            "build_solver:build_phi_bundle_image_search_solver"
+        ),
+        context_provides=("phi_bundle_outer_search_records",),
+    )
+
+    class _FakeStore:
+        def get_catalog_entry(self, key, **kwargs):
+            _ = kwargs
+            return stale if key == stale.key else None
+
+    route = facade_mod.CatalogReadRoute(
+        profile="default",
+        source_mode="prefer",
+        effective_source="postgresql",
+        db_store=_FakeStore(),
+        db_backend="postgresql",
+        config_enabled=True,
+    )
+    monkeypatch.setattr(facade_mod, "_resolve_read_route", lambda **kwargs: route)
+
+    entry = show_entry(stale.key, profile="default", scope="framework")
+
+    assert entry is not None
+    assert entry.context_provides == ()
+    assert entry.artifact_provides == (
+        "phi_bundle_outer_summary_json",
+        "phi_bundle_outer_table_csv",
+        "phi_bundle_outer_table_md",
+    )
 
 
 def test_catalog_schema_and_field_values_are_queryable():

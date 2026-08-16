@@ -9,6 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import Condition, RLock
 from typing import Any, Dict, Mapping, Optional, Sequence
+from uuid import uuid4
+
+from blackbase.resources import ClaimedTask, RedisTaskTransport, ResourceOffer
 
 from .model import DataRef, TaskEnvelope, TaskResult, WorkerDescriptor
 
@@ -672,6 +675,13 @@ class InMemoryL0RuntimeBackend(L0RuntimeBackend):
 
 
 class RedisL0RuntimeBackend(L0RuntimeBackend):
+    """Compatibility facade over blackbase's durable Redis TaskTransport.
+
+    New code should use ``task_transport``/``claim_task`` directly. The legacy
+    envelope-only ``claim`` and result-only ``complete`` methods retain their
+    shapes by keeping the opaque lease claim in the worker process.
+    """
+
     def __init__(
         self,
         *,
@@ -684,34 +694,175 @@ class RedisL0RuntimeBackend(L0RuntimeBackend):
     ) -> None:
         redis_client = _make_redis_client(redis_url=redis_url, client=client)
         artifact_backend = FilesystemArtifactBackend(base_dir=artifact_base_dir)
-        super().__init__(
-            task_queue=RedisTaskQueueBackend(
-                redis_url=redis_url,
-                namespace=namespace,
-                queue_scope=queue_scope,
-                client=redis_client,
-            ),
-            result_backend=RedisTaskResultBackend(
-                redis_url=redis_url,
-                namespace=namespace,
-                client=redis_client,
-                result_ttl_seconds=result_ttl_seconds,
-            ),
-            worker_registry=RedisWorkerRegistryBackend(redis_url=redis_url, namespace=namespace, client=redis_client),
-            state_backend=RedisTaskStateBackend(redis_url=redis_url, namespace=namespace, client=redis_client),
-            artifact_backend=artifact_backend,
-            data_transport=ArtifactDataTransportBackend(artifact_backend),
+        self.redis_url = str(redis_url)
+        self._namespace = _normalize_namespace(namespace)
+        self._queue_scope = _normalize_queue_scope(queue_scope)
+        self.result_ttl_seconds = result_ttl_seconds
+        self.task_transport = RedisTaskTransport(
+            redis_url=redis_url,
+            namespace=self._namespace,
+            client=redis_client,
+        )
+        # Keep the public composite attributes available during migration. Task
+        # and result operations below intentionally go through task_transport.
+        self.task_queue = self
+        self.result_backend = self
+        self.worker_registry = self
+        self.state_backend = RedisTaskStateBackend(
+            redis_url=redis_url,
+            namespace=namespace,
+            client=redis_client,
+        )
+        self.artifact_backend = artifact_backend
+        self.data_transport = ArtifactDataTransportBackend(artifact_backend)
+        self._claims: Dict[str, ClaimedTask] = {}
+
+    def submit(self, task: TaskEnvelope) -> None:
+        self.state_backend.set_task_state(
+            task.task_id,
+            {"status": "queued", "created_at": task.created_at},
+        )
+        self.task_transport.submit(task)
+
+    def submit_many(self, tasks: Sequence[TaskEnvelope]) -> None:
+        for task in tuple(tasks):
+            self.submit(task)
+
+    def claim_task(
+        self,
+        worker: WorkerDescriptor | Mapping[str, Any],
+        *,
+        run_id: Optional[str] = None,
+        timeout_seconds: int = 1,
+        lease_seconds: float = 30.0,
+        task_types: Sequence[str] = (),
+    ) -> Optional[ClaimedTask]:
+        deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+        while True:
+            claim = self.task_transport.claim(
+                worker,
+                lease_seconds=lease_seconds,
+                task_types=task_types,
+                namespaces=((str(run_id),) if run_id and self._queue_scope == "run" else ()),
+            )
+            if claim is not None:
+                self._claims[claim.task.task_id] = claim
+                self.state_backend.set_task_state(
+                    claim.task.task_id,
+                    {
+                        "status": "claimed",
+                        "claimed_at": time.time(),
+                        "worker_id": claim.worker_id,
+                        "attempt": claim.attempt,
+                        "lease_expires_at": claim.lease_expires_at,
+                    },
+                )
+                return claim
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(0.05)
+
+    def claim(self, run_id: Optional[str] = None, *, timeout_seconds: int = 1) -> Optional[TaskEnvelope]:
+        worker = WorkerDescriptor(
+            worker_id=f"nsgablack-compat-{uuid4().hex[:12]}",
+            executor_backend="redis",
+            resource_backend="local",
+            capabilities=("cpu", "numpy", "nested_eval", "project_case"),
+            offer=ResourceOffer(threads=1024, gpus=0, backend="local"),
+            max_inflight=1,
+        )
+        claim = self.claim_task(
+            worker,
+            run_id=run_id,
+            timeout_seconds=timeout_seconds,
+        )
+        return None if claim is None else claim.task
+
+    def complete_claim(self, claim: ClaimedTask, result: TaskResult) -> None:
+        self._claims.pop(claim.task.task_id, None)
+        if result.ok:
+            record = self.task_transport.complete(claim, result)
+        else:
+            record = self.task_transport.fail(claim, result)
+        self._record_result_state(result, transport_status=record.status)
+
+    def complete(self, result: TaskResult) -> None:
+        claim = self._claims.pop(result.task_id, None)
+        if claim is None:
+            raise RuntimeError(
+                f"No active Redis task lease for task_id='{result.task_id}'; "
+                "claim and complete must run in the same worker process"
+            )
+        if result.ok:
+            record = self.task_transport.complete(claim, result)
+        else:
+            record = self.task_transport.fail(claim, result)
+        self._record_result_state(result, transport_status=record.status)
+
+    def get_result(self, run_id: str, task_id: str) -> Optional[TaskResult]:
+        _ = run_id
+        record = self.task_transport.get(task_id)
+        return None if record is None else record.result
+
+    def heartbeat(
+        self,
+        worker_id: str,
+        payload: Optional[Mapping[str, Any]] = None,
+        *,
+        ttl_seconds: int = 30,
+    ) -> None:
+        _ = payload, ttl_seconds
+        if not self.task_transport.heartbeat_worker(worker_id, status="online"):
+            self.task_transport.register_worker(
+                WorkerDescriptor(
+                    worker_id=str(worker_id),
+                    executor_backend="redis",
+                    resource_backend="local",
+                    capabilities=("cpu", "numpy", "nested_eval"),
+                    offer=ResourceOffer(threads=1024, gpus=0, backend="local"),
+                    max_inflight=1,
+                )
+            )
+
+    def register(
+        self,
+        worker: WorkerDescriptor | Mapping[str, Any],
+        *,
+        ttl_seconds: Optional[float] = None,
+    ) -> None:
+        _ = ttl_seconds
+        self.task_transport.register_worker(worker)
+
+    def get_worker(self, worker_id: str) -> Optional[WorkerDescriptor]:
+        for worker in self.task_transport.list_workers():
+            if worker.worker_id == str(worker_id):
+                return worker
+        return None
+
+    def _record_result_state(
+        self,
+        result: TaskResult,
+        *,
+        transport_status: str,
+    ) -> None:
+        self.state_backend.set_task_state(
+            result.task_id,
+            {
+                "status": str(transport_status),
+                "ok": bool(result.ok) if transport_status != "queued" else False,
+                "finished_at": result.finished_at,
+                "worker_id": result.worker_id,
+                "error": result.error,
+            },
         )
 
     @property
     def namespace(self) -> str:
-        queue = self.task_queue
-        return str(getattr(queue, "namespace", "nsgablack:l0"))
+        return self._namespace
 
     @property
     def queue_scope(self) -> str:
-        queue = self.task_queue
-        return str(getattr(queue, "queue_scope", "global"))
+        return self._queue_scope
 
 
 def _make_redis_client(*, redis_url: str, client: Any = None) -> Any:

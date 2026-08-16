@@ -12,11 +12,24 @@
 - mlblack 有 6 个 AlgorithmAdapter（梯度下降/backprop）+ 24 个 Pipeline 组件 + 270 个组件
 - 遇到任何问题，先问：nsgablack 的哪个搜？mlblack 的哪个训？解析解用 Newton 还是 Broyden？
 - **禁止只用一边的组件就下结论。** SHAP 的 WLS 有解析解 → 用 Newton/Broyden Plugin 求解，不是用 PatternSearch 瞎搜。
-
 ## 双框架 Catalog 规则（最高优先级，强制）
-
 **任何能力分析、组件发现、架构调研、实现规划，必须同时搜索双方 catalog。禁止只搜一边就下结论。**
+注意，框架提供了rag库，可用且有效，
+| 项目 | 数值 |
 
+|---|---|
+
+| 索引 chunks | 2,033（nsgablack 1,192 + mlblack 841） |
+
+| 搜索引擎 | ✅ 正常工作 |
+
+| 查询举例 | "VNS multi-objective optimization" → 5 条相关结果，最高相似度 0.52 |
+    
+
+MCP Server 也已配置为 local_embed=True（mcp_server.py:27），下次重启 Claude Code 时 MCP 会自动连接，你就能直接调 rag_search / rag_status 工具了。
+
+
+唯一遗憾：sentence-transformers 每次加载模型都要从 HF Hub 验证，耗时 ~2 秒。设个 HF_TOKEN 可以加速，不过不设也完全能用。
 ```bash
 # nsgablack（编排层）
 python -m nsgablack catalog search <query> --profile framework-core

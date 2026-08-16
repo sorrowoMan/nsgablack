@@ -233,8 +233,8 @@ class TestVerifySolverContracts:
                 super().__init__(name="min", dimension=2,
                                  bounds={"x0": (-1.0, 1.0), "x1": (-1.0, 1.0)})
 
-            def evaluate(self, x):
-                return float(np.sum(np.asarray(x) ** 2))
+            def evaluate(self, candidate):
+                return float(np.sum(np.asarray(candidate) ** 2))
 
         return ComposableSolver(problem=MinProblem(), adapter=NSGA2Adapter())
 
@@ -258,17 +258,20 @@ class TestVerifySolverContracts:
                 super().__init__(name="p", dimension=2,
                                  bounds={"x0": (-1.0, 1.0), "x1": (-1.0, 1.0)})
 
-            def evaluate(self, x):
-                return float(np.sum(np.asarray(x) ** 2))
+            def evaluate(self, candidate):
+                return float(np.sum(np.asarray(candidate) ** 2))
 
         class IncompleteAdapter(AlgorithmAdapter):
             # Inherits context_requires/provides/mutates/cache from AlgorithmAdapter base
             # so this should actually pass. Test that it does.
-            def propose(self, solver, context):
+            def propose(self, control, context):
                 return [np.zeros(2)]
 
-        solver = ComposableSolver(problem=P(), adapter=IncompleteAdapter(name="incomplete"))
-        issues = verify_solver_contracts(solver)
+            def update(self, control, candidates, feedback, context):
+                _ = (control, candidates, feedback, context)
+
+        control = ComposableSolver(problem=P(), adapter=IncompleteAdapter(name="incomplete"))
+        issues = verify_solver_contracts(control)
         # AlgorithmAdapter base declares all four fields → no issues expected
         assert issues == [], f"Unexpected issues: {issues}"
 

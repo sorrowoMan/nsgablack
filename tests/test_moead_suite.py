@@ -19,9 +19,9 @@ def test_moead_adapter_direct_wiring_installs_archive():
             )
             self.low, self.high = low, high
 
-        def evaluate(self, x):
-            x = np.asarray(x, dtype=float)
-            return np.array([np.sum(x * x), np.sum((x - 2.0) ** 2)], dtype=float)
+        def evaluate(self, candidate):
+            candidate = np.asarray(candidate, dtype=float)
+            return np.array([np.sum(candidate * candidate), np.sum((candidate - 2.0) ** 2)], dtype=float)
 
     pipeline = RepresentationPipeline(
         initializer=UniformInitializer(low=-3.0, high=3.0),

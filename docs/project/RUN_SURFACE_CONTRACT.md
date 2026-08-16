@@ -12,7 +12,7 @@ everything into "just one solver name" or "just one trainer name".
 
 The primary unit is:
 
-- which standard scaffold surface was executed
+- which standard Case surface was executed
 - what assembly stack was actually mounted
 - what artifacts were produced
 - what result the run ended with
@@ -35,14 +35,14 @@ introduce a fifth top-level record too early.
 `SurfaceRecord` answers:
 
 - which standard scaffold entry was executed
-- from which project / scaffold root
+- from which Project / Case root
 - what the formal surface kind is
 
 Stable fields:
 
 - `framework`
 - `project_root`
-- `scaffold_root`
+- `case_root`
 - `surface_kind`
 - `surface_key`
 - `surface_label`
@@ -57,12 +57,12 @@ Stable fields:
 
 Framework mapping:
 
-- `nsgablack`: `surface_kind = solver`
-- `mlblack`: `surface_kind = flow`
+- `nsgablack`: `surface_kind = case`, `semantic_layer = optimization`
+- `mlblack`: `surface_kind = case`, `semantic_layer = ml`
 
 The surface record is the answer to:
 
-- "Which scaffold folder entry did this run come from?"
+- "Which Case folder entry did this run come from?"
 
 ## 3. AssemblyRecord
 
@@ -74,10 +74,11 @@ The surface record is the answer to:
 Stable fields:
 
 - `framework`
+- `semantic_layer`
 - `surface_key`
 - `assembly_key`
 - `driver_ref`
-- `family_ref`
+- `preset_ref`
 - `preset_ref`
 - `head_ref`
 - `solver_ref`
@@ -194,7 +195,8 @@ It is instead:
 
 Recommended mapping:
 
-- `surface_kind = solver`
+- `surface_kind = case`
+- `semantic_layer = optimization`
 - `driver_ref = solver:<name>` or `adapter:<name>`
 - `adapter_ref` is first-class
 - `representation_refs / bias_refs / plugin_refs / provider_refs` carry the
@@ -204,9 +206,10 @@ Recommended mapping:
 
 Recommended mapping:
 
-- `surface_kind = flow`
+- `surface_kind = case`
+- `semantic_layer = ml`
 - `driver_ref = trainer:<name>`
-- `family_ref / preset_ref / head_ref` are first-class
+- `preset_ref / head_ref / trainer_ref` are first-class
 - `component_refs / provider_refs / plugin_refs` carry the actual training stack
 
 ## 7. Why This Contract Exists
@@ -218,7 +221,7 @@ This contract prevents a bad simplification:
 
 That is not enough for reproducibility.
 
-The contract makes the runtime surface comparable by scaffold entry,
+The contract makes the runtime surface comparable by Case entry,
 resolved assembly, subject, parameters, result, and artifact set.
 
 ## 8. Code Surface
@@ -235,4 +238,3 @@ Both expose:
 - `ArtifactRecord`
 - `RunRecord`
 - `RUN_SURFACE_CONTRACT_VERSION`
-

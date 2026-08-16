@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
+from blackbase.contracts import BatchDisposition
 
 from ..algorithm_adapter import AlgorithmAdapter
 from ...utils.context.context_keys import (
@@ -137,11 +138,17 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         self.strategies = list(strategies)
         if not self.strategies:
             raise ValueError("AsyncEventDrivenAdapter requires at least one strategy.")
+        strategy_names = [str(spec.name) for spec in self.strategies]
+        if len(strategy_names) != len(set(strategy_names)):
+            raise ValueError("AsyncEventDrivenAdapter strategy names must be unique")
 
         self._step = 0
         self._event_id = 0
         self._queue: List[Dict[str, Any]] = []
         self._inflight: List[Dict[str, Any]] = []
+        self._last_allocations: List[
+            Tuple[AlgorithmAdapter, int, int, Dict[str, Any]]
+        ] = []
         self.archive: List[Dict[str, Any]] = []
         self.event_history: List[Dict[str, Any]] = []
         self.shared_state: Dict[str, Any] = {}
@@ -154,12 +161,13 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         self._last_event_decision: Dict[str, Any] = {}
         self._rng = np.random.default_rng()
 
-    def setup(self, solver: Any) -> None:
-        self._solver_ref = solver
+    def setup(self, control: Any) -> None:
+        self._solver_ref = control
         self._step = 0
         self._event_id = 0
         self._queue = []
         self._inflight = []
+        self._last_allocations = []
         self.archive = []
         self.event_history = []
         self.shared_state = {}
@@ -175,17 +183,17 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
                 "completed": 0.0,
                 "best_score": float("inf"),
             }
-            spec.adapter.setup(solver)
+            spec.adapter.setup(control)
         if not self._uses_event_cases():
             self._seed_queue()
-        self._publish_state(solver)
+        self._publish_state(control)
 
-    def teardown(self, solver: Any) -> None:
+    def teardown(self, control: Any) -> None:
         for spec in self.strategies:
-            spec.adapter.teardown(solver)
+            spec.adapter.teardown(control)
         self._solver_ref = None
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         active_specs = self._enabled_specs()
         if self._uses_event_cases():
             active_specs, decision = self._select_event_case(context)
@@ -200,10 +208,8 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
 
         batch = int(max(1, int(self.cfg.total_batch_size)))
         dispatch_count = min(batch, len(self._queue))
-        out: List[np.ndarray] = []
-        inflight: List[Dict[str, Any]] = []
         by_name = {s.name: s for s in active_specs if s.enabled}
-
+        pending: List[Tuple[EventStrategySpec, Dict[str, Any], int]] = []
         for _ in range(dispatch_count):
             event = self._queue.pop(0)
             if event.get("type") != "propose":
@@ -212,20 +218,58 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             spec = by_name.get(strategy_name)
             if spec is None:
                 continue
-
             budget = int(max(1, int(event.get("budget", 1))))
+            pending.append((spec, event, budget))
+
+        grouped: Dict[str, Dict[str, Any]] = {}
+        order: List[str] = []
+        for spec, event, budget in pending:
+            name = str(spec.name)
+            if name not in grouped:
+                grouped[name] = {"spec": spec, "events": [], "budget": 0}
+                order.append(name)
+            grouped[name]["events"].append((event, budget))
+            grouped[name]["budget"] = int(grouped[name]["budget"]) + budget
+
+        out: List[np.ndarray] = []
+        inflight: List[Dict[str, Any]] = []
+        allocations: List[Tuple[AlgorithmAdapter, int, int, Dict[str, Any]]] = []
+        for strategy_name in order:
+            group = grouped[strategy_name]
+            spec = group["spec"]
+            event_rows = list(group["events"])
+            total_budget = int(group["budget"])
+            first_event = dict(event_rows[0][0])
             local_ctx = dict(context)
             local_ctx["event_shared"] = self.shared_state
-            local_ctx["event"] = dict(event)
-            local_ctx["event_case"] = event.get("case")
+            local_ctx["event"] = first_event
+            local_ctx["events"] = [dict(event) for event, _budget in event_rows]
+            local_ctx["event_case"] = first_event.get("case")
             local_ctx["strategy"] = strategy_name
             local_ctx["step"] = int(self._step)
 
-            proposed = self.coerce_candidates(spec.adapter.propose(solver, local_ctx))
-            if not proposed:
-                proposed = [solver.init_candidate(local_ctx)]
+            proposed = self.coerce_candidates(spec.adapter.propose(control, local_ctx))
+            selected = proposed[:total_budget]
+            if len(selected) < len(proposed):
+                spec.adapter.on_proposal_disposition(
+                    control,
+                    BatchDisposition.prefix(
+                        proposed_count=len(proposed),
+                        accepted_count=len(selected),
+                        reason="event_budget",
+                        metadata={"strategy": strategy_name},
+                    ),
+                    local_ctx,
+                )
 
-            for cand in proposed[:budget]:
+            event_slots = [
+                event
+                for event, event_budget in event_rows
+                for _ in range(int(event_budget))
+            ]
+            start = len(out)
+            accepted_by_event: Dict[int, int] = {}
+            for cand, event in zip(selected, event_slots):
                 out.append(np.asarray(cand, dtype=float))
                 inflight.append(
                     {
@@ -236,41 +280,87 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
                     }
                 )
                 self._stats[strategy_name]["proposed"] += 1.0
-
-            self._log_event("dispatch", event_id=event["event_id"], strategy=strategy_name, budget=budget)
+                event_id = int(event["event_id"])
+                accepted_by_event[event_id] = accepted_by_event.get(event_id, 0) + 1
+            end = len(out)
+            if end > start:
+                allocations.append((spec.adapter, start, end, dict(local_ctx)))
+            for event, event_budget in event_rows:
+                self._log_event(
+                    "dispatch",
+                    event_id=event["event_id"],
+                    strategy=strategy_name,
+                    budget=int(event_budget),
+                    accepted=int(accepted_by_event.get(int(event["event_id"]), 0)),
+                )
 
         self._inflight = inflight
-        self._publish_state(solver)
+        self._last_allocations = allocations
+        self._publish_state(control)
         return out
+
+    def on_proposal_disposition(
+        self,
+        control: Any,
+        disposition: BatchDisposition,
+        context: Dict[str, Any],
+    ) -> None:
+        if disposition.proposed_count != len(self._inflight):
+            raise ValueError(
+                "event disposition does not match inflight candidates: "
+                f"proposed_count={disposition.proposed_count}, "
+                f"inflight_count={len(self._inflight)}"
+            )
+        self._inflight = [self._inflight[index] for index in disposition.accepted_indices]
+        reconciled: List[Tuple[AlgorithmAdapter, int, int, Dict[str, Any]]] = []
+        cursor = 0
+        for adapter, start, end, proposal_context in self._last_allocations:
+            child = disposition.for_range(start, end)
+            child_context = dict(context)
+            child_context.update(proposal_context)
+            adapter.on_proposal_disposition(control, child, child_context)
+            if child.accepted_count == 0:
+                continue
+            next_cursor = cursor + child.accepted_count
+            reconciled.append((adapter, cursor, next_cursor, proposal_context))
+            cursor = next_cursor
+        self._last_allocations = reconciled
 
     def update(
         self,
-        solver: Any,
+        control: Any,
         candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        feedback: Tuple[np.ndarray, np.ndarray],
         context: Dict[str, Any],
     ) -> None:
-        if candidates is None or len(candidates) == 0:
+        objectives, violations = feedback
+        if len(candidates) != len(self._inflight):
+            raise ValueError(
+                "event feedback does not match inflight candidates: "
+                f"candidates={len(candidates)}, inflight={len(self._inflight)}"
+            )
+        if len(objectives) != len(candidates) or len(violations) != len(candidates):
+            raise ValueError("event candidate, objective, and violation counts must match")
+        if len(candidates) == 0:
             self._step += 1
             if not self._uses_event_cases():
                 self._topup_queue()
-            self._publish_state(solver)
+            self._publish_state(control)
             return
 
         groups: Dict[str, List[int]] = {}
         completion_events: List[Dict[str, Any]] = []
         for idx in range(len(candidates)):
-            info = self._inflight[idx] if idx < len(self._inflight) else {}
-            strategy_name = str(info.get("strategy", "unknown"))
+            info = self._inflight[idx]
+            strategy_name = str(info["strategy"])
             groups.setdefault(strategy_name, []).append(idx)
 
-            vio = float(violations[idx]) if violations is not None else 0.0
+            vio = float(violations[idx])
             score = self._score(objectives[idx], vio)
             record = {
-                "event_id": int(info.get("event_id", -1)),
+                "event_id": int(info["event_id"]),
                 "strategy": strategy_name,
-                "case": str(info.get("case", strategy_name)),
+                "case": str(info["case"]),
                 "step": int(self._step),
                 "score": float(score),
                 "violation": float(vio),
@@ -296,27 +386,40 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
                 self._enqueue_propose(strategy=strategy_name, budget=1, source="completion")
 
         by_name = {s.name: s for s in self.strategies if s.enabled}
+        proposal_contexts = {
+            str(proposal_context["strategy"]): proposal_context
+            for _adapter, _start, _end, proposal_context in self._last_allocations
+        }
         for strategy_name, idxs in groups.items():
             spec = by_name.get(strategy_name)
             if spec is None:
-                continue
-            local_ctx = dict(context)
+                raise RuntimeError(
+                    f"inflight feedback references unknown strategy '{strategy_name}'"
+                )
+            proposal_context = proposal_contexts.get(strategy_name)
+            if proposal_context is None:
+                raise RuntimeError(
+                    f"inflight feedback has no proposal context for strategy '{strategy_name}'"
+                )
+            local_ctx = dict(proposal_context)
+            local_ctx.update(context)
             local_ctx["event_shared"] = self.shared_state
             local_ctx["strategy"] = strategy_name
             local_ctx["completed_events"] = [completion_events[i] for i in idxs]
             spec.adapter.update(
-                solver,
+                control,
                 [np.asarray(candidates[i], dtype=float) for i in idxs],
-                np.asarray([objectives[i] for i in idxs], dtype=float),
-                np.asarray([violations[i] for i in idxs], dtype=float),
+                (np.asarray([objectives[i] for i in idxs], dtype=float),
+                 np.asarray([violations[i] for i in idxs], dtype=float)),
                 local_ctx,
             )
 
         self._inflight = []
+        self._last_allocations = []
         self._step += 1
         if not self._uses_event_cases():
             self._topup_queue()
-        self._publish_state(solver)
+        self._publish_state(control)
 
     def _score(self, objectives_row: np.ndarray, violation: float) -> float:
         if self.cfg.objective_aggregation == "first":
@@ -591,7 +694,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         except Exception:
             return
 
-    def _publish_state(self, solver: Any) -> None:
+    def _publish_state(self, control: Any) -> None:
         queue_snapshot = [
             {
                 "event_id": int(e.get("event_id", -1)),
@@ -638,7 +741,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             "archive": archive_snapshot,
             "event_decision": dict(self._last_event_decision),
         }
-        _ = solver
+        _ = control
         self._last_runtime_projection = {
             KEY_EVENT_SHARED: self.shared_state,
             KEY_EVENT_QUEUE: queue_snapshot,

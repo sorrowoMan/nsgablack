@@ -10,8 +10,8 @@ def test_set_plugin_strict_helper():
         def __init__(self):
             super().__init__(name="p", dimension=1, bounds={"x0": (-1.0, 1.0)})
 
-        def evaluate(self, x):
-            return float(x[0] ** 2)
+        def evaluate(self, candidate):
+            return float(candidate[0] ** 2)
 
     solver = SolverBase(problem=_P())
     assert bool(getattr(solver.plugin_manager, "strict", False)) is False
@@ -29,8 +29,8 @@ def test_set_parallel_thread_bias_isolation_helper():
         def __init__(self):
             super().__init__(name="p", dimension=1, bounds={"x0": (-1.0, 1.0)})
 
-        def evaluate(self, x):
-            return float(x[0] ** 2)
+        def evaluate(self, candidate):
+            return float(candidate[0] ** 2)
 
     ParallelBlank = with_parallel_evaluation(SolverBase)
     solver = ParallelBlank(problem=_P(), enable_parallel=True, parallel_backend="thread")

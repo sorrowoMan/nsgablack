@@ -59,47 +59,47 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
         self._basis: Optional[np.ndarray] = None
         self._steps = 0
 
-    def _reset_internal_state(self, solver: Any) -> None:
-        _ = solver
+    def _reset_internal_state(self, control: Any) -> None:
+        _ = control
         self._basis = None
         self._steps = 0
-    def _before_propose(self, solver: Any, context: Dict[str, Any]) -> None:
+    def _before_propose(self, control: Any, context: Dict[str, Any]) -> None:
         if self._basis is None or (self._steps % max(1, int(self.cfg.resample_every)) == 0):
-            self._basis = self._build_or_sample_basis(solver)
+            self._basis = self._build_or_sample_basis(control)
         self._steps += 1
 
-    def _sample_delta(self, solver: Any, context: Dict[str, Any]) -> np.ndarray:
-        _ = solver, context
+    def _sample_delta(self, control: Any, context: Dict[str, Any]) -> np.ndarray:
+        _ = control, context
         assert self._basis is not None
         z = self._rng.uniform(low=-1.0, high=1.0, size=(self._basis.shape[1],))
         return self._basis @ z
 
-    def _sample_subspace(self, solver: Any) -> np.ndarray:
-        dim = int(getattr(solver, "dimension", 1) or 1)
+    def _sample_subspace(self, control: Any) -> np.ndarray:
+        dim = int(getattr(control, "dimension", 1) or 1)
         k = min(max(1, int(self.cfg.subspace_dim)), dim)
         mat = self._rng.normal(size=(dim, k))
         q, _ = np.linalg.qr(mat)
         return q[:, :k]
 
-    def _build_or_sample_basis(self, solver: Any) -> np.ndarray:
+    def _build_or_sample_basis(self, control: Any) -> np.ndarray:
         method = str(getattr(self.cfg, "basis_method", "random") or "random").strip().lower()
         if method == "random":
-            return self._sample_subspace(solver)
+            return self._sample_subspace(control)
 
-        pop = getattr(solver, "population", None)
+        pop = getattr(control, "population", None)
         if pop is None:
-            return self._sample_subspace(solver)
+            return self._sample_subspace(control)
         X = np.asarray(pop, dtype=float)
         if X.ndim != 2 or X.shape[0] < int(self.cfg.min_samples):
-            return self._sample_subspace(solver)
-        return self._build_basis_from_population(X, solver)
+            return self._sample_subspace(control)
+        return self._build_basis_from_population(X, control)
 
-    def _build_basis_from_population(self, X: np.ndarray, solver: Any) -> np.ndarray:
-        dim = int(getattr(solver, "dimension", X.shape[1]) or X.shape[1])
+    def _build_basis_from_population(self, X: np.ndarray, control: Any) -> np.ndarray:
+        dim = int(getattr(control, "dimension", X.shape[1]) or X.shape[1])
         k = min(max(1, int(self.cfg.subspace_dim)), dim)
         method = str(getattr(self.cfg, "basis_method", "random") or "random").strip().lower()
         if method == "random":
-            return self._sample_subspace(solver)
+            return self._sample_subspace(control)
 
         if method == "svd":
             Xc = X - np.mean(X, axis=0, keepdims=True)
@@ -107,7 +107,7 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
                 _, _, vt = np.linalg.svd(Xc, full_matrices=False)
                 return vt[:k].T
             except Exception:
-                return self._sample_subspace(solver)
+                return self._sample_subspace(control)
 
         if method == "sparse_pca":
             try:
@@ -141,16 +141,16 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
             _, _, vt = np.linalg.svd(Xc, full_matrices=False)
             return vt[:k].T
         except Exception:
-            return self._sample_subspace(solver)
+            return self._sample_subspace(control)
 
     def _score(
         self,
-        solver: Any,
+        control: Any,
         objectives: np.ndarray,
         violations: np.ndarray,
         context: Dict[str, Any],
     ) -> np.ndarray:
-        _ = solver, context
+        _ = control, context
         obj = np.asarray(objectives, dtype=float)
         if obj.ndim == 1:
             obj = obj.reshape(-1, 1)

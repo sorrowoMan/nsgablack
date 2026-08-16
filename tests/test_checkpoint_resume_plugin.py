@@ -129,11 +129,12 @@ def test_checkpoint_resume_nsga2_solver(sample_problem, tmp_path: Path):
     )
     solver_b.add_plugin(plugin_b)
 
-    # Loaded state should already place solver at saved generation.
-    assert solver_b.generation >= 4
+    # Registration only attaches the plugin; resume is a run lifecycle action.
+    assert solver_b.generation == 0
     before_eval = int(getattr(solver_b, "evaluation_count", 0))
     result_b = solver_b.run(return_dict=True)
     assert int(result_b["generation"]) == 6
+    assert int(result_b["resume_from"]) >= 4
     assert int(getattr(solver_b, "evaluation_count", 0)) >= before_eval
 
 

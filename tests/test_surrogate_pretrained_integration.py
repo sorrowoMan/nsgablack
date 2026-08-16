@@ -1,4 +1,4 @@
-﻿import numpy as np
+import numpy as np
 
 
 def test_surrogate_plugin_accepts_pretrained_model_without_online_training():
@@ -27,33 +27,36 @@ def test_surrogate_plugin_accepts_pretrained_model_without_online_training():
         def __init__(self):
             super().__init__(name="sphere", dimension=2, bounds={f"x{i}": (-1.0, 1.0) for i in range(2)})
 
-        def evaluate(self, x):
-            x = np.asarray(x, dtype=float)
-            return float(np.sum(x * x))
+        def evaluate(self, candidate):
+            candidate = np.asarray(candidate, dtype=float)
+            return float(np.sum(candidate * candidate))
 
     class Fixed(AlgorithmAdapter):
         def __init__(self):
             super().__init__(name="fixed")
 
-        def propose(self, solver, context):
+        def propose(self, control, context):
             return [
                 np.array([0.0, 0.0], dtype=float),
                 np.array([0.5, 0.0], dtype=float),
                 np.array([0.0, 0.5], dtype=float),
             ]
 
-    solver = ComposableSolver(problem=Sphere(), adapter=Fixed())
-    solver.max_steps = 1
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
+
+    control = ComposableSolver(problem=Sphere(), adapter=Fixed())
+    control.max_steps = 1
 
     cfg = SurrogateEvaluationConfig(min_train_samples=0, min_true_evals=0, topk_exploit=0, topk_explore=0, retrain_every_call=False)
-    solver.evaluation_mediator.config = EvaluationMediatorConfig(allow_approximate=True, strict_conflict=True)
-    solver.register_evaluation_provider(
+    control.evaluation_mediator.config = EvaluationMediatorConfig(allow_approximate=True, strict_conflict=True)
+    control.register_evaluation_provider(
         SurrogateEvaluationProviderPlugin(config=cfg, surrogate=DummySurrogate(), online_training=False).create_provider()
     )
-    solver.run()
+    control.run()
 
-    assert solver.objectives is not None
+    assert control.objectives is not None
     # since we used pure surrogate prediction and no bias, values should match sum(x^2)
-    assert float(solver.objectives[0, 0]) == 0.0
+    assert float(control.objectives[0, 0]) == 0.0
 
 

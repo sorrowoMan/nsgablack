@@ -10,10 +10,8 @@
 
 因此这份文档已收敛为下面三份“事实标准”，避免同一件事讲三遍：
 
-- 端到端陪跑（从 0 到能跑）：`WORKFLOW_END_TO_END.md`
-- 权威示例（参数命名/ctx keys/组合方式的事实标准）：`docs/AUTHORITATIVE_EXAMPLES.md`
+- 端到端陪跑（从 0 到能跑）：`docs/standard_scaffold_tutorial/01_create_and_run.md`
+- 示例标准落点与迁移政策：`docs/project/AUTHORITATIVE_EXAMPLES.md`
 - Catalog/Wiring Helpers（怎么搜组件、怎么一键 attach）：`docs/user_guide/catalog.md`
 
-历史版本（不再维护，仅供考古）：
-
-- `docs/_archive/optimization_strategies_old.md`
+历史版本不再维护；如需考古请查看 git 历史或 `docs/archive/` 中的相关历史材料。

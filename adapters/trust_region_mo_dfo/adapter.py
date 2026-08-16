@@ -60,15 +60,15 @@ class TrustRegionMODFOAdapter(TrustRegionBaseAdapter):
         self.config = self.cfg
         self._weights: Optional[np.ndarray] = None
 
-    def _reset_internal_state(self, solver: Any) -> None:
-        _ = solver
+    def _reset_internal_state(self, control: Any) -> None:
+        _ = control
         self._weights = None
-    def _sample_delta(self, solver: Any, context: Dict[str, Any]) -> np.ndarray:
-        _ = solver, context
+    def _sample_delta(self, control: Any, context: Dict[str, Any]) -> np.ndarray:
+        _ = control, context
         assert self._center is not None
         return self._rng.uniform(low=-1.0, high=1.0, size=self._center.shape)
 
-    def _get_weights(self, solver: Any, context: Dict[str, Any], objectives: np.ndarray) -> np.ndarray:
+    def _get_weights(self, control: Any, context: Dict[str, Any], objectives: np.ndarray) -> np.ndarray:
         if context and isinstance(context, dict) and KEY_MO_WEIGHTS in context:
             try:
                 w = np.asarray(context[KEY_MO_WEIGHTS], dtype=float).ravel()
@@ -81,7 +81,7 @@ class TrustRegionMODFOAdapter(TrustRegionBaseAdapter):
         if self._weights is not None and self.cfg.weight_method == "fixed":
             return self._weights
 
-        n_obj = int(getattr(solver, "num_objectives", 1) or 1)
+        n_obj = int(getattr(control, "num_objectives", 1) or 1)
         method = str(self.cfg.weight_method).lower().strip()
         if method == "fixed" and self.cfg.fixed_weights:
             w = np.asarray(self.cfg.fixed_weights, dtype=float).ravel()
@@ -103,12 +103,12 @@ class TrustRegionMODFOAdapter(TrustRegionBaseAdapter):
 
     def _score(
         self,
-        solver: Any,
+        control: Any,
         objectives: np.ndarray,
         violations: np.ndarray,
         context: Dict[str, Any],
     ) -> np.ndarray:
-        weights = self._get_weights(solver, context, objectives)
+        weights = self._get_weights(control, context, objectives)
         obj = np.asarray(objectives, dtype=float)
         if obj.ndim == 1:
             obj = obj.reshape(-1, 1)

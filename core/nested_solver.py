@@ -237,7 +237,8 @@ class TaskInnerRuntimeEvaluator(InnerRuntimeEvaluator):
         if not self.can_handle(solver=solver, x=x):
             return None
         candidate = np.asarray(x, dtype=float).reshape(-1)
-        eval_ctx: Dict[str, Any] = {
+        eval_ctx: Dict[str, Any] = dict(context or {})
+        eval_ctx.update({
             "solver": solver,
             "candidate": candidate,
             "individual_id": int(individual_id),
@@ -245,7 +246,15 @@ class TaskInnerRuntimeEvaluator(InnerRuntimeEvaluator):
             "scope": "inner",
             "source_layer": self.cfg.source_layer,
             "target_layer": self.cfg.target_layer,
-        }
+        })
+        if not any(key in eval_ctx for key in ("resource_context", "resource.context", "resource")):
+            getter = getattr(solver, "get_resource_context", None)
+            resource_context = getter() if callable(getter) else getattr(solver, "resource_context", None)
+            as_dict = getattr(resource_context, "as_dict", None)
+            if callable(as_dict):
+                eval_ctx["resource_context"] = dict(as_dict())
+            elif isinstance(resource_context, Mapping):
+                eval_ctx["resource_context"] = dict(resource_context)
         task = self._build_task(solver, candidate, eval_ctx)
         if not task:
             return None
@@ -410,13 +419,20 @@ class TaskInnerRuntimeEvaluator(InnerRuntimeEvaluator):
         if timeout_ms is None or float(timeout_ms) <= 0:
             return self._run_task(task, eval_ctx)
         timeout_s = float(timeout_ms) / 1000.0
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            fut = pool.submit(self._run_task, task, eval_ctx)
-            try:
-                return fut.result(timeout=timeout_s)
-            except FutureTimeoutError as exc:
-                self.stats["timeouts"] = float(self.stats.get("timeouts", 0.0) or 0.0) + 1.0
-                raise TimeoutError(f"inner task timeout after {timeout_ms} ms") from exc
+        pool = ThreadPoolExecutor(max_workers=1)
+        fut = pool.submit(self._run_task, task, eval_ctx)
+        timed_out = False
+        try:
+            return fut.result(timeout=timeout_s)
+        except FutureTimeoutError as exc:
+            timed_out = True
+            fut.cancel()
+            self.stats["timeouts"] = float(self.stats.get("timeouts", 0.0) or 0.0) + 1.0
+            raise TimeoutError(f"inner task timeout after {timeout_ms} ms") from exc
+        finally:
+            # Threads cannot be force-killed. On deadline, stop waiting and let a
+            # cooperative/backend cancellation mechanism finish cleanup.
+            pool.shutdown(wait=not timed_out, cancel_futures=True)
 
     def _fallback(self, solver: Any) -> tuple[np.ndarray, float]:
         n_obj = int(getattr(solver, "num_objectives", 1))

@@ -16,13 +16,13 @@ class _DummyMCProblem:
     def __init__(self, dim: int) -> None:
         self.dimension = int(dim)
 
-    def evaluate(self, x):
-        _ = x
+    def evaluate(self, candidate):
+        _ = candidate
         # Deliberately consumes global numpy RNG.
         return np.array([float(np.random.random())], dtype=float)
 
-    def evaluate_constraints(self, x):
-        _ = x
+    def evaluate_constraints(self, candidate):
+        _ = candidate
         return np.zeros((0,), dtype=float)
 
 

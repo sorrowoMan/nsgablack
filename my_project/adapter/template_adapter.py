@@ -39,12 +39,12 @@ class AdapterTemplate(AlgorithmAdapter):
         self,
         solver: Any,
         candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        feedback: tuple[np.ndarray, np.ndarray],
         context: Dict[str, Any],
     ) -> None:
         # 更新阶段：消费评估反馈，维护内部状态
         _ = solver
+        objectives, violations = feedback
         _ = objectives
         _ = violations
         _ = context

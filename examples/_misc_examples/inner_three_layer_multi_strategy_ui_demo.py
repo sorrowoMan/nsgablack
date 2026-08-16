@@ -48,8 +48,8 @@ class _L3Problem(BlackBoxProblem):
     def __init__(self):
         super().__init__(name="l3_problem", dimension=1, bounds={"x0": (0.0, 5.0)})
 
-    def evaluate(self, x):
-        arr = np.asarray(x, dtype=float).reshape(-1)
+    def evaluate(self, candidate):
+        arr = np.asarray(candidate, dtype=float).reshape(-1)
         return np.array([float(arr[0])], dtype=float)
 
 
@@ -64,9 +64,12 @@ class _L3Adapter(AlgorithmAdapter):
         super().__init__(name="l3_adapter")
         self.target = float(target)
 
-    def propose(self, solver, context):
-        _ = (solver, context)
+    def propose(self, control, context):
+        _ = (control, context)
         return [np.array([self.target], dtype=float), np.array([9.0], dtype=float)]
+
+    def update(self, control, candidates, feedback, context):
+        _ = (control, candidates, feedback, context)
 
 
 def _build_l3_solver(target: float) -> ComposableSolver:
@@ -85,8 +88,8 @@ class _L2Problem(BlackBoxProblem):
     def __init__(self):
         super().__init__(name="l2_problem", dimension=1, bounds={"x0": (-1.0, 1.0)})
 
-    def evaluate(self, x):
-        _ = x
+    def evaluate(self, candidate):
+        _ = candidate
         return np.array([999.0], dtype=float)
 
     def build_inner_task(self, x, eval_context):
@@ -109,9 +112,12 @@ class _L2Explorer(AlgorithmAdapter):
     def __init__(self):
         super().__init__(name="l2_explorer")
 
-    def propose(self, solver, context):
-        _ = (solver, context)
+    def propose(self, control, context):
+        _ = (control, context)
         return [np.array([2.0], dtype=float)]
+
+    def update(self, control, candidates, feedback, context):
+        _ = (control, candidates, feedback, context)
 
 
 class _L2Exploiter(AlgorithmAdapter):
@@ -124,9 +130,12 @@ class _L2Exploiter(AlgorithmAdapter):
     def __init__(self):
         super().__init__(name="l2_exploiter")
 
-    def propose(self, solver, context):
-        _ = (solver, context)
+    def propose(self, control, context):
+        _ = (control, context)
         return [np.array([-2.0], dtype=float)]
+
+    def update(self, control, candidates, feedback, context):
+        _ = (control, candidates, feedback, context)
 
 
 def _build_l2_solver() -> ComposableSolver:
@@ -155,8 +164,8 @@ class _L1Problem(BlackBoxProblem):
     def __init__(self):
         super().__init__(name="l1_problem", dimension=1, bounds={"x0": (-2.0, 2.0)})
 
-    def evaluate(self, x):
-        _ = x
+    def evaluate(self, candidate):
+        _ = candidate
         return np.array([99999.0], dtype=float)
 
     def build_inner_task(self, x, eval_context):
@@ -179,9 +188,12 @@ class _L1Adapter(AlgorithmAdapter):
     def __init__(self):
         super().__init__(name="l1_adapter")
 
-    def propose(self, solver, context):
-        _ = (solver, context)
+    def propose(self, control, context):
+        _ = (control, context)
         return [np.array([0.0], dtype=float)]
+
+    def update(self, control, candidates, feedback, context):
+        _ = (control, candidates, feedback, context)
 
 
 def build_solver() -> ComposableSolver:

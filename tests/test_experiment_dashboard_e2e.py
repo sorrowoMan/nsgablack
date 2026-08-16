@@ -24,7 +24,10 @@ _EDGE_CANDIDATES = (
     Path("C:/Program Files/Microsoft/Edge/Application/msedge.exe"),
 )
 _EDGE_AVAILABLE = any(path.exists() for path in _EDGE_CANDIDATES)
-pytestmark = pytest.mark.skip(reason="E2E dashboard test requires playwright + Edge browser + deterministic UI timing. Skipped outside CI environment.")
+pytestmark = pytest.mark.skipif(
+    not _EDGE_AVAILABLE,
+    reason="Experiment dashboard E2E requires Microsoft Edge.",
+)
 
 _ROOT = Path(__file__).resolve().parents[1]
 _SECTION_IDS = (
@@ -201,8 +204,13 @@ def _wait_for_selected_change_in_deep_link(page, original_selected: str, *, time
         selected = parse_qs(last_value.lstrip("?")).get("selected", [""])[0]
         if selected and selected != original_selected:
             return selected, last_value
+    next_link = page.get_by_role("link", name="下一项链接 / Next Link")
     raise AssertionError(
-        f"deep-link selected did not change away from {original_selected!r}\nLast deep-link value: {last_value!r}"
+        f"deep-link selected did not change away from {original_selected!r}"
+        f"\nPage URL: {page.url!r}"
+        f"\nNext-link href: {next_link.get_attribute('href') if next_link.count() == 1 else None!r}"
+        f"\nNext-link target: {next_link.get_attribute('target') if next_link.count() == 1 else None!r}"
+        f"\nLast deep-link value: {last_value!r}"
     )
 
 

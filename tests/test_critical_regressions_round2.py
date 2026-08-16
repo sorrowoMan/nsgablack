@@ -16,8 +16,8 @@ class _ToyMOProblem(BlackBoxProblem):
     def __init__(self) -> None:
         super().__init__(name="toy-moo", dimension=2, objectives=["f1", "f2"])
 
-    def evaluate(self, x):
-        arr = np.asarray(x, dtype=float)
+    def evaluate(self, candidate):
+        arr = np.asarray(candidate, dtype=float)
         return np.array([float(arr[0] ** 2), float((arr[1] - 1.0) ** 2)], dtype=float)
 
 

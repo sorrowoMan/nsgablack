@@ -72,8 +72,9 @@ def test_checkpoint_auto_resume_missing_file_fails_fast_when_strict(
         )
     )
 
+    solver.add_plugin(plugin)
     try:
-        solver.add_plugin(plugin)
+        solver.run(return_dict=True)
     except FileNotFoundError:
         return
-    raise AssertionError("strict auto-resume should raise FileNotFoundError on missing checkpoint")
+    raise AssertionError("strict auto-resume should raise FileNotFoundError when the run starts")

@@ -36,8 +36,8 @@ class ProductionScheduleProblem(BlackBoxProblem):
         self.daily_demand = np.asarray(daily_demand, dtype=int)
         self.matrix_shape = (m, d)
 
-    def evaluate(self, x):
-        mat = np.asarray(x, dtype=float).reshape(self.matrix_shape)
+    def evaluate(self, candidate):
+        mat = np.asarray(candidate, dtype=float).reshape(self.matrix_shape)
         total_cost = float(np.sum(mat * self.cost))
         # penalize switching (production changes per machine)
         switch_penalty = float(np.sum(np.abs(np.diff(mat, axis=1))))

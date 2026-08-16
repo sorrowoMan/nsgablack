@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from typing import Iterable, List, Sequence
 
+from blackbase.project.doctor import run_common_project_doctor as _run_common_project_doctor
+
 from .catalog import find_project_root, load_project_entries
 from .doctor_core import (
     DoctorDiagnostic,
@@ -247,6 +249,27 @@ def _check_registry(root: Path, diags: List[DoctorDiagnostic]) -> None:
 
 
 def _check_build_solver(root: Path, diags: List[DoctorDiagnostic], *, instantiate: bool, strict: bool) -> None:
+    if (root / "project_config.py").is_file() and (root / "cases").is_dir():
+        for case_root in sorted((root / "cases").iterdir()):
+            if not case_root.is_dir() or case_root.name == "__pycache__":
+                continue
+            if not (
+                (case_root / ".case").is_file()
+                or (case_root / "build_solver.py").is_file()
+                or (case_root / "build_trainer.py").is_file()
+            ):
+                continue
+            _check_build_solver(case_root, diags, instantiate=instantiate, strict=strict)
+        return
+    if not _looks_like_scaffold_project(root) and not (root / ".case").is_file():
+        _add(
+            diags,
+            "info",
+            "build-entry-skip",
+            "Skip build entry checks because the inspected root is not a Case scaffold.",
+            root,
+        )
+        return
     _check_build_solver_rule(
         root=root,
         diags=diags,
@@ -501,6 +524,15 @@ def run_project_doctor(
         sys.path.insert(0, str(root))
 
     diags: List[DoctorDiagnostic] = []
+    common_report = _run_common_project_doctor(root, strict=bool(strict))
+    for item in common_report.diagnostics:
+        _add(
+            diags,
+            str(item.level),
+            str(item.code),
+            str(item.message),
+            Path(item.path) if item.path else None,
+        )
     _check_structure(root, diags)
     _check_standard_case_scaffolds(root, diags)
     _check_registry(root, diags)

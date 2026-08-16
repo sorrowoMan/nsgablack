@@ -5,7 +5,7 @@ Pattern Search adapter.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -53,16 +53,16 @@ class PatternSearchAdapter(AlgorithmAdapter):
         self._runtime_projection: Dict[str, Any] = {}
         self._rng = np.random.default_rng()
 
-    def setup(self, solver: Any) -> None:
-        self._rng = self.create_local_rng(solver)
+    def setup(self, control: Any) -> None:
+        self._rng = self.create_local_rng(control)
         self.current_x = None
         self.current_score = None
         self.step_size = float(self.cfg.step_size)
         self._runtime_projection = {KEY_MUTATION_SIGMA: float(self.step_size)}
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self.current_x is None:
-            self.current_x = np.asarray(solver.init_candidate(context), dtype=float)
+            self.current_x = np.asarray(control.init_candidate(context), dtype=float)
         dim = int(self.current_x.shape[0])
         n_dirs = max(1, min(dim, int(self.cfg.max_directions)))
         dims = self._rng.choice(dim, size=n_dirs, replace=False)
@@ -72,20 +72,20 @@ class PatternSearchAdapter(AlgorithmAdapter):
             minus = np.array(self.current_x, copy=True)
             plus[d] += float(self.step_size)
             minus[d] -= float(self.step_size)
-            out.append(np.asarray(solver.repair_candidate(plus, context), dtype=float))
-            out.append(np.asarray(solver.repair_candidate(minus, context), dtype=float))
+            out.append(np.asarray(control.repair_candidate(plus, context), dtype=float))
+            out.append(np.asarray(control.repair_candidate(minus, context), dtype=float))
         self._runtime_projection = {KEY_MUTATION_SIGMA: float(self.step_size)}
         return out
 
     def update(
         self,
-        solver: Any,
+        control: Any,
         candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        feedback: Tuple[np.ndarray, np.ndarray],
         context: Dict[str, Any],
     ) -> None:
-        _ = solver
+        objectives, violations = feedback
+        _ = control
         _ = context
         if candidates is None or len(candidates) == 0:
             return

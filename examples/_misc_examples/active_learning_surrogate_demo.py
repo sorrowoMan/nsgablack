@@ -13,10 +13,10 @@ class ExpensiveProblem:
         self.dimension = int(dimension)
         self.bounds = [(-3.0, 3.0)] * self.dimension
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
         # simulate expensive/noisy evaluation
-        base = float(np.sum(x * x))
+        base = float(np.sum(candidate * candidate))
         noise = float(np.random.normal(0.0, 0.05))
         return base + noise
 

@@ -7,8 +7,6 @@ def test_simulated_annealing_adapter_runs_and_cools(sample_problem):
     from nsgablack.representation import RepresentationPipeline
     from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
 
-    np.random.seed(123)
-
     pipeline = RepresentationPipeline(
         initializer=UniformInitializer(low=-5.0, high=5.0),
         mutator=ContextGaussianMutation(base_sigma=0.6, sigma_key="mutation_sigma"),
@@ -25,6 +23,7 @@ def test_simulated_annealing_adapter_runs_and_cools(sample_problem):
     )
 
     solver = ComposableSolver(problem=sample_problem, adapter=SimulatedAnnealingAdapter(cfg), representation_pipeline=pipeline)
+    solver.set_random_seed(123)
     solver.max_steps = 60
     solver.run()
 

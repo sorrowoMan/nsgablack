@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
+import inspect
 import json
 import sqlite3
 from threading import RLock
@@ -1384,7 +1386,11 @@ def _merge_results(results: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
 
 
 class SolverManager:
-    """Orchestrate multiple solvers with hard resource checks."""
+    """Legacy in-process multi-solver runner with hard resource checks.
+
+    New cross-Case orchestration belongs to the shared blackbase Project
+    substrate. Multi-regime phases here are genuinely concurrent.
+    """
 
     def __init__(
         self,
@@ -1472,8 +1478,13 @@ class SolverManager:
         for phase in self.phases:
             solvers = [self.regimes[name].build_solver() for name in phase.regime_names]
             self._check_phase(solvers)
-            for solver in solvers:
-                out = solver.run(return_dict=True) if hasattr(solver, "run") else {}
+            if len(solvers) <= 1:
+                phase_outputs = [self._run_managed_solver(solvers[0])] if solvers else []
+            else:
+                with ThreadPoolExecutor(max_workers=len(solvers)) as pool:
+                    futures = [pool.submit(self._run_managed_solver, solver) for solver in solvers]
+                    phase_outputs = [future.result() for future in futures]
+            for solver, out in zip(solvers, phase_outputs):
                 results.append(
                     {
                         "regime": getattr(solver, "name", type(solver).__name__),
@@ -1483,3 +1494,14 @@ class SolverManager:
                 )
         merged = _merge_results(results)
         return merged if return_dict else merged
+
+    @staticmethod
+    def _run_managed_solver(solver: Any) -> Any:
+        run = getattr(solver, "run", None)
+        if not callable(run):
+            return {}
+        try:
+            supports_return_dict = "return_dict" in inspect.signature(run).parameters
+        except (TypeError, ValueError):
+            supports_return_dict = False
+        return run(return_dict=True) if supports_return_dict else run()

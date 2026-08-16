@@ -14,9 +14,13 @@
 在项目目录内：
 
 ```powershell
-python run_solver.py --check
+python run_project.py --check --build-check
 python -m nsgablack project doctor --path . --build --strict --format problem
 ```
+
+如果只想调试单个 Case，可以进入 `cases/<case>/` 后运行
+`python run_solver.py --check`。这不是正式复现入口；正式运行和资源授权始终从 Project root 的
+`run_project.py` 开始。
 
 框架主干 catalog：
 
@@ -44,7 +48,7 @@ python -m nsgablack run_inspector --entry build_solver.py:build_solver
 
 | 档位 | 什么时候跑 | 命令 |
 | --- | --- | --- |
-| quick | 每改一层组件后 | `python run_solver.py --check` |
+| quick | 每改一层组件后 | `python run_project.py --check --build-check` |
 | strict | 合并前或机制变更后 | `python -m nsgablack project doctor --path . --build --strict --format problem` |
 | audit | 文档、catalog、case 准备发布前 | `run_inspector` + `project catalog` + `framework-core catalog` |
 
@@ -276,10 +280,32 @@ Run Inspector 的目标是解释 wiring：
 正式 example、benchmark、cross-framework case 放：
 
 ```text
-examples/cases/<case>/
+examples/cases/<project>/
 ```
 
 推荐结构：
+
+```text
+examples/cases/<project>/
+  README.md
+  project_config.py
+  run_project.py
+  cases/
+    <case>/
+      build_solver.py
+      run_solver.py
+      problem/
+      pipeline/
+      bias/
+      plugins/
+      reporting/
+      tests/
+```
+
+Project root is the formal reproduction surface. Case root is the single
+Solver/Trainer assembly surface.
+
+Legacy single-case examples used to look like:
 
 ```text
 examples/cases/<case>/
@@ -299,6 +325,9 @@ examples/cases/<case>/
   tests/
 ```
 
+That shape is compatibility material. New examples and migrated examples must
+use the Project wrapper.
+
 不要把完整 case 长期放到：
 
 ```text
@@ -309,7 +338,7 @@ my_project/<case>
 
 迁移检查清单：
 
-- `my_project/<case>` 中的完整装配逻辑迁到 `examples/cases/<case>`。
+- `my_project/<case>` 中的完整装配逻辑迁到 `examples/cases/<project>/cases/<case>`。
 - 旧入口只保留 thin wrapper 或 compatibility note。
 - `build_solver.py` 不堆 problem/pipeline/plugin 细节。
 - case 内部按 `problem/pipeline/config/reporting` 分层。
@@ -368,5 +397,5 @@ my_project/<case>
 - 是否避免大对象直写 context？
 - 若改评估链，是否验证单点/批量/插件短路？
 - 若改 catalog，是否验证 `default` 与 `framework-core`？
-- 若新增 example/case，是否放在 `examples/cases/<case>/`？
+- 若新增 example/case，是否放在 `examples/cases/<project>/cases/<case>/`，并有 Project 外层？
 - 是否运行 `project doctor --strict --format problem` 并确认无新增 error？

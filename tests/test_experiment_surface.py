@@ -1,6 +1,7 @@
 ﻿import os
 import subprocess
 import sys
+from argparse import Namespace
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -10,9 +11,11 @@ from nsgablack.experiment.db import (
     resolve_experiment_db_target,
     summarize_experiment_db_error,
 )
+from nsgablack.experiment import dashboard as experiment_dashboard
 from nsgablack.experiment.dashboard import (
     _build_deep_link_query,
     _read_query_params,
+    _sync_session_state_from_query,
     build_streamlit_command,
     dashboard_script_path,
 )
@@ -141,6 +144,49 @@ def test_experiment_dashboard_query_roundtrip() -> None:
     rebuilt_query = _build_deep_link_query(base_params=base_params, field_filters=field_filters)
 
     assert parse_qs(rebuilt_query.lstrip("?")) == parse_qs(original_query.lstrip("?"))
+
+
+def test_experiment_dashboard_query_selection_resets_stale_selection_widgets(monkeypatch) -> None:
+    view_mode = "artifact_catalog"
+    stale_key = "artifact:run_demo:old_report"
+    selected_key = "artifact:run_demo:new_report"
+    session_state = {
+        "experiment_ui_last_query_signature": (("selected", stale_key),),
+        f"experiment_ui_selection_hook::{view_mode}": stale_key,
+        f"experiment_ui_selection_jump::{view_mode}": stale_key,
+    }
+    monkeypatch.setattr(
+        experiment_dashboard,
+        "st",
+        type("FakeStreamlit", (), {"session_state": session_state})(),
+    )
+
+    restored_view = _sync_session_state_from_query(
+        Namespace(
+            db="runs/runtime_surface.sqlite3",
+            limit=200,
+            column_mode="full",
+            page_size=20,
+            results_collapse="collapsed",
+        ),
+        {
+            "db": "runs/runtime_surface.sqlite3",
+            "limit": "200",
+            "view": view_mode,
+            "selected": selected_key,
+            "detail_tab": "contracts",
+            "column_mode": "full",
+            "page_size": "20",
+            "results_collapse": "collapsed",
+            "query": "report",
+        },
+        {"artifact_role": ("report",)},
+    )
+
+    assert restored_view == view_mode
+    assert session_state["experiment_ui_selected"] == selected_key
+    assert f"experiment_ui_selection_hook::{view_mode}" not in session_state
+    assert f"experiment_ui_selection_jump::{view_mode}" not in session_state
 
 
 def test_experiment_db_config_resolver_reads_toml_protocol(tmp_path: Path, monkeypatch) -> None:
@@ -348,7 +394,7 @@ def test_cli_experiment_surface_summary_and_queries(sample_problem, sample_bias,
             "--db",
             str(db_path),
             "--status",
-            "completed",
+            "ok",
             "--limit",
             "10",
         ],

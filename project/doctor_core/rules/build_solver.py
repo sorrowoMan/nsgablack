@@ -34,22 +34,28 @@ def check_build_solver(
     check_process_like_bias_usage: Callable[..., None],
     check_runtime_governance_runtime_state: Callable[..., None],
 ) -> None:
-    build_file = root / "build_solver.py"
+    case_kind = _read_case_kind(root / ".case")
+    target = "build_trainer" if case_kind == "trainer" else "build_solver"
+    build_file = root / f"{target}.py"
     if not build_file.is_file():
+        if case_kind == "trainer":
+            add(diags, "error", "build-trainer-missing", "Trainer case is missing build_trainer.py", root / "build_trainer.py")
+        else:
+            add(diags, "error", "build-solver-missing", "Solver case is missing build_solver.py", root / "build_solver.py")
         return
 
     try:
-        module = _load_module_from_file("nsgablack_project_build_solver", build_file)
+        module = _load_module_from_file(f"nsgablack_project_{target}", build_file)
     except Exception as exc:
-        add(diags, "error", "build-solver-import-failed", f"Cannot import build_solver.py: {exc}", build_file)
+        add(diags, "error", "build-entry-import-failed", f"Cannot import {build_file.name}: {exc}", build_file)
         return
 
-    build_fn = getattr(module, "build_solver", None)
+    build_fn = getattr(module, target, None)
     if not callable(build_fn):
-        add(diags, "error", "build-solver-missing", "build_solver.py has no callable build_solver()", build_file)
+        add(diags, "error", "build-entry-missing", f"{build_file.name} has no callable {target}()", build_file)
         return
 
-    add(diags, "info", "build-solver-found", "Detected build_solver()", build_file)
+    add(diags, "info", "build-entry-found", f"Detected {target}()", build_file)
 
     if not instantiate:
         return
@@ -61,14 +67,14 @@ def check_build_solver(
         else:
             solver = build_fn([])
     except Exception as exc:
-        add(diags, "error", "build-solver-instantiate-failed", f"build_solver() failed: {exc}", build_file)
+        add(diags, "error", "build-entry-instantiate-failed", f"{target}() failed: {exc}", build_file)
         return
 
     if solver is None:
-        add(diags, "error", "build-solver-none", "build_solver() returned None", build_file)
+        add(diags, "error", "build-entry-none", f"{target}() returned None", build_file)
         return
 
-    add(diags, "info", "build-solver-instantiated", f"build_solver() returned: {solver.__class__.__name__}", build_file)
+    add(diags, "info", "build-entry-instantiated", f"{target}() returned: {solver.__class__.__name__}", build_file)
     check_context_store_policy(
         root=root,
         solver=solver,
@@ -177,3 +183,23 @@ def check_build_solver(
         )
     except Exception as exc:
         add(diags, "warn", "runtime-governance-check-failed", f"Runtime governance check failed: {exc}", build_file)
+
+
+def _read_case_kind(marker_path: Path) -> str | None:
+    if not marker_path.is_file():
+        return None
+    try:
+        text = marker_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        text = marker_path.read_text(encoding="utf-8-sig", errors="replace")
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key.strip().lower() != "kind":
+            continue
+        token = value.strip().strip('"').strip("'").lower()
+        if token in {"solver", "trainer"}:
+            return token
+    return None

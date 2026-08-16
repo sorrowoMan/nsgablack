@@ -1,4 +1,4 @@
-"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
+ï»¿"""MIGRATED to examples/cases/ - see scaffold case for maintained version."""
 """ParallelRepair demo: wrap repair in thread/process parallelism."""
 
 import numpy as np
@@ -29,9 +29,9 @@ class Sphere(BlackBoxProblem):
         self.low = low
         self.high = high
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        return float(np.sum(x * x))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        return float(np.sum(candidate * candidate))
 
 
 def build_solver():
@@ -65,3 +65,4 @@ if __name__ == "__main__":
     result = solver.run()
     print("status:", result["status"], "steps:", result["steps"])
     print("best:", solver.best_objective)
+

@@ -1,0 +1,45 @@
+{
+  "title": "Black Framework Stack 中文白皮书",
+  "subtitle": "blackbase + nsgablack + mlblack：从统一运行底座到优化搜索与机器学习语义",
+  "edition": "工程架构与实践版 0.1",
+  "language": "zh-CN",
+  "target_characters": 100000,
+  "chapters": [
+    {"kind": "original", "title": "卷首：这套框架真正解决什么", "path": "chapters/00_卷首与阅读路线.md", "status": "规范"},
+    {"kind": "original", "title": "第一卷：统一框架栈与职责边界", "path": "chapters/01_统一框架栈.md", "status": "规范"},
+    {"kind": "original", "title": "第二卷：运行闭环与正确性语义", "path": "chapters/02_运行闭环与正确性.md", "status": "规范"},
+    {"kind": "original", "title": "第三卷：工程可靠性与生产化", "path": "chapters/03_工程可靠性.md", "status": "规范"},
+    {"kind": "original", "title": "第四卷：从入门到进阶的学习路径", "path": "chapters/04_学习与使用路线.md", "status": "规范"},
+    {"kind": "original", "title": "第五卷：实现锚点与协议索引", "path": "chapters/05_实现锚点与协议索引.md", "status": "实现"},
+
+    {"kind": "source", "title": "架构思想：为什么必须解耦", "repo": "nsgablack", "path": "docs/concepts/FRAMEWORK_PHILOSOPHY.md", "status": "说明"},
+    {"kind": "source", "title": "概念映射：从问题到运行表面", "repo": "nsgablack", "path": "docs/concepts/FRAMEWORK_CONCEPT_MAPPING.zh-CN.md", "status": "说明"},
+    {"kind": "source", "title": "Project、Case 与标准脚手架", "repo": "nsgablack", "path": "docs/user_guide/PROJECT_SCAFFOLD.md", "status": "规范"},
+    {"kind": "source", "title": "Context 契约", "repo": "nsgablack", "path": "docs/user_guide/CONTEXT_CONTRACTS.md", "status": "规范"},
+    {"kind": "source", "title": "Context 字段治理", "repo": "nsgablack", "path": "docs/user_guide/CONTEXT_FIELD_RULES.md", "status": "规范"},
+    {"kind": "source", "title": "BlackBase Project Runtime", "repo": "blackbase", "path": "PROJECT_RUNTIME_CN.md", "status": "实现"},
+    {"kind": "source", "title": "Redis 任务传输", "repo": "blackbase", "path": "REDIS_TASK_TRANSPORT_CN.md", "status": "实现"},
+
+    {"kind": "source", "title": "验证、Doctor、Catalog 与长期演进", "repo": "nsgablack", "path": "docs/standard_scaffold_tutorial/04_validation_catalog_and_evolution.md", "status": "实践"},
+    {"kind": "source", "title": "Slot Kernel 最小规范", "repo": "nsgablack", "path": "docs/standard_scaffold_tutorial/08_slot_kernel_minimal_spec.md", "status": "实践"},
+    {"kind": "source", "title": "自定义 Adapter", "repo": "nsgablack", "path": "docs/standard_scaffold_tutorial/09_custom_adapter.md", "status": "实践"},
+    {"kind": "source", "title": "自定义 Bias", "repo": "nsgablack", "path": "docs/standard_scaffold_tutorial/10_custom_bias.md", "status": "实践"},
+    {"kind": "source", "title": "Plugin 十钩子生命周期", "repo": "nsgablack", "path": "docs/standard_scaffold_tutorial/11_custom_plugin_hooks.md", "status": "实践"},
+    {"kind": "source", "title": "Pipeline 编排与组件设计", "repo": "nsgablack", "path": "docs/standard_scaffold_tutorial/12_pipeline_orchestration_and_component_design.md", "status": "实践"},
+
+    {"kind": "source", "title": "复杂模型组合与 I/O Contract", "repo": "mlblack", "path": "docs/standard_scaffold_tutorial/03_model_composition_and_io_contract.md", "status": "实践"},
+    {"kind": "source", "title": "ML 验收、Catalog 与 Artifact", "repo": "mlblack", "path": "docs/standard_scaffold_tutorial/06_validation_catalog_artifacts.md", "status": "实践"},
+    {"kind": "source", "title": "Benchmark、Dashboard 与资源审计", "repo": "mlblack", "path": "docs/standard_scaffold_tutorial/07_benchmark_dashboard_resource.md", "status": "参考"},
+    {"kind": "source", "title": "ML Slot Kernel 最小规范", "repo": "mlblack", "path": "docs/standard_scaffold_tutorial/09_slot_kernel_minimal_spec.md", "status": "实践"},
+    {"kind": "source", "title": "ML 自定义 Adapter", "repo": "mlblack", "path": "docs/standard_scaffold_tutorial/10_custom_adapter.md", "status": "实践"},
+    {"kind": "source", "title": "ML 自定义 Bias", "repo": "mlblack", "path": "docs/standard_scaffold_tutorial/11_custom_bias.md", "status": "实践"},
+    {"kind": "source", "title": "ML Plugin 生命周期", "repo": "mlblack", "path": "docs/standard_scaffold_tutorial/12_custom_plugin_hooks.md", "status": "实践"},
+    {"kind": "source", "title": "ML Pipeline 编排与组件设计", "repo": "mlblack", "path": "docs/standard_scaffold_tutorial/13_pipeline_orchestration_and_component_design.md", "status": "实践"},
+
+    {"kind": "source", "title": "Plugin 系统使用指南", "repo": "nsgablack", "path": "docs/user_guide/PLUGIN_SYSTEM.md", "status": "参考"},
+    {"kind": "source", "title": "并行评估", "repo": "nsgablack", "path": "docs/user_guide/parallel_evaluation.md", "status": "参考"},
+    {"kind": "source", "title": "Run Inspector", "repo": "nsgablack", "path": "docs/user_guide/RUN_INSPECTOR.md", "status": "参考"},
+    {"kind": "source", "title": "组件拆分规则", "repo": "nsgablack", "path": "docs/project/DECOMPOSITION_RULES.md", "status": "规范"},
+    {"kind": "source", "title": "稳定 API 表面", "repo": "nsgablack", "path": "docs/project/STABLE_API_SURFACE.md", "status": "规范"}
+  ]
+}

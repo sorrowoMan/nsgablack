@@ -3,24 +3,18 @@ Project-level orchestration configuration.
 """
 from typing import Dict, Any, List
 
-# Define stages of execution. Each stage is a group of solvers that can be run in parallel.
+# Define serial stages. Unsupported policies fail explicitly instead of being
+# silently executed with different semantics.
 STAGES: List[Dict[str, Any]] = [
     {
         "name": "stage_1",
         "cases": ["case_a"],
-        "policy": "run_all_in_parallel",
+        "policy": "serial",
     },
     {
         "name": "stage_2",
         "cases": ["case_b"],
-        "policy": "run_all_in_parallel",
-        "dependencies": {
-            "case_b": {
-                "artifacts": {
-                    "input_data": "stage_1.case_a.output_data"
-                }
-            }
-        }
+        "policy": "serial",
     }
 ]
 

@@ -1,4 +1,4 @@
-"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
+ï»¿"""MIGRATED to examples/cases/ - see scaffold case for maintained version."""
 """MAS (model-and-search) demo."""
 
 import numpy as np
@@ -33,9 +33,9 @@ class SphereProblem(BlackBoxProblem):
         self.low = low
         self.high = high
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        return float(np.sum(x ** 2))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        return float(np.sum(candidate ** 2))
 
 
 def build_solver():
@@ -72,4 +72,5 @@ if __name__ == "__main__":
     result = solver.run()
     print("status:", result.get("status"))
     print("best:", solver.best_objective)
+
 

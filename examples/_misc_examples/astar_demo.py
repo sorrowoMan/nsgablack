@@ -29,9 +29,9 @@ class GridGoal(BlackBoxProblem):
         self.low = low
         self.high = high
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        return float(np.linalg.norm(x - self.goal))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        return float(np.linalg.norm(candidate - self.goal))
 
 
 def build_solver():

@@ -53,8 +53,8 @@ class PortfolioProblem(BlackBoxProblem):
         self.mu = np.asarray(mu, dtype=float)
         self.cov = np.asarray(cov, dtype=float)
 
-    def evaluate(self, x):
-        w = np.asarray(x, dtype=float)
+    def evaluate(self, candidate):
+        w = np.asarray(candidate, dtype=float)
         ret = float(np.dot(w, self.mu))
         risk = float(w @ self.cov @ w)
         # minimize risk, maximize return -> minimize (-return)

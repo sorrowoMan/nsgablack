@@ -63,7 +63,7 @@ def check_context_field_rules_doc(path: Path | None = None) -> List[GuardIssue]:
 
     text = doc.read_text(encoding="utf-8")
     name_m = re.search(r"context_field_schema_name\s*:\s*([\w\.-]+)", text)
-    ver_m = re.search(r"context_field_schema_version\s*:\s*(\d+)", text)
+    ver_m = re.search(r"context_field_schema_version\s*:\s*([0-9]+(?:\.[0-9]+)*)", text)
     if not name_m:
         issues.append(GuardIssue(location=str(doc), message="schema name marker not found"))
     else:
@@ -78,8 +78,8 @@ def check_context_field_rules_doc(path: Path | None = None) -> List[GuardIssue]:
     if not ver_m:
         issues.append(GuardIssue(location=str(doc), message="schema version marker not found"))
     else:
-        got_v = int(ver_m.group(1))
-        if got_v != int(CONTEXT_FIELD_SCHEMA_VERSION):
+        got_v = str(ver_m.group(1)).strip()
+        if got_v != str(CONTEXT_FIELD_SCHEMA_VERSION):
             issues.append(
                 GuardIssue(
                     location=str(doc),

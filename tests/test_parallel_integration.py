@@ -11,8 +11,8 @@ class TinySphere(BlackBoxProblem):
         bounds = {f"x{i}": (-5, 5) for i in range(dimension)}
         super().__init__(dimension=dimension, objectives=["minimize"], bounds=bounds)
 
-    def evaluate(self, x):
-        return float(np.sum(np.asarray(x, dtype=float) ** 2))
+    def evaluate(self, candidate):
+        return float(np.sum(np.asarray(candidate, dtype=float) ** 2))
 
 
 def test_parallel_evaluation_matches_serial():
@@ -54,7 +54,7 @@ def test_parallelized_evolution_solver_preserves_nested_inner_runtime_path():
             self.build_task_calls = 0
             self.project_calls = 0
 
-        def evaluate(self, x):
+        def evaluate(self, candidate):
             self.direct_evaluate_calls += 1
             return np.array([9999.0], dtype=float)
 
@@ -95,3 +95,49 @@ def test_parallelized_evolution_solver_preserves_nested_inner_runtime_path():
     assert problem.direct_evaluate_calls == 0
     assert problem.build_task_calls == 2
     assert problem.project_calls == 2
+
+
+def test_nested_parallel_uses_parent_l0_grant_and_keeps_local_slot_as_audit_metadata():
+    from nsgablack.utils.parallel.nested import NestedParallelEvaluator
+
+    seen_contexts: list[dict] = []
+
+    class NestedProblem(BlackBoxProblem):
+        def __init__(self):
+            super().__init__(
+                name="nested_resource_lineage",
+                dimension=1,
+                objectives=["nested_score"],
+                bounds={"x0": (-5.0, 5.0)},
+            )
+
+        def evaluate(self, candidate):
+            return np.asarray([9999.0])
+
+        def build_inner_task(self, x, eval_context):
+            seen_contexts.append(dict(eval_context["resource_context"]))
+            return {"run_inner": lambda _p, _s, _c: {"status": "ok", "objective": float(x[0])}}
+
+    problem = NestedProblem()
+    problem.inner_runtime_evaluator = TaskInnerRuntimeEvaluator()
+    solver = EvolutionSolver(
+        problem,
+        resource_context={
+            "threads": 2,
+            "namespace": "project.stage.outer",
+            "grant": {"threads": 2, "workers": 2},
+            "lease": {"lease_id": "project-lease", "owner_id": "outer"},
+        },
+    )
+    evaluator = NestedParallelEvaluator(max_workers=8)
+
+    objectives, violations = evaluator.evaluate_population(solver, np.asarray([[1.0], [2.0], [3.0]]))
+
+    assert np.allclose(objectives.reshape(-1), [1.0, 2.0, 3.0])
+    assert np.allclose(violations, 0.0)
+    assert len(seen_contexts) == 3
+    for context in seen_contexts:
+        assert context["lease"]["lease_id"] == "project-lease"
+        assert context["threads"] == 1
+        assert context["metadata"]["parent_lease_id"] == "project-lease"
+        assert context["metadata"]["local_execution_lease"]["lease_id"]

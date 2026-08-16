@@ -38,12 +38,12 @@ class ExampleAdapter(AlgorithmAdapter):
         self,
         solver: Any,
         candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        feedback: tuple[np.ndarray, np.ndarray],
         context: Dict[str, Any],
     ) -> None:
         _ = solver
         _ = candidates
+        objectives, violations = feedback
         _ = objectives
         _ = violations
         _ = context

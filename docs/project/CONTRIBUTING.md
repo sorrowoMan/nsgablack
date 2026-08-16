@@ -47,9 +47,9 @@
 - 为新功能添加测试
 - 更新相关文档
 
-### Legacy / Solver-control-first（必须遵守）
+### Solver-control-first（必须遵守）
 
-- `core/solver.py` 视为 **Legacy 兼容入口**，不再作为新增功能首选接入点。
+- `core/solver.py` 已删除，不再作为新增功能接入点。
 - 新运行期能力必须优先走 Solver 控制面路径（`core.blank_solver.SolverBase` 控制面方法、Adapter context/snapshot projection、Plugin hook）。
 - 禁止在新组件中直接镜像写入 `solver.population/objectives/constraint_violations/best_x/best_objective/...`。
 - `project doctor --strict` 会检查“绕过 Runtime 直接写 solver 状态”的代码并报错。
@@ -121,8 +121,8 @@ nsgablack/
 # 运行所有测试
 pytest -q
 
-# 运行一个最短示例（可手动挑选更多）
-python examples/end_to_end_workflow_demo.py
+# 运行一个标准项目/案例入口（可手动挑选更多）
+python -m nsgablack project doctor --path . --strict --format problem
 ```
 
 ### 添加新偏置

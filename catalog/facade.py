@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
-from nsgablack.project.catalog import find_project_root, load_project_entries
+from nsgablack.project.catalog import find_project_root, load_project_catalog
 
 from .contract_relations import build_contract_neighbor_sections
 from .registry import Catalog, CatalogEntry, get_catalog
@@ -268,21 +268,11 @@ def _resolve_project_root(project_path: str | Path | None) -> Path | None:
 
 
 def _build_project_catalog(project_root: Path, *, profile: str | None = None, include_global: bool = False) -> Catalog:
-    local_entries = enrich_context_contracts(
-        load_project_entries(project_root),
-        kinds=("plugin", "adapter", "bias", "representation"),
+    return load_project_catalog(
+        project_root,
+        include_global=include_global,
+        profile=profile,
     )
-    local_entries = enrich_usage_contracts(local_entries)
-    if not include_global:
-        return Catalog(local_entries)
-    global_entries = get_catalog(profile=profile).list()
-    local_keys = {entry.key for entry in local_entries}
-    merged = list(local_entries) + [entry for entry in global_entries if entry.key not in local_keys]
-    merged = enrich_context_contracts(
-        merged,
-        kinds=("plugin", "adapter", "bias", "representation"),
-    )
-    return Catalog(enrich_usage_contracts(merged))
 
 
 def _load_catalog_context(
@@ -465,6 +455,52 @@ def _hydrate_entries(entries: Iterable[CatalogEntry], *, catalog: Catalog) -> li
     return out
 
 
+def _enrich_preferred_db_entries(
+    entries: Iterable[CatalogEntry],
+    *,
+    route: CatalogReadRoute,
+) -> list[CatalogEntry]:
+    """Fill stale optional DB contract fields from the current runtime surface.
+
+    ``prefer`` treats the DB as an index/cache over the installed framework,
+    while ``only`` keeps the database strictly authoritative.
+    """
+
+    items = list(entries)
+    if route.source_mode != "prefer":
+        return items
+    runtime_catalog = get_catalog(profile=route.profile)
+    runtime_items: list[CatalogEntry] = []
+    contract_fields = (
+        "context_requires",
+        "context_provides",
+        "context_mutates",
+        "context_cache",
+        "context_notes",
+        "artifact_requires",
+        "artifact_provides",
+        "phase_in",
+        "phase_out",
+    )
+    for entry in items:
+        runtime_entry = runtime_catalog.get(entry.key)
+        if runtime_entry is None:
+            runtime_items.append(entry)
+            continue
+        runtime_items.append(
+            replace(
+                entry,
+                **{field: getattr(runtime_entry, field) for field in contract_fields},
+            )
+        )
+    items = runtime_items
+    items = enrich_context_contracts(
+        items,
+        kinds=("plugin", "adapter", "bias", "representation"),
+    )
+    return enrich_usage_contracts(items)
+
+
 def _matches_tags(entry: CatalogEntry, tags: Sequence[str] | None) -> bool:
     expected = {value.lower() for value in _normalize_strings(tags)}
     if not expected:
@@ -558,6 +594,7 @@ def list_entries(
                 limit=limit,
                 field_filters=field_filters,
             )
+            ordered = _enrich_preferred_db_entries(ordered, route=route)
         else:
             context = _load_catalog_context(
                 profile=profile,
@@ -614,7 +651,7 @@ def search_entries(
     if normalized_scope == "framework":
         route = _resolve_read_route(profile=profile, db_path=db_path, source_mode=source_mode)
         if route.db_store is not None:
-            return route.db_store.search_catalog_entries(
+            matches = route.db_store.search_catalog_entries(
                 text,
                 profile=route.profile,
                 kind=kind,
@@ -623,6 +660,7 @@ def search_entries(
                 limit=limit,
                 field_filters=field_filters,
             )
+            return _enrich_preferred_db_entries(matches, route=route)
         context = _load_catalog_context(
             profile=profile,
             scope="framework",
@@ -674,7 +712,9 @@ def show_entry(
     if normalized_scope == "framework":
         route = _resolve_read_route(profile=profile, db_path=db_path, source_mode=source_mode)
         if route.db_store is not None:
-            return route.db_store.get_catalog_entry(normalized_key, profile=route.profile)
+            entry = route.db_store.get_catalog_entry(normalized_key, profile=route.profile)
+            enriched = _enrich_preferred_db_entries(() if entry is None else (entry,), route=route)
+            return enriched[0] if enriched else None
         context = _load_catalog_context(
             profile=profile,
             scope="framework",
@@ -1065,6 +1105,26 @@ def catalog_neighbors(
             payload = route.db_store.neighbor_payload(key, profile=route.profile)
             if payload is None:
                 return None
+            entry = route.db_store.get_catalog_entry(key, profile=route.profile)
+            all_entries = route.db_store.list_catalog_entries(profile=route.profile, limit=None)
+            enriched = _enrich_preferred_db_entries(all_entries, route=route)
+            entry_by_key = {item.key: item for item in enriched}
+            current = entry_by_key.get(str(key or "").strip())
+            if current is None and entry is not None:
+                current_entries = _enrich_preferred_db_entries((entry,), route=route)
+                current = current_entries[0] if current_entries else None
+            if current is not None:
+                computed_sections = build_contract_neighbor_sections(
+                    current,
+                    candidates=[item for item in enriched if item.key != current.key],
+                )
+                for section_name in ("relation_groups", "relation_labels"):
+                    merged_section = dict(computed_sections.get(section_name, {}) or {})
+                    merged_section.update(dict(payload.get(section_name, {}) or {}))
+                    payload[section_name] = merged_section
+                for section_name in ("relation_cards", "relation_chain_cards"):
+                    if not payload.get(section_name):
+                        payload[section_name] = computed_sections.get(section_name, ())
             payload.update(
                 {
                     "scope": "framework",

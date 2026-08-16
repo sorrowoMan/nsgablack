@@ -1,6 +1,10 @@
 import numpy as np
 
 from nsgablack.representation.base import RepresentationPipeline
+from nsgablack.representation.continuous import (
+    ContextGaussianMutation,
+    UniformInitializer,
+)
 
 
 class InPlaceAddMutator:
@@ -67,3 +71,26 @@ def test_mutate_batch_falls_back_and_matches_per_item():
 
     assert ys_batch.shape == ys_loop.shape
     assert np.allclose(ys_batch, ys_loop)
+
+
+def test_pipeline_seed_reproducibly_controls_component_rng_streams():
+    problem = type("Problem", (), {"dimension": 3})()
+
+    def build_pipeline():
+        return RepresentationPipeline(
+            initializer=UniformInitializer(low=-2.0, high=2.0),
+            mutator=ContextGaussianMutation(base_sigma=0.5),
+        )
+
+    first = build_pipeline()
+    second = build_pipeline()
+    first.set_random_seed(17)
+    second.set_random_seed(17)
+
+    first_candidate = first.init(problem, {})
+    second_candidate = second.init(problem, {})
+    first_mutated = first.mutate(first_candidate, {"mutation_sigma": 0.25})
+    second_mutated = second.mutate(second_candidate, {"mutation_sigma": 0.25})
+
+    assert np.array_equal(first_candidate, second_candidate)
+    assert np.array_equal(first_mutated, second_mutated)

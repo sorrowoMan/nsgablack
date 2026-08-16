@@ -36,8 +36,11 @@ _CONTROL_ROW_IDS = (
     page_protocol.PRIMARY_CONTROLS_ROW_ID,
     page_protocol.SECONDARY_CONTROLS_ROW_ID,
 )
-_READY_SELECTED_KEY = "adapter.astar"
-_NEXT_SELECTED_KEY = "adapter.async_event_driven"
+# Query ``ns`` is relevance-ranked by the current framework-core search
+# contract; keep the E2E focused on selection/navigation rather than the
+# retired alphabetical result order.
+_READY_SELECTED_KEY = "adapter.nsga2"
+_NEXT_SELECTED_KEY = "adapter.nsga3"
 
 
 def _free_port() -> int:

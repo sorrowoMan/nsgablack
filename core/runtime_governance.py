@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import hashlib
 import logging
@@ -49,120 +49,124 @@ def _create_local_rng(*, solver: Any, stream: str, seed: Optional[int] = None) -
                 )
     return np.random.default_rng()
 
-def resolve_population_snapshot(solver: Any) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _coerce_population_snapshot(value: Any) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    x, f, v = value
+    x_arr = np.asarray(x, dtype=float)
+    f_arr = np.asarray(f, dtype=float)
+    v_arr = np.asarray(v, dtype=float).reshape(-1)
+    if x_arr.ndim == 1:
+        x_arr = x_arr.reshape(1, -1) if x_arr.size > 0 else x_arr.reshape(0, 0)
+    if f_arr.ndim == 1:
+        f_arr = f_arr.reshape(-1, 1) if f_arr.size > 0 else f_arr.reshape(0, 0)
+    return x_arr, f_arr, v_arr
+
+
+def _adapter_population_snapshot(solver: Any) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    adapter = getattr(solver, "adapter", None)
+    getter = getattr(adapter, "get_population", None)
+    if not callable(getter):
+        return None
+    try:
+        return _coerce_population_snapshot(getter())
+    except Exception as exc:
+        report_soft_error(
+            component="RuntimeGovernance",
+            event="resolve_population_snapshot.adapter_get_population",
+            exc=exc,
+            logger=logger,
+            context_store=getattr(solver, "context_store", None),
+            strict=False,
+            level="debug",
+        )
+        return None
+
+
+def _solver_population_snapshot(solver: Any) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    return _coerce_population_snapshot(
+        (
+            getattr(solver, "population", np.zeros((0, 0))),
+            getattr(solver, "objectives", np.zeros((0, 0))),
+            getattr(solver, "constraint_violations", np.zeros((0,))),
+        )
+    )
+
+
+def _stored_population_snapshot(solver: Any) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    reader = getattr(solver, "read_snapshot", None)
+    if not callable(reader):
+        return None
+    try:
+        payload = reader()
+    except Exception as exc:
+        report_soft_error(
+            component="RuntimeGovernance",
+            event="resolve_population_snapshot.reader_default",
+            exc=exc,
+            logger=logger,
+            context_store=getattr(solver, "context_store", None),
+            strict=False,
+            level="debug",
+        )
+        payload = None
+    if payload is None:
+        return None
+    data = payload.data if hasattr(payload, "data") else payload
+    if not isinstance(data, dict):
+        return None
+    try:
+        return _coerce_population_snapshot(
+            (
+                data.get(KEY_POPULATION, np.zeros((0, 0))),
+                data.get(KEY_OBJECTIVES, np.zeros((0, 0))),
+                data.get(KEY_CONSTRAINT_VIOLATIONS, np.zeros((0,))),
+            )
+        )
+    except Exception as exc:
+        report_soft_error(
+            component="RuntimeGovernance",
+            event="resolve_population_snapshot.payload_cast",
+            exc=exc,
+            logger=logger,
+            context_store=getattr(solver, "context_store", None),
+            strict=False,
+            level="debug",
+        )
+        return None
+
+
+def resolve_population_snapshot(
+    solver: Any,
+    *,
+    prefer_adapter: bool = False,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Resolve population state, optionally treating the Adapter as authoritative."""
     if solver is None:
         return np.zeros((0, 0), dtype=float), np.zeros((0, 0), dtype=float), np.zeros((0,), dtype=float)
 
-    reader = getattr(solver, "read_snapshot", None)
-    if callable(reader):
-        payload = None
-        try:
-            payload = reader()
-        except Exception as exc:
-            report_soft_error(
-                component="RuntimeGovernance",
-                event="resolve_population_snapshot.reader_default",
-                exc=exc,
-                logger=logger,
-                context_store=getattr(solver, "context_store", None),
-                strict=False,
-                level="debug",
-            )
-            payload = None
-        if payload is None:
-            getter = getattr(solver, "get_context", None)
-            if callable(getter):
-                try:
-                    ctx = getter()
-                except Exception as exc:
-                    report_soft_error(
-                        component="RuntimeGovernance",
-                        event="resolve_population_snapshot.get_context",
-                        exc=exc,
-                        logger=logger,
-                        context_store=getattr(solver, "context_store", None),
-                        strict=False,
-                        level="debug",
-                    )
-                    ctx = None
-                if isinstance(ctx, dict):
-                    key = ctx.get(KEY_POPULATION_REF) or ctx.get(KEY_SNAPSHOT_KEY)
-                    if key:
-                        try:
-                            payload = reader(key)
-                        except Exception as exc:
-                            report_soft_error(
-                                component="RuntimeGovernance",
-                                event="resolve_population_snapshot.reader_with_key",
-                                exc=exc,
-                                logger=logger,
-                                context_store=getattr(solver, "context_store", None),
-                                strict=False,
-                                level="debug",
-                            )
-                            payload = None
-        if payload is not None:
-            data = payload.data if hasattr(payload, "data") else payload
-            if isinstance(data, dict):
-                try:
-                    x = np.asarray(data.get(KEY_POPULATION, np.zeros((0, 0))), dtype=float)
-                    f = np.asarray(data.get(KEY_OBJECTIVES, np.zeros((0, 0))), dtype=float)
-                    v = np.asarray(data.get(KEY_CONSTRAINT_VIOLATIONS, np.zeros((0,))), dtype=float).reshape(-1)
-                    if x.ndim == 1:
-                        x = x.reshape(1, -1) if x.size > 0 else x.reshape(0, 0)
-                    if f.ndim == 1:
-                        f = f.reshape(-1, 1) if f.size > 0 else f.reshape(0, 0)
-                    if x.size > 0 or f.size > 0:
-                        return x, f, v
-                except Exception as exc:
-                    report_soft_error(
-                        component="RuntimeGovernance",
-                        event="resolve_population_snapshot.payload_cast",
-                        exc=exc,
-                        logger=logger,
-                        context_store=getattr(solver, "context_store", None),
-                        strict=False,
-                        level="debug",
-                    )
-
-    adapter = getattr(solver, "adapter", None)
-    if adapter is not None:
-        getter = getattr(adapter, "get_population", None)
-        if callable(getter):
-            try:
-                x, f, v = getter()
-                x_arr = np.asarray(x, dtype=float)
-                f_arr = np.asarray(f, dtype=float)
-                v_arr = np.asarray(v, dtype=float).reshape(-1)
-                if x_arr.ndim == 1:
-                    x_arr = x_arr.reshape(1, -1) if x_arr.size > 0 else x_arr.reshape(0, 0)
-                if f_arr.ndim == 1:
-                    f_arr = f_arr.reshape(-1, 1) if f_arr.size > 0 else f_arr.reshape(0, 0)
-                return x_arr, f_arr, v_arr
-            except Exception as exc:
-                report_soft_error(
-                    component="RuntimeGovernance",
-                    event="resolve_population_snapshot.adapter_get_population",
-                    exc=exc,
-                    logger=logger,
-                    context_store=getattr(solver, "context_store", None),
-                    strict=False,
-                    level="debug",
-                )
-    x = np.asarray(getattr(solver, "population", np.zeros((0, 0))), dtype=float)
-    f = np.asarray(getattr(solver, "objectives", np.zeros((0, 0))), dtype=float)
-    v = np.asarray(getattr(solver, "constraint_violations", np.zeros((0,))), dtype=float).reshape(-1)
-    if x.ndim == 1:
-        x = x.reshape(1, -1) if x.size > 0 else x.reshape(0, 0)
-    if f.ndim == 1:
-        f = f.reshape(-1, 1) if f.size > 0 else f.reshape(0, 0)
-    return x, f, v
+    sources = (
+        (_adapter_population_snapshot, _solver_population_snapshot, _stored_population_snapshot)
+        if prefer_adapter
+        else (_stored_population_snapshot, _adapter_population_snapshot, _solver_population_snapshot)
+    )
+    empty: Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]] = None
+    for source in sources:
+        snapshot = source(solver)
+        if snapshot is None:
+            continue
+        empty = snapshot
+        if snapshot[0].shape[0] > 0 or snapshot[1].shape[0] > 0:
+            return snapshot
+    if empty is not None:
+        return empty
+    return np.zeros((0, 0), dtype=float), np.zeros((0, 0), dtype=float), np.zeros((0,), dtype=float)
 
 def commit_population_snapshot(
     solver: Any,
     population: np.ndarray,
     objectives: np.ndarray,
     violations: np.ndarray,
+    *,
+    strict: bool = False,
 ) -> bool:
     if solver is None:
         return False
@@ -172,6 +176,8 @@ def commit_population_snapshot(
         f_arr = np.asarray(objectives, dtype=float)
         v_arr = np.asarray(violations, dtype=float).reshape(-1)
     except Exception as exc:
+        if strict:
+            raise
         report_soft_error(
             component="RuntimeGovernance",
             event="commit_population_snapshot.cast",
@@ -188,6 +194,35 @@ def commit_population_snapshot(
     if f_arr.ndim == 1:
         f_arr = f_arr.reshape(-1, 1) if f_arr.size > 0 else f_arr.reshape(0, 0)
 
+    dimension = int(getattr(solver, "dimension", x_arr.shape[1] if x_arr.ndim == 2 else 0) or 0)
+    num_objectives = int(getattr(solver, "num_objectives", f_arr.shape[1] if f_arr.ndim == 2 else 0) or 0)
+    valid = (
+        x_arr.ndim == 2
+        and f_arr.ndim == 2
+        and x_arr.shape[0] == f_arr.shape[0] == v_arr.shape[0]
+        and (dimension <= 0 or x_arr.shape[1] == dimension)
+        and (num_objectives <= 0 or f_arr.shape[1] == num_objectives)
+    )
+    if not valid:
+        error = ValueError(
+            "population snapshot shape mismatch: "
+            f"population={tuple(x_arr.shape)}, objectives={tuple(f_arr.shape)}, "
+            f"violations={tuple(v_arr.shape)}, expected=(N, {dimension})/(N, {num_objectives})/(N,)"
+        )
+        if strict:
+            raise error
+        report_soft_error(
+            component="RuntimeGovernance",
+            event="commit_population_snapshot.validate",
+            exc=error,
+            logger=logger,
+            context_store=getattr(solver, "context_store", None),
+            strict=False,
+            level="warning",
+        )
+        return False
+
+    adapter_handled = False
     adapter = getattr(solver, "adapter", None)
     if adapter is not None:
         for method_name in ("set_population", "set_population_snapshot", "update_population"):
@@ -200,6 +235,8 @@ def commit_population_snapshot(
                 try:
                     handled = setter(solver, x_arr, f_arr, v_arr)
                 except Exception as exc:
+                    if strict:
+                        raise
                     report_soft_error(
                         component="RuntimeGovernance",
                         event=f"commit_population_snapshot.{method_name}.call_with_solver",
@@ -211,6 +248,8 @@ def commit_population_snapshot(
                     )
                     handled = False
             except Exception as exc:
+                if strict:
+                    raise
                 report_soft_error(
                     component="RuntimeGovernance",
                     event=f"commit_population_snapshot.{method_name}",
@@ -222,13 +261,16 @@ def commit_population_snapshot(
                 )
                 handled = False
             if handled is not False:
-                return True
+                adapter_handled = True
+                break
 
     writer = getattr(solver, "write_population_snapshot", None)
     if callable(writer):
         try:
             return bool(writer(x_arr, f_arr, v_arr))
         except Exception as exc:
+            if strict:
+                raise
             report_soft_error(
                 component="RuntimeGovernance",
                 event="commit_population_snapshot.writer",
@@ -239,7 +281,7 @@ def commit_population_snapshot(
                 level="debug",
             )
             return False
-    return False
+    return adapter_handled
 
 
 def _best_fitness(objectives: np.ndarray) -> float:
@@ -849,6 +891,15 @@ class CompanionOrchestrator:
             task.budget_used += 1
             return None
 
+        allowance = getattr(solver, "evaluation_batch_allowance", None)
+        if callable(allowance) and int(allowance(1)) < 1:
+            task.status = "evaluation_budget_exhausted"
+            task.budget_used = int(task.budget_max)
+            request_stop = getattr(solver, "request_stop", None)
+            if callable(request_stop):
+                request_stop()
+            return None
+
         ctx = solver.build_context()
         ctx[KEY_COMPANION_PHASE_INDEX] = int(phase_index)
         ctx[KEY_COMPANION_TRIGGER_REASON] = str(self.last_trigger_reason or "")
@@ -883,8 +934,7 @@ class CompanionOrchestrator:
         adapter.update(
             solver,
             pop,
-            np.asarray(obj, dtype=float),
-            np.asarray(vio, dtype=float).reshape(-1),
+            (np.asarray(obj, dtype=float), np.asarray(vio, dtype=float).reshape(-1)),
             ctx,
         )
 

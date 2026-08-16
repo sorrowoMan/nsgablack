@@ -1,0 +1,7 @@
+[[entry]]
+key = "example.causal_discovery_pc_lingam"
+title = "Causal Discovery: PC + LiNGAM as DE Search"
+kind = "example"
+import_path = "examples.cases.causal_discovery.cases.causal_discovery.build_solver:build_solver"
+tags = ["example", "causal", "dag", "pcalg", "lingam", "de", "callable_bias", "graph_sparsity"]
+summary = "Causal structure discovery as black-box optimization. DE searches DAG adjacency matrices, CallableBias (Kahn) enforces acyclicity, SparsityBias prefers parsimonious graphs."

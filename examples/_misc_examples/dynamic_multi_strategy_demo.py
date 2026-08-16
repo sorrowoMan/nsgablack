@@ -1,4 +1,4 @@
-"""MIGRATED to examples/cases/ �� see scaffold case for maintained version."""
+﻿"""MIGRATED to examples/cases/ - see scaffold case for maintained version."""
 """Dynamic + Multi-Strategy showcase.
 
 This example demonstrates:
@@ -64,9 +64,9 @@ class SphereProblem(BlackBoxProblem):
         self.low = low
         self.high = high
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        return float(np.sum(x ** 2))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        return float(np.sum(candidate ** 2))
 
 
 class AdaptiveSignalProvider(SignalProviderBase):
@@ -265,9 +265,10 @@ if __name__ == "__main__":
     else:
         solver = build_solver()
         result = solver.run()
-        print("运行状�?", result["status"], "steps:", result["steps"])
+        print("杩愯鐘舵€?", result["status"], "steps:", result["steps"])
         if solver.best_x is not None:
-            print("最优目标�?", f"{solver.best_objective:.6f}")
-            print("最优解:", solver.best_x)
+            print("鏈€浼樼洰鏍囧€?", f"{solver.best_objective:.6f}")
+            print("鏈€浼樿В:", solver.best_x)
+
 
 

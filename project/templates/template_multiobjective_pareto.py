@@ -36,10 +36,10 @@ class BiObjectiveSphere(BlackBoxProblem):
         self.low = low
         self.high = high
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        f1 = float(np.sum(x ** 2))
-        f2 = float(np.sum((x - 2.0) ** 2))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        f1 = float(np.sum(candidate ** 2))
+        f2 = float(np.sum((candidate - 2.0) ** 2))
         return np.array([f1, f2], dtype=float)
 
 

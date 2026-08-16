@@ -1,4 +1,4 @@
-"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
+ï»¿"""MIGRATED to examples/cases/ - see scaffold case for maintained version."""
 from __future__ import annotations
 
 import numpy as np
@@ -14,9 +14,9 @@ class SmallExpensiveProblem:
         self.dimension = int(dimension)
         self.bounds = [(-4.0, 4.0)] * self.dimension
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        base = float(np.sum(x * x))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        base = float(np.sum(candidate * candidate))
         noise = float(np.random.normal(0.0, 0.1))
         return base + noise
 
@@ -48,5 +48,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 

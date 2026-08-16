@@ -5,7 +5,7 @@ Model-and-Search (MAS) adapter: alternates model update and search steps.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Sequence, List
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -62,16 +62,16 @@ class MASAdapter(AlgorithmAdapter):
         self._Y: list[np.ndarray] = []
         self.solver: Any = None
 
-    def setup(self, solver: Any) -> None:
-        self.solver = solver
+    def setup(self, control: Any) -> None:
+        self.solver = control
         self._center = None
         self._surrogate = None
         self._X.clear()
         self._Y.clear()
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self._center is None:
-            self._center = self._init_center(solver, context)
+            self._center = self._init_center(control, context)
         center = np.asarray(self._center, dtype=float)
         n = max(1, int(self.cfg.batch_size))
         explore_n = int(round(n * float(self.cfg.exploration_ratio)))
@@ -81,7 +81,7 @@ class MASAdapter(AlgorithmAdapter):
         # exploration: random neighborhood
         for _ in range(explore_n):
             cand = center + self._rng.normal(size=center.shape) * 0.5
-            candidates.append(self._clip_to_bounds(cand, solver))
+            candidates.append(self._clip_to_bounds(cand, control))
 
         # exploitation: use surrogate model if available
         model = self._surrogate
@@ -98,17 +98,17 @@ class MASAdapter(AlgorithmAdapter):
                 scores = np.asarray([np.sum(p ** 2) for p in pool_arr], dtype=float)
             best_idx = np.argsort(scores)[:exploit_n]
             for idx in best_idx:
-                candidates.append(self._clip_to_bounds(pool_arr[idx], solver))
+                candidates.append(self._clip_to_bounds(pool_arr[idx], control))
         return candidates
 
     def update(
         self,
-        solver: Any,
+        control: Any,
         candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
+        feedback: Tuple[np.ndarray, np.ndarray],
         context: Dict[str, Any],
     ) -> None:
+        objectives, violations = feedback
         if candidates is None or len(candidates) == 0:
             return None
         scores = self._score(objectives, violations)
@@ -117,27 +117,27 @@ class MASAdapter(AlgorithmAdapter):
         self._update_surrogate(candidates, objectives)
         return None
 
-    def _init_center(self, solver: Any, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+    def _init_center(self, control: Any, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         if isinstance(context, dict):
             best_ctx = context.get(KEY_BEST_X)
             if best_ctx is not None:
                 return np.asarray(best_ctx, dtype=float)
-        if getattr(solver, "best_x", None) is not None:
-            return np.asarray(solver.best_x, dtype=float)
-        pipeline = getattr(solver, "representation_pipeline", None)
+        if getattr(control, "best_x", None) is not None:
+            return np.asarray(control.best_x, dtype=float)
+        pipeline = getattr(control, "representation_pipeline", None)
         if pipeline is not None and hasattr(pipeline, "init"):
             try:
-                return np.asarray(pipeline.init(solver.problem, context=None), dtype=float)
+                return np.asarray(pipeline.init(control.problem, context=None), dtype=float)
             except Exception:
                 pass
-        low, high = self._extract_bounds(solver)
+        low, high = self._extract_bounds(control)
         if low is None or high is None:
-            dim = int(getattr(solver, "dimension", 1) or 1)
+            dim = int(getattr(control, "dimension", 1) or 1)
             return self._rng.uniform(low=-1.0, high=1.0, size=(dim,))
         return self._rng.uniform(low=low, high=high)
 
-    def _extract_bounds(self, solver: Any) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        bounds = getattr(getattr(solver, "problem", None), "bounds", None)
+    def _extract_bounds(self, control: Any) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        bounds = getattr(getattr(control, "problem", None), "bounds", None)
         if bounds is None:
             return None, None
         if isinstance(bounds, dict):
@@ -148,8 +148,8 @@ class MASAdapter(AlgorithmAdapter):
         high = np.asarray([float(v[1]) for v in vals], dtype=float)
         return low, high
 
-    def _clip_to_bounds(self, x: np.ndarray, solver: Any) -> np.ndarray:
-        low, high = self._extract_bounds(solver)
+    def _clip_to_bounds(self, x: np.ndarray, control: Any) -> np.ndarray:
+        low, high = self._extract_bounds(control)
         if low is None or high is None:
             return x
         return np.minimum(np.maximum(x, low), high)
@@ -172,7 +172,7 @@ class MASAdapter(AlgorithmAdapter):
         vio = np.asarray(violations, dtype=float).reshape(-1)
         return np.sum(obj, axis=1) + vio * 1e6
 
-    def _ensure_surrogate(self, solver: Any, objectives: Optional[np.ndarray] = None) -> None:
+    def _ensure_surrogate(self, control: Any, objectives: Optional[np.ndarray] = None) -> None:
         if not bool(self.cfg.enable_surrogate):
             return None
         if self._surrogate is not None:
@@ -185,7 +185,7 @@ class MASAdapter(AlgorithmAdapter):
             elif obj.ndim >= 2:
                 n_obj = int(obj.shape[1])
         if n_obj is None:
-            n_obj = int(getattr(solver, "num_objectives", 1) or 1)
+            n_obj = int(getattr(control, "num_objectives", 1) or 1)
         self._surrogate = VectorSurrogate(num_objectives=int(n_obj), model_type=self.cfg.surrogate_model_type)
 
     def _update_surrogate(self, candidates: Sequence[np.ndarray], objectives: np.ndarray) -> None:

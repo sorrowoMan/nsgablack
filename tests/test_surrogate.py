@@ -146,11 +146,11 @@ class TestSurrogateIntegration:
                     bounds=[(0, 1)] * 5
                 )
 
-            def evaluate(self, x):
+            def evaluate(self, candidate):
                 # 模拟昂贵评估
                 import time
                 time.sleep(0.001)  # 模拟延迟
-                return np.sum(x**2)
+                return np.sum(candidate**2)
 
         problem = ExpensiveProblem()
         manager = SurrogateManager()

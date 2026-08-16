@@ -48,9 +48,9 @@ class NSGA3Adapter(NSGA2Adapter):
         self.cfg: NSGA3Config = config or NSGA3Config()
         self.reference_points: np.ndarray = np.zeros((0, 0), dtype=float)
 
-    def setup(self, solver: Any) -> None:
-        super().setup(solver)
-        n_obj = int(getattr(getattr(solver, "problem", None), "num_objectives", 2))
+    def setup(self, control: Any) -> None:
+        super().setup(control)
+        n_obj = int(getattr(getattr(control, "problem", None), "num_objectives", 2))
         self.reference_points = self._generate_reference_points(n_obj, max(1, int(self.cfg.divisions)))
 
     def _environmental_select(self, objectives: np.ndarray, violations: np.ndarray, n_keep: int) -> np.ndarray:

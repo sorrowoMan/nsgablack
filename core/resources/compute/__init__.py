@@ -3,9 +3,9 @@
 Canonical import surface: ``from nsgablack.core.resources.compute import PoolScheduler``
 """
 
-from .pool import PoolScheduler, PoolTask, PoolResult
+from .pool import PoolScheduler, PoolTask, PoolResult, PoolTaskResult
 
-__all__ = ["PoolScheduler", "PoolTask", "PoolResult"]
+__all__ = ["PoolScheduler", "PoolTask", "PoolResult", "PoolTaskResult"]
 
 
 def __getattr__(name: str):

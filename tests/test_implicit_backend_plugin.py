@@ -1,4 +1,4 @@
-﻿import numpy as np
+import numpy as np
 
 
 def test_newton_implicit_backend_plugin_short_circuits_evaluate_individual():
@@ -15,7 +15,7 @@ def test_newton_implicit_backend_plugin_short_circuits_evaluate_individual():
                 bounds={"x0": (-3.0, 3.0)},
             )
 
-        def evaluate(self, x):
+        def evaluate(self, candidate):
             # Should be bypassed by plugin in this test.
             return 999.0
 
@@ -41,20 +41,23 @@ def test_newton_implicit_backend_plugin_short_circuits_evaluate_individual():
         def __init__(self):
             super().__init__(name="fixed")
 
-        def propose(self, solver, context):
-            _ = (solver, context)
+        def propose(self, control, context):
+            _ = (control, context)
             # x^2 + 1 = 4 -> x = sqrt(3), expected root y ~= 2
             return [np.array([np.sqrt(3.0)], dtype=float) for _ in range(4)]
 
-    solver = ComposableSolver(problem=ImplicitProblem(), adapter=FixedAdapter())
-    solver.max_steps = 1
-    solver.pop_size = 4
-    plugin = NewtonSolverProviderPlugin(config=NumericalSolverConfig(tol=1e-10, max_iter=100))
-    solver.register_evaluation_provider(plugin.create_provider())
-    solver.run()
+        def update(self, control, candidates, feedback, context):
+            _ = (control, candidates, feedback, context)
 
-    assert solver.best_objective is not None
-    assert float(solver.best_objective) < 1e-6
+    control = ComposableSolver(problem=ImplicitProblem(), adapter=FixedAdapter())
+    control.max_steps = 1
+    control.pop_size = 4
+    plugin = NewtonSolverProviderPlugin(config=NumericalSolverConfig(tol=1e-10, max_iter=100))
+    control.register_evaluation_provider(plugin.create_provider())
+    control.run()
+
+    assert control.best_objective is not None
+    assert float(control.best_objective) < 1e-6
     assert plugin.stats["calls"] > 0
     assert plugin.stats["success"] > 0
 
@@ -67,8 +70,8 @@ def test_implicit_backend_plugin_returns_none_when_problem_hooks_missing():
         def __init__(self):
             super().__init__(name="plain", dimension=1, bounds={"x0": (-1.0, 1.0)})
 
-        def evaluate(self, x):
-            return float(np.sum(np.asarray(x, dtype=float) ** 2))
+        def evaluate(self, candidate):
+            return float(np.sum(np.asarray(candidate, dtype=float) ** 2))
 
     class DummySolver:
         problem = PlainProblem()

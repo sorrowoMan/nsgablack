@@ -1,322 +1,158 @@
-# 07. 嵌套编排标准规范
+# 07. 标准嵌套 Case 编排
 
-**嵌套编排的本质**：外层 Solver 的 `Problem.evaluate()` 短路调用内层 `build_solver()`。两层都是完整的标准脚手架，层间只传递 JSON-compatible 数据和 ResourceContext。
+嵌套编排不是在外层 `evaluate()` 中直接 import 一个 Trainer 或 Solver。它表示：
 
----
+- 外层和内层都是可独立运行的标准 Case；
+- 两者使用同一个 `build_solver.py::build_solver()` 装配入口；
+- 父 Case 通过 blackbase 公共协议调用子 Case；
+- 子运行拥有明确 lineage、deadline/cancellation、子资源 grant、预算 handle 和结果信封。
 
-## 1. 创建嵌套项目
+## 1. 公共对象
 
-```powershell
-python -m nsgablack project new nested_hyperopt
-cd nested_hyperopt
-python -m nsgablack project add-case outer_search --type solver
-python -m nsgablack project add-case inner_trainer --type trainer
-```
+所有编排协议都归 `blackbase`：
 
-生成的三层结构：
+- `CaseRunRequest`：子 Case 的声明请求；
+- `CaseRunResult`：版本化、可序列化的统一结果信封；
+- `CaseRunIdentity`：Project run、root run、parent Case、invocation、attempt、depth；
+- `ExecutionControl`：当前 cancellation ref、祖先取消链与有效绝对 deadline；
+- `ChildResourceGrant`：父 grant 内原子划分的子授权；
+- `BudgetHandle`：父预算预留后形成的有界子预算；
+- `CaseExecutor` / `CaseInvoker`：标准装配与递归调用的唯一执行边界。
 
-```text
-nested_hyperopt/
-  project_config.py          ← 编排：外层运行后触发内层
-  run_project.py             ← 【正式入口 — 从这里启动！】
-  cases/
-    outer_search/            ← 外层 nsgablack Solver
-      build_solver.py
-      problem/               ← hyperopt_problem.py（evaluate 中调用内层）
-      pipeline/              ← 超参向量 encode/decode
-      adapter/               ← NSGA2 / RandomSearch
-    inner_trainer/           ← 内层 mlblack Trainer
-      build_solver.py        ← canonical 入口（build_trainer.py 别名可用）
-      problem/               ← training_problem.py
-      pipeline/              ← data + model encode/decode
-      adapter/               ← GradientDescent
-```
+`nsgablack` 与 `mlblack` 不各自实现一套 nested runner。
 
-> **关键**：内外层结构完全一致。`outer_search` 是 solver，`inner_trainer` 是 trainer——但在目录形态上没有任何区别。
+## 2. 父 Case 调用子 Case
 
----
-
-## 2. 内层先行：独立开发并验证
-
-先让内层能独立跑通，不与外层耦合。
-
-### 2.1 内层 build_solver()
-
-`cases/inner_trainer/build_solver.py`：
+标准执行器会给 Case 注入 `case_runtime`。父 Case 只声明请求，不读取子 Case 的
+builder，也不自行伪造 `ResourceContext`：
 
 ```python
-"""Inner trainer — independently runnable."""
-import numpy as np
-from mlblack.core.trainer import ComposableTrainer
-from mlblack.adapters.gradient_descent import GradientDescentAdapter
-from problem.training_problem import RegressionProblem
-from pipeline.model_rep import MLPRepresentation
+from blackbase.project import CaseRunRequest
 
 
-def build_solver(
-    hyperparams: dict | None = None,
-    data: tuple | None = None,
-    resource_context: dict | None = None,
-    budget: int = 100,
-):
-    """Canonical entry. Called by outer solver or standalone."""
-    hp = hyperparams or {}
-    lr = hp.get("learning_rate", 0.01)
-    hidden = hp.get("hidden_dim", 64)
-    n_layers = hp.get("num_layers", 2)
-
-    # Default synthetic data if standalone
-    if data is None:
-        X = np.random.randn(200, 10)
-        y = np.random.randn(200)
-        data = (X, y)
-
-    problem = RegressionProblem(data)
-    representation = MLPRepresentation(
-        input_dim=data[0].shape[1],
-        hidden_dims=[hidden] * n_layers,
-    )
-    adapter = GradientDescentAdapter(learning_rate=lr)
-
-    trainer = ComposableTrainer(
-        problem=problem,
-        representation=representation,
-        adapter=adapter,
-        run_name="inner_trainer",
-    )
-
-    if resource_context:
-        trainer.set_resource_context(resource_context)
-
-    trainer.set_max_steps(budget)
-    return trainer
-```
-
-### 2.2 独立验证内层
-
-```powershell
-cd cases/inner_trainer
-python run_solver.py --check
-# → [check] assembly ok | problem=RegressionProblem | ...
-python run_solver.py
-# → 训练完成，输出 best_score
-```
-
-内层完全自包含，不需要外层就能跑。这保证嵌套时问题一定出在外层的短路调用，而非内层自身。
-
----
-
-## 3. 外层：Problem.evaluate() 短路调用内层
-
-### 3.1 外层 Problem
-
-`cases/outer_search/problem/hyperopt_problem.py`：
-
-```python
-"""Outer problem: optimize hyperparams by calling inner trainer."""
-import sys
-import os
-import numpy as np
-
-# Bootstrap path so inner case is importable
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_PROJECT = os.path.dirname(os.path.dirname(_HERE))
-if _PROJECT not in sys.path:
-    sys.path.insert(0, _PROJECT)
-
-from cases.inner_trainer.build_solver import build_solver as build_inner
-
-
-class HyperoptProblem:
-    """Search hyperparams to minimize validation loss."""
-    name = "hyperopt"
-    dimension = 3
-    objectives = ("val_loss",)
-
-    def __init__(self, data_path=None, inner_budget=50):
-        # Shared data loaded once
-        self.X, self.y = self._load_data(data_path)
-        self.inner_budget = inner_budget
-
-    def _load_data(self, path):
-        X = np.random.randn(200, 10)
-        y = np.random.randn(200)
-        return X, y
-
-    def evaluate(self, x):
-        """Decode hyperparams, run inner trainer, return val_loss."""
-        x = np.asarray(x, dtype=float).ravel()
-        hyperparams = self._decode(x)
-
-        try:
-            trainer = build_inner(
-                hyperparams=hyperparams,
-                data=(self.X, self.y),
-                budget=self.inner_budget,
+class OuterCase:
+    def run(self):
+        child = self.case_runtime.invoke(
+            CaseRunRequest(
+                project_name="hybrid_system",
+                stage_name="inner_training",
+                case_name="train_surrogate",
+                case_kind="trainer",
+                resource_request={
+                    "workers": 1,
+                    "threads": 2,
+                    "gpus": 0,
+                },
+                budget_request={"evaluations": 100},
+                input_artifacts={"dataset": self.dataset_ref},
+                inputs={"model_width": 128},
+                component_overrides={"trainer.max_steps": 500},
             )
-            result = trainer.fit(max_steps=self.inner_budget)
-            val_loss = float(result.best_score or 1e10)
-            return np.array([val_loss], dtype=float)
-        except Exception:
-            return np.array([1e10], dtype=float)  # penalty for failed eval
-
-    def evaluate_constraints(self, x):
-        return np.zeros(0, dtype=float)
-
-    @staticmethod
-    def _decode(x):
+        )
+        if not child.ok:
+            raise RuntimeError(child.error)
         return {
-            "learning_rate": 10 ** float(x[0]),  # x[0] ∈ [-5, -1]
-            "hidden_dim": int(np.clip(x[1], 16, 256)),
-            "num_layers": int(np.clip(x[2], 1, 5)),
+            "inner_metrics": child.output["metrics"],
+            "artifact_refs": {
+                "model": child.artifact_refs["model"].as_dict(),
+            },
         }
 ```
 
-### 3.2 外层 build_solver()
-
-`cases/outer_search/build_solver.py`：
+若 Case 对象需要读取非 Artifact 的轻量输入，实现：
 
 ```python
-"""Outer solver — searches hyperparams via NSGA2."""
-import numpy as np
-from nsgablack.core import ComposableSolver
-from nsgablack.adapters import NSGA2Adapter
-from nsgablack.representation import RepresentationPipeline, UniformInitializer, GaussianMutation, ClipRepair
-from problem.hyperopt_problem import HyperoptProblem
-
-
-def build_solver():
-    problem = HyperoptProblem(inner_budget=30)
-
-    # Encode: [log10(lr), hidden_dim, n_layers] as float vector
-    pipeline = RepresentationPipeline(
-        initializer=UniformInitializer(
-            low=np.array([-5.0, 16.0, 1.0]),
-            high=np.array([-1.0, 256.0, 5.0]),
-        ),
-        mutator=GaussianMutation(sigma=0.15),
-        repair=ClipRepair(
-            low=np.array([-5.0, 16.0, 1.0]),
-            high=np.array([-1.0, 256.0, 5.0]),
-        ),
-    )
-
-    adapter = NSGA2Adapter(pop_size=20)
-
-    solver = ComposableSolver(
-        problem=problem,
-        representation_pipeline=pipeline,
-        adapter=adapter,
-    )
-    solver.set_max_generations(10)
-    return solver
+def set_case_inputs(self, inputs):
+    self.case_inputs = dict(inputs)
 ```
 
----
-
-## 4. 项目编排配置
-
-`project_config.py`：
+若需要自定义 runtime 注入，实现：
 
 ```python
-STAGES = [
-    {
-        "name": "hyperopt",
-        "cases": ["outer_search"],
-        "policy": "run_all_in_parallel",
-    },
-]
-GROUPS = {"default": {"stages": ["hyperopt"]}}
+def set_case_runtime(self, runtime):
+    self.case_runtime = runtime
 ```
 
-> 内层 `inner_trainer` 不直接出现在 STAGES 中——它被外层 `Problem.evaluate()` 隐式调用。如果内层也需要独立运行（比如数据预处理阶段），可以加一个前置 stage。
+普通可设置属性的对象不必实现该 setter。
 
----
+## 3. Lineage 与控制继承
 
-## 5. 运行
-
-```powershell
-# 从项目根启动！（不是 case 目录）
-python run_project.py
-```
-
-执行流：
+父调用生成子 identity：
 
 ```text
-run_project.py
-  → 发现 outer_search
-  → build_solver() → ComposableSolver
-  → solver.run()
-    → adapter.propose() 产出超参候选
-    → problem.evaluate(x)
-        → build_inner(hyperparams=...)
-        → trainer.fit(max_steps=30)
-        → 返回 val_loss
-    → adapter.update(feedback)
-    → ...循环直到 max_generations
+project_run_id  保持不变
+root_run_id     保持不变
+parent_case_run_id = 父 case_run_id
+case_run_id     每次调用唯一
+invocation_id   每次调用唯一
+depth           父 depth + 1
 ```
 
-## 6. ResourceContext 传递
-
-外层通过 `ResourceContext` 向内层授权资源：
+子 `ExecutionControl` 保留父 cancellation ref 作为祖先。有效 deadline 是当前和
+所有祖先 deadline 的最小值，因此子 Case 不能延长父 Case 的截止时间。Case 可以在
+长循环、Provider 等待或批处理边界调用：
 
 ```python
-# 在 outer/problem/hyperopt_problem.py 的 evaluate() 中：
-resource_ctx = getattr(self, "resource_context", None)
-trainer = build_inner(
-    hyperparams=hyperparams,
-    data=(self.X, self.y),
-    budget=self.inner_budget,
-    resource_context=resource_ctx,
-)
+self.case_runtime.checkpoint()
 ```
 
-内层消费：
+Project 超时、父 Case 取消或并行 `fail_fast` 都会写入可跨进程重建的 cancellation
+authority。它是协作式取消；不可中断的第三方调用仍需由对应 Provider 提供取消能力。
 
-```python
-# 在 inner/build_solver.py 中：
-if resource_context:
-    trainer.set_resource_context(resource_context)
+## 4. 资源与预算不能复制
+
+父 Case 的 L0 grant 是硬上界。`CaseInvoker` 在父 grant 内维护共享子资源池：
+
+- 子请求超过父线程、GPU 或 device token 授权时立即失败；
+- 多个并行子调用对父资源做原子竞争，不能各自复制完整父额度；
+- 子 namespace、grant ID、父 lease 与 fencing token 会进入结果审计；
+- 等待资源时仍持续检查 deadline/cancellation。
+
+预算也不传普通 `remaining_budget` 数字。父调用先在共享 Budget Authority 中预留，
+再给子 Case 一个 `BudgetHandle`。子 Case仍在真实 charging point 使用
+`BudgetAccount.from_resource_context(...)`；完成后实际消耗计入父预算，未使用部分返还。
+
+## 5. 统一结果信封
+
+串行 Project、进程池、外部 worker 和父子调用都返回同一种 `CaseRunResult`：
+
+```text
+schema_version
+request + identity + control
+status
+output
+artifact_refs
+resource_usage
+budget_usage
+started_at / finished_at / elapsed_seconds
+exit_code
+structured failure
+metadata / runtime audit
 ```
 
-优先级：外层 ResourceLease > 注入的 ResourceContext > 内层默认值。
+协议读取严格检查 `schema_version`，不猜测旧字典的含义。标准状态包括
+`succeeded`、`built`、`checked`、`resumed`、`failed`、`cancelled`、`timed_out`
+和 `skipped`。
 
----
+## 6. Canonical 入口
 
-## 7. 多内层场景
+Solver 与 Trainer 的目录形状一致：
 
-一个外层同时调用多个内层：
+| 语义 kind | 唯一装配入口 | 唯一 CLI 入口 |
+| --- | --- | --- |
+| `solver` | `build_solver.py::build_solver()` | `run_solver.py` |
+| `trainer` | `build_solver.py::build_solver()` | `run_solver.py` |
 
-```python
-class EnsembleHyperoptProblem:
-    def evaluate(self, x):
-        hyperparams = self._decode(x)
-        losses = []
-        for model_type in ("mlp", "tree", "symbolic"):
-            trainer = build_inner(model_type=model_type, hyperparams=hyperparams)
-            result = trainer.fit()
-            losses.append(float(result.best_score or 1e10))
-        return np.array([np.mean(losses)], dtype=float)
-```
+`build_trainer.py` 与 `run_trainer.py` 只能是薄别名。kind 只改变运行时优先选择
+`run()` 还是 `fit()`，不能制造第二套装配。
 
-内层可以是任意类型：mlblack Trainer、另一个 nsgablack Solver、甚至第三方系统。只要它有一个 `build_solver()` 入口。
+## 7. 最小检查清单
 
----
-
-## 8. 检查清单
-
-- [ ] 内层独立可运行：`cd cases/inner_trainer && python run_solver.py --check`
-- [ ] 外层独立可运行：`cd cases/outer_search && python run_solver.py --check`
-- [ ] 内层和外层的 import 不相互依赖
-- [ ] 外层 Problem.evaluate() 中调用的 `build_inner()` 路径正确
-- [ ] ResourceContext 从外层显式传入内层
-- [ ] 从项目根 `python run_project.py` 启动成功
-
-## 9. 常见错误
-
-| 现象 | 原因 | 修复 |
-|---|---|---|
-| `ImportError: cases.inner_trainer` | sys.path 没加项目根 | 在 outer problem 开头执行 path bootstrap |
-| 内层跑很慢，外层评估卡住 | inner_budget 太大 | 减小 budget，加入 early stopping |
-| 内层失败但外层不报错 | evaluate() 吞掉了异常 | 至少打印异常信息，或返回 penalty value |
-| ResourceContext 在内层不生效 | 外层没传 | 在 evaluate() 中显式传递 resource_context |
+- 父子均为完整标准 Case，且可以独立 build/run；
+- 父 Case 只调用 `case_runtime.invoke()`；
+- 子输入是轻量 `inputs` 或 `DataRef`，不是父对象内部状态；
+- 子资源来自 `ChildResourceGrant`，预算来自 `BudgetHandle`；
+- 长运行逻辑设置 checkpoint；
+- 调用方检查 `CaseRunResult.ok` 并保留失败信封；
+- Artifact 通过命名引用返回；
+- Project Manifest 保存完整版本化结果信封。

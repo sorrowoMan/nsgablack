@@ -1,15 +1,20 @@
 ﻿# EXAMPLES_INDEX (Redirect)
 
-示例索引很容易和“权威示例/事实标准”重复维护，因此本仓库把示例入口收敛为：
+示例索引收敛到正式 Project / Case / Scaffold 口径。
 
-- 权威示例（事实标准）：`docs/AUTHORITATIVE_EXAMPLES.md`
-- 示例目录：`examples/README.md`
-- 组件到示例映射：`docs/COMPONENT_EXAMPLES_INDEX.md`
+权威入口：
 
-你也可以用 Catalog 搜索示例相关组件：
+- `docs/project/AUTHORITATIVE_EXAMPLES.md`
+- `examples/README.md`
+- `examples/cases/README.md`
+- `docs/indexes/COMPONENT_EXAMPLES_INDEX.md`
+
+用 Catalog 查组件与示例线索：
 
 ```powershell
-python -m nsgablack catalog search plugin
-python -m nsgablack catalog search plugin
-python -m nsgablack catalog search vns
+python -m nsgablack catalog search example --profile default
+python -m nsgablack catalog search plugin --profile default
+python -m nsgablack catalog search vns --profile framework-core
 ```
+
+旧 `examples/_misc_examples/` 只作为 compatibility material，不作为新增机制的权威入口。

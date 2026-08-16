@@ -1,4 +1,4 @@
-"""MIGRATED to examples/cases/ ¡ª see scaffold case for maintained version."""
+ï»¿"""MIGRATED to examples/cases/ - see scaffold case for maintained version."""
 """Single-trajectory adaptive search demo."""
 
 from __future__ import annotations
@@ -31,9 +31,9 @@ class SphereProblem(BlackBoxProblem):
             bounds={f"x{i}": (low, high) for i in range(dimension)},
         )
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        return float(np.sum(x**2))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        return float(np.sum(candidate**2))
 
 
 def build_solver():
@@ -84,4 +84,5 @@ if __name__ == "__main__":
         print("status:", result.get("status"), "steps:", result.get("steps"))
         print("best_objective:", getattr(solver, "best_objective", None))
         print("sta_sigma:", getattr(solver, "sta_sigma", None))
+
 

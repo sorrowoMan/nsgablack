@@ -32,6 +32,8 @@
 | `DECOUPLING_PROBLEM.md` | Problem / evaluation projection | `../standard_scaffold_tutorial/02_component_configuration.md` 和 `../standard_scaffold_tutorial/05_cross_framework_coordination.md` |
 | `DECOUPLING_BIAS.md` | Bias / soft guidance | `../standard_scaffold_tutorial/02_component_configuration.md` |
 | `DECOUPLING_CAPABILITIES.md` | Plugin / capability / wiring | `../standard_scaffold_tutorial/03_orchestration_language.md` 和 `../standard_scaffold_tutorial/04_validation_catalog_and_evolution.md` |
+| `MULTI_STRATEGY_COOPERATION.md` | Case 内多策略 / Project 级多 Case 协作 | `../standard_scaffold_tutorial/03_orchestration_language.md` 和 `../architecture/SOLVER_ORCHESTRATION.md` |
+| `ALGORITHM_DECOMPOSITION_HANDS_ON.md` | 从真实问题到标准 scaffold 的手把手接入节奏 | `../standard_scaffold_tutorial/01_create_and_run.md` |
 | `PRODUCTION_SCHEDULING_WALKTHROUGH.md` | 早期端到端案例说明 | 适合作为“为什么先 pipeline、再 bias、再 adapter”的叙事例子 |
 
 ## 3. 常见问题应该看哪里

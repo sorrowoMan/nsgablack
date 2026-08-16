@@ -94,9 +94,9 @@ class NestedOuterProblem(BlackBoxProblem):
     def __init__(self) -> None:
         super().__init__(name="nested_three_layer", dimension=1, bounds={"x0": (-2.0, 2.0)})
 
-    def evaluate(self, x):
+    def evaluate(self, candidate):
         # Fallback only. Problem inner runtime evaluator should bypass this path.
-        x0 = float(np.asarray(x, dtype=float)[0])
+        x0 = float(np.asarray(candidate, dtype=float)[0])
         return float((x0 - 0.3) ** 2 + 100.0)
 
     def build_inner_task(self, x, eval_context):
@@ -114,13 +114,16 @@ class RandomSearchAdapter(AlgorithmAdapter):
         super().__init__(name="random_search")
         self.rng = np.random.default_rng(7)
 
-    def propose(self, solver, context):
+    def propose(self, control, context):
         _ = context
         low, high = -2.0, 2.0
         out = []
-        for _ in range(int(getattr(solver, "pop_size", 8))):
+        for _ in range(int(getattr(control, "pop_size", 8))):
             out.append(np.array([float(self.rng.uniform(low, high))], dtype=float))
         return out
+
+    def update(self, control, candidates, feedback, context):
+        _ = (control, candidates, feedback, context)
 
 
 def build_solver() -> ComposableSolver:

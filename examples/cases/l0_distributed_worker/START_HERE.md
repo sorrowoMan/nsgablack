@@ -1,37 +1,27 @@
 # START_HERE
 
-## 1) 这个 case 验证什么
+`l0_distributed_worker` ????? Project / Case / Scaffold / L0 substrate?
 
-`l0_distributed_worker` 验证 nsgablack 的 L0 worker/runtime path。
-
-- nsgablack 通过 worker-capable runtime boundary 调度 tiny black-box evaluations。
-- case 检查 task claim、result return 和 worker lifecycle behavior。
-- 当前 runtime path 不使用 mlblack。
-
-更多指标、结构和能力信号见 `README.md`。
-
-## 2) 验证 assembly
+## 1) ???????
 
 ```powershell
-python -m nsgablack project doctor --path . --build
-python run_solver.py --check
+python examples/cases/l0_distributed_worker/run_project.py --check
 ```
 
-## 3) 运行
+## 2) ??? Project ??
 
 ```powershell
-python run_solver.py
+python examples/cases/l0_distributed_worker/run_project.py
 ```
 
-## 4) 关键指标
+## 3) ??????
 
-| 指标 | 含义 |
-|---|---|
-| synthetic objective | 很小的标量目标，用于聚焦 worker behavior。 |
-| claimed tasks | Worker dequeue/claim 信号。 |
-| completed results | Worker result-return 信号。 |
-| heartbeat | Worker liveness 信号。 |
+- Project ???? Case ?????????????
+- Case ??????? `build_solver.py` / `run_solver.py` surface?
+- `ResourceContext` ? Project L0 grant???? Case ???
 
-## 5) 预期信号
+## 4) ????
 
-有效运行应该显示 tasks 被 claim 并 completed，且没有 duplicate processing；优化质量不是这个 case 的目的。
+- `README.md`????????
+- `cases/l0_distributed_worker/README.md`?? Case ????????
+- `cases/l0_distributed_worker/START_HERE.md`?Case ?????

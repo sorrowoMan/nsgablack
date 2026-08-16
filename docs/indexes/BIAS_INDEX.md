@@ -1,19 +1,23 @@
 ﻿# BIAS_INDEX
 
-This index lists bias components and how to find examples.
-
 Use Catalog search:
 
 ```powershell
-python -m nsgablack catalog search bias
-python -m nsgablack catalog search risk
-python -m nsgablack catalog search diversity
+python -m nsgablack catalog search bias --profile default
+python -m nsgablack catalog search risk --profile default
+python -m nsgablack catalog search diversity --profile default
 ```
 
-Recommended entry points:
-- `examples/bias_gallery_demo.py` (all biases by key)
-- `examples/risk_bias_demo.py`
-- `examples/structure_prior_mo_demo.py`
+Recommended formal Case entry points:
 
-For components -> examples mapping, see:
-- `docs/COMPONENT_EXAMPLES_INDEX.md`
+- `examples/cases/bias_gallery/`
+- `examples/cases/risk_bias/`
+- `examples/cases/structure_prior/`
+
+Compatibility scripts may exist under `examples/_misc_examples/`, but formal
+docs should prefer standard Case paths.
+
+For the current example policy, see:
+
+- `docs/indexes/COMPONENT_EXAMPLES_INDEX.md`
+- `docs/project/AUTHORITATIVE_EXAMPLES.md`

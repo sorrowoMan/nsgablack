@@ -32,11 +32,11 @@ class GridGoalRisk(BlackBoxProblem):
     def get_num_objectives(self):
         return 2
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        dist = float(np.linalg.norm(x - self.goal))
-        # risk: penalize proximity to the diagonal band (y ~= x)
-        risk = float(np.exp(-abs(x[1] - x[0])))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        dist = float(np.linalg.norm(candidate - self.goal))
+        # risk: penalize proximity to the diagonal band (y ~= candidate)
+        risk = float(np.exp(-abs(candidate[1] - candidate[0])))
         return np.array([dist, risk], dtype=float)
 
 

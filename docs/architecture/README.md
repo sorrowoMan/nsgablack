@@ -1,7 +1,20 @@
 # 架构概览
 
 这份文档回答一个问题：  
-**在 NSGABlack 中，谁负责什么，谁通过谁完成什么。**
+**在统一框架栈中，substrate 和语义层分别负责什么。**
+
+当前第一原则：
+
+```text
+Shared substrate:
+  Project / Case / Scaffold / L0 / Context / Snapshot / Artifact refs / Doctor / Catalog
+
+nsgablack semantic layer:
+  Solver / Adapter / Representation / Bias / Plugin / Pareto / objective-constraint optimization
+
+mlblack semantic layer:
+  Trainer / DataView / Spec / Codec / Head / LearningProblem / ML Artifact
+```
 
 ---
 
@@ -87,16 +100,42 @@
 - **Project Doctor**：结构与契约检查  
 - **Tests**：回归与行为保护  
 
+## 七、Project / Case / Scaffold / L0 substrate
+
+```text
+project_root/
+  project_config.py      # stages, groups, dependencies, Project L0 offer/policy/request
+  run_project.py         # formal project entry and ResourceContext grant
+  cases/
+    case_a/
+      build_solver.py    # canonical case assembly
+      run_solver.py      # case debug only
+      problem/
+      pipeline/
+      adapter/
+      plugins/
+      runtime/           # requirement/profile/audit, not global lease ownership
+```
+
+规则：
+
+- 多 solver、多 trainer、多混合 case 编排都属于 substrate。
+- `nsgablack` 和 `mlblack` case 都可以作为外层或内层。
+- Project L0 发放 `ResourceContext`；case 只声明需求和消费 grant。
+
 ---
 
-## 七、相关文档
+## 八、相关文档
 
-- `START_HERE.md`
-- `WORKFLOW_END_TO_END.md`
-- `docs/architecture/L0_TASK_RESOURCE_BACKEND_ARCHITECTURE.md`
-- `docs/architecture/L0_RESOURCE_ORCHESTRATION.md`
-- `docs/architecture/COPT_INTEGRATION.md`
-- `docs/architecture/SOLVER_ORCHESTRATION.md`
+- `docs/standard_scaffold_tutorial/README.md`：标准 Project / Case / Scaffold 教程。
+- `docs/architecture/SOLVER_ORCHESTRATION.md`：多 case 编排与资源契约。
+- `docs/architecture/L0_RESOURCE_ORCHESTRATION.md`：Project L0 与 ResourceContext 规则。
+- `docs/architecture/L0_TASK_RESOURCE_BACKEND_ARCHITECTURE.md`：task / resource / backend / transport 分层。
+- `docs/architecture/ADAPTER_CONTRACT_CARDS.md`：adapter 恢复等级与 context 契约。
+- `docs/architecture/module_structure.md`：当前代码目录职责速查。
+- `docs/guides/MULTI_STRATEGY_COOPERATION.md`：多策略与多 case 协作的使用层说明。
+- `docs/integrations/COPT_INTEGRATION.md`：数值求解器作为 inner case / provider / plugin 的集成边界。
+- `docs/archive/architecture/`：历史路线图、集成报告和叙事材料；不作为当前架构权威。
 
 ---
 
@@ -106,4 +145,4 @@
 
 外层使用启发式/多目标策略做全局搜索；  
 内层使用 COPT 等数值求解器做局部精修与可行性验证；  
-内层既可以作为 L4 评估 provider，也可以作为子求解器嵌入 Adapter 编排。
+内层应优先作为标准 case 或 L4 评估 provider 被外层 case 调用；不要把完整内层流程私下塞进 Adapter。

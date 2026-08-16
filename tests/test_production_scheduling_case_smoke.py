@@ -7,7 +7,15 @@ from pathlib import Path
 
 def test_production_scheduling_case_runs_quickly():
     repo_root = Path(__file__).resolve().parents[1]
-    script = repo_root / "examples" / "cases" / "production_scheduling" / "working_integrated_optimizer.py"
+    script = (
+        repo_root
+        / "examples"
+        / "cases"
+        / "production_scheduling"
+        / "cases"
+        / "production_scheduling"
+        / "run_solver.py"
+    )
     assert script.exists()
 
     # Keep the smoke test small and dependency-light:

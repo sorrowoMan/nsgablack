@@ -206,13 +206,13 @@ class SymbolicPoolProblem(BlackBoxProblem):
     def encode_mask(self, mask: np.ndarray | Sequence[bool]) -> np.ndarray:
         return np.asarray(mask, dtype=bool).astype(float)
 
-    def evaluate(self, x: np.ndarray) -> np.ndarray:
-        mask = self.decode_mask(x)
+    def evaluate(self, candidate: np.ndarray) -> np.ndarray:
+        mask = self.decode_mask(candidate)
         payload = self._evaluate_mask(mask)
         return np.array([float(payload["rmse_valid"]), float(np.sum(mask))], dtype=float)
 
-    def evaluate_constraints(self, x: np.ndarray) -> np.ndarray:
-        mask = self.decode_mask(x)
+    def evaluate_constraints(self, candidate: np.ndarray) -> np.ndarray:
+        mask = self.decode_mask(candidate)
         overflow = max(0.0, float(np.sum(mask)) - float(self.max_terms))
         return np.array([overflow], dtype=float)
 
@@ -390,9 +390,9 @@ class JointBeamAdapter(AlgorithmAdapter):
         self.violation_weight = float(violation_weight)
         self._beam_masks: list[np.ndarray] = []
 
-    def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         _ = context
-        problem = getattr(solver, "problem", None)
+        problem = getattr(control, "problem", None)
         if problem is None:
             return []
         if not self._beam_masks:
@@ -439,15 +439,9 @@ class JointBeamAdapter(AlgorithmAdapter):
             out = [np.asarray(problem.encode_mask(mask), dtype=float) for mask in self._beam_masks[: self.beam_width]]
         return out
 
-    def update(
-        self,
-        solver: Any,
-        candidates: Sequence[np.ndarray],
-        objectives: np.ndarray,
-        violations: np.ndarray,
-        context: Dict[str, Any],
-    ) -> None:
-        _ = solver
+    def update(self, control: Any, candidates: Sequence[np.ndarray], feedback, context: Dict[str, Any]) -> None:
+        objectives, violations = feedback
+        _ = control
         _ = context
         if candidates is None or len(candidates) == 0:
             return
@@ -462,7 +456,7 @@ class JointBeamAdapter(AlgorithmAdapter):
             score += self.objective1_weight * obj[:, 1]
         score += self.violation_weight * np.maximum(vio, 0.0)
         order = np.argsort(score)
-        problem = getattr(solver, "problem", None)
+        problem = getattr(control, "problem", None)
         if problem is None:
             return
         beam: list[np.ndarray] = []

@@ -1,29 +1,35 @@
-"""
-A dummy solver builder for Case B.
-"""
-from nsgablack.core import ComposableSolver
-from nsgablack.adapters import RandomSearchAdapter
-from nsgablack.representation import RepresentationPipeline, RealValueRepresentation
-from nsgablack.problems import DTLZ2
+"""Build the second independently runnable optimization Case."""
 
-def build_solver():
-    """Builds a simple solver for demonstration."""
-    print("Building solver for Case B...")
-    # This solver might depend on artifacts from Case A in a real scenario
-    problem = DTLZ2(n_var=12, n_obj=3)
-    
-    representation = RepresentationPipeline(
-        init_representation=RealValueRepresentation(problem.xl, problem.xu),
-        mutate_representation=None, # Not needed for random search
-    )
+from __future__ import annotations
 
-    adapter = RandomSearchAdapter(
-        n_points=50,
-        representation=representation
-    )
+import numpy as np
 
-    solver = ComposableSolver(
-        problem=problem,
-        adapter=adapter,
+from nsgablack.core.base import BlackBoxProblem
+from nsgablack.core.evolution_solver import EvolutionSolver
+
+
+class ShiftedSphereProblem(BlackBoxProblem):
+    def __init__(self) -> None:
+        super().__init__(
+            name="project_demo_shifted_sphere",
+            dimension=2,
+            bounds={"x0": (-5.0, 5.0), "x1": (-5.0, 5.0)},
+            objectives=["shifted_sum_squares"],
+        )
+
+    def evaluate(self, candidate):
+        values = np.asarray(candidate, dtype=float) - 1.0
+        return np.asarray([float(np.sum(values**2))])
+
+
+def build_solver(config=None, *, resource_context=None, component_overrides=None):
+    del config
+    overrides = dict(component_overrides or {})
+    solver = EvolutionSolver(
+        ShiftedSphereProblem(),
+        pop_size=int(overrides.get("pop_size", 8)),
+        max_generations=int(overrides.get("max_generations", 2)),
+        resource_context=resource_context,
     )
+    solver.enable_progress_log = False
     return solver

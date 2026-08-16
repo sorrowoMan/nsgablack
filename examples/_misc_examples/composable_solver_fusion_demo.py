@@ -38,9 +38,9 @@ class SimpleSphereProblem(BlackBoxProblem):
         self.low = low
         self.high = high
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        return float(np.sum(x ** 2))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        return float(np.sum(candidate ** 2))
 
 
 class RandomProbeAdapter(AlgorithmAdapter):
@@ -48,8 +48,11 @@ class RandomProbeAdapter(AlgorithmAdapter):
         super().__init__(name="random_probe")
         self.samples = samples
 
-    def propose(self, solver, context):
-        return [solver.init_candidate(context) for _ in range(self.samples)]
+    def propose(self, control, context):
+        return [control.init_candidate(context) for _ in range(self.samples)]
+
+    def update(self, control, candidates, feedback, context):
+        _ = (control, candidates, feedback, context)
 
 
 class LocalStepAdapter(AlgorithmAdapter):
@@ -57,10 +60,13 @@ class LocalStepAdapter(AlgorithmAdapter):
         super().__init__(name="local_step")
         self.samples = samples
 
-    def propose(self, solver, context):
-        if solver.best_x is None:
+    def propose(self, control, context):
+        if control.best_x is None:
             return []
-        return [solver.mutate_candidate(solver.best_x, context) for _ in range(self.samples)]
+        return [control.mutate_candidate(control.best_x, context) for _ in range(self.samples)]
+
+    def update(self, control, candidates, feedback, context):
+        _ = (control, candidates, feedback, context)
 
 
 class StepLoggerPlugin(Plugin):

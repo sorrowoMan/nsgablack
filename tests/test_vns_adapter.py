@@ -13,9 +13,9 @@ def test_vns_adapter_improves_sphere():
             super().__init__(name="sphere", dimension=dim, bounds={f"x{i}": (low, high) for i in range(dim)})
             self.low, self.high = low, high
 
-        def evaluate(self, x):
-            x = np.asarray(x, dtype=float)
-            return float(np.sum(x * x))
+        def evaluate(self, candidate):
+            candidate = np.asarray(candidate, dtype=float)
+            return float(np.sum(candidate * candidate))
 
     problem = Sphere()
     pipeline = RepresentationPipeline(

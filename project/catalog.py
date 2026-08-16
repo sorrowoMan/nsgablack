@@ -7,11 +7,11 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
 import importlib.util
-import sys
 
 from ..catalog import get_catalog
 from ..catalog.registry import Catalog, CatalogEntry, _parse_entries_from_toml
 from ..catalog.usage import enrich_context_contracts, enrich_usage_contracts
+from blackbase.project.runtime import project_import_context
 
 try:  # py>=3.11
     import tomllib as _toml
@@ -23,11 +23,13 @@ except Exception:  # pragma: no cover - import fallback
 
 
 def find_project_root(start: Path | str) -> Optional[Path]:
-    """Find nearest folder containing project_registry.py."""
+    """Find nearest legacy case root or unified Project root."""
     p = Path(start).resolve()
     if p.is_file():
         p = p.parent
     for cur in [p] + list(p.parents):
+        if (cur / "project_config.py").is_file() and (cur / "cases").is_dir():
+            return cur
         if (cur / "project_registry.py").is_file():
             return cur
     return None
@@ -118,22 +120,19 @@ def load_project_entries(project_root: Path | str) -> List[CatalogEntry]:
     entries: List[CatalogEntry] = []
 
     if registry_path.is_file():
-        # Ensure local project modules are importable.
-        if str(root) not in sys.path:
-            sys.path.insert(0, str(root))
+        with project_import_context(root):
+            mod = _load_registry_module(registry_path)
 
-        mod = _load_registry_module(registry_path)
-
-        raw_entries: Sequence = []
-        if hasattr(mod, "get_project_entries"):
-            raw_entries = mod.get_project_entries()
-        elif hasattr(mod, "PROJECT_CATALOG_ENTRIES"):
-            raw_entries = getattr(mod, "PROJECT_CATALOG_ENTRIES")
-        elif hasattr(mod, "CATALOG_ENTRIES"):
-            raw_entries = getattr(mod, "CATALOG_ENTRIES")
-        else:
-            raise AttributeError("project_registry.py must define get_project_entries() or PROJECT_CATALOG_ENTRIES")
-        entries.extend([_coerce_entry(item) for item in list(raw_entries)])
+            raw_entries: Sequence = []
+            if hasattr(mod, "get_project_entries"):
+                raw_entries = mod.get_project_entries()
+            elif hasattr(mod, "PROJECT_CATALOG_ENTRIES"):
+                raw_entries = getattr(mod, "PROJECT_CATALOG_ENTRIES")
+            elif hasattr(mod, "CATALOG_ENTRIES"):
+                raw_entries = getattr(mod, "CATALOG_ENTRIES")
+            else:
+                raise AttributeError("project_registry.py must define get_project_entries() or PROJECT_CATALOG_ENTRIES")
+            entries.extend([_coerce_entry(item) for item in list(raw_entries)])
 
     # Merge project-local TOML entries (UI registration target).
     entries.extend(_load_project_toml_entries(root))
@@ -142,24 +141,31 @@ def load_project_entries(project_root: Path | str) -> List[CatalogEntry]:
     return _normalize_project_entries(entries)
 
 
-def load_project_catalog(project_root: Path | str, *, include_global: bool = False) -> Catalog:
+def load_project_catalog(
+    project_root: Path | str,
+    *,
+    include_global: bool = False,
+    profile: str | None = None,
+) -> Catalog:
     """Build Catalog for a project; optionally merge global catalog."""
-    local_entries = enrich_context_contracts(
-        load_project_entries(project_root),
-        kinds=("plugin", "adapter", "bias", "representation"),
-    )
-    local_entries = enrich_usage_contracts(local_entries)
-    if not include_global:
-        return Catalog(local_entries)
+    root = Path(project_root).resolve()
+    with project_import_context(root):
+        local_entries = enrich_context_contracts(
+            load_project_entries(root),
+            kinds=("plugin", "adapter", "bias", "representation"),
+        )
+        local_entries = enrich_usage_contracts(local_entries)
+        if not include_global:
+            return Catalog(local_entries)
 
-    global_entries = get_catalog().list()
-    local_keys = {e.key for e in local_entries}
-    merged = list(local_entries) + [e for e in global_entries if e.key not in local_keys]
-    merged = enrich_context_contracts(
-        merged,
-        kinds=("plugin", "adapter", "bias", "representation"),
-    )
-    return Catalog(enrich_usage_contracts(merged))
+        global_entries = get_catalog(profile=profile).list()
+        local_keys = {e.key for e in local_entries}
+        merged = list(local_entries) + [e for e in global_entries if e.key not in local_keys]
+        merged = enrich_context_contracts(
+            merged,
+            kinds=("plugin", "adapter", "bias", "representation"),
+        )
+        return Catalog(enrich_usage_contracts(merged))
 
 
 def export_project_entries(entries: Iterable[CatalogEntry]) -> List[dict]:

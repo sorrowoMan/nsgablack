@@ -10,8 +10,8 @@ class _Sphere(BlackBoxProblem):
     def __init__(self) -> None:
         super().__init__(name="sphere", dimension=2)
 
-    def evaluate(self, x):
-        arr = np.asarray(x, dtype=float)
+    def evaluate(self, candidate):
+        arr = np.asarray(candidate, dtype=float)
         return float(np.sum(arr**2))
 
 

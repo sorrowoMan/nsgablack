@@ -96,9 +96,9 @@ try:
 
             return routes
 
-        def evaluate(self, x):
+        def evaluate(self, candidate):
             """目标函数：最小化总距离"""
-            routes = self.decode_solution(x)
+            routes = self.decode_solution(candidate)
 
             total_distance = 0
             for route in routes:
@@ -118,9 +118,9 @@ try:
 
             return total_distance
 
-        def evaluate_constraints(self, x):
+        def evaluate_constraints(self, candidate):
             """约束检查：容量约束"""
-            routes = self.decode_solution(x)
+            routes = self.decode_solution(candidate)
             constraints = []
 
             for route in routes:

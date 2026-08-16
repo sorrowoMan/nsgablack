@@ -80,11 +80,12 @@ python -m nsgablack catalog search plugin
 
 这样保证无论走原生 problem 评估还是 L4 provider，bias 都恰好 apply 一次，不会 double-bias。
 
-> 参考：`docs/development/DEVELOPER_CONVENTIONS.md` 第 3 节
+> 参考：`docs/guides/DECOUPLING_CAPABILITIES.md` 与
+> `docs/standard_scaffold_tutorial/04_validation_catalog_and_evolution.md`
 
 ## 6. 参考入口
 
-- 端到端流程：`WORKFLOW_END_TO_END.md`
+- 端到端流程：`docs/standard_scaffold_tutorial/01_create_and_run.md`
 - Catalog/Wiring Helpers：`docs/user_guide/catalog.md`
 - 解耦导读：`docs/guides/DECOUPLING_CAPABILITIES.md`
 

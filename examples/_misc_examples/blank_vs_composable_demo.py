@@ -41,9 +41,9 @@ class SimpleSphereProblem(BlackBoxProblem):
         self.low = low
         self.high = high
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        return float(np.sum(x ** 2))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        return float(np.sum(candidate ** 2))
 
 
 class GreedyStepPlugin(Plugin):
@@ -82,17 +82,18 @@ class GreedyAdapter(AlgorithmAdapter):
     def __init__(self):
         super().__init__(name="greedy_adapter")
 
-    def propose(self, solver, context):
-        if solver.best_x is None:
-            return [solver.init_candidate(context)]
-        return [solver.mutate_candidate(solver.best_x, context)]
+    def propose(self, control, context):
+        if control.best_x is None:
+            return [control.init_candidate(context)]
+        return [control.mutate_candidate(control.best_x, context)]
 
-    def update(self, solver, candidates, objectives, violations, context):
+    def update(self, control, candidates, feedback, context):
+        objectives, violations = feedback
         obj = objectives[0]
         score = float(obj[0]) if np.asarray(obj).size > 0 else float(obj)
-        if solver.best_objective is None or score < solver.best_objective:
-            solver.best_objective = score
-            solver.best_x = np.asarray(candidates[0])
+        if control.best_objective is None or score < control.best_objective:
+            control.best_objective = score
+            control.best_x = np.asarray(candidates[0])
 
 
 def build_pipeline(problem):

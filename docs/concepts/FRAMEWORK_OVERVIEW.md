@@ -15,7 +15,8 @@
 
 1) 手把手落地一个真实问题（入口主线）
 
-- `WORKFLOW_END_TO_END.md`
+- `docs/standard_scaffold_tutorial/README.md`
+- `docs/standard_scaffold_tutorial/01_create_and_run.md`
 
 2) 解耦对象导读（你会越用越依赖）
 
@@ -26,4 +27,4 @@
 
    3.核心边界（哪些算核心承诺，哪些可变）
 
-- `docs/CORE_STABILITY.md`
+- `docs/project/CORE_STABILITY.md`

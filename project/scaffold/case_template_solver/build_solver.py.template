@@ -1,0 +1,14 @@
+"""Canonical solver case assembly entry."""
+
+from .pipeline import build_pipeline
+
+
+def build_solver(config=None, *, resource_context=None, component_overrides=None):
+    """Assemble and return one solver case."""
+
+    pipeline = build_pipeline(
+        resource_context=resource_context,
+        component_overrides=component_overrides,
+    )
+    del config, pipeline
+    raise NotImplementedError("TODO: implement build_solver for solver case")

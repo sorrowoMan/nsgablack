@@ -18,8 +18,8 @@ class ExampleProblem(BlackBoxProblem):
             objectives=["sphere", "l1"],
         )
 
-    def evaluate(self, x: np.ndarray) -> np.ndarray:
-        arr = np.asarray(x, dtype=float).reshape(-1)
+    def evaluate(self, candidate: np.ndarray) -> np.ndarray:
+        arr = np.asarray(candidate, dtype=float).reshape(-1)
         f1 = float(np.sum(arr ** 2))
         f2 = float(np.sum(np.abs(arr)))
         return np.array([f1, f2], dtype=float)
@@ -61,7 +61,7 @@ class ExampleProblem(BlackBoxProblem):
             return cp.asnumpy(out)
         raise ValueError(f"Unsupported GPU backend: {backend}")
 
-    def evaluate_constraints(self, x: np.ndarray) -> np.ndarray:
+    def evaluate_constraints(self, candidate: np.ndarray) -> np.ndarray:
         # No hard constraints in this minimal example.
         return np.zeros(0, dtype=float)
 

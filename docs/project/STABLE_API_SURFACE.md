@@ -1,8 +1,8 @@
-# STABLE_API_SURFACE（稳定入口清单）
+﻿# STABLE_API_SURFACE（稳定入口清单）
 
 本文件把“对外可依赖的稳定入口”收敛成一页，配合：
 - `docs/project/API_STABILITY_POLICY.md`
-- `docs/CORE_STABILITY.md`
+- `docs/project/CORE_STABILITY.md`
 - `catalog/registry.py`
 
 ## 1) 最推荐入口（Discoverability）

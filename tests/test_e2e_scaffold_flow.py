@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 from nsgablack.catalog.quick_add import build_entry_payload, upsert_catalog_entry
-from nsgablack.project import init_project, load_project_catalog
+from nsgablack.project import add_case, init_project, load_project_catalog
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -20,8 +20,15 @@ def _subprocess_env():
     return env
 
 
+def _init_case(path):
+    project_root = init_project(path)
+    case_root = add_case("e2e_case", "solver", project_root=project_root)
+    (case_root / "catalog" / "entries").mkdir(parents=True, exist_ok=True)
+    return case_root
+
+
 def test_e2e_scaffold_register_search_build_run_doctor(tmp_path):
-    root = init_project(tmp_path / "e2e_project")
+    root = _init_case(tmp_path / "e2e_project")
 
     # 1) write a minimal component
     (root / "bias" / "flow_bias.py").write_text(
@@ -56,6 +63,17 @@ def test_e2e_scaffold_register_search_build_run_doctor(tmp_path):
         context_notes=("e2e flow bias",),
     )
     upsert_catalog_entry(root / "catalog" / "entries.toml", payload, replace=True)
+
+    (root / "build_solver.py").write_text(
+        "class Solver:\n"
+        "    def run(self, return_dict=False):\n"
+        "        del return_dict\n"
+        "        return {'status': 'ok'}\n\n"
+        "def build_solver(config=None, *, resource_context=None, component_overrides=None):\n"
+        "    del config, resource_context, component_overrides\n"
+        "    return Solver()\n",
+        encoding="utf-8",
+    )
 
     # 3) catalog search (project scope)
     project_catalog = load_project_catalog(root, include_global=False)
@@ -101,7 +119,7 @@ def test_e2e_scaffold_register_search_build_run_doctor(tmp_path):
 
 
 def test_project_catalog_can_load_split_kind_toml(tmp_path):
-    root = init_project(tmp_path / "split_project")
+    root = _init_case(tmp_path / "split_project")
     payload = build_entry_payload(
         key="project.bias.split_bias",
         title="SplitBias",

@@ -14,7 +14,7 @@ UI 变更记录见：`docs/changelog/RUN_INSPECTOR_CHANGELOG.md`（每次界面�
 ## 1. 启动方式
 
 ```bash
-python utils/viz/visualizer_tk.py --entry examples/dynamic_multi_strategy_demo.py:build_solver
+python -m nsgablack run_inspector --entry examples/cases/dynamic_strategy/cases/dynamic_strategy/build_solver.py:build_solver
 ```
 
 - `--entry` 指向你的 `build_solver()` 函数。
@@ -242,7 +242,7 @@ Run Inspector 不是“好看 UI”，而是：
 
 建议按下面顺序看，避免“只会点 UI，不理解结构”：
 
-1. `docs/user_guide/DEPTH_BREADTH_WORKFLOW.md`
+1. `docs/user_guide/DEPTH_BREADTH_PATTERNS.md`
    - 先建立框架总图：深度（嵌套层级）+ 广度（多策略协同）。
 2. `docs/user_guide/INNER_SOLVER_BACKENDS.md`
    - 再理解内层编排：`problem.inner_runtime_evaluator` / `ContractBridgePlugin` / `TimeoutBudgetPlugin`。
@@ -250,7 +250,7 @@ Run Inspector 不是“好看 UI”，而是：
    - 再看数值求解：`NewtonSolverProviderPlugin` / `BroydenSolverProviderPlugin`。
 4. `docs/user_guide/REDIS_CONTEXT_BACKEND.md`
    - 理解 context 后端切换：memory / redis、TTL、容器工作流与常见错误。
-5. `examples/nested_three_layer_demo.py` + `examples/nested_three_layer_demo.md`
-   - 最后跑通三层示例（L1 -> L2 -> L3，bridge 直写回 L1）。
+5. `docs/standard_scaffold_tutorial/07_nested_orchestration_standard.md`
+   - 最后理解标准 Project / Case / Scaffold 下的嵌套评估。
 6. 回到本页（Run Inspector）
    - 用 Catalog/Context/Doctor 验证你的装配是否与契约一致。

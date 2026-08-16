@@ -1,4 +1,4 @@
-"""MIGRATED to examples/cases/ �� see scaffold case for maintained version."""
+﻿"""MIGRATED to examples/cases/ - see scaffold case for maintained version."""
 from __future__ import annotations
 
 import numpy as np
@@ -16,16 +16,16 @@ class NoisyConstrainedProblem:
         self.dimension = int(dimension)
         self.bounds = [(-2.0, 2.0)] * self.dimension
 
-    def evaluate(self, x):
-        x = np.asarray(x, dtype=float)
-        base = float(np.sum(x * x))
+    def evaluate(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        base = float(np.sum(candidate * candidate))
         noise = float(np.random.normal(0.0, 0.2))
         return base + noise
 
-    def evaluate_constraints(self, x):
-        x = np.asarray(x, dtype=float)
-        # constraint: sum(x) <= 1
-        g = float(np.sum(x) - 1.0)
+    def evaluate_constraints(self, candidate):
+        candidate = np.asarray(candidate, dtype=float)
+        # constraint: sum(candidate) <= 1
+        g = float(np.sum(candidate) - 1.0)
         return np.array([g], dtype=float)
 
 
@@ -56,12 +56,13 @@ def build_solver():
 def main():
     solver = build_solver()
     result = solver.run(max_generations=40, seed=7)
-    print("运行状�?", result.get("status"))
+    print("杩愯鐘舵€?", result.get("status"))
     print("best_objective:", result.get("best_objective"))
 
 
 if __name__ == "__main__":
     main()
+
 
 
 
