@@ -86,6 +86,8 @@ class ComposableSolver(SolverBase):
         self.adapter: Optional[AlgorithmAdapter] = adapter
         self.best_x: Optional[np.ndarray] = None
         self.best_objective: Optional[float] = None
+        self.best_objectives: Optional[np.ndarray] = None
+        self.best_constraint_violation: Optional[float] = None
         self.last_step_summary: Dict[str, Any] = {}
         # Optional scalarizer for multi-objective summaries (best_x/summary only).
         # Signature: fn(objectives: np.ndarray, violations: np.ndarray, idx: int) -> float
@@ -267,6 +269,17 @@ class ComposableSolver(SolverBase):
         if self.best_objective is None or best_obj < self.best_objective:
             self.best_objective = best_obj
             self.best_x = np.asarray(population[best_idx])
+            self.best_objectives = np.asarray(objectives[best_idx], dtype=float).reshape(-1)
+            violation_values = (
+                np.asarray(violations, dtype=float).reshape(-1)
+                if violations is not None
+                else np.zeros((len(objectives),), dtype=float)
+            )
+            self.best_constraint_violation = (
+                float(violation_values[best_idx])
+                if violation_values.shape[0] > best_idx
+                else None
+            )
 
     def _summarize_step(self, objectives: np.ndarray, violations: np.ndarray) -> Dict[str, Any]:
         if objectives is None or len(objectives) == 0:

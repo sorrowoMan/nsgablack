@@ -119,6 +119,7 @@ def run_solver_loop(
     solver.start_time = time.time()
     result: dict[str, Any] = {}
     steps_executed = 0
+    termination_reason = "step_limit"
 
     try:
         _checkpoint_case_runtime(solver)
@@ -156,12 +157,18 @@ def run_solver_loop(
                 solver.generation = step_index
             generation = int(step_index)
             if bool(getattr(solver, "stop_requested", False)):
+                termination_reason = str(
+                    getattr(solver, "stop_reason", None) or "user_stop"
+                )
                 break
             _call_optional(solver, "_apply_pending_plugin_order_updates")
             control = getattr(solver, "_apply_runtime_control_slot", None)
             if callable(control):
                 control("gen_start")
             if bool(getattr(solver, "stop_requested", False)):
+                termination_reason = str(
+                    getattr(solver, "stop_reason", None) or "user_stop"
+                )
                 break
             _call_optional(solver.plugin_manager, "on_generation_start", generation)
             _checkpoint_case_runtime(solver)
@@ -174,8 +181,12 @@ def run_solver_loop(
             if callable(control):
                 control("gen_end")
             if callback is not None and bool(callback(solver)):
+                termination_reason = "callback"
                 break
             if bool(getattr(solver, "stop_requested", False)):
+                termination_reason = str(
+                    getattr(solver, "stop_reason", None) or "user_stop"
+                )
                 break
     except BaseException as exc:
         dispatcher = getattr(solver, "_dispatch_error_once", None)
@@ -209,6 +220,7 @@ def run_solver_loop(
     result.update(
         {
             "status": "ok" if not bool(getattr(solver, "stop_requested", False)) else "stopped",
+            "termination_reason": termination_reason,
             "generation": int(total_steps),
             "steps": int(total_steps),
             "steps_executed": int(steps_executed),

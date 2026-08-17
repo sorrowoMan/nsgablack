@@ -787,15 +787,29 @@ class EvolutionSolver(ComposableSolver):
         self.history.append((int(self.generation), avg_objectives))
 
     def _refresh_best(self) -> None:
-        best_x, best_f = self._get_best_solution()
-        if best_x is None:
+        best_index, best_f = self._get_best_index()
+        if best_index is None or self.population is None or self.objectives is None:
             return
-        self.best_x = np.asarray(best_x, dtype=float)
+        self.best_x = np.asarray(self.population[best_index], dtype=float)
+        self.best_objectives = np.asarray(
+            self.objectives[best_index], dtype=float
+        ).reshape(-1)
+        violations = np.asarray(
+            self.constraint_violations
+            if self.constraint_violations is not None
+            else np.zeros((len(self.objectives),), dtype=float),
+            dtype=float,
+        ).reshape(-1)
+        self.best_constraint_violation = (
+            float(violations[best_index])
+            if violations.shape[0] > best_index
+            else None
+        )
         if best_f is not None:
             self.best_f = float(best_f)
             self.best_objective = float(best_f)
 
-    def _get_best_solution(self) -> Tuple[Optional[np.ndarray], Optional[float]]:
+    def _get_best_index(self) -> Tuple[Optional[int], Optional[float]]:
         if self.population is None or self.objectives is None:
             return None, None
         pop = np.asarray(self.population, dtype=float)
@@ -822,7 +836,13 @@ class EvolutionSolver(ComposableSolver):
         else:
             score = np.sum(obj, axis=1) + (1e6 * vio)
         idx = int(np.argmin(score))
-        return pop[idx], float(score[idx])
+        return idx, float(score[idx])
+
+    def _get_best_solution(self) -> Tuple[Optional[np.ndarray], Optional[float]]:
+        index, score = self._get_best_index()
+        if index is None or self.population is None:
+            return None, None
+        return np.asarray(self.population, dtype=float)[index], score
 
     def _build_run_result(self, base_result: Dict[str, Any]) -> Dict[str, Any]:
         out = dict(base_result)
@@ -831,6 +851,28 @@ class EvolutionSolver(ComposableSolver):
         out["generation"] = int(getattr(self, "generation", 0))
         out["evaluation_count"] = int(getattr(self, "evaluation_count", 0))
         out["elapsed_sec"] = float(out.get("elapsed_sec", 0.0))
+        raw_status = str(out.get("status", "") or "").strip().lower()
+        violations = np.asarray(
+            self.constraint_violations
+            if self.constraint_violations is not None
+            else (),
+            dtype=float,
+        ).reshape(-1)
+        if violations.size:
+            out["feasibility"] = (
+                "feasible" if bool(np.any(violations <= 0.0)) else "infeasible"
+            )
+        else:
+            out["feasibility"] = "unknown"
+        if raw_status == "stopped":
+            out["solve_status"] = "stopped"
+        elif self.best_x is not None and out["feasibility"] == "feasible":
+            out["solve_status"] = "feasible"
+        elif out["feasibility"] == "infeasible":
+            out["solve_status"] = "infeasible"
+        else:
+            out["solve_status"] = "no_solution"
+        out["quality"] = {"approximate": True}
         self.run_count += 1
         return out
 

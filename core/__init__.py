@@ -63,6 +63,8 @@ from .solver_manager import (
     SQLiteMessageQueue,
     SolverManager,
 )
+from .solver_result import DEFAULT_CASE_RESULT_INLINE_MAX_BYTES, build_solver_result
+from blackbase.types import SolveQuality, SolverResult
 from .resources import (
     ArtifactBackend,
     DataTransportBackend,
@@ -180,6 +182,10 @@ __all__ = [
     "WorkerRegistryBackend",
     "build_local_worker_descriptor",
     "detect_local_resource_offer",
+    "SolverResult",
+    "SolveQuality",
+    "DEFAULT_CASE_RESULT_INLINE_MAX_BYTES",
+    "build_solver_result",
     "OptimizationContext",
     "has_bias_module",
     "has_representation_module",

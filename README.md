@@ -82,6 +82,16 @@ outer Project
 
 The outer Case does not import inner private implementation details. It passes candidates, component overrides, budget, artifact refs, and `ResourceContext`; the inner Case returns objectives, violations, metrics, artifact refs, and audit payload.
 
+At the standard Case boundary, Solver outputs are encoded as a versioned
+`SolverResult`; direct `Solver.run()` return conventions remain unchanged.
+The result boundary never scalarizes a population to invent a best solution:
+best solution/objectives/violation must be declared by the Solver's own
+algorithm semantics.  Execution status and solve status remain separate, and
+oversized Pareto fronts are published through the Project artifact authority
+instead of being copied into the Case envelope.
+The same inline-size policy applies to large best solutions, which are returned
+as real `best_solution_ref` artifacts rather than oversized inline payloads.
+
 This also covers multi-solver and multi-trainer projects: put each runnable unit in its own Case and let the Project substrate coordinate order, parallelism, and resources.
 
 ## L0 Resource Model

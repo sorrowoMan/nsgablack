@@ -354,6 +354,13 @@ class SolverBase:
         if callable(checkpoint):
             checkpoint()
 
+    def export_case_result(self, raw_output: Any):
+        """Project a completed Solver run into the shared Case result codec."""
+
+        from .solver_result import build_solver_result
+
+        return build_solver_result(self, raw_output)
+
     def get_resource_context_items(self) -> Dict[str, Any]:
         payload = self.resource_context.as_dict()
         return {
