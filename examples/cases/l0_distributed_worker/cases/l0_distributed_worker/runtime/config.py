@@ -8,7 +8,7 @@ from dataclasses import field
 from typing import Any, Dict, Mapping, Sequence
 
 from nsgablack.core import GpuBackend, ProcessPoolBackend, ThreadPoolBackend
-from nsgablack.core.resources import ResourceRequirement
+from blackbase.resources import ResourceRequirement
 
 
 @dataclass(frozen=True)
@@ -219,17 +219,12 @@ def apply_runtime_profile(
 
 
 def build_l0_worker_backend(namespace: str = "nsgablack_dist"):
-
     import os
 
-    from nsgablack.core.resources import FilesystemArtifactBackend, PostgresL0RuntimeBackend
+    from blackbase.resources import RedisTaskRuntimeBackend
 
-    pg_url = os.environ.get(
-        "NSGABLACK_L0_PG_URL",
-        "postgresql://postgres:20041123@localhost:5432/nsgablack",
-    )
-    return PostgresL0RuntimeBackend(
-        pg_url=pg_url,
+    redis_url = os.environ.get("BLACKBASE_TASK_REDIS_URL", "redis://127.0.0.1:6379/0")
+    return RedisTaskRuntimeBackend(
+        redis_url=redis_url,
         namespace=str(namespace),
-        artifact_backend=FilesystemArtifactBackend(base_dir="runs/l0_artifacts"),
     )

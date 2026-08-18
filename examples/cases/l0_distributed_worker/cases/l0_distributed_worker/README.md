@@ -42,7 +42,7 @@
 | `runtime/` | L0 distributed runtime pieces。 |
 | `evaluation/` | Worker execution 的 evaluation boundary。 |
 | `plugins/` | Governance、ops、observability plugin surfaces。 |
-| `catalog/entries.toml` | Case-local catalog entries。 |
+| `catalog/entries/<kind>.toml` | Case-local catalog entries。 |
 
 ## 运行
 

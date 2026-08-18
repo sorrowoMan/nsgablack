@@ -1,4 +1,4 @@
-﻿"""Formal L1/L2 nested assembly for event-level supply adjustment.
+"""Formal L1/L2 nested assembly for event-level supply adjustment.
 
 Outer layer:
 - decision variables are shift days for each non-zero supply event (day>0)
@@ -34,7 +34,7 @@ ensure_nsgablack_importable(Path(__file__))
 
 from nsgablack.core.evolution_solver import EvolutionSolver  # noqa: E402
 from nsgablack.core.nested_solver import InnerRuntimeConfig, TaskInnerRuntimeEvaluator  # noqa: E402
-from nsgablack.core.resources import ResourceRequirement  # noqa: E402
+from blackbase.resources import ResourceRequirement  # noqa: E402
 from nsgablack.plugins import TimeoutBudgetConfig, TimeoutBudgetPlugin  # noqa: E402
 from nsgablack.utils.parallel import with_parallel_evaluation  # noqa: E402
 from nsgablack.utils.wiring import attach_default_observability_plugins  # noqa: E402
@@ -391,7 +391,10 @@ def _build_solver_from_args(args, *, resource_context=None):
             else None
         ),
     }
-    solver.objective_scalarizer = _supply_adjustment_score
+    solver.set_incumbent_scalarizer(
+        _supply_adjustment_score,
+        policy_id="supply_adjustment.weighted_sum/v1",
+    )
 
     if not bool(args.check):
         attach_default_observability_plugins(
@@ -421,18 +424,14 @@ def _build_solver_from_args(args, *, resource_context=None):
     return solver
 
 
-def _supply_adjustment_score(objectives: np.ndarray, violations: np.ndarray, idx: int) -> float:
-    obj = np.asarray(objectives, dtype=float)
-    if obj.ndim == 1:
-        obj = obj.reshape(1, -1)
-    row = obj[int(idx)].reshape(-1)
-    vio = 0.0
-    try:
-        vio_arr = np.asarray(violations, dtype=float).reshape(-1)
-        if vio_arr.size > int(idx):
-            vio = max(0.0, float(vio_arr[int(idx)]))
-    except Exception:
-        vio = 0.0
+def _supply_adjustment_score(
+    objective_row: np.ndarray,
+    violation: float,
+    context: dict,
+) -> float:
+    del context
+    row = np.asarray(objective_row, dtype=float).reshape(-1)
+    vio = max(0.0, float(violation))
     output_term = float(row[0]) if row.size > 0 else 0.0
     moved_events = float(row[1]) if row.size > 1 else 0.0
     moved_days = float(row[2]) if row.size > 2 else 0.0

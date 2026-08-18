@@ -77,7 +77,7 @@ Synthetic dataset 上的代表性 fixed-point comparison：
 | `problem/config.py` | Problem registry 和 dataset parameters。 |
 | `pipeline/config.py` | 二维 calibration representation pipeline。 |
 | `solver/config.py` | 用于 example validation 的 smoke-sized solver profile。 |
-| `catalog/entries.toml` | Case-local project catalog entries。 |
+| `catalog/entries/<kind>.toml` | Case-local project catalog entries。 |
 
 ## 运行和验证
 

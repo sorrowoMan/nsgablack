@@ -12,7 +12,7 @@
 - `build_solver.py`：只组装并返回一个外层 Solver；
 - `run_solver.py`：解析 CLI、执行和打印结果；
 - `run_project.py`：由 Project L0 发放资源后启动 Case；
-- `plugins/domain_backends/mlblack_symbolic_consensus_backend.py`：跨框架 provider surface。
+- `mlblack.integrations.nsgablack_symbolic_backend`：跨框架 provider surface。
 
 `--check` 只装配，不启动优化，也不会创建运行日志。正常运行会先打印脱敏的 `[resource-context]`，便于核对实际 grant。
 

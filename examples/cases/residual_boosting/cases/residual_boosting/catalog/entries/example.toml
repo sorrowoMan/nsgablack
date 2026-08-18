@@ -1,0 +1,20 @@
+# Canonical Case example catalog shard.
+
+[[entry]]
+key = "project.solver.build"
+title = "build_solver"
+kind = "example"
+import_path = "build_solver:build_solver"
+tags = ["project", "example", "solver", "residual", "boosting", "serial-trainer", "mlblack"]
+summary = "Runnable residual boosting assembly: nsgablack optimizes recipe variables around an mlblack serial base/residual trainer."
+companions = ["project.problem.example", "project.pipeline.default"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["Assembly entrypoint; runtime context contract is delegated to registered nsgablack components while mlblack artifacts remain inside evaluation."]
+use_when = ["Validate nsgablack + mlblack residual boosting orchestration from a standard scaffold."]
+minimal_wiring = ["python ../../run_project.py --check", "python ../../run_project.py --build-check --check"]
+required_companions = ["project.problem.example", "project.pipeline.default"]
+config_keys = ["n_samples", "valid_ratio", "seed", "pop_size", "max_generations", "mutation_sigma"]
+example_entry = "examples.cases.residual_boosting.cases.residual_boosting.build_solver:build_solver"

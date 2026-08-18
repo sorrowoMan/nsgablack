@@ -1,6 +1,6 @@
 ﻿# COMPONENT_REGISTRATION
 
-This case provides `project_registry.py` with local Catalog entries.
+This case declares local Catalog entries in `catalog/entries/<kind>.toml` shards.
 
 Rules:
 - register solver entry (`build_solver:build_solver`)

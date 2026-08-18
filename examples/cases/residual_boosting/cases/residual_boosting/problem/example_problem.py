@@ -8,7 +8,7 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from mlblack.core import ArtifactRef, BlankTrainer, CompletionPolicy, SerialTrainer, StageSpec, TrainerResult, UnknownState
+from mlblack.core import BlankTrainer, TrainerResult, UnknownState
 from mlblack.models import LinearPointModel, PredictionIOContract, PredictionIntegrationComponent
 from mlblack.pipeline.data_views import NumericDataView, train_valid_split
 from mlblack.pipeline.model_conditioning import ModelConditionedTargetComponent, ModelConditionedTargetConfig
@@ -69,18 +69,7 @@ class ClosedFormLinearTrainer(BlankTrainer):
         self.best_state = state
         self.best_feedback = feedback
         self.best_score = feedback.scalar_score()
-        setattr(
-            self,
-            self.output_artifact,
-            ArtifactRef(
-                key=self.output_artifact,
-                uri="inline",
-                kind="inline",
-                backend="inline",
-                inline_value=model,
-                meta={"stage": self.run_name},
-            ),
-        )
+        setattr(self, self.output_artifact, model)
         self.history.append(
             {
                 "stage": self.run_name,
@@ -163,43 +152,26 @@ class ResidualBoostingProblem(BlackBoxProblem):
                 self.last_report = dict(report)
             return cached.copy()
         recipe = self.decode_recipe(np.asarray(candidate, dtype=float))
-        serial = SerialTrainer(
-            stages=[
-                StageSpec(
-                    name="base_linear",
-                    factory=lambda: ClosedFormLinearTrainer(
-                        data=self.data,
-                        l2=recipe.base_l2,
-                        run_name="base_linear",
-                        output_artifact="base_model",
-                    ),
-                    completion=CompletionPolicy(max_steps=1),
-                    output_artifacts=["base_model"],
-                    metadata={"mlblack.problem": "problem.supervised_regression"},
-                ),
-                StageSpec(
-                    name="residual_linear",
-                    factory=lambda: ClosedFormLinearTrainer(
-                        data=self.data,
-                        l2=recipe.residual_l2,
-                        run_name="residual_linear",
-                        output_artifact="residual_model",
-                        feature_mode=recipe.residual_feature_mode,
-                        target_mode="residual",
-                    ),
-                    completion=CompletionPolicy(max_steps=1),
-                    input_artifacts={"reference_model": "base_model"},
-                    output_artifacts=["residual_model"],
-                    metadata={"mlblack.pipeline": "pipeline.model_conditioned_target"},
-                ),
-            ],
-            run_name="mlblack_serial_residual_boosting",
-            resource_context={"orchestrator": "nsgablack", "case": "residual_boosting"},
+        base_trainer = ClosedFormLinearTrainer(
+            data=self.data,
+            l2=recipe.base_l2,
+            run_name="base_linear",
+            output_artifact="base_model",
         )
-        result = serial.fit(max_steps=2)
-        base_model = _resolve_artifact(serial, "base_model")
+        base_result = base_trainer.fit(max_steps=1)
+        base_model = base_result.best_model
+        residual_trainer = ClosedFormLinearTrainer(
+            data=self.data,
+            l2=recipe.residual_l2,
+            run_name="residual_linear",
+            output_artifact="residual_model",
+            feature_mode=recipe.residual_feature_mode,
+            target_mode="residual",
+        )
+        residual_trainer.set_reference_model(base_model)
+        residual_result = residual_trainer.fit(max_steps=1)
         residual_model = ResidualFeatureModel(
-            model=_resolve_artifact(serial, "residual_model"),
+            model=residual_result.best_model,
             raw_feature_names=self.data.effective_feature_names,
             mode=recipe.residual_feature_mode,
         )
@@ -224,8 +196,8 @@ class ResidualBoostingProblem(BlackBoxProblem):
             "recipe": recipe.__dict__,
             "valid_mse": valid_mse,
             "complexity": complexity,
-            "serial_stage_count": len(result.history),
-            "serial_stages": [row.get("stage_name") for row in result.history],
+            "component_stage_count": 2,
+            "component_stages": ["base_linear", "residual_linear"],
             "integrated_model": integrated.describe(),
         }
         self.last_report = report
@@ -294,13 +266,6 @@ def _residual_feature_matrix(
 
 def _state_from_model(model: LinearPointModel) -> UnknownState:
     return UnknownState(values=np.concatenate([[float(model.intercept)], np.asarray(model.weights, dtype=float).reshape(-1)]))
-
-
-def _resolve_artifact(serial: SerialTrainer, key: str) -> Any:
-    ref = serial.get_artifact(key)
-    if ref is None:
-        raise KeyError(f"missing serial trainer artifact: {key}")
-    return ref.resolve(getattr(serial, "snapshot_store", None))
 
 
 def _recipe_complexity(recipe: ResidualBoostingRecipe, residual_model: LinearPointModel) -> float:

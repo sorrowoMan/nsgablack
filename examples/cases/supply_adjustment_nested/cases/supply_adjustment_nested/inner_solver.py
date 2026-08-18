@@ -6,7 +6,7 @@ from typing import Mapping, Optional, Tuple
 
 import numpy as np
 
-from nsgablack.core.resources import ResourceRequirement
+from blackbase.resources import ResourceRequirement
 
 
 @dataclass(frozen=True)

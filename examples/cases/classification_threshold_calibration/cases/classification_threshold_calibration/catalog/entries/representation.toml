@@ -1,0 +1,23 @@
+# Canonical Case representation catalog shard.
+
+[[entry]]
+key = "project.pipeline.default"
+title = "build_pipeline"
+kind = "representation"
+import_path = "pipeline.example_pipeline:build_pipeline"
+tags = ["project", "example", "pipeline", "threshold", "temperature", "continuous"]
+summary = "Representation pipeline for the two classification calibration variables."
+companions = ["project.problem.example"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["Pipeline handles threshold/temperature initialization, mutation, and bound repair; no additional runtime context keys."]
+use_when = ["Need init/mutate/repair wiring for classification operating-point vectors."]
+minimal_wiring = [
+  "from pipeline.example_pipeline import build_pipeline",
+  "solver.set_representation_pipeline(build_pipeline())",
+]
+required_companions = ["project.problem.example"]
+config_keys = ["low", "high", "mutation_sigma"]
+example_entry = "examples.cases.classification_threshold_calibration.cases.classification_threshold_calibration.build_solver:build_solver"

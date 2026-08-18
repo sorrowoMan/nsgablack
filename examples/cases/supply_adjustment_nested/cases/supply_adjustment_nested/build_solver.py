@@ -24,5 +24,8 @@ from solver.assembly import build_solver as _build_solver  # noqa: E402
 
 
 def build_solver(argv: Optional[list] = None, *, resource_context=None, component_overrides=None):
-    del component_overrides
-    return _build_solver(argv, resource_context=resource_context)
+    solver = _build_solver(argv, resource_context=resource_context)
+    from nsgablack.project import apply_solver_component_overrides
+
+    apply_solver_component_overrides(solver, component_overrides)
+    return solver

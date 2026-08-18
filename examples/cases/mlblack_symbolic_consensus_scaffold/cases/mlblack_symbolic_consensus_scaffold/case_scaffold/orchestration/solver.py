@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from nsgablack.core.composable_solver import ComposableSolver
-from nsgablack.plugins.domain_backends.mlblack_symbolic_consensus_backend import MlblackSymbolicConsensusBackend
+from mlblack.integrations.nsgablack_symbolic_backend import MlblackSymbolicConsensusBackend
 
 from case_scaffold.bias.symbolic_outer_bias import build_symbolic_outer_bias_module
 from case_scaffold.orchestration.adapters import build_outer_adapter

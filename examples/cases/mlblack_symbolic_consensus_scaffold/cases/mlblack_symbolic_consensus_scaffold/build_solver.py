@@ -20,10 +20,12 @@ from case_scaffold.orchestration.solver import build_solver_from_args  # noqa: E
 
 
 def build_solver(argv: Optional[list[str]] = None, *, resource_context=None, component_overrides=None):
-    del component_overrides
     args = build_parser().parse_args(argv if argv is not None else [])
     if bool(args.check):
         args.no_logs = True
     solver = build_solver_from_args(args)
+    from nsgablack.project import apply_solver_component_overrides
+
+    apply_solver_component_overrides(solver, component_overrides)
     solver.set_resource_context(resource_context)
     return solver
