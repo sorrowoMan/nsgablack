@@ -1,39 +1,10 @@
 """CLI entry point for running a trainer through the canonical Case entry."""
 
-import argparse
-
-from blackbase.project import load_resource_context_from_env, print_resource_context_summary
-from .build_solver import build_solver
-from nsgablack.project.scaffold import print_solver_check
+from blackbase.project import run_standard_case_cli
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Run the trainer.")
-    parser.add_argument(
-        "--check",
-        action="store_true",
-        help="Build and validate assembly only; do not run.",
-    )
-    args = parser.parse_args(argv)
-
-    resource_context = load_resource_context_from_env("nsgablack")
-    trainer = build_solver(resource_context=resource_context)
-
-    if args.check:
-        print_solver_check(trainer)
-        return 0
-
-    print_resource_context_summary(resource_context)
-    fit_fn = getattr(trainer, "fit", None)
-    run_fn = getattr(trainer, "run", None)
-    if callable(fit_fn):
-        result = fit_fn()
-    elif callable(run_fn):
-        result = run_fn()
-    else:
-        result = trainer
-    print(result)
-    return 0
+    return run_standard_case_cli(__file__, framework="nsgablack", argv=argv)
 
 
 if __name__ == "__main__":

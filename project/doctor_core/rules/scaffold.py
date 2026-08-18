@@ -9,11 +9,11 @@ from ..model import DoctorDiagnostic
 
 
 def looks_like_scaffold_project(root: Path) -> bool:
-    """Detect both legacy single-solver and unified multi-case scaffold layouts."""
-    # Legacy: build_solver.py or project_registry.py at root
-    if (root / "project_registry.py").is_file() or (root / "build_solver.py").is_file():
+    """Detect a formal Project or Case scaffold."""
+    if (root / "build_solver.py").is_file() and (
+        (root / ".case").is_file() or root.parent.name == "cases"
+    ):
         return True
-    # Unified: cases/ directory with project_config.py
     if (root / "project_config.py").is_file() and (root / "cases").is_dir():
         return True
     return False
@@ -32,7 +32,7 @@ def check_structure(
             diags,
             "info",
             "structure-skip",
-            "Skip scaffold hard-checks (no project_registry.py/build_solver.py detected).",
+            "Skip scaffold hard-checks (no formal Project/Case scaffold detected).",
             root,
         )
         return
@@ -89,7 +89,6 @@ _CASE_MARKER_FILES = {
     "build_trainer.py",
     "run_solver.py",
     "run_trainer.py",
-    "project_registry.py",
 }
 _CASE_MARKER_DIRS = {
     "problem",

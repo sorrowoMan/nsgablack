@@ -28,23 +28,18 @@ def test_project_representation_pipeline_contracts_are_aggregated_and_linked(tmp
     pipeline_dir = root / "pipeline"
     pipeline_dir.mkdir(parents=True)
     (pipeline_dir / "__init__.py").write_text("", encoding="utf-8")
-    (root / "project_registry.py").write_text(
-        "\n".join(
-            [
-                "PROJECT_CATALOG_ENTRIES = [",
-                "    {",
-                "        'key': 'pipeline.contractual',",
-                "        'title': 'Contractual Pipeline',",
-                "        'kind': 'representation',",
-                "        'import_path': 'pipeline.example_pipeline:build_pipeline',",
-                "        'summary': 'Pipeline builder for contract aggregation tests.',",
-                "        'tags': ('project', 'pipeline'),",
-                "        'companions': (),",
-                "    }",
-                "]",
-                "",
-            ]
-        ),
+    (root / ".case").write_text("kind = solver\n", encoding="utf-8")
+    (root / "build_solver.py").write_text("def build_solver():\n    return None\n", encoding="utf-8")
+    (root / "catalog" / "entries").mkdir(parents=True)
+    (root / "catalog" / "entries" / "representation.toml").write_text(
+        """[[entry]]
+key = "pipeline.contractual"
+title = "Contractual Pipeline"
+kind = "representation"
+import_path = "pipeline.example_pipeline:build_pipeline"
+summary = "Pipeline builder for contract aggregation tests."
+tags = ["project", "pipeline"]
+""",
         encoding="utf-8",
     )
     (pipeline_dir / "example_pipeline.py").write_text(
@@ -236,23 +231,18 @@ def test_project_representation_pipeline_runtime_contracts_include_phase_relatio
     pipeline_dir = root / "phasepipe"
     pipeline_dir.mkdir(parents=True)
     (pipeline_dir / "__init__.py").write_text("", encoding="utf-8")
-    (root / "project_registry.py").write_text(
-        "\n".join(
-            [
-                "PROJECT_CATALOG_ENTRIES = [",
-                "    {",
-                "        'key': 'pipeline.phaseful',",
-                "        'title': 'Phaseful Pipeline',",
-                "        'kind': 'representation',",
-                "        'import_path': 'phasepipe.phase_pipeline:build_pipeline',",
-                "        'summary': 'Project pipeline with phase-aware dispatch mutator.',",
-                "        'tags': ('project', 'pipeline', 'phase'),",
-                "        'companions': (),",
-                "    }",
-                "]",
-                "",
-            ]
-        ),
+    (root / ".case").write_text("kind = solver\n", encoding="utf-8")
+    (root / "build_solver.py").write_text("def build_solver():\n    return None\n", encoding="utf-8")
+    (root / "catalog" / "entries").mkdir(parents=True)
+    (root / "catalog" / "entries" / "representation.toml").write_text(
+        """[[entry]]
+key = "pipeline.phaseful"
+title = "Phaseful Pipeline"
+kind = "representation"
+import_path = "phasepipe.phase_pipeline:build_pipeline"
+summary = "Project pipeline with phase-aware dispatch mutator."
+tags = ["project", "pipeline", "phase"]
+""",
         encoding="utf-8",
     )
     (pipeline_dir / "phase_pipeline.py").write_text(

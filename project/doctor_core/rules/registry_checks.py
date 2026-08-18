@@ -29,24 +29,30 @@ def check_registry(
     usage_keys: Iterable[str],
     context_entry_keys: Iterable[str],
 ) -> None:
-    registry_file = root / "project_registry.py"
-    if not registry_file.is_file():
-        add(diags, "info", "registry-skip", "Skip registry checks (project_registry.py not found).", registry_file)
+    catalog_dir = root / "catalog"
+    catalog_files = []
+    split_dir = catalog_dir / "entries"
+    if split_dir.is_dir():
+        catalog_files.extend(sorted(split_dir.glob("*.toml")))
+    catalog_files = [path for path in catalog_files if path.is_file()]
+    evidence_path = catalog_files[0] if catalog_files else catalog_dir
+    if not catalog_files:
+        add(diags, "info", "registry-skip", "Skip registry checks (no Case catalog TOML found).", evidence_path)
         return
     try:
         entries = list(load_project_entries(root))
     except Exception as exc:
-        add(diags, "error", "registry-load-failed", f"Failed to load project_registry.py: {exc}", registry_file)
+        add(diags, "error", "registry-load-failed", f"Failed to load Case catalog TOML: {exc}", evidence_path)
         return
 
     if not entries:
-        add(diags, "warn", "registry-empty", "project_registry.py returned no entries", registry_file)
+        add(diags, "warn", "registry-empty", "Case catalog contains no entries", evidence_path)
         return
 
     keys = [getattr(e, "key", None) for e in entries]
     duplicated = sorted({k for k in keys if k is not None and keys.count(k) > 1})
     if duplicated:
-        add(diags, "error", "registry-duplicate-key", f"Duplicated Catalog key(s): {', '.join(duplicated)}", registry_file)
+        add(diags, "error", "registry-duplicate-key", f"Duplicated Catalog key(s): {', '.join(duplicated)}", evidence_path)
 
     usage_fields = sorted(set(str(k) for k in usage_keys))
     context_fields = sorted(set(str(k) for k in context_entry_keys))
@@ -71,7 +77,7 @@ def check_registry(
                 "error",
                 "registry-usage-missing",
                 f"[{entry_key}] missing usage fields: {', '.join(missing_usage)}",
-                registry_file,
+                evidence_path,
             )
 
         missing_context: List[str] = []
@@ -89,18 +95,22 @@ def check_registry(
                 "error",
                 "registry-context-missing",
                 f"[{entry_key}] missing context fields: {', '.join(missing_context)}",
-                registry_file,
+                evidence_path,
             )
 
         try:
-            _resolve_import_path(str(getattr(entry, "import_path", "")))
+            loader = getattr(entry, "load", None)
+            if callable(loader):
+                loader()
+            else:
+                _resolve_import_path(str(getattr(entry, "import_path", "")))
         except Exception as exc:
             add(
                 diags,
                 "error",
                 "registry-import-failed",
                 f"[{entry_key}] import_path cannot be resolved: {getattr(entry, 'import_path', '')} ({exc})",
-                registry_file,
+                evidence_path,
             )
 
-    add(diags, "info", "registry-count", f"Catalog entries: {len(entries)}", registry_file)
+    add(diags, "info", "registry-count", f"Catalog entries: {len(entries)}", evidence_path)

@@ -1,38 +1,22 @@
-# Auto-generated from catalog/entries.toml
+# Canonical plugin catalog shard.
 
 [[entry]]
-key = "plugin.dynamic_switch"
-title = "DynamicSwitchPlugin"
+key = "plugin.runtime_surface_tracker"
+title = "RuntimeSurfaceTrackerPlugin"
 kind = "plugin"
-import_path = "nsgablack.plugins.runtime.dynamic_switch:DynamicSwitchPlugin"
-tags = ["context", "dynamic", "plugin", "switch"]
-summary = "DynamicSwitchPlugin 插件。 / DynamicSwitchPlugin."
-
-[[entry]]
-key = "plugin.async_event_hub"
-title = "AsyncEventHubPlugin"
-kind = "plugin"
-import_path = "nsgablack.plugins.system.async_event_hub:AsyncEventHubPlugin"
-tags = ["async", "context", "event", "plugin", "runtime"]
-summary = "异步上下文事件队列 + 提交边界。 / Plugin: async context event queue + commit boundary."
+import_path = "nsgablack.plugins:RuntimeSurfaceTrackerPlugin"
+tags = ["audit", "catalog", "plugin", "runtime", "surface", "tracking"]
+summary = "将装配、运行和产物记录写入正式运行面。 / Persist assembly, run, and artifact records to the formal runtime surface."
 use_when = [
-  "需要为异步插件/策略提供统一提交边界时。 / Need a unified commit boundary for async plugins/strategies.",
-  "需要 context 事件回放/审计时。 / Need context event replay/audit.",
+  "需要让 UI、审计或工具链消费可追踪的运行装配记录时。 / Need traceable runtime assembly records for UI, audit, or tooling.",
 ]
-minimal_wiring = ["from nsgablack.plugins import AsyncEventHubPlugin", "solver.add_plugin(AsyncEventHubPlugin())"]
-config_keys = [
-  "mode",
-  "commit_policy",
-  "max_pending",
-  "drop_policy",
-  "events_key",
+minimal_wiring = [
+  "from nsgablack.plugins import RuntimeSurfaceTrackerPlugin",
+  "solver.add_plugin(RuntimeSurfaceTrackerPlugin())",
 ]
-example_entry = "examples/async_event_driven_demo.py:build_solver"
-context_provides = ["context_events"]
-context_mutates = ["context_events"]
-context_notes = [
-  "Use generation_end commit to avoid half-written snapshots during UI/report reads.",
-]
+required_companions = ["(none)"]
+config_keys = ["db_path", "namespace", "tag", "project_root", "surface_key", "surface_label", "print_summary"]
+example_entry = "python -m nsgablack catalog show plugin.runtime_surface_tracker"
 
 [[entry]]
 key = "plugin.checkpoint_resume"
@@ -464,6 +448,9 @@ config_keys = [
 example_entry = "examples/async_event_driven_demo.py:build_solver"
 context_provides = ["context_events"]
 context_mutates = ["context_events"]
+context_notes = [
+  "Use generation_end commit to avoid half-written snapshots during UI/report reads.",
+]
 
 [[entry]]
 key = "plugin.mysql_run_logger"
@@ -677,3 +664,16 @@ context_mutates = ["sequence_graph_ref"]
 context_notes = [
   "Captures order-only interaction sequences (values ignored) and outputs a compact JSON graph.",
 ]
+[[entry]]
+key = "plugin.sensitivity_analysis"
+title = "SensitivityAnalysisPlugin"
+kind = "plugin"
+import_path = "nsgablack.plugins.ops.sensitivity_analysis:SensitivityAnalysisPlugin"
+tags = ["analysis", "plugin", "sensitivity", "study", "sweep"]
+summary = "敏感性分析插件：批量执行参数 sweep 并产出聚合 study artifact。 / Run parameter sweeps and publish aggregated study artifacts."
+companions = ["plugin.benchmark_harness", "plugin.module_report"]
+use_when = ["需要比较参数变化对结果与稳定性的影响时", "需要把批量实验收敛为统一 study artifact 时"]
+minimal_wiring = ["from nsgablack.plugins.ops.sensitivity_analysis import SensitivityAnalysisPlugin, SensitivityAnalysisConfig, SensitivityParam", "solver.add_plugin(SensitivityAnalysisPlugin(config=SensitivityAnalysisConfig(...)))"]
+required_companions = ["plugin.benchmark_harness"]
+config_keys = ["output_dir", "run_id", "seed", "params", "patch_benchmark_run_id", "overwrite_benchmark", "metric_fn"]
+example_entry = "python -m nsgablack catalog search sensitivity_analysis --kind example"

@@ -18,7 +18,7 @@ class CatalogComponentContract:
 
 
 @dataclass(frozen=True)
-class ContextContract:
+class CatalogContextContract:
     component_key: str
     requires: Tuple[str, ...]
     provides: Tuple[str, ...]
@@ -76,7 +76,7 @@ class HealthContract:
 @dataclass(frozen=True)
 class CatalogBundle:
     components: Sequence[CatalogComponentContract]
-    contexts: Sequence[ContextContract]
+    contexts: Sequence[CatalogContextContract]
     usages: Sequence[UsageContract]
     params: Sequence[ParamContract]
     methods: Sequence[MethodContract]

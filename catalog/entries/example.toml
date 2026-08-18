@@ -1,4 +1,4 @@
-# Auto-generated from catalog/entries.toml
+# Canonical example catalog shard.
 
 [[entry]]
 key = "example.async_event_driven"
@@ -450,3 +450,86 @@ minimal_wiring = [
 required_companions = ["(none)"]
 config_keys = ["(none)"]
 example_entry = "C:\\Users\\hp\\Desktop\\代码逻辑 - 副本\\nsgablack\\examples\\trust_region_subspace_demo.py:build_solver"
+
+[[entry]]
+key = "example.phi_bundle_image_search"
+title = "PhiBundleImageSearch"
+kind = "example"
+import_path = "examples.cases.phi_bundle_image_search.cases.phi_bundle_image_search.build_solver:build_phi_bundle_image_search_solver"
+tags = ["project", "example", "mlblack", "representation", "phi_bundle", "outer_search"]
+summary = "Standard project scaffold where nsgablack searches PhiBundle representation formula collections and mlblack evaluates generated image representation objects."
+companions = ["adapter.nsga2", "repr.pipeline"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["Outer solver searches formula bundles; inner mlblack proxy owns fitting, source governance, and metrics."]
+artifact_provides = ["phi_bundle_outer_summary_json", "phi_bundle_outer_table_csv", "phi_bundle_outer_table_md"]
+use_when = ["Search representation formula collections instead of point-prediction expressions."]
+minimal_wiring = ["python examples\\cases\\phi_bundle_image_search\\run_project.py --check --build-check", "python examples\\cases\\phi_bundle_image_search\\run_project.py -- --suite-id digits_phi_outer_v1"]
+required_companions = ["adapter.nsga2", "repr.pipeline"]
+config_keys = ["dataset_key", "max_rows", "pop_size", "generations", "mutation_sigma"]
+example_entry = "python examples\\cases\\phi_bundle_image_search\\run_project.py -- --suite-id digits_phi_outer_v1"
+[[entry]]
+key = "example.anomaly_detection_de"
+title = "Anomaly Detection with DE"
+kind = "example"
+import_path = "examples.cases.anomaly_detection.cases.anomaly_detection.build_solver:build_solver"
+tags = ["anomaly-detection", "de", "example", "scaffold"]
+summary = "标准 Case：用差分进化搜索异常检测配置。 / Standard anomaly-detection Case using differential evolution."
+
+[[entry]]
+key = "example.arima_order_search_de"
+title = "ARIMA Order Search with DE"
+kind = "example"
+import_path = "examples.cases.arima_order_search.cases.arima_order_search.build_solver:build_solver"
+tags = ["arima", "de", "example", "time-series"]
+summary = "标准 Case：搜索 ARIMA 阶数。 / Standard Case for ARIMA order search."
+
+[[entry]]
+key = "example.causal_discovery_pc_lingam"
+title = "Causal Discovery"
+kind = "example"
+import_path = "examples.cases.causal_discovery.cases.causal_discovery.build_solver:build_solver"
+tags = ["causal", "dag", "example", "lingam", "pc"]
+summary = "标准 Case：把因果结构发现建模为黑盒优化。 / Standard causal-structure discovery Case."
+
+[[entry]]
+key = "example.classification_threshold_calibration"
+title = "Classification Threshold Calibration"
+kind = "example"
+import_path = "examples.cases.classification_threshold_calibration.cases.classification_threshold_calibration.build_solver:build_solver"
+tags = ["calibration", "classification", "example", "threshold"]
+summary = "标准 Case：多目标校准分类阈值。 / Standard multi-objective classification-threshold calibration Case."
+
+[[entry]]
+key = "example.gmm_em_vs_de"
+title = "GMM EM vs DE"
+kind = "example"
+import_path = "examples.cases.gmm_em_vs_de.cases.gmm_em_vs_de.build_solver:build_solver"
+tags = ["de", "em", "example", "gmm"]
+summary = "标准 Case：比较 GMM 的 EM 与差分进化路线。 / Standard GMM EM versus differential-evolution Case."
+
+[[entry]]
+key = "example.l0_distributed_worker"
+title = "L0 Distributed Worker"
+kind = "example"
+import_path = "examples.cases.l0_distributed_worker.cases.l0_distributed_worker.build_solver:build_solver"
+tags = ["distributed", "example", "l0", "resource", "worker"]
+summary = "标准 Case：演示 Project L0 授权与分布式 Worker。 / Standard Project-L0 distributed-worker Case."
+
+[[entry]]
+key = "example.residual_boosting"
+title = "Residual Boosting"
+kind = "example"
+import_path = "examples.cases.residual_boosting.cases.residual_boosting.build_solver:build_solver"
+tags = ["boosting", "example", "mlblack", "nested", "residual"]
+summary = "标准跨框架 Case：外层搜索残差提升装配。 / Standard cross-framework residual-boosting Case."
+
+[[entry]]
+key = "example.tsp_permutation_sa"
+title = "TSP Permutation SA"
+kind = "example"
+import_path = "nsgablack.examples_registry:template_tsp_permutation"
+tags = ["example", "permutation", "sa", "template", "tsp"]
+summary = "TSP 排列表示与模拟退火模板。 / TSP permutation representation and simulated-annealing template."

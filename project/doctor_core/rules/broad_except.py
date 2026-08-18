@@ -52,7 +52,7 @@ def check_broad_exception_swallow(
     for py_file in root.rglob("*.py"):
         if py_file.name.startswith("__"):
             continue
-        if py_file.name in {"build_solver.py", "project_registry.py"}:
+        if py_file.name == "build_solver.py":
             continue
         if any(part in {".venv", "venv", "__pycache__", ".git"} for part in py_file.parts):
             continue

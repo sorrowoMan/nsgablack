@@ -1,4 +1,4 @@
-# Auto-generated from catalog/entries.toml
+# Canonical tool catalog shard.
 
 [[entry]]
 key = "tool.dynamic_cli_signal"
@@ -90,13 +90,13 @@ example_entry = "python -m nsgablack catalog search nsga2 --kind example"
 key = "tool.context_keys"
 title = "Context Keys"
 kind = "tool"
-import_path = "nsgablack.core.state:context_keys"
+import_path = "blackbase.context:context_keys"
 tags = ["context", "keys", "schema", "tool"]
 summary = "工具：Context Keys。 / Tool: Context Keys."
 use_when = [
   "需要在流程装配或诊断中使用该工具时。 / Need this utility/tool in workflow assembly or diagnostics.",
 ]
-minimal_wiring = ["from nsgablack.core.state import context_keys", "context_keys()"]
+minimal_wiring = ["from blackbase.context import context_keys", "Use constants from context_keys."]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
 example_entry = "python -m nsgablack catalog search context_keys --kind example"

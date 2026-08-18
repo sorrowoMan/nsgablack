@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable, List, Sequence, Set
 
 from ..model import DoctorDiagnostic
-from nsgablack.core.state.context_keys import (
+from blackbase.context.context_keys import (
     CANONICAL_CONTEXT_KEYS,
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_DECISION_TRACE,
@@ -31,20 +31,12 @@ _CONTRACT_KEYS = {
     "context_mutates",
     "context_cache",
     "context_notes",
-    "requires_context_keys",
-    "provides_context_keys",
-    "mutates_context_keys",
-    "cache_context_keys",
-    "runtime_requires",
-    "runtime_provides",
-    "runtime_mutates",
-    "runtime_cache",
 }
 _CONTRACT_KEY_VALUE_ATTR_GROUPS = {
-    "requires": {"context_requires", "requires_context_keys", "runtime_requires"},
-    "provides": {"context_provides", "provides_context_keys", "runtime_provides"},
-    "mutates": {"context_mutates", "mutates_context_keys", "runtime_mutates"},
-    "cache": {"context_cache", "cache_context_keys", "runtime_cache"},
+    "requires": {"context_requires"},
+    "provides": {"context_provides"},
+    "mutates": {"context_mutates"},
+    "cache": {"context_cache"},
 }
 _CONTRACT_DYNAMIC_FIELDS = {
     "requires": "requires",
@@ -55,14 +47,6 @@ _CONTRACT_DYNAMIC_FIELDS = {
     "context_provides": "provides",
     "context_mutates": "mutates",
     "context_cache": "cache",
-    "requires_context_keys": "requires",
-    "provides_context_keys": "provides",
-    "mutates_context_keys": "mutates",
-    "cache_context_keys": "cache",
-    "runtime_requires": "requires",
-    "runtime_provides": "provides",
-    "runtime_mutates": "mutates",
-    "runtime_cache": "cache",
 }
 _COMPONENT_NAME_SUFFIXES = (
     "Adapter",

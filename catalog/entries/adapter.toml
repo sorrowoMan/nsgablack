@@ -1,4 +1,4 @@
-# Auto-generated from catalog/entries.toml
+# Canonical adapter catalog shard.
 
 [[entry]]
 key = "adapter.role"
@@ -385,3 +385,16 @@ config_keys = [
 ]
 companions = ["repr.context_gaussian", "repr.context_switch"]
 example_entry = "examples/trust_region_subspace_frontier_demo.py:build_solver"
+[[entry]]
+key = "adapter.serial_strategy"
+title = "StrategyChainAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:StrategyChainAdapter"
+tags = ["adapter", "controller", "core", "phase", "serial", "strategy"]
+summary = "串行策略控制器：按 phase 顺序切换子 Adapter。 / Serial strategy controller that advances child adapters by phase."
+companions = ["adapter.multi_strategy"]
+use_when = ["需要把探索、开发等多段策略按阶段顺序串联时", "需要让 phase 成为可审计运行语义时"]
+minimal_wiring = ["from nsgablack.adapters import StrategyChainAdapter", "solver.set_adapter(StrategyChainAdapter(...))"]
+required_companions = ["adapter.multi_strategy"]
+config_keys = ["phases", "phase_schedule", "repeat_last"]
+example_entry = "python -m nsgablack catalog search serial_strategy --kind example"

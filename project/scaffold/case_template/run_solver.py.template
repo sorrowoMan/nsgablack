@@ -6,37 +6,12 @@ Usage:
     python run_solver.py --check
 """
 
-import argparse
-
-from .build_solver import build_solver
+from blackbase.project import run_standard_case_cli
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Run the solver.")
-    parser.add_argument(
-        "--check",
-        action="store_true",
-        help="Build and validate assembly only; do not run.",
-    )
-    args = parser.parse_args(argv)
-
-    solver = build_solver()
-
-    if args.check:
-        problem = getattr(solver, "problem", None)
-        pipeline = getattr(solver, "representation_pipeline", None) or getattr(solver, "representation", None)
-        adapter = getattr(solver, "adapter", None)
-        print(
-            "[check] assembly ok | "
-            f"problem={type(problem).__name__ if problem else 'None'} | "
-            f"pipeline={type(pipeline).__name__ if pipeline else 'None'} | "
-            f"adapter={type(adapter).__name__ if adapter else 'None'}"
-        )
-        return
-
-    result = solver.run()
-    print(result)
+    return run_standard_case_cli(__file__, framework="nsgablack", argv=argv)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

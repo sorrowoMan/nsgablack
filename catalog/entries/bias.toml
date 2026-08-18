@@ -1,4 +1,22 @@
-# Auto-generated from catalog/entries.toml
+# Canonical bias catalog shard.
+
+[[entry]]
+key = "bias.module"
+title = "BiasModule"
+kind = "bias"
+import_path = "nsgablack.bias:BiasModule"
+tags = ["bias", "core", "facade", "manager"]
+summary = "统一聚合算法偏置与领域偏置的运行门面。 / Runtime facade that aggregates algorithmic and domain biases."
+use_when = [
+  "需要把多个软引导机制组合到统一 Solver 生命周期时。 / Need to compose multiple soft-guidance mechanisms into one Solver lifecycle.",
+]
+minimal_wiring = [
+  "from nsgablack.bias import BiasModule",
+  "solver.set_bias_module(BiasModule())",
+]
+required_companions = ["(none)"]
+config_keys = ["cache_backend", "cache_ttl_seconds", "cache_key_prefix", "cache_context_keys", "cache_include_generation"]
+example_entry = "python -m nsgablack catalog show bias.module"
 
 [[entry]]
 key = "bias.diversity_adaptive"
@@ -950,24 +968,6 @@ minimal_wiring = [
 required_companions = ["(none)"]
 config_keys = ["(none)"]
 example_entry = "python -m nsgablack catalog search production_continuity --kind example"
-
-[[entry]]
-key = "bias.production_scheduling"
-title = "ProductionSchedulingBias"
-kind = "bias"
-import_path = "nsgablack.bias.specialized.production.scheduling:ProductionSchedulingBias"
-tags = ["bias", "domain", "production", "scheduling"]
-summary = "生产排程偏好。 / Domain bias: production scheduling preference."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.production.scheduling import ProductionSchedulingBias",
-  "bias_module.add(ProductionSchedulingBias())",
-]
-required_companions = ["(none)"]
-config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search production_scheduling --kind example"
 
 [[entry]]
 key = "bias.cmaes"

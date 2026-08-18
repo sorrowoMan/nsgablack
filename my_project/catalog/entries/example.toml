@@ -1,0 +1,20 @@
+# Canonical Case example catalog shard.
+
+[[entry]]
+key = "project.solver.example"
+title = "build_solver"
+kind = "example"
+import_path = "build_solver:build_solver"
+tags = ["project", "example", "solver"]
+summary = "Example solver assembly entry."
+companions = ["project.problem.example", "project.pipeline.example"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["Assembly entrypoint; context contract is delegated to registered components."]
+use_when = ["Need runnable assembly entry for CLI and Run Inspector."]
+minimal_wiring = ["python build_solver.py"]
+required_companions = ["project.problem.example", "project.pipeline.example"]
+config_keys = ["dimension", "pop_size", "generations", "enable_bias"]
+example_entry = "build_solver:build_solver"

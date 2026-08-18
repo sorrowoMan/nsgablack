@@ -1,8 +1,8 @@
-from nsgablack.project import add_case, init_project, run_project_doctor
+from nsgablack.project import add_case, create_project, run_project_doctor
 
 
 def _init_case(path):
-    project_root = init_project(path)
+    project_root = create_project(path)
     case_root = add_case("doctor_case", "solver", project_root=project_root)
     (case_root / ".nsgablack-project").write_text("framework = nsgablack\n", encoding="utf-8")
     (case_root / "COMPONENT_REGISTRATION.md").write_text(
@@ -29,7 +29,7 @@ def _mark_case_root(path):
     )
 
 
-def test_init_project_and_add_case_create_unified_scaffold(tmp_path):
+def test_create_project_and_add_case_create_unified_scaffold(tmp_path):
     root = _init_case(tmp_path / "demo_project")
     guide = root / "COMPONENT_REGISTRATION.md"
     build_solver = root / "build_solver.py"
@@ -46,7 +46,7 @@ def test_init_project_and_add_case_create_unified_scaffold(tmp_path):
     assert (root / "pipeline" / "main.py").is_file()
 
 
-def test_init_project_creates_contract_and_test_matrix_templates(tmp_path):
+def test_create_project_creates_contract_and_test_matrix_templates(tmp_path):
     root = _init_case(tmp_path / "demo_project")
     assert (root / "docs" / "contracts" / "COMPONENT_CONTRACT_TEMPLATE.md").is_file()
     assert (root / "tests" / "templates" / "README.md").is_file()
@@ -382,7 +382,8 @@ def test_project_doctor_strict_blocks_missing_metrics_provider(tmp_path):
         "            'notes': 'no fallback',\n"
         "        }\n"
         "\n"
-        "def build_solver():\n"
+        "def build_solver(*, resource_context=None, component_overrides=None):\n"
+        "    del resource_context, component_overrides\n"
         "    return SimpleNamespace(\n"
         "        representation_pipeline=None,\n"
         "        bias_module=DemoMetricsConsumer(),\n"
@@ -421,7 +422,8 @@ def test_project_doctor_allows_requires_metrics_with_explicit_fallback(tmp_path)
         "            'notes': 'fallback is explicit in metrics_fallback',\n"
         "        }\n"
         "\n"
-        "def build_solver():\n"
+        "def build_solver(*, resource_context=None, component_overrides=None):\n"
+        "    del resource_context, component_overrides\n"
         "    return SimpleNamespace(\n"
         "        representation_pipeline=None,\n"
         "        bias_module=DemoMetricsConsumer(),\n"
@@ -457,7 +459,8 @@ def test_project_doctor_does_not_treat_notes_as_metrics_fallback(tmp_path):
         "            'notes': 'fallback from notes only',\n"
         "        }\n"
         "\n"
-        "def build_solver():\n"
+        "def build_solver(*, resource_context=None, component_overrides=None):\n"
+        "    del resource_context, component_overrides\n"
         "    return SimpleNamespace(\n"
         "        representation_pipeline=None,\n"
         "        bias_module=DemoMetricsConsumer(),\n"
@@ -536,7 +539,8 @@ def test_project_doctor_strict_blocks_invalid_metrics_fallback_in_build_solver(t
         "            'notes': 'invalid fallback enum value',\n"
         "        }\n"
         "\n"
-        "def build_solver():\n"
+        "def build_solver(*, resource_context=None, component_overrides=None):\n"
+        "    del resource_context, component_overrides\n"
         "    return SimpleNamespace(\n"
         "        representation_pipeline=None,\n"
         "        bias_module=DemoMetricsConsumer(),\n"
@@ -577,7 +581,8 @@ def test_project_doctor_strict_blocks_process_like_algorithm_as_bias(tmp_path):
         "            'notes': 'fake',\n"
         "        }\n"
         "\n"
-        "def build_solver():\n"
+        "def build_solver(*, resource_context=None, component_overrides=None):\n"
+        "    del resource_context, component_overrides\n"
         "    fake_mgr = SimpleNamespace(\n"
         "        algorithmic_manager=SimpleNamespace(biases={'nsga2': NSGA2Bias()}),\n"
         "        domain_manager=SimpleNamespace(biases={}),\n"
@@ -622,7 +627,8 @@ def test_project_doctor_does_not_flag_normal_bias_as_process_like(tmp_path):
         "            'notes': 'fake',\n"
         "        }\n"
         "\n"
-        "def build_solver():\n"
+        "def build_solver(*, resource_context=None, component_overrides=None):\n"
+        "    del resource_context, component_overrides\n"
         "    fake_mgr = SimpleNamespace(\n"
         "        algorithmic_manager=SimpleNamespace(biases={'conv': ConvergenceBias()}),\n"
         "        domain_manager=SimpleNamespace(biases={}),\n"
@@ -646,7 +652,8 @@ def test_project_doctor_strict_blocks_redis_key_prefix_without_project_token(tmp
     (root / "build_solver.py").write_text(
         "from types import SimpleNamespace\n"
         "\n"
-        "def build_solver():\n"
+        "def build_solver(*, resource_context=None, component_overrides=None):\n"
+        "    del resource_context, component_overrides\n"
         "    return SimpleNamespace(\n"
         "        representation_pipeline=None,\n"
         "        bias_module=None,\n"
@@ -669,7 +676,8 @@ def test_project_doctor_warns_when_redis_ttl_policy_is_implicit(tmp_path):
     (root / "build_solver.py").write_text(
         "from types import SimpleNamespace\n"
         "\n"
-        "def build_solver():\n"
+        "def build_solver(*, resource_context=None, component_overrides=None):\n"
+        "    del resource_context, component_overrides\n"
         "    return SimpleNamespace(\n"
         "        representation_pipeline=None,\n"
         "        bias_module=None,\n"
@@ -700,7 +708,8 @@ def test_project_doctor_strict_blocks_framework_component_missing_catalog_entry(
         "    context_notes = ('demo',)\n"
         "MissingFrameworkAdapter.__module__ = 'nsgablack.adapters.__missing__'\n"
         "\n"
-        "def build_solver():\n"
+        "def build_solver(*, resource_context=None, component_overrides=None):\n"
+        "    del resource_context, component_overrides\n"
         "    return SimpleNamespace(\n"
         "        representation_pipeline=None,\n"
         "        bias_module=None,\n"
@@ -713,6 +722,29 @@ def test_project_doctor_strict_blocks_framework_component_missing_catalog_entry(
     rows = [d for d in report.diagnostics if d.code == "framework-component-not-in-catalog"]
     assert rows
     assert all(d.level == "error" for d in rows)
+
+
+def test_project_doctor_accepts_catalog_public_reexport_for_framework_component(tmp_path):
+    root = _init_case(tmp_path / "framework_catalog_reexport_project")
+    (root / "build_solver.py").write_text(
+        "from types import SimpleNamespace\n"
+        "from nsgablack.adapters import NSGA2Adapter\n"
+        "\n"
+        "def build_solver(*, resource_context=None, component_overrides=None):\n"
+        "    del resource_context, component_overrides\n"
+        "    return SimpleNamespace(\n"
+        "        representation_pipeline=None,\n"
+        "        bias_module=None,\n"
+        "        adapter=NSGA2Adapter(),\n"
+        "        plugin_manager=None,\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+
+    report = run_project_doctor(root, instantiate_solver=True, strict=True)
+
+    assert not any(d.code == "build-entry-instantiate-failed" for d in report.diagnostics)
+    assert not any(d.code == "framework-component-not-in-catalog" for d in report.diagnostics)
 
 
 def test_project_doctor_reports_unregistered_project_components_as_info(tmp_path):
@@ -728,7 +760,8 @@ def test_project_doctor_reports_unregistered_project_components_as_info(tmp_path
         "    context_notes = ('demo',)\n"
         "LocalAdapter.__module__ = 'my_project.adapter.local_adapter'\n"
         "\n"
-        "def build_solver():\n"
+        "def build_solver(*, resource_context=None, component_overrides=None):\n"
+        "    del resource_context, component_overrides\n"
         "    return SimpleNamespace(\n"
         "        representation_pipeline=None,\n"
         "        bias_module=None,\n"
@@ -833,7 +866,8 @@ def test_project_doctor_warns_snapshot_ref_unreadable(tmp_path):
         "            }\n"
         "        return None\n"
         "\n"
-        "def build_solver():\n"
+        "def build_solver(*, resource_context=None, component_overrides=None):\n"
+        "    del resource_context, component_overrides\n"
         "    return DemoSolver()\n",
         encoding="utf-8",
     )
@@ -868,7 +902,8 @@ def test_project_doctor_warns_snapshot_payload_shape_mismatch(tmp_path):
         "            'constraint_violations': [0.0],\n"
         "        }\n"
         "\n"
-        "def build_solver():\n"
+        "def build_solver(*, resource_context=None, component_overrides=None):\n"
+        "    del resource_context, component_overrides\n"
         "    return DemoSolver()\n",
         encoding="utf-8",
     )

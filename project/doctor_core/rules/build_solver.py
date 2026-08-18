@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
-import inspect
+import sys
 from pathlib import Path
 from typing import Callable, List
+
+from blackbase.project import build_case, load_case_builder
 
 from ..model import DoctorDiagnostic
 
@@ -15,7 +17,23 @@ def _load_module_from_file(module_name: str, file_path: Path):
     if spec is None or spec.loader is None:
         raise ImportError(f"Cannot import module from file: {file_path}")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)  # type: ignore[call-arg]
+    # Decorators such as dataclasses resolve annotations through sys.modules
+    # while the module body executes.  A spec-only module is therefore not a
+    # valid Python import boundary.
+    previous = sys.modules.get(module_name)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)  # type: ignore[call-arg]
+    except BaseException:
+        if previous is None:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous
+        raise
+    if previous is None:
+        sys.modules.pop(module_name, None)
+    else:
+        sys.modules[module_name] = previous
     return module
 
 
@@ -35,22 +53,33 @@ def check_build_solver(
     check_runtime_governance_runtime_state: Callable[..., None],
 ) -> None:
     case_kind = _read_case_kind(root / ".case")
-    target = "build_trainer" if case_kind == "trainer" else "build_solver"
-    build_file = root / f"{target}.py"
+    target = "build_solver"
+    build_file = root / "build_solver.py"
     if not build_file.is_file():
-        if case_kind == "trainer":
-            add(diags, "error", "build-trainer-missing", "Trainer case is missing build_trainer.py", root / "build_trainer.py")
-        else:
-            add(diags, "error", "build-solver-missing", "Solver case is missing build_solver.py", root / "build_solver.py")
+        add(
+            diags,
+            "error",
+            "build-solver-missing",
+            "Case is missing canonical build_solver.py",
+            build_file,
+        )
         return
 
     try:
-        module = _load_module_from_file(f"nsgablack_project_{target}", build_file)
+        if root.parent.name == "cases":
+            builder = load_case_builder(
+                root.parent.parent,
+                root.name,
+                case_kind=case_kind,
+            )
+            build_fn = builder
+        else:
+            module = _load_module_from_file("nsgablack_project_build_solver", build_file)
+            build_fn = getattr(module, target, None)
     except Exception as exc:
         add(diags, "error", "build-entry-import-failed", f"Cannot import {build_file.name}: {exc}", build_file)
         return
 
-    build_fn = getattr(module, target, None)
     if not callable(build_fn):
         add(diags, "error", "build-entry-missing", f"{build_file.name} has no callable {target}()", build_file)
         return
@@ -61,11 +90,17 @@ def check_build_solver(
         return
 
     try:
-        sig = inspect.signature(build_fn)
-        if len(sig.parameters) == 0:
-            solver = build_fn()
-        else:
-            solver = build_fn([])
+        solver = build_case(
+            build_fn,
+            resource_context={
+                "scope": "optimization",
+                "threads": 1,
+                "namespace": f"doctor.{root.name}",
+                "grant": {"threads": 1, "workers": 1},
+                "metadata": {"source": "nsgablack.project.doctor"},
+            },
+            component_overrides={},
+        )
     except Exception as exc:
         add(diags, "error", "build-entry-instantiate-failed", f"{target}() failed: {exc}", build_file)
         return
@@ -75,6 +110,15 @@ def check_build_solver(
         return
 
     add(diags, "info", "build-entry-instantiated", f"{target}() returned: {solver.__class__.__name__}", build_file)
+    binding = getattr(solver, "resource_binding_audit", {})
+    if not isinstance(binding, dict) or not bool(binding.get("current", False)):
+        add(
+            diags,
+            "error",
+            "build-entry-resource-binding-stale",
+            "Built Case did not retain the Doctor-injected ResourceContext grant.",
+            build_file,
+        )
     check_context_store_policy(
         root=root,
         solver=solver,

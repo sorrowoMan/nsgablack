@@ -18,7 +18,7 @@ except Exception:  # pragma: no cover
 from ..contracts import (
     CatalogBundle,
     CatalogComponentContract,
-    ContextContract,
+    CatalogContextContract,
     HealthContract,
     MethodContract,
     ParamContract,
@@ -1019,7 +1019,7 @@ RETURNING id
         cur.close()
         return out
 
-    def _upsert_contexts(self, conn, component_ids: Dict[str, int], contexts: Sequence[ContextContract]) -> None:
+    def _upsert_contexts(self, conn, component_ids: Dict[str, int], contexts: Sequence[CatalogContextContract]) -> None:
         cur = conn.cursor()
         for ctx in contexts:
             cid = component_ids.get(ctx.component_key)
@@ -1090,7 +1090,7 @@ ON CONFLICT (component_id) DO UPDATE SET
         conn,
         component_ids: Dict[str, int],
         components: Sequence[CatalogComponentContract],
-        contexts: Sequence[ContextContract],
+        contexts: Sequence[CatalogContextContract],
         usages: Sequence[UsageContract],
     ) -> None:
         cur = conn.cursor()

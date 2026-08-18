@@ -16,10 +16,9 @@ def test_generated_solver_and_trainer_cases_have_canonical_pipeline_entry(tmp_pa
         assert "def build_pipeline" in pipeline_main.read_text(encoding="utf-8")
         assert "from .pipeline import build_pipeline" in (case_root / "build_solver.py").read_text(encoding="utf-8")
         run_source = (case_root / "run_solver.py").read_text(encoding="utf-8")
-        assert "--check" in run_source
-        assert "print_solver_check" in run_source
-        assert "load_resource_context_from_env" in run_source
-        assert "print_resource_context_summary" in run_source
+        assert "run_standard_case_cli" in run_source
+        assert "from blackbase.project import run_standard_case_cli" in run_source
+        assert "from .build_solver" not in run_source
 
     report = run_common_project_doctor(project_root, strict=True)
     assert not any(item.code == "case-pipeline-entry-recommended" for item in report.diagnostics)

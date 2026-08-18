@@ -829,7 +829,7 @@ def _secondary_controls_spec() -> _page.ControlRowSpec:
                 "project_path",
                 1.08,
                 "Project Path",
-                help="项目视图下用于定位 project_registry.py 的根路径或其子目录。",
+                help="项目视图下用于定位正式 Project/Case 与其 catalog/ 的路径。",
             ),
             _page.ControlSlotSpec("include_global", 1.05, "项目视图并入框架条目"),
             _page.ControlSlotSpec(
@@ -2455,7 +2455,7 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
         _rerun(st)
 
     if current_scope == "project" and not bool(source_info.get("project_found", False)):
-        st.warning("当前没有发现 project_registry.py。请提供 Project Path，或在项目目录内启动页面。")
+        st.warning("当前没有发现正式 Project/Case catalog。请提供 Project Path，或在项目目录内启动页面。")
     db_error = str(source_info.get("db_error", "") or "").strip()
     if db_error:
         st.warning(f"DB catalog 当前不可用，已回退到 {str(source_info.get('effective_source', 'registry'))}：{db_error}")

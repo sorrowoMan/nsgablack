@@ -27,5 +27,5 @@ NSGABlack scaffold project.
 ## Entry Files
 - `build_solver.py`: standard assembly entry with explicit registration zones
 - `BUILD_SOLVER_REGISTRATION.md`: where each component type should be registered
-- `catalog/project_registry.py`: local catalog registry
+- `catalog/entries/<kind>.toml`: Case-local catalog entries, split by component kind
 - `COMPONENT_REGISTRATION.md`: registration metadata contract

@@ -1,4 +1,4 @@
-# Auto-generated from catalog/entries.toml
+# Canonical representation catalog shard.
 
 [[entry]]
 key = "representation.parallel_repair"
@@ -262,3 +262,30 @@ minimal_wiring = [
 required_companions = ["(none)"]
 config_keys = ["(none)"]
 example_entry = "python -m nsgablack catalog search projection_repair --kind example"
+[[entry]]
+key = "repr.context_dispatch"
+title = "ContextDispatchMutator"
+kind = "representation"
+import_path = "nsgablack.representation:ContextDispatchMutator"
+tags = ["context", "dispatch", "mutation", "phase", "representation", "strategy"]
+summary = "表示组件：按 strategy/phase 路由不同 mutator。 / Dispatch mutators by strategy or phase context."
+companions = ["adapter.multi_strategy", "adapter.serial_strategy"]
+use_when = ["需要让表示层依据 phase 或 strategy_id 自动切换算子时"]
+minimal_wiring = ["from nsgablack.representation import ContextDispatchMutator", "Attach ContextDispatchMutator as the pipeline mutator."]
+required_companions = ["adapter.multi_strategy"]
+config_keys = ["routes", "selector_key", "default_mutator", "strict"]
+example_entry = "python -m nsgablack catalog search context_dispatch --kind example"
+
+[[entry]]
+key = "repr.pipeline_orchestrator"
+title = "PipelineOrchestrator"
+kind = "representation"
+import_path = "nsgablack.representation:PipelineOrchestrator"
+tags = ["context", "controller", "orchestrator", "phase", "pipeline", "representation"]
+summary = "表示层编排控制器：统一 mutate/repair 的串行、路由与动态 phase 策略。 / Phase-aware mutate and repair orchestration controller."
+companions = ["repr.pipeline", "adapter.multi_strategy", "adapter.serial_strategy"]
+use_when = ["需要把 phase-aware 算子路由放在表示层正式协议中时"]
+minimal_wiring = ["from nsgablack.representation import PipelineOrchestrator", "Mount PipelineOrchestrator inside RepresentationPipeline."]
+required_companions = ["repr.pipeline"]
+config_keys = ["mutate_policy", "repair_policy", "mutator", "repair_operator", "strict"]
+example_entry = "python -m nsgablack catalog search pipeline_orchestrator --kind example"

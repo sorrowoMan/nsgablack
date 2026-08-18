@@ -76,17 +76,17 @@ def _marker_meta(class_node: ast.ClassDef) -> tuple[bool, str | None]:
 
 
 def _is_scaffold_project_root(root: Path) -> bool:
-    req_files = ("project_registry.py", "build_solver.py")
-    req_dirs = ("problem", "pipeline", "bias", "adapter", "plugins")
-    legacy = all((root / f).is_file() for f in req_files) and all((root / d).is_dir() for d in req_dirs)
-    unified = (root / "project_config.py").is_file() and (root / "run_project.py").is_file() and (root / "cases").is_dir()
-    return legacy or unified
+    return (
+        (root / "project_config.py").is_file()
+        and (root / "run_project.py").is_file()
+        and (root / "cases").is_dir()
+    )
 
 
 def _is_framework_root(root: Path) -> bool:
     return (
         (root / "pyproject.toml").is_file()
-        and (root / "catalog" / "entries.toml").is_file()
+        and (root / "catalog" / "entries").is_dir()
         and (root / "core").is_dir()
         and (root / "bias").is_dir()
     )
