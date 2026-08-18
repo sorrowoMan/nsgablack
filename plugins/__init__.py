@@ -46,10 +46,6 @@ from .domain_backends.backend_contract import (
 )
 from .domain_backends.ngspice_backend import NgspiceBackend, NgspiceBackendConfig
 from .domain_backends.copt_backend import CoptBackend, CoptBackendConfig
-from .domain_backends.mlblack_symbolic_consensus_backend import (
-    MlblackSymbolicConsensusBackend,
-    MlblackSymbolicConsensusBackendConfig,
-)
 from .domain_backends.contract_bridge import ContractBridgePlugin, BridgeRule
 from .domain_backends.timeout_budget import TimeoutBudgetPlugin, TimeoutBudgetConfig
 from .runtime.pareto_archive import ParetoArchivePlugin, ParetoArchiveConfig
@@ -109,8 +105,6 @@ __all__ = [
     'NgspiceBackendConfig',
     'CoptBackend',
     'CoptBackendConfig',
-    'MlblackSymbolicConsensusBackend',
-    'MlblackSymbolicConsensusBackendConfig',
     'ContractBridgePlugin',
     'BridgeRule',
     'TimeoutBudgetPlugin',

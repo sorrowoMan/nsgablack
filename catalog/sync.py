@@ -21,7 +21,7 @@ from .contracts import (
 from .registry import CatalogEntry, get_catalog
 from .store import resolve_catalog_store
 from .usage import build_usage_profile
-from ..utils.context.context_keys import CANONICAL_CONTEXT_KEYS
+from blackbase.context.context_keys import CANONICAL_CONTEXT_KEYS
 
 
 _ADAPTER_REQUIRED = ("propose", "update")

@@ -1,8 +1,4 @@
-"""
-Forwarding module for snapshot store.
-
-This module re-exports from blackbase for seamless migration.
-"""
+"""Optimization-facing public snapshot-store surface backed by blackbase."""
 
 from blackbase.context import (
     SnapshotHandle,

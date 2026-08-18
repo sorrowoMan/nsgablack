@@ -15,7 +15,19 @@ def test_pareto_archive_truncates_with_crowding() -> None:
     F = np.array([[0.0, 2.0], [1.0, 1.0], [2.0, 0.0]], dtype=float)
     V = np.zeros(3, dtype=float)
 
-    plugin._update_archive(X, F, V)
+    class _Solver:
+        population = X
+        objectives = F
+        constraint_violations = V
+        objective_names = ("f1", "f2")
+
+        def set_pareto_snapshot(self, solutions, objectives):
+            self.pareto_solutions = solutions
+            self.pareto_objectives = objectives
+
+    solver = _Solver()
+    plugin.attach(solver)
+    plugin.on_generation_end(0)
     kept = {tuple(row.tolist()) for row in plugin.archive_F}
     assert (0.0, 2.0) in kept
     assert (2.0, 0.0) in kept

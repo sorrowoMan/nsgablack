@@ -17,7 +17,7 @@ import time
 import numpy as np
 
 from ..base import Plugin
-from ...utils.context.context_keys import KEY_BEST_OBJECTIVE
+from blackbase.context.context_keys import KEY_BEST_OBJECTIVE
 from ...utils.engineering.file_io import atomic_write_json
 
 

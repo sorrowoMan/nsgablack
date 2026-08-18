@@ -1,8 +1,4 @@
-"""
-Forwarding module for context schema.
-
-This module re-exports from blackbase for seamless migration.
-"""
+"""Optimization-facing public context-schema surface backed by blackbase."""
 
 from blackbase.context import (
     CATEGORY_CACHE,

@@ -6,7 +6,7 @@ import logging
 import time
 from typing import Any, Callable, Mapping, Optional
 
-from ...utils.engineering.error_policy import report_soft_error
+from blackbase.plugin import report_soft_error
 from .result_helpers import format_run_result
 
 logger = logging.getLogger(__name__)
@@ -125,13 +125,17 @@ def run_solver_loop(
         _checkpoint_case_runtime(solver)
         preloaded_resume = bool(getattr(solver, "_resume_loaded", False))
         if not preloaded_resume:
-            set_generation = getattr(solver, "set_generation", None)
-            if callable(set_generation):
-                set_generation(0)
+            prepare_fresh_run = getattr(solver, "prepare_fresh_run", None)
+            if callable(prepare_fresh_run):
+                prepare_fresh_run()
             else:
-                solver.generation = 0
-            solver.evaluation_count = 0
-            solver.reset_evaluation_budget()
+                set_generation = getattr(solver, "set_generation", None)
+                if callable(set_generation):
+                    set_generation(0)
+                else:
+                    solver.generation = 0
+                solver.evaluation_count = 0
+                solver.reset_evaluation_budget()
         solver.setup()
         _checkpoint_case_runtime(solver)
         _call_optional(solver.plugin_manager, "on_solver_init", solver)

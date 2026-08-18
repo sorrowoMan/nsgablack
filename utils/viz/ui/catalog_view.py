@@ -208,9 +208,14 @@ class CatalogView:
                 for child in ws.iterdir():
                     if not child.is_dir():
                         continue
-                    if (child / "project_registry.py").is_file() and (child / "build_solver.py").is_file():
+                    if self._is_scaffold_project_root(child):
                         if child not in project_roots:
                             project_roots.append(child)
+                    cases_dir = child / "cases"
+                    if (child / "project_config.py").is_file() and cases_dir.is_dir():
+                        for case_root in sorted(cases_dir.iterdir()):
+                            if self._is_scaffold_project_root(case_root) and case_root not in project_roots:
+                                project_roots.append(case_root)
             except Exception:
                 pass
 
@@ -220,9 +225,9 @@ class CatalogView:
                 project_entries = pcat.list()
                 merged_entries.extend(project_entries)
                 project_key_map = self._collect_project_catalog_key_map(root)
-                project_catalog_file = root / "catalog" / "entries.toml"
                 for pe in project_entries:
-                    project_catalog_by_key[pe.key] = project_key_map.get(pe.key, project_catalog_file)
+                    default_file = self._catalog_file_for_kind(pe.kind, root / "catalog" / "entries")
+                    project_catalog_by_key[pe.key] = project_key_map.get(pe.key, default_file)
             except Exception:
                 continue
 
@@ -237,14 +242,13 @@ class CatalogView:
 
         self.app._catalog_obj = cat
         self._project_catalog_by_key = project_catalog_by_key
-        framework_catalog = Path(__file__).resolve().parents[3] / "catalog" / "entries.toml"
+        framework_catalog = Path(__file__).resolve().parents[3] / "catalog" / "entries"
         out = {}
         for e in cat.list():
             scope = scope_from_key(e.key)
             usage = build_usage_profile(e)
             framework_kind_catalog = self._catalog_file_for_kind(e.kind, framework_catalog)
-            fallback_catalog = framework_kind_catalog if framework_kind_catalog.exists() else framework_catalog
-            source_catalog = str(self._project_catalog_by_key.get(e.key, fallback_catalog))
+            source_catalog = str(self._project_catalog_by_key.get(e.key, framework_kind_catalog))
             out[e.key] = {
                 "key": e.key,
                 "scope": scope,
@@ -369,21 +373,19 @@ class CatalogView:
         workspace = getattr(self.app, "workspace", None)
         if workspace:
             wp = Path(workspace)
-            cand = wp / "catalog" / "entries.toml"
-            if cand.exists():
+            cand = wp / "catalog" / "entries"
+            if cand.is_dir():
                 return cand
         here = Path(__file__).resolve()
         # nsgablack/utils/viz/ui -> nsgablack root
         root = here.parents[3]
-        return root / "catalog" / "entries.toml"
+        return root / "catalog" / "entries"
 
     def _catalog_file_for_kind(self, kind: str, base_file: Optional[Path] = None) -> Path:
         base = Path(base_file or self._default_catalog_file())
         k = str(kind or "").strip().lower() or "misc"
         if base.is_dir():
-            return base / "entries" / f"{k}.toml"
-        if base.name == "entries.toml":
-            return base.parent / "entries" / f"{k}.toml"
+            return base / f"{k}.toml" if base.name == "entries" else base / "entries" / f"{k}.toml"
         if base.parent.name == "entries" and base.suffix.lower() == ".toml":
             return base.parent / f"{k}.toml"
         return base
@@ -392,7 +394,7 @@ class CatalogView:
         root = self._detect_project_root()
         if root is None:
             return None
-        return self._catalog_file_for_kind(kind, root / "catalog" / "entries.toml")
+        return self._catalog_file_for_kind(kind, root / "catalog" / "entries")
 
     def _collect_project_catalog_key_map(self, root: Path) -> Dict[str, Path]:
         out: Dict[str, Path] = {}
@@ -401,9 +403,6 @@ class CatalogView:
         except Exception:
             return out
         files: list[Path] = []
-        legacy = root / "catalog" / "entries.toml"
-        if legacy.is_file():
-            files.append(legacy)
         split_dir = root / "catalog" / "entries"
         if split_dir.is_dir():
             files.extend(sorted(split_dir.glob("*.toml")))
@@ -515,7 +514,7 @@ class CatalogView:
         def _browse_file() -> None:
             chosen = filedialog.asksaveasfilename(
                 title="Select catalog entries TOML",
-                initialfile="entries.toml",
+                initialfile=f"{vars_map['kind'].get().strip() or 'misc'}.toml",
                 defaultextension=".toml",
                 filetypes=[("TOML", "*.toml"), ("All files", "*.*")],
                 initialdir=str(Path(vars_map["file"].get()).parent),
@@ -790,7 +789,7 @@ class CatalogView:
                             break
             if source_project_root is not None:
                 source_project_catalog = self._catalog_file_for_kind(
-                    kind, source_project_root / "catalog" / "entries.toml"
+                    kind, source_project_root / "catalog" / "entries"
                 )
                 try:
                     framework_kind_catalog = self._catalog_file_for_kind(kind, framework_catalog)
@@ -947,10 +946,9 @@ class CatalogView:
         from nsgablack.catalog import build_usage_profile
 
         usage = build_usage_profile(entry)
-        framework_catalog = Path(__file__).resolve().parents[3] / "catalog" / "entries.toml"
+        framework_catalog = Path(__file__).resolve().parents[3] / "catalog" / "entries"
         framework_kind_catalog = self._catalog_file_for_kind(entry.kind, framework_catalog)
-        fallback_catalog = framework_kind_catalog if framework_kind_catalog.exists() else framework_catalog
-        source_catalog = str(self._project_catalog_by_key.get(entry.key, fallback_catalog))
+        source_catalog = str(self._project_catalog_by_key.get(entry.key, framework_kind_catalog))
         return {
             "key": entry.key,
             "scope": scope_from_key(entry.key),
@@ -1036,13 +1034,15 @@ class CatalogView:
         root = self._detect_project_root()
         if root is None:
             return None
-        return root / "catalog" / "entries.toml"
+        return root / "catalog" / "entries"
 
     def _is_scaffold_project_root(self, root: Path) -> bool:
-        """Strict project-scaffold check: only these roots should use project.* auto-prefix."""
-        req_files = ("project_registry.py", "build_solver.py")
-        req_dirs = ("problem", "pipeline", "bias", "adapter", "plugins")
-        return all((root / f).is_file() for f in req_files) and all((root / d).is_dir() for d in req_dirs)
+        """Only formal Project/Case roots receive project.* auto-prefixes."""
+        if (root / "project_config.py").is_file() and (root / "cases").is_dir():
+            return True
+        return (root / "build_solver.py").is_file() and (
+            (root / ".case").is_file() or root.parent.name == "cases"
+        )
 
     def _delete_selected_project_entry(self) -> None:
         sel = self.catalog_result_tree.selection()
@@ -1168,7 +1168,7 @@ class CatalogView:
         if workspace is not None:
             wp = Path(workspace)
             for cand in [wp] + list(wp.parents):
-                if (cand / "project_registry.py").is_file():
+                if self._is_scaffold_project_root(cand):
                     return cand
 
         entry = getattr(self.app, "entry", "") or ""
@@ -1185,6 +1185,6 @@ class CatalogView:
 
         cur = start
         for cand in [cur] + list(cur.parents):
-            if (cand / "project_registry.py").is_file():
+            if self._is_scaffold_project_root(cand):
                 return cand
         return None

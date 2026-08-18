@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 from ..nsga2 import NSGA2Adapter, NSGA2Config
-from ...utils.context.context_keys import KEY_MO_WEIGHTS
+from blackbase.context.context_keys import KEY_MO_WEIGHTS
 
 
 @dataclass

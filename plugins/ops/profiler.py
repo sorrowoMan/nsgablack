@@ -16,7 +16,10 @@ from typing import Any, Dict, List, Optional
 import json
 import time
 
-from ..base import Plugin
+from ..base import Plugin, report_soft_error
+from ...core.solver_helpers.control_plane_helpers import (
+    collect_adapter_runtime_context_projection,
+)
 from ...utils.engineering.file_io import atomic_write_text
 
 
@@ -186,17 +189,10 @@ class ProfilerPlugin(Plugin):
         }
 
     def _read_adapter_projection(self, solver: Any) -> Dict[str, Any]:
-        adapter = getattr(solver, "adapter", None)
-        if adapter is None:
-            return {}
-        projector = getattr(adapter, "get_runtime_context_projection", None)
-        if not callable(projector):
-            return {}
-        try:
-            out = projector(solver)
-        except Exception:
-            return {}
-        return out if isinstance(out, dict) else {}
+        return collect_adapter_runtime_context_projection(
+            solver,
+            report_soft_error_fn=report_soft_error,
+        )
 
 
 

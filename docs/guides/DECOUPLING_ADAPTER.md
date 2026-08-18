@@ -145,32 +145,79 @@ update(evaluations) -> state
 
 ---
 
-## 10) 关于 `best_x` 的“标量化”提醒
+## 10) 关于权威 incumbent 的标量化契约
 
-`ComposableSolver` 默认会用一个**简单标量**来选 `best_x`（用于摘要/日志）：
+`ComposableSolver` 会维护一次 run 内的权威 incumbent。默认先按可行性比较，
+在同一可行性层级内再使用稳定标量：
 
-- `score = sum(objectives) + violation * 1e6`
+- `score = sum(objective_row)`
 
-这**不是算法的核心裁决**，只是给出一个“可读代表点”。当多目标尺度差异很大时，
-这个默认标量可能会偏向某个目标，让 `best_x` 代表性变弱。
+约束违反量由 feasibility-first 比较器单独处理，不再通过固定惩罚系数混入目标。
+Pareto front 仍保留完整多目标语义，incumbent 是显式策略选出的权威单点。
 
 因此框架提供一个**可选的 scalarizer**（你可以不改任何代码，只有在需要更稳摘要时才用）：
 
 ```python
 from nsgablack.core.composable_solver import ComposableSolver
 
-def weighted_sum(objectives, violations, idx):
-    # objectives: (N, M), violations: (N,)
-    # 示例：对第0/1目标设权重，保留约束惩罚
-    f = objectives[idx]
-    vio = 0.0 if violations is None else float(violations[idx])
-    return 0.7 * float(f[0]) + 0.3 * float(f[1]) + vio * 1e6
+def weighted_sum(objective_row, violation, context):
+    # pointwise：只能读取当前候选和固定 context，不能读取整个 batch
+    del violation
+    weights = context["weights"]
+    return sum(float(w) * float(v) for w, v in zip(weights, objective_row))
 
 solver = ComposableSolver(problem=problem, adapter=adapter)
-solver.objective_scalarizer = weighted_sum
+solver.set_incumbent_scalarizer(
+    weighted_sum,
+    policy_id="weighted_sum/v1",
+    context={"weights": [0.7, 0.3]},
+    failure_policy="raise",
+)
 ```
 
 **建议**：
-- 如果你主要看 Pareto，则不要过度依赖 `best_x`（它只是摘要点）
-- 如果你确实需要单点代表，才启用自定义 scalarizer
+- scalarizer 异常默认终止 incumbent 选择，不能静默换一套排序规则。
+- 如确需容错，显式使用 `failure_policy="fallback_sum"`；结果会记录降级次数。
+- 依赖整个 population 的相对排序属于 Adapter 代内选择，不能定义跨代 incumbent。
+
+checkpoint 使用 `nsgablack.checkpoint.v2` 保存完整 incumbent、scalarizer policy/context、
+failure policy、fallback 次数、质量退化状态和 run sequence。恢复时 builder 必须先重建
+同一 scalarizer，policy 或固定 context 不一致会拒绝继续；历史 v1 只能通过显式迁移读取，
+其缺失的 scalarizer 审计会标记为 unknown，而不是伪装成“从未降级”。
+
+ContextStore 只允许在配置的序列化尺寸阈值内内联 `best_x`。超过阈值后，候选写入
+SnapshotStore，Context 只保存规范 `best_candidate_ref`；目标摘要仍可保持轻量内联。
+warm-start 候选在进入候选批次时获得稳定 token，该 token 随 repair 和 evaluate 的行级
+sidecar 传播，因此相同数值的普通提案不会被误认成 warm-start。
+
+Adapter 的代内局部最佳与 Solver 的跨代权威 incumbent 是两套不同语义。Adapter runtime
+projection 必须使用 `adapter_best_x`、`adapter_best_objectives`、`adapter_best_score`，不得
+发布 `best_x`、`best_candidate_ref`、`best_objective`，也不得覆盖 Solver 的 `generation` 或
+`evaluation_count`。正式投影接口固定为 `get_runtime_context_projection(self, solver)`，每次
+采集最多调用一次；内部 `TypeError` 按真实运行错误报告，不能被当成签名兼容信号重试。
+
+正式消费者统一通过受控 runtime projection 网关读取 Adapter 遥测。网关同时执行
+保留字段检查、单字段尺寸预算和整体尺寸预算；超限字段被省略并进入
+`runtime_projection_audit`。网关不会在监控轮询中自动写 Snapshot，也不会为未知对象
+制造不可解析的引用。大对象如确需交付，必须由拥有 codec 和生命周期的 Plugin/Adapter
+先发布真实 `*_ref`。
+
+普通 Adapter 投影的外层审计使用 `ok / unavailable / error / invalid_result` 四态；正式组合
+投影额外允许 `degraded`，因此完整外层状态机是五态。没有 Adapter 或正式投影器属于健康的
+`unavailable`；组合子单元部分失败使用 `degraded`；执行异常、组合全部失败与非法非 Mapping
+返回都必须标记为不健康，且 `degraded / error / invalid_result` 均不得声明 `current=True`。
+组合信封自身只使用 `ok / degraded / error`，并由 blackbase 校验状态与组件分类计数一致。
+嵌套组合发生降级或失败时，父级问题证据通过固定 64 位 `cause_digest` 吸收子信封的
+`audit_digest`；父级不展开子级样本，但不同的深层原因仍会形成不同的父级摘要和去重事件。
+子投影的调用、验证、状态计数、因果摘要与 first-writer 字段合并统一由 blackbase
+`aggregate_runtime_projections()` 完成。nsgablack 组合器只声明活动拓扑：Composite 使用全部
+子 Adapter，Async 使用当前启用策略（事件 Case 模式仅当前活动 Case），Role 包装器使用
+`inner`，RoleRouter 使用全部 role，SerialChain 仅使用当前活动阶段，MultiStrategy 使用启用 unit。
+事件 Case 尚未选出活动 Case 时，活动子拓扑必须为空；Context 投影是观测操作，不得为了生成
+审计而提前选择或启动 Case。字段 writer 随 blackbase 信封递归传播，Solver 外层审计只保留
+有界叶子写入者样本、完整计数和独立 `field_source_digest`，不得把直接父包装器伪装成实际写入者。
+任何新增复合 Adapter 都必须接入同一聚合器，不能以空字典或仅自身字段掩盖子组件健康。
+审计仅保存固定数量且类型化的冲突/省略/组件问题样本、完整计数、原因计数和稳定摘要；字段名、
+错误消息、组件审计及完整外层审计均有硬字节上限。每次 fresh run 都会清除上一运行的审计与
+去重 signature，审计隔离失败也必须以最小 `error` 信封原子替换旧证据。
 

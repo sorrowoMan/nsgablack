@@ -1,7 +1,8 @@
 """
 Core interfaces for NSGABlack components.
 
-This module defines the core interfaces and re-exports from blackbase.
+This module defines nsgablack optimization extension protocols and exposes the
+shared substrate protocol types they reference.
 """
 
 from abc import ABC, abstractmethod

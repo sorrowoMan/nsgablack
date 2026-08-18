@@ -5,7 +5,10 @@ Backend adapters for numeric solvers and inner-runtime tools:
 - `timeout_budget.py`
 - `ngspice_backend.py`
 - `copt_backend.py`
-- `mlblack_symbolic_consensus_backend.py`
+
+ML/symbolic 语义 backend 位于
+`mlblack.integrations.nsgablack_symbolic_backend`；nsgablack 只消费其正式
+Case/provider surface，不保存 ML 实现副本。
 
 ## CoptBackend templates
 

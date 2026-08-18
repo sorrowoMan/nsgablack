@@ -7,14 +7,19 @@ enforcing any specific optimization loop.
 
 from __future__ import annotations
 
+import json
 import logging
 import random
+import threading
+import uuid
 import warnings
+import weakref
+from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
-from .acceleration import AccelerationFacade, ExecutionResult
+from .acceleration import AccelerationFacade, AccelerationRegistry, ExecutionResult
 from .acceleration_helpers import maybe_accel_map, maybe_accel_run
-from .config import StorageConfig, _apply_storage_config
+from blackbase.context import StateStoreConfig
 from .control_plane import (
     BaseController,
     ControlArbiter,
@@ -29,6 +34,11 @@ from .runtime_governance import (
     CompanionOrchestratorConfig,
     ConvergenceConfig,
     ConvergenceMonitor,
+)
+from .state.incumbent import (
+    DEFAULT_INCUMBENT_POLICY_ID,
+    CandidateProvenance,
+    IncumbentState,
 )
 
 import numpy as np
@@ -66,13 +76,15 @@ from .solver_helpers import (
     get_best_snapshot_fields,
     run_solver_loop,
     sample_random_candidate,
-    set_best_snapshot_fields,
     set_generation_value,
     set_pareto_snapshot_fields,
     snapshot_meta,
     strip_large_context_fields,
 )
-from ..core.state.context_keys import (
+from blackbase.context.context_keys import (
+    KEY_BEST_CANDIDATE_REF,
+    KEY_BEST_OBJECTIVE,
+    KEY_BEST_X,
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_CONSTRAINT_VIOLATIONS_REF,
     KEY_DECISION_TRACE,
@@ -87,13 +99,15 @@ from ..core.state.context_keys import (
     KEY_PARETO_SOLUTIONS_REF,
     KEY_POPULATION,
     KEY_POPULATION_REF,
+    KEY_PROBLEM,
     KEY_SNAPSHOT_BACKEND,
+    KEY_SNAPSHOT_KEY,
     KEY_SNAPSHOT_META,
     KEY_SNAPSHOT_SCHEMA,
 )
-from ..core.state.context_store import ContextStore
-from ..core.state.snapshot_store import SnapshotStore, make_snapshot_key
-from ..utils.engineering.error_policy import report_soft_error
+from blackbase.context import ContextStore
+from blackbase.context import SnapshotStore, make_snapshot_key
+from blackbase.plugin import report_soft_error
 from ..utils.extension_contracts import (
     normalize_bias_output,
     normalize_candidate,
@@ -102,6 +116,15 @@ from ..utils.extension_contracts import (
 from ..plugins import PluginManager
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _IncumbentCommit:
+    """One authoritative in-memory incumbent commit."""
+
+    state: IncumbentState | None
+    candidate_ref: str | None
+    revision: int
 
 
 class SolverBase:
@@ -123,10 +146,10 @@ class SolverBase:
         snapshot_strict: bool = False,
         resource_context: Optional[Mapping[str, Any] | ResourceContext] = None,
         # ----------------------------------------------------------------
-        # Preferred: pass a single StorageConfig instead of the flat args.
+        # Preferred: pass a shared StateStoreConfig instead of the flat args.
         # If storage_config is provided, its fields override the flat args.
         # ----------------------------------------------------------------
-        storage_config: Optional[StorageConfig] = None,
+        storage_config: Optional[StateStoreConfig] = None,
         context_store_backend: str = "memory",
         context_store_ttl_seconds: Optional[float] = None,
         context_store_redis_url: str = "redis://localhost:6379/0",
@@ -140,6 +163,9 @@ class SolverBase:
         snapshot_store_hmac_env_var: str = "NSGABLACK_SNAPSHOT_HMAC_KEY",
         snapshot_store_unsafe_allow_unsigned: bool = False,
         snapshot_store_max_payload_bytes: int = 8_388_608,
+        context_inline_candidate_max_bytes: int = 4_096,
+        runtime_context_projection_field_max_bytes: int = 4_096,
+        runtime_context_projection_total_max_bytes: int = 32_768,
         snapshot_schema: str = "population_snapshot_v1",
         enable_convergence_monitor: bool = False,
         convergence_config: Optional[ConvergenceConfig] = None,
@@ -148,10 +174,10 @@ class SolverBase:
         enable_companion_orchestrator: bool = False,
         companion_config: Optional[CompanionOrchestratorConfig] = None,
     ) -> None:
-        # Merge StorageConfig (if supplied) into local flat variables so the
+        # Project the shared config (if supplied) into local store settings.
         # rest of __init__ continues to read them by their original names.
         if storage_config is not None:
-            _sc = _apply_storage_config(storage_config, {})
+            _sc = storage_config.as_dict()
             context_store_backend = _sc.get("context_store_backend", context_store_backend)
             context_store_ttl_seconds = _sc.get("context_store_ttl_seconds", context_store_ttl_seconds)
             context_store_redis_url = _sc.get("context_store_redis_url", context_store_redis_url)
@@ -165,6 +191,18 @@ class SolverBase:
             snapshot_store_hmac_env_var = _sc.get("snapshot_store_hmac_env_var", snapshot_store_hmac_env_var)
             snapshot_store_unsafe_allow_unsigned = _sc.get("snapshot_store_unsafe_allow_unsigned", snapshot_store_unsafe_allow_unsigned)
             snapshot_store_max_payload_bytes = _sc.get("snapshot_store_max_payload_bytes", snapshot_store_max_payload_bytes)
+            context_inline_candidate_max_bytes = _sc.get(
+                "context_inline_candidate_max_bytes",
+                context_inline_candidate_max_bytes,
+            )
+            runtime_context_projection_field_max_bytes = _sc.get(
+                "runtime_context_projection_field_max_bytes",
+                runtime_context_projection_field_max_bytes,
+            )
+            runtime_context_projection_total_max_bytes = _sc.get(
+                "runtime_context_projection_total_max_bytes",
+                runtime_context_projection_total_max_bytes,
+            )
             snapshot_schema = _sc.get("snapshot_schema", snapshot_schema)
         # Keep reference so callers can introspect / rebuild config.
         self._storage_config = storage_config
@@ -208,7 +246,9 @@ class SolverBase:
             CompanionOrchestrator(companion_config) if bool(enable_companion_orchestrator) else None
         )
         # L0: cross-cutting acceleration infrastructure (not plugin-ordered).
-        self.accel = AccelerationFacade()
+        # Backend factories are Case-local. A process-global registry lets one
+        # concurrently built Case replace another Case's execution backend.
+        self.accel = AccelerationFacade(AccelerationRegistry())
         self._accel_default_backends: dict[str, str] = {}
         # L3: runtime control-plane (slot/domain arbitration).
         self.control_arbiter = ControlArbiter(strict=bool(plugin_strict))
@@ -227,6 +267,36 @@ class SolverBase:
         self.population = None
         self.objectives = None
         self.constraint_violations = None
+        self._incumbent_lock = threading.RLock()
+        self._incumbent_commit = _IncumbentCommit(None, None, 0)
+        self._incumbent: IncumbentState | None = None
+        self.best_x: Optional[np.ndarray] = None
+        self.best_objective: Optional[float] = None
+        self.best_f: Optional[float] = None
+        self.best_score: Optional[float] = None
+        self.best_objectives: Optional[np.ndarray] = None
+        self.best_constraint_violation: Optional[float] = None
+        self._run_sequence = 0
+        self._active_run_id: Optional[str] = None
+        self._pending_warm_starts: list[dict[str, Any]] = []
+        self._consumed_warm_starts: list[dict[str, Any]] = []
+        self._proposal_sequence = 0
+        self._candidate_sequence = 0
+        self._candidate_provenance_by_object: dict[
+            int,
+            tuple[weakref.ReferenceType[np.ndarray], CandidateProvenance],
+        ] = {}
+        self._candidate_provenance_lock = threading.RLock()
+        self._active_candidate_provenance: list[CandidateProvenance] = []
+        self._active_candidate_population_ref: Optional[
+            weakref.ReferenceType[np.ndarray]
+        ] = None
+        self._incumbent_candidate_ref: Optional[str] = None
+        self._incumbent_context_projection_revision = 0
+        self._incumbent_context_projection_error: Optional[Dict[str, Any]] = None
+        self._restored_incumbent_projection_audit: Optional[Dict[str, Any]] = None
+        self._runtime_projection_audit: Dict[str, Any] = {}
+        self._runtime_projection_audit_report_signature: Any = None
 
         self.generation = 0
         self.evaluation_count = 0
@@ -257,6 +327,18 @@ class SolverBase:
         )
         self.snapshot_store_unsafe_allow_unsigned = bool(snapshot_store_unsafe_allow_unsigned)
         self.snapshot_store_max_payload_bytes = int(snapshot_store_max_payload_bytes)
+        self.context_inline_candidate_max_bytes = max(
+            0,
+            int(context_inline_candidate_max_bytes),
+        )
+        self.runtime_context_projection_field_max_bytes = max(
+            0,
+            int(runtime_context_projection_field_max_bytes),
+        )
+        self.runtime_context_projection_total_max_bytes = max(
+            0,
+            int(runtime_context_projection_total_max_bytes),
+        )
         self.snapshot_schema = str(snapshot_schema or "population_snapshot_v1")
         self.snapshot_store: SnapshotStore = self._build_snapshot_store()
         self._latest_snapshot_handle = None
@@ -293,7 +375,15 @@ class SolverBase:
         )
 
     def set_context_store(self, store: ContextStore) -> None:
-        self.context_store = store
+        with self._incumbent_lock:
+            self.context_store = store
+            self._incumbent_context_projection_revision = -1
+            self._incumbent_context_projection_error = {
+                "revision": int(self._incumbent_commit.revision),
+                "error_type": "ContextStoreReplaced",
+                "message": "the authoritative incumbent must be published to the replacement ContextStore",
+            }
+            self._publish_incumbent_context(self._incumbent_commit)
 
     def set_snapshot_store(self, store: SnapshotStore) -> None:
         self.snapshot_store = store
@@ -339,6 +429,92 @@ class SolverBase:
 
         self._evaluation_budget.cancel_all()
 
+    def _case_run_id(self) -> Optional[str]:
+        runtime = getattr(self, "case_runtime", None)
+        request = getattr(runtime, "request", None)
+        for holder in (runtime, request):
+            identity = getattr(holder, "identity", None)
+            value = getattr(identity, "case_run_id", None)
+            if value:
+                return str(value)
+        return None
+
+    def _clear_run_context_refs(self) -> None:
+        store = getattr(self, "context_store", None)
+        if store is None:
+            return
+        keys = (
+            KEY_BEST_X,
+            KEY_BEST_OBJECTIVE,
+            KEY_BEST_CANDIDATE_REF,
+            KEY_POPULATION_REF,
+            KEY_OBJECTIVES_REF,
+            KEY_CONSTRAINT_VIOLATIONS_REF,
+            KEY_PARETO_SOLUTIONS_REF,
+            KEY_PARETO_OBJECTIVES_REF,
+            KEY_HISTORY_REF,
+            KEY_DECISION_TRACE_REF,
+            KEY_SNAPSHOT_KEY,
+            KEY_SNAPSHOT_BACKEND,
+            KEY_SNAPSHOT_SCHEMA,
+            KEY_SNAPSHOT_META,
+        )
+        delete = getattr(store, "delete", None)
+        set_value = getattr(store, "set", None)
+        for key in keys:
+            try:
+                if callable(delete):
+                    delete(key)
+                elif callable(set_value):
+                    set_value(key, None)
+                elif isinstance(store, dict):
+                    store.pop(key, None)
+            except Exception:
+                continue
+
+    def prepare_fresh_run(self) -> None:
+        """Reset state owned by one run without discarding explicit warm starts."""
+
+        self._run_sequence = int(getattr(self, "_run_sequence", 0)) + 1
+        run_scope = self._case_run_id() or f"solver-{id(self):x}"
+        run_nonce = uuid.uuid4().hex[:12]
+        self._active_run_id = (
+            f"{run_scope}:solver-run:{self._run_sequence}:{run_nonce}"
+        )
+        self._runtime_projection_audit = {}
+        self._runtime_projection_audit_report_signature = None
+        self._purge_large_context_store()
+        self._clear_run_context_refs()
+        self.set_generation(0)
+        self.evaluation_count = 0
+        self.increment_evaluation_count(0)
+        self.reset_evaluation_budget()
+        self.clear_incumbent()
+        self.population = None
+        self.objectives = None
+        self.constraint_violations = None
+        self.pareto_solutions = None
+        self.pareto_objectives = None
+        self.history = []
+        self.last_result = None
+        self._latest_snapshot_handle = None
+        self._snapshot_generation = None
+        self._consumed_warm_starts = []
+        self._proposal_sequence = 0
+        self._candidate_sequence = 0
+        with self._candidate_provenance_lock:
+            self._candidate_provenance_by_object = {}
+        self._active_candidate_provenance = []
+        self._active_candidate_population_ref = None
+        if hasattr(self, "last_step_summary"):
+            self.last_step_summary = {}
+        if hasattr(self, "scalarizer_fallback_count"):
+            self.scalarizer_fallback_count = 0
+        if hasattr(self, "result_quality_degraded"):
+            self.result_quality_degraded = False
+        if hasattr(self, "scalarizer_audit_complete"):
+            self.scalarizer_audit_complete = True
+
     def get_resource_context(self) -> ResourceContext:
         return self.resource_context
 
@@ -381,6 +557,7 @@ class SolverBase:
     def _apply_resource_context_to_runtime(self) -> None:
         cfg = getattr(self, "_parallel_cfg", None)
         if not isinstance(cfg, dict):
+            self._validate_acceleration_defaults_against_resource_context()
             return
         requested = getattr(self, "_parallel_requested_max_workers", cfg.get("max_workers"))
         cfg["max_workers"] = self.limit_workers_by_resource_context(requested)
@@ -397,6 +574,42 @@ class SolverBase:
         if nested is not None and hasattr(nested, "max_workers"):
             nested.max_workers = cfg["max_workers"]
 
+        self._validate_acceleration_defaults_against_resource_context()
+
+    def _validate_acceleration_defaults_against_resource_context(self) -> None:
+        if not bool(self._resource_context_explicit):
+            return
+        for backend in tuple(self._accel_default_backends.values()):
+            self._validate_acceleration_backend_against_resource_context(backend)
+
+        summary = getattr(self, "l0_runtime_summary", None)
+        if isinstance(summary, dict):
+            summary["effective_resource_context"] = self.resource_context.as_dict()
+            summary["resource_context_current"] = True
+
+    def _validate_acceleration_backend_against_resource_context(self, backend: Any) -> None:
+        if not bool(self._resource_context_explicit):
+            return
+        name = str(backend or "").strip().lower()
+        if name not in {"gpu", "cuda", "cupy", "torch_cuda"}:
+            return
+        context = self.resource_context
+        grant = dict(context.grant or {})
+        tokens = tuple(grant.get("device_tokens", ()) or ())
+        gpu_count = int(grant.get("gpus", 0) or 0)
+        compute_backend = str(context.compute_backend or "").strip().lower()
+        device = str(context.device or "").strip().lower()
+        gpu_authorized = bool(
+            gpu_count > 0
+            or tokens
+            or compute_backend in {"cuda", "gpu", "cupy", "torch_cuda"}
+            or device.startswith(("cuda", "gpu"))
+        )
+        if not gpu_authorized:
+            raise RuntimeError(
+                f"acceleration backend '{name}' requires a GPU grant in ResourceContext"
+            )
+
     def set_context_store_backend(
         self,
         backend: str,
@@ -412,7 +625,7 @@ class SolverBase:
             self.context_store_redis_url = str(redis_url)
         if key_prefix is not None:
             self.context_store_key_prefix = str(key_prefix)
-        self.context_store = self._build_context_store()
+        self.set_context_store(self._build_context_store())
 
     def set_snapshot_store_backend(
         self,
@@ -866,6 +1079,10 @@ class SolverBase:
         while int(current.shape[0]) > 0:
             try:
                 objectives, violations = self.evaluate_population(current)
+                if len(self._active_candidate_provenance) >= int(current.shape[0]):
+                    self._active_candidate_provenance = (
+                        self._active_candidate_provenance[: int(current.shape[0])]
+                    )
                 return current, objectives, violations, truncated
             except EvaluationBudgetExceeded:
                 allowed = self.evaluation_batch_allowance(int(current.shape[0]))
@@ -873,6 +1090,9 @@ class SolverBase:
                     raise
                 truncated = True
                 current = current[: max(0, int(allowed))]
+                self._active_candidate_provenance = (
+                    self._active_candidate_provenance[: max(0, int(allowed))]
+                )
         return (
             np.empty((0, int(self.dimension)), dtype=float),
             np.empty((0, int(self.num_objectives)), dtype=float),
@@ -886,13 +1106,42 @@ class SolverBase:
     def unregister_evaluation_provider(self, provider: Any) -> None:
         self.evaluation_mediator.unregister_provider(provider)
 
+    def configure_evaluation_policy(
+        self,
+        *,
+        allow_approximate: bool | None = None,
+        strict_conflict: bool | None = None,
+    ) -> None:
+        """Configure provider-selection semantics through the control plane."""
+
+        self.evaluation_mediator.configure_policy(
+            allow_approximate=allow_approximate,
+            strict_conflict=strict_conflict,
+        )
+
     def register_acceleration_backend(self, *, scope: str, backend: str, factory: Any) -> None:
-        self.accel.register(scope=scope, backend=backend, factory=factory)
+        if not callable(factory):
+            raise TypeError("acceleration backend factory must be callable")
+
+        def resource_bound_factory(*args: Any, **kwargs: Any) -> Any:
+            self._validate_acceleration_backend_against_resource_context(backend)
+            instance = factory(*args, **kwargs)
+            if hasattr(instance, "max_workers"):
+                requested = getattr(instance, "max_workers", None)
+                setattr(
+                    instance,
+                    "max_workers",
+                    self.limit_workers_by_resource_context(requested),
+                )
+            return instance
+
+        self.accel.register(scope=scope, backend=backend, factory=resource_bound_factory)
 
     def get_acceleration_backend(self, *, scope: str, backend: str = "default", **kwargs: Any) -> Any:
         return self.accel.get(scope=scope, backend=backend, **kwargs)
 
     def set_acceleration_default_backend(self, *, scope: str, backend: str) -> None:
+        self._validate_acceleration_backend_against_resource_context(backend)
         self._accel_default_backends[str(scope)] = str(backend)
 
     def get_acceleration_default_backend(self, *, scope: str) -> Optional[str]:
@@ -1023,14 +1272,563 @@ class SolverBase:
             logger=logger,
         )
 
-    def set_best_snapshot(self, best_x: Any, best_objective: Any) -> None:
-        set_best_snapshot_fields(
-            self,
-            best_x,
-            best_objective,
-            report_soft_error_fn=report_soft_error,
-            logger=logger,
+    @staticmethod
+    def _candidate_serialized_size_bytes(candidate: Any) -> int:
+        payload = json.dumps(
+            np.asarray(candidate, dtype=float).reshape(-1).tolist(),
+            ensure_ascii=False,
+            allow_nan=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return len(payload)
+
+    def _candidate_can_inline_in_context(self, candidate: Any) -> bool:
+        limit = max(0, int(getattr(self, "context_inline_candidate_max_bytes", 0)))
+        return self._candidate_serialized_size_bytes(candidate) <= limit
+
+    @staticmethod
+    def _apply_context_projection_patch(
+        target: Any,
+        values: Mapping[str, Any],
+        delete_keys: Iterable[str],
+    ) -> None:
+        if target is None:
+            return
+        normalized_values = {str(key): value for key, value in values.items()}
+        normalized_deletes = tuple(str(key) for key in delete_keys)
+        if isinstance(target, dict):
+            for key in normalized_deletes:
+                target.pop(key, None)
+            target.update(normalized_values)
+            return
+        apply_patch = getattr(target, "apply_patch", None)
+        if bool(getattr(target, "supports_atomic_patch", False)) and callable(
+            apply_patch
+        ):
+            apply_patch(normalized_values, delete_keys=normalized_deletes)
+            return
+        raise RuntimeError(
+            "incumbent Context projection requires atomic apply_patch support"
         )
+
+    def _incumbent_projection_patch(
+        self,
+        commit: _IncumbentCommit,
+    ) -> tuple[Dict[str, Any], tuple[str, ...]]:
+        state = commit.state
+        if state is None:
+            return {}, (
+                KEY_BEST_X,
+                KEY_BEST_CANDIDATE_REF,
+                KEY_BEST_OBJECTIVE,
+            )
+        values: Dict[str, Any] = {KEY_BEST_OBJECTIVE: float(state.score)}
+        if self._candidate_can_inline_in_context(state.candidate):
+            values[KEY_BEST_X] = state.candidate.copy()
+            return values, (KEY_BEST_CANDIDATE_REF,)
+        if commit.candidate_ref:
+            values[KEY_BEST_CANDIDATE_REF] = commit.candidate_ref
+        return values, (KEY_BEST_X,) if commit.candidate_ref else (
+            KEY_BEST_X,
+            KEY_BEST_CANDIDATE_REF,
+        )
+
+    def _publish_incumbent_context(self, commit: _IncumbentCommit) -> bool:
+        values, delete_keys = self._incumbent_projection_patch(commit)
+        try:
+            self._apply_context_projection_patch(
+                getattr(self, "context_store", None),
+                values,
+                delete_keys,
+            )
+        except Exception as exc:
+            self._incumbent_context_projection_error = {
+                "revision": int(commit.revision),
+                "error_type": exc.__class__.__name__,
+                "message": str(exc),
+            }
+            report_soft_error(
+                component="SolverBase",
+                event="incumbent_context_projection",
+                exc=exc,
+                logger=logger,
+                context_store=getattr(self, "context_store", None),
+                strict=False,
+            )
+            return False
+        self._incumbent_context_projection_revision = int(commit.revision)
+        self._incumbent_context_projection_error = None
+        return True
+
+    def _incumbent_projection_audit_locked(self) -> Dict[str, Any]:
+        incumbent_revision = int(self._incumbent_commit.revision)
+        projection_revision = int(self._incumbent_context_projection_revision)
+        projection_error = self._incumbent_context_projection_error
+        current = (
+            projection_revision == incumbent_revision
+            and projection_error is None
+        )
+        return {
+            "incumbent_revision": incumbent_revision,
+            "incumbent_context_projection_revision": projection_revision,
+            "incumbent_context_projection_current": bool(current),
+            "incumbent_context_projection_error": (
+                None if projection_error is None else dict(projection_error)
+            ),
+        }
+
+    def get_incumbent_projection_audit(self) -> Dict[str, Any]:
+        """Return transport-safe evidence about ContextStore publication."""
+
+        with self._incumbent_lock:
+            return self._incumbent_projection_audit_locked()
+
+    def _record_restored_incumbent_projection_audit(
+        self,
+        audit: Optional[Mapping[str, Any]],
+    ) -> None:
+        """Keep saved publication evidence separate from the new live store."""
+
+        with self._incumbent_lock:
+            self._restored_incumbent_projection_audit = (
+                None if audit is None else dict(audit)
+            )
+
+    def _persist_candidate_snapshot(
+        self,
+        candidate: Any,
+        *,
+        meta: Optional[Mapping[str, Any]] = None,
+    ) -> Optional[str]:
+        store = getattr(self, "snapshot_store", None)
+        if store is None:
+            if bool(getattr(self, "snapshot_strict", False)):
+                raise RuntimeError(
+                    "strict incumbent candidate persistence requires a SnapshotStore"
+                )
+            return None
+        key = make_snapshot_key(
+            prefix="incumbent",
+            generation=int(getattr(self, "generation", 0)),
+            suffix="best-candidate",
+        )
+        metadata = {
+            **dict(meta or {}),
+            "serialized_size_bytes": self._candidate_serialized_size_bytes(
+                candidate
+            ),
+        }
+        try:
+            handle = store.write(
+                {KEY_BEST_X: np.asarray(candidate, dtype=float).reshape(-1).copy()},
+                key=key,
+                meta=metadata,
+                schema="nsgablack.incumbent_candidate.v1",
+                ttl_seconds=self.snapshot_store_ttl_seconds,
+            )
+        except Exception as exc:
+            report_soft_error(
+                component="SolverBase",
+                event="incumbent_candidate_snapshot_write",
+                exc=exc,
+                logger=logger,
+                context_store=self.context_store,
+                strict=bool(getattr(self, "snapshot_strict", False)),
+            )
+            return None
+        return str(handle.key)
+
+    def _persist_incumbent_candidate(self, state: IncumbentState) -> Optional[str]:
+        return self._persist_candidate_snapshot(
+            state.candidate,
+            meta={
+                "active_run_id": self._active_run_id,
+                "evaluation_id": state.evaluation_id,
+                "candidate_token": state.candidate_token,
+            },
+        )
+
+    def _discard_staged_incumbent_candidate(self, candidate_ref: str) -> None:
+        store = getattr(self, "snapshot_store", None)
+        delete = getattr(store, "delete", None)
+        if not callable(delete):
+            return
+        try:
+            delete(str(candidate_ref))
+        except Exception as exc:
+            report_soft_error(
+                component="SolverBase",
+                event="incumbent_candidate_snapshot_discard",
+                exc=exc,
+                logger=logger,
+                context_store=self.context_store,
+                strict=False,
+            )
+
+    def project_incumbent_context(self, target: Any) -> None:
+        """Project only bounded incumbent data or a SnapshotStore reference."""
+
+        with self._incumbent_lock:
+            commit = self._incumbent_commit
+        values, delete_keys = self._incumbent_projection_patch(commit)
+        self._apply_context_projection_patch(target, values, delete_keys)
+
+    def get_incumbent(self) -> IncumbentState | None:
+        """Return the complete authoritative incumbent for the active run."""
+
+        with self._incumbent_lock:
+            return self._incumbent_commit.state
+
+    def export_incumbent_checkpoint_state(self) -> Dict[str, Any]:
+        """Export incumbent and selection audit from one locked state view."""
+
+        with self._incumbent_lock:
+            incumbent = self._incumbent_commit.state
+            policy_context = dict(
+                getattr(
+                    self,
+                    "incumbent_scalarizer_context",
+                    getattr(incumbent, "policy_context", {}) if incumbent else {},
+                )
+                or {}
+            )
+            return {
+                "incumbent": None if incumbent is None else incumbent.as_dict(),
+                "incumbent_projection": self._incumbent_projection_audit_locked(),
+                "incumbent_selection": {
+                    "policy_id": str(
+                        getattr(
+                            self,
+                            "incumbent_scalarizer_id",
+                            getattr(
+                                incumbent,
+                                "policy_id",
+                                DEFAULT_INCUMBENT_POLICY_ID,
+                            ),
+                        )
+                    ),
+                    "policy_context": policy_context,
+                    "failure_policy": getattr(
+                        self,
+                        "scalarizer_failure_policy",
+                        "raise",
+                    ),
+                    "fallback_count": int(
+                        getattr(self, "scalarizer_fallback_count", 0) or 0
+                    ),
+                    "result_quality_degraded": getattr(
+                        self,
+                        "result_quality_degraded",
+                        False,
+                    ),
+                    "audit_complete": bool(
+                        getattr(self, "scalarizer_audit_complete", True)
+                    ),
+                },
+            }
+
+    def _validate_incumbent_commit(self, state: IncumbentState) -> None:
+        """Validate a state before artifact staging and again before commit."""
+
+        if not isinstance(state, IncumbentState):
+            raise TypeError("incumbent commit requires an IncumbentState")
+
+    def set_incumbent(
+        self,
+        incumbent: IncumbentState | Mapping[str, Any],
+    ) -> IncumbentState:
+        """Stage required artifacts, then commit one authoritative incumbent."""
+
+        state = (
+            incumbent
+            if isinstance(incumbent, IncumbentState)
+            else IncumbentState.from_dict(incumbent)
+        )
+        self._validate_incumbent_commit(state)
+        best_x = state.candidate.copy()
+        best_objectives = state.objectives.copy()
+        candidate_ref: Optional[str] = None
+        if not self._candidate_can_inline_in_context(state.candidate):
+            candidate_ref = self._persist_incumbent_candidate(state)
+        try:
+            with self._incumbent_lock:
+                # Snapshot persistence runs without the incumbent lock.  Recheck
+                # here so a concurrent selection-policy change cannot commit a
+                # state that was valid only at the beginning of staging.
+                self._validate_incumbent_commit(state)
+                commit = _IncumbentCommit(
+                    state=state,
+                    candidate_ref=candidate_ref,
+                    revision=int(self._incumbent_commit.revision) + 1,
+                )
+                self.best_x = best_x
+                self.best_objectives = best_objectives
+                self.best_constraint_violation = state.constraint_violation
+                self.best_score = state.score
+                self.best_objective = state.score
+                self.best_f = state.score
+                self._incumbent = state
+                self._incumbent_candidate_ref = candidate_ref
+                self._incumbent_commit = commit
+                self._publish_incumbent_context(commit)
+        except Exception:
+            if candidate_ref:
+                self._discard_staged_incumbent_candidate(candidate_ref)
+            raise
+        return state
+
+    def clear_incumbent(self) -> None:
+        """Clear the atomic incumbent and every derived projection."""
+
+        with self._incumbent_lock:
+            commit = _IncumbentCommit(
+                state=None,
+                candidate_ref=None,
+                revision=int(self._incumbent_commit.revision) + 1,
+            )
+            self._incumbent = None
+            self.best_x = None
+            self.best_objectives = None
+            self.best_constraint_violation = None
+            self.best_score = None
+            self.best_objective = None
+            self.best_f = None
+            self._incumbent_candidate_ref = None
+            self._incumbent_commit = commit
+            self._publish_incumbent_context(commit)
+
+    def set_warm_start(
+        self,
+        candidate: Any | IncumbentState,
+        *,
+        source_run_id: str | None = None,
+        metadata: Optional[Mapping[str, Any]] = None,
+    ) -> "SolverBase":
+        """Queue a seed candidate for reevaluation in the next fresh run.
+
+        Even when an ``IncumbentState`` is supplied, its old objectives and
+        score are not trusted as facts of the new run.  The candidate must pass
+        through the normal evaluation path before it can become authoritative.
+        """
+
+        if isinstance(candidate, IncumbentState):
+            source_run_id = source_run_id or candidate.source_run_id
+            seed = candidate.candidate
+            inherited = {
+                "source_evaluation_id": candidate.evaluation_id,
+                "source_policy_id": candidate.policy_id,
+                **dict(candidate.metadata),
+                **dict(metadata or {}),
+            }
+        else:
+            seed = candidate
+            inherited = dict(metadata or {})
+        seed_array = normalize_candidate(
+            seed,
+            dimension=self.dimension,
+            name="warm_start.candidate",
+        ).copy()
+        warm_start_id = f"warm-start:{uuid.uuid4().hex}"
+        self._pending_warm_starts.append(
+            {
+                "candidate": seed_array,
+                "source_run_id": None if source_run_id is None else str(source_run_id),
+                "warm_start_id": warm_start_id,
+                "metadata": inherited,
+            }
+        )
+        return self
+
+    def _new_candidate_provenance(
+        self,
+        *,
+        source_kind: str = "evaluation",
+        source_run_id: Optional[str] = None,
+        warm_start_id: Optional[str] = None,
+        proposal_id: Optional[str] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
+    ) -> CandidateProvenance:
+        self._candidate_sequence = int(self._candidate_sequence) + 1
+        token_scope = self._active_run_id or "unscoped"
+        token = (
+            f"{token_scope}:candidate:{self._candidate_sequence}:"
+            f"{uuid.uuid4().hex[:8]}"
+        )
+        return CandidateProvenance(
+            candidate_token=token,
+            source_kind=source_kind,
+            source_run_id=source_run_id,
+            warm_start_id=warm_start_id,
+            proposal_id=proposal_id,
+            metadata=dict(metadata or {}),
+        )
+
+    def _register_candidate_provenance(
+        self,
+        candidate: Any,
+        provenance: CandidateProvenance,
+    ) -> None:
+        array = np.asarray(candidate)
+        object_id = id(array)
+        solver_ref = weakref.ref(self)
+
+        def _cleanup(reference: weakref.ReferenceType[np.ndarray]) -> None:
+            solver = solver_ref()
+            if solver is None:
+                return
+            with solver._candidate_provenance_lock:
+                current = solver._candidate_provenance_by_object.get(object_id)
+                if current is not None and current[0] is reference:
+                    solver._candidate_provenance_by_object.pop(object_id, None)
+
+        try:
+            reference = weakref.ref(array, _cleanup)
+        except TypeError:
+            return
+        with self._candidate_provenance_lock:
+            self._candidate_provenance_by_object[object_id] = (
+                reference,
+                provenance,
+            )
+
+    def _lookup_candidate_provenance(
+        self,
+        candidate: Any,
+    ) -> Optional[CandidateProvenance]:
+        current = np.asarray(candidate)
+        visited: set[int] = set()
+        while isinstance(current, np.ndarray) and id(current) not in visited:
+            object_id = id(current)
+            visited.add(object_id)
+            with self._candidate_provenance_lock:
+                entry = self._candidate_provenance_by_object.get(object_id)
+            if entry is not None:
+                reference, provenance = entry
+                if reference() is current:
+                    return provenance
+                with self._candidate_provenance_lock:
+                    latest = self._candidate_provenance_by_object.get(object_id)
+                    if latest is entry:
+                        self._candidate_provenance_by_object.pop(object_id, None)
+            base = getattr(current, "base", None)
+            if not isinstance(base, np.ndarray):
+                break
+            current = base
+        return None
+
+    def prepare_candidate_provenance(
+        self,
+        candidates: Iterable[Any],
+    ) -> list[CandidateProvenance]:
+        """Assign one stable token to each proposed row before repair/evaluation."""
+
+        self._proposal_sequence = int(self._proposal_sequence) + 1
+        proposal_id = (
+            f"{self._active_run_id or 'unscoped'}:proposal:"
+            f"{self._proposal_sequence}"
+        )
+        out: list[CandidateProvenance] = []
+        for candidate in candidates:
+            provenance = self._lookup_candidate_provenance(candidate)
+            if provenance is None:
+                provenance = self._new_candidate_provenance(
+                    source_kind="evaluation",
+                    source_run_id=self._active_run_id,
+                    proposal_id=proposal_id,
+                )
+            elif provenance.proposal_id is None:
+                provenance = CandidateProvenance(
+                    candidate_token=provenance.candidate_token,
+                    source_kind=provenance.source_kind,
+                    source_run_id=provenance.source_run_id,
+                    warm_start_id=provenance.warm_start_id,
+                    proposal_id=proposal_id,
+                    metadata=provenance.metadata,
+                )
+            self._register_candidate_provenance(candidate, provenance)
+            out.append(provenance)
+        return out
+
+    def bind_candidate_provenance(
+        self,
+        candidates: Iterable[Any],
+        provenance: Iterable[CandidateProvenance],
+        *,
+        activate: bool = True,
+    ) -> list[CandidateProvenance]:
+        candidate_values = list(candidates)
+        provenance_values = list(provenance)
+        if len(candidate_values) != len(provenance_values):
+            raise ValueError("candidate provenance must align with candidate rows")
+        for candidate, record in zip(candidate_values, provenance_values):
+            self._register_candidate_provenance(candidate, record)
+        if activate:
+            self._active_candidate_provenance = provenance_values
+        return provenance_values
+
+    def activate_candidate_provenance(
+        self,
+        population: Any,
+        provenance: Iterable[CandidateProvenance],
+    ) -> None:
+        population_values = np.asarray(population)
+        provenance_values = list(provenance)
+        if population_values.ndim != 2 or population_values.shape[0] != len(
+            provenance_values
+        ):
+            raise ValueError("active candidate provenance must align with population")
+        self._active_candidate_provenance = provenance_values
+        self._active_candidate_population_ref = weakref.ref(population_values)
+
+    def _take_warm_start_candidate(self) -> Optional[np.ndarray]:
+        if not self._pending_warm_starts:
+            return None
+        record = dict(self._pending_warm_starts.pop(0))
+        candidate = np.asarray(record["candidate"], dtype=float).reshape(-1).copy()
+        provenance = self._new_candidate_provenance(
+            source_kind="warm_start_evaluated",
+            source_run_id=record.get("source_run_id"),
+            warm_start_id=record.get("warm_start_id"),
+            metadata=record.get("metadata", {}),
+        )
+        self._register_candidate_provenance(candidate, provenance)
+        self._consumed_warm_starts.append(provenance.as_dict())
+        return candidate
+
+    def incumbent_source_for(
+        self,
+        candidate: Any,
+        *,
+        candidate_index: Optional[int] = None,
+        population: Any = None,
+    ) -> dict[str, Any]:
+        provenance = None
+        active_population = (
+            None
+            if self._active_candidate_population_ref is None
+            else self._active_candidate_population_ref()
+        )
+        population_values = None if population is None else np.asarray(population)
+        if candidate_index is not None and active_population is population_values:
+            index = int(candidate_index)
+            if 0 <= index < len(self._active_candidate_provenance):
+                provenance = self._active_candidate_provenance[index]
+        if provenance is None:
+            provenance = self._lookup_candidate_provenance(candidate)
+        if provenance is None:
+            provenance = self._new_candidate_provenance(
+                source_kind="evaluation",
+                source_run_id=self._active_run_id,
+            )
+            self._register_candidate_provenance(candidate, provenance)
+        return {
+            "candidate_token": provenance.candidate_token,
+            "source": provenance.source_kind,
+            "source_run_id": provenance.source_run_id,
+            "warm_start_id": provenance.warm_start_id,
+            "proposal_id": provenance.proposal_id,
+            "metadata": dict(provenance.metadata),
+        }
 
     def set_pareto_snapshot(self, solutions: Any, objectives: Any) -> None:
         set_pareto_snapshot_fields(
@@ -1065,6 +1863,13 @@ class SolverBase:
     # Representation helpers (optional)
     # ------------------------------------------------------------------
     def init_candidate(self, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+        warm_start = self._take_warm_start_candidate()
+        if warm_start is not None:
+            return normalize_candidate(
+                warm_start,
+                dimension=self.dimension,
+                name="warm_start.candidate",
+            )
         pipeline = self.representation_pipeline
         initializer = None
         if pipeline is not None:
@@ -1072,10 +1877,12 @@ class SolverBase:
             if initializer is None:
                 initializer = getattr(pipeline, "_initializer", None)
         if pipeline is not None and initializer is not None:
-            init_fn = getattr(pipeline, "initialize", None)
+            init_fn = getattr(pipeline, "init", None)
             if not callable(init_fn):
-                init_fn = getattr(pipeline, "init", None)
-            cand = init_fn(self.problem, context) if callable(init_fn) else self._random_candidate()
+                raise TypeError("representation pipeline must expose init(context)")
+            init_context = dict(context or self.build_context())
+            init_context[KEY_PROBLEM] = self.problem
+            cand = init_fn(init_context)
         else:
             cand = self._random_candidate()
         return normalize_candidate(cand, dimension=self.dimension, name="init_candidate")
@@ -1146,6 +1953,8 @@ class SolverBase:
         population = []
         for _ in range(size):
             population.append(self.init_candidate(context))
+        candidate_provenance = self.prepare_candidate_provenance(population)
+        self.bind_candidate_provenance(population, candidate_provenance)
         if population:
             self.population = stack_population(
                 population,
@@ -1153,6 +1962,7 @@ class SolverBase:
             )
         else:
             self.population = np.empty((0, int(self.dimension)), dtype=float)
+        self.activate_candidate_provenance(self.population, candidate_provenance)
 
         if evaluate:
             (
@@ -1161,6 +1971,13 @@ class SolverBase:
                 self.constraint_violations,
                 budget_truncated,
             ) = self._evaluate_population_with_budget_retry(self.population)
+            self._active_candidate_provenance = candidate_provenance[
+                : int(self.population.shape[0])
+            ]
+            self.activate_candidate_provenance(
+                self.population,
+                self._active_candidate_provenance,
+            )
             if budget_truncated and int(self.population.shape[0]) == 0:
                 self.request_stop()
             self.plugin_manager.on_population_init(
@@ -1381,6 +2198,16 @@ class SolverBase:
         store = getattr(self, "context_store", None)
         if store is None:
             return
+        get_value = getattr(store, "get", None)
+        if callable(get_value):
+            try:
+                inline_best = get_value(KEY_BEST_X, None)
+                if inline_best is not None and not self._candidate_can_inline_in_context(
+                    inline_best
+                ):
+                    store.delete(KEY_BEST_X)
+            except Exception:
+                pass
         for key in (
             KEY_POPULATION,
             KEY_OBJECTIVES,
@@ -1595,6 +2422,16 @@ class SolverBase:
             self,
             report_soft_error_fn=report_soft_error,
             logger=logger,
+        )
+
+    def get_runtime_projection_audit(self) -> Dict[str, Any]:
+        """Return lightweight evidence for the latest Adapter telemetry gate."""
+
+        from blackbase.context import detach_context_value
+
+        return detach_context_value(
+            self._runtime_projection_audit,
+            path="runtime_projection_audit",
         )
 
     def _dispatch_error_once(

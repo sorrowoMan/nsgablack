@@ -21,8 +21,11 @@ import time
 
 import numpy as np
 
-from ..base import Plugin
-from ...utils.context.context_keys import KEY_BEST_OBJECTIVE
+from ..base import Plugin, report_soft_error
+from ...core.solver_helpers.control_plane_helpers import (
+    collect_adapter_runtime_context_projection,
+)
+from blackbase.context.context_keys import KEY_BEST_OBJECTIVE
 from ...utils.engineering.file_io import atomic_write_json
 from ...utils.engineering.schema_version import stamp_schema
 
@@ -285,17 +288,10 @@ class BenchmarkHarnessPlugin(Plugin):
             return None
 
     def _read_adapter_projection(self, solver: Any) -> Dict[str, Any]:
-        adapter = getattr(solver, "adapter", None)
-        if adapter is None:
-            return {}
-        projector = getattr(adapter, "get_runtime_context_projection", None)
-        if not callable(projector):
-            return {}
-        try:
-            out = projector(solver)
-        except Exception:
-            return {}
-        return out if isinstance(out, dict) else {}
+        return collect_adapter_runtime_context_projection(
+            solver,
+            report_soft_error_fn=report_soft_error,
+        )
 
 
 

@@ -1,8 +1,4 @@
-"""
-Forwarding module for context store.
-
-This module re-exports from blackbase for seamless migration.
-"""
+"""Optimization-facing public context-store surface backed by blackbase."""
 
 from blackbase.context import (
     ContextStore,

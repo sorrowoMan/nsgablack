@@ -12,6 +12,7 @@ from typing import Iterable, Mapping, Optional, MutableMapping, Sequence, Any
 import numpy as np
 
 from blackbase.abc import RepresentationBase
+from blackbase.call_binding import CallCandidate, invoke_bound_once
 from blackbase.context.context_keys import KEY_METRICS, KEY_PROBLEM
 from blackbase.kernel import (
     PipelineSlotSpec,
@@ -259,15 +260,12 @@ class RepresentationPipeline(RepresentationBase):
         weights = weights / float(np.sum(weights))
         return self.initializers[int(self._rng.choice(len(self.initializers), p=weights))][0]
 
-    def init(self, problem_or_context=None, context=None):
-        """Create a candidate, accepting both blackbase and legacy nsgablack call forms."""
-        if context is None and isinstance(problem_or_context, Mapping):
-            context_in = self._prepare_context(problem_or_context)
-            problem = context_in.get(KEY_PROBLEM, context_in)
-        else:
-            context_in = self._prepare_context(context)
-            problem = problem_or_context
-            context_in.setdefault(KEY_PROBLEM, problem)
+    def init(self, context: Mapping[str, Any]):
+        """Create one candidate from the canonical representation context."""
+        context_in = self._prepare_context(context)
+        if KEY_PROBLEM not in context_in:
+            raise KeyError(f"representation context must provide {KEY_PROBLEM!r}")
+        problem = context_in[KEY_PROBLEM]
 
         last_error: Optional[BaseException] = None
         last_candidate: Any = None
@@ -366,10 +364,20 @@ class RepresentationPipeline(RepresentationBase):
         context_items = self._normalize_batch_contexts(states, contexts, context)
         batch = getattr(self._repair, "repair_batch", None)
         if callable(batch):
-            try:
-                return batch(states, contexts=context_items)
-            except TypeError:
-                return batch(states, context_items)
+            return invoke_bound_once(
+                batch,
+                (
+                    CallCandidate(
+                        args=(states,),
+                        kwargs={"contexts": context_items},
+                        label="keyword_contexts",
+                    ),
+                    CallCandidate(
+                        args=(states, context_items),
+                        label="positional_contexts",
+                    ),
+                ),
+            )
         return [self.repair(state, context_items[idx]) for idx, state in enumerate(states)]
 
     def mutate_batch(self, states, contexts: Optional[Iterable[Optional[dict]]] = None, *, context=None):
@@ -378,10 +386,20 @@ class RepresentationPipeline(RepresentationBase):
         context_items = self._normalize_batch_contexts(states, contexts, context)
         batch = getattr(self._mutator, "mutate_batch", None)
         if callable(batch):
-            try:
-                mutated = batch(states, contexts=context_items)
-            except TypeError:
-                mutated = batch(states, context_items)
+            mutated = invoke_bound_once(
+                batch,
+                (
+                    CallCandidate(
+                        args=(states,),
+                        kwargs={"contexts": context_items},
+                        label="keyword_contexts",
+                    ),
+                    CallCandidate(
+                        args=(states, context_items),
+                        label="positional_contexts",
+                    ),
+                ),
+            )
             return self.repair_batch(mutated, contexts=context_items)
         return [self.mutate(state, context_items[idx]) for idx, state in enumerate(states)]
 
@@ -404,21 +422,6 @@ class RepresentationPipeline(RepresentationBase):
             return float(np.sum(np.maximum(values, 0.0))) <= 1e-10
         except Exception:
             return False
-
-    # --- Legacy API compatibility ---
-
-    def initialize(self, problem, context: Optional[MutableMapping] = None):
-        """Legacy initializer spelling used by SolverBase."""
-        return self.init(problem, context=context)
-
-    def transform(self, value, context: Optional[MutableMapping] = None):
-        """Legacy transform method."""
-        result = value
-        if self._initializer:
-            result = self.initialize(result, context)
-        if self._encoder:
-            result = self.encode(result, context)
-        return result
 
     def describe(self) -> dict:
         """Describe the representation pipeline configuration."""
@@ -581,7 +584,7 @@ def _parallel_repair_task(task: tuple[Any, Any, Optional[dict]]) -> Any:
 
 
 class ContinuousRepresentation:
-    """Legacy continuous representation."""
+    """Continuous representation."""
 
     key = "continuous"
     context_requires = ()
@@ -595,7 +598,7 @@ class ContinuousRepresentation:
         self._constraints: list[Any] = []
         self._low, self._high = _bounds_to_arrays(self.bounds, self.dimension)
 
-    def initialize(self, context: Optional[MutableMapping] = None):
+    def init(self, context: Optional[MutableMapping] = None):
         _ = context
         return np.random.uniform(
             low=self._low,
@@ -626,7 +629,7 @@ class ContinuousRepresentation:
 
 
 class IntegerRepresentation:
-    """Legacy integer representation."""
+    """Integer representation."""
 
     key = "integer"
     context_requires = ()
@@ -640,7 +643,7 @@ class IntegerRepresentation:
         self._constraints: list[Any] = []
         self._low, self._high = _bounds_to_arrays(self.bounds, self.dimension)
 
-    def initialize(self, context: Optional[MutableMapping] = None):
+    def init(self, context: Optional[MutableMapping] = None):
         _ = context
         return np.random.randint(
             low=np.asarray(self._low, dtype=int),
@@ -671,7 +674,7 @@ class IntegerRepresentation:
 
 
 class PermutationRepresentation:
-    """Legacy permutation representation."""
+    """Permutation representation."""
 
     key = "permutation"
     context_requires = ()
@@ -684,7 +687,7 @@ class PermutationRepresentation:
         self.dimension = self.size
         self._rng = np.random.default_rng()
 
-    def initialize(self, context: Optional[MutableMapping] = None):
+    def init(self, context: Optional[MutableMapping] = None):
         _ = context
         return self.generate_random()
 
@@ -702,7 +705,7 @@ class PermutationRepresentation:
 
 
 class MixedRepresentation:
-    """Legacy mixed representation."""
+    """Mixed representation composed from typed child representations."""
 
     context_requires = ()
     context_provides = ()
@@ -715,8 +718,8 @@ class MixedRepresentation:
         self.dimension = self.total_dimension
         self._keys = [self._representation_key(rep, idx) for idx, rep in enumerate(self.representations)]
 
-    def initialize(self, context: Optional[MutableMapping] = None):
-        result = [rep.initialize(context) for rep in self.representations]
+    def init(self, context: Optional[MutableMapping] = None):
+        result = [rep.init(context) for rep in self.representations]
         return np.concatenate([np.atleast_1d(value) for value in result])
 
     @staticmethod

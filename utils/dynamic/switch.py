@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 import time
 
 from ...plugins.base import Plugin
-from ..context.context_keys import KEY_DYNAMIC, KEY_GENERATION, KEY_PHASE_ID
+from blackbase.context.context_keys import KEY_DYNAMIC, KEY_GENERATION, KEY_PHASE_ID
 
 
 @dataclass

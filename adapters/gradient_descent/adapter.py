@@ -12,7 +12,7 @@ import numpy as np
 from blackbase.contracts import BatchDisposition
 
 from ..algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import KEY_ADAPTER_BEST_SCORE, KEY_MUTATION_SIGMA
+from blackbase.context.context_keys import KEY_ADAPTER_BEST_SCORE, KEY_MUTATION_SIGMA
 
 
 @dataclass

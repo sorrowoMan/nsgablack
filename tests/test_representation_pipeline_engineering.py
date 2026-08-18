@@ -87,8 +87,8 @@ def test_pipeline_seed_reproducibly_controls_component_rng_streams():
     first.set_random_seed(17)
     second.set_random_seed(17)
 
-    first_candidate = first.init(problem, {})
-    second_candidate = second.init(problem, {})
+    first_candidate = first.init({"problem": problem})
+    second_candidate = second.init({"problem": problem})
     first_mutated = first.mutate(first_candidate, {"mutation_sigma": 0.25})
     second_mutated = second.mutate(second_candidate, {"mutation_sigma": 0.25})
 

@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 import numpy as np
 
 from ..base import Plugin
-from ...utils.context.context_keys import (
+from blackbase.context.context_keys import (
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_EVALUATION_COUNT,
     KEY_OBJECTIVES,
@@ -17,22 +17,10 @@ from ...utils.context.context_keys import (
 
 def _evaluate_candidate_with_solver(solver, x: np.ndarray, individual_id: int) -> tuple[np.ndarray, float]:
     evaluator = getattr(solver, "evaluate_individual", None)
-    if callable(evaluator):
-        obj, vio = evaluator(x, individual_id=individual_id)
-        return np.asarray(obj, dtype=float).reshape(-1), float(vio)
-
-    legacy = getattr(solver, "_evaluate_individual", None)
-    if callable(legacy):
-        obj, vio = legacy(x, individual_id=individual_id)
-        counter = getattr(solver, "increment_evaluation_count", None)
-        if callable(counter):
-            try:
-                counter(1)
-            except Exception:
-                pass
-        return np.asarray(obj, dtype=float).reshape(-1), float(vio)
-
-    raise AttributeError("solver has neither evaluate_individual() nor _evaluate_individual()")
+    if not callable(evaluator):
+        raise TypeError("solver must expose evaluate_individual()")
+    obj, vio = evaluator(x, individual_id=individual_id)
+    return np.asarray(obj, dtype=float).reshape(-1), float(vio)
 
 
 class BasicElitePlugin(Plugin):

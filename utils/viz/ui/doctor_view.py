@@ -179,7 +179,7 @@ _HINT_RULES: Dict[str, tuple[str, str, str]] = {
     "project-component-unregistered": (
         "Project component unregistered",
         "Catalog",
-        "Register project component in local project_registry.py.",
+        "Register project components in catalog/entries/<kind>.toml.",
     ),
 }
 

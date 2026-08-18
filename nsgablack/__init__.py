@@ -17,17 +17,7 @@ _PARENT = Path(__file__).resolve().parent.parent
 if str(_PARENT) not in __path__:
     __path__.append(str(_PARENT))
 
-# Version is managed by setuptools_scm (pyproject.toml: dynamic = ["version"]).
-# For editable installs, importlib.metadata provides the resolved version.
-try:
-    from importlib.metadata import PackageNotFoundError, version as _pkg_version
-
-    try:
-        __version__ = _pkg_version("nsgablack")
-    except PackageNotFoundError:  # pragma: no cover
-        __version__ = "0+unknown"
-except Exception:  # pragma: no cover
-    __version__ = "0+unknown"
+__version__ = "0.3.0"
 
 __author__ = "SorrowoMan"
 __email__ = "sorrowo@foxmail.com"

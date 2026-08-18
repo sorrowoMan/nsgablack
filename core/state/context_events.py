@@ -1,8 +1,4 @@
-"""
-Forwarding module for context events.
-
-This module re-exports from blackbase for seamless migration.
-"""
+"""Optimization-facing public context-event surface backed by blackbase."""
 
 from blackbase.context import (
     ContextEvent,

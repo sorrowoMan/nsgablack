@@ -11,7 +11,7 @@ from tkinter import ttk
 import numpy as np
 
 from ...engineering.schema_version import stamp_schema
-from ...context.context_keys import KEY_BEST_OBJECTIVE, KEY_BEST_X
+from blackbase.context.context_keys import KEY_BEST_OBJECTIVE, KEY_BEST_X
 from ...runtime.repro_bundle import build_repro_bundle, write_repro_bundle
 
 

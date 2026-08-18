@@ -28,14 +28,15 @@ _REPORT_FIELDS = (
 def build_solver_result(solver: Any, raw_output: Any) -> SolverResult:
     """Build a stable Case payload without changing direct ``Solver.run`` APIs.
 
-    A formal ``SolverResult`` is passed through.  For legacy/direct Solver
-    outputs, this boundary only exports best fields explicitly declared by the
-    Solver; it never selects or scalarizes a population on the algorithm's
-    behalf.
+    A formal ``SolverResult`` is passed through. Otherwise this boundary only
+    exports a complete authoritative incumbent; it never reconstructs a best
+    solution from partial mirror fields or scalarizes a population.
     """
 
     formal = _formal_solver_result(raw_output)
     result = formal if formal is not None else _build_declared_solver_result(solver, raw_output)
+    result = _merge_incumbent_projection_audit(solver, result)
+    result = _merge_runtime_projection_audit(solver, result)
     result = _merge_runtime_artifact_refs(solver, result)
     return _apply_inline_gates(solver, result)
 
@@ -58,6 +59,44 @@ def _formal_solver_result(raw_output: Any) -> SolverResult | None:
     return None
 
 
+def _merge_incumbent_projection_audit(
+    solver: Any,
+    result: SolverResult,
+) -> SolverResult:
+    getter = getattr(solver, "get_incumbent_projection_audit", None)
+    if not callable(getter):
+        return result
+    audit = dict(getter() or {})
+    if not audit:
+        return result
+    return replace(
+        result,
+        metadata={
+            **dict(result.metadata or {}),
+            **audit,
+        },
+    )
+
+
+def _merge_runtime_projection_audit(
+    solver: Any,
+    result: SolverResult,
+) -> SolverResult:
+    getter = getattr(solver, "get_runtime_projection_audit", None)
+    if not callable(getter):
+        return result
+    audit = dict(getter() or {})
+    if not audit:
+        return result
+    return replace(
+        result,
+        metadata={
+            **dict(result.metadata or {}),
+            "runtime_projection_audit": audit,
+        },
+    )
+
+
 def _build_declared_solver_result(solver: Any, raw_output: Any) -> SolverResult:
     population = _matrix(getattr(solver, "population", None))
     objectives = _objective_matrix(getattr(solver, "objectives", None))
@@ -65,9 +104,9 @@ def _build_declared_solver_result(solver: Any, raw_output: Any) -> SolverResult:
         getattr(solver, "constraint_violations", None),
         rows=None if objectives is None else objectives.shape[0],
     )
-    best_solution = _declared_best_solution(solver, raw_output)
-    best_objectives = _declared_best_objectives(solver, raw_output)
-    best_violation = _declared_best_violation(solver, raw_output)
+    best_solution = _declared_best_solution(solver)
+    best_objectives = _declared_best_objectives(solver)
+    best_violation = _declared_best_violation(solver)
     best_solution_ref = _coerce_ref(
         getattr(solver, "best_solution_ref", None)
         or getattr(solver, "best_state_ref", None)
@@ -87,6 +126,7 @@ def _build_declared_solver_result(solver: Any, raw_output: Any) -> SolverResult:
         int(getattr(solver, "evaluation_count", 0) or 0),
     )
     history = tuple(getattr(solver, "history", ()) or ())
+    incumbent = _solver_incumbent(solver)
     solve_status, termination_reason, feasibility, quality = _solve_semantics(
         solver,
         source,
@@ -127,6 +167,41 @@ def _build_declared_solver_result(solver: Any, raw_output: Any) -> SolverResult:
             "objective_count": objective_count,
             "pareto_size": 0 if pareto_front is None else len(pareto_front.candidates),
             "history_length": len(history),
+            "incumbent_policy_id": (
+                None if incumbent is None else incumbent.policy_id
+            ),
+            "incumbent_evaluation_id": (
+                None if incumbent is None else incumbent.evaluation_id
+            ),
+            "incumbent_candidate_token": (
+                None if incumbent is None else incumbent.candidate_token
+            ),
+            "incumbent_warm_start_id": (
+                None if incumbent is None else incumbent.warm_start_id
+            ),
+            "incumbent_proposal_id": (
+                None if incumbent is None else incumbent.proposal_id
+            ),
+            "incumbent_source": None if incumbent is None else incumbent.source,
+            "incumbent_source_run_id": (
+                None if incumbent is None else incumbent.source_run_id
+            ),
+            "scalarizer_failure_policy": getattr(
+                solver,
+                "scalarizer_failure_policy",
+                None,
+            ),
+            "scalarizer_fallback_count": int(
+                getattr(solver, "scalarizer_fallback_count", 0) or 0
+            ),
+            "result_quality_degraded": getattr(
+                solver,
+                "result_quality_degraded",
+                None,
+            ),
+            "scalarizer_audit_complete": bool(
+                getattr(solver, "scalarizer_audit_complete", False)
+            ),
         },
     )
 
@@ -211,32 +286,30 @@ def _result_feasibility(
     return "feasible" if bool(np.any(feasible_rows)) else "infeasible"
 
 
-def _declared_best_solution(solver: Any, raw_output: Any) -> Any:
-    for name in ("best_x", "best_solution", "best_state"):
-        value = getattr(solver, name, None)
-        if value is not None:
-            return value
-    if isinstance(raw_output, Mapping):
-        for name in ("best_solution", "best_state", "best_x"):
-            if raw_output.get(name) is not None:
-                return raw_output[name]
+def _declared_best_solution(solver: Any) -> Any:
+    incumbent = _solver_incumbent(solver)
+    if incumbent is not None:
+        return incumbent.candidate.copy()
     return None
 
 
-def _declared_best_objectives(solver: Any, raw_output: Any) -> np.ndarray | None:
-    value = getattr(solver, "best_objectives", None)
-    if value is None and isinstance(raw_output, Mapping):
-        value = raw_output.get("best_objectives")
-    if value is None:
-        return None
-    return np.asarray(value, dtype=float).reshape(-1)
+def _declared_best_objectives(solver: Any) -> np.ndarray | None:
+    incumbent = _solver_incumbent(solver)
+    if incumbent is not None:
+        return incumbent.objectives.copy()
+    return None
 
 
-def _declared_best_violation(solver: Any, raw_output: Any) -> float | None:
-    value = getattr(solver, "best_constraint_violation", None)
-    if value is None and isinstance(raw_output, Mapping):
-        value = raw_output.get("best_constraint_violation")
-    return None if value is None else float(value)
+def _declared_best_violation(solver: Any) -> float | None:
+    incumbent = _solver_incumbent(solver)
+    if incumbent is not None:
+        return float(incumbent.constraint_violation)
+    return None
+
+
+def _solver_incumbent(solver: Any) -> Any:
+    getter = getattr(solver, "get_incumbent", None)
+    return getter() if callable(getter) else None
 
 
 def _pareto_front(

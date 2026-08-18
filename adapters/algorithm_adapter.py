@@ -14,6 +14,9 @@ import numpy as np
 
 from blackbase.abc import AdapterBase
 from blackbase.contracts import BatchDisposition
+from blackbase.context import RuntimeContextProjection
+
+from .runtime_projection import aggregate_adapter_runtime_projections
 
 
 class AlgorithmAdapter(AdapterBase):
@@ -24,7 +27,6 @@ class AlgorithmAdapter(AdapterBase):
     - validate_population_snapshot: strict numpy shape validation
     - coerce_candidates: numpy-aware candidate normalization
     - get_context_contract: extended with artifact_requires/provides, phase_in/out
-    - get_runtime_context_projection / get_runtime_context_projection_sources
     - resolve_config: adapter config normalization helper
     """
 
@@ -180,18 +182,6 @@ class AlgorithmAdapter(AdapterBase):
             "notes": " | ".join(notes_parts) if notes_parts else None,
         }
 
-    # --- nsgablack-specific: runtime context projection ---
-
-    def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
-        """Return best-effort runtime fields to expose in solver.get_context()."""
-        return {}
-
-    def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
-        """Return writer attribution for projected runtime context fields."""
-        _ = solver
-        return {}
-
-
 class CompositeAdapter(AlgorithmAdapter):
     """Combine multiple adapters and merge their proposals."""
     context_requires = ()
@@ -206,8 +196,10 @@ class CompositeAdapter(AlgorithmAdapter):
         super().__init__(name=name, priority=priority)
         self.adapters = list(adapters)
         self._last_ranges: List[Tuple[AlgorithmAdapter, int, int]] = []
+        self._last_projection_writers: Dict[str, str] = {}
 
     def setup(self, control: Any) -> None:
+        self._last_projection_writers = {}
         for adapter in self.adapters:
             adapter.setup(control)
 
@@ -306,3 +298,22 @@ class CompositeAdapter(AlgorithmAdapter):
             "cache": cache,
             "notes": "composite",
         }
+
+    def get_runtime_context_projection(self, solver: Any) -> RuntimeContextProjection:
+        aggregation = aggregate_adapter_runtime_projections(
+            solver,
+            owner_source=f"adapter.{self.__class__.__name__}",
+            children=tuple(
+                (
+                    f"adapter.child.{index}:{adapter.__class__.__name__}",
+                    adapter,
+                )
+                for index, adapter in enumerate(self.adapters)
+            ),
+        )
+        self._last_projection_writers = dict(aggregation.field_sources)
+        return aggregation.projection
+
+    def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
+        del solver
+        return dict(self._last_projection_writers)

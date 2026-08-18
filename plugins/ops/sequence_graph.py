@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 import time
 
 from ..base import Plugin
-from ...utils.context.context_keys import KEY_SEQUENCE_GRAPH_REF
+from blackbase.context.context_keys import KEY_SEQUENCE_GRAPH_REF
 from ...utils.engineering.file_io import atomic_write_json
 from ...utils.engineering.schema_version import stamp_schema
 from ...utils.runtime.sequence_graph import SequenceGraphRecorder, build_sequence_token

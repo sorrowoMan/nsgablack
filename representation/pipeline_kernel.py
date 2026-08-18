@@ -2,7 +2,7 @@
 
 The executable orchestration contract lives in :mod:`blackbase.kernel`.
 This module adds only the ``RepresentationPipeline`` assembly expected by the
-optimization layer and keeps the historical nsgablack import path working.
+optimization layer.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ _PIPELINE_SLOT_NAMES = {"init", "initializer", "mutate", "repair", "encode", "de
 
 
 @dataclass
-class PipelineKernelBuild:
+class RepresentationPipelineKernelBuild:
     representation_pipeline: RepresentationPipeline | None = None
     slot_runners: Mapping[
         str,
@@ -60,7 +60,7 @@ def build_pipeline_kernel(
     strict: bool = True,
     executor: Any = None,
     pool_scheduler: Any = None,
-) -> PipelineKernelBuild:
+) -> RepresentationPipelineKernelBuild:
     """Build through blackbase and adapt standard slots to RepresentationPipeline."""
     shared = build_shared_pipeline_kernel(
         spec,
@@ -74,7 +74,7 @@ def build_pipeline_kernel(
         if slot_name in _PIPELINE_SLOT_NAMES:
             _set_pipeline_operator(pipeline_kwargs, slot_name, runner)
 
-    return PipelineKernelBuild(
+    return RepresentationPipelineKernelBuild(
         representation_pipeline=RepresentationPipeline(**pipeline_kwargs),
         slot_runners=shared.slot_runners,
         slot_policies=shared.slot_policies,
@@ -88,30 +88,30 @@ def _set_pipeline_operator(
     runner: Callable[[Any, Optional[dict]], Any],
 ) -> None:
     if slot_name in {"init", "initializer"}:
-        target["initializer"] = _InitializerShim(runner)
+        target["initializer"] = _InitializerAdapter(runner)
         return
     if slot_name == "mutate":
-        target["mutator"] = _MutatorShim(runner)
+        target["mutator"] = _MutatorAdapter(runner)
         return
     if slot_name == "repair":
-        target["repair"] = _RepairShim(runner)
+        target["repair"] = _RepairAdapter(runner)
         return
     if slot_name == "encode":
         encoder = target.get("encoder")
-        if isinstance(encoder, _EncoderShim):
+        if isinstance(encoder, _EncoderAdapter):
             encoder.set_encode(runner)
         else:
-            target["encoder"] = _EncoderShim(encode_fn=runner)
+            target["encoder"] = _EncoderAdapter(encode_fn=runner)
         return
     if slot_name == "decode":
         encoder = target.get("encoder")
-        if isinstance(encoder, _EncoderShim):
+        if isinstance(encoder, _EncoderAdapter):
             encoder.set_decode(runner)
         else:
-            target["encoder"] = _EncoderShim(decode_fn=runner)
+            target["encoder"] = _EncoderAdapter(decode_fn=runner)
 
 
-class _InitializerShim:
+class _InitializerAdapter:
     def __init__(self, fn: Callable[[Any, Optional[dict]], Any]) -> None:
         self._fn = fn
 
@@ -119,7 +119,7 @@ class _InitializerShim:
         return self._fn(problem, context)
 
 
-class _MutatorShim:
+class _MutatorAdapter:
     def __init__(self, fn: Callable[[Any, Optional[dict]], Any]) -> None:
         self._fn = fn
 
@@ -127,7 +127,7 @@ class _MutatorShim:
         return self._fn(value, context)
 
 
-class _RepairShim:
+class _RepairAdapter:
     def __init__(self, fn: Callable[[Any, Optional[dict]], Any]) -> None:
         self._fn = fn
 
@@ -135,7 +135,7 @@ class _RepairShim:
         return self._fn(value, context)
 
 
-class _EncoderShim:
+class _EncoderAdapter:
     def __init__(
         self,
         *,
@@ -160,7 +160,7 @@ class _EncoderShim:
 
 __all__ = [
     "OrchestrationPolicy",
-    "PipelineKernelBuild",
+    "RepresentationPipelineKernelBuild",
     "PipelineSlotSpec",
     "PipelineSpec",
     "build_pipeline_kernel",

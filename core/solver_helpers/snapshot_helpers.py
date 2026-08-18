@@ -7,7 +7,8 @@ from typing import Any, Dict, Optional
 
 from blackbase.context import SnapshotHandle, SnapshotRecord, SnapshotStore, create_snapshot_store, make_snapshot_key
 
-from ..state.context_keys import (
+from blackbase.context.context_keys import (
+    KEY_BEST_X,
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_CONSTRAINT_VIOLATIONS_REF,
     KEY_DECISION_TRACE,
@@ -120,6 +121,7 @@ def snapshot_meta(
 def strip_large_context_fields(ctx: Dict[str, Any]) -> Dict[str, Any]:
     """Remove large runtime objects from context in-place."""
     for key in (
+        KEY_BEST_X,
         KEY_POPULATION,
         KEY_OBJECTIVES,
         KEY_CONSTRAINT_VIOLATIONS,

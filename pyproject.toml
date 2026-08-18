@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "nsgablack"
-dynamic = ["version"]
+version = "0.3.0"
 description = "A decomposed optimization system with pipelines, biases, adapters, plugins"
 readme = "README.md"
 license = {text = "MIT"}
@@ -40,7 +40,7 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "blackbase>=0.2.0,<0.3.0",
+    "blackbase>=0.3.0,<0.4.0",
     "numpy>=1.20.0",
     "scipy>=1.7.0",
     "scikit-learn>=1.0.0",
@@ -114,7 +114,6 @@ namespaces = true
 "catalog" = [
     "DASHBOARD_PROTOCOL.md",
     "db.toml.example",
-    "entries.toml",
     "entries/*.toml",
 ]
 "experiment" = ["db.toml.example"]
@@ -135,8 +134,6 @@ namespaces = true
     "pipeline/operators/.gitkeep",
 ]
 
-[tool.setuptools_scm]
-fallback_version = "0.0.0"
 
 [tool.black]
 line-length = 100

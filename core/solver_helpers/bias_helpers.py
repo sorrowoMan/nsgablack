@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Optional
 
 import numpy as np
+from blackbase.call_binding import CallCandidate, invoke_bound_once
 
 
 def apply_bias_module(
@@ -42,10 +43,17 @@ def apply_bias_module(
 
         apply_fn = getattr(bias_module, "apply", None)
         if callable(apply_fn):
-            try:
-                out = apply_fn(obj_arr, context=ctx)
-            except TypeError:
-                out = apply_fn(obj_arr)
+            out = invoke_bound_once(
+                apply_fn,
+                (
+                    CallCandidate(
+                        args=(obj_arr,),
+                        kwargs={"context": ctx},
+                        label="with_context",
+                    ),
+                    CallCandidate(args=(obj_arr,), label="without_context"),
+                ),
+            )
             return np.asarray(out, dtype=float).reshape(-1)
     except Exception as exc:
         if callable(report_soft_error_fn):

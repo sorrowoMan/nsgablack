@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional
 
 from ..base import Plugin
-from ...core.state.context_events import record_context_event, replay_context
-from ...utils.context.context_keys import KEY_CONTEXT_EVENTS
+from blackbase.context import record_context_event, replay_context
+from blackbase.context.context_keys import KEY_CONTEXT_EVENTS
 
 
 @dataclass

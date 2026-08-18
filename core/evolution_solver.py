@@ -5,11 +5,12 @@ import logging
 import random
 from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple
 import numpy as np
+from blackbase.call_binding import CallCandidate, invoke_bound_once
 from ..adapters import NSGA2Adapter, NSGA2Config
 from .composable_solver import ComposableSolver
-from .resources import RedisL0RuntimeBackend
+from blackbase.resources import RedisTaskRuntimeBackend
 from .solver_helpers import evaluate_external_population_with_contract, format_run_result
-from ..utils.engineering.error_policy import report_soft_error
+from blackbase.plugin import report_soft_error
 from ..utils.parallel.evaluator import ParallelEvaluator
 from ..utils.parallel.nested import NestedParallelEvaluator, RedisNestedDistributedEvaluator
 from ..utils.performance.fast_non_dominated_sort import FastNonDominatedSort
@@ -55,6 +56,7 @@ class EvolutionSolver(ComposableSolver):
         snapshot_store_hmac_env_var: str = "NSGABLACK_SNAPSHOT_HMAC_KEY",
         snapshot_store_unsafe_allow_unsigned: bool = False,
         snapshot_store_max_payload_bytes: int = 8_388_608,
+        context_inline_candidate_max_bytes: int = 4_096,
         snapshot_schema: str = "population_snapshot_v1",
         pop_size: int = 80,
         max_generations: int = 150,
@@ -136,6 +138,7 @@ class EvolutionSolver(ComposableSolver):
             snapshot_store_hmac_env_var=snapshot_store_hmac_env_var,
             snapshot_store_unsafe_allow_unsigned=snapshot_store_unsafe_allow_unsigned,
             snapshot_store_max_payload_bytes=snapshot_store_max_payload_bytes,
+            context_inline_candidate_max_bytes=context_inline_candidate_max_bytes,
             snapshot_schema=snapshot_schema,
             enable_convergence_monitor=bool(enable_convergence_monitor),
             convergence_config=convergence_config,
@@ -161,7 +164,6 @@ class EvolutionSolver(ComposableSolver):
         if enabled_parallel is None:
             enabled_parallel = enable_parallel_evaluation
         self.enable_parallel_evaluation = bool(enabled_parallel)
-        self._parallel_backend_type = "auto"  # "l0" | "legacy" | "auto"
         self.parallel_evaluator: Optional[ParallelEvaluator] = None
         self.nested_parallel_evaluator: Optional[Any] = None
         self._parallel_requested_max_workers = parallel_max_workers
@@ -315,7 +317,7 @@ class EvolutionSolver(ComposableSolver):
             )
             return self.parallel_evaluator
 
-        # Legacy path (own-process executor)
+        # Standalone local executor path when Project L0 did not attach a pool.
         cfg = self._parallel_cfg
         backend = str(cfg["backend"] or "process").lower()
         if backend == "redis":
@@ -392,12 +394,9 @@ class EvolutionSolver(ComposableSolver):
         backend = str(cfg.get("backend", "thread") or "thread").lower()
         if backend == "redis":
             extra = dict(cfg.get("extra_context") or {})
-            queue = RedisL0RuntimeBackend(
+            queue = RedisTaskRuntimeBackend(
                 redis_url=str(extra.get("redis_url", "redis://localhost:6379/0")),
                 namespace=str(extra.get("namespace", "nsgablack:nested")),
-                queue_scope=str(extra.get("queue_scope", "global")),
-                result_ttl_seconds=extra.get("result_ttl_seconds", 86_400),
-                artifact_base_dir=str(extra.get("artifact_base_dir", "runs/l0_artifacts")),
             )
             self.nested_parallel_evaluator = RedisNestedDistributedEvaluator(
                 queue=queue,
@@ -651,10 +650,23 @@ class EvolutionSolver(ComposableSolver):
             p1 = pop[i]
             p2 = pop[i + 1]
             if crossover is not None and hasattr(crossover, "crossover"):
-                try:
-                    c1, c2 = crossover.crossover(p1, p2, {"generation": self.generation, "bounds": self.var_bounds})
-                except TypeError:
-                    c1, c2 = crossover.crossover(p1, p2)
+                c1, c2 = invoke_bound_once(
+                    crossover.crossover,
+                    (
+                        CallCandidate(
+                            args=(
+                                p1,
+                                p2,
+                                {
+                                    "generation": self.generation,
+                                    "bounds": self.var_bounds,
+                                },
+                            ),
+                            label="with_context",
+                        ),
+                        CallCandidate(args=(p1, p2), label="without_context"),
+                    ),
+                )
                 offspring[i] = np.asarray(c1, dtype=float)
                 offspring[i + 1] = np.asarray(c2, dtype=float)
                 continue
@@ -787,27 +799,15 @@ class EvolutionSolver(ComposableSolver):
         self.history.append((int(self.generation), avg_objectives))
 
     def _refresh_best(self) -> None:
-        best_index, best_f = self._get_best_index()
-        if best_index is None or self.population is None or self.objectives is None:
+        """Update the run-wide incumbent from the authoritative population."""
+
+        if self.population is None or self.objectives is None:
             return
-        self.best_x = np.asarray(self.population[best_index], dtype=float)
-        self.best_objectives = np.asarray(
-            self.objectives[best_index], dtype=float
-        ).reshape(-1)
-        violations = np.asarray(
-            self.constraint_violations
-            if self.constraint_violations is not None
-            else np.zeros((len(self.objectives),), dtype=float),
-            dtype=float,
-        ).reshape(-1)
-        self.best_constraint_violation = (
-            float(violations[best_index])
-            if violations.shape[0] > best_index
-            else None
+        self._update_best(
+            np.asarray(self.population, dtype=float),
+            np.asarray(self.objectives, dtype=float),
+            self.constraint_violations,
         )
-        if best_f is not None:
-            self.best_f = float(best_f)
-            self.best_objective = float(best_f)
 
     def _get_best_index(self) -> Tuple[Optional[int], Optional[float]]:
         if self.population is None or self.objectives is None:
@@ -824,25 +824,19 @@ class EvolutionSolver(ComposableSolver):
         ).reshape(-1)
         if vio.shape[0] != obj.shape[0]:
             vio = np.zeros((obj.shape[0],), dtype=float)
-        scalarizer = getattr(self, "objective_scalarizer", None)
-        if callable(scalarizer):
-            scores = []
-            for i in range(obj.shape[0]):
-                try:
-                    scores.append(float(scalarizer(obj, vio, i)))
-                except Exception:
-                    scores.append(float(np.sum(obj[i])) + (1e6 * float(vio[i])))
-            score = np.asarray(scores, dtype=float)
-        else:
-            score = np.sum(obj, axis=1) + (1e6 * vio)
-        idx = int(np.argmin(score))
-        return idx, float(score[idx])
+        idx, score = self.select_best_with_score(obj, vio)
+        return int(idx), float(score)
 
     def _get_best_solution(self) -> Tuple[Optional[np.ndarray], Optional[float]]:
-        index, score = self._get_best_index()
-        if index is None or self.population is None:
+        """Return the same run-wide incumbent exported by SolverResult."""
+
+        incumbent = self.get_incumbent()
+        if incumbent is None:
             return None, None
-        return np.asarray(self.population, dtype=float)[index], score
+        return (
+            incumbent.candidate.copy(),
+            float(incumbent.score),
+        )
 
     def _build_run_result(self, base_result: Dict[str, Any]) -> Dict[str, Any]:
         out = dict(base_result)
@@ -852,21 +846,32 @@ class EvolutionSolver(ComposableSolver):
         out["evaluation_count"] = int(getattr(self, "evaluation_count", 0))
         out["elapsed_sec"] = float(out.get("elapsed_sec", 0.0))
         raw_status = str(out.get("status", "") or "").strip().lower()
-        violations = np.asarray(
-            self.constraint_violations
-            if self.constraint_violations is not None
-            else (),
-            dtype=float,
-        ).reshape(-1)
-        if violations.size:
+        incumbent = self.get_incumbent()
+        if incumbent is not None:
             out["feasibility"] = (
-                "feasible" if bool(np.any(violations <= 0.0)) else "infeasible"
+                "feasible"
+                if incumbent.constraint_violation <= 0.0
+                else "infeasible"
             )
         else:
-            out["feasibility"] = "unknown"
+            violations = np.asarray(
+                self.constraint_violations
+                if self.constraint_violations is not None
+                else (),
+                dtype=float,
+            ).reshape(-1)
+            finite_violations = violations[np.isfinite(violations)]
+            if finite_violations.size:
+                out["feasibility"] = (
+                    "feasible"
+                    if bool(np.any(finite_violations <= 0.0))
+                    else "infeasible"
+                )
+            else:
+                out["feasibility"] = "unknown"
         if raw_status == "stopped":
             out["solve_status"] = "stopped"
-        elif self.best_x is not None and out["feasibility"] == "feasible":
+        elif incumbent is not None and out["feasibility"] == "feasible":
             out["solve_status"] = "feasible"
         elif out["feasibility"] == "infeasible":
             out["solve_status"] = "infeasible"

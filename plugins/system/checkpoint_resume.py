@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import copy
 import hashlib
@@ -9,12 +9,11 @@ import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 
 from ..base import Plugin
-from ...utils.context.context_keys import (
-    KEY_BEST_OBJECTIVE,
-    KEY_BEST_X,
+from ...core.state.incumbent import DEFAULT_INCUMBENT_POLICY_ID, IncumbentState
+from blackbase.context.context_keys import (
     KEY_CHECKPOINT_LAST_LOADED_PATH,
     KEY_CHECKPOINT_LATEST_PATH,
 )
@@ -53,7 +52,9 @@ class CheckpointResumePlugin(Plugin):
     adapter state, optional plugin state, and optional RNG state.
     """
 
-    SCHEMA = "nsgablack.checkpoint.v1"
+    SCHEMA_V1 = "nsgablack.checkpoint.v1"
+    SCHEMA_V2 = "nsgablack.checkpoint.v2"
+    SCHEMA = SCHEMA_V2
     ENVELOPE_VERSION = "nsgablack.checkpoint.envelope.v1"
 
     def __init__(
@@ -347,8 +348,67 @@ class CheckpointResumePlugin(Plugin):
 
     def _build_payload(self, *, solver: Any, reason: str) -> Dict[str, Any]:
         generation = int(getattr(solver, "generation", 0))
-        best_x_ctx, best_obj_ctx = self._get_context_best(solver)
         snap_pop, snap_obj, snap_vio = self.get_population_snapshot(solver)
+        projection_payload: Dict[str, Any] = {}
+        export_incumbent = getattr(solver, "export_incumbent_checkpoint_state", None)
+        if callable(export_incumbent):
+            incumbent_export = dict(export_incumbent() or {})
+            incumbent_payload = incumbent_export.get("incumbent")
+            projection_payload = dict(
+                incumbent_export.get("incumbent_projection", {}) or {}
+            )
+            selection_payload = dict(
+                incumbent_export.get("incumbent_selection", {}) or {}
+            )
+        else:
+            get_incumbent = getattr(solver, "get_incumbent", None)
+            incumbent = get_incumbent() if callable(get_incumbent) else None
+            incumbent_payload = (
+                None if incumbent is None else incumbent.as_dict()
+            )
+            incumbent_dict = dict(incumbent_payload or {})
+            selection_policy_context = getattr(
+                solver,
+                "incumbent_scalarizer_context",
+                incumbent_dict.get("policy_context", {}),
+            )
+            selection_payload = {
+                "policy_id": str(
+                    getattr(
+                        solver,
+                        "incumbent_scalarizer_id",
+                        incumbent_dict.get(
+                            "policy_id",
+                            DEFAULT_INCUMBENT_POLICY_ID,
+                        ),
+                    )
+                ),
+                "policy_context": dict(selection_policy_context or {}),
+                "failure_policy": getattr(
+                    solver,
+                    "scalarizer_failure_policy",
+                    "raise",
+                ),
+                "fallback_count": int(
+                    getattr(solver, "scalarizer_fallback_count", 0) or 0
+                ),
+                "result_quality_degraded": getattr(
+                    solver,
+                    "result_quality_degraded",
+                    False,
+                ),
+                "audit_complete": bool(
+                    getattr(solver, "scalarizer_audit_complete", True)
+                ),
+            }
+        if not projection_payload:
+            get_projection_audit = getattr(
+                solver,
+                "get_incumbent_projection_audit",
+                None,
+            )
+            if callable(get_projection_audit):
+                projection_payload = dict(get_projection_audit() or {})
         solver_state = {
             "generation": generation,
             "evaluation_count": int(getattr(solver, "evaluation_count", 0)),
@@ -358,13 +418,19 @@ class CheckpointResumePlugin(Plugin):
             "pareto_solutions": self._safe_copy(getattr(solver, "pareto_solutions", None)),
             "pareto_objectives": self._safe_copy(getattr(solver, "pareto_objectives", None)),
             "history": self._safe_copy(getattr(solver, "history", None)),
-            "best_x": self._safe_copy(best_x_ctx if best_x_ctx is not None else getattr(solver, "best_x", None)),
-            "best_f": self._safe_copy(getattr(solver, "best_f", None)),
-            "best_objective": self._safe_copy(
-                best_obj_ctx if best_obj_ctx is not None else getattr(solver, "best_objective", None)
+            "incumbent": (
+                None
+                if incumbent_payload is None
+                else self._safe_copy(incumbent_payload)
             ),
+            "active_run_id": getattr(solver, "_active_run_id", None),
+            "run_sequence": int(getattr(solver, "_run_sequence", 0) or 0),
+            "incumbent_projection": self._safe_copy(projection_payload),
+            "incumbent_selection": self._safe_copy(selection_payload),
             "random_seed": self._safe_copy(getattr(solver, "random_seed", None)),
         }
+        self._validate_checkpoint_internal_selection(solver, solver_state)
+        self._validate_checkpoint_projection_audit(solver_state)
 
         payload = {
             "schema": self.SCHEMA,
@@ -390,26 +456,6 @@ class CheckpointResumePlugin(Plugin):
         }
         return payload
 
-    def _get_context_best(self, solver: Any) -> tuple[Any, Optional[float]]:
-        getter = getattr(solver, "get_context", None)
-        if not callable(getter):
-            return None, None
-        try:
-            ctx = getter()
-        except Exception:
-            return None, None
-        if not isinstance(ctx, dict):
-            return None, None
-        best_x = ctx.get(KEY_BEST_X)
-        best_obj_raw = ctx.get(KEY_BEST_OBJECTIVE)
-        best_obj: Optional[float] = None
-        if best_obj_raw is not None:
-            try:
-                best_obj = float(best_obj_raw)
-            except Exception:
-                best_obj = None
-        return best_x, best_obj
-
     def _apply_solver_state(self, solver: Any, state: Dict[str, Any], resume_cursor: Optional[int]) -> None:
         generation = int(state.get("generation", getattr(solver, "generation", 0)))
         eval_count = int(state.get("evaluation_count", getattr(solver, "evaluation_count", 0)))
@@ -434,6 +480,12 @@ class CheckpointResumePlugin(Plugin):
                 _set_field("evaluation_count", eval_count)
         else:
             _set_field("evaluation_count", eval_count)
+        if state.get("active_run_id") is not None:
+            _set_field("_active_run_id", str(state.get("active_run_id")))
+        if state.get("run_sequence") is not None:
+            restored_sequence = max(0, int(state.get("run_sequence", 0) or 0))
+            current_sequence = max(0, int(getattr(solver, "_run_sequence", 0) or 0))
+            _set_field("_run_sequence", max(current_sequence, restored_sequence))
         if (
             "population" in state
             and "objectives" in state
@@ -465,19 +517,64 @@ class CheckpointResumePlugin(Plugin):
 
         if "history" in state:
             _set_field("history", state.get("history"))
-        if "best_x" in state or "best_objective" in state:
-            set_best = getattr(solver, "set_best_snapshot", None)
-            if callable(set_best):
-                try:
-                    set_best(state.get("best_x"), state.get("best_objective"))
-                except Exception:
-                    _set_field("best_x", state.get("best_x"))
-                    _set_field("best_objective", state.get("best_objective"))
+        projection_audit = state.get("incumbent_projection")
+        record_projection_audit = getattr(
+            solver,
+            "_record_restored_incumbent_projection_audit",
+            None,
+        )
+        if callable(record_projection_audit):
+            record_projection_audit(
+                projection_audit if isinstance(projection_audit, Mapping) else None
+            )
+        incumbent_payload = state.get("incumbent")
+        if isinstance(incumbent_payload, dict):
+            incumbent = IncumbentState.from_dict(incumbent_payload)
+            set_incumbent = getattr(solver, "set_incumbent", None)
+            if not callable(set_incumbent):
+                raise TypeError("checkpoint target does not support atomic incumbent restore")
+            set_incumbent(incumbent)
+        elif self._legacy_incumbent_payload(state) is not None:
+            incumbent = IncumbentState.from_dict(self._legacy_incumbent_payload(state))
+            set_incumbent = getattr(solver, "set_incumbent", None)
+            if not callable(set_incumbent):
+                raise TypeError("checkpoint target does not support atomic incumbent restore")
+            set_incumbent(incumbent)
+        else:
+            incomplete_best = state.get("legacy_best_snapshot")
+            if not isinstance(incomplete_best, dict) and (
+                "best_x" in state or "best_objective" in state
+            ):
+                incomplete_best = {
+                    "candidate": state.get("best_x"),
+                    "score": state.get("best_objective", state.get("best_f")),
+                }
+            if isinstance(incomplete_best, dict) and incomplete_best.get("candidate") is not None:
+                raise ValueError(
+                    "checkpoint contains an incomplete best candidate without "
+                    "objectives and constraint evidence; it cannot be restored "
+                    "as an authoritative incumbent"
+                )
             else:
-                _set_field("best_x", state.get("best_x"))
-                _set_field("best_objective", state.get("best_objective"))
-        if "best_f" in state:
-            _set_field("best_f", state.get("best_f"))
+                clear_incumbent = getattr(solver, "clear_incumbent", None)
+                if callable(clear_incumbent):
+                    clear_incumbent()
+        selection = state.get("incumbent_selection")
+        if isinstance(selection, dict):
+            if hasattr(solver, "scalarizer_fallback_count"):
+                fallback_count = selection.get("fallback_count")
+                if fallback_count is not None:
+                    _set_field("scalarizer_fallback_count", int(fallback_count))
+            if hasattr(solver, "result_quality_degraded"):
+                _set_field(
+                    "result_quality_degraded",
+                    selection.get("result_quality_degraded"),
+                )
+            if hasattr(solver, "scalarizer_audit_complete"):
+                _set_field(
+                    "scalarizer_audit_complete",
+                    bool(selection.get("audit_complete", False)),
+                )
         if "random_seed" in state:
             _set_field("random_seed", state.get("random_seed"))
 
@@ -486,6 +583,28 @@ class CheckpointResumePlugin(Plugin):
             setattr(solver, "_resume_cursor", generation)
         else:
             setattr(solver, "_resume_cursor", int(resume_cursor))
+
+    @staticmethod
+    def _legacy_incumbent_payload(state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        candidate = state.get("best_x")
+        objectives = state.get("best_objectives")
+        violation = state.get("best_constraint_violation")
+        score = state.get(
+            "best_score",
+            state.get("best_objective", state.get("best_f")),
+        )
+        if any(value is None for value in (candidate, objectives, violation, score)):
+            return None
+        return {
+            "candidate": candidate,
+            "objectives": objectives,
+            "constraint_violation": violation,
+            "score": score,
+            "policy_id": DEFAULT_INCUMBENT_POLICY_ID,
+            "source": "checkpoint_legacy",
+            "source_run_id": state.get("active_run_id"),
+            "metadata": {"migrated_from_legacy_fields": True},
+        }
 
     def _apply_adapter_state(self, solver: Any, adapter_state: Any) -> None:
         if adapter_state is None:
@@ -546,15 +665,196 @@ class CheckpointResumePlugin(Plugin):
                     raise
         setattr(solver, "_resume_rng_state", rng_state)
 
-    def _restore_payload(self, *, solver: Any, payload: Dict[str, Any]) -> None:
+    @staticmethod
+    def _run_sequence_from_id(active_run_id: Any) -> int:
+        text = str(active_run_id or "")
+        marker = ":solver-run:"
+        if marker not in text:
+            return 0
+        suffix = text.split(marker, 1)[1]
+        try:
+            return max(0, int(suffix.split(":", 1)[0]))
+        except (TypeError, ValueError):
+            return 0
+
+    @classmethod
+    def _migrate_payload(cls, payload: Dict[str, Any]) -> Dict[str, Any]:
         schema = str(payload.get("schema", "")).strip()
-        if schema != self.SCHEMA:
-            if bool(self.cfg.strict):
-                raise ValueError(f"unsupported checkpoint schema: {schema}")
+        if schema == cls.SCHEMA_V2:
+            return payload
+        if schema != cls.SCHEMA_V1:
+            raise ValueError(f"unsupported checkpoint schema: {schema or '<missing>'}")
+
+        migrated = copy.deepcopy(payload)
+        state = migrated.get("solver_state")
+        if not isinstance(state, dict):
+            raise ValueError("invalid checkpoint payload: missing solver_state")
+        incumbent_payload = state.get("incumbent")
+        if isinstance(incumbent_payload, dict):
+            policy_id = str(
+                incumbent_payload.get("policy_id", DEFAULT_INCUMBENT_POLICY_ID)
+            )
+            policy_context = dict(
+                incumbent_payload.get("policy_context", {}) or {}
+            )
+        else:
+            policy_id = DEFAULT_INCUMBENT_POLICY_ID
+            policy_context = {}
+        state.setdefault(
+            "incumbent_selection",
+            {
+                "policy_id": policy_id,
+                "policy_context": policy_context,
+                "failure_policy": None,
+                "fallback_count": None,
+                "result_quality_degraded": None,
+                "audit_complete": False,
+            },
+        )
+        state.setdefault(
+            "run_sequence",
+            cls._run_sequence_from_id(state.get("active_run_id")),
+        )
+        migrated["schema"] = cls.SCHEMA_V2
+        migrated["migrated_from_schema"] = cls.SCHEMA_V1
+        return migrated
+
+    @staticmethod
+    def _selection_contexts_match(
+        solver: Any,
+        left: Mapping[str, Any],
+        right: Mapping[str, Any],
+    ) -> bool:
+        signature = getattr(solver, "_policy_context_signature", None)
+        if callable(signature):
+            return signature(dict(left)) == signature(dict(right))
+        return dict(left) == dict(right)
+
+    @classmethod
+    def _validate_checkpoint_internal_selection(
+        cls,
+        solver: Any,
+        state: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        selection = state.get("incumbent_selection")
+        if not isinstance(selection, dict):
+            raise ValueError("checkpoint v2 is missing incumbent_selection audit state")
+
+        saved_policy_id = str(selection.get("policy_id", "") or "").strip()
+        if not saved_policy_id:
+            raise ValueError("checkpoint incumbent_selection policy_id must not be empty")
+        incumbent = state.get("incumbent")
+        if isinstance(incumbent, dict):
+            incumbent_policy_id = str(
+                incumbent.get("policy_id", DEFAULT_INCUMBENT_POLICY_ID) or ""
+            ).strip()
+            if incumbent_policy_id != saved_policy_id:
+                raise ValueError(
+                    "checkpoint incumbent/selection policy mismatch: "
+                    f"incumbent={incumbent_policy_id!r}, "
+                    f"selection={saved_policy_id!r}"
+                )
+            incumbent_context = dict(incumbent.get("policy_context", {}) or {})
+            selection_context = dict(selection.get("policy_context", {}) or {})
+            if not cls._selection_contexts_match(
+                solver,
+                incumbent_context,
+                selection_context,
+            ):
+                raise ValueError(
+                    "checkpoint incumbent/selection policy context mismatch"
+                )
+        return selection
+
+    @staticmethod
+    def _validate_checkpoint_projection_audit(
+        state: Mapping[str, Any],
+    ) -> None:
+        projection = state.get("incumbent_projection")
+        if projection is None:
+            return
+        if not isinstance(projection, Mapping):
+            raise ValueError("checkpoint incumbent_projection audit must be a mapping")
+        required = (
+            "incumbent_revision",
+            "incumbent_context_projection_revision",
+            "incumbent_context_projection_current",
+            "incumbent_context_projection_error",
+        )
+        missing = [key for key in required if key not in projection]
+        if missing:
+            raise ValueError(
+                "checkpoint incumbent_projection audit is missing fields: "
+                + ", ".join(missing)
+            )
+        incumbent_revision = int(projection["incumbent_revision"])
+        published_revision = int(
+            projection["incumbent_context_projection_revision"]
+        )
+        if published_revision > incumbent_revision:
+            raise ValueError(
+                "checkpoint incumbent projection revision exceeds incumbent revision"
+            )
+        error = projection["incumbent_context_projection_error"]
+        if error is not None and not isinstance(error, Mapping):
+            raise ValueError(
+                "checkpoint incumbent projection error must be a mapping or null"
+            )
+        expected_current = published_revision == incumbent_revision and error is None
+        if bool(projection["incumbent_context_projection_current"]) != expected_current:
+            raise ValueError(
+                "checkpoint incumbent projection current flag is inconsistent"
+            )
+
+    @classmethod
+    def _validate_incumbent_selection(
+        cls,
+        solver: Any,
+        state: Dict[str, Any],
+    ) -> None:
+        selection = cls._validate_checkpoint_internal_selection(solver, state)
+        cls._validate_checkpoint_projection_audit(state)
+        saved_policy_id = str(selection.get("policy_id", "") or "").strip()
+        current_policy_id = getattr(solver, "incumbent_scalarizer_id", None)
+        if current_policy_id is not None and saved_policy_id != str(current_policy_id):
+            raise ValueError(
+                "checkpoint incumbent scalarizer policy mismatch: "
+                f"saved={saved_policy_id!r}, current={str(current_policy_id)!r}"
+            )
+
+        if current_policy_id is not None:
+            saved_context = dict(selection.get("policy_context", {}) or {})
+            current_context = dict(
+                getattr(solver, "incumbent_scalarizer_context", {}) or {}
+            )
+            if not cls._selection_contexts_match(
+                solver,
+                saved_context,
+                current_context,
+            ):
+                raise ValueError(
+                    "checkpoint incumbent scalarizer context does not match builder configuration"
+                )
+
+        saved_failure_policy = selection.get("failure_policy")
+        current_failure_policy = getattr(solver, "scalarizer_failure_policy", None)
+        if (
+            saved_failure_policy is not None
+            and current_failure_policy is not None
+            and str(saved_failure_policy) != str(current_failure_policy)
+        ):
+            raise ValueError(
+                "checkpoint scalarizer failure policy mismatch: "
+                f"saved={saved_failure_policy!r}, current={current_failure_policy!r}"
+            )
+
+    def _restore_payload(self, *, solver: Any, payload: Dict[str, Any]) -> None:
+        payload = self._migrate_payload(payload)
 
         state = payload.get("solver_state")
         if not isinstance(state, dict):
             raise ValueError("invalid checkpoint payload: missing solver_state")
+        self._validate_incumbent_selection(solver, state)
 
         resume_cursor = payload.get("resume_cursor")
         self._apply_solver_state(solver, state, resume_cursor if isinstance(resume_cursor, int) else None)
@@ -564,6 +864,7 @@ class CheckpointResumePlugin(Plugin):
 
     def get_report(self) -> Optional[Dict[str, Any]]:
         return {
+            "checkpoint_schema": self.SCHEMA,
             "checkpoint_dir": str(self.cfg.checkpoint_dir),
             "save_every": int(self.cfg.save_every),
             "auto_resume": bool(self.cfg.auto_resume),

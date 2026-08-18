@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Iterable, Sequence, Tuple
 
 from .contract_relations import _entry_field_values
-from ..utils.context.context_contracts import get_component_contract
+from blackbase.context import get_component_contract
 
 
 @dataclass(frozen=True)

@@ -54,6 +54,30 @@ class EvaluationMediator:
         self._providers: list[EvaluationProvider] = []
         self._approximate_blocked: set[str] = set()
 
+    def configure_policy(
+        self,
+        *,
+        allow_approximate: bool | None = None,
+        strict_conflict: bool | None = None,
+    ) -> None:
+        """Atomically replace the evaluation-selection policy."""
+
+        current = self.config
+        self.config = EvaluationMediatorConfig(
+            allow_approximate=(
+                bool(current.allow_approximate)
+                if allow_approximate is None
+                else bool(allow_approximate)
+            ),
+            strict_conflict=(
+                bool(current.strict_conflict)
+                if strict_conflict is None
+                else bool(strict_conflict)
+            ),
+        )
+        if bool(self.config.allow_approximate):
+            self._approximate_blocked.clear()
+
     def _warn_approximate_blocked(self, provider: EvaluationProvider) -> None:
         name = str(getattr(provider, "name", provider.__class__.__name__))
         if name in self._approximate_blocked:

@@ -1,6 +1,6 @@
 """Smoke tests for PoolScheduler — L0 shared thread pool."""
 
-from nsgablack.core.resources.compute.pool import PoolScheduler
+from blackbase.resources import PoolScheduler
 
 
 def test_pool_scheduler_basic():
@@ -18,9 +18,10 @@ def test_pool_scheduler_submit_and_wait():
         results.append(n)
         return n * 2
 
-    fut = pool.submit("task_a", 2, worker, 42)
+    fut = pool.submit(worker, 42, resource_permits=2, task_id="task_a")
     val = fut.result(timeout=5)
-    assert val.result == 84
+    assert val == 84
+    assert fut.task_id == "task_a"
     assert 42 in results
 
     report = pool.report()
@@ -46,8 +47,7 @@ def test_pool_scheduler_threads_released_after_map():
     pool.close()
 
 
-def test_pool_scheduler_import_from_public_api():
-    from nsgablack.core.resources import PoolScheduler as P1
-    from nsgablack.core.resources.compute import PoolScheduler as P2
-    from nsgablack.core.acceleration import PoolScheduler as P3
-    assert P1 is P2 is P3
+def test_pool_scheduler_import_from_shared_public_api():
+    from blackbase.resources import PoolScheduler as SharedPoolScheduler
+
+    assert SharedPoolScheduler is PoolScheduler

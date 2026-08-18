@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from ..base import Plugin
-from ...core.state.context_schema import get_context_lifecycle, is_replayable_context
-from ...core.state.context_contracts import collect_solver_contracts, validate_context_contracts
+from blackbase.context import get_context_lifecycle, is_replayable_context
+from blackbase.context import collect_solver_contracts, validate_context_contracts
 
 
 @dataclass

@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional, Sequence, Tuple, List
 import numpy as np
 
 from ..algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import KEY_BEST_X
+from blackbase.context.context_keys import KEY_BEST_X
 
 
 class TrustRegionBaseAdapter(AlgorithmAdapter):
@@ -132,7 +132,7 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
         pipeline = getattr(control, "representation_pipeline", None)
         if pipeline is not None and hasattr(pipeline, "init"):
             try:
-                return np.asarray(pipeline.init(control.problem, context=None), dtype=float)
+                return np.asarray(pipeline.init({"problem": control.problem}), dtype=float)
             except Exception:
                 pass
         low, high = self._extract_bounds(control)

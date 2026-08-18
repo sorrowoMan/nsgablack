@@ -13,15 +13,15 @@
 | AStarAdapter | L0 | generation | - | - | Checkpoint restores summary only (best/found), not full open/closed frontier. |
 | AsyncEventDrivenAdapter | L1 | generation | event_queue, event_inflight, event_archive, event_history, event_shared | event_queue, event_inflight, event_archive, event_history, event_shared | Restores queue/inflight/archive/history snapshots; external side effects are not replayed. |
 | CompositeAdapter | L1 | - | - | - | Restores child adapter snapshots via adapter.get_state()/set_state(). |
-| DifferentialEvolutionAdapter | L2 | generation | strategy_id, adapter_best_score, best_x, best_objective | - | Restores internal population/objectives/violations for deterministic continuation. |
+| DifferentialEvolutionAdapter | L2 | generation | strategy_id, adapter_best_x, adapter_best_objectives, adapter_best_score | - | Restores internal population/objectives/violations for deterministic continuation. |
 | GradientDescentAdapter | L1 | - | mutation_sigma, adapter_best_score | - | Restores current point/score and learning rate; finite-difference probe cache is recomputed. |
 | MASAdapter | L1 | generation | - | - | Restores adaptive center; surrogate/model cache is expected from context providers. |
 | MOAStarAdapter | L0 | generation | - | - | Checkpoint restores summary only; label/open structures are not reconstructed. |
 | MOEADAdapter | L0 | generation | moead_subproblem, moead_weight, moead_neighbor_mode | - | No adapter-owned runtime state is guaranteed to roundtrip. |
 | RoleRouterAdapter | L1 | generation | role, role_index, role_reports, candidate_roles | role_reports, candidate_roles | Restores child role adapter snapshots keyed by role name. |
 | StrategyRouterAdapter | L0 | generation | shared, strategy, strategy_id, role, role_index, role_adapter, task, phase, region_id, region_bounds, seeds, role_reports, candidate_roles, candidate_units, unit_tasks | shared, role_reports, candidate_roles, candidate_units, unit_tasks | No adapter-owned runtime state is guaranteed to roundtrip. |
-| NSGA2Adapter | L2 | - | best_x, best_objective | - | Restores population/objectives/violations and ranking state for deterministic continuation. |
-| NSGA3Adapter | L2 | - | best_x, best_objective, mo_weights | - | Restores population/objectives/violations and ranking state for deterministic continuation. |
+| NSGA2Adapter | L2 | - | adapter_best_x, adapter_best_objectives, adapter_best_score | - | Restores population/objectives/violations and ranking state for deterministic continuation. |
+| NSGA3Adapter | L2 | - | adapter_best_x, adapter_best_objectives, adapter_best_score, mo_weights | - | Restores population/objectives/violations and ranking state for deterministic continuation. |
 | PatternSearchAdapter | L1 | - | mutation_sigma, adapter_best_score | - | Restores incumbent point/score and step size; direction samples are regenerated. |
 | RoleAdapter | L1 | - | role, role_adapter | - | Restores role metadata and delegates inner adapter state restore. |
 | SPEA2Adapter | L2 | - | - | - | Inherits NSGA-II population snapshot roundtrip and SPEA2 selection parameters. |

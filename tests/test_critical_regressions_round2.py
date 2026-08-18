@@ -74,6 +74,37 @@ def test_crowding_distance_marks_true_boundaries() -> None:
     assert np.isfinite(dist[3])
 
 
+def test_infeasible_fronts_and_ranks_share_one_constraint_ordering() -> None:
+    objectives = np.array(
+        [
+            [0.0, 0.0],
+            [100.0, 100.0],
+            [50.0, 50.0],
+            [25.0, 25.0],
+        ],
+        dtype=float,
+    )
+    violations = np.array([3.0, 1.0, 2.0, 2.0], dtype=float)
+
+    fronts, ranks = FastNonDominatedSort.sort(objectives, violations)
+
+    assert fronts == [[1], [2, 3], [0]]
+    for front_rank, front in enumerate(fronts):
+        assert all(int(ranks[idx]) == front_rank for idx in front)
+
+
+def test_environmental_selection_never_uses_crowding_across_violation_levels() -> None:
+    solver = EvolutionSolver(_ToyMOProblem())
+    solver.pop_size = 2
+    population = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]], dtype=float)
+    objectives = np.array([[0.0, 0.0], [100.0, 100.0], [50.0, 50.0]], dtype=float)
+    violations = np.array([3.0, 1.0, 2.0], dtype=float)
+
+    solver.environmental_selection(population, objectives, violations)
+
+    assert sorted(solver.constraint_violations.tolist()) == [1.0, 2.0]
+
+
 def test_adaptive_manager_diversity_and_improvement_are_non_degenerate() -> None:
     mgr = AdaptiveAlgorithmicManager(window_size=8, adaptation_interval=2)
 

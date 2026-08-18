@@ -15,10 +15,10 @@ import numpy as np
 from blackbase.contracts import BatchDisposition
 
 from ..algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import (
+from blackbase.context.context_keys import (
+    KEY_ADAPTER_BEST_OBJECTIVES,
     KEY_ADAPTER_BEST_SCORE,
-    KEY_BEST_OBJECTIVE,
-    KEY_BEST_X,
+    KEY_ADAPTER_BEST_X,
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_GENERATION,
     KEY_OBJECTIVES,
@@ -43,7 +43,12 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
     """Process-model DE adapter with propose/update contract."""
 
     context_requires = (KEY_GENERATION,)
-    context_provides = (KEY_STRATEGY_ID, KEY_ADAPTER_BEST_SCORE, KEY_BEST_X, KEY_BEST_OBJECTIVE)
+    context_provides = (
+        KEY_STRATEGY_ID,
+        KEY_ADAPTER_BEST_SCORE,
+        KEY_ADAPTER_BEST_X,
+        KEY_ADAPTER_BEST_OBJECTIVES,
+    )
     context_mutates = ()
     context_cache = ()
     context_notes = (
@@ -316,13 +321,18 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         return agg + (1e6 * vio)
 
     def _sync_runtime_projection(self, context: Dict[str, Any]) -> None:
+        _ = context
         projection: Dict[str, Any] = {KEY_STRATEGY_ID: str(self.cfg.strategy)}
         if self.population is not None and self.objectives is not None and self.violations is not None and self.population.shape[0] > 0:
             scores = self._scores(self.objectives, self.violations)
             best_idx = int(np.argmin(scores))
             projection[KEY_ADAPTER_BEST_SCORE] = float(scores[best_idx])
-            projection[KEY_BEST_X] = np.asarray(self.population[best_idx], dtype=float).copy()
-            projection[KEY_BEST_OBJECTIVE] = np.asarray(self.objectives[best_idx], dtype=float).copy()
-        if KEY_GENERATION in context:
-            projection[KEY_GENERATION] = context[KEY_GENERATION]
+            projection[KEY_ADAPTER_BEST_X] = np.asarray(
+                self.population[best_idx],
+                dtype=float,
+            ).copy()
+            projection[KEY_ADAPTER_BEST_OBJECTIVES] = np.asarray(
+                self.objectives[best_idx],
+                dtype=float,
+            ).copy()
         self._runtime_projection = projection
