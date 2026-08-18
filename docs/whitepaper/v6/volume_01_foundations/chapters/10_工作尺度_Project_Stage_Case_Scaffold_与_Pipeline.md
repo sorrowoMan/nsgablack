@@ -1,6 +1,6 @@
-# 第八章　工作尺度：Project、Stage、Case、Scaffold 与 Pipeline
+# 第一卷·第十章　工作尺度：Project、Stage、Case、Scaffold 与 Pipeline
 
-前七章解决的是架构为什么存在。我们从可信运行的一般问题出发，经过闭包、不变量、OR 与 ML 的共同计算语法，最终说明了 `blackbase`、`nsgablack`、`mlblack` 和外部边界分别保护什么责任。可是，知道责任属于哪一层，还不足以准确描述一次运行。用户说“这个阶段要并行”，可能指 Project 中的多个独立任务，也可能指一个 Solver 内的算法阶段，还可能只是 Pipeline 的两个算子；开发者说“把它拆成模块”，可能只是提取一个函数，也可能已经需要一个能独立恢复的 Case。若工作尺度没有统一语言，正确的仓库边界仍会被错误的运行边界破坏。
+前九章解决的是架构为什么存在。我们从可信运行的一般问题出发，经过闭包、不变量、责任划分、外部计算边界以及 OR 与 ML 的共同计算语法，最终说明了 `blackbase`、`nsgablack`、`mlblack` 和外部边界分别保护什么责任。可是，知道责任属于哪一层，还不足以准确描述一次运行。用户说“这个阶段要并行”，可能指 Project 中的多个独立任务，也可能指一个 Solver 内的算法阶段，还可能只是 Pipeline 的两个算子；开发者说“把它拆成模块”，可能只是提取一个函数，也可能已经需要一个能独立恢复的 Case。若工作尺度没有统一语言，正确的仓库边界仍会被错误的运行边界破坏。
 
 本章因此进入第一部的形式本体。所谓“本体”，不是用抽象词汇把工程重新命名，而是回答框架究竟把哪些东西视为同一种对象，以及这些对象之间允许建立什么关系。Project、Stage、Case、Scaffold 与 Pipeline 都与“组织工作”有关，却不是五种大小不同的文件夹。Project 关闭整项工作的授权与结果；Stage 表达 Project 依赖图中的执行边界；Case 是最小独立运行闭包；Scaffold 让 Case 具有可重复装配的外形；Pipeline 组织 Case 内部的值流。它们的差异来自闭合责任，而不是代码行数。
 
@@ -10,7 +10,7 @@
 
 ---
 
-## 8.1 在命名对象以前，先判断它关闭了什么
+## 10.1 在命名对象以前，先判断它关闭了什么
 
 考虑三个表面上都可以叫“步骤”的工作。
 
@@ -38,7 +38,7 @@
 
 ---
 
-## 8.2 Project：一次工作的世界边界
+## 10.2 Project：一次工作的世界边界
 
 Project 首先回答的是“哪些运行属于同一项工作”。如果一次实验训练三个模型、比较结果并发布最佳产物，四个步骤应共享一个顶层运行身份；如果一次外层搜索为每个候选启动内层训练，所有子运行应能够追溯到同一个总预算和输入版本；如果用户第二天恢复运行，系统需要知道恢复的是哪项工作、使用哪份配置、已经完成了哪些子任务。
 
@@ -68,7 +68,7 @@ Project = (
 
 ---
 
-## 8.3 Case：最小独立运行闭包
+## 10.3 Case：最小独立运行闭包
 
 Project 之下为什么还需要 Case？因为 Project 不能把每个函数调用都当作调度节点，也不能直接进入 Solver 或 Trainer 内部管理状态。它需要一种粒度：足够独立，可以被构建、运行、重试和审计；又足够完整，能够在自己的领域内交付有意义的结果。这个粒度就是 Case。
 
@@ -88,7 +88,7 @@ Case 的权威边界还意味着大对象不能依靠调用者内存属性传递
 
 ---
 
-## 8.4 Stage 与 Group：组织 Case，而不替代 Case
+## 10.4 Stage 与 Group：组织 Case，而不替代 Case
 
 有了 Project 和 Case，还需要表达 Case 之间的执行结构。假设数据诊断完成以后才能训练，而三个模型训练可以并行，最终比较必须等待三个训练全部结束。仅列出四个 Case 名称无法表达依赖，仅按文件顺序执行又失去并行机会。Project 因而需要一组执行边界，把处在同一依赖前沿、遵守同一调度策略的 Case 组织起来；当前合同称这种边界为 Stage。
 
@@ -100,13 +100,13 @@ Stage 本身通常不是最小独立运行闭包。它不需要重新实现 Solv
 
 因此，Group 不是比 Stage 更大的新运行单元，也不天然表示并行。选择 `all` 可能依次运行两个 Stage，选择 `benchmark` 也可能只运行一个包含多个并行 Case 的 Stage。Group 需要进入 run manifest 和 ProjectResult，因为它改变本次实际执行范围；它却不应拥有第二份资源 authority 或 Artifact registry。
 
-这里必须处理一个现实中的术语重载。当前 `nsgablack.core.solver_stage` 与 `mlblack.core.trainer_stage` 也定义了 `StageSpec` 或串行 Stage runner，用来在一个复合 Solver/Trainer 内运行若干子阶段并传递 Artifact。它们与 Project-level Stage 名字相同，尺度却未必相同。若这些内部阶段共享一个 Case 的输入、授权、状态责任和最终结果，它们更接近**内部 phase**；若每个阶段都能独立构建、获得子级 ResourceContext、失败、恢复并交付正式结果，它们实际上已经接近子 Case，应通过 Project/Case 合同表达。
+共享底座只保留一个正式 Case stage 执行器 `blackbase.project.CaseStageRunner`。若若干步骤共享一个 Case 的输入、授权、状态责任和最终结果，它们只是**内部 phase** 或 Pipeline slot，不应再创建一套 Solver/Trainer stage 类型；若每个阶段能独立构建、获得子级 ResourceContext、失败、恢复并交付正式结果，则由 `CaseRunRequest` / `CaseRunResult` 表达为完整子 Case。
 
-因此，阅读或设计 `Stage` 时必须加限定词：Project Stage、Solver phase、Trainer phase 或 Pipeline route stage。名字不能决定尺度。后续治理可以保留兼容类名，但文档、配置和运行报告必须显示其所属边界，避免同一个 `stage_name` 同时被当作 Project 调度节点和 Case 内算法阶段。
+因此，阅读或设计 `Stage` 时必须加限定词：Project Stage、Solver phase、Trainer phase 或 Pipeline route stage。名字不能决定尺度，运行报告必须显示其所属边界，避免同一个 `stage_name` 同时被当作 Project 调度节点和 Case 内算法阶段。
 
 ---
 
-## 8.5 Scaffold：让 Case 可以被找到、装配和检查
+## 10.5 Scaffold：让 Case 可以被找到、装配和检查
 
 Case 是运行闭包，但“应当独立”并不会自动让它独立。一个案例可能只有作者知道先导入哪个模块、先设置哪个全局变量、怎样创建 Problem、如何挂载 Plugin，以及运行结果藏在哪个对象属性中。这样的代码在本机脚本里能够成功，却无法被 Project 稳定构建，也无法在运行前检查资源与能力。Scaffold 就是在这里出现的。
 
@@ -114,7 +114,7 @@ Scaffold 不是另一个运行尺度，而是 Case 的**标准装配形状**。�
 
 这一区别可以用建筑类比理解，但不能被类比限制。Case 像一间能够独立工作的实验室，Scaffold 像实验室必须满足的接口图纸：门、供电、输入输出和安全出口在哪里。图纸不会自己做实验，却使不同实验室能够被同一园区接入。目录只是图纸的一部分，builder、配置、合同和检查入口同样属于 Scaffold。
 
-当前统一合同规定 `build_solver.py` 为规范装配入口，`run_solver.py` 为规范 CLI/debug 入口；训练 Case 可以保留 `build_trainer.py` 与 `run_trainer.py`，但它们应当是薄别名。第七章已经解释，这个命名存在历史痕迹，却能防止两个 builder 同时成为事实来源。对 Project 而言，它只需要知道一个 canonical build surface；Case 的 `kind=solver|trainer` 决定领域语义和优先执行方法，不产生第二套目录形状。
+当前统一合同规定 `build_solver.py` 为规范装配入口，`run_solver.py` 为规范 CLI/debug 入口；训练 Case 可以保留 `build_trainer.py` 与 `run_trainer.py`，但它们应当是薄别名。第九章已经解释，这个命名存在历史痕迹，却能防止两个 builder 同时成为事实来源。对 Project 而言，它只需要知道一个 canonical build surface；Case 的 `kind=solver|trainer` 决定领域语义和优先执行方法，不产生第二套目录形状。
 
 一个好的 builder 不只是返回“某个对象”。它应接收 Project 注入的 ResourceContext 和公开 component overrides，装配真正启用的组件，把生效资源同步到 backend session，并在 check/build-check 中报告实际组合。若配置文件声明 Adapter A，builder 却仍装配默认 Adapter B，Scaffold 只是外观正确；若 `--check` 只回显配置意图而不检查构建结果，也不能证明 Case 具有真实装配闭包。
 
@@ -126,7 +126,7 @@ Scaffold 还应控制隐式依赖。Case 内模块可以相互导入，但规范
 
 ---
 
-## 8.6 Pipeline：Case 内部的值流，不是缩小版 Project
+## 10.6 Pipeline：Case 内部的值流，不是缩小版 Project
 
 Case 装配完成以后，内部仍然需要组织计算。优化候选可能依次经过初始化、编码、修复和解码，学习数据可能经过解析、数值化、特征变换和条件路由，评价过程也可能包含并行算子与结果合并。若这些步骤都硬编码进 Solver 或 Trainer，控制平面会被领域变换淹没。Pipeline 用来表达这类 Case 内值流。
 
@@ -153,7 +153,7 @@ Pipeline 内部的并行尤其容易越界。两个分支接收同一可变 cont
 
 ---
 
-## 8.7 Lane 是同级身份，Solver 与 Trainer 是 Case 内控制平面
+## 10.7 Lane 是同级身份，Solver 与 Trainer 是 Case 内控制平面
 
 复杂项目还会出现 Lane。多条 Lane 可能使用不同算法、偏置、数据切片、模型家族或资源配置并行探索，然后通过共识、选择或 ensemble 汇总。因为 Lane 常常并行，又可能跨越多个阶段，人们容易把它看成 Project、Stage、Case 之后的另一层固定容器。实际上，Lane 不是稳定的工作尺度，而是一种**同级运行身份与比较语义**。
 
@@ -163,15 +163,15 @@ Pipeline 内部的并行尤其容易越界。两个分支接收同一可变 cont
 
 Group 与 Lane 也不能混用。Group 是用户在启动 Project 时选择的一组 Stage，表达“本次运行哪条已声明路径”；Lane 是运行图中若干同级挑战者的身份，表达“这些结果为何需要分别观察和比较”。选择 `symbolic` Group 可能启动四条 Lane，也可能一条都没有；同一 Lane 也可能跨越多个 Stage。Group 属于执行选择，Lane 属于协作与结果语义。
 
-这时可以重新看 Solver 与 Trainer。它们有时被误认为 Project 下两种不同层级：Solver 做外层编排，Trainer 只是 Solver 的内部函数。第七章已经否定这种固定关系，本章可以给出尺度上的理由。Solver 能独立推进优化生命周期、保存状态并返回优化结果；Trainer 能独立推进学习生命周期、保存状态并返回模型结果。只要二者满足 Case 闭包，它们就处于同一运行尺度。
+这时可以重新看 Solver 与 Trainer。它们有时被误认为 Project 下两种不同层级：Solver 做外层编排，Trainer 只是 Solver 的内部函数。第七、八章已经否定这种固定关系，本章可以给出尺度上的理由。Solver 能独立推进优化生命周期、保存状态并返回优化结果；Trainer 能独立推进学习生命周期、保存状态并返回模型结果。只要二者满足 Case 闭包，它们就处于同一运行尺度。
 
 外层和内层只是一次组合中的位置。超参数搜索中 Solver Case 位于外层、Trainer Case 位于内层；一个学习系统调用规划搜索时，Trainer Case 可以位于外层、Solver Case 位于内层。嵌套不改变被调用者的 Case 身份，也不允许调用者吞并其资源和状态语义。内层 Case 获得派生 ResourceContext，返回正式 CaseResult；外层只消费结果投影。
 
-同理，SerialTrainer 或 SerialStageSolver 只有在子阶段共同构成一个不可分割的语义结果时，才适合留在单 Case 内。若子阶段可独立运行、各自拥有 Artifact 和完成策略，它们更自然地成为多个 Case，由 Project Stage 连接。复合控制平面不能因为继承关系方便，就代替 Project 级编排。
+同理，内部 phase 只有在各步骤共同构成一个不可分割的语义结果时，才适合留在单 Case 内。若步骤可独立运行、各自拥有 Artifact 和完成策略，它们更自然地成为多个 Case，由 Project Stage 连接。复合控制平面不能因为继承关系方便，就代替 Project 级编排。
 
 ---
 
-## 8.8 从 Pipeline 升级为 Case：一套可执行的尺度判定
+## 10.8 从 Pipeline 升级为 Case：一套可执行的尺度判定
 
 到这里，五个核心对象和两个横向概念已经各就其位，但工程中最常见的问题仍然是“这一段到底要不要拆成 Case”。答案不能来自偏好，也不能只看它是否昂贵。可以用一组由弱到强的信号作判断。
 

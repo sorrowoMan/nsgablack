@@ -120,7 +120,7 @@ Trainer:
 
 Backend bridge:
 
-- `C:\Users\hp\Desktop\nsgablack\plugins\solver_backends\mlblack_symbolic_consensus_backend.py`
+- `C:\Users\hp\Desktop\mlblack\integrations\nsgablack_symbolic_backend.py`
 
 Outer scaffold entry:
 

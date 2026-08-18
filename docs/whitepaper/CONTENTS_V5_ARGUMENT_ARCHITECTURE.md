@@ -231,7 +231,7 @@ flowchart TD
 
 - **本章命题**：Solver、Trainer、Plugin、Stage 和 Worker 虽有不同细节，但可以映射到共同的启动—执行—提交—结束—清理结构。
 - **拟设小节**：setup/init/start；generation/step；evaluate hooks；update/commit；finish/result；error boundary；teardown/finally；Plugin 统一 hook；Capability 映射；生命周期事件的幂等性；直接公共 API 调用与 `run()` 的一致性。
-- **关键反例**：基类 `run = fit` 的静态绑定；SerialTrainer 覆盖 `fit()` 却未覆盖 `run()`；公共 evaluate 绕过 `on_error`；失败路径没有 teardown。
+- **关键反例**：基类 `run = fit` 的静态绑定；标准 Case 覆盖 `fit()` 却未覆盖 `run()`；公共 evaluate 绕过 `on_error`；失败路径没有 teardown。
 - **出口结论**：形式本体完备，可以进入共享运行底座。
 
 ---
@@ -275,7 +275,7 @@ flowchart TD
 
 - **本章命题**：Case execution boundary 负责把任意合法 Solver/Trainer 约束成一致的生命周期和结果语义。
 - **拟设小节**：模块加载与 import context；builder invocation；setup/init；`run()`/`fit()` 选择；参数注入；结果标准化；错误 phase；Plugin finish/error；teardown in finally；effective runtime report；嵌套调用与独立运行的一致性。
-- **反例**：SerialTrainer `run()` 空转；子阶段成功但父 Result 为空；构建失败未进入 Manifest。
+- **反例**：子 Case `run()` 空转；子阶段成功但父 Result 为空；构建失败未进入 Manifest。
 - **出口结论**：单个 Case 可以被可靠地执行，但内部值流仍需统一内核。
 
 ### 第二十一章　Pipeline Slot Kernel：Case 内的值流语言
@@ -499,7 +499,7 @@ flowchart TD
 - **拟设小节**：PredictionInputSpec/OutputSpec；主模型+残差；stacking；boosting-like；late fusion；expert/router；中间 Artifact；分阶段训练；联合与独立评估；部署边界；组合模型 lineage。
 - **出口结论**：单 Trainer 内的模型组合边界明确，可以进一步讨论复合 Trainer。
 
-### 第五十一章　SerialTrainer：复合 Trainer 必须仍是标准 Trainer
+### 第五十一章　CaseStageRunner：复合运行必须仍由标准 Case 构成
 
 - **本章命题**：复合 Trainer 只有完整复用生命周期、资源继承、错误语义和结果采用规则，才满足组合闭包。
 - **拟设小节**：StageSpec/CompletionPolicy；子 Trainer setup/init/fit/finish/error/teardown；父 ResourceContext 派生；Artifact 注入；final output stage；aggregation；best state/model/feedback；`fit()`/`run()` 一致性；失败时 finally；何时升级为多 Case Project。
@@ -522,7 +522,7 @@ flowchart TD
 
 - **本章命题**：训练闭包必须同时证明数据、状态、反馈、资源、快照、结果和 Artifact 对齐。
 - **完整时序**：DataView resolve → Pipeline fit/transform → build propose_context → Adapter propose → Representation decode → Provider/Problem evaluate → validate Feedback identity → rebuild update_context → Adapter update → resolve authoritative state → snapshot → best/result → Artifact → finish/teardown。
-- **验证矩阵**：单状态、批量、gradient、provider short-circuit、safe Redis、ResourceContext 更新、SerialTrainer、run/fit、checkpoint、Artifact round-trip。
+- **验证矩阵**：单状态、批量、gradient、provider short-circuit、safe Redis、ResourceContext 更新、CaseStageRunner、run/fit、checkpoint、Artifact round-trip。
 - **出口结论**：mlblack 语义闭包完成，两个语义层可以通过标准 Case surface 组合。
 
 ---
@@ -731,7 +731,7 @@ flowchart TD
 ### 第八十一章　故障排查：从症状回到闭包
 
 - **组织方式**：不是按文件或异常类型，而是按闭包失效定位。
-- **症状索引**：预算超支；阶段晚切换；snapshot stale；feedback 错绑；batch shape 错位；Redis 恢复为字符串；资源显示 GPU 实际 CPU；parallel 不确定；timeout 后污染；重复 `on_error`；SerialTrainer 空结果；Artifact 多一层；Doctor 通过但运行失败。
+- **症状索引**：预算超支；阶段晚切换；snapshot stale；feedback 错绑；batch shape 错位；Redis 恢复为字符串；资源显示 GPU 实际 CPU；parallel 不确定；timeout 后污染；重复 `on_error`；子 Case 空结果；Artifact 多一层；Doctor 通过但运行失败。
 - **诊断路径**：观察事实 → 确定时间点和 identity → 找权威 owner → 检查合同/资源/事件 → 最小复现 → 修复根因 → 增加回归证据。
 - **出口结论**：读者能使用本书的理论反向诊断真实工程。
 
@@ -877,7 +877,7 @@ flowchart TD
 - 先定义 Budget Authority，后讨论评估计数、部分失败、重试和嵌套预算。
 - 先完成 Adapter.update 的权威状态语义，后讨论 generation snapshot 和 checkpoint。
 - 先完成 TrainerResult/Artifact，后讨论外层优化消费内层 ML。
-- 先定义 Case execution boundary，后讨论 SerialTrainer 和 nested Case 的闭包差异。
+- 先定义 Case execution boundary，后讨论内部 phase 和 nested Case 的闭包差异。
 - 先定义 cooperative cancellation，后讨论 timeout 报告和 late write fence。
 - 先区分源码、测试和运行证据，最后才允许撰写“当前能力”结论。
 

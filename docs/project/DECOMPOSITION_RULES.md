@@ -54,7 +54,7 @@
 框架提供 catalog/recipes 作为“可发现性层”：
 
 - 使用说明：`docs/user_guide/catalog.md`
-- 不想改源码：把条目写进 `catalog/entries.toml` 或 `NSGABLACK_CATALOG_PATH`
+- 不想改源码：把条目按 kind 写进 `catalog/entries/<kind>.toml` 或 `NSGABLACK_CATALOG_PATH`
 
 ## 5. 更细的工程检查清单
 

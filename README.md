@@ -9,6 +9,11 @@ Current architecture rule:
 - `mlblack` is responsible for machine-learning semantics: DataView, Spec, Codec, Head, Trainer, Provider, Artifact, and ML reports.
 - Orchestration and resource grants belong to the shared substrate, not to either semantic layer privately.
 
+Shared substrate baseline: `blackbase>=0.3.0,<0.4.0`.
+Version 0.3 removes the former resource/context forwarders and uses BlackBase
+directly for Case orchestration, L0 grants, call binding, Catalog primitives,
+runtime projection envelopes, and atomic ContextStore semantics.
+
 ## What It Solves
 
 Complex optimization projects usually fail because boundaries blur:
@@ -91,6 +96,25 @@ oversized Pareto fronts are published through the Project artifact authority
 instead of being copied into the Case envelope.
 The same inline-size policy applies to large best solutions, which are returned
 as real `best_solution_ref` artifacts rather than oversized inline payloads.
+Composable and evolutionary Solvers maintain one run-wide incumbent through a
+feasibility-first comparator; the configured objective scalarizer is then used
+inside the same feasibility class. Direct tuple/dict results and `SolverResult`
+all read that incumbent, while the current population remains separate runtime
+state. The incumbent is an atomic `IncumbentState` record, fresh runs clear it,
+checkpoint resume restores it in one operation, and explicit warm starts are
+reevaluated before they may become authoritative. Custom incumbent scalarizers
+are pointwise policies; failures raise by default, while explicit fallback is
+audited as degraded result quality. Checkpoint v2 persists that audit state and
+rejects a resume when the builder reconstructed a different scalarizer policy.
+Large incumbent candidates are stored in SnapshotStore and exposed through the
+canonical `best_candidate_ref`; only candidates below the configured serialized
+size limit remain inline in ContextStore. Oversized candidates are persisted
+before the authoritative incumbent commit, so a strict Snapshot failure cannot
+partially replace the in-memory best. Context is a derived atomic projection;
+projection failures keep the committed incumbent and are recorded as stale
+projection audit state instead of being silently swallowed. Candidate tokens travel beside batch
+rows through repair and evaluation, so warm-start lineage is never inferred by
+comparing candidate values.
 
 This also covers multi-solver and multi-trainer projects: put each runnable unit in its own Case and let the Project substrate coordinate order, parallelism, and resources.
 

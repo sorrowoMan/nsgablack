@@ -49,8 +49,8 @@
 ## 关键约定
 1. **开工前先查 catalog**：`python -m nsgablack catalog search <关键词>` — 必须首先执行，避免重复造轮子
 2. 查看组件详情 + companion：`python -m nsgablack catalog show <key> --profile framework-core`
-3. 新案例用：`python -m nsgablack project init examples\cases\<name> --force`
-4. **注册到 catalog DB**：编辑 `_default_entries()` 后，`get_catalog(refresh=True)` 自动写入 DB。**禁止只写 `entries.toml`，WebUI 只读 DB。**
+3. 新项目用：`python -m nsgablack project new <project_name> --force`，再用 `project add-case` 创建 Case。
+4. **Catalog 唯一事实源**：框架条目与 Case 条目都使用 `catalog/entries/<kind>.toml`；数据库/UI 只是其物化视图。
 5. 不要删除脚手架生成的模板文件，只添加新文件
 6. mlblack 侧组件查询：`cd C:\Users\hp\Desktop\mlblack; python -m mlblack catalog search <query>`
 
@@ -88,13 +88,13 @@
 python -m nsgablack catalog list --kind <kind> --profile framework-core
 python -m nsgablack catalog search <query> --profile framework-core --show-import
 python -m nsgablack catalog show <key> --profile framework-core
-python -m nsgablack project init examples\cases\<name> --force
+python -m nsgablack project new <project_name> --force
 python -m nsgablack project doctor --path . --strict --format problem
 
 # 在 C:\Users\hp\Desktop\mlblack
 python -m mlblack catalog list --kind <kind>
 python -m mlblack catalog search <query> --show-import
 python -m mlblack catalog show <key>
-python -m mlblack project init examples\cases\<name> --force
+python -m mlblack project new <project_name> --force
 python -m compileall -q .
 ```

@@ -110,7 +110,7 @@ Use this as the definitive map for import paths and stable entrypoints.
 
 - `catalog/registry.py`
   - `Catalog` registry and entries
-- `catalog/entries.toml`
+- `catalog/entries/*.toml`
   - external entries source
 - CLI:
   - `python -m nsgablack catalog search <query>`

@@ -1,6 +1,6 @@
 # Black Framework Stack 中文白皮书
 
-本目录维护 `blackbase + nsgablack + mlblack` 统一框架栈的中文白皮书源文件与生成工具。
+本目录维护 `blackbase + nsgablack + mlblack` 统一框架栈的中文白皮书源文件与生成工具。正在续写的开发白皮书主版本是 [V6 分卷体系](v6/CONTENTS.md)，其已迁移正文和待写状态见 [V6 迁移状态](v6/MIGRATION_STATUS.md)。
 
 白皮书的主要读者是三类人：第一次接触框架的使用者、准备扩展组件的开发者，以及需要审查运行正确性与工程边界的架构维护者。主版本只使用中文叙述；类名、协议名、命令与代码保持原始英文标识。
 
@@ -14,11 +14,16 @@
 
 ## 目录结构
 
+- `v6/`：当前开发白皮书的权威正文，采用“分卷 + 卷内章号”，卷级 `README.md` 负责阅读导航。
+- `v6/CONTENTS.md`：V6 主目录与全书论证路线。
+- `v6/MIGRATION_STATUS.md`：V5 到 V6 的真实迁移完成度，不用空白章节代替正文。
 - `chapters/`：白皮书原创主卷，负责统一叙事、契约说明和阅读路线。
 - `manifest.json`：编排顺序、章节来源、仓库归属和状态标签。
 - `build_whitepaper.py`：生成合订 Markdown 与 DOCX 的确定性工具。
 - `Black_Framework_Stack_Whitepaper_CN.md`：生成后的合订中文源稿。
 - `Black_Framework_Stack_Whitepaper_CN.docx`：正式阅读版。
+
+`chapters/`、`manifest.json` 和当前合订产物属于此前的生成链；在 V6 分卷尚未完成以前继续保留，但不作为 V6 新正文的修改入口。V6 后续若进入合订发布，应单独更新 manifest 与生成器并重新验证，不把目录迁移自动等同于出版物已经更新。
 
 ## 维护口径
 
@@ -29,4 +34,3 @@
 - **建议**：面向未来的工程路线，不应被读者误解为已经实现。
 
 白皮书版本以生成日期和三个仓库的当前工作树为准。由于三个仓库可能包含未提交改动，生成器不会执行 Git 清理、覆盖或回滚。
-

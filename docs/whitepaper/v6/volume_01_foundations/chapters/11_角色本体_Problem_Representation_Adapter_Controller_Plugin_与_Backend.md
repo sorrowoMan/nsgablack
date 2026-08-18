@@ -1,6 +1,6 @@
-# 第九章　角色本体：Problem、Representation、Adapter、Controller、Plugin 与 Backend
+# 第一卷·第十一章　角色本体：Problem、Representation、Adapter、Controller、Plugin 与 Backend
 
-第八章建立了工作的尺度。Project 是整项工作的世界边界，Stage 组织 Case 的依赖与并行，Case 是最小独立运行闭包，Scaffold 规定 Case 怎样装配，Pipeline 组织 Case 内部值流。可是，即使一个 Case 的边界已经正确，内部仍可能把完全不同的责任揉进同一个循环：从业务数据读取约束，顺手修复候选，再决定下一批搜索策略，同时创建 GPU session、写 checkpoint、根据日志请求停止，最后从一个临时字段构建结果。它也许可以运行，却没有人能够说清任何决定究竟由谁拥有。
+第十章建立了工作的尺度。Project 是整项工作的世界边界，Stage 组织 Case 的依赖与并行，Case 是最小独立运行闭包，Scaffold 规定 Case 怎样装配，Pipeline 组织 Case 内部值流。可是，即使一个 Case 的边界已经正确，内部仍可能把完全不同的责任揉进同一个循环：从业务数据读取约束，顺手修复候选，再决定下一批搜索策略，同时创建 GPU session、写 checkpoint、根据日志请求停止，最后从一个临时字段构建结果。它也许可以运行，却没有人能够说清任何决定究竟由谁拥有。
 
 这一章讨论的不是“一个类应该放在哪个文件”，而是**角色**。角色是一组决策权与相应责任：Problem 有权解释问题事实，Representation 有权解释状态怎样成为领域对象，Adapter 有权决定搜索或更新策略，Solver/Trainer 有权推进控制平面，Controller 有权形成运行治理决定，Plugin 有权在正式生命周期点提供横切能力，Backend/Provider 有权执行外部能力，Artifact builder 有权把已经确定的结果封装成可复现产物。
 
@@ -12,7 +12,7 @@
 
 ---
 
-## 9.1 角色由决策权定义，而不是由调用顺序定义
+## 11.1 角色由决策权定义，而不是由调用顺序定义
 
 假设一个优化 Case 调用预测模型估算候选风险。调用顺序可能是 Solver 先生成 Context，Adapter 提出向量，Representation 解码生产方案，Problem 把方案交给模型 Provider，Provider 返回概率，Problem 将概率解释为风险目标，Controller 检查剩余预算，Plugin 记录 trace。若按“谁先调用谁”划分层级，Solver 好像拥有一切，因为其他组件都从它开始；若按“谁真正执行计算”划分，Provider 又好像拥有一切，因为昂贵计算发生在那里。两种判断都不正确。
 
@@ -40,7 +40,7 @@ Role = (
 
 ---
 
-## 9.2 Problem：拥有“什么算作事实”的解释权
+## 11.2 Problem：拥有“什么算作事实”的解释权
 
 任何反馈驱动过程都需要一个地方回答：当前对象在这个问题中表现如何？生产方案的成本、延期与可行性，路径的距离与禁行违反，模型在验证数据上的损失、校准与残差，都不能由通用循环从数组位置猜测。这项权力属于 Problem。
 
@@ -50,7 +50,7 @@ Problem 拥有的是**问题事实语义**。在优化侧，它定义决策变�
 
 这条边界也规定 Problem 不应做什么。它不应根据上一代历史选择新的候选，那属于 Adapter；不应为了偏好某类解而偷偷改变约束，软偏好应进入 Bias 或显式目标；不应创建全局线程池或设备 lease，那属于 Project L0；不应在 evaluate 过程中把候选替换成另一个对象却仍返回原身份的反馈，那会破坏状态与反馈对齐。
 
-Problem 的正确性不能只靠返回类型验证。`np.ndarray` 形状正确，目标顺序仍可能错误；Feedback 有 objectives 字段，数据切分仍可能泄漏；约束返回零，可能只是异常被误当成无违反。Problem 合同至少要说明输入候选语义、反馈字段、目标方向、约束约定、批量 cardinality、外部失败与不可评价怎样表示。具体合同将在第十章展开，本章只确定这些解释权属于谁。
+Problem 的正确性不能只靠返回类型验证。`np.ndarray` 形状正确，目标顺序仍可能错误；Feedback 有 objectives 字段，数据切分仍可能泄漏；约束返回零，可能只是异常被误当成无违反。Problem 合同至少要说明输入候选语义、反馈字段、目标方向、约束约定、批量 cardinality、外部失败与不可评价怎样表示。具体合同将在第十二章展开，本章只确定这些解释权属于谁。
 
 Problem 与 Bias 的边界尤其需要清楚。Problem 描述现实或任务规则，Bias 描述搜索希望更重视什么。设备容量是硬约束，某类排程更容易被现场接受可能是软偏好；标签和数据切分是学习事实，对简洁模型的偏爱可以是正则、目标或显式 Bias。若把偏好写进 Problem 却不披露，结果看起来是在求原问题，实际已经换了问题。
 
@@ -58,7 +58,7 @@ Problem 与 Bias 的边界尤其需要清楚。Problem 描述现实或任务规�
 
 ---
 
-## 9.3 Representation：拥有“这个状态表示什么”的映射权
+## 11.3 Representation：拥有“这个状态表示什么”的映射权
 
 Problem 评价的是领域对象，算法或训练过程维护的却常常是另一种状态。一个排列可以表示访问顺序，一个连续向量可以解码成结构参数，一组 values 加 metadata 可以描述神经网络、树模型或符号表达式。若没有显式映射，相同数组会在不同组件中被赋予不同含义，状态身份也无法稳定。Representation 因而拥有从未知状态到可评价对象的解释权。
 
@@ -74,7 +74,7 @@ Representation 也不拥有最终评价。一个状态能够成功 decode，只�
 
 ---
 
-## 9.4 Adapter 与 Solver/Trainer：策略权和控制权必须分开
+## 11.4 Adapter 与 Solver/Trainer：策略权和控制权必须分开
 
 有了可评价对象和正式反馈，系统还要决定下一步怎样改变未知状态。遗传选择、差分变异、邻域搜索、信赖域更新、梯度下降、采样或闭式拟合都属于策略。这项权力由 Adapter 承担。共享 AdapterBase 用 `propose` 与 `update` 描述最小闭环：先根据当前策略状态提出候选，再消费与候选身份对齐的反馈，更新自己的算法账本。
 
@@ -92,7 +92,7 @@ Bias 位于策略附近，却不拥有完整策略。它提供软先验、偏好
 
 ---
 
-## 9.5 Controller 与 Plugin：运行决定不是生命周期副作用
+## 11.5 Controller 与 Plugin：运行决定不是生命周期副作用
 
 长期运行会不断产生治理问题：预算是否耗尽，是否因为多轮没有改善而停止，是否应切换策略或阶段，某个降级条件是否已经触发。这些问题既不属于候选评价，也不等于搜索策略。它们读取运行事实，形成对控制平面的决定。当前 `nsgablack` 将这项角色称为 Controller。
 
@@ -114,7 +114,7 @@ Plugin 也不能因为能够短路评价就取得 Problem 权力。评价 Provid
 
 ---
 
-## 9.6 Backend 与 Provider：拥有执行能力，不拥有领域目的
+## 11.6 Backend 与 Provider：拥有执行能力，不拥有领域目的
 
 Problem 可能需要仿真，Trainer 可能需要 PyTorch，Snapshot 可能需要 Redis，Project 可能需要远程 worker。真正执行这些能力的系统拥有自己的 API、资源模型、错误和取消限制。框架内部需要 Backend 或 Provider 把正式合同翻译成现实调用。
 
@@ -132,7 +132,7 @@ Backend 与 Plugin 有时会结合，例如一个评价 Plugin 使用远端 Prov
 
 ---
 
-## 9.7 Artifact builder：封装已经成立的结果，而不是重新选择结果
+## 11.7 Artifact builder：封装已经成立的结果，而不是重新选择结果
 
 一次运行结束时，内存里可能同时存在当前状态、最佳状态、最后一次评价、Adapter 内部账本、模型对象、指标、Snapshot 引用和运行报告。谁负责把这些内容变成可以在新进程中继续使用的产物？这项角色由 Artifact builder 承担。
 
@@ -148,7 +148,7 @@ Artifact builder 还不能被 Dashboard 取代。Dashboard 读取已有 Artifact
 
 ---
 
-## 9.8 一条完整角色链，以及越权时会发生什么
+## 11.8 一条完整角色链，以及越权时会发生什么
 
 现在可以把角色放回一次 Case 运行，但这次图中的箭头只表示正式调用，不表示所有权转移：
 
@@ -197,6 +197,6 @@ Adapter 直接读取业务数据，会把 Problem 的事实语义藏进策略，
 
 当前 `blackbase.abc` 已提供 ProblemBase、RepresentationBase、AdapterBase，`blackbase.plugin` 提供共享 Plugin 生命周期，`nsgablack` 提供 Solver、Controller、Bias 与优化扩展，`mlblack` 提供 LearningProblem、ModelRepresentation、Head、Trainer、Provider 和 Artifact builder。它们构成 **D/S：当前声明与源码静态表面**，不能单独证明所有角色已经在每条运行路径中严格分离。
 
-第八章给合同找到了尺度，本章给合同找到了责任主体。下一章将进一步回答：即使知道“谁负责”，怎样证明一个具体组件真的能被装配和运行？类型注解只能说明一部分，Context 读写、资源需求、backend capability、生命周期、I/O、错误、取消、版本和兼容还需要彼此正交的合同。只有这些合同显式化，角色边界才不再依赖开发者记忆。
+第十章给合同找到了尺度，本章给合同找到了责任主体。下一章将进一步回答：即使知道“谁负责”，怎样证明一个具体组件真的能被装配和运行？类型注解只能说明一部分，Context 读写、资源需求、backend capability、生命周期、I/O、错误、取消、版本和兼容还需要彼此正交的合同。只有这些合同显式化，角色边界才不再依赖开发者记忆。
 
 本章的角色关系属于 **I：架构不变量的角色化展开**；源码类和方法只提供 **D/S** 证据。其出口不是一张类图，而是一套能够判断决策权、状态权和错误所有权的语言。

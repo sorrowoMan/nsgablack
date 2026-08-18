@@ -47,20 +47,20 @@ python -m mlblack catalog show <key>
 
 ## Catalog 存储规则（强制）
 
-**catalog 查询走 DB（PostgreSQL），不读 `entries.toml`。** TOML 4000+ 行是 token 炸弹。
+**Catalog 的事实源是按 kind 分片的 `catalog/entries/*.toml`。** PostgreSQL/SQLite/UI 是可重建的物化查询面。
 
 ```bash
-# 查询 — 走 DB（catalog CLI 内部走 SQL）
+# 查询
 python -m nsgablack catalog show <key> --profile default
 python -m nsgablack catalog search <query> --profile default
 python -m nsgablack catalog list --kind <kind> --profile default
 
-# 注册新组件 — 走 registry.py 的 _default_entries()，不进 entries.toml
-# 注册完同步到 DB：
+# 注册新组件 — 写入 catalog/entries/<kind>.toml
+# 需要数据库查询面时再物化：
 python -m nsgablack catalog materialize --profile default
 ```
 
-**禁止：** 直接 Read `entries.toml`；往 `entries.toml` 追加新 entry。
+**禁止：** 在 Python registry、模块级 `CATALOG_ENTRIES` 或数据库中维护第二份事实源。
 
 ## Catalog 驱动（强制）
 
@@ -171,7 +171,7 @@ nsgablack/
   representation/    — 编码/解码/修复
   plugins/           — 能力层（runtime/eval/system）
   bias/              — 软偏好引导
-  catalog/           — 组件注册表（entries.toml + registry.py）
+  catalog/           — 组件注册表（entries/<kind>.toml 为事实源，registry.py 负责查询）
   project/           — 脚手架 + doctor
   examples/cases/    — 标准示例
   my_project/        — 脚手架模板（保持干净，不含示例）
@@ -190,7 +190,7 @@ mlblack/
 ## 禁止事项
 
 - 只搜 nsgablack catalog 就做架构判断
-- 全量读 `entries.toml`（3738 行）或任意大源文件
+- 为了查一个组件而全量读取所有 Catalog 分片或任意大源文件
 - 在 `my_project/` 放置 example/case
 - Adapter 里写日志/IO；Plugin 里改写搜索语义
 - 在 nsgablack 层硬编码 mlblack 的 DataView/Spec/Codec 内部细节

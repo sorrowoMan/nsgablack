@@ -549,7 +549,7 @@ Plugin 是共享能力层，因此要在优化与 ML 语义之前单独解释。
 7. 中间 Artifact 与阶段依赖。
 8. 组合模型的评估和部署边界。
 
-## 第三十七章　SerialTrainer 与阶段闭包
+## 第三十七章　CaseStageRunner 与阶段闭包
 
 1. StageSpec 与 CompletionPolicy。
 2. 子 Trainer 的完整生命周期。
@@ -559,7 +559,7 @@ Plugin 是共享能力层，因此要在优化与 ML 语义之前单独解释。
 6. best state/model/feedback 的采用。
 7. 子阶段失败时的 finally teardown。
 8. `fit()` 与 `run()` 一致性。
-9. 何时 SerialTrainer 应升级为多个 Project Case。
+9. 何时内部 phase 应升级为多个 Project Case。
 
 ## 第三十八章　Artifact、模型产物与可复现报告
 
@@ -799,7 +799,7 @@ Plugin 是共享能力层，因此要在优化与 ML 语义之前单独解释。
 
 ## 第六十章　故障排查手册
 
-按症状组织：预算异常、策略晚切换、Snapshot stale、shape 错位、Redis 恢复失败、资源声明与实际后端分叉、并行不确定、timeout 后污染、SerialTrainer 空结果、Artifact 层级错误、Doctor 与运行不一致。
+按症状组织：预算异常、策略晚切换、Snapshot stale、shape 错位、Redis 恢复失败、资源声明与实际后端分叉、并行不确定、timeout 后污染、子 Case 空结果、Artifact 层级错误、Doctor 与运行不一致。
 
 ---
 
@@ -908,4 +908,3 @@ Project CLI、Case CLI、Doctor、Catalog、Redis、Worker、恢复和常用诊�
 ## 附录 I　架构决策记录
 
 记录为何统一 builder、为何 Context 轻量、为何 L0 授权属于 Project、为何共享 Kernel 落在 blackbase、为何取消采用协作式语义等关键 ADR。
-

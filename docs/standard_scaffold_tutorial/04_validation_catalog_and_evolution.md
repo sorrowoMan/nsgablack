@@ -212,7 +212,7 @@ python -m nsgablack catalog list --profile default --kind example
 
 ## 7. 项目本地 catalog entry 怎么写
 
-项目侧可在 `catalog/entries.toml` 或 `project_registry.py` 注册本地组件。示例：
+项目侧只在 `catalog/entries/<kind>.toml` 注册本地组件；运行时 Python registry 已删除。示例：
 
 ```toml
 [[entries]]

@@ -1,6 +1,6 @@
-# 第十一章　状态与反馈：UnknownState、Candidate、Feedback 和 Result
+# 第一卷·第十三章　状态与反馈：UnknownState、Candidate、Feedback 和 Result
 
-第十章把一个组件能否运行写成多类合同的合取，其中 I/O 合同留下了一个尚未解决的问题：即使输入输出都有类型、shape 和 schema，框架怎样知道一份反馈究竟属于谁？如果某个数组先被称为参数，解码后被称为模型，评估后又与目标值放在一起，更新结束后仍沿用原来的变量名，那么每一步单独看都能通过类型检查，整条因果链却可能已经把不同时间、不同身份的对象混成了一个“值”。
+第十二章把一个组件能否运行写成多类合同的合取，其中 I/O 合同留下了一个尚未解决的问题：即使输入输出都有类型、shape 和 schema，框架怎样知道一份反馈究竟属于谁？如果某个数组先被称为参数，解码后被称为模型，评估后又与目标值放在一起，更新结束后仍沿用原来的变量名，那么每一步单独看都能通过类型检查，整条因果链却可能已经把不同时间、不同身份的对象混成了一个“值”。
 
 这种混淆在短脚本里不易暴露。变量 `x` 从生成到评估只活几行，开发者凭上下文知道它此刻是什么意思。进入框架以后，同一批对象会经过 repair、decode、并行派发、部分接纳、评价、策略更新、环境选择、快照提交和结果投影；它还可能跨线程、跨 Case、跨进程或跨存储后端。此时，“数组内容看起来一样”不再足以证明“还是同一个对象”，而“最后留下来的种群”也不等于“刚才真正接受过评价的种群”。
 
@@ -18,7 +18,7 @@ UnknownState
 
 ---
 
-## 11.1 一个 ndarray 为什么装不下完整的运行语义
+## 13.1 一个 ndarray 为什么装不下完整的运行语义
 
 数值数组当然重要。搜索算法需要矩阵运算，梯度方法需要张量，批量 Provider 也希望连续内存和统一 shape。问题不在于使用 ndarray，而在于让 ndarray 同时承担数值载体、领域身份、评价归属和最终结果四种责任。
 
@@ -34,7 +34,7 @@ UnknownState
 
 ---
 
-## 11.2 UnknownState：它不是“未知类型”，而是尚待解释的决策状态
+## 13.2 UnknownState：它不是“未知类型”，而是尚待解释的决策状态
 
 UnknownState 这个名字容易产生误解。它不是说框架完全不知道对象类型，也不是 `Any` 的另一种写法；它表示框架知道这里有一份可被策略生成、扰动、保存和恢复的状态，却不应越过 Representation 去断言它在领域中的含义。这个“未知”是对共享运行层而言的语义克制。
 
@@ -53,15 +53,15 @@ state = UnknownState(
 
 这里的三个浮点数只有在 model family、active branch 和 feature schema 都确定时才能被正确解释。删掉 metadata 后，数组仍可被 NumPy 读取，语义却已经不可恢复。一个安全序列化器若只保住 values，不能声称完成了 UnknownState 的 round trip；一个 checkpoint 若恢复了参数，却没有恢复参数布局，也不能声称恢复了训练状态。
 
-metadata 并不意味着可以无限堆放任意对象。它首先应该可规范化、可版本化，并尽量只包含解释 state 所需的轻量信息。大型模型、数据集、历史和缓存仍应通过引用进入 Snapshot 或 Artifact；打开的文件句柄、线程锁、GPU session 和数据库连接更不属于状态 payload。否则 UnknownState 会从语义信封膨胀为新的万能容器，重新制造第十章已经否定的隐式依赖。
+metadata 并不意味着可以无限堆放任意对象。它首先应该可规范化、可版本化，并尽量只包含解释 state 所需的轻量信息。大型模型、数据集、历史和缓存仍应通过引用进入 Snapshot 或 Artifact；打开的文件句柄、线程锁、GPU session 和数据库连接更不属于状态 payload。否则 UnknownState 会从语义信封膨胀为新的万能容器，重新制造第十二章已经否定的隐式依赖。
 
 共享层当前为 UnknownState 提供了版本化 protocol payload：版本、values 与 metadata 可以交给安全 codec；Redis SnapshotStore 也对这一共享协议类型设有正式编解码分支。这个实现事实 **S** 说明 UnknownState 已经不必像普通未知 Python 对象那样退化成 `repr` 字符串。但它不意味着任意自定义候选类型都自动安全。没有正式 codec 的对象在 safe serializer 中仍可能只能保留类型名与文本表示；文本能够展示，不能用于等价恢复。
 
-UnknownState 还需要区分三种常被混称为“版本”的东西。protocol version 说明 payload 字段怎样读取；representation version 说明 values 和 metadata 怎样 decode；state revision 说明这份状态位于一次运行的哪个演化位置。当前 protocol payload 已有显式版本，而后两种关系还必须由更上层合同、指纹、快照 metadata 与 lineage 共同表达。把 schema version 写成 1，并不会自动证明它属于哪个 Representation，也不会自动证明它比另一份状态更新。第十二章会专门处理这些身份与时间问题，本章先确立：凡是会影响状态解释的信息，都不能在 UnknownState 边界上被丢掉。
+UnknownState 还需要区分三种常被混称为“版本”的东西。protocol version 说明 payload 字段怎样读取；representation version 说明 values 和 metadata 怎样 decode；state revision 说明这份状态位于一次运行的哪个演化位置。当前 protocol payload 已有显式版本，而后两种关系还必须由更上层合同、指纹、快照 metadata 与 lineage 共同表达。把 schema version 写成 1，并不会自动证明它属于哪个 Representation，也不会自动证明它比另一份状态更新。第十四章会专门处理这些身份与时间问题，本章先确立：凡是会影响状态解释的信息，都不能在 UnknownState 边界上被丢掉。
 
 ---
 
-## 11.3 Candidate：被评价的是领域对象，不是它的运输外壳
+## 13.3 Candidate：被评价的是领域对象，不是它的运输外壳
 
 UnknownState 之所以存在，是因为策略最方便操作的表示与领域真正能够评价的对象往往不同。Candidate 就出现在这次转换之后。它可能是一套生产计划、一个模型实例、一棵符号表达式、一组超参数配置、一张图结构或一个仿真输入。Candidate 不是一定要在共享包中拥有名为 `Candidate` 的统一 dataclass；更重要的是，框架在语义上承认“状态”和“由状态解释出的领域对象”是两个阶段。
 
@@ -77,7 +77,7 @@ Candidate 还解释了为什么评价 hook 应围绕修复与解码后的真实�
 
 ---
 
-## 11.4 Feedback：它是一条带主语和条件的评价事实
+## 13.4 Feedback：它是一条带主语和条件的评价事实
 
 很多实现把 Feedback 简化为一个 objective 数组，仿佛评价只是在候选后面追加几列数字。这种表示对最小单目标优化足够，却无法覆盖机器学习的梯度与残差、多目标优化的约束、外部仿真的诊断信号，也无法说明数字对应哪个候选、哪份数据和哪次运行。
 
@@ -95,7 +95,7 @@ Feedback 的 `ok` 也不能被误解为完整成功判据。当前实现以 obje
 
 ---
 
-## 11.5 批量评价：数量对齐只是底线，身份对齐才是目标
+## 13.5 批量评价：数量对齐只是底线，身份对齐才是目标
 
 单个候选的归属关系还可以由调用栈维持；进入批量评价以后，数组位置往往被当作默认 identity。候选矩阵第 i 行对应 objectives 第 i 行、violations 第 i 项，这项约定简单而高效，但它只有在整批候选从提出到返回都没有过滤、重排、重试、缓存命中或部分失败时才天然成立。
 
@@ -111,7 +111,7 @@ Feedback 的 `ok` 也不能被误解为完整成功判据。当前实现以 obje
 
 ---
 
-## 11.6 update 之后：权威状态变化了，旧 Feedback 不会自动跟过去
+## 13.6 update 之后：权威状态变化了，旧 Feedback 不会自动跟过去
 
 评价结束不是一代运行的结束。Feedback 的目的通常是驱动 Adapter 更新，而 update 正是最容易把“已评价对象”和“当前权威对象”混为一谈的时点。
 
@@ -129,7 +129,7 @@ Feedback 的 `ok` 也不能被误解为完整成功判据。当前实现以 obje
 
 ---
 
-## 11.7 Result：它是运行承诺的终态投影，不是最后一个内存对象
+## 13.7 Result：它是运行承诺的终态投影，不是最后一个内存对象
 
 当循环停止时，框架需要把运行内部状态变成对调用者稳定的 Result。最省事的做法是返回 `self.population`、`best_model` 或最后一次 step 的字典；这会让调用者拿到某个对象，却无法知道它是否已经评价、是否是权威提交、为什么被选中，以及失败或提前停止对它有什么影响。
 
@@ -139,13 +139,13 @@ Result 与运行状态的根本区别在于承诺范围。运行状态服务于�
 
 不过，字段存在不等于结果闭包已经成立。OptimizationResult 若只返回数组而没有 snapshot、run identity 或选择依据，调用者仍难以追溯；TrainerResult.best_model 若无法通过 best_state、Representation 和 Artifact 复现，就只是进程内便利对象；history 若包含大型可变对象，会让 Result 失去轻量稳定边界。理想 Result 至少应具备终态状态、正式反馈、运行状态、证据引用、schema/version 和选择解释。哪些字段内联、哪些通过引用交付，由大小、生命周期和跨边界需求决定。
 
-复合运行尤其考验 Result 语义。一个 SerialTrainer 依次执行多个独立阶段，最终结果来自最后阶段、指定 output stage 还是聚合器，必须由复合合同决定；不能因为父对象恰好有 `best_state` 字段就返回空值。外层 nsgablack 把内层 TrainerResult 投影为 `(objectives, violation)` 时，也只是为外层搜索提取所需反馈，不能把这对数组称为完整的内层结果。当前正式 Bridge 会创建独立 Trainer、派生子 ResourceContext、要求返回 TrainerResult，再由 projector 提取目标和约束违反 **S**；内层 Artifact、report 与审计引用仍应由 Result/Case 边界保留，而不是在投影时丢失。
+复合运行尤其考验 Result 语义。`CaseStageRunner` 依次执行多个独立子 Case 时，最终结果来自最后阶段、指定 output stage 还是聚合器，必须由复合合同决定；不能因为父对象恰好有 `best_state` 字段就返回空值。外层 nsgablack 把内层 TrainerResult 投影为 `(objectives, violation)` 时，也只是为外层搜索提取所需反馈，不能把这对数组称为完整的内层结果。正式 Bridge 通过 `CaseRunRequest` 创建独立 Trainer、派生子 ResourceContext、要求返回完整结果，再由 projector 提取目标和约束违反 **S**；内层 Artifact、report 与审计引用仍应由 Result/Case 边界保留，而不是在投影时丢失。
 
 运行失败时同样可以有 Result，但它不是伪造的成功结果。失败 Result 应携带 status、error phase、已提交状态引用、已消耗预算和可恢复位置；如果没有任何合法最终候选，best_state 就应明确为空，而不是返回零向量。取消、超时和部分成功也需要独立状态。Result 的责任不是保证每次都有漂亮答案，而是忠实封装这次运行最终能够承诺的事实。
 
 ---
 
-## 11.8 从语义往返到可验证协议
+## 13.8 从语义往返到可验证协议
 
 把四阶段对象分开以后，序列化就不再只是“能否 dump”。真正的 round trip 要求对象经过保存与读取后仍能参与相同的 decode、equivalence、feedback alignment 和结果解释。若写入前是 UnknownState，读取后变成字符串；若 metadata 中的 tuple 变成含义不同的 list；若 dtype、shape 或 schema revision 丢失；若 Result 中的引用无法解析，那么字节读取成功也不代表语义恢复成功。
 
@@ -172,7 +172,7 @@ required:
 
 这些验证并非都已具备运行证据。当前源码提供 UnknownState codec、默认语义指纹、Feedback 结构、BatchDisposition、更新后权威状态解析和两类 Result 表面，可标记为 **S**；它们是否覆盖所有 Adapter、Provider、复合 Trainer、远程 Worker 和历史 schema，仍需相应合同测试 **T** 与真实运行 **R** 逐项证明。per-item batch outcome、核心 identity 一等字段以及跨 Result 的完整证据引用，在形成稳定公共协议前应标记为 **D**，不能因为白皮书定义了理想关系就宣称框架已经全部实现。
 
-至此，第十章提出的 I/O 合同有了真正的语义对象：不是“数组进去、数组出来”，而是状态被解释为候选，候选产生有归属的反馈，策略据此改变权威状态，运行再把已提交事实投影为结果。可还有一个问题被本章有意保留：即使 values、metadata 和 schema 都一致，我们怎样区分两次独立提出的同类候选，怎样表示评价前、评价后、更新后与提交后的先后关系，又怎样防止旧 handle 在新一代仍被当作当前状态？
+至此，第十二章提出的 I/O 合同有了真正的语义对象：不是“数组进去、数组出来”，而是状态被解释为候选，候选产生有归属的反馈，策略据此改变权威状态，运行再把已提交事实投影为结果。可还有一个问题被本章有意保留：即使 values、metadata 和 schema 都一致，我们怎样区分两次独立提出的同类候选，怎样表示评价前、评价后、更新后与提交后的先后关系，又怎样防止旧 handle 在新一代仍被当作当前状态？
 
 下一章将把身份、逻辑时间、版本与 lineage 单独展开。只有为 run、case、stage、generation、candidate 和 evaluation 建立稳定坐标，`equivalent` 才不会被误当成“就是同一次”，Feedback 才能准确找到主语，Snapshot 也才能证明自己记录的是哪个提交点。
 

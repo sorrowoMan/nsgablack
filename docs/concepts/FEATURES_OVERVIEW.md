@@ -9,6 +9,7 @@
 - **Problem 接口**：统一问题定义与评估接口（evaluate / bounds / objectives）
 - **Solver**：运行容器与生命周期（调度 Pipeline/Bias/Adapter/Plugin）
 - **ContextStore / SnapshotStore**：小字段走 Context，大对象走快照引用（可内存/Redis/文件后端）
+- **Incumbent 引用边界**：小候选可按序列化阈值内联；大候选写入 SnapshotStore，Context 只保留 `best_candidate_ref`
 - **RepresentationPipeline**：初始化 / 变异 / 修复 / 编码解码（硬约束优先）
 - **BiasModule**：软约束与偏好驱动（domain / algorithmic / signal-driven）
 - **Adapter**：策略内核（可替换、可组合；ComposableSolver 的搜索引擎）
@@ -171,8 +172,11 @@
 
 - 种群代际语义：`core/evolution_solver.py` → `EvolutionSolver`  
   - 面向 population/generation 的进化式迭代  
-  - `best_x` 为**摘要代表点**：默认标量 `sum(objectives) + violation * 1e6`  
-    - 若多目标尺度差异大，可设置 `solver.objective_scalarizer` 自定义标量化规则
+  - `IncumbentState` 原子保存候选、目标、约束违反、评分与运行来源
+  - 默认使用 feasibility-first，再在同一可行性层级比较 `sum(objective_row)`
+  - 自定义策略通过 `set_incumbent_scalarizer(...)` 声明稳定 pointwise scalarizer
+  - checkpoint v2 保存 scalarizer 审计、run sequence 与原子 incumbent；v1 只经显式迁移读取
+  - warm-start 使用稳定 candidate token 贯穿 repair/evaluate，不再按数值反查来源
 
 ### Adapter（策略内核）
 

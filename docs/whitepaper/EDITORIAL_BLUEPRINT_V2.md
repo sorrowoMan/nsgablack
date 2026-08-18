@@ -60,7 +60,7 @@
 ### 第三部：加入机器学习语义
 
 9. mlblack 单 Trainer：DataView、UnknownState、Representation、Head、Problem、Feedback。
-10. 模型组合：Pipeline、Backend Session、SerialTrainer 和 Artifact。
+10. 模型组合：Pipeline、Backend Session、CaseStageRunner 和 Artifact。
 
 ### 第四部：从单 Case 到复杂 Project
 
@@ -88,4 +88,3 @@
 - 解释线程 timeout 为什么不等于强制停止，并阻止晚到写入。
 - 在 Redis safe serializer 下往返恢复 UnknownState。
 - 从 manifest、trace、Snapshot 和 Artifact 还原一次运行的因果链。
-

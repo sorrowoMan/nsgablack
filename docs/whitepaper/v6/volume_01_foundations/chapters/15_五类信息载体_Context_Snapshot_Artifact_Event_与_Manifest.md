@@ -1,16 +1,16 @@
-# 第十三章　五类信息载体：Context、Snapshot、Artifact、Event 与 Manifest
+# 第一卷·第十五章　五类信息载体：Context、Snapshot、Artifact、Event 与 Manifest
 
-第十二章为运行对象建立了身份、逻辑时间、版本和 lineage。现在可以回答一个此前总会陷入争论的问题：一份信息究竟应该放在哪里？如果只按 Python 类型判断，population 是 ndarray，模型可能是任意对象，错误是字符串，资源授权是字典，似乎都可以塞进一个 Context；如果只按“需要持久化”判断，Snapshot、Artifact、Event 和 Manifest 又都能落盘，似乎只是文件后缀不同。这样的分类没有触及它们真正的职责。
+第十四章为运行对象建立了身份、逻辑时间、版本和 lineage。现在可以回答一个此前总会陷入争论的问题：一份信息究竟应该放在哪里？如果只按 Python 类型判断，population 是 ndarray，模型可能是任意对象，错误是字符串，资源授权是字典，似乎都可以塞进一个 Context；如果只按“需要持久化”判断，Snapshot、Artifact、Event 和 Manifest 又都能落盘，似乎只是文件后缀不同。这样的分类没有触及它们真正的职责。
 
 五类载体并不是五种存储技术，而是对五个不同问题的回答。Context 回答“组件在当前时点需要知道什么”；Snapshot 回答“某个提交点的权威运行状态是什么”；Artifact 回答“哪项产物应被下游或未来运行继续使用”；Event 回答“刚才发生了什么事实”；Manifest 回答“整次 Project 运行由哪些 Case 构成、目前处于什么状态、最终留下了哪些可恢复结果”。它们可以使用相同的 Redis、文件系统或对象存储，也可能共享 JSON 信封，但不能因为 backend 相同就互换语义。
 
 这一区分的重要性在于，同一项业务内容可能在五种载体中留下不同投影，却不能被完整复制五遍。一个 population 的大矩阵属于 Snapshot；当前 Context 只携带 snapshot ref、population size 和必要统计；一次 population commit 形成 Event；若最终 Pareto 解集要交给别的 Project，它可以被提升为 Artifact；Manifest 最后只登记产生该 Artifact 的 Case 状态与引用。每个载体都保留自己完成职责所需的部分，彼此通过 identity 和 ref连接。
 
-本章命题是：**信息载体由时间尺度、所有权、可变性、写入频率、保留周期和消费方式共同定义，而不是由对象类型或存储介质定义。** 只有这六个维度明确，Context 轻量、Snapshot 权威、Artifact 可复用、Event 可追溯和 Manifest 可恢复才会成为一套相互配合的协议，而不是五个重叠的数据仓库。
+本章命题是：**信息载体由时间尺度、所有权、可变性、写入频率、保留周期和消费方式共同定义，而不是由对象类型或存储介质定义。** 只有这六个维度明确，Context 轻量、Snapshot 权威、Artifact 可复用、Event 在声明范围内可追溯、Manifest 可恢复并可指向上游证据，才会成为一套相互配合的协议，而不是五个重叠的数据仓库。
 
 ---
 
-## 13.1 先问信息在回答什么，而不是先问它能存到哪里
+## 15.1 先问信息在回答什么，而不是先问它能存到哪里
 
 假设一代优化刚刚结束，系统同时拥有 generation、evaluation count、当前种群、目标矩阵、一次预算截断原因、Pareto front、决策 trace、资源 grant、一个训练出的代理模型以及本次 Case 的完成状态。如果没有载体边界，最常见的实现是把这些内容合进一个大字典，然后把字典同时称为 context、checkpoint、result 和 report。短期内所有消费者都能“拿到数据”，长期却会出现四类冲突。
 
@@ -28,7 +28,7 @@
 
 ---
 
-## 13.2 Context：当前计算的轻量控制视图
+## 15.2 Context：当前计算的轻量控制视图
 
 Context 最容易被滥用，因为它通常表现为 `dict[str, Any]`，每个组件都能方便地读写。它的真正价值不是容量，而是让相邻组件在同一个逻辑时点共享必要的控制信息：当前 generation/step、candidate identity、evaluation count、少量指标、resource context、停止信号，以及 Snapshot/Artifact 的引用。
 
@@ -48,7 +48,7 @@ mlblack 当前 build_context 会投影 run name、step、best score、population
 
 ---
 
-## 13.3 Snapshot：一次提交点的权威状态截面
+## 15.3 Snapshot：一次提交点的权威状态截面
 
 Snapshot 回答的不是“现在有哪些 key”，而是“在某个逻辑提交点，继续运行所需的权威状态是什么”。它可以包含 population、objectives、constraints、Adapter state、Trainer state、RNG state、必要 history 游标和外部 warm-start ref。哪些字段必需由具体 Case 的恢复合同决定，但 Snapshot 必须作为一个有 schema、有身份、有完整性状态的整体解释。
 
@@ -66,7 +66,7 @@ Snapshot 因而处在运行内部与证据外部之间。它比 Context 重、�
 
 ---
 
-## 13.4 Artifact：从运行状态晋升为可消费产物
+## 15.4 Artifact：从运行状态晋升为可消费产物
 
 Artifact 的关键词不是“大对象”，而是“对下游作出稳定消费承诺”。一个很小的类别映射可以是 Artifact，一个很大的临时 population 也可能只是 Snapshot。判断依据是对象是否要跨 Stage、Case、Project 或运行继续使用，是否拥有明确 producer、schema、版本、完整性与读取方式。
 
@@ -84,7 +84,7 @@ Data 也可以成为 Artifact。训练所用 DataView 的完整内存对象不�
 
 ---
 
-## 13.5 Event：记录已经发生的事实，而不是保存当前真相
+## 15.5 Event：记录已经发生的事实，而不是保存当前真相
 
 Snapshot 是状态截面，Event 是状态怎样变化的事实。一次预算 reservation 被建立、候选被派发、Provider 返回、Adapter 完成选择、取消被请求、lease 丢失、Snapshot 提交，这些都是 Event。它们不应该通过修改旧事件来反映当前状态，而应追加新的事实；当前状态可以由事件投影得到，也可以由 Snapshot 加后续事件恢复。
 
@@ -100,7 +100,7 @@ Event 与日志也不完全相同。日志面向人类诊断，可以包含自�
 
 ---
 
-## 13.6 Manifest：整次运行的可恢复账本
+## 15.6 Manifest：整次运行的可恢复账本
 
 Manifest 经常被写成一份运行结束后的摘要 JSON，但它的首要职责其实在运行过程中：记录 Project 身份、配置指纹、Stage/Case 状态、外部 task link、Artifact registry、失败位置与恢复来源，使新的进程能够判断哪些工作已经合法完成、哪些需要重新执行。
 
@@ -110,6 +110,31 @@ Manifest 与 Event 的差别是“当前账本”与“事实序列”。Event �
 
 原子替换保证的是单个 Manifest 文件写入完整，不自动保证它与 SnapshotStore、外部 broker、Artifact backend 和 lease store形成分布式事务。源码中特意在外部 task 场景使用确定性 task id并提前登记，是对“submit 成功、Manifest 未写就崩溃”窗口的补偿；其他跨 Store 提交仍需要各自的幂等、fencing 与恢复协议。Manifest 是协调这些引用的账本，不是能够让所有后端自动原子的魔法容器。
 
+Manifest 同样不是整条世界因果链的永久档案。它应该封住一次 Project run 的直接证明义务，并给出继续展开 lineage 的入口，而不是递归内联每个子 Case、每份数据、每个 Provider 和每个外部系统的全部历史。否则父 Manifest 的 schema 会随着祖先深度增长，任何一次上游扩展都会迫使所有下游改版；所谓恢复账本最终会膨胀成无法读取的全局世界快照。
+
+因此，Manifest 除了运行拓扑和终态，还需要一个明确的 provenance boundary。这里描述的是协议应当能够表达的设计要求，并不等同于当前 `ProjectRunManifest` 已经完整实现：
+
+```text
+provenance_boundary
+  policy_id                本次采用哪套证明与保留政策
+  claim_scope              Manifest 对外支持哪些运行声明
+  direct_input_refs        本层实际消费的直接输入
+  child_result_refs        子 Case 的稳定结果信封
+  lineage_root_refs        可继续展开的上游图入口
+  trust_roots              当前边界接受的外部权威
+  declared_assumptions     未由本次运行证明的必要前提
+  evidence_level           当前声明获得了哪种强度的证据
+  retention_compaction     哪些记录可删除、压缩或迁移
+```
+
+`direct_input_refs` 与 `lineage_root_refs` 的区别很重要。前者回答“本次运行直接使用了什么”，必须由当前 Manifest 自己闭合；后者回答“这些输入更早从哪里来”，允许审计器按需进入上游 Manifest 或 Artifact record。父 Project 消费一个子 Case Result 时，只需要登记经过验证的 child result identity、digest、contract、child Manifest ref 和与父 Stage 的关系。子 Case 内部数千条 Event 不应被复制到父 Manifest，但也不能只留下一个无法解析的字符串路径。
+
+`trust_roots` 也不是随意声明“这里相信即可”。每个根至少要有类型、authority、稳定 identity 或 digest、适用范围和接受它的 policy。数据发布者的签名可以支持“这正是发布版本 D”，却不能自动支持“D 没有采样偏差”；Provider 的完成回执可以支持“请求已执行”，却未必支持返回结果满足父 Problem 的领域语义。Manifest 必须把外部证明实际支持的 claim 与仍未证明的 assumption 分开。
+
+保留与压缩策略则决定未来还能证明什么。Event 可以按时间窗口聚合为摘要，Snapshot 可以只保留选定 checkpoint，旧子 Manifest 可以迁往冷存储；但压缩结果要记录覆盖范围、算法、digest 和新的解析位置。若某个强声明所需的唯一见证被删除，Manifest 的 evidence level 必须随之降低，或明确标记部分 lineage 已不可验证。存储治理可以改变可证明范围，不能悄悄改写历史。
+
+由此，Manifest 关闭的不是无限因果本身，而是一次有限的证明切面：边界内的直接关系有见证，边界外的必要关系有可解析引用或公开假设，政策说明为何在这里停止以及以后如何继续。不同 Project 可以采用不同深度和保留期，却不能省略自己的停止理由。
+
 Manifest 也不是完整 Result。ProjectRunResult 面向当前调用者，包含 Case results、Artifact registry、status、run id、Manifest path 与 resumed_from；Manifest 面向持久恢复，可以被之后的进程重新读取。Result 可以引用 Manifest，Manifest 不必复制 Result 中所有展示字段。反过来，Dashboard 可以从 Manifest 投影进度，却不能把页面当前显示称为 Manifest authority。
 
 恢复时，Manifest 必须同时通过结构和语义检查。当前读取器严格要求 schema version，恢复入口还校验 project、group、framework 和 config fingerprint **S**。这能阻止明显不匹配的 Project 恢复；Artifact checksum、外部数据 revision、依赖环境和 Case 内 checkpoint 是否兼容，还需要相应语义层验证。Manifest 声称 Case 成功，并不自动证明它引用的 Artifact 仍存在、未损坏且当前代码可读取。
@@ -118,7 +143,7 @@ Manifest 也不是完整 Result。ProjectRunResult 面向当前调用者，包�
 
 ---
 
-## 13.7 五类载体怎样共同形成 Result 与恢复路径
+## 15.7 五类载体怎样共同形成 Result 与恢复路径
 
 五类载体不是各自完成后再拼成一张报告。它们在运行中按因果次序协作：Project 启动时创建 Manifest；Case 由 Manifest 中的结构和 ResourceContext 启动；生命周期构建当前 Context；组件产生 Event；控制平面在合法时点提交 Snapshot，并把 Handle 投影回 Context；Case 完成后将选择的 Snapshot 状态封装为 Artifact；Case Result 返回摘要与 Artifact refs；Project 再把 Case 终态和 Artifact registry写回 Manifest。
 
@@ -134,7 +159,7 @@ flowchart TD
   E --> M1
 ```
 
-正常完成时，这条链让 Result 保持轻量而不失证据。OptimizationResult 可以内联小型 Pareto 指标，同时引用保存完整 population/front 的 Snapshot 或导出 Artifact；TrainerResult 可以返回 best state/feedback 的摘要，同时让 ModelArtifact 承担长期模型交付；ProjectRunResult 则给出 Manifest path和 Artifact registry。调用者不必读取全部历史即可得到结论，需要审计或恢复时又能沿引用返回事实。
+正常完成时，这条链让 Result 保持轻量而不失证据。OptimizationResult 可以内联小型 Pareto 指标，同时引用保存完整 population/front 的 Snapshot 或导出 Artifact；TrainerResult 可以返回 best state/feedback 的摘要，同时让 ModelArtifact 承担长期模型交付；ProjectRunResult 则给出 Manifest path和 Artifact registry。调用者不必读取全部历史即可得到结论，需要审计或恢复时又能在 provenance policy 允许的范围内沿引用返回事实；遇到 trust root 或已声明假设时，也能知道这是证明边界，而不是误以为因果链已经抵达绝对起点。
 
 失败时，这条链更能显出价值。Context 可能已经包含 stop_requested，Event 记录 Provider 超时和已消耗预算，最近 complete Snapshot 保存上一个合法提交点，部分生成的 Artifact 尚未登记为正式产物，Manifest 把 Case 标为 failed并保留错误和外部 task link，Result 返回失败 status 与 Manifest path。系统不需要通过返回一个零数组伪装成功，也不会因为最后一代失败就丢掉此前可恢复状态。
 
@@ -146,7 +171,7 @@ generic payload envelope 在这里承担的是结构统一，而不是语义统�
 
 ---
 
-## 13.8 对象归类不是单选题，而是受阶段约束的投影规则
+## 15.8 对象归类不是单选题，而是受阶段约束的投影规则
 
 理解五类载体后，可以重新处理那些最容易争议的对象。正确答案通常不是“某对象永远只能出现一次”，而是明确本体落点与其他载体允许保留的投影。
 
@@ -166,6 +191,6 @@ history 与 trace 也不是同一种东西。压缩的最近指标窗口可以�
 
 当前源码已经提供 ContextStore、规范 key与大对象剥离、Snapshot Handle/Record和通用 envelope、DataRef与领域 Artifact、Context/Decision/Resource Event、Project Manifest与 Result引用表面，可标记为 **S**。这些实现分布在共享底座与两个语义层中，个别 ArtifactRef、Context projection和事件持久化仍处于迁移收口阶段；是否满足真实 Redis、远程 Worker、长运行和恢复语义，需要合同测试 **T** 与运行证据 **R**，不能由类名推断。
 
-本章至此为一致性提交、恢复和证据闭包准备了材料：Context提供现在，Snapshot保存提交状态，Artifact交付长期产物，Event保留发生事实，Manifest维持整次运行账本。下一章将转向另一组经常被塞进普通配置字典的对象——资源、预算、截止时间、取消与错误。它们不仅要被某种载体保存，更要沿父子运行传播、改变生命周期状态，并由明确 authority作出决定。
+本章至此为一致性提交、恢复和有界证据闭包准备了材料：Context 提供现在，Snapshot 保存提交状态，Artifact 交付长期产物，Event 保留发生事实，Manifest 维持整次运行账本并声明证明切面。下一章将转向另一组经常被塞进普通配置字典的对象——资源、预算、截止时间、取消与错误。它们不仅要被某种载体保存，更要沿父子运行传播、改变生命周期状态，并由明确 authority 作出决定。
 
-本章的五类载体边界属于 **I：状态与证据闭包的不变量**；共享 Store、Handle、DataRef、Event表面、ArtifactBundle与 ProjectRunManifest提供 **S：源码证据**；统一跨框架 ArtifactRef、尺寸强制、持久 Event authority和跨 Store原子发布仍包含 **D：设计收口**。最终原则并不是“每种数据只放一个地方”，而是：**每项事实只有一个权威本体，其他载体只保留与自身职责相称的摘要、引用或不可变事件；任何复制都必须能够说明来源、时点和失效规则。**
+本章的五类载体边界属于 **I：状态与证据闭包的不变量**；共享 Store、Handle、DataRef、Event 表面、ArtifactBundle 与 ProjectRunManifest 提供 **S：源码证据**；统一 provenance boundary、跨框架 ArtifactRef、尺寸强制、持久 Event authority 和跨 Store 原子发布仍包含 **D：设计收口**。最终原则并不是“每种数据只放一个地方”，而是：**每项事实只有一个权威本体，其他载体只保留与自身职责相称的摘要、引用或不可变事件；任何复制都必须能够说明来源、时点和失效规则，任何停止追溯的位置都必须说明 policy、trust root 或公开假设。**

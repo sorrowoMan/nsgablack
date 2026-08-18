@@ -1,4 +1,4 @@
-# 第五十五章　Case 作为组合单元：独立运行与被调用为何是同一件事
+# 第五卷·第一章　Case 作为组合单元：独立运行与被调用为何是同一件事
 
 前面的两卷分别建立了优化与机器学习的内部闭包。一个 Solver 为什么必须围绕候选、反馈与权威种群组织，一次 Trainer 运行为什么必须围绕数据语义、模型状态、Feedback 与 Artifact 组织，到这里都已经有了各自的答案。然而，只要两个完整任务第一次发生关系，前面获得的秩序就会立刻受到考验。
 
@@ -14,7 +14,7 @@
 
 ---
 
-## 55.1 真正需要保持的不是调用形式，而是任务闭包
+## 1.1 真正需要保持的不是调用形式，而是任务闭包
 
 独立运行通常给人一种很强的“完整感”：有一个命令行入口，有一份配置，有从开始到结束的日志，运行结束后还能看到结果文件。嵌套调用则很容易被理解成普通函数调用：父对象准备参数，子对象返回一个值。问题在于，这两个印象都抓住了表面形式，没有抓住运行单元本身。
 
@@ -41,7 +41,7 @@ Case : EffectiveRequest × PriorEvidence
 
 ---
 
-## 55.2 请求与结果把父子关系从对象穿透改造成边界通信
+## 1.2 请求与结果把父子关系从对象穿透改造成边界通信
 
 如果父任务直接持有子任务的全部内部对象，组合关系看起来很灵活：想改参数就改字段，想读状态就读属性，想省一次序列化就传 ndarray。但这种灵活性意味着双方没有边界。父任务开始知道子任务怎样保存 population、Trainer 在哪一步创建 backend session、哪个插件字段保存 checkpoint；子任务也可能反向读取父 Solver 的 generation、预算计数器和线程池。任何一边的内部重构都会变成跨仓破坏。
 
@@ -142,7 +142,7 @@ sequenceDiagram
 
 ---
 
-## 55.3 canonical builder 保证“同一个 Case”不是口头约定
+## 1.3 canonical builder 保证“同一个 Case”不是口头约定
 
 有了 Request/Result 还不够。如果独立入口调用一份 builder，Project 调用另一份 builder，父任务又在自己的 `evaluate()` 中手写第三份装配，即使三次运行都返回相同字段，也不能称为同一个 Case。组件选择、默认值、Plugin 顺序、backend 初始化和资源注入方式会在三份代码中各自演化；最终出现的错误通常不是立刻崩溃，而是结果在不同入口下悄悄不同。
 
@@ -210,7 +210,7 @@ Project ───┘
 
 ---
 
-## 55.4 资源与状态必须被派生，Artifact 必须通过引用流动
+## 1.4 资源与状态必须被派生，Artifact 必须通过引用流动
 
 两个 Case 开始组合以后，最危险的不是函数签名不匹配，而是所有权看起来“顺手”地被复制。父 Case 已经拿到四个线程，于是给每个并行子任务都写 `threads=4`；父 Solver 有一个预算计数器，于是每个子 Trainer 都复制一份初始额度；上游训练产生了一个几百 MB 的模型，于是直接把模型对象塞进下游 context；为了省一次加载，多个分支共享同一个可变数组。这些写法在小数据、单线程和无失败条件下可能正常，一旦发生并发、重试或恢复，组合闭包就会断裂。
 
@@ -258,7 +258,7 @@ STAGES = [
 
 ---
 
-## 55.5 什么时候执行完整 Case，什么时候只调用轻量 evaluate surface
+## 1.5 什么时候执行完整 Case，什么时候只调用轻量 evaluate surface
 
 如果所有内部计算都强制启动一个完整 Case，框架会变得笨重。一个无状态、耗时几微秒的确定性函数，也要构造 Request、分配 namespace、生成 Manifest 和 Artifact，既没有增加可信度，反而掩盖了真正需要管理的边界。因此，组合闭包并不要求“万物皆 Case”，而要求调用尺度与运行语义匹配。
 
@@ -294,7 +294,7 @@ STAGES = [
 
 ---
 
-## 55.6 错误与 teardown 的所有权决定组合是否真的闭合
+## 1.6 错误与 teardown 的所有权决定组合是否真的闭合
 
 组合系统在成功路径上很容易看起来正确。真正暴露边界的，是子任务在 builder、输入解析、初始化、运行、Artifact 提交或清理阶段失败时，系统能否给出唯一而完整的解释。
 
@@ -342,7 +342,7 @@ def evaluate_candidate(x):
 
 ---
 
-## 55.7 一个最小组合怎样同时保留独立入口与 Project 入口
+## 1.7 一个最小组合怎样同时保留独立入口与 Project 入口
 
 现在可以给出一个不依赖复杂算法的机制样例。假设 `prepare_features` Case 读取原始订单，交付一份版本化特征 Artifact；`train_forecast` Case 消费这份 Artifact，训练并交付模型。这个例子的任务不是证明机器学习效果，而是证明第二个 Case 在单独调试和被 Project 调用时仍由同一 builder 装配，并且跨 Case 只传引用。
 
@@ -448,13 +448,13 @@ STAGES = [
 
 ---
 
-## 55.8 当前实现已经闭合到哪里，下一步为何是双向跨框架组合
+## 1.8 当前实现已经闭合到哪里，下一步为何是双向跨框架组合
 
 本章建立的是规范性边界，但规范必须回到当前源码。就现有三仓结构而言，可以确认的源码事实包括：
 
 `blackbase` 已经提供版本化 `CaseRunRequest`、`CaseRunResult` 与 `ProjectRunResult`；Project 串行、进程池、外部 worker 和父子调用都通过 `CaseExecutor` 装配 canonical `build_solver()`，注入 Artifact、轻量 inputs 与 `case_runtime`，再按 kind 调用 `run()/fit()/step()`。Case 输出中的 Artifact ref 会进入 Project registry；异常、取消与超时形成结构化 failure；lease guard 与 lease 在 `finally` 中关闭和释放；Manifest schema v2 保存完整结果信封与 Artifact registry。[S]
 
-`CaseInvoker` 已经能够生成显式父子 identity 和控制祖先链，在父 grant 内原子划分并发子资源，为子预算生成 authority-backed handle，并把每次子结果写入父 runtime audit。[S] `mlblack` 的 `SerialTrainer` 与 `NsgablackTrainerEvaluator` 仍是更轻尺度的语义组合：前者组合 Trainer Stage，后者把完整训练反馈投影为优化 objectives/violation；当调用需要独立 Artifact、lineage、预算和失败信封时，应升级为通用完整子 Case，而不是继续扩展专用 Bridge。[I]
+`CaseInvoker` 已经能够生成显式父子 identity 和控制祖先链，在父 grant 内原子划分并发子资源，为子预算生成 authority-backed handle，并把每次子结果写入父 runtime audit。[S] `CaseStageRunner` 负责多个完整 Case 的串并行组合；`NsgablackTrainerEvaluator` 只保留为更轻尺度的组件反馈投影。当调用需要独立 Artifact、lineage、预算和失败信封时，必须使用通用完整子 Case，而不是扩展专用 Bridge。[I]
 
 这些实现已经把“任意标准父 Case 同步调用一个完整标准子 Case”的公共协议闭合到共享底座。当前仍需继续固化的是协议之外的部署与领域策略，而不是再造父子调用对象。
 
@@ -470,4 +470,4 @@ STAGES = [
 
 然而，最关键的边界已经可以固定：Case 不是一组可以被 import 的实现文件，而是可被不同调用者替换调用、同时保持装配与运行合同的最小组合单元；父层传递有效请求、资源授权和对象引用，子层维护自己的生命周期并返回正式结果；轻量 surface 只有在没有独立运行事实时才成立。
 
-有了这个边界，下一章就不必再争论“nsgablack 能不能调用 mlblack”。问题将变得具体得多：当外层未知量是结构、超参数、特征选择或训练预算，而每个候选的反馈来自一次完整学习任务时，外层 Solver 究竟应该看到什么，内层 Trainer 又必须对它隐藏什么。第 56 章将沿着这一方向，讨论外层优化怎样消费内层 ML 语义，而不破坏刚刚建立的 Case 闭包。
+有了这个边界，下一章就不必再争论“nsgablack 能不能调用 mlblack”。问题将变得具体得多：当外层未知量是结构、超参数、特征选择或训练预算，而每个候选的反馈来自一次完整学习任务时，外层 Solver 究竟应该看到什么，内层 Trainer 又必须对它隐藏什么。本卷第二章将沿着这一方向，讨论外层优化怎样消费内层 ML 语义，而不破坏刚刚建立的 Case 闭包。

@@ -7,7 +7,7 @@
 ## 1) 先跑通最小闭环
 
 ```powershell
-python -m nsgablack project init my_project
+python -m nsgablack project new my_project
 cd my_project
 python -m nsgablack project doctor --path . --build --strict
 python build_solver.py
