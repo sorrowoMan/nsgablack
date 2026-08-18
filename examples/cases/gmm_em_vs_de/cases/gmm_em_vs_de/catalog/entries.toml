@@ -1,7 +1,0 @@
-[[entry]]
-key = "example.gmm_em_vs_de"
-title = "GMM: EM vs DE-VNS Strategy Chain"
-kind = "example"
-import_path = "examples.cases.gmm_em_vs_de.cases.gmm_em_vs_de.build_solver:build_solver"
-tags = ["example", "gmm", "clustering", "de", "vns", "strategy_chain", "nelder_mead"]
-summary = "Gaussian Mixture Model fitting as black-box optimization. DE global search chained with VNS local refinement via StrategyChainAdapter, NelderMeadBias for simplex push. vs sklearn EM baseline."

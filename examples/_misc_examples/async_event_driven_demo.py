@@ -1,4 +1,6 @@
 ﻿"""MIGRATED to examples/cases/ - see scaffold case for maintained version."""
+from __future__ import annotations
+
 """Async event-driven optimization demo.
 
 Shows how to combine:
@@ -6,8 +8,6 @@ Shows how to combine:
 - AsyncEventHubPlugin (event commit/replay boundary)
 - ParetoArchivePlugin (shared frontier state)
 """
-
-from __future__ import annotations
 
 import numpy as np
 

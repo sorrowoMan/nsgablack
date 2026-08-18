@@ -1,0 +1,13 @@
+# Canonical Case example catalog shard.
+
+[[entry]]
+key = "example.causal_discovery_pc_lingam"
+title = "Causal Discovery: PC + LiNGAM as DE Search"
+kind = "example"
+import_path = "examples.cases.causal_discovery.cases.causal_discovery.build_solver:build_solver"
+tags = ["example", "causal", "dag", "pcalg", "lingam", "de", "callable_bias", "graph_sparsity"]
+summary = "Causal structure discovery as black-box optimization. DE searches DAG adjacency matrices, CallableBias (Kahn) enforces acyclicity, SparsityBias prefers parsimonious graphs."
+context_notes = ["示例装配入口不直接写入运行 Context；因果图结果由正式求解结果与报告面发布。"]
+use_when = ["需要演示因果发现阈值与结构约束的联合搜索。"]
+minimal_wiring = ["python run_solver.py --check"]
+example_entry = "build_solver:build_solver"

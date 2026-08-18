@@ -1,8 +1,9 @@
-﻿"""MIGRATED to examples/cases/ - see scaffold case for maintained version."""
+"""MIGRATED to examples/cases/ - see scaffold case for maintained version."""
 """Bias gallery demo: choose a bias by catalog key and run a tiny solver."""
 
 import argparse
 import numpy as np
+from blackbase.call_binding import CallCandidate, invoke_bound_once
 
 try:
     from nsgablack.catalog import get_catalog
@@ -61,11 +62,13 @@ def _make_bias(key: str, dimension: int):
     if entry.key == "bias.callable":
         return CallableBias("callable_rule", func=lambda x, _ctx=None: float(np.sum(x)) * 0.0)
 
-    try:
-        return cls()
-    except TypeError:
-        # Last-resort: try with a generic weight
-        return cls(weight=0.2)
+    return invoke_bound_once(
+        cls,
+        (
+            CallCandidate(label="empty"),
+            CallCandidate(kwargs={"weight": 0.2}, label="generic_weight"),
+        ),
+    )
 
 
 def build_solver(bias_key: str, steps: int = 40):

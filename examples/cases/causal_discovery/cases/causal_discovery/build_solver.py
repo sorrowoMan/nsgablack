@@ -112,6 +112,7 @@ def build_solver(*, resource_context=None, component_overrides=None) -> Composab
         representation_pipeline=pipeline,
         bias_module=bias,
     )
+    solver.set_resource_context(resource_context)
     return solver
 
 

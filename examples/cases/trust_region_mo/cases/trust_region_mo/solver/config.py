@@ -106,11 +106,9 @@ def apply_solver_core_config(solver, cfg: SolverCoreConfig) -> None:
     solver.enable_progress_log = bool(cfg.enable_progress_log)
     solver.report_interval = int(cfg.report_interval)
     solver.parallel_thread_bias_isolation = str(cfg.thread_bias_isolation)
-    if hasattr(solver, "plugin_manager") and getattr(solver, "plugin_manager", None) is not None:
-        try:
-            solver.plugin_manager.strict = bool(cfg.plugin_strict)
-        except Exception:
-            pass
+    plugin_manager = getattr(solver, "plugin_manager", None)
+    if plugin_manager is not None:
+        plugin_manager.strict = bool(cfg.plugin_strict)
 
 
 def apply_solver_profile(solver, registry: SolverProfileRegistry, key: str) -> None:

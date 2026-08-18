@@ -48,6 +48,7 @@ def build_solver(run_id: str | None = None, *, strategy: str | None = None, quic
     from nsgablack.adapters import TrustRegionDFOAdapter
     from nsgablack.plugins import SurrogateEvaluationProviderPlugin, SurrogateEvaluationConfig
     solver.set_adapter(TrustRegionDFOAdapter())
+    solver.configure_evaluation_policy(allow_approximate=True)
     cfg_surr = SurrogateEvaluationConfig(min_train_samples=20, topk_exploit=4, topk_explore=4, min_true_evals=4)
     solver.register_evaluation_provider(
         SurrogateEvaluationProviderPlugin(config=cfg_surr, model_type="rf").create_provider()
@@ -75,6 +76,9 @@ def build_solver(run_id: str | None = None, *, strategy: str | None = None, quic
 
     # Optional checkpoint
     # attach_checkpoint(solver, cfg, "default")
+    from nsgablack.project import apply_solver_component_overrides
+    apply_solver_component_overrides(solver, component_overrides)
+    solver.set_resource_context(resource_context)
     return solver
 
 

@@ -1,7 +1,0 @@
-[[entry]]
-key = "example.arima_order_search_de"
-title = "ARIMA Order Selection as DE Search"
-kind = "example"
-import_path = "examples.cases.arima_order_search.cases.arima_order_search.build_solver:build_solver"
-tags = ["example", "arima", "time_series", "order_search", "de", "integer"]
-summary = "ARIMA(p,d,q) order selection as black-box optimization. DE searches over integer orders, problem evaluates via statsmodels AIC. vs exhaustive grid search."

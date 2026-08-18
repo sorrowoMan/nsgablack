@@ -1,0 +1,23 @@
+# Canonical Case plugin catalog shard.
+
+[[entry]]
+key = "project.plugin.example"
+title = "ExampleProjectPlugin"
+kind = "plugin"
+import_path = "plugins.example_plugin:ExampleProjectPlugin"
+tags = ["project", "example", "plugin"]
+summary = "Example plugin template with explicit context contracts."
+companions = ["project.solver.build"]
+context_requires = ["generation"]
+context_provides = ["project.example_plugin.hit_count"]
+context_mutates = ["project.example_plugin.hit_count"]
+context_cache = []
+context_notes = ["Scaffold plugin example for lifecycle/context wiring."]
+use_when = ["Need a minimal custom plugin starting point."]
+minimal_wiring = [
+  "from plugins.example_plugin import ExampleProjectPlugin",
+  "solver.add_plugin(ExampleProjectPlugin(interval=5))",
+]
+required_companions = ["project.solver.build"]
+config_keys = ["interval", "verbose"]
+example_entry = "examples.cases.async_event.cases.async_event.build_solver:build_solver"

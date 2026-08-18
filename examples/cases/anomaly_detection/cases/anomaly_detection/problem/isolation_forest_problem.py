@@ -40,7 +40,7 @@ class LOFProblem(BlackBoxProblem):
             scores = -model.negative_outlier_factor_
             auc = roc_auc_score(self._y_true, scores)
             return np.array([-auc], dtype=float)
-        except Exception:
+        except (ImportError, TypeError, ValueError, FloatingPointError):
             return np.array([1e10], dtype=float)
 
 
@@ -72,5 +72,5 @@ class IsolationForestProblem(BlackBoxProblem):
             scores = -model.fit(self._X).score_samples(self._X)
             auc = roc_auc_score(self._y_true, scores)
             return np.array([-auc], dtype=float)
-        except Exception:
+        except (ImportError, TypeError, ValueError, FloatingPointError):
             return np.array([1e10], dtype=float)

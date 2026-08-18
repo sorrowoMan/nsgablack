@@ -19,7 +19,7 @@ ensure_nsgablack_importable(Path(__file__))
 from nsgablack.project.scaffold import print_solver_check
 
 
-def build_solver(signal: "np.ndarray", max_changepoints: int = 3, *, adapter: str = "de", pop_size: int = 30, max_steps: int = 150, sparsity_weight: float = 100.0, resource_context=None, component_overrides=None):
+def build_solver(signal: "np.ndarray | None" = None, max_changepoints: int = 3, *, adapter: str = "de", pop_size: int = 30, max_steps: int = 150, sparsity_weight: float = 100.0, resource_context=None, component_overrides=None):
     """Build a changepoint detection solver.
 
     Args:
@@ -50,6 +50,12 @@ def build_solver(signal: "np.ndarray", max_changepoints: int = 3, *, adapter: st
 
     from problem.changepoint_problem import ChangepointProblem
 
+    overrides = dict(component_overrides or {})
+    signal = overrides.get("signal", signal)
+    if signal is None:
+        signal = np.concatenate(
+            [np.zeros(30, dtype=float), np.ones(30, dtype=float), np.full(30, 0.25)]
+        )
     signal = np.asarray(signal, dtype=float)
     n = len(signal)
     prob = ChangepointProblem(signal, max_changepoints=max_changepoints)
@@ -83,6 +89,7 @@ def build_solver(signal: "np.ndarray", max_changepoints: int = 3, *, adapter: st
 
     solver = ComposableSolver(problem=prob, adapter=alg, representation_pipeline=pipeline, bias_module=bias)
     solver.set_max_steps(max_steps)
+    solver.set_resource_context(resource_context)
     return solver
 
 

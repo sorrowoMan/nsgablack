@@ -103,7 +103,7 @@ def _safe(op: Callable[[Any, Any], bool], left: ValueRef, right: ValueRef) -> Co
     def _fn(c: dict) -> bool:
         try:
             return bool(op(_resolve(left, c), _resolve(right, c)))
-        except Exception:
+        except (TypeError, ValueError, KeyError, IndexError, AttributeError, ArithmeticError):
             return False
 
     return _fn

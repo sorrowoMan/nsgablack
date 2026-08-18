@@ -16,7 +16,14 @@ from nsgablack.representation import RepresentationPipeline
 from nsgablack.representation.continuous import ClipRepair, ContextGaussianMutation, UniformInitializer
 from problem.ransac_problem import RANSACProblem
 
-def build_solver(X, y, *, pop_size=30, max_steps=100, resource_context=None, component_overrides=None):
+def build_solver(X=None, y=None, *, pop_size=30, max_steps=100, resource_context=None, component_overrides=None):
+    overrides = dict(component_overrides or {})
+    X = overrides.get("X", X)
+    y = overrides.get("y", y)
+    if X is None or y is None:
+        rng = np.random.default_rng(0)
+        X = rng.normal(size=(40, 2))
+        y = 2.0 * X[:, 0] - X[:, 1] + rng.normal(0.0, 0.1, size=40)
     prob = RANSACProblem(X, y); n = prob.n_samples
     pipeline = RepresentationPipeline(
         initializer=UniformInitializer(low=[0]*n, high=[1]*n),
@@ -29,7 +36,9 @@ def build_solver(X, y, *, pop_size=30, max_steps=100, resource_context=None, com
     bias.add(CallableBias(name="inlier_ratio", func=inlier_count, weight=1.0, mode="penalty"))
     solver = ComposableSolver(problem=prob, adapter=DifferentialEvolutionAdapter(DEConfig(batch_size=pop_size)),
                               representation_pipeline=pipeline, bias_module=bias)
-    solver.set_max_steps(max_steps); return solver
+    solver.set_max_steps(max_steps)
+    solver.set_resource_context(resource_context)
+    return solver
 
 def main():
     p = argparse.ArgumentParser(); p.add_argument("--seed", type=int, default=42)

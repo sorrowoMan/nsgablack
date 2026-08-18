@@ -56,7 +56,7 @@ DE→VNS 的 NLL 约为 EM 的 1.66 倍——这是预期的：黑盒搜索不�
 |---|---|
 | `build_solver.py` | Assembly entry + benchmark CLI。 |
 | `problem/gmm_problem.py` | GMM NLL 计算。 |
-| `catalog/entries.toml` | Case-local catalog entries。 |
+| `catalog/entries/<kind>.toml` | Case-local catalog entries。 |
 
 ## 运行和验证
 

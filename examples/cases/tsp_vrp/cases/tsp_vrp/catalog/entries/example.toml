@@ -1,0 +1,13 @@
+# Canonical Case example catalog shard.
+
+[[entry]]
+key = "example.tsp_permutation_sa"
+title = "TSP/VRP: Permutation Search with Graph Constraints"
+kind = "example"
+import_path = "examples.cases.tsp_vrp.cases.tsp_vrp.build_solver:build_solver"
+tags = ["example", "tsp", "vrp", "permutation", "sa", "tsp_constraint", "hamiltonian"]
+summary = "TSP as permutation optimization with SA. Framework repr.permutation encoder + TSPConstraintBias + HamiltonianPathConstraintBias. vs Nearest-Neighbor greedy baseline."
+context_notes = ["示例装配入口不直接写入运行 Context；路线候选通过 Representation 与 Solver 结果边界传递。"]
+use_when = ["需要演示排列编码、修复与路径优化。"]
+minimal_wiring = ["python run_solver.py --check"]
+example_entry = "build_solver:build_solver"

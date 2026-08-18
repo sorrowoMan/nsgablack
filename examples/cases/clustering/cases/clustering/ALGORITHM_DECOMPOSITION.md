@@ -161,7 +161,7 @@
 | SVM (核) | 🟩 | Pipeline: KernelTransform → LinearSVM |
 | 决策树 | 🟦 | Representation=分裂规则序列, Problem=纯度增益 |
 | 随机森林 | 🔷 | ParallelTrainer: bootstrap样本 → 多棵树 → 投票 |
-| GBDT | 🔷 | SerialTrainer: 每阶段训残差树 |
+| GBDT | 🔷 | CaseStageRunner/Trainer phase：每阶段训残差树 |
 | XGBoost / LightGBM | 🔷 | 同上, +正则化Bias |
 | 多层感知机 (MLP) | 🟩 | Model=MLP, Problem=cross_entropy, Adapter=torch_backprop |
 | 最近质心分类 | 🟦 | Representation=各类质心, Problem=最近距离分类错误 |
@@ -174,14 +174,14 @@
 |---|---|---|
 | Bagging | 🔷 | 🟦 划分bootstrap → 🟩 ParallelTrainer并行训 |
 | Random Forest | 🔷 | Bagging + 随机特征选择 |
-| AdaBoost | 🔷 | 🟩 SerialTrainer: 每阶段加权重采样 |
-| Gradient Boosting | 🔷 | 🟩 SerialTrainer: 每阶段训残差 |
+| AdaBoost | 🔷 | 🟩 CaseStageRunner/Trainer phase：每阶段加权重采样 |
+| Gradient Boosting | 🔷 | 🟩 CaseStageRunner/Trainer phase：每阶段训残差 |
 | Stacking | 🔷 | Stage1: 🟩 ParallelTrainer → Stage2: 🟩 Fusion |
 | Blending | 🔷 | 同上, hold-out代替CV |
 | Voting (硬/软) | 🟩 | Pipeline: 多模型预测 → 投票 |
 | 动态集成 | 🔷 | 🟦 nsgablack搜每个样本的最优模型分配 |
 | 异质集成 | 🔷 | 不同模型族混合 → nsgablack搜加权 |
-| 级联分类 | 🔷 | 🟩 SerialTrainer: 逐级过滤 |
+| 级联分类 | 🔷 | 🟩 CaseStageRunner/Trainer phase：逐级过滤 |
 
 ---
 
@@ -349,7 +349,7 @@
 
 | 算法 | 框架 | 拆解 |
 |---|---|---|
-| 自训练 (Self-training) | 🟩 | SerialTrainer: 伪标签 → 再训练 |
+| 自训练 (Self-training) | 🟩 | CaseStageRunner/Trainer phase：伪标签 → 再训练 |
 | 协同训练 (Co-training) | 🔷 | ParallelTrainer: 两个视图 → 互相标注 |
 | 标签传播 | 🟩 | Model=图拉普拉斯, Problem=平滑分类 |
 | SimCLR (对比学习) | 🟩 | Model=encoder+projector, Problem=NT-Xent |

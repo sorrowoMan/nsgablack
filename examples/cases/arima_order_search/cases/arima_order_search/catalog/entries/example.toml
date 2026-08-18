@@ -1,0 +1,13 @@
+# Canonical Case example catalog shard.
+
+[[entry]]
+key = "example.arima_order_search_de"
+title = "ARIMA Order Selection as DE Search"
+kind = "example"
+import_path = "examples.cases.arima_order_search.cases.arima_order_search.build_solver:build_solver"
+tags = ["example", "arima", "time_series", "order_search", "de", "integer"]
+summary = "ARIMA(p,d,q) order selection as black-box optimization. DE searches over integer orders, problem evaluates via statsmodels AIC. vs exhaustive grid search."
+context_notes = ["示例装配入口不直接写入运行 Context；状态由正式 Solver、Adapter 与 Plugin 契约发布。"]
+use_when = ["需要演示 ARIMA 阶数的整数黑盒搜索。"]
+minimal_wiring = ["python run_solver.py --check"]
+example_entry = "build_solver:build_solver"

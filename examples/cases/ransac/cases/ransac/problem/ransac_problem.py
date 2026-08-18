@@ -15,4 +15,4 @@ class RANSACProblem(BlackBoxProblem):
         try:
             w = np.linalg.lstsq(self._X[mask], self._y[mask], rcond=None)[0]
             return float(np.sum((self._y[mask] - self._X[mask] @ w) ** 2))
-        except Exception: return 1e10
+        except (TypeError, ValueError, FloatingPointError, np.linalg.LinAlgError): return 1e10

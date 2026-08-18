@@ -8,7 +8,7 @@ from dataclasses import field
 from typing import Any, Dict, Mapping, Sequence
 
 from nsgablack.core import GpuBackend, ProcessPoolBackend, ThreadPoolBackend
-from nsgablack.core.resources import ResourceRequirement
+from blackbase.resources import ResourceRequirement
 
 
 @dataclass(frozen=True)

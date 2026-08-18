@@ -143,6 +143,7 @@ def build_solver(*, resource_context=None, component_overrides=None):
         adapter=adapter,
         representation_pipeline=pipeline,
     )
+    solver.set_resource_context(resource_context)
     return solver
 
 

@@ -1,0 +1,20 @@
+# Canonical Case bias catalog shard.
+
+[[entry]]
+key = "project.bias.default"
+title = "build_bias_module"
+kind = "bias"
+import_path = "bias.domain.example_bias:build_bias_module"
+tags = ["project", "example", "bias"]
+summary = "Example bias module (empty by default)."
+companions = ["project.problem.example"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["Bias is empty by default; add soft preferences here."]
+use_when = ["Need a project bias module entry."]
+minimal_wiring = ["from bias.domain.example_bias import build_bias_module"]
+required_companions = []
+config_keys = ["enable_bias"]
+example_entry = "examples.cases.single_trajectory.cases.single_trajectory.build_solver:build_solver"

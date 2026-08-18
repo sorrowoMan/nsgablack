@@ -1,9 +1,10 @@
-﻿"""Plugin gallery demo: choose plugins by catalog key and materialize runtime surface."""
+"""Plugin gallery demo: choose plugins by catalog key and materialize runtime surface."""
 
 import argparse
 from datetime import datetime
 
 import numpy as np
+from blackbase.call_binding import CallCandidate, invoke_bound_once
 
 try:
     from nsgablack.adapters import SAConfig, SimulatedAnnealingAdapter
@@ -72,10 +73,16 @@ def _load_plugin(key: str, *, runtime_tag: str = "demo"):
     if entry is None:
         raise KeyError(f"Unknown plugin key: {normalized}")
     cls = entry.load()
-    try:
-        return cls()
-    except TypeError:
-        return cls(name=entry.key.split(".")[-1])
+    return invoke_bound_once(
+        cls,
+        (
+            CallCandidate(label="empty"),
+            CallCandidate(
+                kwargs={"name": entry.key.split(".")[-1]},
+                label="catalog_name",
+            ),
+        ),
+    )
 
 
 def build_solver(

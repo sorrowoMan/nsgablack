@@ -21,4 +21,4 @@ class AutoMLProblem(BlackBoxProblem):
             else: m = RandomForestClassifier(n_estimators=max(10,int(p1*200)), max_depth=max(3,int(p2)))
             scores = cross_val_score(m, Xp, self._y, cv=3, scoring='accuracy')
             return float(1.0 - scores.mean())
-        except Exception: return 1.0
+        except (TypeError, ValueError, FloatingPointError): return 1.0

@@ -16,10 +16,15 @@ from nsgablack.representation.continuous import ClipRepair, ContextGaussianMutat
 from problem.feature_selection_problem import FeatureSelectionProblem
 
 def build_solver(X=None, y=None, estimator=None, *, pop_size=25, max_steps=80, sparsity_weight=50.0, resource_context=None, component_overrides=None):
-    del resource_context, component_overrides
+    overrides = dict(component_overrides or {})
+    X = overrides.get("X", X)
+    y = overrides.get("y", y)
+    estimator = overrides.get("estimator", estimator)
     from sklearn.linear_model import LinearRegression
     if X is None or y is None:
-        raise ValueError("build_solver requires X and y for this compatibility case.")
+        rng = np.random.default_rng(0)
+        X = rng.normal(size=(60, 6))
+        y = 3.0 * X[:, 0] - 2.0 * X[:, 1] + rng.normal(0.0, 0.1, size=60)
     est = estimator or LinearRegression()
     prob = FeatureSelectionProblem(X, y, est); nf = prob.n_features
     pipeline = RepresentationPipeline(
@@ -32,7 +37,9 @@ def build_solver(X=None, y=None, estimator=None, *, pop_size=25, max_steps=80, s
     bias.add(CallableBias(name="sparsity", func=sparsity_pen, weight=1.0, mode="penalty"))
     solver = ComposableSolver(problem=prob, adapter=DifferentialEvolutionAdapter(DEConfig(batch_size=pop_size)),
                               representation_pipeline=pipeline, bias_module=bias)
-    solver.set_max_steps(max_steps); return solver
+    solver.set_max_steps(max_steps)
+    solver.set_resource_context(resource_context)
+    return solver
 
 def main():
     p = argparse.ArgumentParser(); p.add_argument("--seed", type=int, default=42)
