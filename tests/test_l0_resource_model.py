@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from nsgablack.core.resources import (
+from blackbase.resources import (
+    ArtifactAuthority,
+    ArtifactPublisher,
     DataRef,
-    FilesystemArtifactBackend,
-    InMemoryL0RuntimeBackend,
+    InMemoryTaskRuntimeBackend,
     InMemoryResourceScheduler,
-    ArtifactDataTransportBackend,
     ResourceBudgetError,
     ResourceRequirement,
     TaskEnvelope,
@@ -162,8 +162,8 @@ def test_in_memory_scheduler_acquires_lease_and_releases_worker_slot():
     scheduler.release(again)
 
 
-def test_in_memory_l0_runtime_backend_roundtrips_task_result_and_state():
-    backend = InMemoryL0RuntimeBackend(namespace="test:l0")
+def test_in_memory_task_runtime_roundtrips_claim_and_result():
+    backend = InMemoryTaskRuntimeBackend()
     task = TaskEnvelope(
         task_id="task-l0",
         task_type="nested_candidate_eval",
@@ -172,14 +172,19 @@ def test_in_memory_l0_runtime_backend_roundtrips_task_result_and_state():
         namespace="run-a",
     )
 
+    worker = WorkerDescriptor(
+        worker_id="worker-a",
+        executor_backend="thread",
+        capabilities=("nested_eval",),
+        offer={"threads": 1, "gpus": 0, "backend": "local"},
+    )
     backend.submit(task)
-    claimed = backend.claim(timeout_seconds=1)
+    claimed = backend.claim_task(worker, run_id="run-a", timeout_seconds=1)
     assert claimed is not None
-    assert claimed.task_id == "task-l0"
-    assert backend.state_backend is not None
-    assert backend.state_backend.get_task_state("task-l0")["status"] == "claimed"
+    assert claimed.task.task_id == "task-l0"
 
-    backend.complete(
+    backend.complete_claim(
+        claimed,
         TaskResult.success(
             task_id="task-l0",
             objectives=(3.0,),
@@ -193,20 +198,20 @@ def test_in_memory_l0_runtime_backend_roundtrips_task_result_and_state():
     assert restored is not None
     assert restored.ok
     assert restored.objectives == (3.0,)
-    assert backend.state_backend.get_task_state("task-l0")["status"] == "ok"
-    backend.heartbeat("worker-a", {"active": 1})
-    assert backend.worker_registry is not None
-    assert backend.worker_registry.get_heartbeat("worker-a")["payload"]["active"] == 1
+    assert backend.task_transport.get("task-l0").status == "succeeded"
+    backend.heartbeat(worker)
+    assert backend.task_transport.list_workers()[0].worker_id == "worker-a"
 
 
-def test_filesystem_artifact_and_transport_backend_roundtrip_json(tmp_path):
-    artifact_backend = FilesystemArtifactBackend(base_dir=tmp_path)
-    transport = ArtifactDataTransportBackend(artifact_backend)
-
-    ref = artifact_backend.put_json("reports/summary.json", {"ok": True}, kind="report")
+def test_project_artifact_publisher_roundtrips_json(tmp_path):
+    publisher = ArtifactPublisher(
+        ArtifactAuthority(root=str(tmp_path), namespace="test"),
+        project_run_id="project-run",
+        case_run_id="case-run",
+    )
+    ref = publisher.publish("summary", {"ok": True}, kind="report")
     assert ref.backend == "filesystem"
-    assert artifact_backend.get_json(ref) == {"ok": True}
-
-    payload_ref = transport.send({"x": [1, 2, 3]}, kind="payload")
-    assert isinstance(payload_ref, DataRef)
-    assert transport.receive(payload_ref) == {"x": [1, 2, 3]}
+    assert isinstance(ref, DataRef)
+    assert ref.kind == "report"
+    assert ref.media_type == "application/json"
+    assert __import__("json").loads(__import__("pathlib").Path(ref.uri).read_text("utf-8")) == {"ok": True}

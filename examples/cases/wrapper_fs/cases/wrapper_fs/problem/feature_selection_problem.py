@@ -16,4 +16,4 @@ class FeatureSelectionProblem(BlackBoxProblem):
         try:
             scores = cross_val_score(self._estimator, self._X[:, mask], self._y, cv=self._cv, scoring=self._scoring)
             return float(-scores.mean())
-        except Exception: return 1e10
+        except (TypeError, ValueError, FloatingPointError): return 1e10

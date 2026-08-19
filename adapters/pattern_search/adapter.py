@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 import numpy as np
 
 from ..algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import KEY_ADAPTER_BEST_SCORE, KEY_MUTATION_SIGMA
+from blackbase.context.context_keys import KEY_ADAPTER_BEST_SCORE, KEY_MUTATION_SIGMA
 
 
 @dataclass
@@ -81,7 +81,7 @@ class PatternSearchAdapter(AlgorithmAdapter):
         self,
         control: Any,
         candidates: Sequence[np.ndarray],
-        feedback: Tuple[np.ndarray, np.ndarray],
+        feedback: Any,
         context: Dict[str, Any],
     ) -> None:
         objectives, violations = feedback

@@ -22,7 +22,7 @@ from _bootstrap import ensure_nsgablack_importable  # noqa: E402
 ensure_nsgablack_importable(Path(__file__))
 
 from nsgablack.utils.parallel import run_nested_redis_worker  # noqa: E402
-from nsgablack.core.resources import RedisL0RuntimeBackend, TaskEnvelope, TaskResult  # noqa: E402
+from blackbase.resources import RedisTaskRuntimeBackend, TaskEnvelope, TaskResult  # noqa: E402
 
 from assembly import _build_solver_from_args, build_parser  # noqa: E402
 
@@ -83,17 +83,15 @@ def _build_task_runner(solver):
 def main(argv: Optional[list[str]] = None) -> None:
     args = build_worker_parser().parse_args(argv)
     solver = _build_solver_from_args(args)
-    queue = RedisL0RuntimeBackend(
+    queue = RedisTaskRuntimeBackend(
         redis_url=str(args.redis_url),
         namespace=str(args.redis_namespace),
-        queue_scope=str(args.redis_queue_scope),
-        result_ttl_seconds=int(args.redis_result_ttl_seconds),
     )
     worker_id = args.worker_id
     max_tasks = int(args.worker_max_tasks)
     print(
         "[redis-worker] "
-        f"namespace={args.redis_namespace} scope={args.redis_queue_scope} "
+        f"namespace={args.redis_namespace} "
         f"worker_id={worker_id or 'auto'} max_tasks={max_tasks if max_tasks > 0 else 'unlimited'}"
     )
     summary = run_nested_redis_worker(

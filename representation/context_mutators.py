@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Sequence
 import numpy as np
 
 from .base import RepresentationComponentContract
-from ..core.state.context_keys import KEY_PHASE, KEY_STRATEGY_ID, KEY_VNS_K
+from blackbase.context.context_keys import KEY_PHASE, KEY_STRATEGY_ID, KEY_VNS_K
 
 
 def _call_mutate(mutator: Any, x: np.ndarray, context: Optional[dict]) -> np.ndarray:

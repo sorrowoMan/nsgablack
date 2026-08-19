@@ -15,7 +15,7 @@ from blackbase.kernel import OrchestrationPolicy
 from blackbase.kernel import PipelineOrchestrator as SharedPipelineOrchestrator
 
 from .base import RepresentationComponentContract
-from ..core.state.context_keys import KEY_GENERATION, KEY_PHASE, KEY_STRATEGY_ID, KEY_VNS_K
+from blackbase.context.context_keys import KEY_GENERATION, KEY_PHASE, KEY_STRATEGY_ID, KEY_VNS_K
 
 
 class PipelineOrchestrator(RepresentationComponentContract):
@@ -87,8 +87,8 @@ class PipelineOrchestrator(RepresentationComponentContract):
         if policy is None:
             if fallback is None:
                 return x
-            return self._shared._call_operator(fallback, x, context, method)
-        return self._shared._run_policy(
+            return self._shared.call_operator(fallback, x, context, method)
+        return self._shared.run_policy(
             policy,
             x,
             context,

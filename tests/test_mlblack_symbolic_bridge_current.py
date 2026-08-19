@@ -10,17 +10,15 @@ import sys
 import numpy as np
 
 from nsgablack.plugins.domain_backends.backend_contract import BackendSolveRequest
-from nsgablack.plugins.domain_backends.mlblack_symbolic_consensus_backend import (
+from mlblack.integrations.nsgablack_symbolic_backend import (
     MlblackSymbolicConsensusBackend,
     MlblackSymbolicConsensusBackendConfig,
 )
 
 
 def test_current_mlblack_symbolic_bridge_runs_and_inherits_parent_grant(tmp_path: Path) -> None:
-    mlblack_root = Path(__file__).resolve().parents[2] / "mlblack"
     backend = MlblackSymbolicConsensusBackend(
         config=MlblackSymbolicConsensusBackendConfig(
-            mlblack_root=str(mlblack_root),
             benchmark_key="ohm_like",
             n_total=32,
             output_root=str(tmp_path / "inner"),
@@ -77,6 +75,26 @@ def test_symbolic_bridge_no_longer_imports_retired_mlblack_modules() -> None:
     assert "from config import" not in text
     assert "from training import" not in text
     assert "from workflow import" not in text
+
+
+def test_outer_search_space_respects_backend_workload_caps() -> None:
+    from nsgablack.examples.cases.mlblack_symbolic_consensus_scaffold.cases.mlblack_symbolic_consensus_scaffold.case_scaffold.problem.outer_problem import (
+        MlblackSymbolicConsensusOuterProblem,
+    )
+
+    config = MlblackSymbolicConsensusBackendConfig(
+        n_total=32,
+        orth_candidate_limit=80,
+    )
+    problem = MlblackSymbolicConsensusOuterProblem(
+        benchmark_key="ohm_like",
+        backend_config=config,
+    )
+
+    assert problem.search_space.candidate_limit == (24, 32)
+    assert problem.search_space.group_count == (4, 8)
+    assert problem.search_space.max_basis_count == (2, 4)
+    assert problem.search_space.random_group_trials == (1, 2)
 
 
 def test_symbolic_case_normal_cli_closes_the_current_bridge(tmp_path: Path) -> None:

@@ -1,0 +1,13 @@
+# Canonical Case example catalog shard.
+
+[[entry]]
+key = "example.gmm_em_vs_de"
+title = "GMM: EM vs DE-VNS Strategy Chain"
+kind = "example"
+import_path = "examples.cases.gmm_em_vs_de.cases.gmm_em_vs_de.build_solver:build_solver"
+tags = ["example", "gmm", "clustering", "de", "vns", "strategy_chain", "nelder_mead"]
+summary = "Gaussian Mixture Model fitting as black-box optimization. DE global search chained with VNS local refinement via StrategyChainAdapter, NelderMeadBias for simplex push. vs sklearn EM baseline."
+context_notes = ["示例装配入口不直接写入运行 Context；模型参数与评估由正式组件契约承载。"]
+use_when = ["需要比较 GMM 的演化搜索与 EM 基线。"]
+minimal_wiring = ["python run_solver.py --check"]
+example_entry = "build_solver:build_solver"

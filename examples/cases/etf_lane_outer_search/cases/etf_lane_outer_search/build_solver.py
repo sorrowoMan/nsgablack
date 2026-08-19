@@ -53,7 +53,11 @@ def build_etf_lane_outer_search_solver(
 def build_solver(cfg=None, *, suite_id: str = "doctor_smoke", resource_context=None, component_overrides=None):
     """Canonical scaffold entry; delegates to build_etf_lane_outer_search_solver()."""
 
-    return build_etf_lane_outer_search_solver(cfg, suite_id=suite_id)
+    solver = build_etf_lane_outer_search_solver(cfg, suite_id=suite_id)
+    from nsgablack.project import apply_solver_component_overrides
+    apply_solver_component_overrides(solver, component_overrides)
+    solver.set_resource_context(resource_context)
+    return solver
 
 __all__ = ["EtfLaneOuterSearchConfig", "build_solver", "build_etf_lane_outer_search_solver"]
 

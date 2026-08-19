@@ -10,6 +10,13 @@ from typing import Any, Callable, Dict, Mapping, Optional
 
 import numpy as np
 
+from blackbase.project import (
+    CaseRunResult,
+    CaseStage,
+    CaseStageRunner,
+    ChildCaseCall,
+)
+
 
 @dataclass(frozen=True)
 class InnerSolveRequest:
@@ -35,10 +42,131 @@ InnerResultProjector = Callable[[Any, np.ndarray, InnerSolveResult], tuple[np.nd
 InnerProblemFactory = Callable[[np.ndarray, Dict[str, Any]], Any]
 InnerBackendFactory = Callable[[Any, Dict[str, Any]], Any]
 InnerRunner = Callable[[Any, Any, Dict[str, Any]], Mapping[str, Any]]
+CaseResultProjector = Callable[[Any, np.ndarray, CaseRunResult], tuple[np.ndarray, float]]
+
+
+class ChildCaseExecutionError(RuntimeError):
+    """Raised when a complete child Case returns a failed result envelope."""
+
+    def __init__(self, result: CaseRunResult) -> None:
+        self.result = result
+        message = result.error or f"child Case finished with status={result.status}"
+        super().__init__(message)
+
+
+class CaseInnerRuntimeEvaluator:
+    """Evaluate an outer candidate by invoking one complete standard child Case.
+
+    This is the lineage/resource/budget/cancellation-safe path.  Projection is
+    deliberately mandatory because child Solver objectives are not implicitly
+    equivalent to the outer problem's objectives.
+    """
+
+    def __init__(
+        self,
+        *,
+        case_name: str,
+        projector: CaseResultProjector,
+        case_kind: str = "solver",
+        stage_name: str = "inner_evaluation",
+        candidate_input: str = "candidate",
+        resource_request: Mapping[str, Any] | None = None,
+        budget_request: Mapping[str, int] | None = None,
+        component_overrides: Mapping[str, Any] | None = None,
+        timeout_seconds: float | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> None:
+        if not str(case_name or "").strip():
+            raise ValueError("CaseInnerRuntimeEvaluator case_name must be non-empty")
+        if not callable(projector):
+            raise TypeError("CaseInnerRuntimeEvaluator requires an explicit projector")
+        self.case_name = str(case_name)
+        self.projector = projector
+        self.case_kind = str(case_kind or "solver")
+        self.stage_name = str(stage_name or "inner_evaluation")
+        self.candidate_input = str(candidate_input or "candidate")
+        self.resource_request = dict(resource_request or {})
+        self.budget_request = {str(key): int(value) for key, value in dict(budget_request or {}).items()}
+        self.component_overrides = dict(component_overrides or {})
+        self.timeout_seconds = timeout_seconds
+        self.metadata = dict(metadata or {})
+        self.stats: Dict[str, Any] = {
+            "calls": 0,
+            "success": 0,
+            "failures": 0,
+            "last_case_run_id": "",
+        }
+        self.last_result: CaseRunResult | None = None
+
+    def can_handle(self, *, solver: Any, x: np.ndarray) -> bool:
+        del x
+        runtime = getattr(solver, "case_runtime", None)
+        return callable(getattr(runtime, "invoke", None)) and callable(
+            getattr(runtime, "checkpoint", None)
+        )
+
+    def evaluate(
+        self,
+        *,
+        solver: Any,
+        x: np.ndarray,
+        individual_id: int,
+        context: Mapping[str, Any] | None = None,
+    ) -> tuple[np.ndarray, float]:
+        runtime = getattr(solver, "case_runtime", None)
+        if not self.can_handle(solver=solver, x=x):
+            raise RuntimeError(
+                "CaseInnerRuntimeEvaluator requires a Solver executed through the "
+                "standard Project/Case substrate"
+            )
+        candidate = np.asarray(x, dtype=float).reshape(-1)
+        ctx = dict(context or {})
+        call = ChildCaseCall(
+            name=f"candidate_{int(individual_id)}",
+            case_name=self.case_name,
+            case_kind=self.case_kind,
+            resource_request=self.resource_request,
+            budget_request=self.budget_request,
+            component_overrides=self.component_overrides,
+            inputs={
+                self.candidate_input: candidate.tolist(),
+                "outer_generation": int(getattr(solver, "generation", 0)),
+                "outer_individual_id": int(individual_id),
+                "context": ctx,
+            },
+            timeout_seconds=self.timeout_seconds,
+            metadata={
+                **self.metadata,
+                "source": "nsgablack.CaseInnerRuntimeEvaluator",
+            },
+        )
+        stage_result = CaseStageRunner(
+            runtime,
+            (CaseStage(self.stage_name, (call,)),),
+        ).run()[0]
+        result = stage_result.results[call.name]
+        self.last_result = result
+        self.stats["calls"] = int(self.stats["calls"]) + 1
+        self.stats["last_case_run_id"] = result.identity.case_run_id
+        if not result.ok:
+            self.stats["failures"] = int(self.stats["failures"]) + 1
+            raise ChildCaseExecutionError(result)
+        projected = self.projector(solver, candidate, result)
+        if not isinstance(projected, tuple) or len(projected) != 2:
+            raise TypeError("CaseInnerRuntimeEvaluator projector must return (objectives, violation)")
+        objectives = np.asarray(projected[0], dtype=float).reshape(-1)
+        violation = float(projected[1])
+        self.stats["success"] = int(self.stats["success"]) + 1
+        return objectives, violation
 
 
 class InnerRuntimeEvaluator:
-    """Problem-level evaluator for nested solve semantics."""
+    """Low-level in-process component evaluator for nested solve semantics.
+
+    It is not a complete child Case boundary.  Standard child Cases must use
+    :class:`CaseInnerRuntimeEvaluator` so Project lineage and L0 grants remain
+    authoritative.
+    """
 
     def __init__(
         self,
@@ -191,7 +319,7 @@ class InnerRuntimeConfig:
 
 
 class TaskInnerRuntimeEvaluator(InnerRuntimeEvaluator):
-    """Problem-side evaluator compatible with legacy build_inner_task pipeline."""
+    """Low-level component evaluator for a problem's ``build_inner_task`` pipeline."""
 
     def __init__(
         self,

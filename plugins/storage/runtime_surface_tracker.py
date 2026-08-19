@@ -28,7 +28,7 @@ from ...experiment.db import (
 )
 from ...catalog import get_catalog
 from ...project.catalog import find_project_root
-from ...utils.context.context_contracts import collect_solver_contracts, detect_context_conflicts
+from blackbase.context import collect_solver_contracts, detect_context_conflicts
 from ...utils.engineering.run_contracts import (
     ArtifactRecord,
     AssemblyRecord,

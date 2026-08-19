@@ -1,7 +1,7 @@
 ﻿"""MIGRATED to examples/cases/ - see scaffold case for maintained version."""
-"""Single-trajectory adaptive search demo."""
-
 from __future__ import annotations
+
+"""Single-trajectory adaptive search demo."""
 
 import numpy as np
 

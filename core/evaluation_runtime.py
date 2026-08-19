@@ -6,6 +6,17 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Mapping, Optional, Protocol, Sequence, Tuple
 
 import numpy as np
+from blackbase.types import Feedback
+
+from .evaluation_feedback import OptimizationFeedbackBatch
+
+
+IndividualEvaluationResult = Feedback | Tuple[Any, float] | np.ndarray | float
+PopulationEvaluationResult = (
+    OptimizationFeedbackBatch
+    | Sequence[Feedback]
+    | Tuple[Any, Any]
+)
 
 
 class EvaluationProviderContractError(RuntimeError):
@@ -25,7 +36,7 @@ class EvaluationProvider(Protocol):
         x: np.ndarray,
         context: Mapping[str, Any],
         individual_id: Optional[int] = None,
-    ) -> Tuple[np.ndarray, float]:
+    ) -> IndividualEvaluationResult:
         ...
 
     def can_handle_population(self, solver: Any, population: np.ndarray, context: Mapping[str, Any]) -> bool:
@@ -36,7 +47,7 @@ class EvaluationProvider(Protocol):
         solver: Any,
         population: np.ndarray,
         context: Mapping[str, Any],
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> PopulationEvaluationResult:
         ...
 
 
@@ -53,6 +64,30 @@ class EvaluationMediator:
         self.config = config or EvaluationMediatorConfig()
         self._providers: list[EvaluationProvider] = []
         self._approximate_blocked: set[str] = set()
+
+    def configure_policy(
+        self,
+        *,
+        allow_approximate: bool | None = None,
+        strict_conflict: bool | None = None,
+    ) -> None:
+        """Atomically replace the evaluation-selection policy."""
+
+        current = self.config
+        self.config = EvaluationMediatorConfig(
+            allow_approximate=(
+                bool(current.allow_approximate)
+                if allow_approximate is None
+                else bool(allow_approximate)
+            ),
+            strict_conflict=(
+                bool(current.strict_conflict)
+                if strict_conflict is None
+                else bool(strict_conflict)
+            ),
+        )
+        if bool(self.config.allow_approximate):
+            self._approximate_blocked.clear()
 
     def _warn_approximate_blocked(self, provider: EvaluationProvider) -> None:
         name = str(getattr(provider, "name", provider.__class__.__name__))
@@ -123,12 +158,12 @@ class EvaluationMediator:
         *,
         individual_id: Optional[int] = None,
         context: Optional[Mapping[str, Any]] = None,
-        fallback: Callable[[], Tuple[np.ndarray, float]],
+        fallback: Callable[[], IndividualEvaluationResult],
         on_dispatch: Optional[Callable[[str], None]] = None,
-    ) -> Tuple[np.ndarray, float]:
+    ) -> IndividualEvaluationResult:
         ctx = dict(context or {})
 
-        def run_fallback() -> Tuple[np.ndarray, float]:
+        def run_fallback() -> IndividualEvaluationResult:
             if on_dispatch is not None:
                 on_dispatch("fallback")
             return fallback()
@@ -185,12 +220,12 @@ class EvaluationMediator:
         population: np.ndarray,
         *,
         context: Optional[Mapping[str, Any]] = None,
-        fallback: Callable[[], Tuple[np.ndarray, np.ndarray]],
+        fallback: Callable[[], PopulationEvaluationResult],
         on_dispatch: Optional[Callable[[str], None]] = None,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> PopulationEvaluationResult:
         ctx = dict(context or {})
 
-        def run_fallback() -> Tuple[np.ndarray, np.ndarray]:
+        def run_fallback() -> PopulationEvaluationResult:
             if on_dispatch is not None:
                 on_dispatch("fallback")
             return fallback()

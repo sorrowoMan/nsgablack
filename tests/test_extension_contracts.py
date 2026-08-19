@@ -1,6 +1,23 @@
 import numpy as np
 import pytest
 
+from blackbase.types import UnknownState
+
+
+def test_candidate_boundary_consumes_shared_unknown_state_protocol():
+    from nsgablack.utils.extension_contracts import normalize_candidate
+
+    candidate = UnknownState(
+        values=np.asarray([1.0, -2.0], dtype=float),
+        metadata={"provider": "test"},
+    )
+
+    normalized = normalize_candidate(candidate, dimension=2)
+
+    assert isinstance(normalized, np.ndarray)
+    assert normalized.dtype != object
+    assert np.array_equal(normalized, [1.0, -2.0])
+
 
 def test_composable_solver_rejects_wrong_candidate_shape():
     from nsgablack.core.base import BlackBoxProblem

@@ -12,10 +12,13 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
+from blackbase.call_binding import CallCandidate, invoke_bound_once
 from blackbase.contracts import BatchDisposition
+from blackbase.context import RuntimeContextProjection
 
 from ..algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import KEY_PHASE, KEY_STRATEGY, KEY_STRATEGY_ID
+from ..runtime_projection import aggregate_adapter_runtime_projections
+from blackbase.context.context_keys import KEY_PHASE, KEY_STRATEGY, KEY_STRATEGY_ID
 
 
 PhaseAdapter = Union[AlgorithmAdapter, Callable[[], AlgorithmAdapter], Callable[[int], AlgorithmAdapter]]
@@ -77,6 +80,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
         self._phase_steps: List[int] = []
         self._current_idx: int = 0
         self._step_in_phase: int = 0
+        self._last_projection_writers: Dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -86,6 +90,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
         self._phase_steps = [int(p.steps) for p in self.phases]
         self._current_idx = 0
         self._step_in_phase = 0
+        self._last_projection_writers = {}
         if self._adapters:
             self._adapters[self._current_idx].setup(control)
 
@@ -113,7 +118,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
         self,
         control: Any,
         candidates: Sequence[np.ndarray],
-        feedback: Tuple[np.ndarray, np.ndarray],
+        feedback: Any,
         context: Dict[str, Any],
     ) -> None:
         objectives, violations = feedback
@@ -144,7 +149,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
         ctx[KEY_PHASE] = self._current_phase_name()
         ctx[KEY_STRATEGY] = adapter.name
         ctx[KEY_STRATEGY_ID] = int(self._current_idx)
-        adapter.update(control, candidates, (objectives, violations), ctx)
+        adapter.update(control, candidates, feedback, ctx)
 
         self._step_in_phase += 1
         if self._should_advance(ctx):
@@ -195,6 +200,33 @@ class StrategyChainAdapter(AlgorithmAdapter):
             except Exception:
                 continue
 
+    def get_runtime_context_projection(self, solver: Any) -> RuntimeContextProjection:
+        adapter = self._current_adapter()
+        own_fields: Dict[str, Any] = {KEY_PHASE: self._current_phase_name()}
+        children = ()
+        if adapter is not None:
+            own_fields[KEY_STRATEGY] = adapter.name
+            own_fields[KEY_STRATEGY_ID] = int(self._current_idx)
+            children = (
+                (
+                    "adapter.phase."
+                    f"{self._current_phase_name()}:{adapter.__class__.__name__}",
+                    adapter,
+                ),
+            )
+        aggregation = aggregate_adapter_runtime_projections(
+            solver,
+            owner_source=f"adapter.{self.__class__.__name__}",
+            own_fields=own_fields,
+            children=children,
+        )
+        self._last_projection_writers = dict(aggregation.field_sources)
+        return aggregation.projection
+
+    def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
+        del solver
+        return dict(self._last_projection_writers)
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
@@ -208,10 +240,15 @@ class StrategyChainAdapter(AlgorithmAdapter):
             if isinstance(adapter, AlgorithmAdapter):
                 self._adapters.append(adapter)
             elif callable(adapter):
-                try:
-                    self._adapters.append(adapter(idx))
-                except TypeError:
-                    self._adapters.append(adapter())
+                self._adapters.append(
+                    invoke_bound_once(
+                        adapter,
+                        (
+                            CallCandidate(args=(idx,), label="phase_index"),
+                            CallCandidate(label="empty"),
+                        ),
+                    )
+                )
             else:
                 raise TypeError("phase.adapter must be AlgorithmAdapter or factory")
 

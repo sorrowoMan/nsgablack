@@ -41,6 +41,10 @@ def test_module_report_writes_reports_and_injects_artifacts(sample_problem, samp
     modules = json.loads(modules_path.read_text(encoding="utf-8"))
     assert modules["metadata"]["run_id"] == "demo"
     assert "plugins" in modules
+    assert modules["incumbent_projection"][
+        "incumbent_context_projection_current"
+    ] is True
+    assert modules["incumbent_projection"]["incumbent_revision"] >= 1
 
     bias_report = json.loads(bias_json_path.read_text(encoding="utf-8"))
     assert bias_report["metadata"]["run_id"] == "demo"

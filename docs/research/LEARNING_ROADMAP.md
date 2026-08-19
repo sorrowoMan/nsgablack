@@ -115,7 +115,7 @@
 
 "训练"就是搜索 θ。梯度下降是一种搜索算法——它用导数的方向信息加速搜索。BP (反向传播) 是自动求导链式法则的实现。
 
-**你框架里的对应：** `GradientDescentAdapter` 和 `FunctionalBackpropAdapter` 就是搜 θ 的策略。`Problem.evaluate` 给的是 loss（相当于运筹里的目标函数值）。`UnknownState` 就是 θ 的扁平化表示。你不需要理解"怎么推导 softmax 的导数"——autograd 替你做了。你需要理解的是：梯度下降在做什么、什么时候会卡在鞍点、为什么需要学习率衰减和学习率预热。
+**你框架里的对应：** nsgablack 的 `GradientOptimizerAdapter` 是搜索 θ 的策略；mlblack 的 `FunctionalGradientLearningProblem` 负责把 autograd 梯度放进正式 Feedback。`Problem.evaluate` 给的是 loss（相当于运筹里的目标函数值），`UnknownState` 就是 θ 的扁平化表示。你不需要理解"怎么推导 softmax 的导数"——autograd 替你做了。你需要理解的是：梯度下降在做什么、什么时候会卡在鞍点、为什么需要学习率衰减和学习率预热。
 
 **推荐资料：** 李宏毅《机器学习》2021 课程前 5 讲（B 站有），不讲数学推导，只讲直觉。
 

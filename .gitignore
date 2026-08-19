@@ -148,6 +148,11 @@ artifacts/
 results/test_runs/
 deprecated/legacy/experiments/results/
 
+# Local diagnostic/generated workspaces
+/scratch/
+/out_doc_e2e_demo/
+/=
+
 # Example-generated optimization artifacts (keep local, do not version)
 examples/cases/integrated_result_*.xlsx
 examples/cases/integrated_result_*.summary.json

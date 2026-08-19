@@ -7,6 +7,10 @@ import numpy as np
 from typing import List, Tuple
 from .array_utils import validate_array_bounds
 
+
+FEASIBILITY_THRESHOLD = 0.0
+VIOLATION_GROUP_ATOL = 1e-12
+
 try:
     import numba  # type: ignore
 except Exception:
@@ -47,10 +51,19 @@ class FastNonDominatedSort:
         if constraint_violations is None:
             constraint_violations = np.zeros(n)
         else:
-            constraint_violations = np.asarray(constraint_violations)
+            constraint_violations = np.asarray(constraint_violations, dtype=float).reshape(-1)
+            if constraint_violations.shape[0] != n:
+                raise ValueError(
+                    "constraint_violations must contain one value per objective row"
+                )
+            constraint_violations = np.where(
+                np.isnan(constraint_violations),
+                np.inf,
+                constraint_violations,
+            )
 
         # Separate feasible and infeasible solutions
-        feasible_mask = constraint_violations <= 1e-10
+        feasible_mask = constraint_violations <= FEASIBILITY_THRESHOLD
         infeasible_mask = ~feasible_mask
 
         fronts = []
@@ -75,14 +88,28 @@ class FastNonDominatedSort:
             # Sort infeasible solutions by constraint violation (ascending)
             sorted_infeasible = infeasible_indices[np.argsort(constraint_violations[infeasible_indices])]
 
-            # Add infeasible solutions to last front or create new fronts
-            start_rank = len(fronts)
-            for i, idx in enumerate(sorted_infeasible):
-                ranks[idx] = start_rank + i
-                if i == 0:
-                    fronts.append([idx])
-                else:
-                    fronts[-1].append(idx)
+            # Constraint-domination creates one front per distinct violation
+            # level. Only equal-violation candidates share a front and may be
+            # separated later by objective-space crowding.
+            current_violation = None
+            current_rank = -1
+            for idx in sorted_infeasible:
+                violation = float(constraint_violations[idx])
+                same_level = current_violation is not None and bool(
+                    np.isclose(
+                        violation,
+                        current_violation,
+                        rtol=0.0,
+                        atol=VIOLATION_GROUP_ATOL,
+                        equal_nan=False,
+                    )
+                )
+                if not same_level:
+                    fronts.append([])
+                    current_rank = len(fronts) - 1
+                    current_violation = violation
+                fronts[current_rank].append(int(idx))
+                ranks[idx] = current_rank
 
         return fronts, ranks
 
@@ -272,7 +299,9 @@ def fast_non_dominated_sort_optimized(objectives: np.ndarray, constraint_violati
     # Use Numba version if available and beneficial
     if NUMBA_AVAILABLE and objectives.shape[0] > 100:  # Only use Numba for larger populations
         try:
-            if constraint_violations is None or np.all(constraint_violations <= 1e-10):
+            if constraint_violations is None or np.all(
+                np.asarray(constraint_violations, dtype=float) <= FEASIBILITY_THRESHOLD
+            ):
                 # All feasible, use pure Numba implementation
                 fronts = fast_non_dominated_sort_numba(objectives)
                 ranks = np.zeros(objectives.shape[0], dtype=int)

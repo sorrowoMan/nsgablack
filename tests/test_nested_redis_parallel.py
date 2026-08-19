@@ -5,12 +5,13 @@ import time
 
 import numpy as np
 
-from nsgablack.core.resources import (
-    RedisL0RuntimeBackend,
+from blackbase.resources import (
+    RedisTaskRuntimeBackend,
     ResourceContext,
     ResourceRequirement,
     TaskEnvelope,
     TaskResult,
+    WorkerDescriptor,
 )
 from nsgablack.utils.parallel import (
     RedisNestedDistributedEvaluator,
@@ -140,12 +141,10 @@ class _FakeRedis:
             return int(self._values.pop(str(key), None) is not None)
 
 
-def test_redis_l0_backend_uses_task_envelope_and_task_result(tmp_path):
-    queue = RedisL0RuntimeBackend(
+def test_redis_task_runtime_uses_task_envelope_and_task_result():
+    queue = RedisTaskRuntimeBackend(
         client=_FakeRedis(),
         namespace="test:nested",
-        result_ttl_seconds=None,
-        artifact_base_dir=tmp_path,
     )
     task = TaskEnvelope(
         task_id="t1",
@@ -156,10 +155,16 @@ def test_redis_l0_backend_uses_task_envelope_and_task_result(tmp_path):
     )
 
     queue.submit(task)
-    claimed = queue.claim(timeout_seconds=1)
-    assert isinstance(claimed, TaskEnvelope)
-    assert claimed.task_id == task.task_id
-    assert claimed.payload["candidate"] == [1.0]
+    worker = WorkerDescriptor(
+        worker_id="worker-a",
+        executor_backend="thread",
+        capabilities=("nested_eval",),
+        offer={"threads": 1, "gpus": 0, "backend": "local"},
+    )
+    claimed = queue.claim_task(worker, run_id="r1", timeout_seconds=1)
+    assert claimed is not None
+    assert claimed.task.task_id == task.task_id
+    assert claimed.task.payload["candidate"] == [1.0]
 
     result = TaskResult(
         task_id=task.task_id,
@@ -168,15 +173,15 @@ def test_redis_l0_backend_uses_task_envelope_and_task_result(tmp_path):
         violations=(0.0,),
         metadata={"run_id": "r1", "index": 0},
     )
-    queue.complete(result)
+    queue.complete_claim(claimed, result)
     restored = queue.get_result("r1", "t1")
     assert isinstance(restored, TaskResult)
     assert restored.objectives == (1.0,)
     assert restored.violations == (0.0,)
 
 
-def test_redis_nested_distributed_evaluator_uses_external_worker_loop_with_l0_protocol(tmp_path):
-    queue = RedisL0RuntimeBackend(client=_FakeRedis(), namespace="test:nested:evaluator", artifact_base_dir=tmp_path)
+def test_redis_nested_distributed_evaluator_uses_external_worker_loop_with_l0_protocol():
+    queue = RedisTaskRuntimeBackend(client=_FakeRedis(), namespace="test:nested:evaluator")
     evaluator = RedisNestedDistributedEvaluator(
         queue=queue,
         run_id="case42",

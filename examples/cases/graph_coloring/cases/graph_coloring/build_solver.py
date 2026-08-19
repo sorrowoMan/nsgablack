@@ -15,7 +15,14 @@ from nsgablack.representation import RepresentationPipeline
 from nsgablack.representation.continuous import ClipRepair, ContextGaussianMutation, UniformInitializer
 from problem.coloring_problem import GraphColoringProblem
 
-def build_solver(edges, n_nodes, max_colors=15, *, pop_size=30, max_steps=200, resource_context=None, component_overrides=None):
+def build_solver(edges=None, n_nodes=None, max_colors=15, *, pop_size=30, max_steps=200, resource_context=None, component_overrides=None):
+    overrides = dict(component_overrides or {})
+    edges = overrides.get("edges", edges)
+    n_nodes = overrides.get("n_nodes", n_nodes)
+    if edges is None:
+        edges = [(0, 1), (1, 2), (2, 0)]
+    if n_nodes is None:
+        n_nodes = 3
     prob = GraphColoringProblem(edges, n_nodes, max_colors)
     pipeline = RepresentationPipeline(
         initializer=UniformInitializer(low=[0]*n_nodes, high=[max_colors-0.001]*n_nodes),
@@ -29,7 +36,9 @@ def build_solver(edges, n_nodes, max_colors=15, *, pop_size=30, max_steps=200, r
     bias.add(CallableBias(name="adjacency", func=adj_penalty, weight=1.0, mode="penalty"))
     solver = ComposableSolver(problem=prob, adapter=DifferentialEvolutionAdapter(DEConfig(batch_size=pop_size)),
                               representation_pipeline=pipeline, bias_module=bias)
-    solver.set_max_steps(max_steps); return solver
+    solver.set_max_steps(max_steps)
+    solver.set_resource_context(resource_context)
+    return solver
 
 def main():
     p = argparse.ArgumentParser(); p.add_argument("--seed", type=int, default=42)

@@ -123,6 +123,7 @@ def build_solver(*, resource_context=None, component_overrides=None) -> Composab
         bias_module=bias,
     )
     solver.set_max_steps(2000)
+    solver.set_resource_context(resource_context)
     return solver
 
 

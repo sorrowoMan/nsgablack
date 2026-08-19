@@ -107,9 +107,9 @@ def build_bias(
 
 
 def _register_builtin_biases() -> None:
-    from .example_bias import build_bias_module
-
     def _default_builder(params: Dict[str, Any]) -> BiasModule:
+        from .example_bias import build_bias_module
+
         return _build_with_config(BiasConfig, params, build_bias_module)
 
     register_bias_builder("default", _default_builder)

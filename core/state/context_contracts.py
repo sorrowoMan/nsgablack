@@ -1,8 +1,4 @@
-"""
-Forwarding module for context contracts.
-
-This module re-exports from blackbase for seamless migration.
-"""
+"""Optimization-facing public context-contract surface backed by blackbase."""
 
 from blackbase.context import (
     ContextContract,

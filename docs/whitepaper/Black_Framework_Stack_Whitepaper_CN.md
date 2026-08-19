@@ -204,7 +204,7 @@ Problem 负责决策空间、目标、约束和评估语义。它不决定搜索
 
 Solver 是生命周期与控制平面。它管理 generation、evaluation_count、停止请求、RNG、插件、Context/Snapshot 访问和公共评估入口。它不应该膨胀成“所有算法的共同父类实现”，否则每加一个策略都要修改控制平面。
 
-Adapter 通过 `propose(solver, context)` 和 `update(solver, candidates, feedback, context)` 表达策略，其中 `feedback=(objectives, violations)`。进阶 Adapter 还应实现 state、population 和 context projection 接口，以支持 checkpoint、权威种群提交和审计。Adapter 更新后的 population 是代级快照的首选权威来源。
+Adapter 通过 `propose(solver, context)` 和 `update(solver, candidates, feedback, context)` 表达策略，其中正式反馈是 `OptimizationFeedbackBatch`，并可向纯数值算法投影为 objectives / violations。候选批次同时保留 UnknownState 语义视图、ndarray 数值视图与 token/provenance。进阶 Adapter 还应实现 state、population 和 context projection 接口，以支持 checkpoint、权威种群提交和审计。Adapter 更新后的 population 是代级快照的首选权威来源。
 
 RepresentationPipeline 是候选流转的唯一入口，负责 init、mutate、repair、encode 和 decode。它保证候选 shape 与语义稳定。Repair 只做可行性兜底，不应偷偷执行完整业务搜索；否则算法控制权会从 Adapter 泄漏到表示层。
 
@@ -216,7 +216,7 @@ mlblack 用 UnknownState 表示尚未解码的模型状态。UnknownState 不只
 
 ModelRepresentation 定义 init、decode、encode、repair、mutate 和批量版本。Codec 负责结构化参数与扁平状态之间的变换，Head 负责输出语义。LearningProblem 消费解码后的候选和 DataView，返回 Feedback，其中可以包含 objectives、constraints、gradients、residuals 和 metrics。
 
-BlankTrainer 是单任务控制平面，ComposableTrainer 通过 OptimizerAdapter 形成 propose/evaluate/update 闭环，SerialTrainer 将多个标准 Trainer 阶段组合成一个标准 Trainer。复合 Trainer 必须保持生命周期闭包：子阶段 setup/finish/error/teardown 正确触发，最终结果语义明确，`run()` 与 `fit()` 动态一致，最后阶段或指定输出阶段的 best state、model 和 feedback 被父级采用。
+LearningSolver 不是第二套控制平面，而是把 ML 的 DataView、Codec、Problem、Provider、Artifact 与 `fit()`/`TrainerResult` 词汇投影到 nsgablack Solver。propose/evaluate/update 统一由 nsgablack AlgorithmAdapter 驱动。多个具有独立生命周期的学习任务必须作为标准子 Case，通过 BlackBase `CaseStageRunner` 与 `CaseRunRequest` 组合；完整子 Case 的结果、Artifact、资源与 lineage 均由公共执行信封闭合。
 
 Artifact 与 Snapshot 有不同生命周期。Snapshot 用于运行内或恢复时的状态，Artifact 是对外可复现产物，通常包含模型、规格、报告、血缘和必要元数据。大型阶段产物通过 ArtifactRef 注入后续 Case，避免复制进 Context。
 
@@ -324,7 +324,7 @@ Provider 短路不能绕过运行语义。批量 Provider 路径仍需增加 eva
 
 `_latest_snapshot_handle` 不能只在 `None` 时写入。第一次快照后，每一代都必须更新引用，否则所有后续 Context 会持续指向旧快照。快照 key 可以包含 generation 或版本，handle 则代表当前权威提交。
 
-mlblack 也遵循同一规则。ComposableTrainer 在 Adapter.update 之后应读取 Adapter 的 UnknownState population，而不是继续保存评估前 `self.population`。这要求 OptimizerAdapter 提供 `get_population/set_population` 或更通用的 runtime state 接口。
+mlblack 也遵循同一规则。LearningSolver 在 nsgablack Adapter.update 之后读取 Adapter 的权威 population，而不是继续保存评估前状态；`get_population/set_population` 与 runtime state 合同由统一 AlgorithmAdapter 提供。
 
 ## 2.9 反馈与候选的语义对齐
 
@@ -390,11 +390,11 @@ Python 正在运行的线程无法被 `future.cancel()` 强制终止。因此 ti
 
 ## 2.16 Trainer 的闭环
 
-BlankTrainer 提供单任务生命周期：setup、on_solver_init、step 循环、on_solver_finish、teardown 和 error boundary。`run()` 应动态调用 `self.fit()`，而不是在基类定义时静态绑定 `run = fit`。否则子类覆盖 fit 后，run 仍指向基类旧函数，SerialTrainer 可能空转而不执行阶段。
+LearningSolver 复用 nsgablack 的单任务生命周期：setup、on_solver_init、step 循环、on_solver_finish、teardown 和 error boundary。`fit()` 是面向 ML 用户的结果投影，不建立第二套循环；标准 Case 的 `run()` 仍由同一 Solver 生命周期执行。
 
-ComposableTrainer 的一轮与 Solver 类似：Adapter propose，Representation repair/decode，LearningProblem evaluate，Feedback bias 调整，Adapter update，权威状态提交，best 更新和 Plugin hook。资源 Context 变化时，ComputeBackendSession 必须原子同步或禁止后改；不能审计显示新授权而实际 Session 保持旧设备。
+LearningSolver 的一轮就是标准 Solver 一轮：Adapter propose，Representation repair/decode，LearningProblem evaluate，Feedback bias 调整，Adapter update，权威状态提交，best 更新和 Plugin hook。资源 Context 变化时，ComputeBackendSession 必须原子同步或禁止后改；不能审计显示新授权而实际 Session 保持旧设备。
 
-SerialTrainer 是复合 Trainer，也必须是标准 Trainer。它需要为每个 Stage 创建子 Trainer，派生并注入父级 ResourceContext，注入 ArtifactRef，执行完整子生命周期，在 finally 中 teardown，收集 TrainerResult，并按明确策略选择最终输出。父级自己的 init/finish/error/teardown 同样不能缺失。
+完整子 Trainer 组合由 BlackBase Case 协议承担：`CaseStageRunner` 为每个 Stage 创建 `CaseRunRequest`，派生 ResourceContext 与 cancellation lineage，注入 ArtifactRef，执行完整子生命周期，收集 `CaseRunResult`，并按声明策略选择输出。父 Case 自身的 init/finish/error/teardown 同样不能缺失。
 
 结果策略可以是“最后成功阶段”“指定 output stage”或“显式聚合器”，但必须写入 Contract。父级 best_state、best_model、best_feedback 和 report 应采用这一策略，不能子阶段都成功而最终返回空字段。
 
@@ -514,7 +514,7 @@ Kubernetes、Ray 或云 Batch 等外部执行后端，应作为 blackbase Projec
 
 ## 3.13 发布前故障演练
 
-生产发布前应主动构造故障，而不是只跑正常 benchmark。建议覆盖：批量评估第 N 个失败；Provider 返回错误 shape；预算只剩少于 batch 的额度；Adapter.update 后状态改变；Snapshot 后端临时不可用；Redis 安全序列化往返 UnknownState；Plugin 在不同 hook 报错；外部 Worker 租约过期；parallel 分支原地修改 ndarray；Operator 函数体抛 TypeError；timeout 分支晚到写；ResourceContext 更新但 Backend 不可用；SerialTrainer 子阶段失败并检查 teardown。
+生产发布前应主动构造故障，而不是只跑正常 benchmark。建议覆盖：批量评估第 N 个失败；Provider 返回错误 shape；预算只剩少于 batch 的额度；Adapter.update 后状态改变；Snapshot 后端临时不可用；Redis 安全序列化往返 UnknownState；Plugin 在不同 hook 报错；外部 Worker 租约过期；parallel 分支原地修改 ndarray；Operator 函数体抛 TypeError；timeout 分支晚到写；ResourceContext 更新但 Backend 不可用；子 Case 失败并检查 teardown 与结构化失败信封。
 
 每个演练都要检查三类结果：运行是否按预期停止或降级；预算、状态和资源账本是否符合事实；报告能否解释发生了什么。仅断言抛出某个异常不足以证明闭环。
 
@@ -655,7 +655,7 @@ ComputeBackendSession 练习应分别声明 CPU preferred、GPU preferred 和 GP
 
 典型模式包括：主模型 + 同输入残差模型，不同输入的多模态 late fusion，stacking，boosting-like 多轮残差，专家路由和结构条件 Head。每个阶段应产生 ArtifactRef，后续 Stage 通过正式注入读取，而不是把 fitted model 放进 Context。
 
-SerialTrainer 适合单个 ML Case 内部的顺序训练闭包。多个可独立运行的模型比较、超参搜索或跨数据任务则应拆成多个 Case，由 Project 编排。判断标准不是文件数量，而是每个单元是否具有独立生命周期、资源需求和 Artifact。
+单个 ML Case 内共享生命周期的顺序步骤使用 Trainer phase 或 DataPipeline。多个可独立运行的模型比较、超参搜索或跨数据任务应拆成多个 Case，由 Project/`CaseStageRunner` 编排。判断标准不是文件数量，而是每个单元是否具有独立生命周期、资源需求和 Artifact。
 
 ## 4.8 第八阶段：跨框架嵌套
 
@@ -822,11 +822,11 @@ Project 配置负责阶段与资源，不把算法内部循环写进去。每个
 
 ## 5.10 mlblack：Trainer 主干
 
-`mlblack/core/trainer.py` 定义 `BlankTrainer` 与 `ComposableTrainer`。BlankTrainer 提供单任务控制平面、Context、Snapshot、ResourceContext、ComputeBackendSession、公共评估入口和 Result。ComposableTrainer 连接 OptimizerAdapter。
+`mlblack/integrations/nsgablack_control.py` 定义 `LearningSolver`。它将 ModelRepresentation、LearningProblem、ComputeBackendSession 与 TrainerResult 投影到 nsgablack `ComposableSolver`，不再定义 ML 私有控制平面。
 
-`core/trainer_stage.py` 定义 `SerialTrainer`、`StageSpec`、`CompletionPolicy` 和 `ArtifactRef`。审查重点是父子 ResourceContext 派生、完整生命周期、finally teardown、阶段结果收集、Artifact 注入/提取以及 `run()` 动态转发到 `fit()`。
+`blackbase.project.case_stages` 定义公共 `CaseStageRunner` 与 Stage 执行协议；`blackbase.project.invocation` 关闭父子 identity、ResourceContext、预算、取消、Artifact 注入和结构化结果。审查重点是完整生命周期、finally teardown、阶段结果收集，以及失败与输出均不绕过 `CaseRunResult`。
 
-`core/adapter.py` 定义 OptimizerAdapter；`core/problem.py` 定义 LearningProblem；`core/representation.py` 定义 ModelRepresentation、fingerprint 与 equivalent；`core/backend_session.py` 定义 ComputeBackendSpec/Session。
+优化策略统一由 `nsgablack.adapters.AlgorithmAdapter` 定义；`core/problem.py` 定义 LearningProblem；`core/representation.py` 定义 ModelRepresentation、fingerprint 与 equivalent；`core/backend_session.py` 定义 ComputeBackendSpec/Session。
 
 ## 5.11 mlblack：数据、模型与产物
 
@@ -1349,7 +1349,7 @@ Context 契约之上，还有一层更底层的状态治理规则——它约束
 > 文档状态：规范；来源：`nsgablack/docs/user_guide/CONTEXT_FIELD_RULES.md`。本节按当前工作树合订；如与原创主卷或实时源码冲突，以原创主卷标注的规范和实时源码为准。
 
 > context_field_schema_name: blackbase.context_field.v1  
-> context_field_schema_version: 1.0.0
+> context_field_schema_version: 1.1.0
 
 本规范用于约束 Context 字段治理，避免同义字段漂移、隐式写入和不可审计状态。
 
@@ -1446,7 +1446,7 @@ This document defines hard governance rules for Context key lifecycle and compat
 ## Versioning
 
 - `context_field_schema_name = blackbase.context_field.v1`
-- `context_field_schema_version = 1.0.0`
+- `context_field_schema_version = 1.1.0`
 
 When semantics break compatibility, bump schema version and provide migration guidance.
 
@@ -1738,7 +1738,7 @@ id 并与 transport 对账：
 
 ## nsgablack 兼容面
 
-`nsgablack.core.resources.RedisL0RuntimeBackend` 现在是统一 Redis
+`blackbase.resources.RedisL0RuntimeBackend` 是统一 Redis
 `TaskTransport` 的兼容 facade。旧的 `submit/claim/complete/get_result` 调用外形仍然保留，
 但 claim token 只能由同一个 worker 进程持有和完成。新的 worker 代码应优先使用
 `task_transport`、`claim_task()` 和 `complete_claim()`，以便显式处理 lease 与心跳。
@@ -1961,7 +1961,7 @@ python -m nsgablack catalog list --profile default --kind example
 
 ## 7. 项目本地 catalog entry 怎么写
 
-项目侧可在 `catalog/entries.toml` 或 `project_registry.py` 注册本地组件。示例：
+项目侧只在 `catalog/entries/<kind>.toml` 注册本地组件；运行时 Python registry 已删除。示例：
 
 ```toml
 [[entries]]
@@ -5025,7 +5025,7 @@ Run Inspector 不是“好看 UI”，而是：
 框架提供 catalog/recipes 作为“可发现性层”：
 
 - 使用说明：`docs/user_guide/catalog.md`
-- 不想改源码：把条目写进 `catalog/entries.toml` 或 `NSGABLACK_CATALOG_PATH`
+- 不想改源码：把条目按 kind 写进 `catalog/entries/<kind>.toml` 或 `NSGABLACK_CATALOG_PATH`
 
 ## 5. 更细的工程检查清单
 

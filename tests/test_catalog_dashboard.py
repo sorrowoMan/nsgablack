@@ -311,18 +311,18 @@ def test_focus_relation_group_callback_updates_relation_view_state():
 def test_project_scope_catalog_snapshot_and_listing(tmp_path):
     root = tmp_path / "demo_project"
     root.mkdir()
-    (root / "project_registry.py").write_text(
-        "PROJECT_CATALOG_ENTRIES = [\n"
-        "    {\n"
-        "        'key': 'bias.demo_local',\n"
-        "        'title': 'DemoLocalBias',\n"
-        "        'kind': 'bias',\n"
-        "        'import_path': 'bias.demo_local:DemoLocalBias',\n"
-        "        'summary': 'Project-local bias entry for dashboard tests.',\n"
-        "        'tags': ('project', 'demo', 'local'),\n"
-        "        'companions': (),\n"
-        "    }\n"
-        "]\n",
+    (root / ".case").write_text("kind = solver\n", encoding="utf-8")
+    (root / "build_solver.py").write_text("def build_solver():\n    return None\n", encoding="utf-8")
+    (root / "catalog" / "entries").mkdir(parents=True)
+    (root / "catalog" / "entries" / "bias.toml").write_text(
+        """[[entry]]
+key = "bias.demo_local"
+title = "DemoLocalBias"
+kind = "bias"
+import_path = "bias.demo_local:DemoLocalBias"
+summary = "Project-local bias entry for dashboard tests."
+tags = ["project", "demo", "local"]
+""",
         encoding="utf-8",
     )
 

@@ -28,6 +28,9 @@ from .async_event_driven import AsyncEventDrivenAdapter, AsyncEventDrivenConfig,
 from .single_trajectory_adaptive import SingleTrajectoryAdaptiveAdapter, SingleTrajectoryAdaptiveConfig
 from .differential_evolution import DifferentialEvolutionAdapter, DEConfig
 from .gradient_descent import GradientDescentAdapter, GradientDescentConfig
+from .gradient_optimizer import GradientOptimizerAdapter, GradientOptimizerConfig
+from .gaussian_search import GaussianSearchAdapter, GaussianSearchConfig
+from .fixed_candidate import FixedCandidateAdapter
 from .pattern_search import PatternSearchAdapter, PatternSearchConfig
 from .nsga2 import NSGA2Adapter, NSGA2Config
 from .nsga3 import NSGA3Adapter, NSGA3Config
@@ -76,6 +79,11 @@ __all__ = [
     "DEConfig",
     "GradientDescentAdapter",
     "GradientDescentConfig",
+    "GradientOptimizerAdapter",
+    "GradientOptimizerConfig",
+    "GaussianSearchAdapter",
+    "GaussianSearchConfig",
+    "FixedCandidateAdapter",
     "PatternSearchAdapter",
     "PatternSearchConfig",
     "NSGA2Adapter",

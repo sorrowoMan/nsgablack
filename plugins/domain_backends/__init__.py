@@ -1,12 +1,4 @@
-"""Domain-specific external solver backend plugins (COPT, NGSPICE, mlblack symbolic, etc)."""
+"""Optimization-owned external solver backend plugins (for example COPT and NGSPICE)."""
 
-from .mlblack_symbolic_consensus_backend import (
-    MlblackSymbolicConsensusBackend,
-    MlblackSymbolicConsensusBackendConfig,
-)
-
-__all__ = [
-    "MlblackSymbolicConsensusBackend",
-    "MlblackSymbolicConsensusBackendConfig",
-]
+__all__: list[str] = []
 

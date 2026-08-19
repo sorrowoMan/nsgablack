@@ -1,6 +1,6 @@
 ﻿# COMPONENT_REGISTRATION
 
-本案例使用 `project_registry.py` 注册本地可发现组件。
+本案例使用 `catalog/entries/<kind>.toml` 注册本地可发现组件；Catalog 按组件 kind 分片。
 
 目标：
 - 让 Run Inspector/Catalog 能搜索到案例组件。

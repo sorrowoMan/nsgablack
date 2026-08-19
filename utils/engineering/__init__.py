@@ -9,7 +9,6 @@ from __future__ import annotations
 from .config_loader import load_config, merge_dicts, apply_config, ConfigError
 from .experiment import ExperimentResult
 from .logging_config import configure_logging, JsonFormatter
-from .error_policy import report_soft_error
 from .run_contracts import (
     RUN_SURFACE_CONTRACT_VERSION,
     ArtifactRecord,
@@ -40,7 +39,6 @@ __all__ = [
     "ExperimentResult",
     "configure_logging",
     "JsonFormatter",
-    "report_soft_error",
     "RUN_SURFACE_CONTRACT_VERSION",
     "SurfaceRecord",
     "AssemblyRecord",

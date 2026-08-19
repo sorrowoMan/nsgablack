@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.plugins.domain_backends.mlblack_symbolic_consensus_backend import (
+from mlblack.integrations.nsgablack_symbolic_backend import (
     MlblackSymbolicConsensusBackendConfig,
 )
 
@@ -52,7 +52,27 @@ class MlblackSymbolicConsensusOuterProblem(BlackBoxProblem):
     ) -> None:
         self.benchmark_key = str(benchmark_key)
         self.backend_config = backend_config
-        self.search_space = search_space or MlblackConsensusSearchSpace()
+        if search_space is None:
+            candidate_upper = max(
+                8,
+                min(
+                    140,
+                    int(backend_config.orth_candidate_limit),
+                    int(backend_config.n_total),
+                ),
+            )
+            group_upper = max(4, min(24, int(backend_config.n_total) // 4))
+            max_basis_upper = max(2, min(8, int(backend_config.n_total) // 8))
+            random_trial_upper = max(1, min(16, int(backend_config.n_total) // 16))
+            search_space = MlblackConsensusSearchSpace(
+                candidate_limit=(min(24, candidate_upper), candidate_upper),
+                group_count=(4, min(group_upper, candidate_upper)),
+                seed_candidate_count=(4, min(24, candidate_upper)),
+                max_basis_count=(2, max_basis_upper),
+                greedy_choice_topk=(2, min(8, max_basis_upper)),
+                random_group_trials=(1, random_trial_upper),
+            )
+        self.search_space = search_space
         self.last_inner_result: dict[str, Any] | None = None
         self.best_inner_result: dict[str, Any] | None = None
         self.best_objective_vector: np.ndarray | None = None

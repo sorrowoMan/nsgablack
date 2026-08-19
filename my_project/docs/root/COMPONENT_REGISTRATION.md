@@ -5,7 +5,7 @@ This file defines the local project registration contract.
 
 **为什么要注册组件 / Why register components**
 - 供 Catalog 与 Run Inspector 发现与审计
-- 统一 `build_solver.py` 与 `catalog/project_registry.py` 的入口
+- 统一 `build_solver.py` 与 `catalog/entries/<kind>.toml` 的装配和发现口径
 - 让 context I/O 更可追踪
 
 **需要注册什么 / What should be registered**
@@ -16,7 +16,7 @@ This file defines the local project registration contract.
 原则：仅登记可复用或可发现的组件；实验草稿不必登记。
 
 **在哪里注册 / Where to register**
-- Local project entries: `catalog/project_registry.py`
+- Case 本地条目只写入 `catalog/entries/<kind>.toml`
 - Catalog key 统一使用 `project.` 前缀
 
 **最小条目契约 / Minimal entry contract**

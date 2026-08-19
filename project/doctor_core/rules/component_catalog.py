@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
-from typing import Callable, Iterable, List
+from typing import Any, Callable, Iterable, List
 
 from ..model import DoctorDiagnostic
 
@@ -88,6 +89,28 @@ def _component_import_path(obj: object) -> str:
     return f"{module}:{name}"
 
 
+def _resolve_catalog_import_path(import_path: str) -> Any | None:
+    """Resolve a public Catalog path to the object it re-exports.
+
+    Catalog entries intentionally advertise stable public imports such as
+    ``nsgablack.adapters:NSGA2Adapter`` while Python records the concrete
+    class module as ``nsgablack.adapters.nsga2.adapter``.  Registration is an
+    object-identity contract, not a string-equality contract between those two
+    valid paths.
+    """
+
+    module_name, separator, attribute_path = str(import_path or "").partition(":")
+    if not separator or not module_name or not attribute_path:
+        return None
+    try:
+        value: Any = importlib.import_module(module_name)
+        for part in attribute_path.split("."):
+            value = getattr(value, part)
+        return value
+    except (ImportError, AttributeError):
+        return None
+
+
 def check_process_like_bias_usage(
     *,
     solver: object,
@@ -141,6 +164,11 @@ def check_component_catalog_registration(
         return
 
     framework_paths = {str(getattr(e, "import_path", "") or "") for e in framework_entries}
+    resolved_framework_object_ids = {
+        id(resolved)
+        for entry_path in framework_paths
+        if (resolved := _resolve_catalog_import_path(entry_path)) is not None
+    }
     local_paths: set[str] = set()
     try:
         # Keep loading to ensure project registry itself is healthy when present.
@@ -157,7 +185,8 @@ def check_component_catalog_registration(
         if not import_path:
             continue
         if import_path.startswith("nsgablack."):
-            if import_path not in framework_paths:
+            component_class = getattr(comp_obj, "__class__", None)
+            if import_path not in framework_paths and id(component_class) not in resolved_framework_object_ids:
                 missing_framework.append(f"{comp_name} -> {import_path}")
         else:
             if import_path not in local_paths:

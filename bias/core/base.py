@@ -120,15 +120,6 @@ class BiasBase(_BiasBase, BiasInterface):
         self._max_history = 100
         self._current_generation_values = []
 
-        # Keep instance-level copies for backward compatibility
-        self.context_requires = tuple(getattr(self, "context_requires", ()) or ())
-        self.context_provides = tuple(getattr(self, "context_provides", ()) or ())
-        self.context_mutates = tuple(getattr(self, "context_mutates", ()) or ())
-        self.context_cache = tuple(getattr(self, "context_cache", ()) or ())
-        self.context_notes = getattr(self, "context_notes", None)
-        self.requires_metrics = tuple(getattr(self, "requires_metrics", ()) or ())
-        self.metrics_fallback = str(getattr(self, "metrics_fallback", "none") or "none").strip().lower()
-        self.missing_metrics_policy = str(getattr(self, "missing_metrics_policy", "warn") or "warn").strip().lower()
         self._missing_metrics_reported = set()
 
     # --- nsgablack-specific: compute-based bias ---
@@ -167,12 +158,6 @@ class BiasBase(_BiasBase, BiasInterface):
             self._recent_values.pop(0)
 
         return weighted_value
-
-    # --- Override: adjust delegates to compute ---
-
-    def adjust(self, feedback, context=None):
-        """Apply preference adjustment. In nsgablack, this is compute-based."""
-        return feedback
 
     # --- Override: extended context contract ---
 

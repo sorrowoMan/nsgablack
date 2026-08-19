@@ -7,13 +7,13 @@ import numpy as np
 from scipy import optimize
 
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
-from ...utils.context.context_keys import (
+from blackbase.context.context_keys import (
     KEY_METRICS,
     KEY_METRICS_IMPLICIT_ITERS,
     KEY_METRICS_IMPLICIT_RESIDUAL,
     KEY_METRICS_IMPLICIT_SUCCESS,
 )
-from ...core.state.context_schema import build_minimal_context
+from blackbase.context import build_minimal_context
 from ...utils.extension_contracts import (
     normalize_bias_output,
     normalize_candidate,

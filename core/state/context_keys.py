@@ -1,11 +1,6 @@
-"""
-Forwarding module for context keys.
-
-This module re-exports from blackbase for seamless migration.
-"""
+"""Optimization-facing exports of the shared blackbase context-key registry."""
 
 from blackbase.context import (
-    CONTEXT_KEY_ALIASES,
     CONTEXT_KEY_SET,
     METRIC_FALLBACKS,
     METRIC_KEYS,
@@ -28,6 +23,7 @@ from blackbase.context.context_keys import (
     KEY_INDIVIDUAL,
     KEY_BEST_X,
     KEY_BEST_OBJECTIVE,
+    KEY_BEST_CANDIDATE_REF,
     KEY_HISTORY,
     KEY_METADATA,
     KEY_METADATA_LAYERS,
@@ -64,6 +60,9 @@ from blackbase.context.context_keys import (
     KEY_ADAPTER_NAME,
     KEY_ADAPTER_CURRENT_SCORE,
     KEY_ADAPTER_BEST_SCORE,
+    KEY_ADAPTER_BEST_X,
+    KEY_ADAPTER_BEST_OBJECTIVES,
+    KEY_RUNTIME_PROJECTION_AUDIT,
     KEY_DYNAMIC,
     KEY_PHASE_ID,
     KEY_COMPANION_PHASE_INDEX,
@@ -317,7 +316,6 @@ from blackbase.context.context_keys import (
 )
 
 __all__ = [
-    "CONTEXT_KEY_ALIASES",
     "CONTEXT_KEY_SET",
     "CANONICAL_CONTEXT_KEYS",
     "METRIC_FALLBACKS",
@@ -337,6 +335,7 @@ __all__ = [
     "KEY_INDIVIDUAL",
     "KEY_BEST_X",
     "KEY_BEST_OBJECTIVE",
+    "KEY_BEST_CANDIDATE_REF",
     "KEY_HISTORY",
     "KEY_METADATA",
     "KEY_METADATA_LAYERS",
@@ -373,6 +372,9 @@ __all__ = [
     "KEY_ADAPTER_NAME",
     "KEY_ADAPTER_CURRENT_SCORE",
     "KEY_ADAPTER_BEST_SCORE",
+    "KEY_ADAPTER_BEST_X",
+    "KEY_ADAPTER_BEST_OBJECTIVES",
+    "KEY_RUNTIME_PROJECTION_AUDIT",
     "KEY_DYNAMIC",
     "KEY_PHASE_ID",
     "KEY_COMPANION_PHASE_INDEX",

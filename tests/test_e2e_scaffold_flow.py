@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 from nsgablack.catalog.quick_add import build_entry_payload, upsert_catalog_entry
-from nsgablack.project import add_case, init_project, load_project_catalog
+from nsgablack.project import add_case, create_project, load_project_catalog
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -21,7 +21,7 @@ def _subprocess_env():
 
 
 def _init_case(path):
-    project_root = init_project(path)
+    project_root = create_project(path)
     case_root = add_case("e2e_case", "solver", project_root=project_root)
     (case_root / "catalog" / "entries").mkdir(parents=True, exist_ok=True)
     return case_root
@@ -62,7 +62,7 @@ def test_e2e_scaffold_register_search_build_run_doctor(tmp_path):
         context_cache=(),
         context_notes=("e2e flow bias",),
     )
-    upsert_catalog_entry(root / "catalog" / "entries.toml", payload, replace=True)
+    upsert_catalog_entry(root / "catalog" / "entries" / "bias.toml", payload, replace=True)
 
     (root / "build_solver.py").write_text(
         "class Solver:\n"
@@ -135,3 +135,31 @@ def test_project_catalog_can_load_split_kind_toml(tmp_path):
     hit = project_catalog.get("project.bias.split_bias")
     assert hit is not None
     assert hit.kind == "bias"
+
+
+def test_project_root_catalog_namespaces_case_entries(tmp_path):
+    project_root = create_project(tmp_path / "catalog_project")
+    first = add_case("first", "solver", project_root=project_root)
+    second = add_case("second", "solver", project_root=project_root)
+    payload = build_entry_payload(
+        key="project.bias.default",
+        title="BiasTemplate",
+        kind="bias",
+        import_path="bias.example_bias:BiasTemplate",
+        summary="Case-local duplicate key regression.",
+    )
+    for case_root in (first, second):
+        (case_root / "bias" / "example_bias.py").write_text(
+            "class BiasTemplate:\n    context_notes = ('test bias',)\n",
+            encoding="utf-8",
+        )
+        upsert_catalog_entry(case_root / "catalog" / "entries" / "bias.toml", payload, replace=True)
+
+    catalog = load_project_catalog(project_root, include_global=False)
+    first_entry = catalog.get("project.first.bias.default")
+    second_entry = catalog.get("project.second.bias.default")
+    assert first_entry is not None
+    assert second_entry is not None
+    assert first_entry.import_path == "cases.first.bias.example_bias:BiasTemplate"
+    assert first_entry.metadata["case_name"] == "first"
+    assert first_entry.load().__name__ == "BiasTemplate"

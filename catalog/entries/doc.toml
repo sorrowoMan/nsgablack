@@ -1,4 +1,4 @@
-# Auto-generated from catalog/entries.toml
+# Canonical doc catalog shard.
 
 [[entry]]
 key = "doc.authoritative_examples"

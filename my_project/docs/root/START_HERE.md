@@ -58,8 +58,7 @@ Pass criteria:
 
 ## Stage Gate 5 - Registration & Discoverability
 Register metadata:
-- `catalog/project_registry.py`
-- `catalog/entries.toml`
+- `catalog/entries/<kind>.toml`（按组件 kind 分片，唯一事实源）
 Pass criteria:
 - Teammates can understand what each component does from metadata only.
 

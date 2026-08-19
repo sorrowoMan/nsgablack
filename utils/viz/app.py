@@ -1,4 +1,4 @@
-﻿import argparse
+import argparse
 import hashlib
 import importlib.util
 import re
@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from ..context.context_contracts import get_component_contract
+from blackbase.context import get_component_contract
 from .ui.catalog_view import CatalogView
 from .ui.context_view import ContextView
 from .ui.contrib_view import ContributionView

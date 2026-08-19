@@ -16,7 +16,7 @@ import numpy as np
 from ..algorithm_adapter import AlgorithmAdapter
 import warnings
 
-from ...utils.context.context_keys import KEY_MUTATION_SIGMA, KEY_VNS_K
+from blackbase.context.context_keys import KEY_MUTATION_SIGMA, KEY_VNS_K
 
 
 @dataclass
@@ -157,7 +157,7 @@ class VNSAdapter(AlgorithmAdapter):
         self,
         control: Any,
         candidates: Sequence[np.ndarray],
-        feedback: Tuple[np.ndarray, np.ndarray],
+        feedback: Any,
         context: Dict[str, Any],
     ) -> None:
         objectives, violations = feedback

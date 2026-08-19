@@ -8,11 +8,13 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
+from blackbase.call_binding import CallCandidate, invoke_bound_once
 
 from ..algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import (
-    KEY_BEST_OBJECTIVE,
-    KEY_BEST_X,
+from blackbase.context.context_keys import (
+    KEY_ADAPTER_BEST_OBJECTIVES,
+    KEY_ADAPTER_BEST_SCORE,
+    KEY_ADAPTER_BEST_X,
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_OBJECTIVES,
     KEY_POPULATION,
@@ -32,7 +34,11 @@ class NSGA2Config:
 
 class NSGA2Adapter(AlgorithmAdapter):
     context_requires = ()
-    context_provides = (KEY_BEST_X, KEY_BEST_OBJECTIVE)
+    context_provides = (
+        KEY_ADAPTER_BEST_X,
+        KEY_ADAPTER_BEST_OBJECTIVES,
+        KEY_ADAPTER_BEST_SCORE,
+    )
     context_mutates = ()
     context_cache = ()
     context_notes = "Population-based NSGA-II adapter with propose/update loop."
@@ -93,7 +99,7 @@ class NSGA2Adapter(AlgorithmAdapter):
         self,
         control: Any,
         candidates: Sequence[np.ndarray],
-        feedback: Tuple[np.ndarray, np.ndarray],
+        feedback: Any,
         context: Dict[str, Any],
     ) -> None:
         objectives, violations = feedback
@@ -251,10 +257,13 @@ class NSGA2Adapter(AlgorithmAdapter):
         pipeline = getattr(control, "representation_pipeline", None)
         crossover = getattr(pipeline, "crossover", None) if pipeline is not None else None
         if crossover is not None and hasattr(crossover, "crossover"):
-            try:
-                c1, c2 = crossover.crossover(p1, p2, context)
-            except TypeError:
-                c1, c2 = crossover.crossover(p1, p2)
+            c1, c2 = invoke_bound_once(
+                crossover.crossover,
+                (
+                    CallCandidate(args=(p1, p2, context), label="with_context"),
+                    CallCandidate(args=(p1, p2), label="without_context"),
+                ),
+            )
             pick_second = bool(self._rng.random() < 0.5)
             return np.asarray(c2 if pick_second else c1, dtype=float)
         alpha = self._rng.random(p1.shape[0])
@@ -279,8 +288,9 @@ class NSGA2Adapter(AlgorithmAdapter):
         if self.population is not None and self.objectives is not None and self.violations is not None and self.population.shape[0] > 0:
             score = self._objective_scores(self.objectives, self.violations)
             best_idx = int(np.argmin(score))
-            projection[KEY_BEST_X] = self.population[best_idx].copy()
-            projection[KEY_BEST_OBJECTIVE] = self.objectives[best_idx].copy()
+            projection[KEY_ADAPTER_BEST_X] = self.population[best_idx].copy()
+            projection[KEY_ADAPTER_BEST_OBJECTIVES] = self.objectives[best_idx].copy()
+            projection[KEY_ADAPTER_BEST_SCORE] = float(score[best_idx])
         self._runtime_projection = projection
 
     def _objective_scores(self, objectives: np.ndarray, violations: np.ndarray) -> np.ndarray:

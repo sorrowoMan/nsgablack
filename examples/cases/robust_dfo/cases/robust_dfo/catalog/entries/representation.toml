@@ -1,0 +1,23 @@
+# Canonical Case representation catalog shard.
+
+[[entry]]
+key = "project.pipeline.default"
+title = "build_pipeline"
+kind = "representation"
+import_path = "pipeline.example_pipeline:build_pipeline"
+tags = ["project", "example", "pipeline"]
+summary = "Example representation pipeline."
+companions = ["project.problem.example"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["Pipeline handles init/mutate/repair; no additional runtime context keys."]
+use_when = ["Need init/mutate/repair wiring for vector representation."]
+minimal_wiring = [
+  "from pipeline.example_pipeline import build_pipeline",
+  "solver.set_representation_pipeline(build_pipeline())",
+]
+required_companions = ["project.problem.example"]
+config_keys = []
+example_entry = "examples.cases.robust_dfo.cases.robust_dfo.build_solver:build_solver"

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable, List, Sequence, Set
 
 from ..model import DoctorDiagnostic
-from nsgablack.core.state.context_keys import (
+from blackbase.context.context_keys import (
     CANONICAL_CONTEXT_KEYS,
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_DECISION_TRACE,
@@ -27,42 +27,30 @@ from .runtime_guards import (
 
 _CONTRACT_KEYS = {
     "context_requires",
+    "context_optional",
     "context_provides",
     "context_mutates",
     "context_cache",
     "context_notes",
-    "requires_context_keys",
-    "provides_context_keys",
-    "mutates_context_keys",
-    "cache_context_keys",
-    "runtime_requires",
-    "runtime_provides",
-    "runtime_mutates",
-    "runtime_cache",
 }
 _CONTRACT_KEY_VALUE_ATTR_GROUPS = {
-    "requires": {"context_requires", "requires_context_keys", "runtime_requires"},
-    "provides": {"context_provides", "provides_context_keys", "runtime_provides"},
-    "mutates": {"context_mutates", "mutates_context_keys", "runtime_mutates"},
-    "cache": {"context_cache", "cache_context_keys", "runtime_cache"},
+    "requires": {"context_requires"},
+    "optional": {"context_optional"},
+    "provides": {"context_provides"},
+    "mutates": {"context_mutates"},
+    "cache": {"context_cache"},
 }
 _CONTRACT_DYNAMIC_FIELDS = {
     "requires": "requires",
+    "optional": "optional",
     "provides": "provides",
     "mutates": "mutates",
     "cache": "cache",
     "context_requires": "requires",
+    "context_optional": "optional",
     "context_provides": "provides",
     "context_mutates": "mutates",
     "context_cache": "cache",
-    "requires_context_keys": "requires",
-    "provides_context_keys": "provides",
-    "mutates_context_keys": "mutates",
-    "cache_context_keys": "cache",
-    "runtime_requires": "requires",
-    "runtime_provides": "provides",
-    "runtime_mutates": "mutates",
-    "runtime_cache": "cache",
 }
 _COMPONENT_NAME_SUFFIXES = (
     "Adapter",
@@ -195,7 +183,13 @@ def _iter_declared_contract_literals(class_node: ast.ClassDef) -> List[tuple[str
 
 
 def _collect_declared_contract_keys(class_node: ast.ClassDef) -> dict[str, set[str]]:
-    declared = {"requires": set(), "provides": set(), "mutates": set(), "cache": set()}
+    declared = {
+        "requires": set(),
+        "optional": set(),
+        "provides": set(),
+        "mutates": set(),
+        "cache": set(),
+    }
     for field_name, value in _iter_declared_contract_literals(class_node):
         group = _CONTRACT_DYNAMIC_FIELDS.get(field_name)
         if group is None:
@@ -555,8 +549,12 @@ def _check_class_contract_impl_alignment(
     if not reads and not writes:
         return
 
-    declared_read = set(declared["requires"]) | set(declared["provides"]) | set(declared["mutates"]) | set(
-        declared["cache"]
+    declared_read = (
+        set(declared["requires"])
+        | set(declared["optional"])
+        | set(declared["provides"])
+        | set(declared["mutates"])
+        | set(declared["cache"])
     )
     declared_write = set(declared["provides"]) | set(declared["mutates"])
 

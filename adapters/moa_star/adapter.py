@@ -224,7 +224,7 @@ class MOAStarAdapter(AlgorithmAdapter):
         self,
         control: Any,
         candidates: Sequence[np.ndarray],
-        feedback: Tuple[np.ndarray, np.ndarray],
+        feedback: Any,
         context: Dict[str, Any],
     ) -> None:
         objectives, violations = feedback

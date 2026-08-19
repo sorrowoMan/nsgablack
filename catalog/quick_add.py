@@ -193,7 +193,7 @@ def remove_catalog_entry(path: Path, key: str) -> bool:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Quick add/update a catalog entry in TOML with explicit usage fields.")
-    parser.add_argument("--file", default="catalog/entries.toml", help="Target TOML file path.")
+    parser.add_argument("--file", default="", help="Target TOML file path; defaults to catalog/entries/<kind>.toml.")
     parser.add_argument("--key", required=True)
     parser.add_argument("--title", required=True)
     parser.add_argument(
@@ -241,7 +241,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         context_cache=args.context_cache,
         context_notes=args.context_notes,
     )
-    target = Path(args.file)
+    target = Path(args.file) if str(args.file).strip() else Path("catalog") / "entries" / f"{args.kind}.toml"
     upsert_catalog_entry(target, payload, replace=not bool(args.no_replace))
     print(f"catalog entry upserted: {payload['key']} -> {target}")
     return 0

@@ -4,7 +4,7 @@ This file defines the local project registration contract.
 
 ## Why register components
 - Enable Catalog and Run Inspector discovery
-- Keep `build_solver.py` and `project_registry.py` aligned
+- Keep `build_solver.py` and `catalog/entries/<kind>.toml` aligned
 - Make context I/O traceable
 
 ## What should be registered
@@ -12,8 +12,7 @@ This file defines the local project registration contract.
 - solver assembly entries
 
 ## Where to register
-- `project_registry.py` for dynamic entries
-- `catalog/entries.toml` for static entries
+- `catalog/entries/<kind>.toml` is the only Case-local catalog source
 
 ## Minimal entry fields
 - `key`, `kind`, `title`, `import_path`

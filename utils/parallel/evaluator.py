@@ -26,12 +26,12 @@ import numpy as np
 from ...bias import BiasModule
 from ...core.base import BlackBoxProblem
 from ..constraints.constraint_utils import evaluate_constraints_safe
-from ..context.context_keys import (
+from blackbase.context.context_keys import (
     KEY_BOUNDS,
     KEY_CONSTRAINT_VIOLATION,
     KEY_PROBLEM,
 )
-from ..context.context_schema import build_minimal_context
+from blackbase.context import build_minimal_context
 
 Backend = Literal["process", "thread", "ray", "joblib"]
 

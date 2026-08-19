@@ -297,44 +297,6 @@ class ParetoArchivePlugin(Plugin):
         except Exception:
             pass
 
-    # ---- backward-compat: direct array-level update (no solver context) ----
-
-    def _update_archive(self, X: np.ndarray, F: np.ndarray, V: np.ndarray) -> None:
-        """Direct update without solver context — auto-labels from F dimension."""
-        m = int(F.shape[1])
-        labels = [f"obj_{i}" for i in range(m)]
-        lk = _label_key(labels)
-        active = self._segments.get(lk)
-        if active is None:
-            active = _Segment(label_key=lk, labels=tuple(labels), generation_first=0)
-            self._segments[lk] = active
-        if active.F is None:
-            active.X = np.asarray(X, dtype=float)
-            active.F = np.asarray(F, dtype=float)
-            active.V = np.asarray(V, dtype=float).reshape(-1)
-        else:
-            active.X = np.vstack([active.X, np.asarray(X, dtype=float)])
-            active.F = np.vstack([active.F, np.asarray(F, dtype=float)])
-            active.V = np.concatenate([active.V, np.asarray(V, dtype=float).reshape(-1)])
-        if not self.cfg.keep_infeasible:
-            feas = (active.V <= 0.0)
-            active.X = active.X[feas]
-            active.F = active.F[feas]
-            active.V = active.V[feas]
-        if active.F.size == 0:
-            return
-        nd = self._nondominated_mask(active.F)
-        active.X = active.X[nd]
-        active.F = active.F[nd]
-        active.V = active.V[nd]
-        max_size = self.cfg.max_size
-        if max_size is not None and active.F.shape[0] > int(max_size):
-            k = int(max_size)
-            idx = self._select_by_crowding(active.F, k)
-            active.X = active.X[idx]
-            active.F = active.F[idx]
-            active.V = active.V[idx]
-
     @property
     def archive_X(self) -> Optional[np.ndarray]:
         seg = self.active_segment

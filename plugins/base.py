@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 
+from blackbase.call_binding import CallCandidate, invoke_bound_once
 from blackbase.plugin import PluginBase, PluginManager, report_soft_error
 
 logger = logging.getLogger(__name__)
@@ -220,20 +221,19 @@ class Plugin(PluginBase):
                 if not callable(setter):
                     continue
                 try:
-                    handled = setter(x_arr, f_arr, v_arr)
-                except TypeError:
-                    try:
-                        handled = setter(target, x_arr, f_arr, v_arr)
-                    except Exception as exc:
-                        report_soft_error(
-                            component="Plugin",
-                            event=f"commit_population_snapshot.{method_name}.call_with_solver",
-                            exc=exc,
-                            logger=logger,
-                            strict=False,
-                            level="debug",
-                        )
-                        handled = False
+                    handled = invoke_bound_once(
+                        setter,
+                        (
+                            CallCandidate(
+                                args=(x_arr, f_arr, v_arr),
+                                label="population",
+                            ),
+                            CallCandidate(
+                                args=(target, x_arr, f_arr, v_arr),
+                                label="solver_population",
+                            ),
+                        ),
+                    )
                 except Exception as exc:
                     report_soft_error(
                         component="Plugin",

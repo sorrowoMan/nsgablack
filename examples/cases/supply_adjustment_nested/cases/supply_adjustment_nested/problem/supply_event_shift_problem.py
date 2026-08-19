@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from nsgablack.core.base import BlackBoxProblem
-from nsgablack.core.resources import ResourceRequirement
+from blackbase.resources import ResourceRequirement
 
 from inner_solver import InnerProductionSolverConfig, build_inner_production_solver, extract_total_output
 

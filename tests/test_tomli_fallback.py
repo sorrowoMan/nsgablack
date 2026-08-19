@@ -48,19 +48,28 @@ def fake_loads(raw: str):
     return {"entry": []}
 
 fake_tomli.loads = fake_loads
+def fake_load(stream):
+    raw = stream.read()
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8")
+    return fake_loads(raw)
+fake_tomli.load = fake_load
 sys.modules["tomli"] = fake_tomli
 builtins.__import__ = blocked_import
 
 try:
     import nsgablack.project.catalog as project_catalog
     import nsgablack.catalog.registry as registry
+    import blackbase.catalog as shared_catalog
 
-    assert project_catalog._toml is fake_tomli
     assert registry._toml is fake_tomli
+    assert shared_catalog.tomllib is fake_tomli
 
     root = Path(tempfile.mkdtemp(prefix="tomli_project_"))
-    (root / "catalog").mkdir(parents=True, exist_ok=True)
-    (root / "catalog" / "entries.toml").write_text("project_case", encoding="utf-8")
+    (root / ".case").write_text("name = fallback\nkind = solver\n", encoding="utf-8")
+    (root / "build_solver.py").write_text("def build_solver(): return None\n", encoding="utf-8")
+    (root / "catalog" / "entries").mkdir(parents=True, exist_ok=True)
+    (root / "catalog" / "entries" / "bias.toml").write_text("project_case", encoding="utf-8")
     rows = project_catalog._load_project_toml_entries(root)
     assert rows and rows[0].key == "project.bias.fallback_probe"
 

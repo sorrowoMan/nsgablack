@@ -6,6 +6,7 @@ features (bounds, constraints, evaluation counting, multi-objective support).
 
 from __future__ import annotations
 
+from functools import wraps
 from typing import Any, Dict, Optional, Sequence
 
 import numpy as np
@@ -43,6 +44,7 @@ class BlackBoxProblem(ProblemBase):
         if getattr(orig, "__nsgablack_evaluation_wrapped__", False):
             return
 
+        @wraps(orig)
         def _wrapped_evaluate(self, candidate, *args, **kwargs):
             try:
                 self.evaluation_count += 1

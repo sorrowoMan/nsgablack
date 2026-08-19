@@ -18,9 +18,11 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 from blackbase.contracts import BatchDisposition
+from blackbase.context import RuntimeContextProjection
 
-from ..algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import (
+from ..algorithm_adapter import AlgorithmAdapter, subset_adapter_feedback
+from ..runtime_projection import aggregate_adapter_runtime_projections
+from blackbase.context.context_keys import (
     KEY_EVENT_ARCHIVE,
     KEY_EVENT_HISTORY,
     KEY_EVENT_INFLIGHT,
@@ -115,6 +117,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         "Queue-based event orchestration for multi-strategy propose/update.",
         "Provides queue/inflight/archive snapshots for replay and inspection.",
     )
+    context_contract_encapsulates_children = True
     state_recovery_level = "L1"
     state_recovery_notes = "Restores queue/inflight/archive/history snapshots; external side effects are not replayed."
 
@@ -155,6 +158,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         self._stats: Dict[str, Dict[str, float]] = {}
         self._solver_ref: Optional[Any] = None
         self._last_runtime_projection: Dict[str, Any] = {}
+        self._last_projection_writers: Dict[str, str] = {}
         self._active_case_name: Optional[str] = None
         self._active_case_since: Optional[int] = None
         self._case_last_exit: Dict[str, int] = {}
@@ -173,6 +177,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         self.shared_state = {}
         self._stats = {}
         self._last_runtime_projection = {}
+        self._last_projection_writers = {}
         self._active_case_name = None
         self._active_case_since = None
         self._case_last_exit = {}
@@ -330,7 +335,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         self,
         control: Any,
         candidates: Sequence[np.ndarray],
-        feedback: Tuple[np.ndarray, np.ndarray],
+        feedback: Any,
         context: Dict[str, Any],
     ) -> None:
         objectives, violations = feedback
@@ -409,8 +414,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             spec.adapter.update(
                 control,
                 [np.asarray(candidates[i], dtype=float) for i in idxs],
-                (np.asarray([objectives[i] for i in idxs], dtype=float),
-                 np.asarray([violations[i] for i in idxs], dtype=float)),
+                subset_adapter_feedback(feedback, idxs),
                 local_ctx,
             )
 
@@ -741,23 +745,54 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             "archive": archive_snapshot,
             "event_decision": dict(self._last_event_decision),
         }
+        runtime_summary = {
+            "step": self.shared_state["step"],
+            "queue_size": self.shared_state["queue_size"],
+            "inflight_size": self.shared_state["inflight_size"],
+            "archive_size": self.shared_state["archive_size"],
+            "event_count": self.shared_state["event_count"],
+            "stats": self.shared_state["stats"],
+            "event_decision": self.shared_state["event_decision"],
+        }
         _ = control
         self._last_runtime_projection = {
-            KEY_EVENT_SHARED: self.shared_state,
+            KEY_EVENT_SHARED: runtime_summary,
             KEY_EVENT_QUEUE: queue_snapshot,
             KEY_EVENT_INFLIGHT: inflight_snapshot,
             KEY_EVENT_ARCHIVE: archive_snapshot,
             KEY_EVENT_HISTORY: list(self.event_history),
         }
 
-    def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
-        _ = solver
-        return dict(self._last_runtime_projection)
+    def get_runtime_context_projection(self, solver: Any) -> RuntimeContextProjection:
+        specs = self._enabled_specs()
+        if self._uses_event_cases():
+            specs = (
+                []
+                if self._active_case_name is None
+                else [
+                    spec
+                    for spec in specs
+                    if str(spec.name) == str(self._active_case_name)
+                ]
+            )
+        aggregation = aggregate_adapter_runtime_projections(
+            solver,
+            owner_source=f"adapter.{self.__class__.__name__}",
+            own_fields=self._last_runtime_projection,
+            children=tuple(
+                (
+                    f"adapter.event.{spec.name}:{spec.adapter.__class__.__name__}",
+                    spec.adapter,
+                )
+                for spec in specs
+            ),
+        )
+        self._last_projection_writers = dict(aggregation.field_sources)
+        return aggregation.projection
 
     def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
-        _ = solver
-        source = f"adapter.{self.__class__.__name__}"
-        return {str(key): source for key in self._last_runtime_projection.keys()}
+        del solver
+        return dict(self._last_projection_writers)
 
     def get_state(self) -> Dict[str, Any]:
         return {

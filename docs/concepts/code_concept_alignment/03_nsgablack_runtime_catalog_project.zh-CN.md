@@ -4,7 +4,7 @@
 
 - `plugins/base.py`
 - `plugins/runtime/*`, `plugins/evaluation/*`, `plugins/ops/*`, `plugins/storage/*`, `plugins/solver_backends/*`
-- `core/state/*`, `utils/context/*`
+- `core/state/*`（优化状态）与 `blackbase.context`（共享 Context/Snapshot）
 - `catalog/*`
 - `project/doctor*`, `project/scaffold.py`
 - `utils/runtime/*`, `utils/engineering/*`
@@ -51,7 +51,7 @@
 | `backend_contract.py` | backend request/response contract | 后端求解请求协议。 |
 | `copt_backend.py` / `copt_templates/*` | mathematical programming backend | COPT/锥优化/线性/二次/半定等后端模板。 |
 | `ngspice_backend.py` | simulator backend | 电路仿真后端。 |
-| `mlblack_symbolic_consensus_backend.py` | inner ML/symbolic workflow backend | nsgablack 调用 mlblack 符号共识流。 |
+| `mlblack.integrations.nsgablack_symbolic_backend` | inner ML/symbolic workflow backend | nsgablack 通过 mlblack 正式集成面调用符号共识流。 |
 | `timeout_budget.py` | timeout/budget guard | 后端预算与超时控制。 |
 | `contract_bridge.py` | backend contract adapter | 后端契约转换。 |
 
@@ -125,4 +125,3 @@
 | 组件靠 README 找。 | catalog + profile + UI + DB。 |
 | 项目结构靠约定俗成。 | scaffold + doctor 约束结构。 |
 | 大对象和小状态混在 dict。 | context/snapshot 分层。 |
-

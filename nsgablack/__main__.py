@@ -347,15 +347,15 @@ def _cmd_catalog_add(args: argparse.Namespace) -> int:
         context_cache=args.context_cache,
         context_notes=args.context_notes,
     )
-    upsert_catalog_entry(Path(args.file), payload, replace=not bool(args.no_replace))
-    print(f"catalog entry upserted: {payload['key']} -> {args.file}")
+    target = Path(args.file) if str(args.file).strip() else Path("catalog") / "entries" / f"{args.kind}.toml"
+    upsert_catalog_entry(target, payload, replace=not bool(args.no_replace))
+    print(f"catalog entry upserted: {payload['key']} -> {target}")
     return 0
 
 
 def _cmd_catalog_ui(args: argparse.Namespace) -> int:
-    # Use the public package path so the development shim and installed wheel
-    # resolve the same dashboard module instead of creating a duplicate nested
-    # module under ``nsgablack.nsgablack``.
+    # Resolve through the public package so source-tree and installed layouts
+    # share the same dashboard module identity.
     from nsgablack.catalog.dashboard import launch_catalog_dashboard
 
     return int(
@@ -380,10 +380,8 @@ def _cmd_catalog_ui(args: argparse.Namespace) -> int:
 
 
 def _cmd_ui(args: argparse.Namespace) -> int:
-    # Resolve through the public package module.  The editable-install shim
-    # extends ``nsgablack.__path__`` to the repository root, so importing a
-    # function relatively can otherwise create a second dashboard module in
-    # some test/runner layouts and bypass module-level instrumentation.
+    # Resolve through the public package module so source-tree and installed
+    # layouts keep one dashboard module identity for instrumentation.
     from nsgablack.ui import dashboard as ui_dashboard
 
     return int(
@@ -523,22 +521,10 @@ def _cmd_rag_clear(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_project_init(args: argparse.Namespace) -> int:
-    from .project import init_project
-
-    root = init_project(Path(args.path), force=bool(args.force))
-    print(f"Project created at: {root}")
-    print("Next:")
-    print(f"  cd {root}")
-    print("  python -m nsgablack project add-case <name> --type solver")
-    print("  python -m nsgablack project doctor --path . --build")
-    return 0
-
-
 def _cmd_project_new(args: argparse.Namespace) -> int:
-    from .project import init_project
+    from .project import create_project
 
-    root = init_project(Path(args.project_name), force=bool(args.force))
+    root = create_project(Path(args.project_name), force=bool(args.force))
     print(f"Project '{args.project_name}' created at: {root}")
     print("Next:")
     print(f"  cd {args.project_name}")
@@ -752,9 +738,13 @@ def _cmd_project_catalog_search(args: argparse.Namespace) -> int:
 
     root = find_project_root(Path(args.path) if args.path else Path.cwd())
     if root is None:
-        print("project catalog: project_registry.py not found", file=sys.stderr)
+        print("project catalog: no formal Project/Case scope found", file=sys.stderr)
         return 2
-    c = load_project_catalog(root, include_global=bool(args.global_catalog))
+    c = load_project_catalog(
+        root,
+        include_global=bool(args.global_catalog),
+        profile=str(args.profile),
+    )
     entries = c.search(
         args.query,
         kinds=args.kind,
@@ -763,7 +753,10 @@ def _cmd_project_catalog_search(args: argparse.Namespace) -> int:
         limit=args.limit,
     )
     scope = "local+global" if args.global_catalog else "local"
-    print(f"Project catalog search ({scope}): {args.query!r}  (hits={len(entries)})")
+    print(
+        f"Project catalog search ({scope}, profile={args.profile}): "
+        f"{args.query!r}  (hits={len(entries)})"
+    )
     _print_entries(
         entries,
         show_import=args.show_import,
@@ -778,9 +771,13 @@ def _cmd_project_catalog_list(args: argparse.Namespace) -> int:
 
     root = find_project_root(Path(args.path) if args.path else Path.cwd())
     if root is None:
-        print("project catalog: project_registry.py not found", file=sys.stderr)
+        print("project catalog: no formal Project/Case scope found", file=sys.stderr)
         return 2
-    c = load_project_catalog(root, include_global=bool(args.global_catalog))
+    c = load_project_catalog(
+        root,
+        include_global=bool(args.global_catalog),
+        profile=str(args.profile),
+    )
     entries = c.list()
     if args.kind:
         kind_set = {str(k).strip().lower() for k in args.kind}
@@ -790,7 +787,10 @@ def _cmd_project_catalog_list(args: argparse.Namespace) -> int:
         entries = [e for e in entries if tag_set.issubset({x.lower() for x in e.tags})]
     label = ",".join(args.kind) if args.kind else "ALL"
     scope = "local+global" if args.global_catalog else "local"
-    print(f"Project catalog list ({scope}): kind={label!r}  (count={len(entries)})")
+    print(
+        f"Project catalog list ({scope}, profile={args.profile}): "
+        f"kind={label!r}  (count={len(entries)})"
+    )
     _print_entries(
         entries,
         show_import=args.show_import,
@@ -805,9 +805,13 @@ def _cmd_project_catalog_show(args: argparse.Namespace) -> int:
 
     root = find_project_root(Path(args.path) if args.path else Path.cwd())
     if root is None:
-        print("project catalog: project_registry.py not found", file=sys.stderr)
+        print("project catalog: no formal Project/Case scope found", file=sys.stderr)
         return 2
-    c = load_project_catalog(root, include_global=bool(args.global_catalog))
+    c = load_project_catalog(
+        root,
+        include_global=bool(args.global_catalog),
+        profile=str(args.profile),
+    )
     e = c.get(args.key)
     if e is None:
         print(f"project catalog: key not found: {args.key}", file=sys.stderr)
@@ -886,7 +890,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_show.set_defaults(func=_cmd_catalog_show)
 
     p_add = sub_cat.add_parser("add", help="Quick add/update a catalog entry in TOML")
-    p_add.add_argument("--file", default="catalog/entries.toml", help="Target TOML file path")
+    p_add.add_argument(
+        "--file",
+        default="",
+        help="Target TOML file path; defaults to catalog/entries/<kind>.toml",
+    )
     p_add.add_argument("--key", required=True, help="Entry key, e.g. bias.my_rule")
     p_add.add_argument("--title", required=True, help="Entry title")
     p_add.add_argument(
@@ -1165,11 +1173,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_project = sub.add_parser("project", help="Project scaffold & local catalog")
     sub_project = p_project.add_subparsers(dest="project_cmd", required=True)
 
-    p_init = sub_project.add_parser("init", help="Create a local project scaffold (legacy alias for 'new')")
-    p_init.add_argument("path", help="Target directory for the project")
-    p_init.add_argument("--force", action="store_true", help="Overwrite existing directory")
-    p_init.set_defaults(func=_cmd_project_init)
-
     p_new = sub_project.add_parser("new", help="Create a new project scaffold in current directory")
     p_new.add_argument("project_name", help="Name of the new project directory")
     p_new.add_argument("--force", action="store_true", help="Overwrite existing directory")
@@ -1294,6 +1297,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_proj_show = sub_proj_cat.add_parser("show", help="Show one project catalog entry")
     p_proj_show.add_argument("key", help="Entry key, e.g. project.bias.example")
+    p_proj_show.add_argument(
+        "--profile",
+        choices=("default", "framework-core"),
+        default="default",
+        help="Catalog profile used when --global is enabled",
+    )
     p_proj_show.add_argument("--path", type=str, default=None, help="Project root (defaults to cwd)")
     p_proj_show.add_argument("--global", dest="global_catalog", action="store_true", help="Include global catalog")
     p_proj_show.set_defaults(func=_cmd_project_catalog_show)

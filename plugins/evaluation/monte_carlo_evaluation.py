@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
@@ -8,7 +8,7 @@ import numpy as np
 from ..base import Plugin
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
 from ...utils.extension_contracts import ContractError, normalize_candidate
-from ...utils.context.context_keys import (
+from blackbase.context.context_keys import (
     KEY_METRICS,
     KEY_METRICS_MC_MAX,
     KEY_METRICS_MC_MEAN,
@@ -133,13 +133,11 @@ class MonteCarloEvaluationProviderPlugin(Plugin):
                         except Exception:
                             pass
                 y = np.asarray(val, dtype=float).ravel()
-                if y.size == 1 and m > 1:
-                    # pad for compatibility
-                    padded = np.zeros((m,), dtype=float)
-                    padded[0] = float(y[0])
-                    y = padded
                 if y.size != m:
-                    y = y[:m] if y.size > m else np.pad(y, (0, m - y.size))
+                    raise ValueError(
+                        "MonteCarloEvaluation objective dimension mismatch: "
+                        f"problem returned {y.size}, solver expects {m}"
+                    )
                 ys.append(y)
             Y = np.stack(ys, axis=0)  # (S, M)
 

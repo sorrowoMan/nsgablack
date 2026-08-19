@@ -22,7 +22,7 @@ from ..contracts import (
     ApiDocGap,
     CatalogBundle,
     CatalogComponentContract,
-    ContextContract,
+    CatalogContextContract,
     HealthContract,
     MethodContract,
     ParamContract,
@@ -351,29 +351,20 @@ def _connect_mysql(cfg: MySQLCatalogConfig):
         mysql_connector = None
 
     if mysql_connector is not None:
-        try:
-            conn = mysql_connector.connect(
-                host=cfg.host,
-                port=int(cfg.port),
-                user=cfg.user,
-                password=cfg.password,
-                database=cfg.database,
-                connection_timeout=int(cfg.connect_timeout),
-                charset=_MYSQL_CHARSET,
-                collation=_MYSQL_COLLATION,
-                use_unicode=True,
-            )
-        except TypeError:
-            conn = mysql_connector.connect(
-                host=cfg.host,
-                port=int(cfg.port),
-                user=cfg.user,
-                password=cfg.password,
-                database=cfg.database,
-                connection_timeout=int(cfg.connect_timeout),
-                charset=_MYSQL_CHARSET,
-                use_unicode=True,
-            )
+        common_kwargs = {
+            "host": cfg.host,
+            "port": int(cfg.port),
+            "user": cfg.user,
+            "password": cfg.password,
+            "database": cfg.database,
+            "connection_timeout": int(cfg.connect_timeout),
+            "charset": _MYSQL_CHARSET,
+            "use_unicode": True,
+        }
+        # The canonical connection form deliberately omits ``collation``:
+        # older connector releases accept the remaining kwargs, and the next
+        # line applies the authoritative charset/collation once connected.
+        conn = mysql_connector.connect(**common_kwargs)
         _apply_connection_charset(conn)
         return conn
 
@@ -893,7 +884,7 @@ ON DUPLICATE KEY UPDATE
         self,
         conn,
         component_ids: Dict[str, int],
-        contexts: Sequence[ContextContract],
+        contexts: Sequence[CatalogContextContract],
     ) -> None:
         cur = conn.cursor()
         for ctx in contexts:
@@ -970,7 +961,7 @@ ON DUPLICATE KEY UPDATE
         conn,
         component_ids: Dict[str, int],
         components: Sequence[CatalogComponentContract],
-        contexts: Sequence[ContextContract],
+        contexts: Sequence[CatalogContextContract],
         usages: Sequence[UsageContract],
     ) -> None:
         cur = conn.cursor()

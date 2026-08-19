@@ -15,9 +15,11 @@ import warnings
 
 import numpy as np
 from blackbase.contracts import BatchDisposition
+from blackbase.context import RuntimeContextProjection
 
-from ..algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import (
+from ..algorithm_adapter import AlgorithmAdapter, subset_adapter_feedback
+from ..runtime_projection import aggregate_adapter_runtime_projections
+from blackbase.context.context_keys import (
     KEY_CANDIDATE_ROLES,
     KEY_ROLE,
     KEY_ROLE_ADAPTER,
@@ -71,6 +73,7 @@ class RoleAdapter(AlgorithmAdapter):
 
         self._warned: set[str] = set()
         self.last_report: Dict[str, Any] = {}
+        self._last_projection_writers: Dict[str, str] = {}
 
     def _warn_once(self, key: str, message: str) -> None:
         if key in self._warned:
@@ -98,6 +101,7 @@ class RoleAdapter(AlgorithmAdapter):
             self._warn_once("companions", hint)
 
     def setup(self, control: Any) -> None:
+        self._last_projection_writers = {}
         if self.inner is not None:
             self.inner.setup(control)
 
@@ -142,7 +146,7 @@ class RoleAdapter(AlgorithmAdapter):
         self,
         control: Any,
         candidates: Sequence[np.ndarray],
-        feedback: Tuple[np.ndarray, np.ndarray],
+        feedback: Any,
         context: Dict[str, Any],
     ) -> None:
         objectives, violations = feedback
@@ -152,7 +156,7 @@ class RoleAdapter(AlgorithmAdapter):
         ctx = dict(context)
         ctx[KEY_ROLE] = self.role
         ctx[KEY_ROLE_ADAPTER] = self.name
-        self.inner.update(control, candidates, (objectives, violations), ctx)
+        self.inner.update(control, candidates, feedback, ctx)
         self._update_report(control, candidates, objectives, violations, context)
 
     def teardown(self, control: Any) -> None:
@@ -270,6 +274,27 @@ class RoleAdapter(AlgorithmAdapter):
             "notes": " | ".join(notes) if notes else None,
         }
 
+    def get_runtime_context_projection(self, solver: Any) -> RuntimeContextProjection:
+        children = ()
+        if self.inner is not None:
+            children = (
+                (
+                    f"adapter.role.{self.role}.inner:{self.inner.__class__.__name__}",
+                    self.inner,
+                ),
+            )
+        aggregation = aggregate_adapter_runtime_projections(
+            solver,
+            owner_source=f"adapter.{self.__class__.__name__}",
+            children=children,
+        )
+        self._last_projection_writers = dict(aggregation.field_sources)
+        return aggregation.projection
+
+    def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
+        del solver
+        return dict(self._last_projection_writers)
+
 
 class RoleRouterAdapter(AlgorithmAdapter):
     """Orchestrate multiple RoleAdapter instances.
@@ -279,6 +304,8 @@ class RoleRouterAdapter(AlgorithmAdapter):
     - Records candidate -> role mapping for later analysis/plugins
     - Dispatches evaluation feedback back to each role adapter
     """
+
+    context_contract_encapsulates_children = True
 
     def __init__(
         self,
@@ -292,6 +319,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
         self._last_ranges: List[Tuple[RoleAdapter, int, int]] = []
         self.last_candidate_roles: List[str] = []
         self._runtime_projection: Dict[str, Any] = {}
+        self._last_projection_writers: Dict[str, str] = {}
 
     context_requires = ("generation",)
     context_provides = (KEY_ROLE, KEY_ROLE_INDEX, KEY_ROLE_REPORTS, KEY_CANDIDATE_ROLES)
@@ -303,6 +331,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
 
     def setup(self, control: Any) -> None:
         self._runtime_projection = {}
+        self._last_projection_writers = {}
         for role in self.roles:
             role.setup(control)
 
@@ -355,7 +384,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
         self,
         control: Any,
         candidates: Sequence[np.ndarray],
-        feedback: Tuple[np.ndarray, np.ndarray],
+        feedback: Any,
         context: Dict[str, Any],
     ) -> None:
         objectives, violations = feedback
@@ -381,7 +410,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
             role.update(
                 control,
                 candidates[start:end],
-                (objectives[start:end], violations[start:end]),
+                subset_adapter_feedback(feedback, slice(start, end)),
                 ctx,
             )
         self._runtime_projection[KEY_CANDIDATE_ROLES] = list(self.last_candidate_roles)
@@ -414,14 +443,25 @@ class RoleRouterAdapter(AlgorithmAdapter):
                 out[str(role.role)] = dict(report)
         return out
 
-    def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
-        _ = solver
-        return dict(self._runtime_projection)
+    def get_runtime_context_projection(self, solver: Any) -> RuntimeContextProjection:
+        aggregation = aggregate_adapter_runtime_projections(
+            solver,
+            owner_source=f"adapter.{self.__class__.__name__}",
+            own_fields=self._runtime_projection,
+            children=tuple(
+                (
+                    f"adapter.role.{role.role}:{role.__class__.__name__}",
+                    role,
+                )
+                for role in self.roles
+            ),
+        )
+        self._last_projection_writers = dict(aggregation.field_sources)
+        return aggregation.projection
 
     def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
-        _ = solver
-        source = f"adapter.{self.__class__.__name__}"
-        return {str(key): source for key in self._runtime_projection.keys()}
+        del solver
+        return dict(self._last_projection_writers)
 
 
 class MultiRoleControllerAdapter(RoleRouterAdapter):

@@ -115,11 +115,11 @@
 
 本章交付一个单 Trainer。下一章解决模型组合、Backend 和阶段产物。
 
-## 第十章　模型组合、Backend Session 与 SerialTrainer
+## 第十章　模型组合、Backend Session 与 CaseStageRunner
 
 先做“主模型 + 残差模型”，再扩展到多模态分支和专家融合。每次组合前先定义 Input/Output Contract，避免形状正确但语义错误。
 
-本章会解释 ComputeBackendSession 怎样从 ResourceContext 解析 requested、granted、resolved，以及为什么 setter 更新资源后必须同步 Session。随后实现一个两阶段 SerialTrainer，说明子 Trainer 的 setup、finish、error、teardown 和最终 Result 怎样汇总。
+本章会解释 ComputeBackendSession 怎样从 ResourceContext 解析 requested、granted、resolved，以及为什么 setter 更新资源后必须同步 Session。随后以两阶段 `CaseStageRunner` 说明子 Trainer 的 setup、finish、error、teardown 和最终 Result 怎样汇总。
 
 反例包括 `run = fit` 的静态绑定、子阶段成功但父级 best 为空、Artifact 多包一层和更新前状态被写入快照。
 
@@ -185,7 +185,7 @@
 
 ## 第十七章　测试、Doctor、Catalog 与发布验收
 
-从测试金字塔讲到运行契约矩阵：单候选、批量、Provider 短路、Snapshot、部分失败预算、并行 merge、timeout、late write、Redis codec、SerialTrainer 生命周期、跨 Case 资源收窄。
+从测试金字塔讲到运行契约矩阵：单候选、批量、Provider 短路、Snapshot、部分失败预算、并行 merge、timeout、late write、Redis codec、子 Case 生命周期、跨 Case 资源收窄。
 
 Doctor 负责什么、不能证明什么；Catalog 的 default 与 framework-core 口径怎样使用；build-check 怎样验证“配置声明”真的变成“实际装配”。Dashboard 放在最后，因为它只能展示已经可靠的事实。
 
@@ -218,4 +218,3 @@ Doctor 负责什么、不能证明什么；Catalog 的 default 与 framework-cor
 ## 附录 D　术语表
 
 解释 Project、Case、Scaffold、L0、Adapter、Representation、Feedback、Artifact、Lease、Fence 等术语及容易混淆的近义概念。
-

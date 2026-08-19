@@ -502,10 +502,10 @@ Plugin 是共享能力层，因此要在优化与 ML 语义之前单独解释。
 7. Feedback identity 对齐。
 8. Problem 不负责的优化策略。
 
-## 第三十三章　Trainer：机器学习控制平面
+## 第三十三章　LearningSolver：ML 语义投影与单一控制平面
 
-1. BlankTrainer 生命周期。
-2. ComposableTrainer 的 propose/evaluate/update。
+1. LearningSolver 对 nsgablack Solver 生命周期的语义投影。
+2. AlgorithmAdapter 的 propose/evaluate/update。
 3. setup、fit、run、evaluate、teardown。
 4. `run()` 动态转发与继承语义。
 5. population、feedback、best state/model。
@@ -513,11 +513,11 @@ Plugin 是共享能力层，因此要在优化与 ML 语义之前单独解释。
 7. Context/Snapshot 提交。
 8. ResourceContext 与 Backend Session。
 9. TrainerResult 与 report。
-10. Trainer 与 Solver 的同级关系及差异。
+10. `fit()`/`TrainerResult` 词汇如何投影到唯一 Solver 控制平面。
 
-## 第三十四章　OptimizerAdapter 与训练策略
+## 第三十四章　AlgorithmAdapter 与训练策略
 
-1. OptimizerAdapter 合同。
+1. nsgablack AlgorithmAdapter 合同。
 2. gradient descent、evolution、black-box 和混合策略。
 3. gradients/residuals capability。
 4. Adapter 权威 state。
@@ -549,7 +549,7 @@ Plugin 是共享能力层，因此要在优化与 ML 语义之前单独解释。
 7. 中间 Artifact 与阶段依赖。
 8. 组合模型的评估和部署边界。
 
-## 第三十七章　SerialTrainer 与阶段闭包
+## 第三十七章　CaseStageRunner 与阶段闭包
 
 1. StageSpec 与 CompletionPolicy。
 2. 子 Trainer 的完整生命周期。
@@ -559,7 +559,7 @@ Plugin 是共享能力层，因此要在优化与 ML 语义之前单独解释。
 6. best state/model/feedback 的采用。
 7. 子阶段失败时的 finally teardown。
 8. `fit()` 与 `run()` 一致性。
-9. 何时 SerialTrainer 应升级为多个 Project Case。
+9. 何时内部 phase 应升级为多个 Project Case。
 
 ## 第三十八章　Artifact、模型产物与可复现报告
 
@@ -799,7 +799,7 @@ Plugin 是共享能力层，因此要在优化与 ML 语义之前单独解释。
 
 ## 第六十章　故障排查手册
 
-按症状组织：预算异常、策略晚切换、Snapshot stale、shape 错位、Redis 恢复失败、资源声明与实际后端分叉、并行不确定、timeout 后污染、SerialTrainer 空结果、Artifact 层级错误、Doctor 与运行不一致。
+按症状组织：预算异常、策略晚切换、Snapshot stale、shape 错位、Redis 恢复失败、资源声明与实际后端分叉、并行不确定、timeout 后污染、子 Case 空结果、Artifact 层级错误、Doctor 与运行不一致。
 
 ---
 
@@ -908,4 +908,3 @@ Project CLI、Case CLI、Doctor、Catalog、Redis、Worker、恢复和常用诊�
 ## 附录 I　架构决策记录
 
 记录为何统一 builder、为何 Context 轻量、为何 L0 授权属于 Project、为何共享 Kernel 落在 blackbase、为何取消采用协作式语义等关键 ADR。
-

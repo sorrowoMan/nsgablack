@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import importlib.util
 from pathlib import Path
 
-from blackbase.project.scaffold import add_component
+from blackbase.project.scaffold import add_component as _add_component
 from blackbase.project.scaffold import add_case as _add_case
 from blackbase.project.scaffold import create_project as _create_project
 
 from .check_output import build_solver_check_payload, format_solver_check, print_solver_check
+from .component_templates import render_component_template
 
 _SCAFFOLD_ROOT = Path(__file__).resolve().parent
 _PROJECT_TEMPLATE = _SCAFFOLD_ROOT / "project_template"
@@ -43,6 +45,33 @@ def add_case(
         project_root=project_root,
         template_by_kind=_template_by_kind(str(framework or "nsgablack")),
     )
+
+
+def add_component(
+    component_name: str,
+    component_kind: str,
+    *,
+    case_name: str | None = None,
+    slot: str | None = None,
+    project_root: str | Path | None = None,
+):
+    return _add_component(
+        component_name,
+        component_kind,
+        case_name=case_name,
+        slot=slot,
+        project_root=project_root,
+        framework="blackbase",
+        template_providers=_component_template_providers(),
+    )
+
+
+def _component_template_providers():
+    providers = {"nsgablack": render_component_template}
+    if importlib.util.find_spec("mlblack.project.scaffold.component_templates") is not None:
+        module = importlib.import_module("mlblack.project.scaffold.component_templates")
+        providers["mlblack"] = module.render_component_template
+    return providers
 
 
 def _template_by_kind(framework: str) -> dict[str, Path]:
@@ -88,15 +117,12 @@ def main(argv=None) -> int:
     return 2
 
 
-init_project = create_project
-
 __all__ = [
     "add_case",
     "add_component",
     "build_solver_check_payload",
     "create_project",
     "format_solver_check",
-    "init_project",
     "main",
     "print_solver_check",
 ]

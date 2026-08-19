@@ -90,7 +90,6 @@ def _attach_observability_plugins(solver, args) -> None:
     run_dir = Path(args.run_dir) if getattr(args, "run_dir", None) else (_THIS_DIR / "runs" / "production_schedule")
     run_id = str(args.run_id) if getattr(args, "run_id", None) else datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = run_dir.expanduser().resolve()
-    run_dir.mkdir(parents=True, exist_ok=True)
     attach_default_observability_plugins(
         solver,
         output_dir=str(run_dir),
@@ -389,7 +388,7 @@ def _build_solver_from_args(args, *, resource_context=None) -> ComposableSolver:
 
 
 def build_solver(argv: Optional[list] = None, *, case_root: Optional[Path] = None, resource_context=None, component_overrides=None) -> ComposableSolver:
-    del case_root, component_overrides
+    del case_root
     parser = build_parser()
     args = parser.parse_args(argv if argv is not None else [])
     if bool(getattr(args, "check", False)):
@@ -398,7 +397,11 @@ def build_solver(argv: Optional[list] = None, *, case_root: Optional[Path] = Non
         args.run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     random.seed(args.seed)
     np.random.seed(args.seed)
-    return _build_solver_from_args(args, resource_context=resource_context)
+    solver = _build_solver_from_args(args, resource_context=resource_context)
+    from nsgablack.project import apply_solver_component_overrides
+
+    apply_solver_component_overrides(solver, component_overrides)
+    return solver
 
 
 

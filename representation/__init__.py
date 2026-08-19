@@ -46,7 +46,12 @@ from .constraints import BoundConstraint
 from .context_mutators import ContextSelectMutator, SerialMutator, ContextDispatchMutator
 from .dynamic import DynamicRepair
 from .orchestrator import OrchestrationPolicy, PipelineOrchestrator
-from .pipeline_kernel import PipelineKernelBuild, PipelineSlotSpec, PipelineSpec, build_pipeline_kernel
+from .pipeline_kernel import (
+    PipelineSlotSpec,
+    PipelineSpec,
+    RepresentationPipelineKernelBuild,
+    build_pipeline_kernel,
+)
 
 __all__ = [
     "RepresentationPipeline",
@@ -93,7 +98,7 @@ __all__ = [
     "ContextSelectMutator",
     "SerialMutator",
     "ContextDispatchMutator",
-    "PipelineKernelBuild",
+    "RepresentationPipelineKernelBuild",
     "PipelineSlotSpec",
     "PipelineSpec",
     "build_pipeline_kernel",

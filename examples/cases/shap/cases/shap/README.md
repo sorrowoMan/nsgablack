@@ -59,7 +59,7 @@ Bounds 根据 coalition model outputs 的幅度推导。
 | `problem/example_problem.py` | Scaffold placeholder，不是能力实现。 |
 | `pipeline/config.py` | Attribution vector representation pipeline。 |
 | `solver/config.py` | Solver profile registry。 |
-| `catalog/entries.toml` | Case-local scaffold catalog entries。 |
+| `catalog/entries/<kind>.toml` | Case-local scaffold catalog entries。 |
 
 ## 能力信号（Capability signal）
 

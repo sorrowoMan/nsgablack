@@ -3,142 +3,49 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Tuple
-import importlib.util
+from typing import Iterable, List, Optional
 
 from ..catalog import get_catalog
-from ..catalog.registry import Catalog, CatalogEntry, _parse_entries_from_toml
+from ..catalog.registry import Catalog, CatalogEntry
 from ..catalog.usage import enrich_context_contracts, enrich_usage_contracts
+from blackbase.project import find_catalog_scope, load_scaffold_catalog_entries
 from blackbase.project.runtime import project_import_context
-
-try:  # py>=3.11
-    import tomllib as _toml
-except Exception:  # pragma: no cover - import fallback
-    try:  # py<3.11
-        import tomli as _toml  # type: ignore[import-not-found]
-    except Exception:  # pragma: no cover - optional dependency missing
-        _toml = None
 
 
 def find_project_root(start: Path | str) -> Optional[Path]:
-    """Find nearest legacy case root or unified Project root."""
-    p = Path(start).resolve()
-    if p.is_file():
-        p = p.parent
-    for cur in [p] + list(p.parents):
-        if (cur / "project_config.py").is_file() and (cur / "cases").is_dir():
-            return cur
-        if (cur / "project_registry.py").is_file():
-            return cur
-    return None
-
-
-def _load_registry_module(registry_path: Path):
-    spec = importlib.util.spec_from_file_location("nsgablack_project_registry", registry_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot import project registry: {registry_path}")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[call-arg]
-    return mod
-
-
-def _coerce_entry(item) -> CatalogEntry:
-    if isinstance(item, CatalogEntry):
-        return item
-    if isinstance(item, dict):
-        return CatalogEntry(**item)
-    raise TypeError(f"Invalid catalog entry type: {type(item)!r}")
+    """Find the nearest formal Project or Case catalog scope."""
+    scope = find_catalog_scope(start)
+    return None if scope is None else scope.root
 
 
 def _normalize_project_entries(entries: Iterable[CatalogEntry]) -> List[CatalogEntry]:
     out: List[CatalogEntry] = []
     for e in entries:
-        key = e.key
-        if not key.startswith("project."):
-            key = f"project.{key}"
-        out.append(
-            CatalogEntry(
-                key=key,
-                title=e.title,
-                kind=e.kind,
-                import_path=e.import_path,
-                tags=tuple(e.tags or ()),
-                summary=e.summary or "",
-                companions=tuple(e.companions or ()),
-                context_requires=tuple(getattr(e, "context_requires", ()) or ()),
-                context_provides=tuple(getattr(e, "context_provides", ()) or ()),
-                context_mutates=tuple(getattr(e, "context_mutates", ()) or ()),
-                context_cache=tuple(getattr(e, "context_cache", ()) or ()),
-                context_notes=tuple(getattr(e, "context_notes", ()) or ()),
-                artifact_requires=tuple(getattr(e, "artifact_requires", ()) or ()),
-                artifact_provides=tuple(getattr(e, "artifact_provides", ()) or ()),
-                phase_in=tuple(getattr(e, "phase_in", ()) or ()),
-                phase_out=tuple(getattr(e, "phase_out", ()) or ()),
-                use_when=tuple(getattr(e, "use_when", ()) or ()),
-                minimal_wiring=tuple(getattr(e, "minimal_wiring", ()) or ()),
-                required_companions=tuple(getattr(e, "required_companions", ()) or ()),
-                config_keys=tuple(getattr(e, "config_keys", ()) or ()),
-                example_entry=str(getattr(e, "example_entry", "") or ""),
-            )
-        )
+        key = e.key if e.key.startswith("project.") else f"project.{e.key}"
+        out.append(replace(e, key=key))
     return out
 
 
 def _load_project_toml_entries(project_root: Path) -> List[CatalogEntry]:
     """
     Load project-local entries from:
-    - <project_root>/catalog/entries.toml
     - <project_root>/catalog/entries/*.toml
 
-    This is used by UI register flow and merged with project_registry entries.
+    This is the only project-local catalog source in the formal scaffold.
     """
-    if _toml is None:
-        return []
-    out: List[CatalogEntry] = []
-    catalog_dir = project_root / "catalog"
-    paths: List[Path] = []
-    legacy = catalog_dir / "entries.toml"
-    if legacy.is_file():
-        paths.append(legacy)
-    entries_dir = catalog_dir / "entries"
-    if entries_dir.is_dir():
-        paths.extend(sorted(entries_dir.glob("*.toml")))
-    for path in paths:
-        try:
-            out.extend(_parse_entries_from_toml(path))
-        except Exception:
-            continue
-    return [e for e in out if e.key and e.kind and e.import_path]
+    entries = load_scaffold_catalog_entries(project_root)
+    return [CatalogEntry(**entry.as_dict()) for entry in entries]
 
 
 def load_project_entries(project_root: Path | str) -> List[CatalogEntry]:
-    """Load entries from project_registry.py."""
+    """Load entries from the formal project-local TOML catalog."""
     root = Path(project_root).resolve()
-    registry_path = root / "project_registry.py"
-    entries: List[CatalogEntry] = []
-
-    if registry_path.is_file():
-        with project_import_context(root):
-            mod = _load_registry_module(registry_path)
-
-            raw_entries: Sequence = []
-            if hasattr(mod, "get_project_entries"):
-                raw_entries = mod.get_project_entries()
-            elif hasattr(mod, "PROJECT_CATALOG_ENTRIES"):
-                raw_entries = getattr(mod, "PROJECT_CATALOG_ENTRIES")
-            elif hasattr(mod, "CATALOG_ENTRIES"):
-                raw_entries = getattr(mod, "CATALOG_ENTRIES")
-            else:
-                raise AttributeError("project_registry.py must define get_project_entries() or PROJECT_CATALOG_ENTRIES")
-            entries.extend([_coerce_entry(item) for item in list(raw_entries)])
-
-    # Merge project-local TOML entries (UI registration target).
-    entries.extend(_load_project_toml_entries(root))
+    entries = _normalize_project_entries(_load_project_toml_entries(root))
     if not entries:
         raise FileNotFoundError(f"No project catalog entries found under: {root}")
-    return _normalize_project_entries(entries)
+    return entries
 
 
 def load_project_catalog(

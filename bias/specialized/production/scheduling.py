@@ -235,20 +235,3 @@ class ProductionOptimizationContext(OptimizationContext):
 
     machine_ids: Optional[List[Any]] = None
     days: Optional[int] = None
-
-
-class ProductionSchedulingBias:
-    """Thin wrapper compatible with older code paths."""
-    context_requires = ()
-    context_provides = ()
-    context_mutates = ()
-    context_cache = ()
-    context_notes = "No explicit context dependency; outputs scalar bias only."
-
-
-
-    def __init__(self, manager: ProductionSchedulingBiasManager) -> None:
-        self.manager = manager
-
-    def compute(self, x: np.ndarray, context: OptimizationContext) -> float:
-        return self.manager.compute_bias(x, context)

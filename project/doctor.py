@@ -33,7 +33,6 @@ from .doctor_core.rules import (
     check_runtime_governance_runtime_state as _check_runtime_governance_runtime_state_rule,
     check_runtime_private_surface as _check_runtime_private_surface_rule,
     check_standard_case_scaffolds as _check_standard_case_scaffolds_rule,
-    check_structure as _check_structure_rule,
     check_snapshot_refs as _check_snapshot_refs_rule,
     check_snapshot_store_policy as _check_snapshot_store_policy_rule,
     collect_bias_instances as _collect_bias_instances_rule,
@@ -42,7 +41,7 @@ from .doctor_core.rules import (
 )
 from ..catalog import get_catalog
 from ..catalog.audit import audit_catalog
-from ..core.state.context_keys import (
+from blackbase.context.context_keys import (
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_CONSTRAINT_VIOLATIONS_REF,
     KEY_DECISION_TRACE,
@@ -61,14 +60,6 @@ from ..core.state.context_keys import (
 )
 
 
-_REQUIRED_DIRS = ("problem", "pipeline", "bias", "adapter", "plugins")
-_REQUIRED_FILES = ("README.md", "build_solver.py", "project_registry.py")
-# Unified multi-case project: required at project root level
-_PROJECT_REQUIRED_DIRS = ("cases",)
-_PROJECT_REQUIRED_FILES = ("README.md", "project_config.py", "run_project.py")
-# Case-level (inside cases/<name>/): required per case
-_CASE_REQUIRED_DIRS = ("problem", "pipeline", "adapter", "plugins")
-_CASE_REQUIRED_FILES = ("build_solver.py", "config.py")
 _CORE_CONTRACT_KEYS = {"context_requires", "context_provides", "context_mutates", "context_cache"}
 _USAGE_KEYS = {"use_when", "minimal_wiring", "required_companions", "config_keys", "example_entry"}
 _CONTEXT_ENTRY_KEYS = {"context_requires", "context_provides", "context_mutates", "context_cache", "context_notes"}
@@ -201,51 +192,87 @@ def _looks_like_scaffold_project(root: Path) -> bool:
     return _looks_like_scaffold_project_rule(root)
 
 
-def _check_structure(root: Path, diags: List[DoctorDiagnostic]) -> None:
-    # Unified multi-case project: check project-level structure
-    if (root / "project_config.py").is_file() and (root / "cases").is_dir():
-        _check_structure_rule(
-            root=root,
-            diags=diags,
-            add=_add,
-            required_dirs=_PROJECT_REQUIRED_DIRS,
-            required_files=_PROJECT_REQUIRED_FILES,
+def _looks_like_framework_repository(root: Path) -> bool:
+    """Return whether ``root`` is the nsgablack source repository, not a Case."""
+
+    return all(
+        path.exists()
+        for path in (
+            root / "pyproject.toml",
+            root / "core" / "blank_solver.py",
+            root / "catalog" / "entries",
+            root / "project" / "doctor.py",
         )
-        # Also check each case directory
-        cases_dir = root / "cases"
-        for case_dir in sorted(cases_dir.iterdir()):
-            if case_dir.is_dir() and (case_dir / "build_solver.py").is_file():
-                _check_structure_rule(
-                    root=case_dir,
-                    diags=diags,
-                    add=_add,
-                    required_dirs=_CASE_REQUIRED_DIRS,
-                    required_files=_CASE_REQUIRED_FILES,
-                )
-    else:
-        # Legacy single-solver scaffold
-        _check_structure_rule(
-            root=root,
-            diags=diags,
-            add=_add,
-            required_dirs=_REQUIRED_DIRS,
-            required_files=_REQUIRED_FILES,
-        )
+    )
 
 
 def _check_standard_case_scaffolds(root: Path, diags: List[DoctorDiagnostic]) -> None:
     _check_standard_case_scaffolds_rule(root=root, diags=diags, add=_add)
 
 
-def _check_registry(root: Path, diags: List[DoctorDiagnostic]) -> None:
-    _check_registry_rule(
-        root=root,
-        diags=diags,
-        add=_add,
-        load_project_entries=load_project_entries,
-        usage_keys=_USAGE_KEYS,
-        context_entry_keys=_CONTEXT_ENTRY_KEYS,
+def _check_nsg_scaffold_guides(root: Path, diags: List[DoctorDiagnostic]) -> None:
+    """Check nsgablack-specific teaching/audit assets on formal Case roots."""
+
+    if (root / "project_config.py").is_file() and (root / "cases").is_dir():
+        for case_root in sorted((root / "cases").iterdir()):
+            if case_root.is_dir() and (case_root / "build_solver.py").is_file():
+                _check_nsg_scaffold_guides(case_root, diags)
+        return
+    if not _looks_like_scaffold_project(root):
+        _add(
+            diags,
+            "info",
+            "structure-skip",
+            "Skip nsgablack scaffold guide checks (no formal Project/Case scaffold detected).",
+            root,
+        )
+        return
+    required = (
+        (
+            root / "COMPONENT_REGISTRATION.md",
+            "missing-component-registration-guide",
+            "Recommended: add COMPONENT_REGISTRATION.md for Case-local Catalog guidance.",
+        ),
+        (
+            root / "docs" / "contracts" / "COMPONENT_CONTRACT_TEMPLATE.md",
+            "missing-contract-card-template",
+            "Recommended: add a component contract-card template.",
+        ),
+        (
+            root / "tests" / "templates" / "README.md",
+            "missing-component-test-matrix-template",
+            "Recommended: add the component smoke/contract/roundtrip/fault test matrix.",
+        ),
     )
+    for path, code, message in required:
+        if not path.is_file():
+            _add(diags, "warn", code, message, path)
+
+
+def _check_registry(root: Path, diags: List[DoctorDiagnostic]) -> None:
+    if (root / "project_config.py").is_file() and (root / "cases").is_dir():
+        for case_root in sorted((root / "cases").iterdir()):
+            if case_root.is_dir() and (case_root / "build_solver.py").is_file():
+                _check_registry(case_root, diags)
+        return
+    if _looks_like_framework_repository(root):
+        _add(
+            diags,
+            "info",
+            "framework-registry-scope",
+            "Framework repository Catalog is validated by catalog audit, not as a Case-local registry.",
+            root / "catalog" / "entries",
+        )
+        return
+    with project_import_context(root):
+        _check_registry_rule(
+            root=root,
+            diags=diags,
+            add=_add,
+            load_project_entries=load_project_entries,
+            usage_keys=_USAGE_KEYS,
+            context_entry_keys=_CONTEXT_ENTRY_KEYS,
+        )
 
 
 def _check_build_solver(root: Path, diags: List[DoctorDiagnostic], *, instantiate: bool, strict: bool) -> None:
@@ -270,20 +297,21 @@ def _check_build_solver(root: Path, diags: List[DoctorDiagnostic], *, instantiat
             root,
         )
         return
-    _check_build_solver_rule(
-        root=root,
-        diags=diags,
-        instantiate=bool(instantiate),
-        strict=bool(strict),
-        add=_add,
-        check_context_store_policy=_check_context_store_policy,
-        check_snapshot_store_policy=_check_snapshot_store_policy,
-        check_snapshot_refs=_check_snapshot_refs,
-        check_component_catalog_registration=_check_component_catalog_registration,
-        check_metrics_provider_alignment=_check_metrics_provider_alignment,
-        check_process_like_bias_usage=_check_process_like_bias_usage,
-        check_runtime_governance_runtime_state=_check_runtime_governance_runtime_state,
-    )
+    with project_import_context(root):
+        _check_build_solver_rule(
+            root=root,
+            diags=diags,
+            instantiate=bool(instantiate),
+            strict=bool(strict),
+            add=_add,
+            check_context_store_policy=_check_context_store_policy,
+            check_snapshot_store_policy=_check_snapshot_store_policy,
+            check_snapshot_refs=_check_snapshot_refs,
+            check_component_catalog_registration=_check_component_catalog_registration,
+            check_metrics_provider_alignment=_check_metrics_provider_alignment,
+            check_process_like_bias_usage=_check_process_like_bias_usage,
+            check_runtime_governance_runtime_state=_check_runtime_governance_runtime_state,
+        )
 
 
 def _check_context_store_policy(
@@ -533,8 +561,8 @@ def run_project_doctor(
             str(item.message),
             Path(item.path) if item.path else None,
         )
-    _check_structure(root, diags)
     _check_standard_case_scaffolds(root, diags)
+    _check_nsg_scaffold_guides(root, diags)
     _check_registry(root, diags)
     _check_build_solver(root, diags, instantiate=instantiate_solver, strict=bool(strict))
     _check_contract_source(root, diags, strict=bool(strict))
@@ -579,3 +607,4 @@ def iter_diagnostics_by_level(
 ) -> List[DoctorDiagnostic]:
     return _iter_diagnostics_by_level(diagnostics, level)
 
+from blackbase.project.runtime import project_import_context

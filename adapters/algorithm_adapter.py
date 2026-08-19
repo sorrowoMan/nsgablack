@@ -14,6 +14,19 @@ import numpy as np
 
 from blackbase.abc import AdapterBase
 from blackbase.contracts import BatchDisposition
+from blackbase.context import RuntimeContextProjection
+
+from .runtime_projection import aggregate_adapter_runtime_projections
+
+
+def subset_adapter_feedback(feedback: Any, selector: Any) -> Any:
+    """Slice rich feedback when available, preserving legacy tuple support."""
+
+    subset = getattr(feedback, "subset", None)
+    if callable(subset):
+        return subset(selector)
+    objectives, violations = feedback
+    return np.asarray(objectives)[selector], np.asarray(violations)[selector]
 
 
 class AlgorithmAdapter(AdapterBase):
@@ -24,8 +37,11 @@ class AlgorithmAdapter(AdapterBase):
     - validate_population_snapshot: strict numpy shape validation
     - coerce_candidates: numpy-aware candidate normalization
     - get_context_contract: extended with artifact_requires/provides, phase_in/out
-    - get_runtime_context_projection / get_runtime_context_projection_sources
     - resolve_config: adapter config normalization helper
+
+    The Solver lifecycle supplies ``OptimizationFeedbackBatch`` to update().
+    It remains pair-unpack compatible for legacy adapters; semantic adapters
+    may inspect ``feedback.items`` for gradients, losses, metrics, or signals.
     """
 
     # Extended context contract (nsgablack-specific)
@@ -148,6 +164,8 @@ class AlgorithmAdapter(AdapterBase):
         artifact_provides = list(getattr(self, "artifact_provides", ()) or ())
         phase_in = list(getattr(self, "phase_in", ()) or ())
         phase_out = list(getattr(self, "phase_out", ()) or ())
+        feedback_requires = list(getattr(self, "feedback_requires", ()) or ())
+        method_ids = list(getattr(self, "method_ids", ()) or ())
 
         notes_parts: List[str] = []
         for attr in ("context_notes", "recommended_mutators", "recommended_plugins", "companions", "recommended_suite"):
@@ -177,20 +195,10 @@ class AlgorithmAdapter(AdapterBase):
             "artifact_provides": artifact_provides,
             "phase_in": phase_in,
             "phase_out": phase_out,
+            "feedback_requires": feedback_requires,
+            "method_ids": method_ids,
             "notes": " | ".join(notes_parts) if notes_parts else None,
         }
-
-    # --- nsgablack-specific: runtime context projection ---
-
-    def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
-        """Return best-effort runtime fields to expose in solver.get_context()."""
-        return {}
-
-    def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
-        """Return writer attribution for projected runtime context fields."""
-        _ = solver
-        return {}
-
 
 class CompositeAdapter(AlgorithmAdapter):
     """Combine multiple adapters and merge their proposals."""
@@ -206,12 +214,14 @@ class CompositeAdapter(AlgorithmAdapter):
         super().__init__(name=name, priority=priority)
         self.adapters = list(adapters)
         self._last_ranges: List[Tuple[AlgorithmAdapter, int, int]] = []
+        self._last_projection_writers: Dict[str, str] = {}
 
     def setup(self, control: Any) -> None:
+        self._last_projection_writers = {}
         for adapter in self.adapters:
             adapter.setup(control)
 
-    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[Any]:
         candidates: List[np.ndarray] = []
         self._last_ranges = []
         for adapter in self.adapters:
@@ -225,8 +235,8 @@ class CompositeAdapter(AlgorithmAdapter):
     def update(
         self,
         control: Any,
-        candidates: Sequence[np.ndarray],
-        feedback: Tuple[np.ndarray, np.ndarray],
+        candidates: Sequence[Any],
+        feedback: Any,
         context: Dict[str, Any],
     ) -> None:
         objectives, violations = feedback
@@ -248,7 +258,7 @@ class CompositeAdapter(AlgorithmAdapter):
             adapter.update(
                 control,
                 candidates[start:end],
-                (objectives[start:end], violations[start:end]),
+                subset_adapter_feedback(feedback, slice(start, end)),
                 context,
             )
 
@@ -306,3 +316,22 @@ class CompositeAdapter(AlgorithmAdapter):
             "cache": cache,
             "notes": "composite",
         }
+
+    def get_runtime_context_projection(self, solver: Any) -> RuntimeContextProjection:
+        aggregation = aggregate_adapter_runtime_projections(
+            solver,
+            owner_source=f"adapter.{self.__class__.__name__}",
+            children=tuple(
+                (
+                    f"adapter.child.{index}:{adapter.__class__.__name__}",
+                    adapter,
+                )
+                for index, adapter in enumerate(self.adapters)
+            ),
+        )
+        self._last_projection_writers = dict(aggregation.field_sources)
+        return aggregation.projection
+
+    def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
+        del solver
+        return dict(self._last_projection_writers)

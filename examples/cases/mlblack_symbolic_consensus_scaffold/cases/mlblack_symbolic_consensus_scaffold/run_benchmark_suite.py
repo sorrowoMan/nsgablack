@@ -75,7 +75,7 @@ def _load_reference_table(path: Path | None) -> dict[str, dict[str, Any]]:
 def _format_metric(value: Any) -> str:
     try:
         return f"{float(value):.6f}"
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return _text(value) or "-"
 
 
@@ -186,7 +186,7 @@ def build_parser() -> argparse.ArgumentParser:
 def _reference_delta(orchestrator_rmse: Any, reference_rmse: Any) -> float | None:
     try:
         return float(orchestrator_rmse) - float(reference_rmse)
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return None
 
 

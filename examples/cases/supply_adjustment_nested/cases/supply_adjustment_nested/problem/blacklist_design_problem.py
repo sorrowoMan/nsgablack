@@ -205,7 +205,7 @@ class BlacklistDesignProblem(BlackBoxProblem):
             if obj.ndim == 2 and obj.shape[0] > 0:
                 idx = int(np.argmin(np.sum(obj, axis=1)))
                 return float(-obj[idx][0])
-        except Exception:
+        except (TypeError, ValueError, IndexError):
             pass
         best = getattr(solver, "best_objective", None)
         if best is None or not np.isfinite(best):

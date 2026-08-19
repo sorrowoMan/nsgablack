@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Mapping, Optional
 
-from ..state.context_keys import (
+from blackbase.context.context_keys import (
+    KEY_BEST_CANDIDATE_REF,
     KEY_BEST_OBJECTIVE,
     KEY_BEST_X,
     KEY_BOUNDS,
@@ -26,6 +27,18 @@ from ..state.context_keys import (
     KEY_RESOURCE_CONTEXT,
     KEY_RESOURCE_CONTEXT_SHORT,
     KEY_SNAPSHOT_KEY,
+)
+
+
+# The authoritative incumbent publisher is the only writer for these keys.
+# ``build_solver_context`` may project them into its returned local view, but
+# must never replay a captured value into the shared ContextStore.
+_INCUMBENT_CONTEXT_STORE_OWNED_KEYS = frozenset(
+    (
+        KEY_BEST_X,
+        KEY_BEST_CANDIDATE_REF,
+        KEY_BEST_OBJECTIVE,
+    )
 )
 
 
@@ -72,15 +85,8 @@ def build_solver_context(
     report_soft_error_fn: Any = None,
     logger: Any = None,
     allow_snapshot_write: bool = True,
-    **legacy: Any,
 ) -> Dict[str, Any]:
     """Build a lightweight runtime context from a solver instance."""
-    if isinstance(solver, Mapping):
-        ctx = dict(solver)
-        ctx.setdefault(KEY_GENERATION, int(legacy.get("generation", 0) or 0))
-        ctx.setdefault(KEY_EVALUATION_COUNT, int(legacy.get("evaluation_count", 0) or 0))
-        return ctx
-
     purge_large = getattr(solver, "_purge_large_context_store", None)
     if callable(purge_large):
         purge_large()
@@ -168,8 +174,16 @@ def build_solver_context(
 
     if callable(strip_large):
         strip_large(ctx)
+    project_incumbent = getattr(solver, "project_incumbent_context", None)
+    if callable(project_incumbent):
+        project_incumbent(ctx)
     if bool(getattr(solver, "context_store_update_on_build", False)):
-        _set_store_values(getattr(solver, "context_store", None), ctx)
+        writeback = {
+            key: value
+            for key, value in ctx.items()
+            if key not in _INCUMBENT_CONTEXT_STORE_OWNED_KEYS
+        }
+        _set_store_values(getattr(solver, "context_store", None), writeback)
     if callable(purge_large):
         purge_large()
     return ctx
@@ -183,23 +197,34 @@ def ensure_snapshot_readable(solver: Any, context: Optional[Dict[str, Any]] = No
     reader = getattr(solver, "read_snapshot", None)
     if not callable(reader):
         return ctx
-    key = ctx.get(KEY_SNAPSHOT_KEY) or ctx.get(KEY_POPULATION_REF) or ctx.get(KEY_OBJECTIVES_REF)
-    if not key:
+    primary_key = (
+        ctx.get(KEY_SNAPSHOT_KEY)
+        or ctx.get(KEY_POPULATION_REF)
+        or ctx.get(KEY_OBJECTIVES_REF)
+    )
+    best_key = ctx.get(KEY_BEST_CANDIDATE_REF)
+    snapshot_keys: list[str] = []
+    for key in (primary_key, best_key):
+        if key and str(key) not in snapshot_keys:
+            snapshot_keys.append(str(key))
+    if not snapshot_keys:
         return ctx
-    try:
-        payload = reader(str(key))
-    except Exception:
-        return ctx
-    if not isinstance(payload, Mapping):
-        return ctx
-    for key_name in (
-        KEY_POPULATION,
-        KEY_OBJECTIVES,
-        KEY_PARETO_SOLUTIONS,
-        KEY_PARETO_OBJECTIVES,
-    ):
-        if key_name not in ctx and key_name in payload:
-            ctx[key_name] = payload[key_name]
+    for snapshot_key in snapshot_keys:
+        try:
+            payload = reader(snapshot_key)
+        except Exception:
+            continue
+        if not isinstance(payload, Mapping):
+            continue
+        for key_name in (
+            KEY_BEST_X,
+            KEY_POPULATION,
+            KEY_OBJECTIVES,
+            KEY_PARETO_SOLUTIONS,
+            KEY_PARETO_OBJECTIVES,
+        ):
+            if key_name not in ctx and key_name in payload:
+                ctx[key_name] = payload[key_name]
     return ctx
 
 
@@ -239,12 +264,18 @@ def get_solver_context_view(
                     strict=False,
                     level="debug",
                 )
-    if getattr(solver, "best_x", None) is not None:
-        ctx[KEY_BEST_X] = getattr(solver, "best_x", None)
-    if getattr(solver, "best_objective", None) is not None:
-        ctx[KEY_BEST_OBJECTIVE] = getattr(solver, "best_objective", None)
-    elif getattr(solver, "best_f", None) is not None:
-        ctx[KEY_BEST_OBJECTIVE] = getattr(solver, "best_f", None)
+    project_incumbent = getattr(solver, "project_incumbent_context", None)
+    get_incumbent = getattr(solver, "get_incumbent", None)
+    incumbent = get_incumbent() if callable(get_incumbent) else None
+    if callable(project_incumbent):
+        project_incumbent(ctx)
+    elif incumbent is None:
+        if getattr(solver, "best_x", None) is not None:
+            ctx[KEY_BEST_X] = getattr(solver, "best_x", None)
+        if getattr(solver, "best_objective", None) is not None:
+            ctx[KEY_BEST_OBJECTIVE] = getattr(solver, "best_objective", None)
+        elif getattr(solver, "best_f", None) is not None:
+            ctx[KEY_BEST_OBJECTIVE] = getattr(solver, "best_f", None)
 
     if getattr(solver, "pareto_solutions", None) is not None:
         ctx.setdefault(KEY_PARETO_SOLUTIONS_REF, ctx.get(KEY_SNAPSHOT_KEY))

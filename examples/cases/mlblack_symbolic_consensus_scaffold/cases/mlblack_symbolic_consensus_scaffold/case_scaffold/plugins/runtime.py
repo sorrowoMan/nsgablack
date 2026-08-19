@@ -17,7 +17,7 @@ from nsgablack.plugins import (
     TimeoutBudgetConfig,
     TimeoutBudgetPlugin,
 )
-from nsgablack.plugins.domain_backends.mlblack_symbolic_consensus_backend import (
+from mlblack.integrations.nsgablack_symbolic_backend import (
     MlblackSymbolicConsensusBackend,
     MlblackSymbolicConsensusBackendConfig,
 )
@@ -32,7 +32,6 @@ def build_backend_config(
     db_path: str,
 ) -> MlblackSymbolicConsensusBackendConfig:
     return MlblackSymbolicConsensusBackendConfig(
-        mlblack_root=str(args.mlblack_root),
         benchmark_key=str(args.benchmark_key),
         n_total=int(args.n_total),
         train_ratio=float(args.train_ratio),

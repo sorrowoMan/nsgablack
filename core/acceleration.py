@@ -416,13 +416,6 @@ def _call_task_ref_map(task_ref: str, item: Any, args: tuple, kwargs: dict) -> A
     return fn(item, *args, **kwargs)
 
 
-# L0 PoolScheduler — canonical location: core.resources.compute.pool
-# Re-exported here for backward compatibility.
-from .resources.compute.pool import (  # noqa: E402,F401
-    PoolScheduler, PoolTask, PoolResult,
-)
-
-
 class ThreadPoolBackend:
     """Thread-based execution backend for generic L0 tasks."""
 

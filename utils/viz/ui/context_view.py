@@ -8,8 +8,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import tkinter as tk
 from tkinter import ttk
 
-from ...context.context_contracts import collect_solver_contracts
-from ...context.context_schema import get_context_lifecycle, is_replayable_context, strip_context_for_replay
+from blackbase.context import collect_solver_contracts
+from blackbase.context import get_context_lifecycle, is_replayable_context, strip_context_for_replay
 
 _BUILTIN_DECLARED_WRITERS: Dict[str, List[str]] = {
     "problem": ["solver.core"],

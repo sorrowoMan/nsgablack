@@ -15,14 +15,19 @@ Design goals:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 import math
 
 import numpy as np
+from blackbase.call_binding import CallCandidate, invoke_bound_once
 from blackbase.contracts import BatchDisposition
+from blackbase.context import (
+    RuntimeContextProjection,
+)
 
-from ..algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import (
+from ..algorithm_adapter import AlgorithmAdapter, subset_adapter_feedback
+from ..runtime_projection import aggregate_adapter_runtime_projections
+from blackbase.context.context_keys import (
     KEY_GENERATION,
     KEY_CANDIDATE_ROLES,
     KEY_CANDIDATE_UNITS,
@@ -197,6 +202,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         "Orchestrates multi-strategy/multi-role cooperation and injects strategy task context.",
         "Shared state is updated every step and exposed via runtime context projection.",
     )
+    context_contract_encapsulates_children = True
 
     def __init__(
         self,
@@ -318,10 +324,13 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 "its own adapter state."
             )
         # factory callable
-        try:
-            return adapter(int(unit_id))  # type: ignore[misc]
-        except TypeError:
-            return adapter()  # type: ignore[misc]
+        return invoke_bound_once(
+            adapter,
+            (
+                CallCandidate(args=(int(unit_id),), label="unit_id"),
+                CallCandidate(label="empty"),
+            ),
+        )
 
     def _score(self, objectives_row: np.ndarray, violation: float) -> float:
         if self.cfg.objective_aggregation == "first":
@@ -1014,7 +1023,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self,
         control: Any,
         candidates: Sequence[np.ndarray],
-        feedback: Tuple[np.ndarray, np.ndarray],
+        feedback: Any,
         context: Dict[str, Any],
     ) -> None:
         objectives, violations = feedback
@@ -1095,7 +1104,12 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             ctx[KEY_STRATEGY_ID] = int(unit_id)
             ctx[KEY_TASK] = dict(self._unit_tasks[task_key])
 
-            unit.adapter.update(control, sub_cands, (sub_obj, sub_vio), ctx)
+            unit.adapter.update(
+                control,
+                sub_cands,
+                subset_adapter_feedback(feedback, slice(start, end)),
+                ctx,
+            )
             self._record_unit_report(role, int(unit_id), sub_cands, sub_obj, sub_vio, scores_arr[start:end])
 
         # decision: adapt strategy weights
@@ -1115,53 +1129,39 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self._unit_proposal_contexts = {}
         self._step += 1
 
-    def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
-        _ = solver
-        out: Dict[str, Any] = {}
-        writers: Dict[str, str] = {}
-        self_source = f"adapter.{self.__class__.__name__}"
+    def get_runtime_context_projection(self, solver: Any) -> RuntimeContextProjection:
+        own_fields: Dict[str, Any] = {}
         for key, value in self._runtime_shared_projection.items():
             if value is None:
                 continue
-            out[str(key)] = value
-            writers[str(key)] = self_source
+            own_fields[str(key)] = value
 
         for key, value in self._last_task_projection.items():
             if value is None:
                 continue
-            out[key] = value
-            writers[str(key)] = self_source
+            own_fields[str(key)] = value
         for key, value in self._runtime_meta_projection.items():
             if value is None:
                 continue
-            out[str(key)] = value
-            writers[str(key)] = self_source
+            own_fields[str(key)] = value
 
-        # Pull child adapter projection to make role-local runtime fields visible
-        # in global context snapshots (e.g., moead_* / vns_*).
-        for unit in self.units:
-            adapter = getattr(unit, "adapter", None)
-            if adapter is None:
-                continue
-            unit_source = f"adapter.unit.{unit.role}#{int(unit.unit_id)}:{adapter.__class__.__name__}"
-            getter = getattr(adapter, "get_runtime_context_projection", None)
-            if not callable(getter):
-                continue
-            try:
-                proj = getter(solver)
-            except Exception:
-                proj = None
-            if not isinstance(proj, dict):
-                continue
-            for key, value in proj.items():
-                if key is None or value is None:
-                    continue
-                key_str = str(key)
-                if key_str not in out:
-                    out[key_str] = value
-                    writers[key_str] = unit_source
-        self._last_projection_writers = writers
-        return out
+        aggregation = aggregate_adapter_runtime_projections(
+            solver,
+            owner_source=f"adapter.{self.__class__.__name__}",
+            own_fields=own_fields,
+            children=tuple(
+                (
+                    "adapter.unit."
+                    f"{unit.role}#{int(unit.unit_id)}:"
+                    f"{unit.adapter.__class__.__name__}",
+                    unit.adapter,
+                )
+                for unit in self.units
+                if bool(unit.enabled) and unit.adapter is not None
+            ),
+        )
+        self._last_projection_writers = dict(aggregation.field_sources)
+        return aggregation.projection
 
     def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
         _ = solver

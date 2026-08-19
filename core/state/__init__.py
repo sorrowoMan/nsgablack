@@ -1,11 +1,11 @@
-"""
-Forwarding module for state package.
+"""NSGABlack state surface built on shared blackbase context protocols.
 
-This module re-exports from blackbase for seamless migration.
+Generic context, snapshot, contract, and replay protocols are owned by
+blackbase.  Incumbent selection and candidate provenance remain optimization
+semantics owned by nsgablack.
 """
 
 from blackbase.context import (
-    CONTEXT_KEY_ALIASES,
     CONTEXT_KEY_SET,
     METRIC_FALLBACKS,
     METRIC_KEYS,
@@ -52,10 +52,15 @@ from blackbase.context import (
     record_context_event,
     replay_context,
 )
+from .incumbent import (
+    DEFAULT_INCUMBENT_POLICY_ID,
+    CandidateProvenance,
+    IncumbentState,
+    ScalarizationError,
+)
 
 __all__ = [
     # Keys
-    "CONTEXT_KEY_ALIASES",
     "CONTEXT_KEY_SET",
     "METRIC_FALLBACKS",
     "METRIC_KEYS",
@@ -111,4 +116,9 @@ __all__ = [
     "apply_context_event",
     "record_context_event",
     "replay_context",
+    # Optimization incumbent
+    "DEFAULT_INCUMBENT_POLICY_ID",
+    "CandidateProvenance",
+    "IncumbentState",
+    "ScalarizationError",
 ]

@@ -1,4 +1,58 @@
-# Auto-generated from catalog/entries.toml
+# Canonical adapter catalog shard.
+
+[[entry]]
+key = "adapter.fixed_candidate"
+title = "FixedCandidateAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters.fixed_candidate:FixedCandidateAdapter"
+tags = ["adapter", "core", "one-shot", "evaluation", "provider-neutral"]
+summary = "固定候选评估策略：把 Representation 生成的单个候选送入标准 Solver 生命周期，不创建第二套控制循环。 / One-shot fixed-candidate evaluation through the canonical Solver lifecycle."
+use_when = [
+  "诊断、验证或闭式任务仍需统一 cancellation、resource、plugin、result 与 lineage 语义时。",
+]
+minimal_wiring = [
+  "Representation.init -> Problem.evaluate -> FixedCandidateAdapter",
+]
+
+[[entry]]
+key = "adapter.gradient_optimizer"
+title = "GradientOptimizerAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters.gradient_optimizer:GradientOptimizerAdapter"
+tags = ["adapter", "core", "gradient", "sgd", "adam", "adamw", "provider-neutral", "state-transition"]
+summary = "通用一阶优化策略：通过 gradient.sgd/adam/adamw 稳定方法标识消费 Provider 反馈；可请求版本栅栏设备态更新，但不拥有数据、autograd、Tensor 或设备。 / Provider-neutral first-order strategy selected by stable method ID."
+use_when = [
+  "Problem/Evaluation Provider 能返回 Feedback.gradients 时。",
+  "需要让同一个 SGD/Adam/AdamW 策略跨 NumPy、Torch、JAX 或解析梯度 Provider 复用时。",
+]
+minimal_wiring = [
+  "GradientOptimizerConfig.from_method('gradient.adam')",
+  "Problem -> EvaluationProvider -> Feedback.gradients/gradient_ref -> GradientOptimizerAdapter.update",
+]
+context_provides = ["mutation_sigma", "adapter_best_score"]
+context_notes = [
+  "Device/backend selection belongs to the Evaluation Provider and Project L0 grant.",
+]
+
+[[entry]]
+key = "adapter.gaussian_search"
+title = "GaussianSearchAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters.gaussian_search:GaussianSearchAdapter"
+tags = ["adapter", "core", "black-box", "stochastic", "gaussian", "provider-neutral"]
+summary = "通用高斯随机搜索策略：通过 search.random_gaussian 稳定方法标识搜索数值候选；模型拟合、Codec、数据和指标仍由 Problem/Provider 负责。 / Provider-neutral Gaussian search selected by a stable method ID."
+use_when = [
+  "Problem 只能返回目标/约束，无法提供梯度时。",
+  "需要在模型参数、结构编码或外部 estimator spec 上复用同一种轻量黑盒搜索时。",
+]
+minimal_wiring = [
+  "GaussianSearchConfig(population_size=16, mutation_scale=0.25)",
+  "Representation.init/decode -> Problem.evaluate -> GaussianSearchAdapter.update",
+]
+context_provides = ["mutation_sigma", "adapter_best_score"]
+context_notes = [
+  "Candidate decoding and estimator fitting never belong to this Adapter.",
+]
 
 [[entry]]
 key = "adapter.role"
@@ -385,3 +439,16 @@ config_keys = [
 ]
 companions = ["repr.context_gaussian", "repr.context_switch"]
 example_entry = "examples/trust_region_subspace_frontier_demo.py:build_solver"
+[[entry]]
+key = "adapter.serial_strategy"
+title = "StrategyChainAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:StrategyChainAdapter"
+tags = ["adapter", "controller", "core", "phase", "serial", "strategy"]
+summary = "串行策略控制器：按 phase 顺序切换子 Adapter。 / Serial strategy controller that advances child adapters by phase."
+companions = ["adapter.multi_strategy"]
+use_when = ["需要把探索、开发等多段策略按阶段顺序串联时", "需要让 phase 成为可审计运行语义时"]
+minimal_wiring = ["from nsgablack.adapters import StrategyChainAdapter", "solver.set_adapter(StrategyChainAdapter(...))"]
+required_companions = ["adapter.multi_strategy"]
+config_keys = ["phases", "phase_schedule", "repeat_last"]
+example_entry = "python -m nsgablack catalog search serial_strategy --kind example"

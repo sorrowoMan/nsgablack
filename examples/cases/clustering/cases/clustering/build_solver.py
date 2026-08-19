@@ -18,7 +18,7 @@ ensure_nsgablack_importable(Path(__file__))
 from nsgablack.project.scaffold import print_solver_check
 
 
-def build_solver(data: "np.ndarray", k: int = 3, adapter: str = "sa", pop_size: int = 20, max_steps: int = 200, *, resource_context=None, component_overrides=None):
+def build_solver(data: "np.ndarray | None" = None, k: int = 3, adapter: str = "sa", pop_size: int = 20, max_steps: int = 200, *, resource_context=None, component_overrides=None):
     """Build a clustering solver for the given dataset.
 
     Args:
@@ -42,6 +42,13 @@ def build_solver(data: "np.ndarray", k: int = 3, adapter: str = "sa", pop_size: 
     from pipeline.main import build_pipeline
     from problem.clustering_problem import ClusteringProblem
 
+    overrides = dict(component_overrides or {})
+    data = overrides.get("data", data)
+    if data is None:
+        data = np.asarray(
+            [[0.0, 0.0], [0.1, 0.0], [1.0, 1.0], [1.1, 1.0], [2.0, 0.0], [2.1, 0.0]],
+            dtype=float,
+        )
     problem = ClusteringProblem(np.asarray(data, dtype=float), k=k)
     pipeline = build_pipeline(
         problem,
@@ -63,6 +70,7 @@ def build_solver(data: "np.ndarray", k: int = 3, adapter: str = "sa", pop_size: 
         representation_pipeline=pipeline,
     )
     solver.set_max_steps(max_steps)
+    solver.set_resource_context(resource_context)
     return solver
 
 

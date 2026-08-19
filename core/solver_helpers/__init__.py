@@ -7,10 +7,10 @@ from .snapshot_helpers import (
     strip_large_context_fields,
 )
 from .control_plane_helpers import (
+    collect_adapter_runtime_context_projection,
     collect_runtime_context_projection,
     increment_evaluation_counter,
     get_best_snapshot_fields,
-    set_best_snapshot_fields,
     set_generation_value,
     set_pareto_snapshot_fields,
 )
@@ -39,6 +39,7 @@ __all__ = [
     "build_context_store_or_memory",
     "build_solver_context",
     "build_snapshot_store_or_memory",
+    "collect_adapter_runtime_context_projection",
     "collect_runtime_context_projection",
     "ensure_snapshot_readable",
     "evaluate_external_population_with_contract",
@@ -55,7 +56,6 @@ __all__ = [
     "ComponentOrderError",
     "get_best_snapshot_fields",
     "sample_random_candidate",
-    "set_best_snapshot_fields",
     "set_generation_value",
     "set_pareto_snapshot_fields",
     "snapshot_meta",

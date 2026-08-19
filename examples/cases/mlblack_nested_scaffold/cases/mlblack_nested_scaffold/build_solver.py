@@ -123,7 +123,11 @@ def _build_solver_from_args(args):
 
 def build_solver(argv: Optional[list] = None, *, resource_context=None, component_overrides=None):
     args = build_parser().parse_args(argv if argv is not None else [])
-    return _build_solver_from_args(args)
+    solver = _build_solver_from_args(args)
+    from nsgablack.project import apply_solver_component_overrides
+    apply_solver_component_overrides(solver, component_overrides)
+    solver.set_resource_context(resource_context)
+    return solver
 
 
 def main(argv: Optional[list] = None) -> None:

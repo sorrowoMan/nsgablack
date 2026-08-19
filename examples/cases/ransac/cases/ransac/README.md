@@ -47,7 +47,7 @@ RANSAC 被表达为 subset optimization：
 | `problem/example_problem.py` | Scaffold placeholder，不是能力实现。 |
 | `pipeline/config.py` | Mask-vector representation pipeline。 |
 | `solver/config.py` | Solver profile registry。 |
-| `catalog/entries.toml` | Case-local scaffold catalog entries。 |
+| `catalog/entries/<kind>.toml` | Case-local scaffold catalog entries。 |
 
 ## 能力信号（Capability signal）
 

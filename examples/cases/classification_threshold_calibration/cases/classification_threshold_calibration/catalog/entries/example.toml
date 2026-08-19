@@ -1,0 +1,20 @@
+# Canonical Case example catalog shard.
+
+[[entry]]
+key = "project.solver.build"
+title = "build_solver"
+kind = "example"
+import_path = "build_solver:build_solver"
+tags = ["project", "example", "solver", "classification", "threshold", "calibration", "mlblack"]
+summary = "Runnable classification threshold calibration assembly: nsgablack optimizes operating-point variables around mlblack supervised classification metrics."
+companions = ["project.problem.example", "project.pipeline.default"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["Assembly entrypoint; runtime context contract is delegated to registered nsgablack components while mlblack feedback remains inside evaluation."]
+use_when = ["Validate nsgablack + mlblack classification operating-point orchestration from a standard scaffold."]
+minimal_wiring = ["python ../../run_project.py --check", "python ../../run_project.py --build-check --check"]
+required_companions = ["project.problem.example", "project.pipeline.default"]
+config_keys = ["n_samples", "valid_ratio", "seed", "pop_size", "max_generations", "mutation_sigma"]
+example_entry = "examples.cases.classification_threshold_calibration.cases.classification_threshold_calibration.build_solver:build_solver"

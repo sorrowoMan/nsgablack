@@ -35,7 +35,7 @@ def _import_case_modules():
     inner_spec.loader.exec_module(inner_mod)
     InnerProductionSolverConfig = inner_mod.InnerProductionSolverConfig
 
-    from nsgablack.core.resources import ResourceRequirement
+    from blackbase.resources import ResourceRequirement
 
     prob_spec = importlib.util.spec_from_file_location("supply_event_shift_problem", str(case_dir / "problem" / "supply_event_shift_problem.py"))
     prob_mod = importlib.util.module_from_spec(prob_spec)

@@ -94,6 +94,7 @@ def build_solver(*, resource_context=None, component_overrides=None):
         bias_module=bias,
     )
     solver.set_max_steps(max_steps)
+    solver.set_resource_context(resource_context)
     return solver
 
 

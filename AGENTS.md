@@ -257,10 +257,13 @@ Collaboration rules:
 
 ### 6.1 Adapter API（必备）
 
-- `propose(self, solver, context) -> Sequence[np.ndarray]`
-- `update(self, solver, candidates, feedback, context) -> None`
+- `propose(self, solver, context) -> Sequence[np.ndarray | UnknownState]`
+- `update(self, solver, candidates, feedback: OptimizationFeedbackBatch, context) -> None`
 
-其中 `feedback` 的正式形态为 `(objectives, violations)`；不再支持拆分参数的旧签名。
+候选进入控制面后使用 `CandidateBatch` 同时保留 `semantic_states`、`numeric_matrix`
+和 candidate token/provenance：数值算法消费矩阵，Representation / Problem / 结果对齐消费
+语义状态。`feedback` 的正式形态为 `OptimizationFeedbackBatch`；它仍可解包为
+`(objectives, violations)` 供纯数值 Adapter 使用，但不得再定义另一套拆分参数签名。
 
 建议实现：
 

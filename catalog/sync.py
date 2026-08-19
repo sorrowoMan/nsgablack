@@ -12,7 +12,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 from .contracts import (
     CatalogBundle,
     CatalogComponentContract,
-    ContextContract,
+    CatalogContextContract,
     HealthContract,
     MethodContract,
     ParamContract,
@@ -21,7 +21,7 @@ from .contracts import (
 from .registry import CatalogEntry, get_catalog
 from .store import resolve_catalog_store
 from .usage import build_usage_profile
-from ..utils.context.context_keys import CANONICAL_CONTEXT_KEYS
+from blackbase.context.context_keys import CANONICAL_CONTEXT_KEYS
 
 
 _ADAPTER_REQUIRED = ("propose", "update")
@@ -508,8 +508,8 @@ def _build_component(entry: CatalogEntry) -> CatalogComponentContract:
     )
 
 
-def _build_context_contract(entry: CatalogEntry) -> ContextContract:
-    return ContextContract(
+def _build_context_contract(entry: CatalogEntry) -> CatalogContextContract:
+    return CatalogContextContract(
         component_key=entry.key,
         requires=_coerce_tuple(getattr(entry, "context_requires", ())),
         provides=_coerce_tuple(getattr(entry, "context_provides", ())),
@@ -562,7 +562,7 @@ def _build_health(
     entry: CatalogEntry,
     params: Sequence[ParamContract],
     methods: Sequence[MethodContract],
-    context: ContextContract,
+    context: CatalogContextContract,
     *,
     runtime: bool,
 ) -> HealthContract:
@@ -606,7 +606,7 @@ def build_catalog_bundle(*, profile: str, runtime: bool = False, entries: List |
         c = get_catalog(profile=profile)
         entries = c.list()
     components: List[CatalogComponentContract] = []
-    contexts: List[ContextContract] = []
+    contexts: List[CatalogContextContract] = []
     usages: List[UsageContract] = []
     params: List[ParamContract] = []
     methods: List[MethodContract] = []
@@ -675,18 +675,12 @@ def materialize_catalog_to_db(
     runtime: bool = False,
     db_url: str | None = None,
 ) -> dict[str, int | str]:
-    from .registry import _default_entries, _discover_python_entries, _load_external_entries, _load_entrypoint_entries
+    from .registry import _load_external_entries, _load_entrypoint_entries
 
-    base = _default_entries()
-    discovered = _discover_python_entries()
     extra = _load_external_entries()
     eps = _load_entrypoint_entries()
 
-    merged: dict[str, Any] = {e.key: e for e in base}
-    for e in discovered:
-        merged[e.key] = e
-    for e in extra:
-        merged[e.key] = e
+    merged: dict[str, Any] = {e.key: e for e in extra}
     for e in eps:
         merged[e.key] = e
     entries = list(merged.values())

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Optional
 
 import numpy as np
+from blackbase.call_binding import CallCandidate, invoke_bound_once
 
 
 def _bounds_array(bounds: Any, dimension: int) -> np.ndarray:
@@ -31,10 +32,14 @@ def sample_random_candidate(
     """Sample a random candidate from problem bounds."""
     sample = getattr(problem, "sample", None)
     if callable(sample):
-        try:
-            return np.asarray(sample(), dtype=float).reshape(-1)
-        except TypeError:
-            return np.asarray(sample(context=context), dtype=float).reshape(-1)
+        sampled = invoke_bound_once(
+            sample,
+            (
+                CallCandidate(label="empty"),
+                CallCandidate(kwargs={"context": context}, label="with_context"),
+            ),
+        )
+        return np.asarray(sampled, dtype=float).reshape(-1)
 
     dim = int(dimension if dimension is not None else getattr(problem, "dimension", 0) or 0)
     bounds = var_bounds if var_bounds is not None else getattr(problem, "bounds", None)

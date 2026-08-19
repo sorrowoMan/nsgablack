@@ -14,7 +14,7 @@ from typing import Any, Deque, Dict, Optional, Sequence, Tuple
 import numpy as np
 
 from ..algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import (
+from blackbase.context.context_keys import (
     KEY_MUTATION_SIGMA,
     KEY_SINGLE_TRAJ_SIGMA,
     KEY_SINGLE_TRAJ_STATE,
@@ -133,7 +133,7 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
         self,
         control: Any,
         candidates: Sequence[np.ndarray],
-        feedback: Tuple[np.ndarray, np.ndarray],
+        feedback: Any,
         context: Dict[str, Any],
     ) -> None:
         objectives, violations = feedback

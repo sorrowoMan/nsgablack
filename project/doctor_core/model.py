@@ -2,39 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import Iterable, List
 
-
-@dataclass(frozen=True)
-class DoctorDiagnostic:
-    """Single doctor diagnostic entry."""
-
-    level: str  # info / warn / error
-    code: str
-    message: str
-    path: str | None = None
-
-
-@dataclass(frozen=True)
-class DoctorReport:
-    """Doctor report for one project root."""
-
-    project_root: Path
-    diagnostics: Sequence[DoctorDiagnostic]
-
-    @property
-    def error_count(self) -> int:
-        return sum(1 for d in self.diagnostics if d.level == "error")
-
-    @property
-    def warn_count(self) -> int:
-        return sum(1 for d in self.diagnostics if d.level == "warn")
-
-    @property
-    def info_count(self) -> int:
-        return sum(1 for d in self.diagnostics if d.level == "info")
+from blackbase.project.doctor import DoctorDiagnostic, DoctorReport
 
 
 def add_diagnostic(

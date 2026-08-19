@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
-from ...utils.context.context_keys import KEY_METRICS
+from blackbase.context.context_keys import KEY_METRICS
 from .provider_plugin_base import EvaluationProviderPluginBase
 
 

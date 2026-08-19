@@ -14,7 +14,7 @@ NSGABlack scaffold (my_project-style layout).
 - `problem/`, `pipeline/`, `bias/`, `adapter/`, `solver/`
 - `runtime/` (L0), `evaluation/` (L4)
 - `plugins/` (governance/ops/observability)
-- `catalog/entries.toml`: local catalog entries
+- `catalog/entries/<kind>.toml`: local catalog entries
 
 ## Notes
 - Parameters live in registries; selection happens in `build_solver.py`.

@@ -6,7 +6,7 @@ import logging
 import time
 from typing import Any, Callable, Mapping, Optional
 
-from ...utils.engineering.error_policy import report_soft_error
+from blackbase.plugin import report_soft_error
 from .result_helpers import format_run_result
 
 logger = logging.getLogger(__name__)
@@ -116,6 +116,7 @@ def run_solver_loop(
     solver.max_steps = limit
     solver.running = True
     solver.stop_requested = False
+    solver.stop_reason = None
     solver.start_time = time.time()
     result: dict[str, Any] = {}
     steps_executed = 0
@@ -125,13 +126,17 @@ def run_solver_loop(
         _checkpoint_case_runtime(solver)
         preloaded_resume = bool(getattr(solver, "_resume_loaded", False))
         if not preloaded_resume:
-            set_generation = getattr(solver, "set_generation", None)
-            if callable(set_generation):
-                set_generation(0)
+            prepare_fresh_run = getattr(solver, "prepare_fresh_run", None)
+            if callable(prepare_fresh_run):
+                prepare_fresh_run()
             else:
-                solver.generation = 0
-            solver.evaluation_count = 0
-            solver.reset_evaluation_budget()
+                set_generation = getattr(solver, "set_generation", None)
+                if callable(set_generation):
+                    set_generation(0)
+                else:
+                    solver.generation = 0
+                solver.evaluation_count = 0
+                solver.reset_evaluation_budget()
         solver.setup()
         _checkpoint_case_runtime(solver)
         _call_optional(solver.plugin_manager, "on_solver_init", solver)
@@ -168,6 +173,16 @@ def run_solver_loop(
             if bool(getattr(solver, "stop_requested", False)):
                 termination_reason = str(
                     getattr(solver, "stop_reason", None) or "user_stop"
+                )
+                break
+            should_execute = getattr(solver, "should_execute_step", None)
+            if callable(should_execute) and not bool(should_execute(generation)):
+                if not bool(getattr(solver, "stop_requested", False)):
+                    request_stop = getattr(solver, "request_stop", None)
+                    if callable(request_stop):
+                        request_stop("pre_step_policy")
+                termination_reason = str(
+                    getattr(solver, "stop_reason", None) or "pre_step_policy"
                 )
                 break
             _call_optional(solver.plugin_manager, "on_generation_start", generation)
@@ -209,9 +224,7 @@ def run_solver_loop(
             solver.running = False
 
     elapsed = max(0.0, float(time.time() - float(getattr(solver, "start_time", time.time()))))
-    total_steps = int(start_step)
-    if steps_executed > 0:
-        total_steps = int(getattr(solver, "generation", 0) or 0) + 1
+    total_steps = int(start_step) + int(steps_executed)
     set_generation = getattr(solver, "set_generation", None)
     if callable(set_generation):
         set_generation(total_steps)

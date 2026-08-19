@@ -120,7 +120,7 @@ Trainer：
 
 Backend 桥接：
 
-- `C:\Users\hp\Desktop\nsgablack\plugins\solver_backends\mlblack_symbolic_consensus_backend.py`
+- `C:\Users\hp\Desktop\mlblack\integrations\nsgablack_symbolic_backend.py`
 
 外层脚手架入口：
 

@@ -1,0 +1,20 @@
+# Canonical Case tool catalog shard.
+
+[[entry]]
+key = "project.problem.example"
+title = "ResidualBoostingProblem"
+kind = "tool"
+import_path = "problem.example_problem:ResidualBoostingProblem"
+tags = ["project", "example", "problem", "residual", "boosting", "mlblack"]
+summary = "Two-objective residual boosting recipe problem: nsgablack searches the outer recipe, mlblack owns serial training and residual semantics."
+companions = ["project.pipeline.default"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["Defines objective/constraint semantics only; mlblack trainer artifacts stay inside evaluation."]
+use_when = ["Validate an outer nsgablack search over an inner mlblack base/residual training flow."]
+minimal_wiring = ["from problem.example_problem import ResidualBoostingProblem"]
+required_companions = ["project.pipeline.default"]
+config_keys = ["n_samples", "valid_ratio", "seed"]
+example_entry = "examples.cases.residual_boosting.cases.residual_boosting.build_solver:build_solver"

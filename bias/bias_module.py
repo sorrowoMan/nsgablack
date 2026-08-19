@@ -1,4 +1,4 @@
-﻿"""\
+"""\
 BiasModule - bias system facade.
 
 Provides a solver-friendly wrapper around UniversalBiasManager with optional
@@ -19,7 +19,7 @@ import numpy as np
 
 from .core.base import AlgorithmicBias, DomainBias, OptimizationContext
 from .core.manager import UniversalBiasManager
-from ..core.state.context_keys import (
+from blackbase.context.context_keys import (
     KEY_CONSTRAINTS,
     KEY_CONSTRAINT_VIOLATION,
     KEY_GENERATION,
@@ -33,8 +33,8 @@ from ..core.state.context_keys import (
     KEY_SNAPSHOT_KEY,
     KEY_BIAS_CACHE_FINGERPRINT,
 )
-from ..core.state.context_store import ContextStore
-from ..core.state.snapshot_store import SnapshotStore
+from blackbase.context import ContextStore
+from blackbase.context import SnapshotStore
 
 logger = logging.getLogger(__name__)
 
@@ -83,13 +83,6 @@ class BiasModule:
         # Callback for cache invalidation when bias params change
         self._param_change_handler = self._on_bias_param_change
         self._lock = threading.RLock()
-
-        # Optional context contract (defaults empty for compatibility).
-        self.context_requires = tuple(getattr(self, "context_requires", ()) or ())
-        self.context_provides = tuple(getattr(self, "context_provides", ()) or ())
-        self.context_mutates = tuple(getattr(self, "context_mutates", ()) or ())
-        self.context_cache = tuple(getattr(self, "context_cache", ()) or ())
-        self.context_notes = getattr(self, "context_notes", None)
 
     def get_context_contract(self) -> Dict[str, Any]:
         requires = set(getattr(self, "context_requires", ()) or ())

@@ -46,9 +46,6 @@ def build_solver(run_id: str | None = None, *, strategy: str | None = None, quic
                               adapter=MOEADAdapter())
     solver.add_plugin(ParetoArchivePlugin())
     solver.set_max_steps(2)
-    # ComposableSolver 鈥?skip EvolutionSolver-specific hooks
-    return solver
-    solver.set_max_steps(2)
 
     # --- Search orchestration (built-in) ------------------------------
     if strategy_key not in {"", "default", "none"}:
@@ -72,6 +69,9 @@ def build_solver(run_id: str | None = None, *, strategy: str | None = None, quic
 
     # Optional checkpoint
     # attach_checkpoint(solver, cfg, "default")
+    from nsgablack.project import apply_solver_component_overrides
+    apply_solver_component_overrides(solver, component_overrides)
+    solver.set_resource_context(resource_context)
     return solver
 
 

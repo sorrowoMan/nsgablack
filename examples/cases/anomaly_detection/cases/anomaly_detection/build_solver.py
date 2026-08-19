@@ -134,6 +134,7 @@ def build_solver(*, resource_context=None, component_overrides=None):
     )
     solver.set_bias_module(bias_module)
     solver.enable_bias_module()
+    solver.set_resource_context(resource_context)
     return solver
 
 

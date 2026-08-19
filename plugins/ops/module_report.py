@@ -121,6 +121,24 @@ class ModuleReportPlugin(Plugin):
             "plugins": [],
             "parallel": {},
         }
+        get_projection_audit = getattr(
+            solver,
+            "get_incumbent_projection_audit",
+            None,
+        )
+        if callable(get_projection_audit):
+            payload["incumbent_projection"] = dict(
+                get_projection_audit() or {}
+            )
+        get_runtime_projection_audit = getattr(
+            solver,
+            "get_runtime_projection_audit",
+            None,
+        )
+        if callable(get_runtime_projection_audit):
+            payload["runtime_projection"] = dict(
+                get_runtime_projection_audit() or {}
+            )
         runtime_timing = getattr(solver, "_runtime_timing", None)
         runtime_timing_calls = getattr(solver, "_runtime_timing_calls", None)
         if isinstance(runtime_timing, dict):

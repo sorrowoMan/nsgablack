@@ -4,6 +4,7 @@ from nsgablack.project import run_project_doctor
 
 
 def _write_build_solver(path, serializer: str) -> None:
+    (path / ".case").write_text("kind = solver\n", encoding="utf-8")
     (path / "build_solver.py").write_text(
         "class DummySolver:\n"
         "    snapshot_store_backend = 'redis'\n"
@@ -12,7 +13,8 @@ def _write_build_solver(path, serializer: str) -> None:
         "    snapshot_store_ttl_seconds = 60\n"
         "    context_store_backend = 'memory'\n"
         "\n"
-        "def build_solver(argv=None):\n"
+        "def build_solver(*, resource_context=None, component_overrides=None):\n"
+        "    del resource_context, component_overrides\n"
         "    return DummySolver()\n",
         encoding="utf-8",
     )

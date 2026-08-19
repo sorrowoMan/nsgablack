@@ -1,0 +1,20 @@
+# Canonical Case adapter catalog shard.
+
+[[entry]]
+key = "project.adapter.example"
+title = "ExampleAdapter"
+kind = "adapter"
+import_path = "adapter.example_adapter:ExampleAdapter"
+tags = ["project", "example", "adapter"]
+summary = "Example adapter that proposes random candidates."
+companions = ["project.problem.example", "project.pipeline.default"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["Adapter template for propose/update integration."]
+use_when = ["Need a minimal adapter starting point."]
+minimal_wiring = ["from adapter.example_adapter import ExampleAdapter"]
+required_companions = []
+config_keys = ["max_candidates", "seed"]
+example_entry = "examples.cases.trust_region_nonsmooth.cases.trust_region_nonsmooth.build_solver:build_solver"

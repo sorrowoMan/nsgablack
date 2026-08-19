@@ -64,7 +64,7 @@ def _ensure_mlblack_path() -> None:
             project_path = getattr(my_project, "__path__", None)
             if project_path is not None and str(mlblack_project) not in list(project_path):
                 project_path.append(str(mlblack_project))
-        except Exception:
+        except (ImportError, AttributeError, TypeError):
             return
 
 

@@ -23,7 +23,7 @@ import warnings
 import numpy as np
 
 from ..algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import KEY_MUTATION_SIGMA, KEY_TEMPERATURE
+from blackbase.context.context_keys import KEY_MUTATION_SIGMA, KEY_TEMPERATURE
 
 
 @dataclass
@@ -156,7 +156,7 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
         self,
         control: Any,
         candidates: Sequence[np.ndarray],
-        feedback: Tuple[np.ndarray, np.ndarray],
+        feedback: Any,
         context: Dict[str, Any],
     ) -> None:
         objectives, violations = feedback

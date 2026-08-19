@@ -11,10 +11,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, List, Sequence, Tuple
+from typing import Any, List, Sequence, Tuple
 import math
 
 import numpy as np
+
+from blackbase.types import CandidateBatch, UnknownState
 
 
 class ContractError(ValueError):
@@ -22,6 +24,12 @@ class ContractError(ValueError):
 
 
 def _as_1d_array(x: Any, *, name: str) -> np.ndarray:
+    # ``UnknownState`` is the shared cross-framework candidate protocol.  The
+    # NSG control plane remains ndarray-native internally, but its public
+    # candidate boundary must consume the protocol returned by Providers and
+    # cross-framework Adapters without turning it into an object array.
+    if isinstance(x, UnknownState):
+        x = x.as_array()
     try:
         arr = np.asarray(x)
     except Exception as exc:  # pragma: no cover
@@ -53,6 +61,43 @@ def normalize_candidates(
     for i, cand in enumerate(list(candidates)):
         out.append(normalize_candidate(cand, dimension=dimension, name=f"{owner}.candidates[{i}]"))
     return out
+
+
+def normalize_candidate_batch(
+    candidates: Sequence[Any],
+    *,
+    dimension: int,
+    owner: str = "adapter/plugin",
+    candidate_tokens: Sequence[str | None] = (),
+) -> CandidateBatch:
+    """Build aligned semantic/numeric views without object-array control state."""
+
+    values = list(candidates or ())
+    states: list[UnknownState] = []
+    rows: list[np.ndarray] = []
+    for index, candidate in enumerate(values):
+        state = (
+            candidate
+            if isinstance(candidate, UnknownState)
+            else UnknownState(values=candidate)
+        )
+        row = normalize_candidate(
+            state,
+            dimension=dimension,
+            name=f"{owner}.candidates[{index}]",
+        )
+        states.append(UnknownState(values=row.copy(), metadata=dict(state.metadata)))
+        rows.append(row)
+    matrix = (
+        np.stack(rows, axis=0)
+        if rows
+        else np.empty((0, int(dimension)), dtype=float)
+    )
+    return CandidateBatch(
+        semantic_states=tuple(states),
+        numeric_matrix=matrix,
+        candidate_tokens=tuple(candidate_tokens),
+    )
 
 
 def stack_population(candidates: Sequence[np.ndarray], *, name: str = "population") -> np.ndarray:

@@ -15,7 +15,7 @@ import numpy as np
 from ...core.base import BlackBoxProblem
 from ...bias import BiasModule
 from ..constraints.constraint_utils import evaluate_constraints_safe, evaluate_constraints_batch_safe
-from ..context.context_keys import KEY_CONSTRAINTS, KEY_CONSTRAINT_VIOLATION, KEY_INDIVIDUAL_ID
+from blackbase.context.context_keys import KEY_CONSTRAINTS, KEY_CONSTRAINT_VIOLATION, KEY_INDIVIDUAL_ID
 
 
 class BatchEvaluator:

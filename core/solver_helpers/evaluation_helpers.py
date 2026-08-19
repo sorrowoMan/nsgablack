@@ -5,8 +5,15 @@ from __future__ import annotations
 from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
+from blackbase.call_binding import CallCandidate, invoke_bound_once
 from blackbase.resources import BudgetClaim
+from blackbase.types import Feedback
 
+from ..evaluation_feedback import (
+    OptimizationFeedbackBatch,
+    coerce_individual_feedback,
+    copy_feedback_with_result,
+)
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
 from ...utils.evaluation.shape_validation import (
     EvaluationShapeError,
@@ -66,9 +73,60 @@ def _validate_population_result(
         raise ContractError(str(exc)) from exc
 
 
+def _normalize_individual_feedback_result(
+    solver: Any,
+    value: Any,
+    *,
+    context: str,
+) -> tuple[Feedback, np.ndarray, float]:
+    try:
+        feedback, violation = coerce_individual_feedback(value)
+    except (TypeError, ValueError) as exc:
+        raise ContractError(f"{context}: {exc}") from exc
+    objectives, violation = _validate_individual_result(
+        solver,
+        feedback.objectives,
+        violation,
+        context=context,
+    )
+    feedback = copy_feedback_with_result(
+        feedback,
+        objectives=objectives,
+        violation=violation,
+    )
+    return feedback, objectives, float(violation)
+
+
+def _normalize_population_feedback_result(
+    solver: Any,
+    value: Any,
+    *,
+    population_size: int,
+    context: str,
+) -> OptimizationFeedbackBatch:
+    try:
+        batch = OptimizationFeedbackBatch.coerce(value)
+    except (TypeError, ValueError) as exc:
+        raise ContractError(f"{context}: {exc}") from exc
+    objectives, violations = _validate_population_result(
+        solver,
+        batch.objectives,
+        batch.violations,
+        population_size=population_size,
+        context=context,
+    )
+    return batch.with_arrays(objectives, violations)
+
+
 def _constraint_violation(problem: Any, x: np.ndarray) -> Tuple[np.ndarray, float]:
     constraints, violation = evaluate_constraints_safe(problem, x)
     return np.asarray(constraints, dtype=float).reshape(-1), float(violation)
+
+
+def _merge_constraint_violation(left: float, right: float) -> float:
+    """Keep the strongest constraint evidence, including NaN/Inf evidence."""
+
+    return float(np.maximum(float(left), float(right)))
 
 
 def _reserve_evaluations(solver: Any, requested: int) -> BudgetClaim:
@@ -136,7 +194,7 @@ def _evaluate_individual(
         if emit_hooks and plugin_manager is not None:
             plugin_manager.on_evaluate_start(arr, ctx)
 
-        def fallback() -> tuple[np.ndarray, float]:
+        def fallback() -> Feedback:
             problem = getattr(solver, "problem", None)
             if problem is None or not callable(getattr(problem, "evaluate", None)):
                 raise ContractError("solver.problem.evaluate must be callable")
@@ -150,32 +208,52 @@ def _evaluate_individual(
                     context=ctx,
                 )
                 if nested is not None:
-                    obj_nested, vio_nested = _validate_individual_result(
+                    feedback_nested, obj_nested, vio_nested = _normalize_individual_feedback_result(
                         solver,
-                        nested[0],
-                        nested[1],
+                        nested,
                         context="problem.inner_runtime.evaluate",
                     )
                     constraints, constraint_vio = _constraint_violation(problem, arr)
                     ctx["constraints"] = constraints
                     ctx["constraint_violation"] = constraint_vio
-                    if np.isfinite(constraint_vio) and np.isfinite(vio_nested):
-                        vio_nested = max(float(vio_nested), float(constraint_vio))
-                    return obj_nested, float(vio_nested)
+                    vio_nested = _merge_constraint_violation(
+                        vio_nested,
+                        constraint_vio,
+                    )
+                    return copy_feedback_with_result(
+                        feedback_nested,
+                        objectives=obj_nested,
+                        violation=float(vio_nested),
+                    )
 
-            raw = problem.evaluate(arr)
-            obj, shape_violation = _validate_individual_result(
+            raw = invoke_bound_once(
+                problem.evaluate,
+                (
+                    CallCandidate(
+                        args=(arr,),
+                        kwargs={"context": ctx},
+                        label="candidate_with_context",
+                    ),
+                    CallCandidate(args=(arr,), label="candidate_only"),
+                ),
+            )
+            feedback, obj, shape_violation = _normalize_individual_feedback_result(
                 solver,
                 raw,
-                0.0,
                 context="problem.evaluate",
             )
             constraints, violation = _constraint_violation(problem, arr)
             ctx["constraints"] = constraints
             ctx["constraint_violation"] = violation
-            if np.isfinite(violation) and np.isfinite(shape_violation):
-                violation = max(float(violation), float(shape_violation))
-            return obj, float(violation)
+            violation = _merge_constraint_violation(
+                violation,
+                shape_violation,
+            )
+            return copy_feedback_with_result(
+                feedback,
+                objectives=obj,
+                violation=float(violation),
+            )
 
         def on_dispatch(mode: str) -> None:
             nonlocal dispatched
@@ -187,7 +265,7 @@ def _evaluate_individual(
 
         mediator = getattr(solver, "evaluation_mediator", None)
         if mediator is not None and callable(getattr(mediator, "evaluate_individual", None)):
-            objectives, violation = mediator.evaluate_individual(
+            raw_result = mediator.evaluate_individual(
                 solver,
                 arr,
                 individual_id=individual_id,
@@ -197,12 +275,11 @@ def _evaluate_individual(
             )
         else:
             on_dispatch("fallback")
-            objectives, violation = fallback()
+            raw_result = fallback()
 
-        objectives, violation = _validate_individual_result(
+        feedback, objectives, violation = _normalize_individual_feedback_result(
             solver,
-            objectives,
-            violation,
+            raw_result,
             context="evaluate_individual.result",
         )
         if bool(getattr(solver, "enable_bias", False)):
@@ -215,6 +292,13 @@ def _evaluate_individual(
                 violation,
                 context="evaluate_individual.bias",
             )
+
+        feedback = copy_feedback_with_result(
+            feedback,
+            objectives=objectives,
+            violation=float(violation),
+        )
+        solver._last_individual_feedback = feedback
 
         result = (np.asarray(objectives, dtype=float).reshape(-1), float(violation))
         if emit_hooks and plugin_manager is not None:
@@ -291,9 +375,10 @@ def _evaluate_population_via_individuals(
     emit_hooks: bool = True,
     budget_claim: BudgetClaim,
     budget_already_consumed: bool = False,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> OptimizationFeedbackBatch:
     objectives = []
     violations = []
+    feedback_items: list[Feedback] = []
     for idx, individual in enumerate(population):
         item_context = None if hook_contexts is None else hook_contexts[idx]
         obj, vio = _evaluate_individual(
@@ -307,12 +392,27 @@ def _evaluate_population_via_individuals(
         )
         objectives.append(obj)
         violations.append(vio)
+        item = getattr(solver, "_last_individual_feedback", None)
+        if isinstance(item, Feedback):
+            feedback_items.append(item)
+        else:
+            feedback_items.append(
+                Feedback(
+                    objectives=np.asarray(obj, dtype=float).reshape(-1),
+                    info={"constraint_violation": float(vio)},
+                )
+            )
     if not objectives:
-        return (
+        return OptimizationFeedbackBatch.from_arrays(
             np.zeros((0, int(getattr(solver, "num_objectives", 1) or 1)), dtype=float),
             np.zeros((0,), dtype=float),
         )
-    return np.vstack(objectives), np.asarray(violations, dtype=float).reshape(-1)
+    return OptimizationFeedbackBatch.from_arrays(
+        np.vstack(objectives),
+        np.asarray(violations, dtype=float).reshape(-1),
+        items=feedback_items,
+        metadata={"evaluation_path": "individual_fallback"},
+    )
 
 
 def evaluate_population_with_plugins_and_bias(
@@ -349,7 +449,7 @@ def evaluate_population_with_plugins_and_bias(
         used_fallback = False
         population_context = dict(solver.build_context())
 
-        def fallback() -> tuple[np.ndarray, np.ndarray]:
+        def fallback() -> OptimizationFeedbackBatch:
             nonlocal used_fallback
             used_fallback = True
             return _evaluate_population_via_individuals(
@@ -371,7 +471,7 @@ def evaluate_population_with_plugins_and_bias(
             batch_dispatched = True
 
         if mediator is not None and callable(getattr(mediator, "evaluate_population", None)):
-            objectives, violations = mediator.evaluate_population(
+            raw_result = mediator.evaluate_population(
                 solver,
                 pop,
                 context={**population_context, "population_size": pop_size},
@@ -379,15 +479,16 @@ def evaluate_population_with_plugins_and_bias(
                 on_dispatch=on_dispatch,
             )
         else:
-            objectives, violations = fallback()
+            raw_result = fallback()
 
-        objectives, violations = _validate_population_result(
+        feedback_batch = _normalize_population_feedback_result(
             solver,
-            objectives,
-            violations,
+            raw_result,
             population_size=pop_size,
             context="evaluate_population.result",
         )
+        objectives = np.array(feedback_batch.objectives, dtype=float, copy=True)
+        violations = np.array(feedback_batch.violations, dtype=float, copy=True)
 
         if not used_fallback:
             if bool(getattr(solver, "enable_bias", False)):
@@ -406,6 +507,17 @@ def evaluate_population_with_plugins_and_bias(
                     adjusted.append(row)
                     violations[idx] = vio
                 objectives = np.vstack(adjusted) if adjusted else objectives
+
+        feedback_batch = feedback_batch.with_arrays(
+            objectives,
+            violations,
+            metadata={
+                "evaluation_path": "individual_fallback" if used_fallback else "provider",
+            },
+        )
+        solver._last_feedback_batch = feedback_batch
+        objectives = np.array(feedback_batch.objectives, dtype=float, copy=True)
+        violations = np.array(feedback_batch.violations, dtype=float, copy=True)
 
         if claim.remaining > 0:
             _consume_evaluations(solver, claim, claim.remaining)
@@ -440,7 +552,7 @@ def evaluate_population_with_plugins_and_bias(
 def evaluate_external_population_with_contract(
     solver: Any,
     population: Any,
-    evaluator: Callable[[np.ndarray], tuple[Any, Any]],
+    evaluator: Callable[[np.ndarray], Any],
     *,
     context_name: str,
     bias_already_applied: bool = False,
@@ -460,6 +572,11 @@ def evaluate_external_population_with_contract(
             dtype=float,
         )
         violations = np.zeros((0,), dtype=float)
+        solver._last_feedback_batch = OptimizationFeedbackBatch.from_arrays(
+            objectives,
+            violations,
+            metadata={"evaluation_path": str(context_name)},
+        )
         _persist_evaluation_snapshot(
             solver,
             pop,
@@ -492,14 +609,15 @@ def evaluate_external_population_with_contract(
                 plugin_manager.on_evaluate_start(individual, item_context)
 
         _consume_evaluations(solver, claim, pop_size)
-        objectives, violations = evaluator(pop)
-        objectives, violations = _validate_population_result(
+        raw_result = evaluator(pop)
+        feedback_batch = _normalize_population_feedback_result(
             solver,
-            objectives,
-            violations,
+            raw_result,
             population_size=pop_size,
             context=f"{context_name}.result",
         )
+        objectives = np.array(feedback_batch.objectives, dtype=float, copy=True)
+        violations = np.array(feedback_batch.violations, dtype=float, copy=True)
 
         enable_bias = bool(getattr(solver, "enable_bias", False))
         ignore_bias_violation = bool(
@@ -525,6 +643,15 @@ def evaluate_external_population_with_contract(
             objectives = np.vstack(adjusted) if adjusted else objectives
         elif enable_bias and ignore_bias_violation:
             violations = np.zeros((pop_size,), dtype=float)
+
+        feedback_batch = feedback_batch.with_arrays(
+            objectives,
+            violations,
+            metadata={"evaluation_path": str(context_name)},
+        )
+        solver._last_feedback_batch = feedback_batch
+        objectives = np.array(feedback_batch.objectives, dtype=float, copy=True)
+        violations = np.array(feedback_batch.violations, dtype=float, copy=True)
 
         _complete_evaluations(solver, claim)
         claim_pending = False

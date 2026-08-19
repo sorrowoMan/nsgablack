@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import Any, Dict, Mapping, Sequence
 
+from blackbase.call_binding import CallCandidate, invoke_bound_once
+
 
 @dataclass(frozen=True)
 class ExecutionGraphNode:
@@ -132,10 +134,18 @@ def _list_plugins(plugin_manager: object | None) -> Sequence[object]:
         return ()
     list_plugins = getattr(plugin_manager, "list_plugins", None)
     if callable(list_plugins):
-        try:
-            return tuple(list_plugins(enabled_only=False))
-        except TypeError:
-            return tuple(list_plugins())
+        return tuple(
+            invoke_bound_once(
+                list_plugins,
+                (
+                    CallCandidate(
+                        kwargs={"enabled_only": False},
+                        label="include_disabled",
+                    ),
+                    CallCandidate(label="empty"),
+                ),
+            )
+        )
     return tuple(getattr(plugin_manager, "plugins", ()) or ())
 
 

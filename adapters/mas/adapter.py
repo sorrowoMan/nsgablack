@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from ..algorithm_adapter import AlgorithmAdapter
-from ...utils.context.context_keys import KEY_BEST_X
+from blackbase.context.context_keys import KEY_BEST_X
 from ...utils.surrogate.vector_surrogate import VectorSurrogate
 
 
@@ -105,7 +105,7 @@ class MASAdapter(AlgorithmAdapter):
         self,
         control: Any,
         candidates: Sequence[np.ndarray],
-        feedback: Tuple[np.ndarray, np.ndarray],
+        feedback: Any,
         context: Dict[str, Any],
     ) -> None:
         objectives, violations = feedback
@@ -127,7 +127,7 @@ class MASAdapter(AlgorithmAdapter):
         pipeline = getattr(control, "representation_pipeline", None)
         if pipeline is not None and hasattr(pipeline, "init"):
             try:
-                return np.asarray(pipeline.init(control.problem, context=None), dtype=float)
+                return np.asarray(pipeline.init({"problem": control.problem}), dtype=float)
             except Exception:
                 pass
         low, high = self._extract_bounds(control)

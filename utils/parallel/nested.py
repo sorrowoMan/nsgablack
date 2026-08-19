@@ -17,10 +17,10 @@ from uuid import uuid4
 import numpy as np
 
 from ...core.nested_solver import InnerRuntimeEvaluator
-from ...core.resources import (
+from blackbase.resources import (
     InMemoryResourceScheduler,
-    L0RuntimeBackend,
     ResourceRequirement,
+    TaskRuntimeBackend,
     coerce_resource_context,
     TaskEnvelope,
     TaskResult,
@@ -480,7 +480,7 @@ class RedisNestedDistributedEvaluator:
     def __init__(
         self,
         *,
-        queue: L0RuntimeBackend,
+        queue: TaskRuntimeBackend,
         run_id: Optional[str] = None,
         timeout_seconds: float = 3600.0,
         poll_interval_seconds: float = 1.0,
@@ -570,7 +570,7 @@ class RedisNestedDistributedEvaluator:
 
 def run_nested_redis_worker_once(
     *,
-    queue: L0RuntimeBackend,
+    queue: TaskRuntimeBackend,
     run_id: Optional[str] = None,
     task_runner: Any,
     worker_id: Optional[str] = None,
@@ -710,7 +710,7 @@ def run_nested_redis_worker_once(
 
 def run_nested_redis_worker(
     *,
-    queue: L0RuntimeBackend,
+    queue: TaskRuntimeBackend,
     task_runner: Any,
     worker_id: Optional[str] = None,
     run_id: Optional[str] = None,

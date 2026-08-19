@@ -14,7 +14,7 @@
 | --- | --- | --- | --- |
 | `AlgorithmAdapter` | optimizer strategy / search policy | 优化策略基类。 | 只管 propose/update，不管 solver 生命周期和评估路径。 |
 | `propose(solver, context)` | ask / candidate proposal | 产生候选解。 | 允许多种算法共享同一个 solver runtime。 |
-| `update(solver, candidates, feedback, context)` | tell / feedback assimilation | 根据 `feedback=(objectives, violations)` 更新内部状态。 | 把评估结果作为正式反馈流，而不是算法内部私算。 |
+| `update(solver, candidates, feedback, context)` | tell / feedback assimilation | 根据 `OptimizationFeedbackBatch` 更新内部状态；纯数值算法可将其解包为 objectives / violations。 | 把评估结果作为正式反馈流，而不是算法内部私算。 |
 | `setup/teardown` | lifecycle hooks | 算法策略挂载/卸载。 | 生命周期存在但弱化，主生命周期仍归 solver。 |
 | `get_state/set_state` | checkpointable optimizer state | adapter 状态恢复。 | checkpoint 可恢复算法策略，而不只恢复 solver 字段。 |
 | `get_population/set_population` | population state IO | 支持插件或 checkpoint 写回种群。 | 运行态 population 归属可在 adapter 和 solver 间对齐。 |

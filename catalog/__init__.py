@@ -9,7 +9,7 @@ It is intentionally *shallow*: it does not enforce how users decompose algorithm
 it only makes components discoverable.
 """
 
-from .registry import CatalogEntry, CatalogRegistry, get_catalog
+from .registry import CatalogEntry, get_catalog
 from .facade import (
     catalog_facets,
     catalog_neighbors,
@@ -46,7 +46,6 @@ from .export import export_catalog_docs, export_default_docs
 
 __all__ = [
     "CatalogEntry",
-    "CatalogRegistry",
     "get_catalog",
     "list_entries",
     "search_entries",
@@ -107,5 +106,5 @@ def get_entry(key: str):
 
 
 def reload_catalog(*, profile: str | None = None):
-    """Reload catalog (useful after editing `catalog/entries.toml` or env var paths)."""
+    """Reload catalog after editing `catalog/entries/*.toml` or env paths."""
     return get_catalog(refresh=True, profile=profile)

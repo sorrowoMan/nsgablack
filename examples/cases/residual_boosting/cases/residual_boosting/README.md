@@ -8,7 +8,7 @@
 
 mlblack components used：
 
-- `SerialTrainer`：按顺序执行 base stage 和 residual stage。
+- BlackBase `CaseStageRunner`：按顺序执行 base Case 和 residual Case。
 - `StageSpec` / `CompletionPolicy`：描述 stage wiring 和 one-step closed-form fitting。
 - `ArtifactRef`：把 base model artifact 传给 residual stage。
 - `NumericDataView` / `train_valid_split`：提供 tabular train/validation data semantics。
@@ -82,7 +82,7 @@ Synthetic dataset 上的代表性 fixed-point comparison：
 | `problem/config.py` | Problem registry 和 dataset parameters。 |
 | `pipeline/config.py` | 四维 recipe representation pipeline。 |
 | `solver/config.py` | 用于 example validation 的 smoke-sized solver profile。 |
-| `catalog/entries.toml` | Case-local project catalog entries。 |
+| `catalog/entries/<kind>.toml` | Case-local project catalog entries。 |
 
 ## 运行和验证
 

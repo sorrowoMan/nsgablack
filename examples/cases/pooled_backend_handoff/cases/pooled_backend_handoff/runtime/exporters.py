@@ -225,7 +225,7 @@ def _is_same_fingerprint(path: Path, payload: Mapping[str, Any], *, scope: str) 
         return False
     try:
         stored = json.loads(marker.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError):
         return False
     stored_scope = str(stored.get("scope", "")).lower()
     expected_scope = str(scope).lower()

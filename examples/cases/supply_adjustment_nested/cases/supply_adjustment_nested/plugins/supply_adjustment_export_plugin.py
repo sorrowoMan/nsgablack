@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from nsgablack.core.resources import DataRef
+from blackbase.resources import DataRef
 from nsgablack.plugins import Plugin
 from reporting import write_supply_adjustment_audit_report
 
@@ -64,7 +64,7 @@ class SupplyAdjustmentExportPlugin(Plugin):
                         else:
                             x = inds_arr[0]
                             selected_objectives = None
-                except Exception:
+                except (TypeError, ValueError, IndexError):
                     x = None
         if x is None:
             try:
@@ -77,7 +77,7 @@ class SupplyAdjustmentExportPlugin(Plugin):
                     x = pop_arr[idx]
                     if obj_arr.ndim == 2 and obj_arr.shape[0] > idx:
                         selected_objectives = obj_arr[idx]
-            except Exception:
+            except (TypeError, ValueError):
                 x = None
         if x is None:
             return
@@ -123,15 +123,16 @@ class SupplyAdjustmentExportPlugin(Plugin):
             print(f"[export] runtime_artifact_ref={runtime_ref.as_dict()}")
 
     def _select_export_candidate(self, solver):
+        snapshot_population, snapshot_objectives, _ = self.get_population_snapshot(solver)
         candidate_sets = []
         for pop, obj in (
-            (getattr(solver, "population", None), getattr(solver, "objectives", None)),
+            (snapshot_population, snapshot_objectives),
             self._pareto_arrays(solver),
         ):
             try:
                 pop_arr = np.asarray(pop, dtype=float)
                 obj_arr = np.asarray(obj, dtype=float)
-            except Exception:
+            except (TypeError, ValueError):
                 continue
             if pop_arr.ndim != 2 or pop_arr.shape[0] == 0:
                 continue
@@ -176,7 +177,7 @@ class SupplyAdjustmentExportPlugin(Plugin):
     def _moved_quantity_days(self, x) -> float:
         try:
             shifts = self.case_problem.decode_shifts(np.asarray(x, dtype=float))
-        except Exception:
+        except (TypeError, ValueError, IndexError, AttributeError):
             return 0.0
         total = 0.0
         for i, shift in enumerate(shifts):
@@ -185,7 +186,7 @@ class SupplyAdjustmentExportPlugin(Plugin):
                 continue
             try:
                 total += float(self.case_problem.events[int(i)].quantity) * float(s)
-            except Exception:
+            except (TypeError, ValueError, IndexError, AttributeError):
                 continue
         return float(total)
 
@@ -196,20 +197,20 @@ class SupplyAdjustmentExportPlugin(Plugin):
             return None, None
         return pareto.get("individuals"), pareto.get("objectives")
 
-    @staticmethod
-    def _lookup_objectives_for_candidate(solver, x):
+    def _lookup_objectives_for_candidate(self, solver, x):
         if x is None:
             return None
         try:
             target = np.asarray(x, dtype=float).reshape(-1)
-        except Exception:
+        except (TypeError, ValueError):
             return None
         pareto = getattr(solver, "pareto_solutions", None)
         if not isinstance(pareto, dict):
             pareto = {}
+        snapshot_population, snapshot_objectives, _ = self.get_population_snapshot(solver)
 
         for pop_obj in (
-            (getattr(solver, "population", None), getattr(solver, "objectives", None)),
+            (snapshot_population, snapshot_objectives),
             (
                 pareto.get("individuals"),
                 pareto.get("objectives"),
@@ -219,7 +220,7 @@ class SupplyAdjustmentExportPlugin(Plugin):
             try:
                 pop_arr = np.asarray(pop, dtype=float)
                 obj_arr = np.asarray(obj, dtype=float)
-            except Exception:
+            except (TypeError, ValueError):
                 continue
             if pop_arr.ndim != 2 or pop_arr.shape[0] == 0 or pop_arr.shape[1] != target.size:
                 continue
@@ -236,7 +237,7 @@ class SupplyAdjustmentExportPlugin(Plugin):
         if best is not None:
             try:
                 return np.asarray([float(best)], dtype=float)
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 return None
         return None
 

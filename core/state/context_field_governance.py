@@ -1,8 +1,4 @@
-"""
-Forwarding module for context field governance.
-
-This module re-exports from blackbase for seamless migration.
-"""
+"""Optimization-facing context-field governance backed by blackbase."""
 
 from blackbase.context import (
     CONTEXT_FIELD_SCHEMA_NAME,

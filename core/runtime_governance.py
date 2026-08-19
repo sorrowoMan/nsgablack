@@ -6,8 +6,9 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
+from blackbase.call_binding import CallCandidate, invoke_bound_once
 
-from ..utils.context.context_keys import (
+from blackbase.context.context_keys import (
     KEY_COMPANION_NEXT_ELIGIBLE_GENERATION,
     KEY_COMPANION_PHASE_COUNT_USED,
     KEY_COMPANION_PHASE_INDEX,
@@ -21,8 +22,8 @@ from ..utils.context.context_keys import (
     KEY_RUNNING,
     KEY_SNAPSHOT_KEY,
 )
-from ..utils.context.snapshot_store import make_snapshot_key
-from ..utils.engineering.error_policy import report_soft_error
+from blackbase.context import make_snapshot_key
+from blackbase.plugin import report_soft_error
 
 logger = logging.getLogger(__name__)
 
@@ -230,23 +231,19 @@ def commit_population_snapshot(
             if not callable(setter):
                 continue
             try:
-                handled = setter(x_arr, f_arr, v_arr)
-            except TypeError:
-                try:
-                    handled = setter(solver, x_arr, f_arr, v_arr)
-                except Exception as exc:
-                    if strict:
-                        raise
-                    report_soft_error(
-                        component="RuntimeGovernance",
-                        event=f"commit_population_snapshot.{method_name}.call_with_solver",
-                        exc=exc,
-                        logger=logger,
-                        context_store=getattr(solver, "context_store", None),
-                        strict=False,
-                        level="debug",
-                    )
-                    handled = False
+                handled = invoke_bound_once(
+                    setter,
+                    (
+                        CallCandidate(
+                            args=(x_arr, f_arr, v_arr),
+                            label="population",
+                        ),
+                        CallCandidate(
+                            args=(solver, x_arr, f_arr, v_arr),
+                            label="solver_population",
+                        ),
+                    ),
+                )
             except Exception as exc:
                 if strict:
                     raise
@@ -931,10 +928,17 @@ class CompanionOrchestrator:
         fx = np.asarray(obj[0], dtype=float).reshape(-1)
         vv = float(np.asarray(vio, dtype=float).reshape(-1)[0])
 
+        feedback = getattr(solver, "get_last_feedback_batch", lambda: None)()
+        if feedback is None or int(getattr(feedback, "candidate_count", -1)) != 1:
+            from .evaluation_feedback import OptimizationFeedbackBatch
+
+            feedback = OptimizationFeedbackBatch.from_arrays(obj, vio)
+        else:
+            feedback = feedback.with_arrays(obj, vio)
         adapter.update(
             solver,
             pop,
-            (np.asarray(obj, dtype=float), np.asarray(vio, dtype=float).reshape(-1)),
+            feedback,
             ctx,
         )
 

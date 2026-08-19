@@ -48,11 +48,6 @@ def test_contract_key_literals_are_canonical() -> None:
         "context_provides",
         "context_mutates",
         "context_cache",
-        "requires_context_keys",
-        "runtime_requires",
-        "runtime_provides",
-        "runtime_mutates",
-        "runtime_cache",
     }
     issues: list[str] = []
     for path in _iter_py_files():
