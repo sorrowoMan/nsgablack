@@ -106,6 +106,7 @@ class MOEADAdapter(AlgorithmAdapter):
         self.pop_X: Optional[np.ndarray] = None  # (N, D)
         self.pop_F: Optional[np.ndarray] = None  # (N, M)
         self.pop_V: Optional[np.ndarray] = None  # (N,)
+        self._population_candidate_tokens: tuple[str | None, ...] = ()
 
         self._pending_indices: List[int] = []
         self._pending_modes: List[str] = []
@@ -116,6 +117,7 @@ class MOEADAdapter(AlgorithmAdapter):
     # Lifecycle
     # ------------------------------------------------------------------
     def setup(self, control: Any) -> None:
+        self._population_candidate_tokens = ()
         missing = [
             name
             for name in ("init_candidate", "evaluate_population")
@@ -154,6 +156,7 @@ class MOEADAdapter(AlgorithmAdapter):
             self.pop_X = np.empty((0, int(getattr(control, "dimension", 0) or 0)), dtype=float)
             self.pop_F = np.empty((0, self._m), dtype=float)
             self.pop_V = np.empty((0,), dtype=float)
+            self._population_candidate_tokens = ()
             self._pending_indices = []
             self._pending_modes = []
             request_stop = getattr(control, "request_stop", None)
@@ -171,8 +174,15 @@ class MOEADAdapter(AlgorithmAdapter):
         # initialize population
         pop = []
         for _ in range(self._n):
-            pop.append(np.asarray(control.init_candidate({"generation": int(getattr(control, "generation", 0) or 0)})))
+            pop.append(control.init_candidate({"generation": int(getattr(control, "generation", 0) or 0)}))
+        self._population_candidate_tokens = self.candidate_tokens_for(control, pop)
         self.pop_X = np.stack(pop, axis=0)
+        provenance_getter = getattr(control, "candidate_provenance_for", None)
+        provenance_binder = getattr(control, "bind_candidate_provenance", None)
+        if callable(provenance_getter) and callable(provenance_binder):
+            records = tuple(provenance_getter(candidate) for candidate in pop)
+            if all(record is not None for record in records):
+                provenance_binder(self.pop_X, records, activate=True)
 
         # evaluate initial population using the solver's evaluation path (plugins may short-circuit)
         F, V = control.evaluate_population(self.pop_X)
@@ -259,6 +269,7 @@ class MOEADAdapter(AlgorithmAdapter):
         cand_X = np.asarray(candidates, dtype=float)
         cand_F = np.asarray(objectives, dtype=float)
         cand_V = np.asarray(violations, dtype=float).reshape(-1)
+        candidate_tokens = self.candidate_tokens_for(control, candidates)
         if cand_X.ndim == 1:
             cand_X = cand_X.reshape(1, -1)
         if cand_F.ndim == 1:
@@ -298,6 +309,11 @@ class MOEADAdapter(AlgorithmAdapter):
                     self.pop_X[int(j)] = yx
                     self.pop_F[int(j)] = yf
                     self.pop_V[int(j)] = yv
+                    tokens = list(self._population_candidate_tokens)
+                    if len(tokens) != int(self.pop_X.shape[0]):
+                        tokens = [None] * int(self.pop_X.shape[0])
+                    tokens[int(j)] = candidate_tokens[k]
+                    self._population_candidate_tokens = tuple(tokens)
                     replaced += 1
 
         self._refresh_runtime_projection()
@@ -327,6 +343,7 @@ class MOEADAdapter(AlgorithmAdapter):
             "ideal": None if self.ideal is None else self.ideal.tolist(),
             "weights": None if self.weights is None else self.weights.tolist(),
             "neighbors": None if self.neighbors is None else self.neighbors.tolist(),
+            "candidate_tokens": list(self._population_candidate_tokens),
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
@@ -345,6 +362,7 @@ class MOEADAdapter(AlgorithmAdapter):
         self.weights = None if weights is None else np.asarray(weights, dtype=float)
         neighbors = state.get("neighbors")
         self.neighbors = None if neighbors is None else np.asarray(neighbors, dtype=int)
+        self._population_candidate_tokens = tuple(state.get("candidate_tokens", ()) or ())
 
     # ------------------------------------------------------------------
     # Public helpers for plugins
@@ -353,6 +371,24 @@ class MOEADAdapter(AlgorithmAdapter):
         if self.pop_X is None or self.pop_F is None or self.pop_V is None:
             return np.zeros((0, 0)), np.zeros((0, 0)), np.zeros((0,))
         return np.asarray(self.pop_X), np.asarray(self.pop_F), np.asarray(self.pop_V)
+
+    def get_population_candidate_tokens(self) -> tuple[str | None, ...] | None:
+        if self.pop_X is None:
+            return ()
+        if len(self._population_candidate_tokens) != int(self.pop_X.shape[0]):
+            return None
+        return tuple(self._population_candidate_tokens)
+
+    def set_population_candidate_tokens(
+        self,
+        candidate_tokens: Sequence[str | None],
+    ) -> bool:
+        tokens = tuple(candidate_tokens)
+        expected = 0 if self.pop_X is None else int(self.pop_X.shape[0])
+        if len(tokens) != expected:
+            raise ValueError("MOEA/D population tokens must align with population rows")
+        self._population_candidate_tokens = tokens
+        return True
 
     def set_population(self, population: np.ndarray, objectives: np.ndarray, violations: np.ndarray) -> bool:
         """Write back population snapshot from plugins (context-first path).
@@ -377,9 +413,17 @@ class MOEADAdapter(AlgorithmAdapter):
         if self._m > 0 and n > 0 and m != int(self._m):
             return False
 
+        preserve_tokens = (
+            self.pop_X is not None
+            and np.asarray(self.pop_X).shape == x_arr.shape
+            and np.array_equal(self.pop_X, x_arr, equal_nan=True)
+            and len(self._population_candidate_tokens) == int(x_arr.shape[0])
+        )
         self.pop_X = x_arr
         self.pop_F = f_arr
         self.pop_V = v_arr
+        if not preserve_tokens:
+            self._population_candidate_tokens = (None,) * int(x_arr.shape[0])
 
         # Bootstrap dimension metadata from incoming data when uninitialised.
         if self._m == 0 and m > 0:

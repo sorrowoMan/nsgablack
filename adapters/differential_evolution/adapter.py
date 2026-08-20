@@ -76,6 +76,7 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         self.population: Optional[np.ndarray] = None
         self.objectives: Optional[np.ndarray] = None
         self.violations: Optional[np.ndarray] = None
+        self._population_candidate_tokens: tuple[str | None, ...] = ()
         self._last_target_indices: List[int] = []
         self._last_target_scores: np.ndarray = np.zeros(0, dtype=float)
         self._runtime_projection: Dict[str, Any] = {}
@@ -86,6 +87,7 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         self.population = None
         self.objectives = None
         self.violations = None
+        self._population_candidate_tokens = ()
         self._last_target_indices = []
         self._last_target_scores = np.zeros(0, dtype=float)
         self._runtime_projection = {KEY_STRATEGY_ID: str(self.cfg.strategy)}
@@ -130,6 +132,7 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         obj = np.asarray(objectives, dtype=float)
         vio = np.asarray(violations, dtype=float).reshape(-1)
         cand_scores = self._scores(obj, vio)
+        candidate_tokens = self.candidate_tokens_for(control, candidates)
 
         if self.population is None or self.population.shape[0] == 0:
             raise RuntimeError("DE.update requires population state created by propose()")
@@ -158,6 +161,11 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
                 self.population[target_idx] = cand[j]
                 self.objectives[target_idx] = obj[j]
                 self.violations[target_idx] = vio[j]
+                tokens = list(self._population_candidate_tokens)
+                if len(tokens) != int(self.population.shape[0]):
+                    tokens = [None] * int(self.population.shape[0])
+                tokens[target_idx] = candidate_tokens[j]
+                self._population_candidate_tokens = tuple(tokens)
         self._sync_runtime_projection(context)
 
     def on_proposal_disposition(
@@ -189,10 +197,36 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
 
     def set_population(self, population: np.ndarray, objectives: np.ndarray, violations: np.ndarray) -> bool:
         pop, obj, vio = self.validate_population_snapshot(population, objectives, violations)
+        preserve_tokens = (
+            self.population is not None
+            and np.asarray(self.population).shape == pop.shape
+            and np.array_equal(self.population, pop, equal_nan=True)
+            and len(self._population_candidate_tokens) == int(pop.shape[0])
+        )
         self.population = pop.copy()
         self.objectives = obj.copy()
         self.violations = vio.copy()
+        if not preserve_tokens:
+            self._population_candidate_tokens = (None,) * int(pop.shape[0])
         self._sync_runtime_projection({})
+        return True
+
+    def get_population_candidate_tokens(self) -> tuple[str | None, ...] | None:
+        if self.population is None:
+            return ()
+        if len(self._population_candidate_tokens) != int(self.population.shape[0]):
+            return None
+        return tuple(self._population_candidate_tokens)
+
+    def set_population_candidate_tokens(
+        self,
+        candidate_tokens: Sequence[str | None],
+    ) -> bool:
+        tokens = tuple(candidate_tokens)
+        expected = 0 if self.population is None else int(self.population.shape[0])
+        if len(tokens) != expected:
+            raise ValueError("DE population tokens must align with population rows")
+        self._population_candidate_tokens = tokens
         return True
 
     def get_population(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -218,6 +252,7 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
             "population": None if self.population is None else self.population.tolist(),
             "objectives": None if self.objectives is None else self.objectives.tolist(),
             "violations": None if self.violations is None else self.violations.tolist(),
+            "candidate_tokens": list(self._population_candidate_tokens),
             "strategy": str(self.cfg.strategy),
         }
 
@@ -230,6 +265,14 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         self.population = None if pop is None else np.asarray(pop, dtype=float)
         self.objectives = None if obj is None else np.asarray(obj, dtype=float)
         self.violations = None if vio is None else np.asarray(vio, dtype=float).reshape(-1)
+        self._population_candidate_tokens = tuple(state.get("candidate_tokens", ()) or ())
+        if self.population is not None and len(self._population_candidate_tokens) not in {
+            0,
+            int(self.population.shape[0]),
+        }:
+            raise ValueError("DE checkpoint tokens do not align with population")
+        if self.population is not None and not self._population_candidate_tokens:
+            self._population_candidate_tokens = (None,) * int(self.population.shape[0])
         self._sync_runtime_projection({})
 
     def _ensure_population(self, control: Any, context: Dict[str, Any]) -> None:
@@ -263,6 +306,20 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
             pop_arr = np.asarray(pop, dtype=float)
             if pop_arr.ndim == 2 and pop_arr.shape[0] > 0:
                 self.population = pop_arr.copy()
+                batch_getter = getattr(control, "get_candidate_population_batch", None)
+                batch = batch_getter() if callable(batch_getter) else None
+                if (
+                    batch is not None
+                    and batch.numeric_matrix.shape == self.population.shape
+                    and np.array_equal(
+                        batch.numeric_matrix,
+                        self.population,
+                        equal_nan=True,
+                    )
+                ):
+                    self._population_candidate_tokens = tuple(batch.candidate_tokens)
+                else:
+                    self._population_candidate_tokens = (None,) * int(pop_arr.shape[0])
                 if obj is not None and vio is not None:
                     self.objectives = np.asarray(obj, dtype=float).copy()
                     self.violations = np.asarray(vio, dtype=float).reshape(-1).copy()
@@ -270,7 +327,8 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
                 return
 
         init_n = max(2, int(self.cfg.population_size))
-        created = [np.asarray(control.init_candidate(context), dtype=float) for _ in range(init_n)]
+        created = [control.init_candidate(context) for _ in range(init_n)]
+        self._population_candidate_tokens = self.candidate_tokens_for(control, created)
         self.population = np.asarray(created, dtype=float)
         self.objectives = None
         self.violations = None

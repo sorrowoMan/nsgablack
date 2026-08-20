@@ -136,6 +136,18 @@ class CandidateProvenance:
             "metadata": _thaw_payload(self.metadata),
         }
 
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "CandidateProvenance":
+        data = dict(payload or {})
+        return cls(
+            candidate_token=str(data.get("candidate_token", "")),
+            source_kind=str(data.get("source_kind", "evaluation")),
+            source_run_id=data.get("source_run_id"),
+            warm_start_id=data.get("warm_start_id"),
+            proposal_id=data.get("proposal_id"),
+            metadata=dict(data.get("metadata", {}) or {}),
+        )
+
 
 @dataclass(frozen=True)
 class IncumbentState:

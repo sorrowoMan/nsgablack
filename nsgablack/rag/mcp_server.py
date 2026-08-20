@@ -3,15 +3,6 @@
 
 from __future__ import annotations
 
-import json
-import sys
-from pathlib import Path
-
-# Ensure nsgablack is importable
-_HERE = Path(__file__).resolve().parent
-_REPO = _HERE.parent.parent  # rag/ -> nsgablack/ -> repo root
-if str(_REPO) not in sys.path:
-    sys.path.insert(0, str(_REPO))
 
 
 def _search(args: dict) -> str:

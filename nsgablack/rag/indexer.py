@@ -202,28 +202,19 @@ def _index_docs(root: Path, framework: str, store: RagStore, embedder: Embedder)
 
 def _load_catalog(framework: str, profile: str) -> list[dict]:
     """Load catalog entries for a framework."""
-    import sys
-    from pathlib import Path
-
     entries: list[dict] = []
     try:
         if framework == "nsgablack":
             from nsgablack.catalog import get_catalog
-            cat = get_catalog()
+            cat = get_catalog(profile=profile)
         else:
-            # Ensure mlblack is importable
-            ml_root = Path(MLBLACK_ROOT)
-            if str(ml_root.parent) not in sys.path:
-                sys.path.insert(0, str(ml_root.parent))
             from mlblack.catalog import get_catalog as get_mlblack_catalog
             cat = get_mlblack_catalog()
 
-        # Convert entries to dicts (handle both CatalogEntry objects and dicts)
-        raw = []
-        if hasattr(cat, '_entries'):
-            raw = list(cat._entries)
-        elif hasattr(cat, 'list_all'):
-            raw = list(cat.list_all())
+        list_entries = getattr(cat, "list", None)
+        if not callable(list_entries):
+            raise TypeError(f"{framework} catalog does not expose public list()")
+        raw = list(list_entries())
 
         for e in raw:
             if hasattr(e, 'to_dict'):

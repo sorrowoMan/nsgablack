@@ -125,6 +125,8 @@ from ..plugins import PluginManager
 logger = logging.getLogger(__name__)
 
 _SEMANTIC_METADATA_KEY = "candidate.semantic_metadata"
+_CANDIDATE_BATCH_SNAPSHOT_KEY = "candidate_batch"
+_CANDIDATE_PROVENANCE_SNAPSHOT_KEY = "candidate_provenance"
 
 
 @dataclass(frozen=True)
@@ -302,12 +304,15 @@ class SolverBase:
         self._active_candidate_population_ref: Optional[
             weakref.ReferenceType[np.ndarray]
         ] = None
+        self._candidate_population_batch: CandidateBatch | None = None
+        self._candidate_population_provenance: tuple[CandidateProvenance, ...] = ()
         self._incumbent_candidate_ref: Optional[str] = None
         self._incumbent_context_projection_revision = 0
         self._incumbent_context_projection_error: Optional[Dict[str, Any]] = None
         self._restored_incumbent_projection_audit: Optional[Dict[str, Any]] = None
         self._runtime_projection_audit: Dict[str, Any] = {}
         self._runtime_projection_audit_report_signature: Any = None
+        self._teardown_error: Dict[str, Any] | None = None
 
         self.generation = 0
         self.evaluation_count = 0
@@ -494,6 +499,7 @@ class SolverBase:
         )
         self._runtime_projection_audit = {}
         self._runtime_projection_audit_report_signature = None
+        self._teardown_error = None
         self._purge_large_context_store()
         self._clear_run_context_refs()
         self.set_generation(0)
@@ -519,6 +525,8 @@ class SolverBase:
             self._candidate_provenance_by_object = {}
         self._active_candidate_provenance = []
         self._active_candidate_population_ref = None
+        self._candidate_population_batch = None
+        self._candidate_population_provenance = ()
         if hasattr(self, "last_step_summary"):
             self.last_step_summary = {}
         if hasattr(self, "scalarizer_fallback_count"):
@@ -1808,6 +1816,181 @@ class SolverBase:
         self.bind_candidate_provenance(rows, semantic_records, activate=activate)
         return rows, semantic_records
 
+    def get_candidate_population_batch(self) -> CandidateBatch | None:
+        """Return the authoritative semantic/numeric population view."""
+
+        return self._candidate_population_batch
+
+    def get_candidate_population_provenance(self) -> tuple[CandidateProvenance, ...]:
+        """Return lineage aligned with :meth:`get_candidate_population_batch`."""
+
+        return tuple(self._candidate_population_provenance)
+
+    def commit_candidate_population(
+        self,
+        population: Any,
+        candidate_tokens: Iterable[str | None] | None,
+        *,
+        sources: Iterable[
+            tuple[CandidateBatch | None, Iterable[CandidateProvenance]]
+        ] = (),
+    ) -> CandidateBatch:
+        """Commit one token-aligned population without guessing semantic identity.
+
+        Numeric Adapters remain free to own selection arrays, but any selected
+        semantic row must name the token it selected.  This prevents equal
+        numeric rows with different metadata from being rebound by value.
+        """
+
+        matrix = np.asarray(population, dtype=float)
+        if matrix.ndim == 1:
+            matrix = matrix.reshape(1, -1) if matrix.size else matrix.reshape(0, 0)
+        if matrix.ndim != 2:
+            raise ValueError("candidate population matrix must be two-dimensional")
+        if matrix.shape[1] != int(self.dimension) and matrix.shape[0] > 0:
+            raise ValueError(
+                "candidate population dimension mismatch: "
+                f"expected={self.dimension}, actual={matrix.shape[1]}"
+            )
+
+        source_by_token: dict[str, tuple[UnknownState, CandidateProvenance]] = {}
+        has_semantic_metadata = False
+        for batch, provenance_values in tuple(sources):
+            if batch is None:
+                continue
+            records = tuple(provenance_values)
+            if len(records) != len(batch.semantic_states):
+                raise ValueError("candidate population source lineage is misaligned")
+            for state, record, token in zip(
+                batch.semantic_states,
+                records,
+                batch.candidate_tokens,
+            ):
+                has_semantic_metadata = has_semantic_metadata or bool(state.metadata)
+                effective_token = token or record.candidate_token
+                if effective_token != record.candidate_token:
+                    raise ValueError("candidate batch token disagrees with provenance token")
+                previous = source_by_token.get(record.candidate_token)
+                if previous is not None:
+                    previous_state, _ = previous
+                    if (
+                        not np.array_equal(
+                            previous_state.as_array(),
+                            state.as_array(),
+                            equal_nan=True,
+                        )
+                        or previous_state.as_dict()["metadata"]
+                        != state.as_dict()["metadata"]
+                    ):
+                        raise ValueError(
+                            "one candidate token identifies multiple semantic states: "
+                            f"{record.candidate_token}"
+                        )
+                source_by_token[record.candidate_token] = (state, record)
+
+        raw_tokens = (
+            (None,) * int(matrix.shape[0])
+            if candidate_tokens is None
+            else tuple(candidate_tokens)
+        )
+        if len(raw_tokens) != int(matrix.shape[0]):
+            raise ValueError("candidate population tokens must align with population rows")
+
+        states: list[UnknownState] = []
+        records: list[CandidateProvenance] = []
+        normalized_tokens: list[str] = []
+        for index, (row, raw_token) in enumerate(zip(matrix, raw_tokens)):
+            token = None if raw_token is None else str(raw_token).strip() or None
+            source = None if token is None else source_by_token.get(token)
+            if source is None and has_semantic_metadata:
+                raise ValueError(
+                    "semantic population selection must preserve candidate tokens; "
+                    f"row {index} has token={token!r}"
+                )
+            if source is None:
+                record = self._new_candidate_provenance(
+                    source_kind="adapter_population",
+                    source_run_id=self._active_run_id,
+                )
+                state = UnknownState(values=row, metadata={})
+            else:
+                source_state, record = source
+                if not np.array_equal(
+                    source_state.as_array(),
+                    np.asarray(row, dtype=float).reshape(-1),
+                    equal_nan=True,
+                ):
+                    raise ValueError(
+                        "candidate token was reused for different numeric values: "
+                        f"{record.candidate_token}"
+                    )
+                state = UnknownState(values=row, metadata=dict(source_state.metadata))
+            states.append(state)
+            records.append(record)
+            normalized_tokens.append(record.candidate_token)
+
+        batch = CandidateBatch(
+            semantic_states=tuple(states),
+            numeric_matrix=matrix,
+            candidate_tokens=tuple(normalized_tokens),
+        )
+        self._candidate_population_batch = batch
+        self._candidate_population_provenance = tuple(records)
+        self.bind_candidate_provenance(matrix, records, activate=True)
+        return batch
+
+    def export_candidate_population_checkpoint_state(self) -> dict[str, Any] | None:
+        batch = self._candidate_population_batch
+        if batch is None:
+            return None
+        return {
+            "batch": batch.as_dict(),
+            "provenance": [
+                item.as_dict() for item in self._candidate_population_provenance
+            ],
+        }
+
+    def restore_candidate_population_checkpoint_state(
+        self,
+        payload: Mapping[str, Any] | None,
+    ) -> None:
+        if not isinstance(payload, Mapping):
+            self._candidate_population_batch = None
+            self._candidate_population_provenance = ()
+            return
+        batch_payload = payload.get("batch")
+        if not isinstance(batch_payload, Mapping):
+            raise ValueError("candidate population checkpoint is missing its batch")
+        batch = CandidateBatch.from_dict(batch_payload)
+        raw_records = tuple(payload.get("provenance", ()) or ())
+        if len(raw_records) != len(batch.semantic_states):
+            raise ValueError("candidate population checkpoint lineage is misaligned")
+        records = tuple(
+            item
+            if isinstance(item, CandidateProvenance)
+            else CandidateProvenance.from_dict(item)
+            for item in raw_records
+        )
+        for token, record in zip(batch.candidate_tokens, records):
+            if token != record.candidate_token:
+                raise ValueError(
+                    "candidate population checkpoint token disagrees with lineage"
+                )
+        self._candidate_population_batch = batch
+        self._candidate_population_provenance = records
+        population = getattr(self, "population", None)
+        if population is not None:
+            values = np.asarray(population, dtype=float)
+            if values.shape != batch.numeric_matrix.shape or not np.array_equal(
+                values,
+                batch.numeric_matrix,
+                equal_nan=True,
+            ):
+                raise ValueError(
+                    "candidate population checkpoint disagrees with numeric population"
+                )
+            self.bind_candidate_provenance(values, records, activate=True)
+
     def semantic_candidate_state(
         self,
         candidate: Any,
@@ -1991,6 +2174,23 @@ class SolverBase:
             self._register_candidate_provenance(normalized, provenance)
         return normalized
 
+    def init_population(
+        self,
+        count: int,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> tuple[Any, ...]:
+        """Create an unevaluated proposal batch for Adapter consumption.
+
+        This is intentionally separate from ``initialize_population``: the
+        lifecycle operation may evaluate, publish snapshots and fire Plugin
+        hooks, while an Adapter proposal must remain side-effect bounded.
+        """
+
+        size = int(count)
+        if size < 0:
+            raise ValueError("population count must be non-negative")
+        return tuple(self.init_candidate(context) for _ in range(size))
+
     def mutate_candidate(self, x: np.ndarray, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         pipeline = self.representation_pipeline
         mutator = None
@@ -2103,6 +2303,24 @@ class SolverBase:
             except Exception:
                 if bool(getattr(self, "plugin_strict", False)):
                     raise
+        active_count = int(self.population.shape[0])
+        active_records = tuple(self._active_candidate_provenance[:active_count])
+        semantic_states = tuple(
+            self.semantic_candidate_state(row, candidate_index=index)
+            for index, row in enumerate(np.asarray(self.population, dtype=float))
+        )
+        source_batch = CandidateBatch(
+            semantic_states=semantic_states,
+            numeric_matrix=np.asarray(self.population, dtype=float),
+            candidate_tokens=tuple(
+                record.candidate_token for record in active_records
+            ),
+        )
+        self.commit_candidate_population(
+            self.population,
+            source_batch.candidate_tokens,
+            sources=((source_batch, active_records),),
+        )
         return self.population
 
     def write_population_snapshot(
@@ -2120,6 +2338,16 @@ class SolverBase:
             obj = obj.reshape(-1, 1) if obj.size > 0 else obj.reshape(0, 0)
         if obj.shape[0] != pop.shape[0] or vio.shape[0] != pop.shape[0]:
             return False
+        batch = self._candidate_population_batch
+        if batch is not None and (
+            pop.shape != batch.numeric_matrix.shape
+            or not np.array_equal(pop, batch.numeric_matrix, equal_nan=True)
+        ):
+            # A numeric-only writer cannot claim that semantic states and
+            # candidate lineage still describe a different population.  The
+            # next semantic-aware Solver step may establish a new CandidateBatch.
+            self._candidate_population_batch = None
+            self._candidate_population_provenance = ()
         self.population = pop
         self.objectives = obj
         self.constraint_violations = vio
@@ -2177,7 +2405,7 @@ class SolverBase:
         history: Optional[Any] = None,
         decision_trace: Optional[Any] = None,
     ) -> Dict[str, Any]:
-        return build_snapshot_payload(
+        payload = build_snapshot_payload(
             population,
             objectives,
             violations,
@@ -2186,6 +2414,20 @@ class SolverBase:
             history=history,
             decision_trace=decision_trace,
         )
+        batch = self._candidate_population_batch
+        if batch is not None and population is not None:
+            numeric = np.asarray(population, dtype=float)
+            if numeric.shape == batch.numeric_matrix.shape and np.array_equal(
+                numeric,
+                batch.numeric_matrix,
+                equal_nan=True,
+            ):
+                payload[_CANDIDATE_BATCH_SNAPSHOT_KEY] = batch.as_dict()
+                payload[_CANDIDATE_PROVENANCE_SNAPSHOT_KEY] = [
+                    item.as_dict()
+                    for item in self._candidate_population_provenance
+                ]
+        return payload
 
     def _persist_snapshot(
         self,

@@ -9,7 +9,7 @@ Current architecture rule:
 - `mlblack` is responsible for machine-learning semantics: DataView, Spec, Codec, Head, Trainer, Provider, Artifact, and ML reports.
 - Orchestration and resource grants belong to the shared substrate, not to either semantic layer privately.
 
-Shared substrate baseline: `blackbase>=0.3.3,<0.4.0`.
+Shared substrate baseline: `blackbase>=0.3.6,<0.4.0`.
 Version 0.3 removes the former resource/context forwarders and uses BlackBase
 directly for Case orchestration, L0 grants, call binding, Catalog primitives,
 runtime projection envelopes, and atomic ContextStore semantics.
@@ -104,7 +104,7 @@ state. The incumbent is an atomic `IncumbentState` record, fresh runs clear it,
 checkpoint resume restores it in one operation, and explicit warm starts are
 reevaluated before they may become authoritative. Custom incumbent scalarizers
 are pointwise policies; failures raise by default, while explicit fallback is
-audited as degraded result quality. Checkpoint v2 persists that audit state and
+audited as degraded result quality. Checkpoint v4 persists that audit state and
 rejects a resume when the builder reconstructed a different scalarizer policy.
 Large incumbent candidates are stored in SnapshotStore and exposed through the
 canonical `best_candidate_ref`; only candidates below the configured serialized
@@ -115,6 +115,13 @@ projection failures keep the committed incumbent and are recorded as stale
 projection audit state instead of being silently swallowed. Candidate tokens travel beside batch
 rows through repair and evaluation, so warm-start lineage is never inferred by
 comparing candidate values.
+Population write-back has one canonical control-plane path: Adapter state,
+Solver numeric fields, semantic CandidateBatch validity and Snapshot publication
+cannot be committed by competing Plugin helpers. Numeric-only replacement of a
+different population explicitly invalidates the old semantic batch. Checkpoint
+resume restores both views before publishing its final Snapshot; non-strict
+component skips are emitted as structured degraded resume audit rather than
+silently claiming trajectory-equivalent recovery.
 
 This also covers multi-solver and multi-trainer projects: put each runnable unit in its own Case and let the Project substrate coordinate order, parallelism, and resources.
 

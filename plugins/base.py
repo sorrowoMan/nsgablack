@@ -13,7 +13,6 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 
-from blackbase.call_binding import CallCandidate, invoke_bound_once
 from blackbase.plugin import PluginBase, PluginManager, report_soft_error
 
 logger = logging.getLogger(__name__)
@@ -184,84 +183,28 @@ class Plugin(PluginBase):
         violations,
         solver=None,
     ) -> bool:
-        """Write back updated population snapshot.
+        """Commit one population through the canonical control-plane writer.
 
-        Priority:
-        1) adapter.set_population / set_population_snapshot / update_population
-        2) solver.write_population_snapshot(...) protocol
+        Adapter state, Solver fields, semantic CandidateBatch invalidation and
+        Snapshot publication must not be maintained by two helper
+        implementations.  Import locally to avoid a module cycle while keeping
+        the optimization-specific commit protocol in ``runtime_governance``.
         """
+
         target = solver if solver is not None else self.solver
         if target is None:
             return False
+        from ..core.runtime_governance import commit_population_snapshot
 
-        try:
-            x_arr = np.asarray(population, dtype=float)
-            f_arr = np.asarray(objectives, dtype=float)
-            v_arr = np.asarray(violations, dtype=float).reshape(-1)
-        except Exception as exc:
-            report_soft_error(
-                component="Plugin",
-                event="commit_population_snapshot.cast",
-                exc=exc,
-                logger=logger,
+        return bool(
+            commit_population_snapshot(
+                target,
+                population,
+                objectives,
+                violations,
                 strict=False,
-                level="debug",
             )
-            return False
-
-        if x_arr.ndim == 1:
-            x_arr = x_arr.reshape(1, -1) if x_arr.size > 0 else x_arr.reshape(0, 0)
-        if f_arr.ndim == 1:
-            f_arr = f_arr.reshape(-1, 1) if f_arr.size > 0 else f_arr.reshape(0, 0)
-
-        adapter = getattr(target, "adapter", None)
-        if adapter is not None:
-            for method_name in ("set_population", "set_population_snapshot", "update_population"):
-                setter = getattr(adapter, method_name, None)
-                if not callable(setter):
-                    continue
-                try:
-                    handled = invoke_bound_once(
-                        setter,
-                        (
-                            CallCandidate(
-                                args=(x_arr, f_arr, v_arr),
-                                label="population",
-                            ),
-                            CallCandidate(
-                                args=(target, x_arr, f_arr, v_arr),
-                                label="solver_population",
-                            ),
-                        ),
-                    )
-                except Exception as exc:
-                    report_soft_error(
-                        component="Plugin",
-                        event=f"commit_population_snapshot.{method_name}",
-                        exc=exc,
-                        logger=logger,
-                        strict=False,
-                        level="debug",
-                    )
-                    handled = False
-                if handled is not False:
-                    return True
-
-        writer = getattr(target, "write_population_snapshot", None)
-        if callable(writer):
-            try:
-                return bool(writer(x_arr, f_arr, v_arr))
-            except Exception as exc:
-                report_soft_error(
-                    component="Plugin",
-                    event="commit_population_snapshot.writer",
-                    exc=exc,
-                    logger=logger,
-                    strict=False,
-                    level="debug",
-                )
-                return False
-        return False
+        )
 
 
 __all__ = [

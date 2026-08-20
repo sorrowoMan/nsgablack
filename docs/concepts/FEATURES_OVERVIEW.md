@@ -175,7 +175,7 @@
   - `IncumbentState` 原子保存候选、目标、约束违反、评分与运行来源
   - 默认使用 feasibility-first，再在同一可行性层级比较 `sum(objective_row)`
   - 自定义策略通过 `set_incumbent_scalarizer(...)` 声明稳定 pointwise scalarizer
-  - checkpoint v2 保存 scalarizer 审计、run sequence 与原子 incumbent；v1 只经显式迁移读取
+  - checkpoint v4 保存 scalarizer 审计、run sequence、原子 incumbent 与 token 对齐的 CandidateBatch population；v1-v3 只经显式迁移读取
   - warm-start 使用稳定 candidate token 贯穿 repair/evaluate，不再按数值反查来源
 
 ### Adapter（策略内核）

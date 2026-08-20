@@ -442,7 +442,7 @@ def test_checkpoint_writer_uses_v3_and_carries_component_and_selection_audit(
     payload = plugin._build_payload(solver=solver, reason="schema-test")
     state = payload["solver_state"]
 
-    assert payload["schema"] == "nsgablack.checkpoint.v3"
+    assert payload["schema"] == "nsgablack.checkpoint.v4"
     assert "adapter" in payload["stateful_components"]
     assert state["run_sequence"] == 1
     assert state["incumbent_selection"] == {
@@ -501,6 +501,38 @@ def test_checkpoint_uses_solver_declared_stateful_components(sample_problem) -> 
 
     assert "evaluation_provider" in restored
     assert target_provider.cursor == 7
+
+
+def test_checkpoint_non_strict_component_skip_is_reported_as_degraded(
+    sample_problem,
+) -> None:
+    from nsgablack.plugins import CheckpointResumePlugin
+
+    solver = _build_composable_solver(sample_problem)
+    reader = CheckpointResumePlugin()
+    reader.attach(solver)
+    reader._begin_resume_audit("direct")
+
+    restored = reader._apply_component_states(
+        solver,
+        {
+            "evaluation_provider": {
+                "module": "missing.provider",
+                "class": "MissingProvider",
+                "state": {"cursor": 7},
+            }
+        },
+    )
+    reader._finish_resume_audit(status="degraded", current=True)
+    audit = reader.get_report()["resume_audit"]
+
+    assert restored == set()
+    assert audit["status"] == "degraded"
+    assert audit["current"] is True
+    assert audit["trajectory_equivalent"] is False
+    assert audit["skipped_component_count"] == 1
+    assert audit["issues"][0]["component"] == "evaluation_provider"
+    assert audit["issues"][0]["reason"] == "unavailable"
 
 
 def test_checkpoint_roundtrip_restores_scalarizer_audit_and_validates_policy(

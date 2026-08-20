@@ -153,6 +153,46 @@ class AlgorithmAdapter(AdapterBase):
         _ = self.validate_population_snapshot(population, objectives, violations)
         return False
 
+    def get_population_candidate_tokens(self) -> tuple[str | None, ...] | None:
+        """Return tokens aligned with ``get_population()`` when Adapter owns selection.
+
+        Returning ``None`` means that the Adapter does not expose a population
+        lineage surface.  A Solver may only infer tokens when the authoritative
+        rows exactly equal one complete input batch; mixed/reordered semantic
+        populations must implement this contract explicitly.
+        """
+
+        return None
+
+    def set_population_candidate_tokens(
+        self,
+        candidate_tokens: Sequence[str | None],
+    ) -> bool:
+        """Optional token write-back paired with ``set_population()``."""
+
+        del candidate_tokens
+        return False
+
+    @staticmethod
+    def candidate_tokens_for(
+        control: Any,
+        candidates: Sequence[Any],
+    ) -> tuple[str | None, ...]:
+        resolver = getattr(control, "candidate_provenance_for", None)
+        if not callable(resolver):
+            return (None,) * len(candidates)
+        tokens: list[str | None] = []
+        for index, candidate in enumerate(candidates):
+            provenance = resolver(candidate)
+            if provenance is None:
+                provenance = resolver(candidate, candidate_index=index)
+            tokens.append(
+                None
+                if provenance is None
+                else str(provenance.candidate_token)
+            )
+        return tuple(tokens)
+
     # --- Override: extended context contract ---
 
     def get_context_contract(self) -> Dict[str, Any]:

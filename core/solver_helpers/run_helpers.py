@@ -121,6 +121,7 @@ def run_solver_loop(
     result: dict[str, Any] = {}
     steps_executed = 0
     termination_reason = "step_limit"
+    primary_error: BaseException | None = None
 
     try:
         _checkpoint_case_runtime(solver)
@@ -204,6 +205,7 @@ def run_solver_loop(
                 )
                 break
     except BaseException as exc:
+        primary_error = exc
         dispatcher = getattr(solver, "_dispatch_error_once", None)
         if callable(dispatcher):
             dispatcher(exc)
@@ -219,7 +221,23 @@ def run_solver_loop(
         raise
     finally:
         try:
-            solver.teardown()
+            try:
+                solver.teardown()
+            except BaseException as teardown_error:
+                if primary_error is None:
+                    raise
+                cleanup_evidence = {
+                    "type": type(teardown_error).__name__,
+                    "message": str(teardown_error),
+                }
+                setattr(solver, "_teardown_error", cleanup_evidence)
+                setattr(primary_error, "_nsgablack_teardown_error", cleanup_evidence)
+                add_note = getattr(primary_error, "add_note", None)
+                if callable(add_note):
+                    add_note(
+                        "Solver teardown also failed: "
+                        f"{cleanup_evidence['type']}: {cleanup_evidence['message']}"
+                    )
         finally:
             solver.running = False
 

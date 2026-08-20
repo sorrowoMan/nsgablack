@@ -8,40 +8,17 @@ from typing import Any
 
 
 def _resolve_nsgablack_pg_config() -> dict[str, Any] | None:
-    """Resolve nsgablack PG connection using the same logic as catalog."""
-    try:
-        from nsgablack.catalog.store.postgres import _resolve_postgres_config
+    """Resolve the public NSGABlack catalog URL without private store imports."""
 
-        url, cfg, _readonly = _resolve_postgres_config()
-        if cfg is not None:
-            return {
-                "host": cfg.host,
-                "port": int(cfg.port),
-                "user": cfg.user,
-                "password": cfg.password,
-                "database": cfg.database,
-                "url": url or f"postgresql://{cfg.user}:{cfg.password}@{cfg.host}:{cfg.port}/{cfg.database}",
-            }
-    except Exception:
-        pass
-    return None
+    url = os.environ.get("NSGABLACK_CATALOG_DB_URL", "").strip()
+    return {"url": url} if url else None
 
 
 def _resolve_mlblack_pg_config() -> dict[str, Any] | None:
-    """Resolve mlblack PG connection — tries env var first, then config file."""
-    env_url = os.environ.get("MLBLACK_CATALOG_DB_URL", "").strip()
-    if env_url:
-        return {"url": env_url}
+    """Resolve the public MLBlack catalog URL without importing MLBlack internals."""
 
-    try:
-        from mlblack.catalog.store.surface import _resolve_postgres_url
-
-        url = _resolve_postgres_url()
-        if url:
-            return {"url": url}
-    except Exception:
-        pass
-    return None
+    url = os.environ.get("MLBLACK_CATALOG_DB_URL", "").strip()
+    return {"url": url} if url else None
 
 
 @dataclass

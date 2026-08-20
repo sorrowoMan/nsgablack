@@ -11,6 +11,8 @@ from nsgablack.adapters.gradient_optimizer import (
     GradientOptimizerAdapter,
     GradientOptimizerConfig,
 )
+from nsgablack.core.base import BlackBoxProblem
+from nsgablack.core.blank_solver import SolverBase
 
 
 class _Control:
@@ -28,6 +30,25 @@ class _Control:
     def repair_candidate(self, candidate, context):
         del context
         return candidate
+
+
+class _Problem(BlackBoxProblem):
+    def __init__(self):
+        super().__init__(dimension=2, bounds={"x0": (-1.0, 1.0), "x1": (-1.0, 1.0)})
+
+    def evaluate(self, candidate):
+        return np.asarray([np.sum(np.asarray(candidate, dtype=float) ** 2)])
+
+
+def test_solver_base_exposes_side_effect_bounded_adapter_population_init() -> None:
+    control = SolverBase(_Problem())
+
+    population = control.init_population(3, {})
+
+    assert len(population) == 3
+    assert all(np.asarray(candidate).shape == (2,) for candidate in population)
+    assert control.population is None
+    assert control.evaluation_count == 0
 
 
 def test_gaussian_search_is_feasibility_first_and_preserves_unknown_state() -> None:

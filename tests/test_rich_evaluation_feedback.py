@@ -228,7 +228,7 @@ def test_gradient_optimizer_fails_closed_when_provider_omits_gradient():
             {},
         )
     except ValueError as exc:
-        assert "requires one Feedback item with gradients" in str(exc)
+        assert "requires inline gradients or a Provider" in str(exc)
     else:
         raise AssertionError("missing gradients must not silently fall back")
 

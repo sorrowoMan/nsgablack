@@ -262,7 +262,8 @@ Collaboration rules:
 
 候选进入控制面后使用 `CandidateBatch` 同时保留 `semantic_states`、`numeric_matrix`
 和 candidate token/provenance：数值算法消费矩阵，Representation / Problem / 结果对齐消费
-语义状态。`feedback` 的正式形态为 `OptimizationFeedbackBatch`；它仍可解包为
+语义状态。Solver 持有跨代权威 CandidateBatch population；拥有内部环境选择的 Adapter
+必须返回与选中行对齐的 candidate tokens，不得按数值相等反推语义状态。`feedback` 的正式形态为 `OptimizationFeedbackBatch`；它仍可解包为
 `(objectives, violations)` 供纯数值 Adapter 使用，但不得再定义另一套拆分参数签名。
 
 建议实现：

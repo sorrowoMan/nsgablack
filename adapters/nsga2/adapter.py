@@ -63,6 +63,7 @@ class NSGA2Adapter(AlgorithmAdapter):
         self.population: Optional[np.ndarray] = None
         self.objectives: Optional[np.ndarray] = None
         self.violations: Optional[np.ndarray] = None
+        self._population_candidate_tokens: tuple[str | None, ...] = ()
         self._rank: np.ndarray = np.zeros(0, dtype=int)
         self._crowding: np.ndarray = np.zeros(0, dtype=float)
         self._runtime_projection: Dict[str, Any] = {}
@@ -73,6 +74,7 @@ class NSGA2Adapter(AlgorithmAdapter):
         self.population = None
         self.objectives = None
         self.violations = None
+        self._population_candidate_tokens = ()
         self._rank = np.zeros(0, dtype=int)
         self._crowding = np.zeros(0, dtype=float)
         self._runtime_projection = {}
@@ -103,7 +105,6 @@ class NSGA2Adapter(AlgorithmAdapter):
         context: Dict[str, Any],
     ) -> None:
         objectives, violations = feedback
-        _ = control
         _ = context
         if candidates is None or len(candidates) == 0:
             return
@@ -113,30 +114,65 @@ class NSGA2Adapter(AlgorithmAdapter):
         vio = np.asarray(violations, dtype=float).reshape(-1)
         if obj.ndim == 1:
             obj = obj.reshape(-1, 1)
+        candidate_tokens = self.candidate_tokens_for(control, candidates)
 
         if self.population is None or self.objectives is None or self.violations is None:
             self.population = cand.copy()
             self.objectives = obj.copy()
             self.violations = vio.copy()
+            self._population_candidate_tokens = candidate_tokens
         else:
             merged_pop = np.vstack([self.population, cand])
             merged_obj = np.vstack([self.objectives, obj])
             merged_vio = np.concatenate([self.violations, vio])
+            previous_tokens = self._population_candidate_tokens
+            if len(previous_tokens) != int(self.population.shape[0]):
+                previous_tokens = (None,) * int(self.population.shape[0])
+            merged_tokens = previous_tokens + candidate_tokens
             keep = self._environmental_select(merged_obj, merged_vio, int(self.cfg.population_size))
             self.population = merged_pop[keep]
             self.objectives = merged_obj[keep]
             self.violations = merged_vio[keep]
+            self._population_candidate_tokens = tuple(
+                merged_tokens[int(index)] for index in np.asarray(keep, dtype=int)
+            )
 
         self._refresh_ranking()
         self._sync_runtime_projection()
 
     def set_population(self, population: np.ndarray, objectives: np.ndarray, violations: np.ndarray) -> bool:
         pop, obj, vio = self.validate_population_snapshot(population, objectives, violations)
+        preserve_tokens = (
+            self.population is not None
+            and np.asarray(self.population).shape == pop.shape
+            and np.array_equal(self.population, pop, equal_nan=True)
+            and len(self._population_candidate_tokens) == int(pop.shape[0])
+        )
         self.population = pop.copy()
         self.objectives = obj.copy()
         self.violations = vio.copy()
+        if not preserve_tokens:
+            self._population_candidate_tokens = (None,) * int(pop.shape[0])
         self._refresh_ranking()
         self._sync_runtime_projection()
+        return True
+
+    def get_population_candidate_tokens(self) -> tuple[str | None, ...] | None:
+        if self.population is None:
+            return ()
+        if len(self._population_candidate_tokens) != int(self.population.shape[0]):
+            return None
+        return tuple(self._population_candidate_tokens)
+
+    def set_population_candidate_tokens(
+        self,
+        candidate_tokens: Sequence[str | None],
+    ) -> bool:
+        tokens = tuple(candidate_tokens)
+        expected = 0 if self.population is None else int(self.population.shape[0])
+        if len(tokens) != expected:
+            raise ValueError("NSGA2 population tokens must align with population rows")
+        self._population_candidate_tokens = tokens
         return True
 
     def get_population(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -162,6 +198,7 @@ class NSGA2Adapter(AlgorithmAdapter):
             "population": None if self.population is None else self.population.tolist(),
             "objectives": None if self.objectives is None else self.objectives.tolist(),
             "violations": None if self.violations is None else self.violations.tolist(),
+            "candidate_tokens": list(self._population_candidate_tokens),
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
@@ -173,6 +210,14 @@ class NSGA2Adapter(AlgorithmAdapter):
         self.population = None if pop is None else np.asarray(pop, dtype=float)
         self.objectives = None if obj is None else np.asarray(obj, dtype=float)
         self.violations = None if vio is None else np.asarray(vio, dtype=float).reshape(-1)
+        self._population_candidate_tokens = tuple(state.get("candidate_tokens", ()) or ())
+        if self.population is not None and len(self._population_candidate_tokens) not in {
+            0,
+            int(self.population.shape[0]),
+        }:
+            raise ValueError("NSGA2 checkpoint tokens do not align with population")
+        if self.population is not None and not self._population_candidate_tokens:
+            self._population_candidate_tokens = (None,) * int(self.population.shape[0])
         self._refresh_ranking()
         self._sync_runtime_projection()
 

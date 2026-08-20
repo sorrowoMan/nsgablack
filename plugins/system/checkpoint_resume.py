@@ -55,8 +55,10 @@ class CheckpointResumePlugin(Plugin):
     SCHEMA_V1 = "nsgablack.checkpoint.v1"
     SCHEMA_V2 = "nsgablack.checkpoint.v2"
     SCHEMA_V3 = "nsgablack.checkpoint.v3"
-    SCHEMA = SCHEMA_V3
+    SCHEMA_V4 = "nsgablack.checkpoint.v4"
+    SCHEMA = SCHEMA_V4
     ENVELOPE_VERSION = "nsgablack.checkpoint.envelope.v1"
+    RESUME_ISSUE_SAMPLE_LIMIT = 32
 
     def __init__(
         self,
@@ -70,6 +72,16 @@ class CheckpointResumePlugin(Plugin):
         self.last_loaded_path: Optional[str] = None
         self.last_saved_generation: Optional[int] = None
         self.last_loaded_generation: Optional[int] = None
+        self._last_resume_audit: Dict[str, Any] = {
+            "status": "not_attempted",
+            "current": False,
+            "trajectory_equivalent": False,
+            "restored_components": [],
+            "skipped_component_count": 0,
+            "issue_count": 0,
+            "issues": [],
+            "audit_truncated": False,
+        }
         self.is_algorithmic = False
         # Allow solver.add_plugin() to fail-fast when strict resume is requested.
         self.raise_on_init_error = bool(self.cfg.strict)
@@ -80,7 +92,6 @@ class CheckpointResumePlugin(Plugin):
     def on_solver_init(self, solver):
         if not bool(self.cfg.auto_resume):
             return None
-        self._assert_strict_security_ready()
         try:
             self.resume(self.cfg.resume_from)
         except Exception:
@@ -132,32 +143,104 @@ class CheckpointResumePlugin(Plugin):
         return target
 
     def resume(self, checkpoint: str = "latest") -> bool:
+        self._begin_resume_audit(checkpoint)
         solver = self.solver
         if solver is None:
+            self._finish_resume_audit(status="unavailable", current=False)
             return False
-        self._assert_strict_security_ready()
-        path = self._get_checkpoint_path(checkpoint)
-        if path is None:
-            if bool(self.cfg.strict):
-                raise FileNotFoundError(f"checkpoint not found: {checkpoint}")
-            return False
+        try:
+            self._assert_strict_security_ready()
+            path = self._get_checkpoint_path(checkpoint)
+            if path is None:
+                error = FileNotFoundError(f"checkpoint not found: {checkpoint}")
+                self._record_resume_issue("checkpoint", "not_found", error)
+                self._finish_resume_audit(status="unavailable", current=False)
+                if bool(self.cfg.strict):
+                    raise error
+                return False
 
-        if not self._is_path_trusted(path):
-            msg = f"checkpoint path is not trusted: {path}"
-            if bool(self.cfg.strict):
-                raise PermissionError(msg)
-            return False
+            self._last_resume_audit["checkpoint_path"] = str(path)
+            if not self._is_path_trusted(path):
+                error = PermissionError(f"checkpoint path is not trusted: {path}")
+                self._record_resume_issue("checkpoint", "untrusted_path", error)
+                self._finish_resume_audit(status="error", current=False)
+                if bool(self.cfg.strict):
+                    raise error
+                return False
 
-        with path.open("rb") as f:
-            # SECURITY NOTE: pickle.load can execute arbitrary code.
-            # Only load checkpoints from trusted sources (your own runs).
-            loaded = pickle.load(f)  # nosec B301
-        payload = self._unwrap_and_verify_payload(loaded)
-        self._restore_payload(solver=solver, payload=payload)
-        self.last_loaded_path = str(path)
-        self.last_loaded_generation = int(getattr(solver, "generation", 0))
-        self.latest_checkpoint_path = str(path)
-        return True
+            with path.open("rb") as f:
+                # SECURITY NOTE: pickle.load can execute arbitrary code.
+                # Only load checkpoints from trusted sources (your own runs).
+                loaded = pickle.load(f)  # nosec B301
+            payload = self._unwrap_and_verify_payload(loaded)
+            self._restore_payload(solver=solver, payload=payload)
+            self.last_loaded_path = str(path)
+            self.last_loaded_generation = int(getattr(solver, "generation", 0))
+            self.latest_checkpoint_path = str(path)
+            status = (
+                "degraded"
+                if int(self._last_resume_audit.get("issue_count", 0) or 0) > 0
+                else "restored"
+            )
+            self._finish_resume_audit(status=status, current=True)
+            return True
+        except Exception as exc:
+            if str(self._last_resume_audit.get("status", "")) not in {
+                "error",
+                "unavailable",
+            }:
+                self._record_resume_issue("checkpoint", "resume_error", exc)
+                self._finish_resume_audit(status="error", current=False)
+            raise
+
+    def _begin_resume_audit(self, checkpoint: str) -> None:
+        self._last_resume_audit = {
+            "status": "restoring",
+            "current": False,
+            "trajectory_equivalent": False,
+            "requested_checkpoint": str(checkpoint or "latest"),
+            "restored_components": [],
+            "skipped_component_count": 0,
+            "issue_count": 0,
+            "issues": [],
+            "audit_truncated": False,
+        }
+
+    def _record_resume_issue(
+        self,
+        component: str,
+        reason: str,
+        error: BaseException | None = None,
+    ) -> None:
+        audit = self._last_resume_audit
+        if not isinstance(audit, dict) or audit.get("status") == "not_attempted":
+            self._begin_resume_audit("direct")
+            audit = self._last_resume_audit
+        audit["issue_count"] = int(audit.get("issue_count", 0) or 0) + 1
+        audit["skipped_component_count"] = int(
+            audit.get("skipped_component_count", 0) or 0
+        ) + int(str(component) != "checkpoint")
+        issues = list(audit.get("issues", []) or [])
+        if len(issues) < self.RESUME_ISSUE_SAMPLE_LIMIT:
+            issue: Dict[str, Any] = {
+                "component": str(component)[:160],
+                "reason": str(reason)[:160],
+            }
+            if error is not None:
+                issue["error_type"] = type(error).__name__[:160]
+                issue["message"] = str(error)[:512]
+            issues.append(issue)
+            audit["issues"] = issues
+        else:
+            audit["audit_truncated"] = True
+
+    def _finish_resume_audit(self, *, status: str, current: bool) -> None:
+        issue_count = int(self._last_resume_audit.get("issue_count", 0) or 0)
+        self._last_resume_audit["status"] = str(status)
+        self._last_resume_audit["current"] = bool(current)
+        self._last_resume_audit["trajectory_equivalent"] = bool(
+            current and issue_count == 0
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -361,9 +444,18 @@ class CheckpointResumePlugin(Plugin):
                 if bool(self.cfg.strict):
                     raise
                 continue
+            identity_getter = getattr(component, "checkpoint_identity", None)
+            identity = None
+            if callable(identity_getter):
+                identity = identity_getter()
+                if not isinstance(identity, Mapping):
+                    raise TypeError(
+                        f"checkpoint_identity() must return a Mapping: {name}"
+                    )
             out[str(name)] = {
                 "module": str(type(component).__module__),
                 "class": str(type(component).__qualname__),
+                "identity": self._safe_copy(identity),
                 "state": state,
             }
         return out
@@ -456,6 +548,23 @@ class CheckpointResumePlugin(Plugin):
             "incumbent_selection": self._safe_copy(selection_payload),
             "random_seed": self._safe_copy(getattr(solver, "random_seed", None)),
         }
+        export_candidate_population = getattr(
+            solver,
+            "export_candidate_population_checkpoint_state",
+            None,
+        )
+        candidate_population = (
+            export_candidate_population()
+            if callable(export_candidate_population)
+            else None
+        )
+        solver_state["candidate_population"] = self._safe_copy(
+            candidate_population
+        )
+        solver_state["candidate_population_audit"] = {
+            "available": candidate_population is not None,
+            "schema": "blackbase.candidate_batch/v1",
+        }
         self._validate_checkpoint_internal_selection(solver, solver_state)
         self._validate_checkpoint_projection_audit(solver_state)
 
@@ -519,17 +628,59 @@ class CheckpointResumePlugin(Plugin):
             and "objectives" in state
             and "constraint_violations" in state
         ):
+            population = state.get("population")
+            objectives = state.get("objectives")
+            violations = state.get("constraint_violations")
+            # Establish the numeric side first without publishing a Snapshot.
+            # CandidateBatch restore validates against these exact values; one
+            # final writer call below then publishes both views together.
+            _set_field("population", population)
+            _set_field("objectives", objectives)
+            _set_field("constraint_violations", violations)
+            restore_candidate_population = getattr(
+                solver,
+                "restore_candidate_population_checkpoint_state",
+                None,
+            )
+            if callable(restore_candidate_population):
+                try:
+                    restore_candidate_population(state.get("candidate_population"))
+                except Exception as exc:
+                    self._record_resume_issue(
+                        "solver.candidate_population",
+                        "restore_failed",
+                        exc,
+                    )
+                    try:
+                        restore_candidate_population(None)
+                    except Exception:
+                        pass
+                    if bool(self.cfg.strict):
+                        raise
             writer = getattr(solver, "write_population_snapshot", None)
             if callable(writer):
                 try:
                     writer(
-                        state.get("population"),
-                        state.get("objectives"),
-                        state.get("constraint_violations"),
+                        population,
+                        objectives,
+                        violations,
                     )
-                except Exception:
+                except Exception as exc:
+                    self._record_resume_issue(
+                        "solver.population_snapshot",
+                        "publish_failed",
+                        exc,
+                    )
                     if bool(self.cfg.strict):
                         raise
+        else:
+            restore_candidate_population = getattr(
+                solver,
+                "restore_candidate_population_checkpoint_state",
+                None,
+            )
+            if callable(restore_candidate_population):
+                restore_candidate_population(state.get("candidate_population"))
 
         if "pareto_solutions" in state or "pareto_objectives" in state:
             set_pareto = getattr(solver, "set_pareto_snapshot", None)
@@ -676,26 +827,50 @@ class CheckpointResumePlugin(Plugin):
         component_states: Any,
     ) -> set[str]:
         if not isinstance(component_states, Mapping):
+            if component_states:
+                error = ValueError("checkpoint stateful_components payload is invalid")
+                self._record_resume_issue("stateful_components", "invalid_payload", error)
+                if bool(self.cfg.strict):
+                    raise error
             return set()
         getter = getattr(solver, "checkpoint_components", None)
         if not callable(getter):
-            if component_states and bool(self.cfg.strict):
-                raise ValueError("checkpoint contains stateful components but solver exposes none")
+            if component_states:
+                error = ValueError(
+                    "checkpoint contains stateful components but solver exposes none"
+                )
+                self._record_resume_issue(
+                    "stateful_components",
+                    "component_registry_unavailable",
+                    error,
+                )
+                if bool(self.cfg.strict):
+                    raise error
             return set()
         current = getter()
         if not isinstance(current, Mapping):
-            raise TypeError("solver.checkpoint_components() must return a Mapping")
+            error = TypeError("solver.checkpoint_components() must return a Mapping")
+            self._record_resume_issue(
+                "stateful_components",
+                "invalid_component_registry",
+                error,
+            )
+            raise error
         restored: set[str] = set()
         for raw_name, raw_payload in component_states.items():
             name = str(raw_name)
             component = current.get(name)
             if component is None:
+                error = ValueError(f"checkpoint component is unavailable: {name}")
+                self._record_resume_issue(name, "unavailable", error)
                 if bool(self.cfg.strict):
-                    raise ValueError(f"checkpoint component is unavailable: {name}")
+                    raise error
                 continue
             if not isinstance(raw_payload, Mapping):
+                error = ValueError(f"checkpoint component payload is invalid: {name}")
+                self._record_resume_issue(name, "invalid_payload", error)
                 if bool(self.cfg.strict):
-                    raise ValueError(f"checkpoint component payload is invalid: {name}")
+                    raise error
                 continue
             expected_module = str(raw_payload.get("module", "") or "")
             expected_class = str(raw_payload.get("class", "") or "")
@@ -704,24 +879,56 @@ class CheckpointResumePlugin(Plugin):
             if (expected_module and expected_module != actual_module) or (
                 expected_class and expected_class != actual_class
             ):
+                error = ValueError(
+                    f"checkpoint component identity mismatch for {name}: "
+                    f"saved={expected_module}.{expected_class}, "
+                    f"current={actual_module}.{actual_class}"
+                )
+                self._record_resume_issue(name, "type_mismatch", error)
                 if bool(self.cfg.strict):
-                    raise ValueError(
-                        f"checkpoint component identity mismatch for {name}: "
-                        f"saved={expected_module}.{expected_class}, "
-                        f"current={actual_module}.{actual_class}"
-                    )
+                    raise error
                 continue
+            saved_identity = raw_payload.get("identity")
+            identity_getter = getattr(component, "checkpoint_identity", None)
+            if saved_identity is not None:
+                if not callable(identity_getter):
+                    error = ValueError(
+                        f"checkpoint component identity contract is unavailable: {name}"
+                    )
+                    self._record_resume_issue(name, "identity_unavailable", error)
+                    if bool(self.cfg.strict):
+                        raise error
+                    continue
+                actual_identity = identity_getter()
+                if not isinstance(actual_identity, Mapping):
+                    raise TypeError(
+                        f"checkpoint_identity() must return a Mapping: {name}"
+                    )
+                if self._safe_copy(dict(saved_identity)) != self._safe_copy(
+                    dict(actual_identity)
+                ):
+                    error = ValueError(
+                        f"checkpoint component configuration mismatch: {name}"
+                    )
+                    self._record_resume_issue(name, "configuration_mismatch", error)
+                    if bool(self.cfg.strict):
+                        raise error
+                    continue
             setter = getattr(component, "set_state", None)
             if not callable(setter):
+                error = ValueError(f"checkpoint component cannot restore state: {name}")
+                self._record_resume_issue(name, "set_state_unavailable", error)
                 if bool(self.cfg.strict):
-                    raise ValueError(f"checkpoint component cannot restore state: {name}")
+                    raise error
                 continue
             try:
                 setter(raw_payload.get("state"))
                 restored.add(name)
-            except Exception:
+            except Exception as exc:
+                self._record_resume_issue(name, "set_state_failed", exc)
                 if bool(self.cfg.strict):
                     raise
+        self._last_resume_audit["restored_components"] = sorted(restored)
         return restored
 
     def _apply_rng_state(self, solver: Any, rng_state: Dict[str, Any]) -> None:
@@ -762,9 +969,9 @@ class CheckpointResumePlugin(Plugin):
     @classmethod
     def _migrate_payload(cls, payload: Dict[str, Any]) -> Dict[str, Any]:
         schema = str(payload.get("schema", "")).strip()
-        if schema == cls.SCHEMA_V3:
+        if schema == cls.SCHEMA_V4:
             return payload
-        if schema not in {cls.SCHEMA_V1, cls.SCHEMA_V2}:
+        if schema not in {cls.SCHEMA_V1, cls.SCHEMA_V2, cls.SCHEMA_V3}:
             raise ValueError(f"unsupported checkpoint schema: {schema or '<missing>'}")
 
         migrated = copy.deepcopy(payload)
@@ -799,7 +1006,16 @@ class CheckpointResumePlugin(Plugin):
             cls._run_sequence_from_id(state.get("active_run_id")),
         )
         migrated.setdefault("stateful_components", {})
-        migrated["schema"] = cls.SCHEMA_V3
+        state.setdefault("candidate_population", None)
+        state.setdefault(
+            "candidate_population_audit",
+            {
+                "available": False,
+                "schema": "blackbase.candidate_batch/v1",
+                "reason": f"migrated_from_{schema}",
+            },
+        )
+        migrated["schema"] = cls.SCHEMA_V4
         migrated["migrated_from_schema"] = schema
         return migrated
 
@@ -822,7 +1038,7 @@ class CheckpointResumePlugin(Plugin):
     ) -> Dict[str, Any]:
         selection = state.get("incumbent_selection")
         if not isinstance(selection, dict):
-            raise ValueError("checkpoint v2 is missing incumbent_selection audit state")
+            raise ValueError("checkpoint is missing incumbent_selection audit state")
 
         saved_policy_id = str(selection.get("policy_id", "") or "").strip()
         if not saved_policy_id:
@@ -964,5 +1180,6 @@ class CheckpointResumePlugin(Plugin):
             "last_loaded_path": self.last_loaded_path,
             "last_saved_generation": self.last_saved_generation,
             "last_loaded_generation": self.last_loaded_generation,
+            "resume_audit": copy.deepcopy(self._last_resume_audit),
         }
 

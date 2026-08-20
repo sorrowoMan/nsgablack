@@ -90,6 +90,12 @@ def test_commit_population_snapshot_uses_adapter_setter() -> None:
             self.objectives = None
             self.constraint_violations = None
 
+        def write_population_snapshot(self, population, objectives, violations):
+            self.population = np.asarray(population, dtype=float).copy()
+            self.objectives = np.asarray(objectives, dtype=float).copy()
+            self.constraint_violations = np.asarray(violations, dtype=float).copy()
+            return True
+
     plugin = _DummyPlugin()
     solver = _Solver()
     ok = plugin.commit_population_snapshot(
@@ -104,3 +110,5 @@ def test_commit_population_snapshot_uses_adapter_setter() -> None:
     assert px.shape == (1, 2)
     assert pf.shape == (1, 1)
     assert pv.shape == (1,)
+    assert solver.population.tolist() == [[1.0, 2.0]]
+    assert solver.objectives.tolist() == [[3.0]]

@@ -321,6 +321,26 @@ def test_evaluation_error_is_dispatched_once_by_run_lifecycle() -> None:
     assert hooks.contexts[0]["error_phase"] == "evaluate_individual"
 
 
+def test_teardown_failure_does_not_mask_primary_run_error() -> None:
+    class _FailingRunAndTeardown(_FailingEvaluationSolver):
+        def teardown(self) -> None:
+            raise RuntimeError("teardown failed")
+
+    solver = _FailingRunAndTeardown(_FailingProblem())
+
+    with pytest.raises(RuntimeError, match="evaluation failed") as captured:
+        solver.run(max_steps=1)
+
+    assert getattr(captured.value, "_nsgablack_teardown_error") == {
+        "type": "RuntimeError",
+        "message": "teardown failed",
+    }
+    assert solver._teardown_error == {
+        "type": "RuntimeError",
+        "message": "teardown failed",
+    }
+
+
 def test_direct_public_evaluation_dispatches_on_error_exactly_once() -> None:
     solver = SolverBase(_FailingProblem())
     hooks = _ErrorHooks()

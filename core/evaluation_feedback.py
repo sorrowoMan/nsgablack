@@ -25,7 +25,10 @@ from blackbase.types import Feedback
 
 
 def _readonly_array(value: Any, *, ndim: int | None = None) -> np.ndarray:
-    array = np.array(value, dtype=float, copy=True)
+    owner = np.array(value, dtype=float, copy=True)
+    array = np.frombuffer(owner.tobytes(order="C"), dtype=owner.dtype).reshape(
+        owner.shape
+    )
     if ndim is not None and array.ndim != ndim:
         raise ValueError(f"expected a {ndim}-D array, got shape={array.shape}")
     array.setflags(write=False)

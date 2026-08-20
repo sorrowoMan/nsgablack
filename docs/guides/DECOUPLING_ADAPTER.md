@@ -227,7 +227,7 @@ solver.set_incumbent_scalarizer(
 - 如确需容错，显式使用 `failure_policy="fallback_sum"`；结果会记录降级次数。
 - 依赖整个 population 的相对排序属于 Adapter 代内选择，不能定义跨代 incumbent。
 
-checkpoint 使用 `nsgablack.checkpoint.v3` 保存完整 incumbent、scalarizer policy/context、
+checkpoint 使用 `nsgablack.checkpoint.v4` 保存完整 incumbent、scalarizer policy/context、token 对齐的 CandidateBatch population、
 failure policy、fallback 次数、质量退化状态、run sequence，以及 Solver 声明的
 Adapter / Representation / Provider / DataSchedule 等 stateful components。恢复时 builder
 必须先重建同一 scalarizer 和组件身份，policy、固定 context 或组件类型不一致会拒绝继续；历史 v1/v2 只能通过显式迁移读取，

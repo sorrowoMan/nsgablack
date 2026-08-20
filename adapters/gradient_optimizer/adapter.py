@@ -150,6 +150,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         self._provider_slot_refs: Dict[str, StateRef] = {}
         self._provider_transition_count = 0
         self._provider_transition_needs_slot_seed = False
+        self._provider_resource_context: ResourceContext | None = None
         self._state_loaded = False
 
     def setup(self, control: Any) -> None:
@@ -170,6 +171,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
             self._provider_slot_refs = {}
             self._provider_transition_count = 0
             self._provider_transition_needs_slot_seed = False
+            self._provider_resource_context = None
         self._state_loaded = False
         self._proposal_pending = False
         self._refresh_runtime_projection()
@@ -184,6 +186,15 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         candidate = self._repair_values(control, self.current_x.copy(), context)
         self._proposal_pending = True
         return (self._wrap_candidate(candidate),)
+
+    def teardown(self, control: Any) -> None:
+        del control
+        had_live_slots = bool(self._provider_slot_refs)
+        self._refresh_provider_slot_shadow()
+        self._provider_slot_refs = {}
+        self._provider_resource_context = None
+        if had_live_slots and self.cfg.optimizer in {"adam", "adamw"}:
+            self._provider_transition_needs_slot_seed = True
 
     def on_proposal_disposition(
         self,
@@ -214,11 +225,17 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
             raise RuntimeError("gradient feedback has no pending proposal")
 
         items = tuple(rich_feedback.items)
-        if len(items) != 1 or items[0].gradients is None:
+        if len(items) != 1:
             raise ValueError(
-                "GradientOptimizerAdapter requires one Feedback item with gradients; "
-                "attach an autograd/analytic evaluation provider or use the finite-"
-                "difference GradientDescentAdapter"
+                "GradientOptimizerAdapter requires exactly one Feedback item"
+            )
+        item = items[0]
+        use_provider_transition = self._should_use_provider_transition(item)
+        if item.gradients is None and not use_provider_transition:
+            raise ValueError(
+                "GradientOptimizerAdapter requires inline gradients or a Provider "
+                "gradient_ref/state_ref transition; attach an autograd/analytic "
+                "Provider or use the finite-difference GradientDescentAdapter"
             )
 
         semantic_resolver = getattr(control, "semantic_candidate_state", None)
@@ -229,14 +246,19 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         )
         self._capture_candidate_template(candidate_view)
         candidate = self._candidate_array(candidate_view)
-        gradient = np.asarray(items[0].gradients, dtype=float).reshape(-1)
-        if gradient.shape != candidate.shape:
-            raise ValueError(
-                "feedback gradient shape must match the candidate: "
-                f"gradient={gradient.shape}, candidate={candidate.shape}"
-            )
-        if not np.all(np.isfinite(gradient)):
-            raise ValueError("feedback gradient must contain only finite values")
+        gradient = (
+            None
+            if item.gradients is None
+            else np.asarray(item.gradients, dtype=float).reshape(-1)
+        )
+        if gradient is not None:
+            if gradient.shape != candidate.shape:
+                raise ValueError(
+                    "feedback gradient shape must match the candidate: "
+                    f"gradient={gradient.shape}, candidate={candidate.shape}"
+                )
+            if not np.all(np.isfinite(gradient)):
+                raise ValueError("feedback gradient must contain only finite values")
 
         objective_rows = np.asarray(objectives, dtype=float)
         if objective_rows.ndim == 1:
@@ -255,9 +277,10 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
             self._refresh_runtime_projection()
             return
 
-        gradient = self._clip_gradient(gradient)
-        self.last_gradient_norm = float(np.linalg.norm(gradient))
-        if self._should_use_provider_transition(items[0]):
+        if gradient is not None:
+            gradient = self._clip_gradient(gradient)
+            self.last_gradient_norm = float(np.linalg.norm(gradient))
+        if use_provider_transition:
             # Maintain a materialized optimizer shadow for checkpoint fallback;
             # the authoritative parameter update still executes exactly once
             # inside the Provider.
@@ -271,9 +294,10 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
                         None if self._second_moment is None else self._second_moment.copy()
                     ),
                 }
-            self._optimizer_delta(candidate, gradient)
+            if gradient is not None:
+                self._optimizer_delta(candidate, gradient)
             self._apply_provider_transition(
-                feedback=items[0],
+                feedback=item,
                 context=context,
                 slot_seed=slot_seed,
             )
@@ -287,6 +311,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
             self.step_index += 1
             self._refresh_runtime_projection()
             return
+        assert gradient is not None
         next_x = candidate - self._optimizer_delta(candidate, gradient)
         self.current_x = self._repair_values(control, next_x, context)
         self.step_index += 1
@@ -349,6 +374,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
                 context.get(KEY_RESOURCE_CONTEXT_SHORT, {}),
             )
         )
+        self._provider_resource_context = resource
         operands: dict[str, Any] = {"gradient": gradient_ref}
         for name, value in dict(slot_seed or {}).items():
             if value is not None:
@@ -377,7 +403,12 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
             raise TypeError("gradient transition materialization must return UnknownState")
         self._capture_candidate_template(materialized.value)
         self.current_x = self._candidate_array(materialized.value)
-        self._provider_state_ref = transition.state_ref
+        gradient_norm = transition.metrics.get("gradient_norm")
+        if gradient_norm is not None:
+            self.last_gradient_norm = float(gradient_norm)
+        # materialize(release_after=True) intentionally releases this parameter
+        # state.  Keeping its StateRef would make checkpoint evidence look live.
+        self._provider_state_ref = None
         self._provider_slot_refs = dict(transition.slot_refs)
         self._provider_transition_count += 1
         self._provider_transition_needs_slot_seed = False
@@ -530,7 +561,47 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         source = f"adapter.{self.__class__.__name__}"
         return {key: source for key in self._runtime_projection}
 
+    def _refresh_provider_slot_shadow(self) -> None:
+        """Materialize optimizer slots only when persistent state is requested."""
+
+        if not self._provider_slot_refs:
+            return
+        gateway = self.state_gateway
+        resource = self._provider_resource_context
+        if gateway is None or resource is None:
+            raise RuntimeError(
+                "provider optimizer slots are live but their materialization "
+                "gateway/resource context is unavailable"
+            )
+        materialized: dict[str, np.ndarray] = {}
+        for name, ref in self._provider_slot_refs.items():
+            result = gateway.materialize(
+                StateMaterializationRequest(
+                    state_ref=ref,
+                    release_after=False,
+                    metadata={
+                        "adapter": self.name,
+                        "reason": "checkpoint_optimizer_slot",
+                    },
+                ),
+                resource,
+            )
+            if not isinstance(result.value, UnknownState):
+                raise TypeError(
+                    "provider optimizer slot materialization must return UnknownState"
+                )
+            materialized[str(name)] = np.asarray(
+                result.value.as_array(),
+                dtype=float,
+            ).reshape(-1).copy()
+        if self.cfg.optimizer in {"adam", "adamw"}:
+            if set(materialized) != {"m", "v"}:
+                raise RuntimeError("Adam Provider checkpoint requires m/v slot states")
+            self._first_moment = materialized["m"]
+            self._second_moment = materialized["v"]
+
     def get_state(self) -> Mapping[str, Any]:
+        self._refresh_provider_slot_shadow()
         return {
             "current_x": None if self.current_x is None else self.current_x.tolist(),
             "current_score": self.current_score,
@@ -561,7 +632,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
                     name: ref.as_dict()
                     for name, ref in self._provider_slot_refs.items()
                 },
-                "checkpoint_mode": "materialized_shadow_with_slot_reseed",
+                "checkpoint_mode": "on_demand_materialized_slot_shadow",
                 "needs_slot_seed": bool(self._provider_transition_needs_slot_seed),
             },
         }
@@ -604,9 +675,11 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         self._provider_state_ref = None
         self._provider_slot_refs = {}
         self._provider_transition_needs_slot_seed = bool(
-            provider_transition.get("state_ref")
+            provider_transition.get("needs_slot_seed")
+            or provider_transition.get("state_ref")
             or provider_transition.get("slot_refs")
         )
+        self._provider_resource_context = None
         first = state.get("first_moment")
         second = state.get("second_moment")
         self._first_moment = (

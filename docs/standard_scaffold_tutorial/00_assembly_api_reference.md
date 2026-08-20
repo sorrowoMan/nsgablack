@@ -1,22 +1,23 @@
-# 00. Assembly API Reference
+# 00. 统一装配 API 参考
 
-This page defines the formal assembly surface for the shared Project/Case substrate.
+本页定义共享 Project/Case substrate 的正式装配面。
 
-## 1) Case primary entry
+## 1）Case 唯一规范入口
 
-| `.case kind` | Primary assembly | Primary run |
+| `.case kind` | 规范装配入口 | 规范运行入口 |
 | --- | --- | --- |
 | `solver` | `build_solver.py:build_solver()` | `run_solver.py` |
-| `trainer` | `build_trainer.py:build_trainer()` | `run_trainer.py` |
+| `trainer` | `build_solver.py:build_solver()` | `run_solver.py` |
 
-Rules:
-- One case exposes exactly one primary build entry and one primary run entry.
-- Project runner resolves entry by `.case kind` (no fallback guessing).
-- Doctor reports dual primary entries as errors.
+规则：
+- 每个 Case 只有一个规范 builder 和一个规范 CLI/debug 入口。
+- `.case kind` 只区分领域语义和结果投影，不改变入口解析。
+- `build_trainer.py` 与 `run_trainer.py` 如存在，只能是薄别名。
+- Doctor 必须拒绝包含第二份装配逻辑的别名文件。
 
 ## 2) Pipeline contract (new baseline)
 
-- A case has one pipeline entry: `pipeline/main.py` (or legacy `pipeline.py`).
+- Case 只有一个 pipeline 入口：`pipeline/main.py`。
 - `pipeline` is a flow-level assembly surface, not a flat component list.
 - Fine-grained logic (mutate/repair/codec/head/etc.) is implemented as internal operators and assembled by the pipeline entry.
 

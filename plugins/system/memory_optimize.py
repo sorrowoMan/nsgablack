@@ -61,7 +61,7 @@ class MemoryPlugin(Plugin):
             pop, obj, vio = self.get_population_snapshot(self.solver)
             if pop is not None and len(pop) > 0:
                 self._optimize_arrays(pop, obj, vio)
-                self.commit_population_snapshot(self.solver, pop, obj, vio)
+                self.commit_population_snapshot(pop, obj, vio, self.solver)
 
         self._take_memory_snapshot(generation)
         return None

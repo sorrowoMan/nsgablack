@@ -4,7 +4,8 @@
 
 - `nsgablack` + `mlblack` 共享 Project / Case / Scaffold / L0 substrate。
 - 编排能力属于 substrate，不属于任一语义层私有能力。
-- Case 主入口按 `.case kind` 解析（`solver` / `trainer`）。
+- 所有 Case 都从 `build_solver.py` / `run_solver.py` 解析；`.case kind`
+  只区分 `solver` / `trainer` 的语义和结果投影。
 - 每个 Case 只保留一个 `pipeline/main.py` 主入口，内部用 slot operator 组合。
 
 ## 推荐阅读顺序

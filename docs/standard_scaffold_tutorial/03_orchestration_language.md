@@ -28,12 +28,13 @@ Project-level orchestration:
 - nested case invocation
 - resource grant and namespace
 
-## 3) Entry Resolution By `.case kind`
+## 3）统一入口解析
 
 - `solver` -> `build_solver.py` + `run_solver.py`
-- `trainer` -> `build_trainer.py` + `run_trainer.py`
+- `trainer` -> `build_solver.py` + `run_solver.py`
 
-No fallback guessing.
+`build_trainer.py` / `run_trainer.py` 只能是薄别名，Project 不按 kind 猜测
+另一套入口。
 
 ## 4) Nested Standard Case Contract
 

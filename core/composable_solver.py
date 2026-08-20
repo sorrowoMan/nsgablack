@@ -10,6 +10,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from blackbase.resources import ResourceContext
 from blackbase.contracts import BatchDisposition
+from blackbase.types import CandidateBatch
 
 import numpy as np
 
@@ -257,6 +258,8 @@ class ComposableSolver(SolverBase):
         if self.adapter is None or bool(getattr(self, "stop_requested", False)):
             return
 
+        previous_population_batch = self.get_candidate_population_batch()
+        previous_population_provenance = self.get_candidate_population_provenance()
         propose_context = self.build_context()
         propose_context[KEY_STEP] = self.generation
 
@@ -347,6 +350,14 @@ class ComposableSolver(SolverBase):
             self.population,
             self._active_candidate_provenance,
         )
+        evaluated_batch = CandidateBatch(
+            semantic_states=tuple(candidate_batch.semantic_states[:accepted_count]),
+            numeric_matrix=np.asarray(self.population, dtype=float),
+            candidate_tokens=tuple(
+                item.candidate_token
+                for item in self._active_candidate_provenance
+            ),
+        )
         self._notify_proposal_disposition(
             proposed_count=requested_count,
             accepted_count=accepted_count,
@@ -416,6 +427,41 @@ class ComposableSolver(SolverBase):
         authoritative_population, authoritative_objectives, authoritative_violations = (
             resolve_population_snapshot(self, prefer_adapter=True)
         )
+        token_getter = getattr(self.adapter, "get_population_candidate_tokens", None)
+        authoritative_tokens = token_getter() if callable(token_getter) else None
+        authoritative_array = np.asarray(authoritative_population, dtype=float)
+        if authoritative_tokens is None and (
+            authoritative_array.shape == evaluated_batch.numeric_matrix.shape
+            and np.array_equal(
+                authoritative_array,
+                evaluated_batch.numeric_matrix,
+                equal_nan=True,
+            )
+        ):
+            authoritative_tokens = evaluated_batch.candidate_tokens
+        if (
+            authoritative_tokens is None
+            and previous_population_batch is not None
+            and authoritative_array.shape
+            == previous_population_batch.numeric_matrix.shape
+            and np.array_equal(
+                authoritative_array,
+                previous_population_batch.numeric_matrix,
+                equal_nan=True,
+            )
+        ):
+            authoritative_tokens = previous_population_batch.candidate_tokens
+        committed_batch = self.commit_candidate_population(
+            authoritative_array,
+            authoritative_tokens,
+            sources=(
+                (evaluated_batch, self._active_candidate_provenance),
+                (previous_population_batch, previous_population_provenance),
+            ),
+        )
+        token_setter = getattr(self.adapter, "set_population_candidate_tokens", None)
+        if callable(token_setter):
+            token_setter(committed_batch.candidate_tokens)
         commit_population_snapshot(
             self,
             authoritative_population,
