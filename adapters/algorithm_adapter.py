@@ -8,15 +8,168 @@ enhancements (numpy RNG, strict snapshot validation, extended contract).
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
+from blackbase.wire import freeze_wire_mapping, thaw_wire_mapping
 
 from blackbase.abc import AdapterBase
 from blackbase.contracts import BatchDisposition
 from blackbase.context import RuntimeContextProjection
 
 from .runtime_projection import aggregate_adapter_runtime_projections
+
+
+@dataclass(frozen=True)
+class PopulationPartition:
+    """One stable Adapter-owned evaluated-population partition.
+
+    A composite Adapter must not concatenate unrelated child populations merely
+    to satisfy the legacy single-population surface.  Instead it publishes one
+    partition per stable child/role/unit identity.  Candidate tokens remain
+    aligned with the numeric rows so the Solver can retain semantic identity.
+    """
+
+    partition_id: str
+    population: np.ndarray
+    objectives: np.ndarray
+    violations: np.ndarray
+    candidate_tokens: Sequence[str | None] = field(default_factory=tuple)
+    owner: str = ""
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        partition_id = str(self.partition_id or "").strip()
+        if not partition_id:
+            raise ValueError("PopulationPartition.partition_id must not be empty")
+        pop, obj, vio = AlgorithmAdapter.validate_population_snapshot(
+            self.population,
+            self.objectives,
+            self.violations,
+        )
+        tokens = tuple(self.candidate_tokens)
+        if not tokens:
+            tokens = (None,) * int(pop.shape[0])
+        if len(tokens) != int(pop.shape[0]):
+            raise ValueError(
+                "PopulationPartition candidate tokens must align with population rows"
+            )
+        normalized_tokens = tuple(
+            None if token is None else str(token).strip() or None
+            for token in tokens
+        )
+        pop = np.asarray(pop, dtype=float).copy()
+        obj = np.asarray(obj, dtype=float).copy()
+        vio = np.asarray(vio, dtype=float).reshape(-1).copy()
+        pop.setflags(write=False)
+        obj.setflags(write=False)
+        vio.setflags(write=False)
+        object.__setattr__(self, "partition_id", partition_id)
+        object.__setattr__(self, "population", pop)
+        object.__setattr__(self, "objectives", obj)
+        object.__setattr__(self, "violations", vio)
+        object.__setattr__(self, "candidate_tokens", normalized_tokens)
+        object.__setattr__(self, "owner", str(self.owner or ""))
+        object.__setattr__(
+            self,
+            "metadata",
+            freeze_wire_mapping(
+                self.metadata,
+                path="population_partition.metadata",
+            ),
+        )
+
+    def with_prefix(self, prefix: str) -> "PopulationPartition":
+        normalized = str(prefix or "").strip().strip("/")
+        if not normalized:
+            return self
+        return PopulationPartition(
+            partition_id=f"{normalized}/{self.partition_id}",
+            population=self.population,
+            objectives=self.objectives,
+            violations=self.violations,
+            candidate_tokens=self.candidate_tokens,
+            owner=self.owner,
+            metadata=self.metadata,
+        )
+
+    def without_prefix(self, prefix: str) -> "PopulationPartition":
+        normalized = str(prefix or "").strip().strip("/")
+        marker = f"{normalized}/"
+        if not normalized or not self.partition_id.startswith(marker):
+            raise ValueError(
+                f"population partition {self.partition_id!r} is outside prefix {normalized!r}"
+            )
+        return PopulationPartition(
+            partition_id=self.partition_id[len(marker):],
+            population=self.population,
+            objectives=self.objectives,
+            violations=self.violations,
+            candidate_tokens=self.candidate_tokens,
+            owner=self.owner,
+            metadata=self.metadata,
+        )
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "schema": "nsgablack.population_partition/v1",
+            "partition_id": self.partition_id,
+            "population": self.population.tolist(),
+            "objectives": self.objectives.tolist(),
+            "violations": self.violations.tolist(),
+            "candidate_tokens": list(self.candidate_tokens),
+            "owner": self.owner,
+            "metadata": thaw_wire_mapping(self.metadata),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "PopulationPartition":
+        data = dict(payload or {})
+        schema = str(data.get("schema", "nsgablack.population_partition/v1"))
+        if schema != "nsgablack.population_partition/v1":
+            raise ValueError(f"unsupported population partition schema: {schema}")
+        return cls(
+            partition_id=str(data.get("partition_id", "")),
+            population=np.asarray(data.get("population", ()), dtype=float),
+            objectives=np.asarray(data.get("objectives", ()), dtype=float),
+            violations=np.asarray(data.get("violations", ()), dtype=float),
+            candidate_tokens=tuple(data.get("candidate_tokens", ()) or ()),
+            owner=str(data.get("owner", "")),
+            metadata=dict(data.get("metadata", {}) or {}),
+        )
+
+
+def prefixed_population_partitions(
+    prefix: str,
+    adapter: Any,
+) -> tuple[PopulationPartition, ...]:
+    getter = getattr(adapter, "get_population_partitions", None)
+    if not callable(getter):
+        return ()
+    return tuple(partition.with_prefix(prefix) for partition in tuple(getter() or ()))
+
+
+def restore_prefixed_population_partitions(
+    prefix: str,
+    adapter: Any,
+    partitions: Sequence[PopulationPartition],
+) -> bool:
+    normalized = str(prefix or "").strip().strip("/")
+    marker = f"{normalized}/"
+    selected = tuple(
+        partition.without_prefix(normalized)
+        for partition in tuple(partitions or ())
+        if partition.partition_id.startswith(marker)
+    )
+    if not selected:
+        return False
+    setter = getattr(adapter, "set_population_partitions", None)
+    if not callable(setter):
+        raise TypeError(
+            f"Adapter {type(adapter).__name__} cannot restore population partitions"
+        )
+    return bool(setter(selected))
 
 
 def subset_adapter_feedback(feedback: Any, selector: Any) -> Any:
@@ -51,6 +204,7 @@ class AlgorithmAdapter(AdapterBase):
     phase_out = ()
     state_recovery_level = "L0"
     state_recovery_notes = "No adapter-owned runtime state is guaranteed to roundtrip."
+    population_state_mode = "none"
 
     def __init__(self, name: str, priority: int = 0) -> None:
         self.name = name
@@ -190,6 +344,62 @@ class AlgorithmAdapter(AdapterBase):
         del candidate_tokens
         return False
 
+    def get_population_partitions(self) -> tuple[PopulationPartition, ...]:
+        """Return the complete Adapter-owned population authority.
+
+        A leaf/single-authority Adapter receives the default one-partition
+        projection.  True composites override this method and keep child
+        populations separate.
+        """
+
+        if str(getattr(self, "population_state_mode", "none")) == "none":
+            return ()
+        snapshot = self.get_population_snapshot()
+        if snapshot is None:
+            return ()
+        population, objectives, violations = snapshot
+        tokens = self.get_population_candidate_tokens()
+        return (
+            PopulationPartition(
+                partition_id="population",
+                population=population,
+                objectives=objectives,
+                violations=violations,
+                candidate_tokens=() if tokens is None else tokens,
+                owner=self.name,
+            ),
+        )
+
+    def set_population_partitions(
+        self,
+        partitions: Sequence[PopulationPartition],
+    ) -> bool:
+        """Restore the population authority exported by this Adapter."""
+
+        values = tuple(partitions or ())
+        if len(values) != 1:
+            if not values:
+                return False
+            raise ValueError(
+                f"single-population Adapter {self.name!r} expected one partition"
+            )
+        partition = values[0]
+        handled = self.set_population_snapshot(
+            partition.population,
+            partition.objectives,
+            partition.violations,
+        )
+        if handled is False:
+            return False
+        token_handled = self.set_population_candidate_tokens(
+            partition.candidate_tokens
+        )
+        if partition.candidate_tokens and token_handled is False:
+            raise ValueError(
+                f"Adapter {self.name!r} restored population values but rejected tokens"
+            )
+        return True
+
     @staticmethod
     def candidate_tokens_for(
         control: Any,
@@ -264,8 +474,9 @@ class CompositeAdapter(AlgorithmAdapter):
     context_mutates = ()
     context_cache = ()
     context_notes = "Composite adapter: unions child adapter contracts."
-    state_recovery_level = "L1"
-    state_recovery_notes = "Restores child adapter snapshots via adapter.get_state()/set_state()."
+    state_recovery_level = "L2"
+    state_recovery_notes = "Restores stable child population partitions, tokens, and child adapter states."
+    population_state_mode = "partitioned"
 
     def __init__(self, adapters: Sequence[AlgorithmAdapter], name: str = "composite", priority: int = 0) -> None:
         super().__init__(name=name, priority=priority)
@@ -344,15 +555,88 @@ class CompositeAdapter(AlgorithmAdapter):
         for adapter in self.adapters:
             adapter.teardown(control)
 
+    def _child_prefix(self, index: int, adapter: AlgorithmAdapter) -> str:
+        return f"child:{int(index)}:{adapter.name}"
+
+    def get_population_partitions(self) -> tuple[PopulationPartition, ...]:
+        out: list[PopulationPartition] = []
+        for index, adapter in enumerate(self.adapters):
+            out.extend(
+                prefixed_population_partitions(
+                    self._child_prefix(index, adapter),
+                    adapter,
+                )
+            )
+        return tuple(out)
+
+    def set_population_partitions(
+        self,
+        partitions: Sequence[PopulationPartition],
+    ) -> bool:
+        values = tuple(partitions or ())
+        handled = False
+        for index, adapter in enumerate(self.adapters):
+            handled = (
+                restore_prefixed_population_partitions(
+                    self._child_prefix(index, adapter),
+                    adapter,
+                    values,
+                )
+                or handled
+            )
+        unknown = {
+            partition.partition_id
+            for partition in values
+            if not any(
+                partition.partition_id.startswith(
+                    self._child_prefix(index, adapter) + "/"
+                )
+                for index, adapter in enumerate(self.adapters)
+            )
+        }
+        if unknown:
+            raise ValueError(
+                "CompositeAdapter checkpoint contains unknown population partitions: "
+                + ", ".join(sorted(unknown))
+            )
+        return handled or not values
+
     def get_state(self) -> Dict[str, Any]:
-        return {adapter.name: adapter.get_state() for adapter in self.adapters}
+        return {
+            "schema": "nsgablack.composite_adapter_state/v2",
+            "children": [
+                {
+                    "index": int(index),
+                    "name": adapter.name,
+                    "class": f"{type(adapter).__module__}.{type(adapter).__qualname__}",
+                    "state": adapter.get_state(),
+                }
+                for index, adapter in enumerate(self.adapters)
+            ],
+            "population_partitions": [
+                partition.as_dict()
+                for partition in self.get_population_partitions()
+            ],
+        }
 
     def set_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
-        for adapter in self.adapters:
-            if adapter.name in state:
-                adapter.set_state(state[adapter.name])
+        children = tuple(state.get("children", ()) or ())
+        if children:
+            if len(children) != len(self.adapters):
+                raise ValueError("CompositeAdapter child state count mismatch")
+            for index, (adapter, child) in enumerate(zip(self.adapters, children)):
+                if int(child.get("index", index)) != index:
+                    raise ValueError("CompositeAdapter child state order mismatch")
+                if str(child.get("name", adapter.name)) != adapter.name:
+                    raise ValueError("CompositeAdapter child state identity mismatch")
+                adapter.set_state(dict(child.get("state", {}) or {}))
+        raw_partitions = tuple(state.get("population_partitions", ()) or ())
+        if raw_partitions:
+            self.set_population_partitions(
+                tuple(PopulationPartition.from_dict(item) for item in raw_partitions)
+            )
 
     def get_context_contract(self) -> Dict[str, Any]:
         contract = super().get_context_contract()

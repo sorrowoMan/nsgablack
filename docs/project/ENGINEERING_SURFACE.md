@@ -1,8 +1,8 @@
 # Engineering Surface
 
 This page keeps the current engineering surface compact and authoritative.
-Long historical technology-stack notes belong in `docs/archive/` and are not
-architecture authority.
+Historical technology-stack notes live in Git history and are not architecture
+authority.
 
 ## Main Runtime Shape
 

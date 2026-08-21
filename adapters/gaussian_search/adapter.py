@@ -90,21 +90,18 @@ class GaussianSearchAdapter(AlgorithmAdapter):
         self._candidate_kind = "array"
         self._candidate_metadata: Dict[str, Any] = {}
         self._rng = np.random.default_rng(int(self.cfg.random_seed))
-        self._state_loaded = False
         self._runtime_projection: Dict[str, Any] = {}
         self._refresh_runtime_projection()
 
     def setup(self, control: Any) -> None:
         _ = control
-        if not self._state_loaded:
-            self.best_x = None
-            self.best_score = None
-            self.best_violation = None
-            self.step_index = 0
-            self._candidate_kind = "array"
-            self._candidate_metadata = {}
-            self._rng = np.random.default_rng(int(self.cfg.random_seed))
-        self._state_loaded = False
+        self.best_x = None
+        self.best_score = None
+        self.best_violation = None
+        self.step_index = 0
+        self._candidate_kind = "array"
+        self._candidate_metadata = {}
+        self._rng = np.random.default_rng(int(self.cfg.random_seed))
         self._refresh_runtime_projection()
 
     def propose(self, control: Any, context: Mapping[str, Any]) -> Sequence[Any]:
@@ -243,7 +240,6 @@ class GaussianSearchAdapter(AlgorithmAdapter):
             self.best_x = None
             self.best_score = None
             self.best_violation = None
-            self._state_loaded = True
             self._refresh_runtime_projection()
             return True
         candidate = values[0]
@@ -258,7 +254,6 @@ class GaussianSearchAdapter(AlgorithmAdapter):
                 0.0,
                 float(np.asarray(violations, dtype=float).reshape(-1)[0]),
             )
-        self._state_loaded = True
         self._refresh_runtime_projection()
         return True
 
@@ -319,7 +314,6 @@ class GaussianSearchAdapter(AlgorithmAdapter):
         rng_state = state.get("rng_state")
         if isinstance(rng_state, Mapping):
             self._rng.bit_generator.state = deepcopy(dict(rng_state))
-        self._state_loaded = True
         self._refresh_runtime_projection()
 
 

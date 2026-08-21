@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 
 def _build_pipeline():
@@ -75,3 +76,35 @@ def test_async_event_direct_wiring_wires_plugins(sample_problem):
     assert solver.adapter is adapter
     assert solver.get_plugin("async_event_hub") is not None
     assert solver.get_plugin("pareto_archive") is not None
+
+
+def test_async_event_state_is_detached_and_schema_checked(sample_problem):
+    from nsgablack.adapters import (
+        AsyncEventDrivenAdapter,
+        EventStrategySpec,
+        SAConfig,
+        SimulatedAnnealingAdapter,
+    )
+    from nsgablack.core.composable_solver import ComposableSolver
+
+    adapter = AsyncEventDrivenAdapter(
+        strategies=[
+            EventStrategySpec(
+                adapter=SimulatedAnnealingAdapter(SAConfig(batch_size=1)),
+                name="sa",
+            )
+        ]
+    )
+    solver = ComposableSolver(
+        problem=sample_problem,
+        adapter=adapter,
+        representation_pipeline=_build_pipeline(),
+    )
+    adapter.setup(solver)
+    state = adapter.get_state()
+    assert state["schema"] == "nsgablack.async_event_state/v2"
+    state["stats"]["sa"]["proposed"] = 999.0
+    assert adapter.get_state()["stats"]["sa"]["proposed"] != 999.0
+
+    with pytest.raises(ValueError, match="unsupported AsyncEventDrivenAdapter"):
+        adapter.set_state({"schema": "nsgablack.async_event_state/v999"})

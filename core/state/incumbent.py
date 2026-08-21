@@ -96,6 +96,8 @@ class CandidateProvenance:
     source_run_id: str | None = None
     warm_start_id: str | None = None
     proposal_id: str | None = None
+    parent_token: str | None = None
+    transform_stage: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -120,6 +122,19 @@ class CandidateProvenance:
             "proposal_id",
             None if self.proposal_id is None else str(self.proposal_id),
         )
+        parent_token = (
+            None if self.parent_token is None else str(self.parent_token).strip()
+        )
+        if parent_token == token:
+            raise ValueError("CandidateProvenance.parent_token must differ from candidate_token")
+        object.__setattr__(self, "parent_token", parent_token or None)
+        object.__setattr__(
+            self,
+            "transform_stage",
+            None
+            if self.transform_stage is None
+            else str(self.transform_stage).strip().lower() or None,
+        )
         object.__setattr__(
             self,
             "metadata",
@@ -133,6 +148,8 @@ class CandidateProvenance:
             "source_run_id": self.source_run_id,
             "warm_start_id": self.warm_start_id,
             "proposal_id": self.proposal_id,
+            "parent_token": self.parent_token,
+            "transform_stage": self.transform_stage,
             "metadata": _thaw_payload(self.metadata),
         }
 
@@ -145,6 +162,8 @@ class CandidateProvenance:
             source_run_id=data.get("source_run_id"),
             warm_start_id=data.get("warm_start_id"),
             proposal_id=data.get("proposal_id"),
+            parent_token=data.get("parent_token"),
+            transform_stage=data.get("transform_stage"),
             metadata=dict(data.get("metadata", {}) or {}),
         )
 

@@ -1,67 +1,60 @@
-# Documentation Architecture Cleanup Log
+# 文档权威与清理规则
 
-This file records the current documentation cleanup baseline. It is not a substitute for the authoritative architecture docs.
+本文定义三仓现行文档的维护边界。它是治理规则，不重复讲解框架 API。
 
-Current rule:
+## 权威顺序
 
-- `nsgablack` and `mlblack` share the Project / Case / Scaffold / L0 substrate.
-- `nsgablack` is the optimization and search semantic layer.
-- `mlblack` is the machine-learning semantic layer.
-- orchestration, resource grants, and nested Case execution belong to the shared substrate.
+发生冲突时按以下顺序判断：
 
-## Cleanup Policy
+1. 当前源码与通过的测试。
+2. 仓库 `AGENTS.md` 和包版本/依赖声明。
+3. 根 `README.md`、`docs/README.md` 与当前标准脚手架教程。
+4. 专题架构、用户指南和示例 README。
+5. research、whitepaper 草稿和 Git 历史。
 
-When a document conflicts with the current architecture, prefer one of these actions:
+后一级不能覆盖前一级。
 
-1. Rewrite it around Project / Case / Scaffold / L0.
-2. Replace it with a short migration note that points to the current tutorial.
-3. Delete it if it only duplicates a stale example entry.
+## 单一入口
 
-Do not keep long historical explanations beside current rules. They look like supported behavior and confuse users.
+- 每个仓库：一个根 `README.md`。
+- 每个 Project：一个 `README.md`。
+- 每个 Case：一个 `README.md`。
+- 每个 docs 一级目录：一个 `README.md` 负责导航。
 
-## Canonical References
+不再创建：
 
-- `docs/standard_scaffold_tutorial/README.md`
-- `docs/standard_scaffold_tutorial/01_create_and_run.md`
-- `docs/standard_scaffold_tutorial/03_orchestration_language.md`
-- `docs/standard_scaffold_tutorial/05_cross_framework_coordination.md`
-- `docs/user_guide/PROJECT_SCAFFOLD.md`
-- `docs/architecture/L0_RESOURCE_ORCHESTRATION.md`
+- `START_HERE.md`
+- `BUILD_SOLVER_REGISTRATION.md`
+- `COMPONENT_REGISTRATION.md`
+- 复制到每个 Case 的 `COMPONENT_CONTRACT_TEMPLATE.md`
+- 只解释目录名的空壳 README
+- 与当前 README 重复的实现总结、迁移清单和 AI 记忆文件
 
-## Directory Decisions
+组件、资源、输入输出、运行命令和限制都写入所属 Project/Case 的 README。正式契约写入代码、类型和 Doctor 规则，不靠复制模板维持。
 
-| Directory | Decision | Reason |
-| --- | --- | --- |
-| `docs/` root | keep only navigation / Sphinx / quickstart | avoid mixed authority docs at root |
-| `architecture/` | keep architecture rules only | no concrete backend manuals or historical reports |
-| `integrations/` | keep external backend integration docs | COPT, ML tools, DB/backend integration live here |
-| `standard_scaffold_tutorial/` | keep as primary tutorial | current Project / Case / Scaffold / L0 path |
-| `user_guide/` | keep current recommended operations only | legacy paths must be rewritten or marked compatibility |
-| `guides/` | keep component-boundary and hands-on guides | learning notes and research material moved out |
-| `concepts/` | keep conceptual summaries and current concept-alignment docs | no operational step-by-step, governance, or backend integration |
-| `indexes/` | keep index/navigation docs only | no long conceptual or tutorial body |
-| `project/` | keep governance, stability, ADR, catalog DB protocol, run surface, cleanup policy | research narratives and concept-alignment docs moved out |
-| `cases/` | keep case summaries and reproduction pointers | executable authority remains `examples/cases/<project>/run_project.py` |
-| `research/` | keep non-authoritative research, learning, narrative, ML pattern notes | not architecture authority |
-| `archive/` | keep read-only historical material | not referenced as current facts |
-| `changelog/` | keep change logs and redirects | canonical project changelog remains under `project/` |
+## 三仓内容边界
 
-## Migrations In This Cleanup
+- `blackbase`：Project/Stage/Case/Scaffold、L0、Context/Snapshot/Artifact、公共调用与结果协议。
+- `nsgablack`：Solver、CandidateBatch、Representation、Adapter、Bias、Plugin、目标/约束、Pareto。
+- `mlblack`：DataView、Spec、Codec、Head、LearningProblem、Evaluation Provider、backend capability、模型 Artifact。
 
-- Root docs were moved into their owning directories:
-  - `ALGORITHM_DECOMPOSITION_HANDS_ON.md` -> `guides/`
-  - `AUTHORITATIVE_EXAMPLES.md`, `CATALOG_DB_PROTOCOL.md`, `CORE_STABILITY.md`, `TODO.md` -> `project/`
-  - `COMPONENT_EXAMPLES_INDEX.md`, `INDEX_MANUAL.md` -> `indexes/`
-  - `COMPUTE_FLOW_GUIDE_CN.md` -> `user_guide/`
-  - `COPT_Python_Only_CN.md` -> `integrations/`
-  - `FEATURES_OVERVIEW.md` -> `concepts/`
-- `architecture/COPT_INTEGRATION.md` moved to `integrations/COPT_INTEGRATION.md`.
-- `guides/LEARNING_ROADMAP.md` and `guides/ML_PATTERN_REFERENCE.md` moved to `research/`.
-- `project/FRAMEWORK_CONCEPT_MAPPING.zh-CN.md` and `project/code_concept_alignment/` moved to `concepts/`.
-- stale research redirect files under `project/` were removed after the real documents moved to `research/`.
-- `project/TECH_STACK_ALIGNED.md` moved to `archive/`; current engineering facts live in `project/ENGINEERING_SURFACE.md`.
-- `archive/README.md` now marks archived material as non-authoritative.
+`mlblack` 文档可以使用“训练、epoch、optimizer”等 ML 词汇，但必须说明它们如何投影到统一 Solver，而不能写成独立控制平面。`nsgablack` 文档不得把 ML backend 或模型语义硬编码进 Adapter。
 
-## Next Example Refactor Queue
+## 历史材料
 
-Documentation now points users toward the current substrate. The remaining implementation cleanup is to migrate or mark compatibility examples so every formal example lives as a Project with one or more standard Cases.
+错误或已过期的文档直接删除，历史由 Git 保存。不要在现行文档树维护 `archive/`，因为搜索、Catalog 和 AI 检索仍会把 archive 当成候选事实。
+
+白皮书只保留当前 V6 草稿；旧版本不与当前指南并列。
+
+## 变更检查
+
+文档变更至少验证：
+
+- Markdown 本地链接指向真实文件。
+- Catalog 的 `example_entry` / doc pointer 指向真实入口。
+- 示例 README 声明的组件与 `--check --build-check` 一致。
+- 不出现已删除的导入路径或私有控制面。
+- 教程与介绍类文档以中文为主；英文另建独立文件。
+- Doctor 不再要求生成重复文档。
+
+文档数量不是质量指标。规则只写一次，其他位置通过链接复用。

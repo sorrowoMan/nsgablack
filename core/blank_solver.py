@@ -11,11 +11,12 @@ import json
 import logging
 import random
 import threading
+import time
 import uuid
 import warnings
 import weakref
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple
 
 from .acceleration import AccelerationFacade, AccelerationRegistry, ExecutionResult
 from .acceleration_helpers import maybe_accel_map, maybe_accel_run
@@ -47,6 +48,7 @@ from .state.incumbent import (
     CandidateProvenance,
     IncumbentState,
 )
+from .state.run_progress import RunProgressState
 
 import numpy as np
 
@@ -127,6 +129,7 @@ logger = logging.getLogger(__name__)
 _SEMANTIC_METADATA_KEY = "candidate.semantic_metadata"
 _CANDIDATE_BATCH_SNAPSHOT_KEY = "candidate_batch"
 _CANDIDATE_PROVENANCE_SNAPSHOT_KEY = "candidate_provenance"
+_CANDIDATE_PARTITIONS_SNAPSHOT_KEY = "candidate_population_partitions"
 
 
 @dataclass(frozen=True)
@@ -322,6 +325,16 @@ class SolverBase:
         )
         self.running = False
         self.stop_requested = False
+        self._runtime_setup_complete = False
+        self._pending_restore_envelopes: list[
+            tuple[str, Callable[[], None]]
+        ] = []
+        self._resume_loaded = False
+        self._resume_cursor = 0
+        self._run_progress_steps = 0
+        self._run_progress_elapsed_seconds = 0.0
+        self._run_progress_clock_started_at: float | None = None
+        self._run_progress_deadline_remaining_seconds: float | None = None
         self.max_steps = 1
         self.start_time = 0.0
         self.random_seed: Optional[int] = None
@@ -527,6 +540,10 @@ class SolverBase:
         self._active_candidate_population_ref = None
         self._candidate_population_batch = None
         self._candidate_population_provenance = ()
+        self._run_progress_steps = 0
+        self._run_progress_elapsed_seconds = 0.0
+        self._run_progress_clock_started_at = None
+        self._run_progress_deadline_remaining_seconds = None
         if hasattr(self, "last_step_summary"):
             self.last_step_summary = {}
         if hasattr(self, "scalarizer_fallback_count"):
@@ -1672,6 +1689,8 @@ class SolverBase:
         source_run_id: Optional[str] = None,
         warm_start_id: Optional[str] = None,
         proposal_id: Optional[str] = None,
+        parent_token: Optional[str] = None,
+        transform_stage: Optional[str] = None,
         metadata: Optional[Mapping[str, Any]] = None,
     ) -> CandidateProvenance:
         self._candidate_sequence = int(self._candidate_sequence) + 1
@@ -1686,6 +1705,8 @@ class SolverBase:
             source_run_id=source_run_id,
             warm_start_id=warm_start_id,
             proposal_id=proposal_id,
+            parent_token=parent_token,
+            transform_stage=transform_stage,
             metadata=dict(metadata or {}),
         )
 
@@ -1694,7 +1715,11 @@ class SolverBase:
         candidate: Any,
         provenance: CandidateProvenance,
     ) -> None:
-        array = np.asarray(candidate)
+        array = (
+            candidate.values
+            if isinstance(candidate, UnknownState)
+            else np.asarray(candidate)
+        )
         object_id = id(array)
         solver_ref = weakref.ref(self)
 
@@ -1721,7 +1746,11 @@ class SolverBase:
         self,
         candidate: Any,
     ) -> Optional[CandidateProvenance]:
-        current = np.asarray(candidate)
+        current = (
+            candidate.values
+            if isinstance(candidate, UnknownState)
+            else np.asarray(candidate)
+        )
         visited: set[int] = set()
         while isinstance(current, np.ndarray) and id(current) not in visited:
             object_id = id(current)
@@ -1769,6 +1798,8 @@ class SolverBase:
                     source_run_id=provenance.source_run_id,
                     warm_start_id=provenance.warm_start_id,
                     proposal_id=proposal_id,
+                    parent_token=provenance.parent_token,
+                    transform_stage=provenance.transform_stage,
                     metadata=provenance.metadata,
                 )
             if isinstance(candidate, UnknownState):
@@ -1793,6 +1824,8 @@ class SolverBase:
             source_run_id=provenance.source_run_id,
             warm_start_id=provenance.warm_start_id,
             proposal_id=provenance.proposal_id,
+            parent_token=provenance.parent_token,
+            transform_stage=provenance.transform_stage,
             metadata=metadata,
         )
 
@@ -1826,7 +1859,7 @@ class SolverBase:
 
         return tuple(self._candidate_population_provenance)
 
-    def commit_candidate_population(
+    def _materialize_candidate_population(
         self,
         population: Any,
         candidate_tokens: Iterable[str | None] | None,
@@ -1834,8 +1867,8 @@ class SolverBase:
         sources: Iterable[
             tuple[CandidateBatch | None, Iterable[CandidateProvenance]]
         ] = (),
-    ) -> CandidateBatch:
-        """Commit one token-aligned population without guessing semantic identity.
+    ) -> tuple[CandidateBatch, tuple[CandidateProvenance, ...]]:
+        """Build one token-aligned semantic population without committing it.
 
         Numeric Adapters remain free to own selection arrays, but any selected
         semantic row must name the token it selected.  This prevents equal
@@ -1934,9 +1967,31 @@ class SolverBase:
             numeric_matrix=matrix,
             candidate_tokens=tuple(normalized_tokens),
         )
+        return batch, tuple(records)
+
+    def commit_candidate_population(
+        self,
+        population: Any,
+        candidate_tokens: Iterable[str | None] | None,
+        *,
+        sources: Iterable[
+            tuple[CandidateBatch | None, Iterable[CandidateProvenance]]
+        ] = (),
+    ) -> CandidateBatch:
+        """Commit one token-aligned population without guessing semantic identity."""
+
+        batch, records = self._materialize_candidate_population(
+            population,
+            candidate_tokens,
+            sources=sources,
+        )
         self._candidate_population_batch = batch
-        self._candidate_population_provenance = tuple(records)
-        self.bind_candidate_provenance(matrix, records, activate=True)
+        self._candidate_population_provenance = records
+        self.bind_candidate_provenance(
+            batch.numeric_matrix,
+            records,
+            activate=True,
+        )
         return batch
 
     def export_candidate_population_checkpoint_state(self) -> dict[str, Any] | None:
@@ -2104,6 +2159,8 @@ class SolverBase:
             "source_run_id": provenance.source_run_id,
             "warm_start_id": provenance.warm_start_id,
             "proposal_id": provenance.proposal_id,
+            "parent_token": provenance.parent_token,
+            "transform_stage": provenance.transform_stage,
             "metadata": dict(provenance.metadata),
         }
 
@@ -2191,7 +2248,20 @@ class SolverBase:
             raise ValueError("population count must be non-negative")
         return tuple(self.init_candidate(context) for _ in range(size))
 
-    def mutate_candidate(self, x: np.ndarray, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+    def mutate_candidate(self, x: Any, context: Optional[Dict[str, Any]] = None) -> Any:
+        input_provenance = self._lookup_candidate_provenance(x)
+        if input_provenance is None:
+            input_provenance = self._new_candidate_provenance(
+                source_kind="mutation_parent",
+                source_run_id=self._active_run_id,
+                transform_stage="mutation_input",
+            )
+            if isinstance(x, UnknownState):
+                input_provenance = self._with_candidate_semantics(
+                    input_provenance,
+                    x,
+                )
+            self._register_candidate_provenance(x, input_provenance)
         pipeline = self.representation_pipeline
         mutator = None
         if pipeline is not None:
@@ -2202,9 +2272,27 @@ class SolverBase:
             out = pipeline.mutate(x, context)
         else:
             out = x
-        return normalize_candidate(out, dimension=self.dimension, name="mutate_candidate")
+        normalized = normalize_candidate(
+            out,
+            dimension=self.dimension,
+            name="mutate_candidate",
+        )
+        provenance = self._new_candidate_provenance(
+            source_kind="mutation",
+            source_run_id=input_provenance.source_run_id or self._active_run_id,
+            warm_start_id=input_provenance.warm_start_id,
+            proposal_id=input_provenance.proposal_id,
+            parent_token=input_provenance.candidate_token,
+            transform_stage="mutate",
+            metadata=input_provenance.metadata,
+        )
+        if isinstance(out, UnknownState):
+            provenance = self._with_candidate_semantics(provenance, out)
+            self._register_candidate_provenance(out, provenance)
+        self._register_candidate_provenance(normalized, provenance)
+        return out if isinstance(out, UnknownState) else normalized
 
-    def repair_candidate(self, x: np.ndarray, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+    def repair_candidate(self, x: Any, context: Optional[Dict[str, Any]] = None) -> Any:
         input_provenance = self._lookup_candidate_provenance(x)
         pipeline = self.representation_pipeline
         if pipeline is not None and getattr(pipeline, "repair", None) is not None:
@@ -2216,12 +2304,30 @@ class SolverBase:
         else:
             out = x
         normalized = normalize_candidate(out, dimension=self.dimension, name="repair_candidate")
-        if input_provenance is not None:
-            provenance = input_provenance
+        provenance = input_provenance
+        if provenance is None and isinstance(out, UnknownState):
+            provenance = self._new_candidate_provenance(
+                source_kind="repair",
+                source_run_id=self._active_run_id,
+                transform_stage="repair",
+            )
+        elif provenance is not None:
+            provenance = CandidateProvenance(
+                candidate_token=provenance.candidate_token,
+                source_kind=provenance.source_kind,
+                source_run_id=provenance.source_run_id,
+                warm_start_id=provenance.warm_start_id,
+                proposal_id=provenance.proposal_id,
+                parent_token=provenance.parent_token,
+                transform_stage="repair",
+                metadata=provenance.metadata,
+            )
+        if provenance is not None:
             if isinstance(out, UnknownState):
                 provenance = self._with_candidate_semantics(provenance, out)
+                self._register_candidate_provenance(out, provenance)
             self._register_candidate_provenance(normalized, provenance)
-        return normalized
+        return out if isinstance(out, UnknownState) else normalized
 
     def encode_candidate(self, x: Any, context: Optional[Dict[str, Any]] = None) -> Any:
         pipeline = self.representation_pipeline
@@ -2427,6 +2533,15 @@ class SolverBase:
                     item.as_dict()
                     for item in self._candidate_population_provenance
                 ]
+        export_partitions = getattr(
+            self,
+            "export_candidate_population_partitions_checkpoint_state",
+            None,
+        )
+        if callable(export_partitions):
+            partition_payload = export_partitions()
+            if partition_payload:
+                payload[_CANDIDATE_PARTITIONS_SNAPSHOT_KEY] = partition_payload
         return payload
 
     def _persist_snapshot(
@@ -2899,6 +3014,117 @@ class SolverBase:
 
         del step_index
         return True
+
+    def queue_restore_envelope(
+        self,
+        apply: Callable[[], None],
+        *,
+        source: str = "external",
+    ) -> None:
+        """Queue one restore transaction for the post-setup lifecycle slot."""
+
+        if not callable(apply):
+            raise TypeError("restore envelope apply callback must be callable")
+        if bool(self.running) or bool(self._runtime_setup_complete):
+            raise RuntimeError(
+                "restore envelopes may only be queued before runtime setup"
+            )
+        self._pending_restore_envelopes.append((str(source), apply))
+
+    def _apply_pending_restore_envelopes(self) -> None:
+        pending = list(self._pending_restore_envelopes)
+        self._pending_restore_envelopes = []
+        if len(pending) > 1:
+            raise RuntimeError(
+                "multiple restore envelopes were queued for one Solver run: "
+                + ", ".join(source for source, _apply in pending)
+            )
+        for _source, apply in pending:
+            apply()
+        if pending and not bool(getattr(self, "_resume_loaded", False)):
+            raise RuntimeError(
+                "restore envelope completed without establishing resume state"
+            )
+
+    def _start_run_progress_clock(self) -> None:
+        if self._run_progress_clock_started_at is None:
+            self._run_progress_clock_started_at = time.monotonic()
+
+    def _pause_run_progress_clock(self) -> None:
+        started = self._run_progress_clock_started_at
+        if started is None:
+            return
+        delta = max(0.0, float(time.monotonic() - started))
+        self._run_progress_elapsed_seconds += delta
+        if self._run_progress_deadline_remaining_seconds is not None:
+            self._run_progress_deadline_remaining_seconds = max(
+                0.0,
+                float(self._run_progress_deadline_remaining_seconds) - delta,
+            )
+        self._run_progress_clock_started_at = None
+
+    def _record_completed_run_step(self) -> None:
+        self._run_progress_steps = int(self._run_progress_steps) + 1
+
+    @property
+    def run_progress_steps(self) -> int:
+        return int(self._run_progress_steps)
+
+    @property
+    def run_progress_elapsed_seconds(self) -> float:
+        elapsed = float(self._run_progress_elapsed_seconds)
+        if self._run_progress_clock_started_at is not None:
+            elapsed += max(
+                0.0,
+                float(time.monotonic() - self._run_progress_clock_started_at),
+            )
+        return elapsed
+
+    def export_run_progress_state(self) -> dict[str, Any]:
+        remaining = self._run_progress_deadline_remaining_seconds
+        if (
+            remaining is not None
+            and self._run_progress_clock_started_at is not None
+        ):
+            remaining = max(
+                0.0,
+                float(remaining)
+                - float(time.monotonic() - self._run_progress_clock_started_at),
+            )
+        return RunProgressState(
+            steps_completed=self.run_progress_steps,
+            elapsed_seconds=self.run_progress_elapsed_seconds,
+            deadline_remaining_seconds=remaining,
+            run_id=self._active_run_id,
+        ).as_dict()
+
+    def restore_run_progress_state(
+        self,
+        payload: Mapping[str, Any] | None,
+    ) -> None:
+        if not isinstance(payload, Mapping):
+            self._run_progress_steps = 0
+            self._run_progress_elapsed_seconds = 0.0
+            self._run_progress_clock_started_at = None
+            self._run_progress_deadline_remaining_seconds = None
+            return
+        state = RunProgressState.from_dict(payload)
+        active_run_id = getattr(self, "_active_run_id", None)
+        if (
+            state.run_id is not None
+            and active_run_id is not None
+            and str(state.run_id) != str(active_run_id)
+        ):
+            raise ValueError(
+                "run progress state belongs to a different logical run: "
+                f"progress={state.run_id!r}, solver={active_run_id!r}"
+            )
+        self._run_progress_steps = state.steps_completed
+        self._run_progress_elapsed_seconds = state.elapsed_seconds
+        self._run_progress_clock_started_at = None
+        self._run_progress_deadline_remaining_seconds = (
+            state.deadline_remaining_seconds
+        )
 
     def setup(self) -> None:
         return None

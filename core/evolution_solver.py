@@ -476,24 +476,22 @@ class EvolutionSolver(ComposableSolver):
 
     def setup(self) -> None:
         self._sync_nsga2_adapter_config()
-        resume_loaded = bool(getattr(self, "_resume_loaded", False))
-        if not resume_loaded:
-            if getattr(self, "random_seed", None) is None:
-                try:
-                    self.random_seed = int(np.random.randint(0, 2**32 - 1))
-                except Exception as exc:
-                    report_soft_error(
-                        component="EvolutionSolver",
-                        event="auto_seed_generate",
-                        exc=exc,
-                        logger=logger,
-                        context_store=self.context_store,
-                        strict=False,
-                        level="debug",
-                    )
-                    self.random_seed = 0
-            self.set_random_seed(getattr(self, "random_seed", None))
-            self.mutation_range = float(self.initial_mutation_range)
+        if getattr(self, "random_seed", None) is None:
+            try:
+                self.random_seed = int(np.random.randint(0, 2**32 - 1))
+            except Exception as exc:
+                report_soft_error(
+                    component="EvolutionSolver",
+                    event="auto_seed_generate",
+                    exc=exc,
+                    logger=logger,
+                    context_store=self.context_store,
+                    strict=False,
+                    level="debug",
+                )
+                self.random_seed = 0
+        self.set_random_seed(getattr(self, "random_seed", None))
+        self.mutation_range = float(self.initial_mutation_range)
 
         super().setup()
 

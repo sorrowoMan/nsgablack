@@ -91,8 +91,8 @@ def test_gaussian_search_checkpoint_restores_exact_rng_sequence() -> None:
     )
 
     restored = GaussianSearchAdapter(config)
-    restored.set_state(original.get_state())
     restored.setup(control)
+    restored.set_state(original.get_state())
 
     expected = tuple(original.propose(control, {}))
     actual = tuple(restored.propose(control, {}))
@@ -102,7 +102,7 @@ def test_gaussian_search_checkpoint_restores_exact_rng_sequence() -> None:
     )
 
 
-def test_gradient_optimizer_keeps_explicit_seed_across_setup() -> None:
+def test_gradient_optimizer_accepts_explicit_seed_after_setup() -> None:
     control = _Control()
     adapter = GradientOptimizerAdapter(
         GradientOptimizerConfig.from_method(
@@ -112,8 +112,8 @@ def test_gradient_optimizer_keeps_explicit_seed_across_setup() -> None:
     )
     seed = UnknownState(values=np.array([7.0, 8.0]))
 
-    assert adapter.set_current_candidates((seed,)) is True
     adapter.setup(control)
+    assert adapter.set_current_candidates((seed,)) is True
     proposed = tuple(adapter.propose(control, {}))
 
     assert np.allclose(proposed[0].as_array(), seed.as_array())

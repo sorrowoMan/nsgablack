@@ -3,22 +3,7 @@ from nsgablack.project import add_case, create_project, run_project_doctor
 
 def _init_case(path):
     project_root = create_project(path)
-    case_root = add_case("doctor_case", "solver", project_root=project_root)
-    (case_root / ".nsgablack-project").write_text("framework = nsgablack\n", encoding="utf-8")
-    (case_root / "COMPONENT_REGISTRATION.md").write_text(
-        "# Component registration\n\nRegister discoverable Case components in the local Catalog.\n",
-        encoding="utf-8",
-    )
-    contract_dir = case_root / "docs" / "contracts"
-    contract_dir.mkdir(parents=True, exist_ok=True)
-    (contract_dir / "COMPONENT_CONTRACT_TEMPLATE.md").write_text(
-        "# Component contract template\n",
-        encoding="utf-8",
-    )
-    matrix_dir = case_root / "tests" / "templates"
-    matrix_dir.mkdir(parents=True, exist_ok=True)
-    (matrix_dir / "README.md").write_text("# Component test matrix\n", encoding="utf-8")
-    return case_root
+    return add_case("doctor_case", "solver", project_root=project_root)
 
 
 def _mark_case_root(path):
@@ -31,55 +16,37 @@ def _mark_case_root(path):
 
 def test_create_project_and_add_case_create_unified_scaffold(tmp_path):
     root = _init_case(tmp_path / "demo_project")
-    guide = root / "COMPONENT_REGISTRATION.md"
     build_solver = root / "build_solver.py"
-    marker = root / ".nsgablack-project"
-    assert guide.is_file()
+    readme = root / "README.md"
+    assert readme.is_file()
     assert build_solver.is_file()
-    assert marker.is_file()
-    text = guide.read_text(encoding="utf-8")
     build_solver_py = build_solver.read_text(encoding="utf-8")
-    assert "Component registration" in text
     assert "build_solver" in build_solver_py
     assert "resource_context" in build_solver_py
     assert "component_overrides" in build_solver_py
     assert (root / "pipeline" / "main.py").is_file()
+    assert not (root / "START_HERE.md").exists()
+    assert not (root / "COMPONENT_REGISTRATION.md").exists()
+    assert not (root / "docs" / "contracts" / "COMPONENT_CONTRACT_TEMPLATE.md").exists()
 
 
-def test_create_project_creates_contract_and_test_matrix_templates(tmp_path):
+def test_project_doctor_warns_when_case_readme_missing(tmp_path):
     root = _init_case(tmp_path / "demo_project")
-    assert (root / "docs" / "contracts" / "COMPONENT_CONTRACT_TEMPLATE.md").is_file()
-    assert (root / "tests" / "templates" / "README.md").is_file()
-
-
-def test_project_doctor_warns_when_registration_guide_missing(tmp_path):
-    root = _init_case(tmp_path / "demo_project")
-    guide = root / "COMPONENT_REGISTRATION.md"
-    guide.unlink()
+    (root / "README.md").unlink()
 
     report = run_project_doctor(root, instantiate_solver=False)
     codes = {d.code for d in report.diagnostics}
-    assert "missing-component-registration-guide" in codes
+    assert "missing-case-readme" in codes
 
 
-def test_project_doctor_warns_when_component_contract_template_missing(tmp_path):
+def test_project_doctor_warns_for_legacy_case_docs(tmp_path):
     root = _init_case(tmp_path / "demo_project")
-    path = root / "docs" / "contracts" / "COMPONENT_CONTRACT_TEMPLATE.md"
-    path.unlink()
+    (root / "START_HERE.md").write_text("# duplicate\n", encoding="utf-8")
+    (root / "COMPONENT_REGISTRATION.md").write_text("# duplicate\n", encoding="utf-8")
 
     report = run_project_doctor(root, instantiate_solver=False)
-    codes = {d.code for d in report.diagnostics}
-    assert "missing-contract-card-template" in codes
-
-
-def test_project_doctor_warns_when_component_test_matrix_template_missing(tmp_path):
-    root = _init_case(tmp_path / "demo_project")
-    path = root / "tests" / "templates" / "README.md"
-    path.unlink()
-
-    report = run_project_doctor(root, instantiate_solver=False)
-    codes = {d.code for d in report.diagnostics}
-    assert "missing-component-test-matrix-template" in codes
+    rows = [d for d in report.diagnostics if d.code == "legacy-case-doc"]
+    assert len(rows) == 2
 
 
 def test_project_doctor_skips_scaffold_checks_for_non_scaffold_folder(tmp_path):

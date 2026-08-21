@@ -56,7 +56,8 @@ class CheckpointResumePlugin(Plugin):
     SCHEMA_V2 = "nsgablack.checkpoint.v2"
     SCHEMA_V3 = "nsgablack.checkpoint.v3"
     SCHEMA_V4 = "nsgablack.checkpoint.v4"
-    SCHEMA = SCHEMA_V4
+    SCHEMA_V5 = "nsgablack.checkpoint.v5"
+    SCHEMA = SCHEMA_V5
     ENVELOPE_VERSION = "nsgablack.checkpoint.envelope.v1"
     RESUME_ISSUE_SAMPLE_LIMIT = 32
 
@@ -173,6 +174,65 @@ class CheckpointResumePlugin(Plugin):
                 # Only load checkpoints from trusted sources (your own runs).
                 loaded = pickle.load(f)  # nosec B301
             payload = self._unwrap_and_verify_payload(loaded)
+            payload = self._migrate_payload(payload)
+            state_for_validation = payload.get("solver_state")
+            if not isinstance(state_for_validation, dict):
+                raise ValueError("invalid checkpoint payload: missing solver_state")
+            self._validate_incumbent_selection(solver, state_for_validation)
+            queue_restore = getattr(solver, "queue_restore_envelope", None)
+            setup_complete = bool(
+                getattr(solver, "_runtime_setup_complete", False)
+            )
+            if callable(queue_restore) and not setup_complete:
+                def _apply_queued_restore() -> None:
+                    try:
+                        self._restore_payload(solver=solver, payload=payload)
+                        self.last_loaded_generation = int(
+                            getattr(solver, "generation", 0)
+                        )
+                        status = (
+                            "degraded"
+                            if int(
+                                self._last_resume_audit.get("issue_count", 0) or 0
+                            ) > 0
+                            else "restored"
+                        )
+                        self._finish_resume_audit(status=status, current=True)
+                    except Exception as exc:
+                        self._record_resume_issue(
+                            "checkpoint",
+                            "queued_restore_error",
+                            exc,
+                        )
+                        self._finish_resume_audit(status="error", current=False)
+                        raise
+
+                queue_restore(
+                    _apply_queued_restore,
+                    source=f"checkpoint:{path}",
+                )
+                self.last_loaded_path = str(path)
+                self.latest_checkpoint_path = str(path)
+                state = payload.get("solver_state", {})
+                resume_cursor = payload.get("resume_cursor")
+                setattr(
+                    solver,
+                    "_resume_cursor",
+                    int(
+                        resume_cursor
+                        if isinstance(resume_cursor, int)
+                        else state.get("generation", 0)
+                        if isinstance(state, Mapping)
+                        else 0
+                    ),
+                )
+                self.last_loaded_generation = int(
+                    state.get("generation", 0)
+                    if isinstance(state, Mapping)
+                    else 0
+                )
+                self._finish_resume_audit(status="queued", current=False)
+                return True
             self._restore_payload(solver=solver, payload=payload)
             self.last_loaded_path = str(path)
             self.last_loaded_generation = int(getattr(solver, "generation", 0))
@@ -408,6 +468,20 @@ class CheckpointResumePlugin(Plugin):
         except Exception:
             return None
 
+    def _collect_adapter_population_partitions(
+        self,
+        solver: Any,
+    ) -> list[Dict[str, Any]]:
+        adapter = getattr(solver, "adapter", None)
+        getter = getattr(adapter, "get_population_partitions", None)
+        if not callable(getter):
+            return []
+        partitions = tuple(getter() or ())
+        ids = [str(partition.partition_id) for partition in partitions]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Adapter exported duplicate population partition IDs")
+        return [self._safe_copy(partition.as_dict()) for partition in partitions]
+
     def _collect_plugin_states(self, solver: Any) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
         manager = getattr(solver, "plugin_manager", None)
@@ -547,6 +621,9 @@ class CheckpointResumePlugin(Plugin):
             "incumbent_projection": self._safe_copy(projection_payload),
             "incumbent_selection": self._safe_copy(selection_payload),
             "random_seed": self._safe_copy(getattr(solver, "random_seed", None)),
+            "run_progress": self._safe_copy(
+                getattr(solver, "export_run_progress_state", lambda: None)()
+            ),
         }
         export_candidate_population = getattr(
             solver,
@@ -560,6 +637,19 @@ class CheckpointResumePlugin(Plugin):
         )
         solver_state["candidate_population"] = self._safe_copy(
             candidate_population
+        )
+        export_candidate_partitions = getattr(
+            solver,
+            "export_candidate_population_partitions_checkpoint_state",
+            None,
+        )
+        candidate_partitions = (
+            export_candidate_partitions()
+            if callable(export_candidate_partitions)
+            else None
+        )
+        solver_state["candidate_population_partitions"] = self._safe_copy(
+            candidate_partitions
         )
         solver_state["candidate_population_audit"] = {
             "available": candidate_population is not None,
@@ -577,6 +667,9 @@ class CheckpointResumePlugin(Plugin):
             "solver_state": solver_state,
             "resume_cursor": self._infer_resume_cursor(solver, generation),
             "adapter_state": self._collect_adapter_state(solver),
+            "adapter_population_partitions": (
+                self._collect_adapter_population_partitions(solver)
+            ),
             "stateful_components": self._collect_component_states(solver),
             "plugin_states": self._collect_plugin_states(solver),
             "rng_state": {
@@ -657,6 +750,15 @@ class CheckpointResumePlugin(Plugin):
                         pass
                     if bool(self.cfg.strict):
                         raise
+            restore_candidate_partitions = getattr(
+                solver,
+                "restore_candidate_population_partitions_checkpoint_state",
+                None,
+            )
+            if callable(restore_candidate_partitions):
+                restore_candidate_partitions(
+                    state.get("candidate_population_partitions")
+                )
             writer = getattr(solver, "write_population_snapshot", None)
             if callable(writer):
                 try:
@@ -681,6 +783,15 @@ class CheckpointResumePlugin(Plugin):
             )
             if callable(restore_candidate_population):
                 restore_candidate_population(state.get("candidate_population"))
+            restore_candidate_partitions = getattr(
+                solver,
+                "restore_candidate_population_partitions_checkpoint_state",
+                None,
+            )
+            if callable(restore_candidate_partitions):
+                restore_candidate_partitions(
+                    state.get("candidate_population_partitions")
+                )
 
         if "pareto_solutions" in state or "pareto_objectives" in state:
             set_pareto = getattr(solver, "set_pareto_snapshot", None)
@@ -756,6 +867,13 @@ class CheckpointResumePlugin(Plugin):
                 )
         if "random_seed" in state:
             _set_field("random_seed", state.get("random_seed"))
+        restore_run_progress = getattr(
+            solver,
+            "restore_run_progress_state",
+            None,
+        )
+        if callable(restore_run_progress):
+            restore_run_progress(state.get("run_progress"))
 
         setattr(solver, "_resume_loaded", True)
         if resume_cursor is None:
@@ -797,6 +915,54 @@ class CheckpointResumePlugin(Plugin):
         try:
             setter(adapter_state)
         except Exception:
+            if bool(self.cfg.strict):
+                raise
+
+    def _apply_adapter_population_partitions(
+        self,
+        solver: Any,
+        raw_partitions: Any,
+    ) -> None:
+        if not raw_partitions:
+            return
+        adapter = getattr(solver, "adapter", None)
+        setter = getattr(adapter, "set_population_partitions", None)
+        if not callable(setter):
+            error = TypeError(
+                "checkpoint target Adapter cannot restore population partitions"
+            )
+            self._record_resume_issue(
+                "adapter.population_partitions",
+                "set_state_unavailable",
+                error,
+            )
+            if bool(self.cfg.strict):
+                raise error
+            return
+        from ...adapters.algorithm_adapter import PopulationPartition
+
+        try:
+            partitions = tuple(
+                item
+                if isinstance(item, PopulationPartition)
+                else PopulationPartition.from_dict(item)
+                for item in tuple(raw_partitions or ())
+            )
+            ids = [partition.partition_id for partition in partitions]
+            if len(ids) != len(set(ids)):
+                raise ValueError(
+                    "checkpoint contains duplicate population partition IDs"
+                )
+            if setter(partitions) is False:
+                raise ValueError(
+                    "Adapter rejected checkpoint population partitions"
+                )
+        except Exception as exc:
+            self._record_resume_issue(
+                "adapter.population_partitions",
+                "set_state_failed",
+                exc,
+            )
             if bool(self.cfg.strict):
                 raise
 
@@ -969,9 +1135,14 @@ class CheckpointResumePlugin(Plugin):
     @classmethod
     def _migrate_payload(cls, payload: Dict[str, Any]) -> Dict[str, Any]:
         schema = str(payload.get("schema", "")).strip()
-        if schema == cls.SCHEMA_V4:
+        if schema == cls.SCHEMA_V5:
             return payload
-        if schema not in {cls.SCHEMA_V1, cls.SCHEMA_V2, cls.SCHEMA_V3}:
+        if schema not in {
+            cls.SCHEMA_V1,
+            cls.SCHEMA_V2,
+            cls.SCHEMA_V3,
+            cls.SCHEMA_V4,
+        }:
             raise ValueError(f"unsupported checkpoint schema: {schema or '<missing>'}")
 
         migrated = copy.deepcopy(payload)
@@ -1006,7 +1177,19 @@ class CheckpointResumePlugin(Plugin):
             cls._run_sequence_from_id(state.get("active_run_id")),
         )
         migrated.setdefault("stateful_components", {})
+        migrated.setdefault("adapter_population_partitions", [])
         state.setdefault("candidate_population", None)
+        state.setdefault("candidate_population_partitions", None)
+        state.setdefault(
+            "run_progress",
+            {
+                "schema": "nsgablack.run_progress/v1",
+                "steps_completed": int(state.get("generation", 0) or 0),
+                "elapsed_seconds": 0.0,
+                "deadline_remaining_seconds": None,
+                "run_id": state.get("active_run_id"),
+            },
+        )
         state.setdefault(
             "candidate_population_audit",
             {
@@ -1015,7 +1198,7 @@ class CheckpointResumePlugin(Plugin):
                 "reason": f"migrated_from_{schema}",
             },
         )
-        migrated["schema"] = cls.SCHEMA_V4
+        migrated["schema"] = cls.SCHEMA_V5
         migrated["migrated_from_schema"] = schema
         return migrated
 
@@ -1164,6 +1347,10 @@ class CheckpointResumePlugin(Plugin):
         )
         if "adapter" not in restored_components:
             self._apply_adapter_state(solver, payload.get("adapter_state"))
+        self._apply_adapter_population_partitions(
+            solver,
+            payload.get("adapter_population_partitions", ()),
+        )
         self._apply_plugin_states(solver, payload.get("plugin_states", {}))
         self._apply_rng_state(solver, payload.get("rng_state", {}))
 

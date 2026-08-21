@@ -5,7 +5,6 @@ import json
 import os
 import socket
 import subprocess
-import sys
 import tempfile
 import time
 import urllib.request
@@ -15,6 +14,7 @@ import pytest
 
 from nsgablack.catalog import dashboard_page as page_protocol
 from nsgablack.catalog import dashboard_shell as shell_protocol
+from nsgablack.catalog.dashboard import build_streamlit_command
 
 sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
 
@@ -70,21 +70,16 @@ def _running_catalog_ui(*extra_args: str, env_extra: dict[str, str] | None = Non
     log_file = tempfile.NamedTemporaryFile(prefix="nsgablack_catalog_ui_", suffix=".log", delete=False)
     log_path = Path(log_file.name)
     log_file.close()
-    command = [
-        sys.executable,
-        "-m",
-        "nsgablack",
-        "catalog",
-        "ui",
-        "--profile",
-        "framework-core",
-        "--kind",
-        "adapter",
-        "--port",
-        str(port),
-        "--headless",
-        *extra_args,
-    ]
+    # Own the actual Streamlit process. Going through ``python -m nsgablack``
+    # adds a blocking CLI wrapper; terminating that wrapper on Windows leaves
+    # its Streamlit child orphaned and leaks the test port/process.
+    command = build_streamlit_command(
+        profile="framework-core",
+        kind="adapter",
+        port=port,
+        headless=True,
+    )
+    command.extend(extra_args)
     env = os.environ.copy()
     env.update(dict(env_extra or {}))
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)

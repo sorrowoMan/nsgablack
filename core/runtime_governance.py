@@ -52,9 +52,9 @@ def _create_local_rng(*, solver: Any, stream: str, seed: Optional[int] = None) -
 
 def _coerce_population_snapshot(value: Any) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     x, f, v = value
-    x_arr = np.asarray(x, dtype=float)
-    f_arr = np.asarray(f, dtype=float)
-    v_arr = np.asarray(v, dtype=float).reshape(-1)
+    x_arr = np.asarray(np.zeros((0, 0)) if x is None else x, dtype=float)
+    f_arr = np.asarray(np.zeros((0, 0)) if f is None else f, dtype=float)
+    v_arr = np.asarray(np.zeros((0,)) if v is None else v, dtype=float).reshape(-1)
     if x_arr.ndim == 1:
         x_arr = x_arr.reshape(1, -1) if x_arr.size > 0 else x_arr.reshape(0, 0)
     if f_arr.ndim == 1:

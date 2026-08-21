@@ -123,23 +123,24 @@ def run_solver_loop(
     termination_reason = "step_limit"
     primary_error: BaseException | None = None
     completed_result: Any = None
+    setattr(solver, "_runtime_setup_complete", False)
 
     try:
         _checkpoint_case_runtime(solver)
-        preloaded_resume = bool(getattr(solver, "_resume_loaded", False))
-        if not preloaded_resume:
-            prepare_fresh_run = getattr(solver, "prepare_fresh_run", None)
-            if callable(prepare_fresh_run):
-                prepare_fresh_run()
+        prepare_fresh_run = getattr(solver, "prepare_fresh_run", None)
+        if callable(prepare_fresh_run):
+            prepare_fresh_run()
+        else:
+            set_generation = getattr(solver, "set_generation", None)
+            if callable(set_generation):
+                set_generation(0)
             else:
-                set_generation = getattr(solver, "set_generation", None)
-                if callable(set_generation):
-                    set_generation(0)
-                else:
-                    solver.generation = 0
-                solver.evaluation_count = 0
-                solver.reset_evaluation_budget()
+                solver.generation = 0
+            solver.evaluation_count = 0
+            solver.reset_evaluation_budget()
         solver.setup()
+        setattr(solver, "_runtime_setup_complete", True)
+        _call_optional(solver, "_apply_pending_restore_envelopes")
         _checkpoint_case_runtime(solver)
         _call_optional(solver.plugin_manager, "on_solver_init", solver)
         _call_optional(solver, "_runtime_governance_on_solver_init")
@@ -154,6 +155,7 @@ def run_solver_loop(
             _call_optional(solver, "_initialize_run_state")
         setattr(solver, "_resume_loaded", False)
         setattr(solver, "_resume_cursor", 0)
+        _call_optional(solver, "_start_run_progress_clock")
 
         for step_index in range(start_step, limit):
             _checkpoint_case_runtime(solver)
@@ -192,6 +194,7 @@ def run_solver_loop(
             solver.step()
             _checkpoint_case_runtime(solver)
             steps_executed += 1
+            _call_optional(solver, "_record_completed_run_step")
             _call_optional(solver.plugin_manager, "on_step", solver, generation)
             _call_optional(solver.plugin_manager, "on_generation_end", generation)
             _call_optional(solver, "_runtime_governance_on_generation_end", generation)
@@ -232,6 +235,12 @@ def run_solver_loop(
                     getattr(solver, "evaluation_count", 0) or 0
                 ),
                 "elapsed_sec": elapsed,
+                "logical_run_steps": int(
+                    getattr(solver, "run_progress_steps", total_steps)
+                ),
+                "logical_run_elapsed_sec": float(
+                    getattr(solver, "run_progress_elapsed_seconds", elapsed)
+                ),
             }
         )
         builder = getattr(solver, "_build_run_result", None)
@@ -269,6 +278,7 @@ def run_solver_loop(
                 pm.on_error(exc, error_context)
         raise
     finally:
+        _call_optional(solver, "_pause_run_progress_clock")
         try:
             try:
                 solver.teardown()
@@ -292,6 +302,7 @@ def run_solver_loop(
                     )
         finally:
             solver.running = False
+            setattr(solver, "_runtime_setup_complete", False)
 
     if completed_result is None:  # pragma: no cover - guarded by lifecycle flow
         raise RuntimeError("solver lifecycle completed without a result")

@@ -19,9 +19,9 @@ my_project/
   project_config.py        # stages/groups/dependencies + Project L0
   run_project.py           # formal entry, grants ResourceContext
   README.md
-  START_HERE.md
   cases/
     my_case/
+      README.md             # 该 Case 唯一文档入口
       build_solver.py      # canonical assembly
       build_trainer.py     # alias only
       run_solver.py        # case debug CLI
@@ -36,6 +36,10 @@ my_project/
       runtime/             # requirement/profile/audit
       solver/
 ```
+
+Project 与每个 Case 各自只维护一个 `README.md`。组件说明、资源需求、
+输入输出和运行命令都写入该文件，不再复制 `START_HERE.md`、注册指南或
+契约卡模板。
 
 ## 3. 第一轮检查
 

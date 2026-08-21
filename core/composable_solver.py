@@ -14,7 +14,7 @@ from blackbase.types import CandidateBatch
 
 import numpy as np
 
-from ..adapters import AlgorithmAdapter, CompositeAdapter
+from ..adapters import AlgorithmAdapter, CompositeAdapter, PopulationPartition
 from .blank_solver import SolverBase
 from .evaluation_feedback import OptimizationFeedbackBatch
 from blackbase.context.context_keys import KEY_STEP
@@ -23,7 +23,7 @@ from .state.incumbent import (
     IncumbentState,
     ScalarizationError,
 )
-from .runtime_governance import commit_population_snapshot, resolve_population_snapshot
+from .runtime_governance import commit_population_snapshot
 from ..utils.extension_contracts import normalize_candidate_batch, stack_population
 
 
@@ -101,6 +101,15 @@ class ComposableSolver(SolverBase):
         self.scalarizer_fallback_count = 0
         self.result_quality_degraded = False
         self.scalarizer_audit_complete = True
+        self._candidate_population_partitions: dict[
+            str,
+            tuple[
+                PopulationPartition,
+                CandidateBatch,
+                tuple[Any, ...],
+            ],
+        ] = {}
+        self.population_authority_mode = "single"
 
     @property
     def objective_scalarizer(self):
@@ -223,6 +232,11 @@ class ComposableSolver(SolverBase):
     def setup(self) -> None:
         if self.adapter is not None:
             self.adapter.setup(self)
+
+    def prepare_fresh_run(self) -> None:
+        super().prepare_fresh_run()
+        self._candidate_population_partitions = {}
+        self.population_authority_mode = "single"
 
     def teardown(self) -> None:
         if self.adapter is not None:
@@ -424,50 +438,239 @@ class ComposableSolver(SolverBase):
             feedback_batch,
             update_context,
         )
-        authoritative_population, authoritative_objectives, authoritative_violations = (
-            resolve_population_snapshot(self, prefer_adapter=True)
+        snapshot_getter = getattr(self.adapter, "get_population_snapshot", None)
+        authoritative = snapshot_getter() if callable(snapshot_getter) else None
+        partition_getter = getattr(self.adapter, "get_population_partitions", None)
+        partitions = (
+            tuple(partition_getter() or ())
+            if callable(partition_getter)
+            else ()
         )
-        token_getter = getattr(self.adapter, "get_population_candidate_tokens", None)
-        authoritative_tokens = token_getter() if callable(token_getter) else None
-        authoritative_array = np.asarray(authoritative_population, dtype=float)
-        if authoritative_tokens is None and (
-            authoritative_array.shape == evaluated_batch.numeric_matrix.shape
-            and np.array_equal(
+        if authoritative is not None:
+            (
+                authoritative_population,
+                authoritative_objectives,
+                authoritative_violations,
+            ) = authoritative
+            token_getter = getattr(
+                self.adapter,
+                "get_population_candidate_tokens",
+                None,
+            )
+            authoritative_tokens = (
+                token_getter() if callable(token_getter) else None
+            )
+            authoritative_array = np.asarray(
+                authoritative_population,
+                dtype=float,
+            )
+            if authoritative_tokens is None and (
+                authoritative_array.shape == evaluated_batch.numeric_matrix.shape
+                and np.array_equal(
+                    authoritative_array,
+                    evaluated_batch.numeric_matrix,
+                    equal_nan=True,
+                )
+            ):
+                authoritative_tokens = evaluated_batch.candidate_tokens
+            if (
+                authoritative_tokens is None
+                and previous_population_batch is not None
+                and authoritative_array.shape
+                == previous_population_batch.numeric_matrix.shape
+                and np.array_equal(
+                    authoritative_array,
+                    previous_population_batch.numeric_matrix,
+                    equal_nan=True,
+                )
+            ):
+                authoritative_tokens = previous_population_batch.candidate_tokens
+            committed_batch = self.commit_candidate_population(
                 authoritative_array,
+                authoritative_tokens,
+                sources=(
+                    (evaluated_batch, self._active_candidate_provenance),
+                    (previous_population_batch, previous_population_provenance),
+                ),
+            )
+            token_setter = getattr(
+                self.adapter,
+                "set_population_candidate_tokens",
+                None,
+            )
+            if callable(token_setter):
+                token_setter(committed_batch.candidate_tokens)
+            self._candidate_population_partitions = {}
+            self.population_authority_mode = "single"
+            commit_population_snapshot(
+                self,
+                authoritative_population,
+                authoritative_objectives,
+                authoritative_violations,
+                strict=True,
+            )
+        elif partitions:
+            self._commit_candidate_population_partitions(
+                partitions,
+                evaluated_batch=evaluated_batch,
+                evaluated_provenance=tuple(self._active_candidate_provenance),
+                previous_population_batch=previous_population_batch,
+                previous_population_provenance=tuple(
+                    previous_population_provenance
+                ),
+            )
+            self.commit_candidate_population(
                 evaluated_batch.numeric_matrix,
-                equal_nan=True,
+                evaluated_batch.candidate_tokens,
+                sources=((evaluated_batch, self._active_candidate_provenance),),
             )
-        ):
-            authoritative_tokens = evaluated_batch.candidate_tokens
-        if (
-            authoritative_tokens is None
-            and previous_population_batch is not None
-            and authoritative_array.shape
-            == previous_population_batch.numeric_matrix.shape
-            and np.array_equal(
-                authoritative_array,
-                previous_population_batch.numeric_matrix,
-                equal_nan=True,
+            self.population_authority_mode = "partitioned"
+            self.write_population_snapshot(
+                self.population,
+                self.objectives,
+                self.constraint_violations,
             )
-        ):
-            authoritative_tokens = previous_population_batch.candidate_tokens
-        committed_batch = self.commit_candidate_population(
-            authoritative_array,
-            authoritative_tokens,
-            sources=(
-                (evaluated_batch, self._active_candidate_provenance),
-                (previous_population_batch, previous_population_provenance),
+        else:
+            self._candidate_population_partitions = {}
+            self.population_authority_mode = "step_batch"
+            self.commit_candidate_population(
+                evaluated_batch.numeric_matrix,
+                evaluated_batch.candidate_tokens,
+                sources=((evaluated_batch, self._active_candidate_provenance),),
+            )
+            self.write_population_snapshot(
+                self.population,
+                self.objectives,
+                self.constraint_violations,
+            )
+
+    def _commit_candidate_population_partitions(
+        self,
+        partitions: Sequence[PopulationPartition],
+        *,
+        evaluated_batch: CandidateBatch,
+        evaluated_provenance: Sequence[Any],
+        previous_population_batch: CandidateBatch | None,
+        previous_population_provenance: Sequence[Any],
+    ) -> None:
+        previous_states = dict(self._candidate_population_partitions)
+        sources: list[tuple[CandidateBatch | None, Sequence[Any]]] = [
+            (evaluated_batch, tuple(evaluated_provenance)),
+            (
+                previous_population_batch,
+                tuple(previous_population_provenance),
             ),
+        ]
+        sources.extend(
+            (batch, provenance)
+            for _partition, batch, provenance in previous_states.values()
         )
-        token_setter = getattr(self.adapter, "set_population_candidate_tokens", None)
-        if callable(token_setter):
-            token_setter(committed_batch.candidate_tokens)
-        commit_population_snapshot(
-            self,
-            authoritative_population,
-            authoritative_objectives,
-            authoritative_violations,
-            strict=True,
+        committed: dict[
+            str,
+            tuple[PopulationPartition, CandidateBatch, tuple[Any, ...]],
+        ] = {}
+        for partition in tuple(partitions or ()):
+            if partition.partition_id in committed:
+                raise ValueError(
+                    "Adapter exported duplicate population partition ID: "
+                    f"{partition.partition_id}"
+                )
+            batch, provenance = self._materialize_candidate_population(
+                partition.population,
+                partition.candidate_tokens,
+                sources=tuple(sources),
+            )
+            committed[partition.partition_id] = (
+                partition,
+                batch,
+                provenance,
+            )
+        self._candidate_population_partitions = committed
+
+    def get_candidate_population_partitions(
+        self,
+    ) -> Mapping[str, CandidateBatch]:
+        return {
+            partition_id: value[1]
+            for partition_id, value in self._candidate_population_partitions.items()
+        }
+
+    def export_candidate_population_partitions_checkpoint_state(
+        self,
+    ) -> dict[str, Any] | None:
+        if not self._candidate_population_partitions:
+            return None
+        return {
+            "schema": "nsgablack.candidate_population_partitions/v1",
+            "authority_mode": "partitioned",
+            "partitions": [
+                {
+                    "partition": partition.as_dict(),
+                    "batch": batch.as_dict(),
+                    "provenance": [item.as_dict() for item in provenance],
+                }
+                for partition, batch, provenance in self._candidate_population_partitions.values()
+            ],
+        }
+
+    def restore_candidate_population_partitions_checkpoint_state(
+        self,
+        payload: Mapping[str, Any] | None,
+    ) -> None:
+        if not isinstance(payload, Mapping):
+            self._candidate_population_partitions = {}
+            return
+        schema = str(payload.get("schema", ""))
+        if schema != "nsgablack.candidate_population_partitions/v1":
+            raise ValueError(
+                f"unsupported candidate population partition schema: {schema}"
+            )
+        restored: dict[
+            str,
+            tuple[PopulationPartition, CandidateBatch, tuple[Any, ...]],
+        ] = {}
+        from .state.incumbent import CandidateProvenance
+
+        for item in tuple(payload.get("partitions", ()) or ()):
+            partition = PopulationPartition.from_dict(item.get("partition", {}))
+            batch = CandidateBatch.from_dict(item.get("batch", {}))
+            provenance = tuple(
+                CandidateProvenance.from_dict(value)
+                for value in tuple(item.get("provenance", ()) or ())
+            )
+            if partition.partition_id in restored:
+                raise ValueError(
+                    "candidate population checkpoint contains duplicate partition IDs"
+                )
+            if batch.numeric_matrix.shape != partition.population.shape or not np.array_equal(
+                batch.numeric_matrix,
+                partition.population,
+                equal_nan=True,
+            ):
+                raise ValueError(
+                    "candidate population partition semantic/numeric state mismatch"
+                )
+            if tuple(batch.candidate_tokens) != tuple(partition.candidate_tokens):
+                raise ValueError(
+                    "candidate population partition token state mismatch"
+                )
+            if len(provenance) != len(batch.semantic_states):
+                raise ValueError(
+                    "candidate population partition provenance is misaligned"
+                )
+            for token, record in zip(batch.candidate_tokens, provenance):
+                if token != record.candidate_token:
+                    raise ValueError(
+                        "candidate population partition token disagrees with lineage"
+                    )
+            restored[partition.partition_id] = (
+                partition,
+                batch,
+                provenance,
+            )
+        self._candidate_population_partitions = restored
+        self.population_authority_mode = (
+            "partitioned" if restored else "single"
         )
 
     def _normalize_violation_values(

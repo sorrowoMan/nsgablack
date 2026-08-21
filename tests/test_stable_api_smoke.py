@@ -24,3 +24,11 @@ def test_profiler_plugin_importable():
     assert ProfilerPlugin is not None
 
 
+def test_public_state_protocols_importable():
+    from nsgablack.adapters import PopulationPartition
+    from nsgablack.core import RunProgressState
+
+    assert PopulationPartition is not None
+    assert RunProgressState is not None
+
+

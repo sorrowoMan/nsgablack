@@ -70,6 +70,7 @@ class MOEADAdapter(AlgorithmAdapter):
         "MOEA/D writes decomposition subproblem metadata into context for variation/repair plugins.",
     )
     state_recovery_level = "L2"
+    population_state_mode = "single"
     state_recovery_notes = (
         "Restores decomposition population (pop_X/pop_F/pop_V), ideal point, weights and neighborhood. "
         "get_state()/set_state() cover scalar parameters; "

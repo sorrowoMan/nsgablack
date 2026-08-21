@@ -672,6 +672,64 @@ def _check_class_state_recovery_declaration(
                 ),
                 path,
             )
+            continue
+        if level != "L2" or not has_get_state:
+            continue
+        population_modes = _iter_class_attr_values(
+            class_node,
+            "population_state_mode",
+        )
+        if not population_modes:
+            add(
+                diags,
+                "error" if strict else "warn",
+                "l2-population-authority-missing",
+                (
+                    f"Class {class_node.name} declares L2 state recovery but does not "
+                    "declare population_state_mode (single/delegate/partitioned)."
+                ),
+                path,
+            )
+            continue
+        mode = _literal_str_value(population_modes[-1])
+        if mode not in {"single", "delegate", "partitioned"}:
+            add(
+                diags,
+                "error" if strict else "warn",
+                "l2-population-authority-invalid",
+                (
+                    f"Class {class_node.name} has invalid population_state_mode={mode!r}; "
+                    "expected single, delegate, or partitioned."
+                ),
+                path,
+            )
+            continue
+        if mode == "partitioned":
+            required = {"get_population_partitions", "set_population_partitions"}
+        else:
+            required = {
+                "get_population_snapshot",
+                "set_population_snapshot",
+                "get_population_candidate_tokens",
+                "set_population_candidate_tokens",
+            }
+        missing = sorted(
+            method
+            for method in required
+            if not _class_defines_method(class_node, method)
+        )
+        if missing:
+            add(
+                diags,
+                "error" if strict else "warn",
+                "l2-population-authority-incomplete",
+                (
+                    f"Class {class_node.name} declares L2/{mode} but does not define "
+                    + ", ".join(missing)
+                    + "."
+                ),
+                path,
+            )
 
 
 def check_contract_source(

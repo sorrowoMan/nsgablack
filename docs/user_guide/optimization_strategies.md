@@ -14,4 +14,4 @@
 - 示例标准落点与迁移政策：`docs/project/AUTHORITATIVE_EXAMPLES.md`
 - Catalog/Wiring Helpers（怎么搜组件、怎么一键 attach）：`docs/user_guide/catalog.md`
 
-历史版本不再维护；如需考古请查看 git 历史或 `docs/archive/` 中的相关历史材料。
+历史版本不再维护；如需考古请查看 Git 历史。

@@ -14,6 +14,7 @@ Design goals:
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 import math
@@ -25,7 +26,13 @@ from blackbase.context import (
     RuntimeContextProjection,
 )
 
-from ..algorithm_adapter import AlgorithmAdapter, subset_adapter_feedback
+from ..algorithm_adapter import (
+    AlgorithmAdapter,
+    PopulationPartition,
+    prefixed_population_partitions,
+    restore_prefixed_population_partitions,
+    subset_adapter_feedback,
+)
 from ..runtime_projection import aggregate_adapter_runtime_projections
 from blackbase.context.context_keys import (
     KEY_GENERATION,
@@ -203,6 +210,12 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         "Shared state is updated every step and exposed via runtime context projection.",
     )
     context_contract_encapsulates_children = True
+    state_recovery_level = "L2"
+    state_recovery_notes = (
+        "Restores controller policy/accounting state plus stable per-unit "
+        "population partitions, tokens, and child adapter states."
+    )
+    population_state_mode = "partitioned"
 
     def __init__(
         self,
@@ -947,7 +960,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 )
             start = cursor
             for cand in selected:
-                candidates.append(np.asarray(cand))
+                candidates.append(cand)
                 cursor += 1
             end = cursor
             allocations.append((unit.role, int(unit.unit_id), start, end))
@@ -1128,6 +1141,205 @@ class StrategyRouterAdapter(AlgorithmAdapter):
 
         self._unit_proposal_contexts = {}
         self._step += 1
+
+    def _unit_prefix(self, unit: UnitSpec) -> str:
+        return f"unit:{unit.role}:{int(unit.unit_id)}"
+
+    def get_population_partitions(self) -> tuple[PopulationPartition, ...]:
+        out: list[PopulationPartition] = []
+        for unit in self.units:
+            if not bool(unit.enabled):
+                continue
+            out.extend(
+                prefixed_population_partitions(
+                    self._unit_prefix(unit),
+                    unit.adapter,
+                )
+            )
+        return tuple(out)
+
+    def set_population_partitions(
+        self,
+        partitions: Sequence[PopulationPartition],
+    ) -> bool:
+        values = tuple(partitions or ())
+        handled = False
+        for unit in self.units:
+            handled = (
+                restore_prefixed_population_partitions(
+                    self._unit_prefix(unit),
+                    unit.adapter,
+                    values,
+                )
+                or handled
+            )
+        known_prefixes = tuple(
+            self._unit_prefix(unit) + "/" for unit in self.units
+        )
+        unknown = tuple(
+            partition.partition_id
+            for partition in values
+            if not partition.partition_id.startswith(known_prefixes)
+        )
+        if unknown:
+            raise ValueError(
+                "StrategyRouterAdapter checkpoint contains unknown population partitions: "
+                + ", ".join(sorted(unknown))
+            )
+        return handled or not values
+
+    @staticmethod
+    def _encode_keyed_mapping(
+        values: Mapping[Tuple[str, int], Mapping[str, Any]],
+    ) -> list[Dict[str, Any]]:
+        return [
+            {
+                "role": str(role),
+                "unit_id": int(unit_id),
+                "value": copy.deepcopy(dict(value or {})),
+            }
+            for (role, unit_id), value in sorted(
+                values.items(),
+                key=lambda item: (str(item[0][0]), int(item[0][1])),
+            )
+        ]
+
+    @staticmethod
+    def _decode_keyed_mapping(values: Sequence[Mapping[str, Any]]) -> Dict[Tuple[str, int], Dict[str, Any]]:
+        out: Dict[Tuple[str, int], Dict[str, Any]] = {}
+        for item in tuple(values or ()):
+            key = (str(item.get("role", "")), int(item.get("unit_id", 0)))
+            if key in out:
+                raise ValueError(
+                    f"duplicate StrategyRouterAdapter unit state: {key[0]}:{key[1]}"
+                )
+            out[key] = copy.deepcopy(dict(item.get("value", {}) or {}))
+        return out
+
+    def get_state(self) -> Dict[str, Any]:
+        return {
+            "schema": "nsgablack.strategy_router_state/v2",
+            "step": int(self._step),
+            "current_phase_name": str(self._current_phase_name),
+            "phase_step": int(self._phase_step),
+            "best_score": copy.deepcopy(self._best_score),
+            "ema_score": copy.deepcopy(self._ema_score),
+            "last_improve_step": copy.deepcopy(self._last_improve_step),
+            "last_allocations": [list(item) for item in self._last_allocations],
+            "shared_state": copy.deepcopy(self.shared_state),
+            "unit_reports": self._encode_keyed_mapping(self.unit_reports),
+            "unit_tasks": self._encode_keyed_mapping(self._unit_tasks),
+            "regions": copy.deepcopy(self._regions),
+            "unit_region": [
+                {
+                    "role": str(role),
+                    "unit_id": int(unit_id),
+                    "region_id": int(region_id),
+                }
+                for (role, unit_id), region_id in sorted(
+                    self._unit_region.items(),
+                    key=lambda item: (str(item[0][0]), int(item[0][1])),
+                )
+            ],
+            "rng_state": copy.deepcopy(self._rng.bit_generator.state),
+            "units": [
+                {
+                    "role": str(unit.role),
+                    "unit_id": int(unit.unit_id),
+                    "enabled": bool(unit.enabled),
+                    "adapter_name": str(unit.adapter.name),
+                    "adapter_class": (
+                        f"{type(unit.adapter).__module__}."
+                        f"{type(unit.adapter).__qualname__}"
+                    ),
+                    "state": copy.deepcopy(unit.adapter.get_state()),
+                }
+                for unit in self.units
+            ],
+            "population_partitions": [
+                partition.as_dict()
+                for partition in self.get_population_partitions()
+            ],
+        }
+
+    def set_state(self, state: Dict[str, Any]) -> None:
+        if not state:
+            return
+        schema = str(state.get("schema", "nsgablack.strategy_router_state/v2"))
+        if schema != "nsgablack.strategy_router_state/v2":
+            raise ValueError(f"unsupported StrategyRouterAdapter state schema: {schema}")
+        if not self.units:
+            self.units = self._build_units()
+        raw_units = tuple(state.get("units", ()) or ())
+        expected = {(unit.role, int(unit.unit_id)): unit for unit in self.units}
+        if len(raw_units) != len(expected):
+            raise ValueError("StrategyRouterAdapter unit state count mismatch")
+        for item in raw_units:
+            key = (str(item.get("role", "")), int(item.get("unit_id", 0)))
+            unit = expected.get(key)
+            if unit is None:
+                raise ValueError(
+                    f"StrategyRouterAdapter checkpoint references unknown unit {key[0]}:{key[1]}"
+                )
+            if str(item.get("adapter_name", unit.adapter.name)) != unit.adapter.name:
+                raise ValueError(
+                    f"StrategyRouterAdapter adapter identity mismatch for {key[0]}:{key[1]}"
+                )
+            unit.enabled = bool(item.get("enabled", unit.enabled))
+            unit.adapter.set_state(dict(item.get("state", {}) or {}))
+
+        self._step = max(0, int(state.get("step", 0) or 0))
+        self._current_phase_name = str(
+            state.get("current_phase_name", self._phase_for_step(self._step)[0])
+        )
+        self._phase_step = max(0, int(state.get("phase_step", 0) or 0))
+        self._best_score = {
+            str(key): float(value)
+            for key, value in dict(state.get("best_score", {}) or {}).items()
+        }
+        self._ema_score = {
+            str(key): float(value)
+            for key, value in dict(state.get("ema_score", {}) or {}).items()
+        }
+        self._last_improve_step = {
+            str(key): int(value)
+            for key, value in dict(state.get("last_improve_step", {}) or {}).items()
+        }
+        self._last_allocations = [
+            (str(role), int(unit_id), int(start), int(end))
+            for role, unit_id, start, end in tuple(
+                state.get("last_allocations", ()) or ()
+            )
+        ]
+        self.shared_state = copy.deepcopy(dict(state.get("shared_state", {}) or {}))
+        self.unit_reports = self._decode_keyed_mapping(
+            tuple(state.get("unit_reports", ()) or ())
+        )
+        self._unit_tasks = self._decode_keyed_mapping(
+            tuple(state.get("unit_tasks", ()) or ())
+        )
+        self._regions = copy.deepcopy(list(state.get("regions", ()) or ()))
+        self._unit_region = {}
+        for item in tuple(state.get("unit_region", ()) or ()):
+            key = (str(item.get("role", "")), int(item.get("unit_id", 0)))
+            if key not in expected:
+                raise ValueError(
+                    f"StrategyRouterAdapter region references unknown unit {key[0]}:{key[1]}"
+                )
+            self._unit_region[key] = int(item.get("region_id", 0))
+        rng_state = state.get("rng_state")
+        if isinstance(rng_state, Mapping):
+            self._rng.bit_generator.state = copy.deepcopy(dict(rng_state))
+        self._unit_proposal_contexts = {}
+        self._runtime_shared_projection = {}
+        self._runtime_meta_projection = {}
+        self._last_projection_writers = {}
+        self._broadcast_state(None)
+        raw_partitions = tuple(state.get("population_partitions", ()) or ())
+        if raw_partitions:
+            self.set_population_partitions(
+                tuple(PopulationPartition.from_dict(item) for item in raw_partitions)
+            )
 
     def get_runtime_context_projection(self, solver: Any) -> RuntimeContextProjection:
         own_fields: Dict[str, Any] = {}

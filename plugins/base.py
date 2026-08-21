@@ -170,9 +170,21 @@ class Plugin(PluginBase):
                         strict=False,
                         level="debug",
                     )
-        x = np.asarray(getattr(target, "population", np.zeros((0, 0))), dtype=float)
-        f = np.asarray(getattr(target, "objectives", np.zeros((0, 0))), dtype=float)
-        v = np.asarray(getattr(target, "constraint_violations", np.zeros((0,))), dtype=float).reshape(-1)
+        raw_x = getattr(target, "population", None)
+        raw_f = getattr(target, "objectives", None)
+        raw_v = getattr(target, "constraint_violations", None)
+        x = np.asarray(
+            np.zeros((0, 0)) if raw_x is None else raw_x,
+            dtype=float,
+        )
+        f = np.asarray(
+            np.zeros((0, 0)) if raw_f is None else raw_f,
+            dtype=float,
+        )
+        v = np.asarray(
+            np.zeros((0,)) if raw_v is None else raw_v,
+            dtype=float,
+        ).reshape(-1)
         if x.ndim == 1:
             x = x.reshape(1, -1) if x.size > 0 else x.reshape(0, 0)
         if f.ndim == 1:

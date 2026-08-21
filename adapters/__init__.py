@@ -4,7 +4,7 @@ Adapters: algorithm logic modules for ComposableSolver.
 This package is the canonical home for adapter-related abstractions.
 """
 
-from .algorithm_adapter import AlgorithmAdapter, CompositeAdapter
+from .algorithm_adapter import AlgorithmAdapter, CompositeAdapter, PopulationPartition
 from .role_adapters import RoleAdapter, RoleRouterAdapter
 from .vns import VNSAdapter, VNSConfig
 from .moead import MOEADAdapter, MOEADConfig
@@ -39,6 +39,7 @@ from .spea2 import SPEA2Adapter, SPEA2Config
 __all__ = [
     "AlgorithmAdapter",
     "CompositeAdapter",
+    "PopulationPartition",
     "RoleAdapter",
     "RoleRouterAdapter",
     "VNSAdapter",

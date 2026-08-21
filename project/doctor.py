@@ -211,7 +211,7 @@ def _check_standard_case_scaffolds(root: Path, diags: List[DoctorDiagnostic]) ->
 
 
 def _check_nsg_scaffold_guides(root: Path, diags: List[DoctorDiagnostic]) -> None:
-    """Check nsgablack-specific teaching/audit assets on formal Case roots."""
+    """Enforce one README as the only Case documentation entry."""
 
     if (root / "project_config.py").is_file() and (root / "cases").is_dir():
         for case_root in sorted((root / "cases").iterdir()):
@@ -227,26 +227,32 @@ def _check_nsg_scaffold_guides(root: Path, diags: List[DoctorDiagnostic]) -> Non
             root,
         )
         return
-    required = (
-        (
-            root / "COMPONENT_REGISTRATION.md",
-            "missing-component-registration-guide",
-            "Recommended: add COMPONENT_REGISTRATION.md for Case-local Catalog guidance.",
-        ),
-        (
-            root / "docs" / "contracts" / "COMPONENT_CONTRACT_TEMPLATE.md",
-            "missing-contract-card-template",
-            "Recommended: add a component contract-card template.",
-        ),
-        (
-            root / "tests" / "templates" / "README.md",
-            "missing-component-test-matrix-template",
-            "Recommended: add the component smoke/contract/roundtrip/fault test matrix.",
-        ),
+    readme = root / "README.md"
+    if not readme.is_file():
+        _add(
+            diags,
+            "warn",
+            "missing-case-readme",
+            "Case documentation belongs in one README.md.",
+            readme,
+        )
+
+    legacy_docs = (
+        root / "START_HERE.md",
+        root / "BUILD_SOLVER_REGISTRATION.md",
+        root / "COMPONENT_REGISTRATION.md",
+        root / "docs" / "contracts" / "COMPONENT_CONTRACT_TEMPLATE.md",
+        root / "tests" / "templates" / "README.md",
     )
-    for path, code, message in required:
-        if not path.is_file():
-            _add(diags, "warn", code, message, path)
+    for path in legacy_docs:
+        if path.is_file():
+            _add(
+                diags,
+                "warn",
+                "legacy-case-doc",
+                "Move useful content into the Case README and remove the duplicated legacy document.",
+                path,
+            )
 
 
 def _check_registry(root: Path, diags: List[DoctorDiagnostic]) -> None:

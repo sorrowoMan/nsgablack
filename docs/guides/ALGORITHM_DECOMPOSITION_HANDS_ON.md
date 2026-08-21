@@ -267,7 +267,7 @@ python -m nsgablack run_inspector --entry build_solver.py:build_solver
 
 ## 10. 参考阅读顺序
 
-1. `START_HERE.md`
+1. `README.md`
 2. `docs/standard_scaffold_tutorial/01_create_and_run.md`
 3. `docs/user_guide/CONTEXT_CONTRACTS.md`
 4. `docs/user_guide/REDIS_CONTEXT_SNAPSHOT_STORES.md`

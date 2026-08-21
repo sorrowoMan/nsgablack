@@ -151,28 +151,23 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         self._provider_transition_count = 0
         self._provider_transition_needs_slot_seed = False
         self._provider_resource_context: ResourceContext | None = None
-        self._state_loaded = False
 
     def setup(self, control: Any) -> None:
-        resume_loaded = bool(getattr(control, "_resume_loaded", False)) or bool(
-            self._state_loaded
-        )
-        if not resume_loaded:
-            self.current_x = None
-            self.current_score = None
-            self.best_score = None
-            self.last_gradient_norm = None
-            self.step_index = 0
-            self._first_moment = None
-            self._second_moment = None
-            self._candidate_kind = "array"
-            self._candidate_metadata = {}
-            self._provider_state_ref = None
-            self._provider_slot_refs = {}
-            self._provider_transition_count = 0
-            self._provider_transition_needs_slot_seed = False
-            self._provider_resource_context = None
-        self._state_loaded = False
+        _ = control
+        self.current_x = None
+        self.current_score = None
+        self.best_score = None
+        self.last_gradient_norm = None
+        self.step_index = 0
+        self._first_moment = None
+        self._second_moment = None
+        self._candidate_kind = "array"
+        self._candidate_metadata = {}
+        self._provider_state_ref = None
+        self._provider_slot_refs = {}
+        self._provider_transition_count = 0
+        self._provider_transition_needs_slot_seed = False
+        self._provider_resource_context = None
         self._proposal_pending = False
         self._refresh_runtime_projection()
 
@@ -447,12 +442,10 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
                 values = tuple(population) if population is not None else tuple()
             if not values:
                 self.current_x = None
-                self._state_loaded = True
                 return True
             candidate: Any = values[0]
         self._capture_candidate_template(candidate)
         self.current_x = self._candidate_array(candidate)
-        self._state_loaded = True
         self._proposal_pending = False
         self._refresh_runtime_projection()
         return True
@@ -703,7 +696,6 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
                 )
         if self.step_index < 0:
             raise ValueError("gradient optimizer checkpoint step_index must be non-negative")
-        self._state_loaded = True
         self._proposal_pending = False
         self._refresh_runtime_projection()
 

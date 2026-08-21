@@ -46,6 +46,7 @@ from .nested_solver import (
 )
 from .solver_result import DEFAULT_CASE_RESULT_INLINE_MAX_BYTES, build_solver_result
 from .state.incumbent import CandidateProvenance, IncumbentState, ScalarizationError
+from .state.run_progress import RunProgressState
 from blackbase.types import SolveQuality, SolverResult
 from ..adapters import AlgorithmAdapter, CompositeAdapter, RoleAdapter, RoleRouterAdapter
 from .interfaces import (
@@ -115,6 +116,7 @@ __all__ = [
     "IncumbentState",
     "CandidateProvenance",
     "ScalarizationError",
+    "RunProgressState",
     "OptimizationContext",
     "has_bias_module",
     "has_representation_module",

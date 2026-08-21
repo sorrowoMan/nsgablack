@@ -12,8 +12,8 @@ Shared substrate:
 nsgablack semantic layer:
   Solver / Adapter / Representation / Bias / Plugin / Pareto / objective-constraint optimization
 
-mlblack semantic layer:
-  Trainer / DataView / Spec / Codec / Head / LearningProblem / ML Artifact
+mlblack semantic extension:
+  DataView / Spec / Codec / Head / LearningProblem / Evaluation Provider / ML Artifact
 ```
 
 ---
@@ -135,7 +135,7 @@ project_root/
 - `docs/architecture/module_structure.md`：当前代码目录职责速查。
 - `docs/guides/MULTI_STRATEGY_COOPERATION.md`：多策略与多 case 协作的使用层说明。
 - `docs/integrations/COPT_INTEGRATION.md`：数值求解器作为 inner case / provider / plugin 的集成边界。
-- `docs/archive/architecture/`：历史路线图、集成报告和叙事材料；不作为当前架构权威。
+- 已删除设计通过 Git 历史查阅，不在现行文档树内维护第二套口径。
 
 ---
 

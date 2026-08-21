@@ -4,7 +4,6 @@ import contextlib
 import os
 import socket
 import subprocess
-import sys
 import tempfile
 import time
 import urllib.request
@@ -14,7 +13,7 @@ from urllib.parse import parse_qs
 import pytest
 
 from nsgablack.catalog import dashboard_page as page_protocol
-from nsgablack.experiment.dashboard import _build_deep_link_query
+from nsgablack.experiment.dashboard import _build_deep_link_query, build_streamlit_command
 from nsgablack.plugins import list_runtime_artifact_surfaces
 
 sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
@@ -112,19 +111,14 @@ def _running_experiment_ui(db_path: Path, *extra_args: str):
     log_file = tempfile.NamedTemporaryFile(prefix="nsgablack_experiment_ui_", suffix=".log", delete=False)
     log_path = Path(log_file.name)
     log_file.close()
-    command = [
-        sys.executable,
-        "-m",
-        "nsgablack",
-        "experiment",
-        "ui",
-        "--db",
-        str(db_path),
-        "--port",
-        str(port),
-        "--headless",
-        *extra_args,
-    ]
+    # Own the actual Streamlit process so teardown terminates the server, not
+    # only the intermediate CLI wrapper that launched it.
+    command = build_streamlit_command(
+        db_path=str(db_path),
+        port=port,
+        headless=True,
+    )
+    command.extend(extra_args)
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     with log_path.open("w", encoding="utf-8") as handle:
         proc = subprocess.Popen(

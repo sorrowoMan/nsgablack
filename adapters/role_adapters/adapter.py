@@ -17,7 +17,13 @@ import numpy as np
 from blackbase.contracts import BatchDisposition
 from blackbase.context import RuntimeContextProjection
 
-from ..algorithm_adapter import AlgorithmAdapter, subset_adapter_feedback
+from ..algorithm_adapter import (
+    AlgorithmAdapter,
+    PopulationPartition,
+    prefixed_population_partitions,
+    restore_prefixed_population_partitions,
+    subset_adapter_feedback,
+)
 from ..runtime_projection import aggregate_adapter_runtime_projections
 from blackbase.context.context_keys import (
     KEY_CANDIDATE_ROLES,
@@ -44,8 +50,9 @@ class RoleAdapter(AlgorithmAdapter):
     context_mutates: Tuple[str, ...] = ()
     context_cache: Tuple[str, ...] = ()
     context_notes: str = "Role wrapper: injects role metadata and delegates propose/update to inner adapter."
-    state_recovery_level: str = "L1"
-    state_recovery_notes: str = "Restores role metadata and delegates inner adapter state restore."
+    state_recovery_level: str = "L2"
+    state_recovery_notes: str = "Transparently delegates population/token authority and inner adapter state restore."
+    population_state_mode = "delegate"
 
     def __init__(
         self,
@@ -231,6 +238,7 @@ class RoleAdapter(AlgorithmAdapter):
     def get_state(self) -> Dict[str, Any]:
         inner = self.inner.get_state() if self.inner is not None else {}
         return {
+            "schema": "nsgablack.role_adapter_state/v2",
             "role": self.role,
             "name": self.name,
             "max_candidates": self.max_candidates,
@@ -238,26 +246,116 @@ class RoleAdapter(AlgorithmAdapter):
             "companions": list(self.companions),
             "recommended_suite": self.recommended_suite,
             "strict_contract": self.strict_contract,
+            "inner_name": None if self.inner is None else self.inner.name,
+            "inner_class": (
+                None
+                if self.inner is None
+                else f"{type(self.inner).__module__}.{type(self.inner).__qualname__}"
+            ),
             "inner": inner,
+            "population_partitions": [
+                partition.as_dict()
+                for partition in self.get_population_partitions()
+            ],
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
-        if "role" in state:
-            self.role = str(state["role"])
-        if "max_candidates" in state:
-            self.max_candidates = state["max_candidates"]
-        if "context_requires" in state and isinstance(state["context_requires"], (list, tuple)):
-            self.context_requires = tuple(str(k) for k in state["context_requires"])
-        if "companions" in state and isinstance(state["companions"], (list, tuple)):
-            self.companions = tuple(str(c) for c in state["companions"])
-        if "recommended_suite" in state:
-            self.recommended_suite = state["recommended_suite"]
-        if "strict_contract" in state:
-            self.strict_contract = bool(state["strict_contract"])
+        schema = str(state.get("schema", "nsgablack.role_adapter_state/v1"))
+        if schema not in {
+            "nsgablack.role_adapter_state/v1",
+            "nsgablack.role_adapter_state/v2",
+        }:
+            raise ValueError(f"unsupported RoleAdapter state schema: {schema}")
+        saved_role = str(state.get("role", self.role))
+        saved_name = str(state.get("name", self.name))
+        if saved_role != self.role or saved_name != self.name:
+            raise ValueError("RoleAdapter checkpoint identity mismatch")
+        expected_config = {
+            "max_candidates": self.max_candidates,
+            "context_requires": tuple(self.context_requires),
+            "companions": tuple(self.companions),
+            "recommended_suite": self.recommended_suite,
+            "strict_contract": self.strict_contract,
+        }
+        saved_config = {
+            "max_candidates": state.get("max_candidates", self.max_candidates),
+            "context_requires": tuple(
+                str(item)
+                for item in state.get("context_requires", self.context_requires)
+            ),
+            "companions": tuple(
+                str(item) for item in state.get("companions", self.companions)
+            ),
+            "recommended_suite": state.get(
+                "recommended_suite",
+                self.recommended_suite,
+            ),
+            "strict_contract": bool(
+                state.get("strict_contract", self.strict_contract)
+            ),
+        }
+        if saved_config != expected_config:
+            raise ValueError("RoleAdapter checkpoint configuration mismatch")
+        if self.inner is not None:
+            saved_inner_name = state.get("inner_name")
+            saved_inner_class = state.get("inner_class")
+            current_inner_class = (
+                f"{type(self.inner).__module__}.{type(self.inner).__qualname__}"
+            )
+            if saved_inner_name is not None and str(saved_inner_name) != self.inner.name:
+                raise ValueError("RoleAdapter inner adapter identity mismatch")
+            if saved_inner_class is not None and str(saved_inner_class) != current_inner_class:
+                raise ValueError("RoleAdapter inner adapter class mismatch")
         if self.inner is not None and isinstance(state.get("inner"), dict):
             self.inner.set_state(state["inner"])
+        raw_partitions = tuple(state.get("population_partitions", ()) or ())
+        if raw_partitions:
+            self.set_population_partitions(
+                tuple(PopulationPartition.from_dict(item) for item in raw_partitions)
+            )
+
+    def get_population_snapshot(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+        getter = getattr(self.inner, "get_population_snapshot", None)
+        return getter() if callable(getter) else None
+
+    def set_population_snapshot(
+        self,
+        population: np.ndarray,
+        objectives: np.ndarray,
+        violations: np.ndarray,
+    ) -> bool:
+        setter = getattr(self.inner, "set_population_snapshot", None)
+        return (
+            bool(setter(population, objectives, violations))
+            if callable(setter)
+            else False
+        )
+
+    def get_population_candidate_tokens(self) -> tuple[str | None, ...] | None:
+        getter = getattr(self.inner, "get_population_candidate_tokens", None)
+        return getter() if callable(getter) else None
+
+    def set_population_candidate_tokens(
+        self,
+        candidate_tokens: Sequence[str | None],
+    ) -> bool:
+        setter = getattr(self.inner, "set_population_candidate_tokens", None)
+        return bool(setter(candidate_tokens)) if callable(setter) else False
+
+    def get_population_partitions(self) -> tuple[PopulationPartition, ...]:
+        getter = getattr(self.inner, "get_population_partitions", None)
+        return tuple(getter() or ()) if callable(getter) else ()
+
+    def set_population_partitions(
+        self,
+        partitions: Sequence[PopulationPartition],
+    ) -> bool:
+        setter = getattr(self.inner, "set_population_partitions", None)
+        return bool(setter(partitions)) if callable(setter) else False
 
     def get_context_contract(self) -> Dict[str, Any]:
         contract = super().get_context_contract()
@@ -316,6 +414,9 @@ class RoleRouterAdapter(AlgorithmAdapter):
     ) -> None:
         super().__init__(name=name, priority=priority)
         self.roles = list(roles)
+        role_names = [str(role.name) for role in self.roles]
+        if len(role_names) != len(set(role_names)):
+            raise ValueError("RoleRouterAdapter role adapter names must be unique")
         self._last_ranges: List[Tuple[RoleAdapter, int, int]] = []
         self.last_candidate_roles: List[str] = []
         self._runtime_projection: Dict[str, Any] = {}
@@ -326,8 +427,9 @@ class RoleRouterAdapter(AlgorithmAdapter):
     context_mutates = (KEY_ROLE_REPORTS, KEY_CANDIDATE_ROLES)
     context_cache = ()
     context_notes = "Controller for RoleAdapter set: dispatches candidates and returns role-scoped feedback."
-    state_recovery_level = "L1"
-    state_recovery_notes = "Restores child role adapter snapshots keyed by role name."
+    state_recovery_level = "L2"
+    state_recovery_notes = "Restores stable role population partitions, tokens, and role adapter states."
+    population_state_mode = "partitioned"
 
     def setup(self, control: Any) -> None:
         self._runtime_projection = {}
@@ -422,18 +524,86 @@ class RoleRouterAdapter(AlgorithmAdapter):
 
     def get_state(self) -> Dict[str, Any]:
         return {
+            "schema": "nsgablack.role_router_state/v2",
+            "role_order": [r.name for r in self.roles],
             "roles": {r.name: r.get_state() for r in self.roles},
+            "population_partitions": [
+                partition.as_dict()
+                for partition in self.get_population_partitions()
+            ],
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
+        schema = str(state.get("schema", "nsgablack.role_router_state/v1"))
+        if schema not in {
+            "nsgablack.role_router_state/v1",
+            "nsgablack.role_router_state/v2",
+        }:
+            raise ValueError(f"unsupported RoleRouterAdapter state schema: {schema}")
+        saved_order = tuple(str(item) for item in state.get("role_order", ()))
+        current_order = tuple(str(role.name) for role in self.roles)
+        if saved_order and saved_order != current_order:
+            raise ValueError("RoleRouterAdapter role identity mismatch")
         roles = state.get("roles")
         if not isinstance(roles, dict):
-            return
+            raise ValueError("RoleRouterAdapter checkpoint is missing role states")
+        if set(roles) != set(current_order):
+            raise ValueError("RoleRouterAdapter role state set mismatch")
         for r in self.roles:
             if r.name in roles and isinstance(roles[r.name], dict):
                 r.set_state(roles[r.name])
+        raw_partitions = tuple(state.get("population_partitions", ()) or ())
+        if raw_partitions:
+            self.set_population_partitions(
+                tuple(PopulationPartition.from_dict(item) for item in raw_partitions)
+            )
+
+    def _role_prefix(self, index: int, role: RoleAdapter) -> str:
+        return f"role:{int(index)}:{role.role}:{role.name}"
+
+    def get_population_partitions(self) -> tuple[PopulationPartition, ...]:
+        out: list[PopulationPartition] = []
+        for index, role in enumerate(self.roles):
+            out.extend(
+                prefixed_population_partitions(
+                    self._role_prefix(index, role),
+                    role,
+                )
+            )
+        return tuple(out)
+
+    def set_population_partitions(
+        self,
+        partitions: Sequence[PopulationPartition],
+    ) -> bool:
+        values = tuple(partitions or ())
+        handled = False
+        for index, role in enumerate(self.roles):
+            handled = (
+                restore_prefixed_population_partitions(
+                    self._role_prefix(index, role),
+                    role,
+                    values,
+                )
+                or handled
+            )
+        known_prefixes = tuple(
+            self._role_prefix(index, role) + "/"
+            for index, role in enumerate(self.roles)
+        )
+        unknown = tuple(
+            partition.partition_id
+            for partition in values
+            if not partition.partition_id.startswith(known_prefixes)
+        )
+        if unknown:
+            raise ValueError(
+                "RoleRouterAdapter checkpoint contains unknown population partitions: "
+                + ", ".join(sorted(unknown))
+            )
+        return handled or not values
 
     def _collect_role_reports(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {}

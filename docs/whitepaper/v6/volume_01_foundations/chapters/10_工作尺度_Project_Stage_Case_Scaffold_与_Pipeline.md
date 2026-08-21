@@ -94,7 +94,7 @@ Case 的权威边界还意味着大对象不能依靠调用者内存属性传递
 
 Project-level Stage 描述的是“这一批 Case 在什么前提下、以什么策略执行”。它可以声明 Case 集合、serial 或 parallel policy、资源请求、输入 Artifact、运行模式、外部执行配置和失败策略。前一 Stage 的正式 Artifact 可以进入后一 Stage，但后一 Stage 不能读取前一 Stage 的临时内存。Stage 完成意味着其包含的 Case 已按照策略形成可判断的结果，而不只是某个函数返回。
 
-Stage 本身通常不是最小独立运行闭包。它不需要重新实现 Solver 或 Trainer 生命周期，也不拥有独立领域状态；它是 Project 对 Case DAG 的一种结构化切片。Stage 失败应当由包含的 Case 结果与声明策略推导，而不是另起一份和 Case 冲突的错误真相。Stage 可以拥有自己的名称、时间、调度事件与汇总状态，这些属于编排证据，不把它变成领域执行核心。
+Stage 本身通常不是最小独立运行闭包。它不需要重新实现 Solver 生命周期或 ML 对该生命周期的语义投影，也不拥有独立领域状态；它是 Project 对 Case DAG 的一种结构化切片。Stage 失败应当由包含的 Case 结果与声明策略推导，而不是另起一份和 Case 冲突的错误真相。Stage 可以拥有自己的名称、时间、调度事件与汇总状态，这些属于编排证据，不把它变成领域执行核心。
 
 同一个 Project 还可能存在多种运行视图。开发时只跑 smoke Stage，日常任务只跑训练与评估，完整审计再运行全部 Stage。当前配置用 **Group** 为一组 Stage 名称建立可选择入口，例如 `default`、`diagnostics`、`symbolic` 或 `all`。Group 回答“本次选择哪条已声明执行路径”，不回答 Case 内部怎样运行。
 
@@ -163,7 +163,7 @@ Pipeline 内部的并行尤其容易越界。两个分支接收同一可变 cont
 
 Group 与 Lane 也不能混用。Group 是用户在启动 Project 时选择的一组 Stage，表达“本次运行哪条已声明路径”；Lane 是运行图中若干同级挑战者的身份，表达“这些结果为何需要分别观察和比较”。选择 `symbolic` Group 可能启动四条 Lane，也可能一条都没有；同一 Lane 也可能跨越多个 Stage。Group 属于执行选择，Lane 属于协作与结果语义。
 
-这时可以重新看 Solver 与 Trainer。它们有时被误认为 Project 下两种不同层级：Solver 做外层编排，Trainer 只是 Solver 的内部函数。第七、八章已经否定这种固定关系，本章可以给出尺度上的理由。Solver 能独立推进优化生命周期、保存状态并返回优化结果；Trainer 能独立推进学习生命周期、保存状态并返回模型结果。只要二者满足 Case 闭包，它们就处于同一运行尺度。
+这时可以重新看 Solver 与 Trainer 词汇。它们有时被误认为 Project 下两种不同层级：Solver 做外层编排，Trainer 只是 Solver 的内部函数。当前实现采用更严格的统一：控制面只有 Solver；Trainer 是 ML 装配与使用词汇，LearningSolver 把 epoch、batch、fit 和模型结果映射到同一生命周期。Solver Case 与 trainer-kind Case 只要满足 Case 闭包，就处于同一运行尺度，但并不因此拥有两套控制平面。
 
 外层和内层只是一次组合中的位置。超参数搜索中 Solver Case 位于外层、Trainer Case 位于内层；一个学习系统调用规划搜索时，Trainer Case 可以位于外层、Solver Case 位于内层。嵌套不改变被调用者的 Case 身份，也不允许调用者吞并其资源和状态语义。内层 Case 获得派生 ResourceContext，返回正式 CaseResult；外层只消费结果投影。
 

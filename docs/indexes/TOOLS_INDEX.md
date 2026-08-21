@@ -25,8 +25,6 @@ python -m nsgablack catalog show adapter.sa
   - 用法：`python tools/context_field_guard.py --strict`
 - `tools/schema_tool.py`：JSON 产物 schema 版本校验
   - 用法：`python tools/schema_tool.py runs/ --strict`
-- `tools/release/make_v010_repro_package.py`：构建可复现发布包（docs + baseline + manifest）
-  - 用法：`python tools/release/make_v010_repro_package.py --tag v0.10.0`
 - `tools/cleanup_project.py`：清理工程杂项/归档
 - `scripts/organize_project.py`：项目结构整理脚本（如有）
 

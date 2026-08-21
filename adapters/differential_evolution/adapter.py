@@ -56,6 +56,7 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         "Population write-back is exposed through set_population_snapshot().",
     )
     state_recovery_level = "L2"
+    population_state_mode = "single"
     state_recovery_notes = "Restores internal population/objectives/violations for deterministic continuation."
 
     def __init__(

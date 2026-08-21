@@ -58,6 +58,7 @@ from .incumbent import (
     IncumbentState,
     ScalarizationError,
 )
+from .run_progress import RunProgressState
 
 __all__ = [
     # Keys
@@ -121,4 +122,5 @@ __all__ = [
     "CandidateProvenance",
     "IncumbentState",
     "ScalarizationError",
+    "RunProgressState",
 ]

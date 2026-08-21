@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nsgablack"
-version = "0.3.9"
+version = "0.3.10"
 description = "A decomposed optimization system with pipelines, biases, adapters, plugins"
 readme = "README.md"
 license = {text = "MIT"}

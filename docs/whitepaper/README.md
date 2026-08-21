@@ -1,36 +1,23 @@
-# Black Framework Stack 中文白皮书
+# Black Framework Stack 白皮书
 
-本目录维护 `blackbase + nsgablack + mlblack` 统一框架栈的中文白皮书源文件与生成工具。正在续写的开发白皮书主版本是 [V6 分卷体系](v6/CONTENTS.md)，其已迁移正文和待写状态见 [V6 迁移状态](v6/MIGRATION_STATUS.md)。
+本目录只保留正在维护的 V6 分卷草稿：
 
-白皮书的主要读者是三类人：第一次接触框架的使用者、准备扩展组件的开发者，以及需要审查运行正确性与工程边界的架构维护者。主版本只使用中文叙述；类名、协议名、命令与代码保持原始英文标识。
+- [V6 目录与论证路线](v6/CONTENTS.md)
+- [迁移与完成状态](v6/MIGRATION_STATUS.md)
+- [卷一：基础与边界](v6/volume_01_foundations/README.md)
+- [卷五：组合](v6/volume_05_composition/README.md)
+- [卷七：项目实现](v6/volume_07_project_implementation/README.md)
 
-## 文档原则
+V3、V4、V5、旧合订稿、旧 manifest 和旧生成器已经删除。它们描述过多轮已被源码替代的边界，继续留在现行文档树会制造第二套权威；如需考古，请查看 Git 历史。
 
-- 以当前源码为事实基础，以仓库文档为解释材料；二者冲突时标注差异，不把愿景写成已实现能力。
-- 运行架构、状态语义、预算、资源、并行、取消、快照与生命周期是主线。
-- Catalog、Dashboard 与展示层只作为发现性和运维附录，不替代运行闭环。
-- `blackbase` 负责共享 substrate，`nsgablack` 负责优化搜索语义，`mlblack` 负责机器学习语义。
-- 示例只通过 Project -> Case -> Standard Scaffold 的正式表面解释，不鼓励私有脚本胶水。
+## 写作规则
 
-## 目录结构
+- 只以当前三仓源码、测试、AGENTS 和正式 Scaffold 为事实依据。
+- `blackbase` 只描述共享 substrate 与公共协议。
+- `nsgablack` 只描述优化/搜索语义和唯一 Solver 控制面。
+- `mlblack` 描述 ML 语义扩展，不虚构第二套 Trainer 循环或 Adapter 层。
+- 愿景、建议和已实现能力必须明确区分。
+- 示例只引用标准 Project / Case / Scaffold，不引用私有脚本和兼容入口。
+- 章节在进入 V6 前必须重新核对源码；不能把旧稿机械迁移成新版本。
 
-- `v6/`：当前开发白皮书的权威正文，采用“分卷 + 卷内章号”，卷级 `README.md` 负责阅读导航。
-- `v6/CONTENTS.md`：V6 主目录与全书论证路线。
-- `v6/MIGRATION_STATUS.md`：V5 到 V6 的真实迁移完成度，不用空白章节代替正文。
-- `chapters/`：白皮书原创主卷，负责统一叙事、契约说明和阅读路线。
-- `manifest.json`：编排顺序、章节来源、仓库归属和状态标签。
-- `build_whitepaper.py`：生成合订 Markdown 与 DOCX 的确定性工具。
-- `Black_Framework_Stack_Whitepaper_CN.md`：生成后的合订中文源稿。
-- `Black_Framework_Stack_Whitepaper_CN.docx`：正式阅读版。
-
-`chapters/`、`manifest.json` 和当前合订产物属于此前的生成链；在 V6 分卷尚未完成以前继续保留，但不作为 V6 新正文的修改入口。V6 后续若进入合订发布，应单独更新 manifest 与生成器并重新验证，不把目录迁移自动等同于出版物已经更新。
-
-## 维护口径
-
-主卷使用三种状态标签：
-
-- **规范**：当前代码与协作规则共同约束的公共契约。
-- **实现**：能在当前源码中定位到的行为；若未经本次命令验证，会明确写成静态分析。
-- **建议**：面向未来的工程路线，不应被读者误解为已经实现。
-
-白皮书版本以生成日期和三个仓库的当前工作树为准。由于三个仓库可能包含未提交改动，生成器不会执行 Git 清理、覆盖或回滚。
+V6 尚未完成时，不生成“正式合订版”，避免不完整草稿被误认为发布文档。

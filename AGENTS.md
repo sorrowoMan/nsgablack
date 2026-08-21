@@ -269,9 +269,15 @@ Collaboration rules:
 建议实现：
 
 - `get_state()/set_state()`：checkpoint 恢复
-- `get_population_snapshot()/set_population_snapshot()`：仅用于完整 L2 population `(X, F, V)` 的权威读写
+- `population_state_mode`：L2 Adapter 必须显式声明 `single`、`delegate` 或 `partitioned`
+- `get_population_snapshot()/set_population_snapshot()`：仅用于 `single/delegate` 模式下完整 L2 population `(X, F, V)` 的权威读写
+- `get_population_partitions()/set_population_partitions()`：`partitioned` 复合 Adapter 按稳定 unit/role/phase ID 保存多个 `PopulationPartition`，不得把不同子群体无语义拼接
 - `get_current_candidates()/set_current_candidates()`：L1/trajectory Adapter 的当前候选访问；不得冒充 population snapshot
 - `get_runtime_context_projection()`：可视化/日志运行切片
+
+恢复顺序是 `prepare -> setup -> apply restore envelope -> initialize if fresh -> run`。`set_state()`、外部 Case 预加载与 checkpoint 插件必须先排队恢复信封，不能在 `setup()` 之前直接污染 Adapter 运行态，也不能由各 Adapter 私自维护 `_state_loaded` 分支。
+
+运行级完成条件必须消费可恢复的 `RunProgressState`（逻辑步数、累计耗时、剩余 deadline 与可选 policy state），不得把“已经完成但未执行求值”的空步骤计入 generation/step。
 
 ### 6.2 Plugin API（生命周期增强）
 

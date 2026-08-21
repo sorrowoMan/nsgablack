@@ -110,6 +110,8 @@ def test_checkpoint_roundtrip_preserves_complete_incumbent(
 
     solver_b.set_incumbent = _record_atomic_restore
     assert plugin_b.resume(str(path)) is True
+    assert plugin_b.get_report()["resume_audit"]["status"] == "queued"
+    solver_b.run(max_steps=0)
 
     assert len(restored_incumbents) == 1
     assert solver_b.get_incumbent() is not None
@@ -153,6 +155,7 @@ def test_checkpoint_without_incumbent_clears_target_incumbent(
     solver_b.add_plugin(plugin_b)
 
     assert plugin_b.resume(str(path)) is True
+    solver_b.run(max_steps=0)
     assert solver_b.get_incumbent() is None
     assert solver_b.best_x is None
     assert solver_b.best_objectives is None
@@ -427,7 +430,7 @@ def test_attach_checkpoint_resume_strict_conflicts_with_trust_checkpoint(sample_
         )
 
 
-def test_checkpoint_writer_uses_v3_and_carries_component_and_selection_audit(
+def test_checkpoint_writer_uses_v5_and_carries_component_and_selection_audit(
     sample_problem,
 ) -> None:
     from nsgablack.plugins import CheckpointResumePlugin
@@ -442,7 +445,7 @@ def test_checkpoint_writer_uses_v3_and_carries_component_and_selection_audit(
     payload = plugin._build_payload(solver=solver, reason="schema-test")
     state = payload["solver_state"]
 
-    assert payload["schema"] == "nsgablack.checkpoint.v4"
+    assert payload["schema"] == "nsgablack.checkpoint.v5"
     assert "adapter" in payload["stateful_components"]
     assert state["run_sequence"] == 1
     assert state["incumbent_selection"] == {
@@ -585,6 +588,7 @@ def test_checkpoint_roundtrip_restores_scalarizer_audit_and_validates_policy(
     )
     plugin_b.attach(solver_b)
     assert plugin_b.resume(str(path)) is True
+    solver_b.run(max_steps=0)
     assert solver_b.scalarizer_fallback_count == 1
     assert solver_b.result_quality_degraded is True
     assert solver_b.scalarizer_audit_complete is True

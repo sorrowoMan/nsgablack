@@ -115,3 +115,71 @@ def test_numeric_population_writer_invalidates_mismatched_semantic_population() 
 
     assert solver.get_candidate_population_batch() is None
     assert solver.get_candidate_population_provenance() == ()
+
+
+def test_mutate_creates_child_token_and_repair_preserves_it() -> None:
+    class _SemanticPipeline:
+        mutator = object()
+
+        def mutate(self, candidate, context):
+            del context
+            state = candidate if isinstance(candidate, UnknownState) else UnknownState(candidate)
+            return UnknownState(
+                state.as_array() + 1.0,
+                metadata={**dict(state.metadata), "mutated": True},
+            )
+
+        def repair(self, candidate, context):
+            del context
+            state = candidate if isinstance(candidate, UnknownState) else UnknownState(candidate)
+            return UnknownState(
+                np.clip(state.as_array(), -1.0, 1.0),
+                metadata={**dict(state.metadata), "repaired": True},
+            )
+
+    solver = ComposableSolver(
+        problem=_TwoDimensionalProblem(),
+        representation_pipeline=_SemanticPipeline(),
+    )
+    solver.prepare_fresh_run()
+    original = UnknownState([0.5, 0.5], metadata={"architecture": "a"})
+
+    mutated = solver.mutate_candidate(original)
+    mutated_provenance = solver.candidate_provenance_for(mutated)
+    original_provenance = solver.candidate_provenance_for(original)
+    assert isinstance(mutated, UnknownState)
+    assert mutated_provenance is not None
+    assert original_provenance is not None
+    assert mutated_provenance.candidate_token != original_provenance.candidate_token
+    assert mutated_provenance.parent_token == original_provenance.candidate_token
+    assert mutated_provenance.transform_stage == "mutate"
+
+    repaired = solver.repair_candidate(mutated)
+    repaired_provenance = solver.candidate_provenance_for(repaired)
+    assert isinstance(repaired, UnknownState)
+    assert repaired.metadata["mutated"] is True
+    assert repaired.metadata["repaired"] is True
+    assert repaired_provenance is not None
+    assert repaired_provenance.candidate_token == mutated_provenance.candidate_token
+    assert repaired_provenance.parent_token == original_provenance.candidate_token
+    assert repaired_provenance.transform_stage == "repair"
+
+
+def test_unknown_state_repair_creates_lineage_without_registered_input() -> None:
+    class _RepairOnlyPipeline:
+        def repair(self, candidate, context):
+            del candidate, context
+            return UnknownState([0.0, 0.0], metadata={"repaired": "semantic"})
+
+    solver = ComposableSolver(
+        problem=_TwoDimensionalProblem(),
+        representation_pipeline=_RepairOnlyPipeline(),
+    )
+    solver.prepare_fresh_run()
+    repaired = solver.repair_candidate(np.asarray([2.0, 2.0]))
+    provenance = solver.candidate_provenance_for(repaired)
+
+    assert isinstance(repaired, UnknownState)
+    assert provenance is not None
+    assert provenance.transform_stage == "repair"
+    assert repaired.metadata["repaired"] == "semantic"

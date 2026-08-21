@@ -114,19 +114,27 @@ def test_l2_adapters_define_population_snapshot_methods():
         # Classes that inherit population methods from L2 parent are fine.
         # We flag only if the class re-declares state_recovery_level="L2" without
         # providing any population-management methods AND has no L2 parent.
-        has_own_pop = (
-            "get_population_snapshot" in methods
-            or "set_population_snapshot" in methods
-        )
+        mode = _literal_str(attrs.get("population_state_mode")) if attrs.get("population_state_mode") is not None else None
+        if mode == "partitioned":
+            has_own_pop = {
+                "get_population_partitions",
+                "set_population_partitions",
+            }.issubset(methods)
+        else:
+            has_own_pop = {
+                "get_population_snapshot",
+                "set_population_snapshot",
+                "get_population_candidate_tokens",
+                "set_population_candidate_tokens",
+            }.issubset(methods)
         # If the class declares its own get_state (i.e. is a root L2), it MUST also
         # declare population methods in-tree. Subclasses that inherit are checked at runtime.
         has_own_state = "get_state" in methods
         if has_own_state and not has_own_pop:
             assert False, (
                 f"{path}:{class_node.name} declares state_recovery_level='L2' and owns "
-                "get_state() but does not define get_population_snapshot() / "
-                "set_population_snapshot(). "
-                "A root L2 adapter must provide both pairs."
+                "get_state() but does not close its declared single/delegate/partitioned "
+                "population and token authority."
             )
 
 

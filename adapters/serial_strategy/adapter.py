@@ -16,7 +16,12 @@ from blackbase.call_binding import CallCandidate, invoke_bound_once
 from blackbase.contracts import BatchDisposition
 from blackbase.context import RuntimeContextProjection
 
-from ..algorithm_adapter import AlgorithmAdapter
+from ..algorithm_adapter import (
+    AlgorithmAdapter,
+    PopulationPartition,
+    prefixed_population_partitions,
+    restore_prefixed_population_partitions,
+)
 from ..runtime_projection import aggregate_adapter_runtime_projections
 from blackbase.context.context_keys import KEY_PHASE, KEY_STRATEGY, KEY_STRATEGY_ID
 
@@ -57,6 +62,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
     context_notes = ("Serial phase scheduler; delegates propose/update to active adapter.",)
     state_recovery_level = "L2"
     state_recovery_notes = "Restores current phase index, per-phase step counter, and child adapter states."
+    population_state_mode = "delegate"
 
     def __init__(
         self,
@@ -80,6 +86,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
         self._phase_steps: List[int] = []
         self._current_idx: int = 0
         self._step_in_phase: int = 0
+        self._population_owner_idx: int | None = None
         self._last_projection_writers: Dict[str, str] = {}
 
     # ------------------------------------------------------------------
@@ -90,9 +97,14 @@ class StrategyChainAdapter(AlgorithmAdapter):
         self._phase_steps = [int(p.steps) for p in self.phases]
         self._current_idx = 0
         self._step_in_phase = 0
+        self._population_owner_idx = None
         self._last_projection_writers = {}
-        if self._adapters:
-            self._adapters[self._current_idx].setup(control)
+        # Every child that can receive checkpoint state must first establish
+        # its clean baseline.  Restore is applied to the chain only after this
+        # method returns, so lazily setting up a later restored phase would
+        # either skip setup or erase its restored state on phase activation.
+        for adapter in self._adapters:
+            adapter.setup(control)
 
     def teardown(self, control: Any) -> None:
         for adapter in self._adapters:
@@ -149,7 +161,9 @@ class StrategyChainAdapter(AlgorithmAdapter):
         ctx[KEY_PHASE] = self._current_phase_name()
         ctx[KEY_STRATEGY] = adapter.name
         ctx[KEY_STRATEGY_ID] = int(self._current_idx)
+        owner_index = int(self._current_idx)
         adapter.update(control, candidates, feedback, ctx)
+        self._population_owner_idx = owner_index
 
         self._step_in_phase += 1
         if self._should_advance(ctx):
@@ -175,30 +189,161 @@ class StrategyChainAdapter(AlgorithmAdapter):
     # ------------------------------------------------------------------
     def get_state(self) -> Dict[str, Any]:
         state = {
+            "schema": "nsgablack.strategy_chain_state/v2",
             "current_idx": int(self._current_idx),
             "step_in_phase": int(self._step_in_phase),
             "phase_steps": list(self._phase_steps),
             "phase_names": [p.name for p in self.phases],
+            "population_owner_idx": self._population_owner_idx,
             "adapters": [],
         }
         for adapter in self._adapters:
-            try:
-                state["adapters"].append(adapter.get_state())
-            except Exception:
-                state["adapters"].append({})
+            state["adapters"].append(adapter.get_state())
+        state["population_partitions"] = [
+            partition.as_dict() for partition in self.get_population_partitions()
+        ]
         return state
 
     def set_state(self, state: Dict[str, Any]) -> None:
         self._materialize_adapters()
-        self._current_idx = int(state.get("current_idx", 0))
+        schema = str(state.get("schema", "nsgablack.strategy_chain_state/v1"))
+        if schema not in {
+            "nsgablack.strategy_chain_state/v1",
+            "nsgablack.strategy_chain_state/v2",
+        }:
+            raise ValueError(f"unsupported StrategyChainAdapter state schema: {schema}")
+        saved_names = tuple(str(item) for item in state.get("phase_names", ()))
+        current_names = tuple(str(phase.name) for phase in self.phases)
+        if saved_names and saved_names != current_names:
+            raise ValueError("StrategyChainAdapter phase identity mismatch")
+        current_idx = int(state.get("current_idx", 0))
+        if self._adapters and not 0 <= current_idx < len(self._adapters):
+            raise ValueError("StrategyChainAdapter current phase is out of range")
+        self._current_idx = current_idx
         self._step_in_phase = int(state.get("step_in_phase", 0))
-        self._phase_steps = list(state.get("phase_steps", self._phase_steps))
-        adapter_states = state.get("adapters", [])
+        phase_steps = list(state.get("phase_steps", self._phase_steps))
+        if len(phase_steps) != len(self.phases):
+            raise ValueError("StrategyChainAdapter phase step schedule mismatch")
+        self._phase_steps = [int(value) for value in phase_steps]
+        raw_owner = state.get("population_owner_idx")
+        owner = None if raw_owner is None else int(raw_owner)
+        if owner is not None and not 0 <= owner < len(self._adapters):
+            raise ValueError("StrategyChainAdapter population owner is out of range")
+        self._population_owner_idx = owner
+        adapter_states = tuple(state.get("adapters", ()) or ())
+        if len(adapter_states) != len(self._adapters):
+            raise ValueError("StrategyChainAdapter child state count mismatch")
         for adapter, astate in zip(self._adapters, adapter_states):
-            try:
-                adapter.set_state(dict(astate or {}))
-            except Exception:
-                continue
+            adapter.set_state(dict(astate or {}))
+        raw_partitions = tuple(state.get("population_partitions", ()) or ())
+        if raw_partitions:
+            self.set_population_partitions(
+                tuple(PopulationPartition.from_dict(item) for item in raw_partitions)
+            )
+
+    def _population_owner(self) -> tuple[int, AlgorithmAdapter] | None:
+        if not self._adapters:
+            return None
+        index = (
+            int(self._current_idx)
+            if self._population_owner_idx is None
+            else int(self._population_owner_idx)
+        )
+        if index < 0 or index >= len(self._adapters):
+            raise ValueError("StrategyChainAdapter population owner is out of range")
+        return index, self._adapters[index]
+
+    def _population_prefix(self, index: int) -> str:
+        phase_name = (
+            self.phases[index].name
+            if 0 <= int(index) < len(self.phases)
+            else str(index)
+        )
+        return f"phase:{int(index)}:{phase_name}"
+
+    def get_population_snapshot(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+        owner = self._population_owner()
+        if owner is None:
+            return None
+        _index, adapter = owner
+        getter = getattr(adapter, "get_population_snapshot", None)
+        if not callable(getter):
+            return None
+        return getter()
+
+    def set_population_snapshot(
+        self,
+        population: np.ndarray,
+        objectives: np.ndarray,
+        violations: np.ndarray,
+    ) -> bool:
+        owner = self._population_owner()
+        if owner is None:
+            return False
+        _index, adapter = owner
+        setter = getattr(adapter, "set_population_snapshot", None)
+        if not callable(setter):
+            return False
+        return bool(setter(population, objectives, violations))
+
+    def get_population_candidate_tokens(self) -> tuple[str | None, ...] | None:
+        owner = self._population_owner()
+        if owner is None:
+            return None
+        _index, adapter = owner
+        getter = getattr(adapter, "get_population_candidate_tokens", None)
+        return getter() if callable(getter) else None
+
+    def set_population_candidate_tokens(
+        self,
+        candidate_tokens: Sequence[str | None],
+    ) -> bool:
+        owner = self._population_owner()
+        if owner is None:
+            return False
+        _index, adapter = owner
+        setter = getattr(adapter, "set_population_candidate_tokens", None)
+        return bool(setter(candidate_tokens)) if callable(setter) else False
+
+    def get_population_partitions(self) -> tuple[PopulationPartition, ...]:
+        owner = self._population_owner()
+        if owner is None:
+            return ()
+        index, adapter = owner
+        return prefixed_population_partitions(
+            self._population_prefix(index),
+            adapter,
+        )
+
+    def set_population_partitions(
+        self,
+        partitions: Sequence[PopulationPartition],
+    ) -> bool:
+        values = tuple(partitions or ())
+        handled = False
+        owner_index: int | None = None
+        for index, adapter in enumerate(self._adapters):
+            restored = restore_prefixed_population_partitions(
+                self._population_prefix(index),
+                adapter,
+                values,
+            )
+            if restored:
+                if owner_index is not None and owner_index != index:
+                    raise ValueError(
+                        "StrategyChainAdapter cannot restore multiple authoritative phases"
+                    )
+                owner_index = index
+                handled = True
+        if values and not handled:
+            raise ValueError(
+                "StrategyChainAdapter checkpoint contains no matching phase partition"
+            )
+        if owner_index is not None:
+            self._population_owner_idx = owner_index
+        return handled or not values
 
     def get_runtime_context_projection(self, solver: Any) -> RuntimeContextProjection:
         adapter = self._current_adapter()
@@ -301,7 +446,3 @@ class StrategyChainAdapter(AlgorithmAdapter):
             pass
         self._current_idx = next_idx
         self._step_in_phase = 0
-        try:
-            self._adapters[self._current_idx].setup(control)
-        except Exception:
-            pass

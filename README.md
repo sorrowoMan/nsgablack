@@ -1,57 +1,52 @@
 # NSGABlack
 
-`nsgablack` is the optimization and search semantic layer in a shared framework stack. It is not just an NSGA-II wrapper; it is an engineering framework for building auditable optimization systems with clear boundaries between problem semantics, candidate representation, search strategy, runtime capabilities, state, and reports.
+`nsgablack` 是统一框架栈中的优化与搜索语义层。它面向的不是“调用一个算法”，而是把候选表示、目标与约束、搜索策略、运行能力和结果证据装配成可组合、可恢复、可审计的求解系统。
 
-Current architecture rule:
+当前版本：`0.3.10`，依赖 `blackbase>=0.3.8,<0.4.0`。
 
-- `nsgablack` and `mlblack` share the Project / Case / Scaffold / L0 substrate.
-- `nsgablack` is responsible for optimization/search semantics: Solver lifecycle, Adapter search policy, candidate representation, Pareto/frontier governance, objective/constraint evaluation, and search audit.
-- `mlblack` is responsible for machine-learning semantics: DataView, Spec, Codec, Head, Trainer, Provider, Artifact, and ML reports.
-- Orchestration and resource grants belong to the shared substrate, not to either semantic layer privately.
+## 三仓边界
 
-Shared substrate baseline: `blackbase>=0.3.8,<0.4.0`.
-Version 0.3 removes the former resource/context forwarders and uses BlackBase
-directly for Case orchestration, L0 grants, call binding, Catalog primitives,
-runtime projection envelopes, and atomic ContextStore semantics.
+- `blackbase`：Project / Stage / Case / Scaffold、L0 资源授权、Context / Snapshot / Artifact 引用、跨 Case 调用与公共协议。
+- `nsgablack`：Solver 生命周期、CandidateBatch、Representation、Adapter、Bias、Plugin、目标/约束、Pareto 与求解结果。
+- `mlblack`：DataView、Spec、Codec、Head、LearningProblem、Evaluation Provider、模型 Artifact 与 ML 报告。
 
-## What It Solves
+编排和资源授权只属于共享底座。优化 Adapter 不申请 GPU，也不硬编码 Torch、CUDA 或模型训练逻辑；Problem / Evaluation Provider 根据 L0 发放的 `ResourceContext` 执行求值。
 
-Complex optimization projects usually fail because boundaries blur:
-
-- business constraints, repair, logging, checkpointing, and search logic get mixed into one loop
-- nested evaluation and multi-solver execution become ad hoc scripts
-- GPU/thread settings are hidden inside examples or trainers
-- large runtime objects leak into context
-- examples drift away from framework contracts
-
-`nsgablack` makes those boundaries explicit:
-
-| Layer | Responsibility |
-| --- | --- |
-| `Problem` | Objectives, constraints, bounds, and evaluation semantics |
-| `Solver` | Lifecycle, evaluation entrypoints, state access, plugin dispatch |
-| `Adapter` | Search policy through `propose/update` |
-| `RepresentationPipeline` | Candidate init/mutate/repair/encode/decode |
-| `BiasModule` | Soft guidance, priors, and preference signals |
-| `Plugin` | Runtime capabilities such as trace, checkpoint, report, backend, and short-circuit evaluation |
-| `ContextStore` | Lightweight state, canonical keys, and refs |
-| `SnapshotStore` | Large objects such as population, objectives, violations, history, and trace |
-| `Catalog` | Discoverability and profile-filtered component index |
-| `Project / Case / L0` | Top-level orchestration, standard scaffold shape, and resource grants |
-
-## Standard Project Shape
-
-Formal projects use three layers:
+## 核心闭环
 
 ```text
-project_root/
+Representation 产生语义候选与数值视图
+    -> Adapter.propose()
+    -> Problem / Evaluation Provider 求值
+    -> OptimizationFeedbackBatch
+    -> Adapter.update()
+    -> Solver 提交 incumbent、frontier、snapshot 和审计
+```
+
+四个主要扩展面：
+
+- `Solver`：唯一控制平面，管理生命周期、评估入口、状态和插件钩子。
+- `Adapter`：搜索策略，只负责 `propose/update`。
+- `RepresentationPipeline`：候选的 init / mutate / repair / encode / decode。
+- `Plugin`：checkpoint、trace、报告、评估短路和运行治理等能力。
+
+`CandidateBatch` 同时保存 `semantic_states`、`numeric_matrix` 与 candidate token/provenance。数值算法消费矩阵；Representation、Problem、结果绑定和恢复消费语义状态。框架不再通过“数值相等”反推候选身份。
+
+复合 Adapter 不再把多个子群体强行拼成一个虚假的 population。透明包装器委托当前子 Adapter；多策略、角色路由和事件组合器通过稳定 partition ID 发布 `PopulationPartition`。checkpoint 保存 partition、反馈和 token，Solver 只在外层确实完成融合选择时接受单一权威 population。
+
+恢复生命周期固定为 `prepare -> setup -> apply restore envelope -> initialize if fresh -> run`。外部预加载、插件自动恢复和 `set_state()` 都进入同一恢复通道，避免 Adapter 的 `setup()` 清空刚载入的状态。运行步数、累计耗时和逻辑 deadline 由可恢复的 `RunProgressState` 统一记录。
+
+## 标准项目
+
+```text
+project/
   project_config.py
   run_project.py
   README.md
   cases/
-    __init__.py
     case_a/
-      __init__.py
+      .case
+      README.md
       build_solver.py
       run_solver.py
       config.py
@@ -65,152 +60,48 @@ project_root/
       solver/
 ```
 
-Rules:
+- Project 负责跨 Case 的串行、并行、嵌套和资源授权。
+- Case 是独立运行和被父 Case 调用的统一组合单元。
+- `build_solver.py` 是唯一规范装配入口。
+- `build_trainer.py` 如存在，只能是 `build_solver` 的薄别名。
+- 每个 Project 和 Case 只维护一个 `README.md`，不再复制 `START_HERE`、注册指南或契约模板。
 
-- `run_project.py` is the formal project entry.
-- `project_config.py` declares cross-case order and Project L0 resources.
-- each Case is independently runnable and inspectable.
-- `build_solver.py` is the canonical Case assembly entry.
-- `build_trainer.py`, when present for ML naming ergonomics, is only a thin alias.
-- Case-level `runtime/` declares requirements and audit behavior; it does not own the global pool.
-
-## Nested Optimization
-
-Nested optimization is not a special side-channel. It is standard Case composition:
-
-```text
-outer Project
-  -> outer Case
-     -> evaluates candidate
-        -> calls inner Case through a standard request/result payload
-```
-
-The outer Case does not import inner private implementation details. It passes candidates, component overrides, budget, artifact refs, and `ResourceContext`; the inner Case returns objectives, violations, metrics, artifact refs, and audit payload.
-
-At the standard Case boundary, Solver outputs are encoded as a versioned
-`SolverResult`; direct `Solver.run()` return conventions remain unchanged.
-The result boundary never scalarizes a population to invent a best solution:
-best solution/objectives/violation must be declared by the Solver's own
-algorithm semantics.  Execution status and solve status remain separate, and
-oversized Pareto fronts are published through the Project artifact authority
-instead of being copied into the Case envelope.
-The same inline-size policy applies to large best solutions, which are returned
-as real `best_solution_ref` artifacts rather than oversized inline payloads.
-Composable and evolutionary Solvers maintain one run-wide incumbent through a
-feasibility-first comparator; the configured objective scalarizer is then used
-inside the same feasibility class. Direct tuple/dict results and `SolverResult`
-all read that incumbent, while the current population remains separate runtime
-state. The incumbent is an atomic `IncumbentState` record, fresh runs clear it,
-checkpoint resume restores it in one operation, and explicit warm starts are
-reevaluated before they may become authoritative. Custom incumbent scalarizers
-are pointwise policies; failures raise by default, while explicit fallback is
-audited as degraded result quality. Checkpoint v4 persists that audit state and
-rejects a resume when the builder reconstructed a different scalarizer policy.
-Large incumbent candidates are stored in SnapshotStore and exposed through the
-canonical `best_candidate_ref`; only candidates below the configured serialized
-size limit remain inline in ContextStore. Oversized candidates are persisted
-before the authoritative incumbent commit, so a strict Snapshot failure cannot
-partially replace the in-memory best. Context is a derived atomic projection;
-projection failures keep the committed incumbent and are recorded as stale
-projection audit state instead of being silently swallowed. Candidate tokens travel beside batch
-rows through repair and evaluation, so warm-start lineage is never inferred by
-comparing candidate values.
-Population write-back has one canonical control-plane path: Adapter state,
-Solver numeric fields, semantic CandidateBatch validity and Snapshot publication
-cannot be committed by competing Plugin helpers. Numeric-only replacement of a
-different population explicitly invalidates the old semantic batch. Checkpoint
-resume restores both views before publishing its final Snapshot; non-strict
-component skips are emitted as structured degraded resume audit rather than
-silently claiming trajectory-equivalent recovery.
-
-This also covers multi-solver and multi-trainer projects: put each runnable unit in its own Case and let the Project substrate coordinate order, parallelism, and resources.
-
-## L0 Resource Model
-
-Resources are declared at Project level and granted to Cases:
-
-```python
-L0 = {
-    "backend": "local",
-    "resource_pool": {
-        "threads": 16,
-        "device_tokens": ("logical-gpu-a", "logical-gpu-b"),
-    },
-}
-
-resource_requests = {
-    "outer_search": {"threads": 4},
-    "inner_learning": {"threads": 4, "device_tokens": ("logical-gpu-a",)},
-}
-```
-
-Case code consumes the effective `ResourceContext` injected by the Project runtime. It should not hard-code machine-local devices, thread counts, or backend internals.
-
-## Quick Start
+## 快速开始
 
 ```powershell
-python -m nsgablack project new my_project
-cd my_project
-python -m nsgablack project add-case my_case --type solver
+python -m pip install -e .[dev]
+python -m nsgablack project new demo_project
+Set-Location demo_project
+python -m nsgablack project add-case demo_case --type solver
 python -m nsgablack project doctor --path . --build --strict
 python run_project.py
 ```
 
-For current tutorial flow, start with:
-
-- `docs/standard_scaffold_tutorial/README.md`
-- `docs/standard_scaffold_tutorial/01_create_and_run.md`
-- `docs/standard_scaffold_tutorial/02_component_configuration.md`
-- `docs/standard_scaffold_tutorial/03_orchestration_language.md`
-- `docs/standard_scaffold_tutorial/05_cross_framework_coordination.md`
-
-## Stable Optimization Methods
-
-一阶优化使用稳定方法标识 `gradient.sgd`、`gradient.adam`、`gradient.adamw`。
-`GradientOptimizerAdapter` 只决定学习率、动量、权重衰减和更新规则；数据、loss、
-autograd、设备与参数存储由 Problem/Evaluation Provider 负责。Provider 若发布
-`StateRef`，Adapter 会通过 BlackBase 的版本栅栏 transition 请求执行更新，再通过
-正式 materialization 协议取得可保存的 `UnknownState`，不会传递活 Tensor 或申请 GPU。
-
-无梯度数值搜索使用 `search.random_gaussian`。`GaussianSearchAdapter` 只对候选编码
-做高斯扰动并按 feasibility-first 维护 incumbent；候选究竟代表模型参数、网络结构、
-estimator spec 还是运筹决策，由 Representation 与 Problem 决定。这样 MLBlack 的
-分类头、区间模型、树模型和时序模型可以复用同一个搜索机制，而无需私有 ML Adapter。
-
-## Catalog Profiles
-
-Use `framework-core` when auditing framework architecture:
+查看组件：
 
 ```powershell
-python -m nsgablack catalog list --profile framework-core --kind adapter
-python -m nsgablack catalog search nsga2 --profile framework-core --limit 20
+python -m nsgablack catalog search nsga2 --profile framework-core
+python -m nsgablack catalog list --kind adapter --profile framework-core
+python -m nsgablack catalog show adapter.nsga2 --profile framework-core
 ```
 
-Use `default` only when examples and documentation entries should be included.
-Repository-only example and document records are omitted from installed wheels
-so the global Catalog never advertises source trees that are not present in the
-distribution.
+`default` Catalog 包含示例和文档；架构审计必须显式使用 `framework-core`。
 
-## Optional Framework Knowledge Index
+## 状态与大对象
 
-The `nsgablack rag` command is optional framework-operator tooling, not an
-optimization Adapter, Problem, Plugin, or BlackBase substrate service. It reads
-frameworks only through their public Catalog surfaces and discovers installed
-packages or explicit `<FRAMEWORK>_ROOT` environment overrides.
+- ContextStore 只保存轻量状态、版本和引用。
+- population、objectives、history、trace 和大型 incumbent 进入 SnapshotStore。
+- 可跨 Case、跨进程或长期保存的模型与数据先由 Artifact provider 发布，再传递 `DataRef`。
+- `UnknownState` 是可传输语义状态；`StateRef` 是 Provider 持有的进程内活状态，不能伪装成持久 Artifact。
 
-```powershell
-pip install "nsgablack[rag]"       # OpenAI embeddings + PostgreSQL
-pip install "nsgablack[rag-local]" # local sentence-transformers + PostgreSQL
-$env:NSGABLACK_RAG_DB_URL = "postgresql://user:password@localhost:5432/framework_rag"
-```
+## 文档
 
-Embedding spaces are versioned by provider/model/dimension before retrieval;
-local and hosted vectors are stored under independent composite identities and
-are never overwritten or compared as if they belonged to one space. RAG does
-not reinterpret the Catalog database URL, because that URL may target MySQL.
+- [文档入口](docs/README.md)
+- [标准脚手架教程](docs/standard_scaffold_tutorial/README.md)
+- [架构边界](docs/architecture/README.md)
+- [用户指南](docs/user_guide/README.md)
+- [组件导读](docs/guides/README.md)
+- [示例项目](examples/cases/README.md)
+- [当前白皮书草稿](docs/whitepaper/README.md)
 
-## Example Policy
-
-Formal examples belong under `examples/cases/<case>/` or a documented Project example namespace.
-
-Repository-root `my_project/` is a starter template, reference skeleton, or private incubation workspace. New formal examples, demos, benchmark runners, and cross-framework cases should not be parked there long term. Removed flat examples are not retained through path-returning compatibility registries; maintained examples use the standard Project / Case / Scaffold surface directly.
+历史设计和已删除接口以 Git 历史为准，不作为现行使用说明。

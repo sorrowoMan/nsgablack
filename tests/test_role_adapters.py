@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 
 def test_role_adapter_contract_strict_requires_keys():
@@ -89,3 +90,41 @@ def test_multi_role_controller_adapter_runs_with_composable_solver():
     ctx = control.get_context()
     assert isinstance(ctx.get("candidate_roles"), list)
     assert isinstance(ctx.get("role_reports"), dict)
+
+
+def test_role_router_rejects_ambiguous_adapter_names():
+    from nsgablack.adapters import AlgorithmAdapter, RoleAdapter, RoleRouterAdapter
+
+    class Dummy(AlgorithmAdapter):
+        def propose(self, control, context):
+            del control, context
+            return ()
+
+        def update(self, control, candidates, feedback, context):
+            del control, candidates, feedback, context
+
+    with pytest.raises(ValueError, match="names must be unique"):
+        RoleRouterAdapter(
+            [
+                RoleAdapter("first", Dummy("first"), name="duplicate"),
+                RoleAdapter("second", Dummy("second"), name="duplicate"),
+            ]
+        )
+
+
+def test_role_adapter_restore_rejects_builder_role_mismatch():
+    from nsgablack.adapters import AlgorithmAdapter, RoleAdapter
+
+    class Dummy(AlgorithmAdapter):
+        def propose(self, control, context):
+            del control, context
+            return ()
+
+        def update(self, control, candidates, feedback, context):
+            del control, candidates, feedback, context
+
+    source = RoleAdapter("source", Dummy("inner"), name="role")
+    target = RoleAdapter("target", Dummy("inner"), name="role")
+
+    with pytest.raises(ValueError, match="identity mismatch"):
+        target.set_state(source.get_state())

@@ -18,8 +18,8 @@ def test_vscode_settings_pin_utf8_encoding() -> None:
     assert settings.get("files.autoGuessEncoding") is False
 
 
-def test_start_here_doctor_section_has_no_mojibake() -> None:
-    text = _read_utf8(REPO_ROOT / "START_HERE.md")
-    assert "## 1) 先跑通最小闭环" in text
-    assert "## 2) 明确四层边界" in text
+def test_readme_architecture_section_has_no_mojibake() -> None:
+    text = _read_utf8(REPO_ROOT / "README.md")
+    assert "## 三仓边界" in text
+    assert "## 核心闭环" in text
     assert "## Doctor IDE ?????" not in text

@@ -18,7 +18,6 @@
 | [integrations/](integrations/README.md) | 外部 solver、ML 工具、数据库等集成说明。 |
 | [cases/](cases/README.md) | 案例说明与复现入口，正式可运行内容以 `examples/cases/<project>/run_project.py` 为准。 |
 | [research/README.md](research/README.md) | 研究机制、系统叙事和 benchmark 解读，不作为架构权威。 |
-| [archive/](archive/) | 历史路线图、旧报告和叙事材料，不作为当前架构权威。 |
 | [project/DOCS_ARCHITECTURE_AUDIT.md](project/DOCS_ARCHITECTURE_AUDIT.md) | 文档清理规则和旧口径迁移基线。 |
 | [project/AUTHORITATIVE_EXAMPLES.md](project/AUTHORITATIVE_EXAMPLES.md) | 什么样的示例才算正式示例。 |
 
@@ -35,6 +34,6 @@
 
 ## 清理规则
 
-仍然教学 legacy single-file demo、私有编排、Case-local 全局资源分配、`assembly/scaffold.json` 或 Case-level `capabilities/` 的文档，都应该重写、降级为兼容说明或删除。不要在 compatibility 页面继续新增机制。
+仍然教学 legacy single-file demo、私有编排、Case-local 全局资源分配、`assembly/scaffold.json` 或 Case-level `capabilities/` 的文档，直接重写或删除。历史内容由 Git 保存，不再维护可被误认为现行说明的 archive 文档树。
 
-根目录只保留导航入口、Sphinx 入口和 quickstart。正文类文档应放入对应一级目录，避免根目录重新变成混合索引。
+仓库根目录只保留一个 README 导航入口。正文类文档放入对应的 docs 一级目录，避免根目录重新变成混合索引。

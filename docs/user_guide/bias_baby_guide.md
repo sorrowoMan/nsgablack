@@ -141,7 +141,7 @@ import numpy as np
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.core.composable_solver import ComposableSolver
 from nsgablack.adapters import AlgorithmAdapter
-from nsgablack.utils.plugins import SurrogateEvaluationProviderPlugin, SurrogateEvaluationConfig
+from nsgablack.plugins import SurrogateEvaluationProviderPlugin, SurrogateEvaluationConfig
 
 class MyProblem(BlackBoxProblem):
     def __init__(self, dim=10):

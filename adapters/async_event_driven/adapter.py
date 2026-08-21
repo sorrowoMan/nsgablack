@@ -13,14 +13,21 @@ event semantics explicit in context/state.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 from blackbase.contracts import BatchDisposition
 from blackbase.context import RuntimeContextProjection
 
-from ..algorithm_adapter import AlgorithmAdapter, subset_adapter_feedback
+from ..algorithm_adapter import (
+    AlgorithmAdapter,
+    PopulationPartition,
+    prefixed_population_partitions,
+    restore_prefixed_population_partitions,
+    subset_adapter_feedback,
+)
 from ..runtime_projection import aggregate_adapter_runtime_projections
 from blackbase.context.context_keys import (
     KEY_EVENT_ARCHIVE,
@@ -118,8 +125,9 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         "Provides queue/inflight/archive snapshots for replay and inspection.",
     )
     context_contract_encapsulates_children = True
-    state_recovery_level = "L1"
-    state_recovery_notes = "Restores queue/inflight/archive/history snapshots; external side effects are not replayed."
+    state_recovery_level = "L2"
+    state_recovery_notes = "Restores event state plus stable strategy population partitions, tokens, and child adapter states."
+    population_state_mode = "partitioned"
 
     def __init__(
         self,
@@ -275,7 +283,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             start = len(out)
             accepted_by_event: Dict[int, int] = {}
             for cand, event in zip(selected, event_slots):
-                out.append(np.asarray(cand, dtype=float))
+                out.append(cand)
                 inflight.append(
                     {
                         "event_id": int(event["event_id"]),
@@ -796,30 +804,129 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
 
     def get_state(self) -> Dict[str, Any]:
         return {
+            "schema": "nsgablack.async_event_state/v2",
             "step": int(self._step),
             "event_id": int(self._event_id),
-            "queue": list(self._queue),
-            "inflight": list(self._inflight),
-            "archive": list(self.archive),
-            "event_history": list(self.event_history),
-            "stats": dict(self._stats),
+            "queue": copy.deepcopy(self._queue),
+            "inflight": copy.deepcopy(self._inflight),
+            "archive": copy.deepcopy(self.archive),
+            "event_history": copy.deepcopy(self.event_history),
+            "stats": copy.deepcopy(self._stats),
             "active_case_name": self._active_case_name,
             "active_case_since": self._active_case_since,
-            "case_last_exit": dict(self._case_last_exit),
-            "last_event_decision": dict(self._last_event_decision),
+            "case_last_exit": copy.deepcopy(self._case_last_exit),
+            "last_event_decision": copy.deepcopy(self._last_event_decision),
+            "shared_state": copy.deepcopy(self.shared_state),
+            "rng_state": copy.deepcopy(self._rng.bit_generator.state),
+            "strategies": [
+                {
+                    "index": int(index),
+                    "name": str(spec.name),
+                    "adapter_name": str(spec.adapter.name),
+                    "adapter_class": (
+                        f"{type(spec.adapter).__module__}."
+                        f"{type(spec.adapter).__qualname__}"
+                    ),
+                    "state": copy.deepcopy(spec.adapter.get_state()),
+                }
+                for index, spec in enumerate(self.strategies)
+            ],
+            "population_partitions": [
+                partition.as_dict()
+                for partition in self.get_population_partitions()
+            ],
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
+        schema = str(state.get("schema", "nsgablack.async_event_state/v1"))
+        if schema not in {
+            "nsgablack.async_event_state/v1",
+            "nsgablack.async_event_state/v2",
+        }:
+            raise ValueError(f"unsupported AsyncEventDrivenAdapter state schema: {schema}")
         self._step = int(state.get("step", 0))
         self._event_id = int(state.get("event_id", 0))
-        self._queue = list(state.get("queue", []))
-        self._inflight = list(state.get("inflight", []))
-        self.archive = list(state.get("archive", []))
-        self.event_history = list(state.get("event_history", []))
-        self._stats = dict(state.get("stats", {}))
+        self._queue = copy.deepcopy(list(state.get("queue", [])))
+        self._inflight = copy.deepcopy(list(state.get("inflight", [])))
+        self.archive = copy.deepcopy(list(state.get("archive", [])))
+        self.event_history = copy.deepcopy(list(state.get("event_history", [])))
+        self._stats = copy.deepcopy(dict(state.get("stats", {})))
         active = state.get("active_case_name", None)
         self._active_case_name = None if active is None else str(active)
         since = state.get("active_case_since", None)
         self._active_case_since = None if since is None else int(since)
         self._case_last_exit = {str(k): int(v) for k, v in dict(state.get("case_last_exit", {})).items()}
-        self._last_event_decision = dict(state.get("last_event_decision", {}))
+        self._last_event_decision = copy.deepcopy(
+            dict(state.get("last_event_decision", {}))
+        )
+        self.shared_state = copy.deepcopy(dict(state.get("shared_state", {}) or {}))
+        raw_strategies = tuple(state.get("strategies", ()) or ())
+        if raw_strategies:
+            if len(raw_strategies) != len(self.strategies):
+                raise ValueError("AsyncEventDrivenAdapter strategy state count mismatch")
+            for index, (spec, item) in enumerate(zip(self.strategies, raw_strategies)):
+                if int(item.get("index", index)) != index or str(
+                    item.get("name", spec.name)
+                ) != str(spec.name):
+                    raise ValueError("AsyncEventDrivenAdapter strategy identity mismatch")
+                saved_class = item.get("adapter_class")
+                current_class = (
+                    f"{type(spec.adapter).__module__}."
+                    f"{type(spec.adapter).__qualname__}"
+                )
+                if saved_class is not None and str(saved_class) != current_class:
+                    raise ValueError("AsyncEventDrivenAdapter strategy class mismatch")
+                spec.adapter.set_state(dict(item.get("state", {}) or {}))
+        rng_state = state.get("rng_state")
+        if isinstance(rng_state, Mapping):
+            self._rng.bit_generator.state = copy.deepcopy(dict(rng_state))
+        raw_partitions = tuple(state.get("population_partitions", ()) or ())
+        if raw_partitions:
+            self.set_population_partitions(
+                tuple(PopulationPartition.from_dict(item) for item in raw_partitions)
+            )
+
+    def _strategy_prefix(self, index: int, spec: EventStrategySpec) -> str:
+        return f"event:{int(index)}:{spec.name}"
+
+    def get_population_partitions(self) -> tuple[PopulationPartition, ...]:
+        out: list[PopulationPartition] = []
+        for index, spec in enumerate(self.strategies):
+            out.extend(
+                prefixed_population_partitions(
+                    self._strategy_prefix(index, spec),
+                    spec.adapter,
+                )
+            )
+        return tuple(out)
+
+    def set_population_partitions(
+        self,
+        partitions: Sequence[PopulationPartition],
+    ) -> bool:
+        values = tuple(partitions or ())
+        handled = False
+        for index, spec in enumerate(self.strategies):
+            handled = (
+                restore_prefixed_population_partitions(
+                    self._strategy_prefix(index, spec),
+                    spec.adapter,
+                    values,
+                )
+                or handled
+            )
+        known_prefixes = tuple(
+            self._strategy_prefix(index, spec) + "/"
+            for index, spec in enumerate(self.strategies)
+        )
+        unknown = tuple(
+            partition.partition_id
+            for partition in values
+            if not partition.partition_id.startswith(known_prefixes)
+        )
+        if unknown:
+            raise ValueError(
+                "AsyncEventDrivenAdapter checkpoint contains unknown population partitions: "
+                + ", ".join(sorted(unknown))
+            )
+        return handled or not values
