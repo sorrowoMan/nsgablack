@@ -1,7 +1,7 @@
 """RAG (Retrieval-Augmented Generation) for nsgablack + mlblack.
 
 Semantic search over framework components, source code, and documentation.
-Built on PostgreSQL + pgvector, reusing the catalog DB connection.
+Built on PostgreSQL + pgvector with a dedicated operator-store URL.
 
 Usage:
     from nsgablack.rag import build_index, search, format_results
@@ -14,7 +14,7 @@ from .config import RagConfig
 from .embed import Embedder
 from .indexer import build_index
 from .retriever import format_results, search
-from .store import RagChunk, RagResult, RagStore
+from .store import RAG_STORE_SCHEMA, RagChunk, RagResult, RagStore, RagStoreHealth
 
 __all__ = [
     "build_index",
@@ -22,6 +22,8 @@ __all__ = [
     "format_results",
     "RagConfig",
     "RagStore",
+    "RagStoreHealth",
+    "RAG_STORE_SCHEMA",
     "RagChunk",
     "RagResult",
     "Embedder",

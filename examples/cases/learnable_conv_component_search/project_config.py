@@ -19,7 +19,6 @@ STAGES = [
         "name": "main",
         "cases": ["learnable_conv_component_search"],
         "resource_requests": {"learnable_conv_component_search": {"threads": 1, "gpus": 0, "backend": "local"}},
-        "mode": "cli",
     },
 ]
 

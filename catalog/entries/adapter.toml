@@ -118,7 +118,7 @@ config_keys = [
   "refill_events_per_completion",
 ]
 companions = ["plugin.async_event_hub", "plugin.pareto_archive"]
-example_entry = "examples/async_event_driven_demo.py:build_solver"
+example_entry = "python examples\\cases\\async_event\\run_project.py"
 context_requires = ["generation"]
 context_provides = [
   "event_queue",
@@ -163,7 +163,7 @@ config_keys = [
   "accept_worse_prob",
 ]
 companions = ["repr.context_gaussian"]
-example_entry = "examples/single_trajectory_adaptive_demo.py:build_solver"
+example_entry = "python examples\\cases\\single_trajectory\\run_project.py"
 context_requires = ["generation"]
 context_provides = ["single_traj_state", "single_traj_sigma"]
 context_mutates = ["single_traj_state", "single_traj_sigma"]
@@ -187,7 +187,7 @@ config_keys = [
   "strategy",
   "seed",
 ]
-example_entry = "examples/template_continuous_constrained.py:build_solver"
+example_entry = ""
 
 [[entry]]
 key = "adapter.gradient_descent"
@@ -204,7 +204,7 @@ config_keys = [
   "gradient_eps",
   "max_inner_steps",
 ]
-example_entry = "examples/template_continuous_constrained.py:build_solver"
+example_entry = ""
 
 [[entry]]
 key = "adapter.mas"
@@ -225,7 +225,7 @@ config_keys = [
   "surrogate_retrain_every_call",
   "random_seed",
 ]
-example_entry = "examples/mas_demo.py:build_solver"
+example_entry = "python examples\\cases\\mas_search\\run_project.py"
 
 [[entry]]
 key = "adapter.moead"
@@ -244,7 +244,7 @@ config_keys = [
   "seed",
 ]
 companions = ["plugin.pareto_archive"]
-example_entry = "examples/moead_demo.py:build_solver"
+example_entry = ""
 
 [[entry]]
 key = "adapter.multi_strategy"
@@ -263,7 +263,7 @@ config_keys = [
   "seed",
 ]
 companions = ["plugin.pareto_archive"]
-example_entry = "examples/dynamic_multi_strategy_demo.py:build_solver"
+example_entry = "python examples\\cases\\dynamic_strategy\\run_project.py"
 
 [[entry]]
 key = "adapter.nsga2"
@@ -279,7 +279,7 @@ config_keys = [
   "crossover_rate",
   "mutation_rate",
 ]
-example_entry = "examples/nsga2_solver_demo.py:build_solver"
+example_entry = "python examples\\cases\\nsga2_basic\\run_project.py"
 
 [[entry]]
 key = "adapter.nsga3"
@@ -296,7 +296,7 @@ config_keys = [
   "crossover_rate",
   "mutation_rate",
 ]
-example_entry = "examples/template_multiobjective_pareto.py:build_solver"
+example_entry = ""
 
 [[entry]]
 key = "adapter.pattern_search"
@@ -313,7 +313,7 @@ config_keys = [
   "expand_factor",
   "shrink_factor",
 ]
-example_entry = "examples/template_continuous_constrained.py:build_solver"
+example_entry = ""
 
 [[entry]]
 key = "adapter.sa"
@@ -332,7 +332,7 @@ config_keys = [
   "min_temperature",
 ]
 companions = ["repr.context_gaussian"]
-example_entry = "examples/trust_region_subspace_frontier_demo.py:build_solver"
+example_entry = "python examples\\cases\\tsp_vrp\\run_project.py"
 
 [[entry]]
 key = "adapter.spea2"
@@ -348,7 +348,7 @@ config_keys = [
   "archive_size",
   "k_neighbor",
 ]
-example_entry = "examples/template_multiobjective_pareto.py:build_solver"
+example_entry = ""
 
 [[entry]]
 key = "adapter.trust_region_dfo"
@@ -365,7 +365,7 @@ config_keys = [
   "min_radius",
   "max_radius",
 ]
-example_entry = "examples/trust_region_dfo_demo.py:build_solver"
+example_entry = "python examples\\cases\\trust_region_dfo\\run_project.py"
 
 [[entry]]
 key = "adapter.trust_region_mo_dfo"
@@ -383,7 +383,7 @@ config_keys = [
   "scalarization",
   "weights",
 ]
-example_entry = "examples/trust_region_mo_dfo_demo.py:build_solver"
+example_entry = "python examples\\cases\\trust_region_mo\\run_project.py"
 
 [[entry]]
 key = "adapter.trust_region_nonsmooth"
@@ -400,7 +400,7 @@ config_keys = [
   "min_radius",
   "aggregation",
 ]
-example_entry = "examples/trust_region_nonsmooth_demo.py:build_solver"
+example_entry = "python examples\\cases\\trust_region_nonsmooth\\run_project.py"
 
 [[entry]]
 key = "adapter.trust_region_subspace"
@@ -419,7 +419,7 @@ config_keys = [
   "initial_radius",
   "resample_every",
 ]
-example_entry = "examples/trust_region_subspace_demo.py:build_solver"
+example_entry = "python examples\\cases\\trust_region_subspace\\run_project.py"
 
 [[entry]]
 key = "adapter.vns"
@@ -438,7 +438,7 @@ config_keys = [
   "n_iter",
 ]
 companions = ["repr.context_gaussian", "repr.context_switch"]
-example_entry = "examples/trust_region_subspace_frontier_demo.py:build_solver"
+example_entry = ""
 [[entry]]
 key = "adapter.serial_strategy"
 title = "StrategyChainAdapter"

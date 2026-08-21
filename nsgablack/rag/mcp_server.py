@@ -34,17 +34,22 @@ def _status(args: dict) -> str:
     from nsgablack.rag import RagStore
 
     store = RagStore()
-    store.init_tables()
-    total = store.chunk_count()
-    nsga = store.chunk_count(framework="nsgablack")
-    ml = store.chunk_count(framework="mlblack")
-    ts = store.last_indexed_at() or "never"
+    health = store.health()
+    if not health.current:
+        detail = (
+            f"{health.error_type}: {health.error_message}"
+            if health.error_type
+            else health.status
+        )
+        return f"RAG store status: {health.status}\n{detail}"
 
-    return (
-        f"Total chunks: {total}\n"
-        f"  nsgablack: {nsga}\n  mlblack: {ml}\n"
-        f"Last indexed: {ts}"
+    lines = [f"Total chunks: {health.total_chunks}"]
+    lines.extend(
+        f"  {framework}: {count}"
+        for framework, count in sorted(health.framework_counts.items())
     )
+    lines.append(f"Last indexed: {health.last_indexed_at or 'never'}")
+    return "\n".join(lines)
 
 
 TOOLS = {

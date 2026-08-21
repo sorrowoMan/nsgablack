@@ -1,26 +1,27 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-if __package__ in {None, ""}:
-    _THIS_DIR = Path(__file__).resolve().parent
-    if str(_THIS_DIR) not in sys.path:
-        sys.path.insert(0, str(_THIS_DIR))
-    from _bootstrap import ensure_nsgablack_importable  # noqa: E402
-    from case_scaffold.config import LearnableConvComponentSearchConfig  # noqa: E402
-    from pipeline.main import build_pipeline  # noqa: E402
-    from case_scaffold.problem import LearnableConvComponentSearchProblem  # noqa: E402
-else:
-    from ._bootstrap import ensure_nsgablack_importable  # noqa: E402
-    from .case_scaffold.config import LearnableConvComponentSearchConfig  # noqa: E402
-    from .pipeline.main import build_pipeline  # noqa: E402
-    from .case_scaffold.problem import LearnableConvComponentSearchProblem  # noqa: E402
-
-ensure_nsgablack_importable(Path(__file__))
+try:
+    from .case_scaffold.config import LearnableConvComponentSearchConfig
+    from .case_scaffold.problem import LearnableConvComponentSearchProblem
+    from .pipeline.main import build_pipeline
+except ImportError:  # direct Case CLI execution
+    from case_scaffold.config import LearnableConvComponentSearchConfig
+    from case_scaffold.problem import LearnableConvComponentSearchProblem
+    from pipeline.main import build_pipeline
 
 from nsgablack.adapters import NSGA2Adapter, NSGA2Config
 from nsgablack.core.evolution_solver import EvolutionSolver
+
+
+class LearnableConvOuterSolver(EvolutionSolver):
+    """Forward the shared Case runtime to the nested-evaluation Problem."""
+
+    def set_case_runtime(self, runtime):
+        self.case_runtime = runtime
+        self.problem.set_case_runtime(runtime)
+        return self
 
 
 def build_learnable_conv_component_search_solver(
@@ -41,7 +42,7 @@ def build_learnable_conv_component_search_solver(
         ),
         name="learnable_conv_component_outer_nsga2",
     )
-    solver = EvolutionSolver(
+    solver = LearnableConvOuterSolver(
         problem=problem,
         adapter=adapter,
         representation_pipeline=pipeline,

@@ -89,7 +89,7 @@ def test_differential_evolution_adapter_tracks_best_score_in_projection():
     )
     obj = np.array([[4.0], [3.0], [2.0], [1.0]], dtype=float)
     vio = np.zeros(4, dtype=float)
-    assert adapter.set_population(pop, obj, vio) is True
+    assert adapter.set_population_snapshot(pop, obj, vio) is True
 
     projection = adapter.get_runtime_context_projection(_Solver())
     assert KEY_ADAPTER_BEST_SCORE in projection

@@ -48,8 +48,8 @@ def get_solver_profile_registry() -> SolverProfileRegistry:
             SolverProfileSpec(
                 key="default",
                 params={
-                    "pop_size": 80,
-                    "max_generations": 60,
+                    "pop_size": 4,
+                    "max_generations": 1,
                     "mutation_rate": 0.2,
                     "crossover_rate": 0.8,
                     "enable_progress_log": True,

@@ -9,13 +9,15 @@
 - Inner evaluation 聚合大规模 ETF panel 的 walk-forward 和 multi-seed results。
 - Objectives 展示 return、drawdown、turnover 和 rank-IC stability 之间的 tradeoffs。
 
-## 是否使用 mlblack
+## 跨框架调用边界
 
-使用。Inner path 现在调用标准 mlblack integration surface：
+外层 Problem 不直接导入或调用 mlblack 的 trainer/provider。每次候选评估都会构造正式的
+`CaseRunRequest`，通过注入的 Case runtime 调用同一 Project 下的
+`etf_lane_evaluation` Trainer Case。共享层由此统一派生父子 lineage、资源授权、预算、
+deadline/cancellation，并用版本化 `TrainerResult` 信封返回结果。
 
-- `mlblack.integrations.etf_temporal_forecast.WalkForwardSpec`
-- `mlblack.integrations.etf_temporal_forecast.run_etf_walkforward_multi_seed`
-- 默认数据：`C:\Users\hp\Desktop\mlblack\runs\etf_temporal_forecast\cache\multi_etf_returns_momodel_kaggle.parquet`
+`etf_lane_evaluation` 才负责调用 mlblack 的 ETF walk-forward 语义组件。数据位置由
+`dataset_url` 或 mlblack 的正式数据发现机制决定；示例不依赖机器专属绝对路径。
 
 ## nsgablack 侧能力
 
@@ -48,38 +50,23 @@ Outer vector 控制 lane alphas、top-k selection、thresholds、blend modes，�
 
 | 路径 | 作用 |
 |---|---|
-| `run_solver.py` | CLI entry。 |
-| `build_solver.py` | 被 CLI 使用时的标准 assembly entry。 |
-| `problem/outer_problem.py` | 解码 lane genome，并调用 mlblack walk-forward evaluation。 |
+| `run_solver.py` | 外层 Case 的 CLI 入口。 |
+| `build_solver.py` | 外层 Solver 的 canonical assembly entry。 |
+| `problem/outer_problem.py` | 解码 lane genome，并通过 Case runtime 调用正式子 Case。 |
 | `pipeline/` | Outer representation pipeline。 |
 | `adapter/` | Outer search configuration。 |
-| `solver/` | Solver defaults 和 assembly helpers。 |
+| `../etf_lane_evaluation/` | 独立可装配的 mlblack Trainer Case。 |
 
 ## 运行
 
 ```powershell
-python examples\cases\etf_lane_outer_search\run_project.py --check
-python examples\cases\etf_lane_outer_search\run_project.py --suite-id etf_outer_v1
+python examples\cases\etf_lane_outer_search\run_project.py --check --build-check
+python examples\cases\etf_lane_outer_search\run_project.py
 ```
 
-## 当前 reconnect smoke 指标
-
-`python examples\cases\etf_lane_outer_search\run_project.py --suite-id etf_reconnect_smoke_fixed --pop-size 4 --offspring-size 2 --generations 1 --seeds 42 --wf-max-folds 1 --wf-max-train-panel-rows 4000 --wf-max-test-panel-rows 1600 --baseline-models ridge` 已验证 nsgablack 外层能调用新的 mlblack ETF 标准 case：
-
-| 指标 | smoke 值 |
-|---|---:|
-| evaluation_count | `8` |
-| best_score | `1.0921645143` |
-| `composite_test_rmse_mean` | `0.0103530581` |
-| `composite_direction_accuracy_mean` | `0.505` |
-| `composite_rank_ic_mean` | `0.0723950625` |
-| `composite_rank_ic_std` | `0.0` |
-| `composite_hit_rate_mean` | `0.5` |
-| `composite_net_sharpe_proxy_mean` | `-0.5582782523` |
-| `composite_max_drawdown_abs_mean` | `0.0492606124` |
-| `composite_turnover_proxy_mean` | `0.5570207121` |
-
-这个 smoke 只用于验证跨框架接入；正式研究运行应增加 folds、seeds、models 和 generations。
+默认配置是可执行的 smoke profile：外层 `pop_size=4`、`generations=1`，内层使用单个
+seed、单个 walk-forward fold 和 `ridge` baseline。正式研究运行应显式增加 folds、seeds、
+models 和 generations，且继续由 Project L0 为父子 Case 发放资源。
 
 ## 预期信号（Expected signal）
 

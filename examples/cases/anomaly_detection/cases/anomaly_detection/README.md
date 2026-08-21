@@ -59,6 +59,6 @@
 ## 运行和验证
 
 ```powershell
-python build_solver.py --seed 42 --n-samples 200 --n-outliers 10 --pop-size 15 --max-steps 50 --mode lof
-python build_solver.py --mode iforest
+python run_solver.py --seed 42 --n-samples 200 --n-outliers 10 --pop-size 15 --max-steps 50 --mode lof
+python run_solver.py --mode iforest
 ```

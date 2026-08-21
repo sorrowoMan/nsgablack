@@ -9,7 +9,7 @@ Current architecture rule:
 - `mlblack` is responsible for machine-learning semantics: DataView, Spec, Codec, Head, Trainer, Provider, Artifact, and ML reports.
 - Orchestration and resource grants belong to the shared substrate, not to either semantic layer privately.
 
-Shared substrate baseline: `blackbase>=0.3.6,<0.4.0`.
+Shared substrate baseline: `blackbase>=0.3.8,<0.4.0`.
 Version 0.3 removes the former resource/context forwarders and uses BlackBase
 directly for Case orchestration, L0 grants, call binding, Catalog primitives,
 runtime projection envelopes, and atomic ContextStore semantics.
@@ -187,11 +187,30 @@ python -m nsgablack catalog search nsga2 --profile framework-core --limit 20
 ```
 
 Use `default` only when examples and documentation entries should be included.
+Repository-only example and document records are omitted from installed wheels
+so the global Catalog never advertises source trees that are not present in the
+distribution.
+
+## Optional Framework Knowledge Index
+
+The `nsgablack rag` command is optional framework-operator tooling, not an
+optimization Adapter, Problem, Plugin, or BlackBase substrate service. It reads
+frameworks only through their public Catalog surfaces and discovers installed
+packages or explicit `<FRAMEWORK>_ROOT` environment overrides.
+
+```powershell
+pip install "nsgablack[rag]"       # OpenAI embeddings + PostgreSQL
+pip install "nsgablack[rag-local]" # local sentence-transformers + PostgreSQL
+$env:NSGABLACK_RAG_DB_URL = "postgresql://user:password@localhost:5432/framework_rag"
+```
+
+Embedding spaces are versioned by provider/model/dimension before retrieval;
+local and hosted vectors are stored under independent composite identities and
+are never overwritten or compared as if they belonged to one space. RAG does
+not reinterpret the Catalog database URL, because that URL may target MySQL.
 
 ## Example Policy
 
 Formal examples belong under `examples/cases/<case>/` or a documented Project example namespace.
 
-Repository-root `my_project/` is a starter template, reference skeleton, compatibility layer, or private incubation workspace. New formal examples, demos, benchmark runners, and cross-framework cases should not be parked there long term.
-
-Compatibility demos may remain while being migrated, but new mechanisms should be implemented through the standard Project / Case / Scaffold surface.
+Repository-root `my_project/` is a starter template, reference skeleton, or private incubation workspace. New formal examples, demos, benchmark runners, and cross-framework cases should not be parked there long term. Removed flat examples are not retained through path-returning compatibility registries; maintained examples use the standard Project / Case / Scaffold surface directly.

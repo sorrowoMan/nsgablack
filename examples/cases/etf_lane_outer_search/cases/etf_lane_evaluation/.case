@@ -1,0 +1,3 @@
+name = etf_lane_evaluation
+kind = trainer
+framework = mlblack

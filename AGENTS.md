@@ -269,7 +269,8 @@ Collaboration rules:
 建议实现：
 
 - `get_state()/set_state()`：checkpoint 恢复
-- `get_population()/set_population()`：运行态读写对齐
+- `get_population_snapshot()/set_population_snapshot()`：仅用于完整 L2 population `(X, F, V)` 的权威读写
+- `get_current_candidates()/set_current_candidates()`：L1/trajectory Adapter 的当前候选访问；不得冒充 population snapshot
 - `get_runtime_context_projection()`：可视化/日志运行切片
 
 ### 6.2 Plugin API（生命周期增强）
@@ -319,7 +320,7 @@ Collaboration rules:
 为避免“框架主干”和“示例/文档索引”混用，采用双口径：
 
 - `default`：完整口径（包含 `example/doc`）
-- `framework-core`：纯主干口径（排除 `example/doc`，且不返回 `examples_registry` 导向条目）
+- `framework-core`：纯主干口径（排除 `example/doc` 与任何 `examples/` 导向条目）
 
 ### 7.1 使用场景
 
@@ -335,7 +336,7 @@ Collaboration rules:
 ### 7.3 Catalog 变更验收
 
 - 必须同时验证 `default` 与 `framework-core`
-- `framework-core` 下不得出现 `example/doc/examples_registry` 导向结果
+- `framework-core` 下不得出现 `example/doc/examples/` 导向结果
 - 若改 CLI 行为，`catalog search/list/show` 三子命令行为须一致
 - 若影响统计或索引口径，同步更新 `docs/development/COMPONENT_API_INDEX_*`
 
@@ -418,7 +419,7 @@ Collaboration rules:
 
 ```powershell
 # 在项目根目录
-Set-Location "C:\Users\hp\Desktop\代码逻辑 - 副本\nsgablack"
+Set-Location "C:\Users\hp\Desktop\nsgablack"
 
 # 测试（全量）
 pytest -q

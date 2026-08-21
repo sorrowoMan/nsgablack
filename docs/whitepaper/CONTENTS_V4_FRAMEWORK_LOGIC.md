@@ -347,7 +347,7 @@ Plugin 是共享能力层，因此要在优化与 ML 语义之前单独解释。
 
 1. `propose()` 与 `update()`。
 2. `get_state()/set_state()`。
-3. `get_population()/set_population()`。
+3. L2 `get_population_snapshot()/set_population_snapshot()` 与 L1 `get_current_candidates()/set_current_candidates()`。
 4. runtime context projection。
 5. 权威 population 的判定。
 6. batch size、策略状态与阶段切换。

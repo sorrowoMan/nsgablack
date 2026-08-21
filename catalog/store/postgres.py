@@ -480,6 +480,30 @@ CREATE TABLE IF NOT EXISTS catalog_schema_migrations (
         finally:
             conn.close()
 
+    def profile_source_digest(self, *, profile: str = "default") -> str | None:
+        """Return the source fingerprint recorded for a formal profile snapshot."""
+
+        conn = _connect_postgres(self._cfg)
+        try:
+            self._ensure_schema(conn)
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT schema_json FROM catalog_profiles WHERE profile = %s LIMIT 1",
+                (str(profile),),
+            )
+            row = cur.fetchone()
+            cur.close()
+            if not row:
+                return None
+            raw = row.get("schema_json") if isinstance(row, Mapping) else row[0]
+            payload = _json_loads(raw)
+            if not isinstance(payload, Mapping):
+                return None
+            digest = str(payload.get("source_digest", "") or "").strip().lower()
+            return digest or None
+        finally:
+            conn.close()
+
     def _ensure_schema(self, conn) -> None:
         self._apply_migrations(conn)
         self._ensure_surface_tables(conn)
@@ -1284,6 +1308,8 @@ ON CONFLICT (component_id) DO UPDATE SET
         entries = [entry for entry, _, _ in paired_entries]
         summary = _surface_summary(entries, profile=profile_key)
         schema = _surface_schema(entries, profile=profile_key)
+        schema["source_schema"] = str(getattr(bundle, "source_schema", "") or "")
+        schema["source_digest"] = str(getattr(bundle, "source_digest", "") or "")
 
         entry_rows: List[tuple[object, ...]] = []
         scalar_rows: List[tuple[object, ...]] = []

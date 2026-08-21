@@ -2457,7 +2457,13 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
     if current_scope == "project" and not bool(source_info.get("project_found", False)):
         st.warning("当前没有发现正式 Project/Case catalog。请提供 Project Path，或在项目目录内启动页面。")
     db_error = str(source_info.get("db_error", "") or "").strip()
-    if db_error:
+    db_stale_reason = str(source_info.get("db_stale_reason", "") or "").strip()
+    if db_stale_reason:
+        st.warning(
+            f"DB catalog 快照已过期，已只读回退到 "
+            f"{str(source_info.get('effective_source', 'registry'))}：{db_stale_reason}"
+        )
+    elif db_error:
         st.warning(f"DB catalog 当前不可用，已回退到 {str(source_info.get('effective_source', 'registry'))}：{db_error}")
     else:
         active_backend = str(source_info.get("effective_source", "registry") or "registry")

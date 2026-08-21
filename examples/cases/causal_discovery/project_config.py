@@ -19,7 +19,17 @@ STAGES = [
         "name": "main",
         "cases": ["causal_discovery"],
         "resource_requests": {"causal_discovery": {"threads": 1, "gpus": 0, "backend": "local"}},
-        "mode": "cli",
+        "component_overrides": {
+            "causal_discovery": {
+                "config": {
+                    "mode": "pc",
+                    "n_vars": 4,
+                    "pop_size": 6,
+                    "max_steps": 2,
+                    "random_seed": 42,
+                }
+            }
+        },
     },
 ]
 

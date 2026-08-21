@@ -3,15 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-import sys
 from pathlib import Path
-
-_THIS_DIR = Path(__file__).resolve().parent
-if str(_THIS_DIR) not in sys.path:
-    sys.path.insert(0, str(_THIS_DIR))
-from _bootstrap import ensure_nsgablack_importable
-
-ensure_nsgablack_importable(Path(__file__))
 
 from nsgablack.adapters import PatternSearchAdapter
 from nsgablack.core.composable_solver import ComposableSolver
@@ -35,6 +27,7 @@ def build_solver(
 
     payload = dict(config or {}) if isinstance(config, Mapping) else {}
     overrides = dict(component_overrides or {})
+    payload.update(dict(overrides.pop("config", {}) or {}))
     seed = int(payload.get("seed", 42))
     if model is None or X_bg is None or x_target is None:
         from sklearn.datasets import make_regression
@@ -50,7 +43,7 @@ def build_solver(
     problem = KernelSHAPProblem(model, X_bg, x_target, n_coalitions=n_coalitions)
     lower = [bound[0] for bound in problem.bounds]
     upper = [bound[1] for bound in problem.bounds]
-    pipeline = overrides.get("representation_pipeline") or RepresentationPipeline(
+    pipeline = overrides.get("representation_pipeline") or overrides.get("pipeline") or RepresentationPipeline(
         initializer=UniformInitializer(low=lower, high=upper),
         mutator=ContextGaussianMutation(base_sigma=0.2, low=lower, high=upper),
         repair=ClipRepair(low=lower, high=upper),
@@ -58,5 +51,7 @@ def build_solver(
     adapter = overrides.get("adapter") or PatternSearchAdapter()
     solver = ComposableSolver(problem=problem, adapter=adapter, representation_pipeline=pipeline)
     solver.set_max_steps(max_steps)
+    from nsgablack.project import apply_solver_component_overrides
+    apply_solver_component_overrides(solver, overrides)
     solver.set_resource_context(resource_context)
     return solver

@@ -6,29 +6,33 @@ from pathlib import Path
 
 import pytest
 
+from blackbase.project.runtime import path_declares_check_argument
+
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE_CASES = ROOT / "examples" / "cases"
+RUN_ENTRIES = tuple(sorted(EXAMPLE_CASES.glob("*/cases/*/run_solver.py")))
 
 
 def test_every_standard_case_cli_declares_build_check_contract():
-    run_entries = sorted(EXAMPLE_CASES.glob("*/cases/*/run_solver.py"))
-    assert run_entries
-    missing = [path for path in run_entries if "--check" not in path.read_text(encoding="utf-8")]
+    assert RUN_ENTRIES
+    missing = [path for path in RUN_ENTRIES if not path_declares_check_argument(path)]
     assert missing == []
 
 
-@pytest.mark.parametrize(
-    "relative_entry",
-    (
-        "examples/cases/arima_order_search/cases/arima_order_search/run_solver.py",
-        "examples/cases/l0_distributed_worker/cases/l0_distributed_worker/run_solver.py",
-        "examples/cases/supply_adjustment_nested/cases/supply_adjustment_nested/run_solver.py",
-    ),
-)
-def test_divergent_legacy_case_build_checks_are_side_effect_bounded(relative_entry: str):
+def test_standard_case_clis_do_not_call_removed_return_dict_mode():
+    stale = [
+        path
+        for path in RUN_ENTRIES
+        if "run(return_dict=True)" in path.read_text(encoding="utf-8")
+    ]
+    assert stale == []
+
+
+@pytest.mark.parametrize("entry", RUN_ENTRIES, ids=lambda path: path.parent.name)
+def test_every_standard_case_build_check_is_side_effect_bounded(entry: Path):
     completed = subprocess.run(
-        [sys.executable, str(ROOT / relative_entry), "--check"],
+        [sys.executable, str(entry), "--check"],
         cwd=ROOT,
         capture_output=True,
         text=True,

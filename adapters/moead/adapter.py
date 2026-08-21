@@ -73,7 +73,7 @@ class MOEADAdapter(AlgorithmAdapter):
     state_recovery_notes = (
         "Restores decomposition population (pop_X/pop_F/pop_V), ideal point, weights and neighborhood. "
         "get_state()/set_state() cover scalar parameters; "
-        "get_population()/set_population() handle the full solution array."
+        "get_population_snapshot()/set_population_snapshot() handle the full solution array."
     )
 
     # Soft partner contracts (informational; no hard dependency).
@@ -334,7 +334,7 @@ class MOEADAdapter(AlgorithmAdapter):
     def get_state(self) -> Dict[str, Any]:
         """Return serialisable scalar adapter state (scalar fields + ideal point).
 
-        For the full population array use ``get_population()`` in addition.
+        For the full population array use ``get_population_snapshot()`` in addition.
         Combined, these two calls fulfil the L2 checkpoint contract.
         """
         return {
@@ -350,7 +350,7 @@ class MOEADAdapter(AlgorithmAdapter):
         """Restore scalar adapter state from a checkpoint.
 
         The solution arrays (pop_X/F/V) must be restored separately via
-        ``set_population()`` to keep array ownership consistent.
+        ``set_population_snapshot()`` to keep array ownership consistent.
         """
         if not state:
             return
@@ -367,7 +367,7 @@ class MOEADAdapter(AlgorithmAdapter):
     # ------------------------------------------------------------------
     # Public helpers for plugins
     # ------------------------------------------------------------------
-    def get_population(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def get_population_snapshot(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if self.pop_X is None or self.pop_F is None or self.pop_V is None:
             return np.zeros((0, 0)), np.zeros((0, 0)), np.zeros((0,))
         return np.asarray(self.pop_X), np.asarray(self.pop_F), np.asarray(self.pop_V)
@@ -390,7 +390,7 @@ class MOEADAdapter(AlgorithmAdapter):
         self._population_candidate_tokens = tokens
         return True
 
-    def set_population(self, population: np.ndarray, objectives: np.ndarray, violations: np.ndarray) -> bool:
+    def set_population_snapshot(self, population: np.ndarray, objectives: np.ndarray, violations: np.ndarray) -> bool:
         """Write back population snapshot from plugins (context-first path).
 
         When the adapter has not yet been initialised via ``setup()`` (i.e.

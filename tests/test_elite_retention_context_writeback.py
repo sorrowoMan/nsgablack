@@ -12,10 +12,10 @@ class _Adapter:
         self.V = np.array([0.0, 0.0, 0.0], dtype=float)
         self.set_calls = 0
 
-    def get_population(self):
+    def get_population_snapshot(self):
         return self.X, self.F, self.V
 
-    def set_population(self, population, objectives, violations):
+    def set_population_snapshot(self, population, objectives, violations):
         self.set_calls += 1
         self.X = np.asarray(population, dtype=float)
         self.F = np.asarray(objectives, dtype=float)
@@ -42,19 +42,19 @@ class _Solver:
         return np.array([float(np.sum(np.abs(x)))], dtype=float), 0.0
 
 
-def test_basic_elite_plugin_writes_back_via_adapter_set_population() -> None:
+def test_basic_elite_plugin_writes_back_via_adapter_population_snapshot() -> None:
     np.random.seed(0)
     solver = _Solver()
     plugin = BasicElitePlugin(retention_prob=1.0, retention_ratio=0.34)
     plugin.attach(solver)
     plugin.on_solver_init(solver)
 
-    X0, F0, V0 = solver.adapter.get_population()
+    X0, F0, V0 = solver.adapter.get_population_snapshot()
     plugin.on_population_init(X0, F0, V0)
     plugin.on_generation_end(1)
 
     assert solver.adapter.set_calls >= 1
-    X1, F1, V1 = solver.adapter.get_population()
+    X1, F1, V1 = solver.adapter.get_population_snapshot()
     assert X1.shape == X0.shape
     assert F1.shape == F0.shape
     assert V1.shape == V0.shape

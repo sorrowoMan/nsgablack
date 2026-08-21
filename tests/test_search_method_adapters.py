@@ -66,7 +66,7 @@ def test_gaussian_search_is_feasibility_first_and_preserves_unknown_state() -> N
         {},
     )
 
-    best = adapter.get_population()
+    best = adapter.get_current_candidates()
     assert best is not None
     assert isinstance(best[0], UnknownState)
     assert np.allclose(best[0].as_array(), candidates[1].as_array())
@@ -112,24 +112,24 @@ def test_gradient_optimizer_keeps_explicit_seed_across_setup() -> None:
     )
     seed = UnknownState(values=np.array([7.0, 8.0]))
 
-    assert adapter.set_population((seed,)) is True
+    assert adapter.set_current_candidates((seed,)) is True
     adapter.setup(control)
     proposed = tuple(adapter.propose(control, {}))
 
     assert np.allclose(proposed[0].as_array(), seed.as_array())
 
 
-def test_gaussian_search_accepts_matrix_population_snapshot() -> None:
+def test_gaussian_search_restores_current_candidate_from_evaluated_matrix() -> None:
     adapter = GaussianSearchAdapter(
         GaussianSearchConfig(population_size=3, mutation_scale=0.1)
     )
     population = np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=float)
 
-    assert adapter.set_population(
+    assert adapter.set_current_candidates(
         population,
         np.asarray([[3.0], [7.0]], dtype=float),
         np.zeros(2, dtype=float),
     ) is True
-    restored = adapter.get_population()
+    restored = adapter.get_current_candidates()
     assert restored is not None
     np.testing.assert_allclose(np.asarray(restored[0], dtype=float), population[0])

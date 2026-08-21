@@ -17,7 +17,6 @@ python examples/cases/production_scheduling/solver/run_case.py --solver multi-ag
 from __future__ import annotations
 
 import random
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -25,12 +24,6 @@ from typing import Optional
 import numpy as np
 
 _THIS_DIR = Path(__file__).resolve().parent
-if str(_THIS_DIR) not in sys.path:
-    sys.path.insert(0, str(_THIS_DIR))
-
-from _bootstrap import ensure_nsgablack_importable  # noqa: E402
-
-ensure_nsgablack_importable(Path(__file__))
 
 from nsgablack.adapters import (  # noqa: E402
     MOEADAdapter,
@@ -192,7 +185,7 @@ def build_multi_agent_solver(problem, args):
             )
         )
     else:
-        moead_pop = max(32, int(getattr(args, "moead_pop_size", max(64, args.pop_size // 2))))
+        moead_pop = max(4, int(getattr(args, "moead_pop_size", max(8, args.pop_size // 2))))
         moead_neighbor = max(2, int(getattr(args, "moead_neighborhood", 20)))
         moead_nr = max(1, int(getattr(args, "moead_nr", 2)))
         moead_delta = float(getattr(args, "moead_delta", 0.9))
@@ -389,8 +382,10 @@ def _build_solver_from_args(args, *, resource_context=None) -> ComposableSolver:
 
 def build_solver(argv: Optional[list] = None, *, case_root: Optional[Path] = None, resource_context=None, component_overrides=None) -> ComposableSolver:
     del case_root
+    overrides = dict(component_overrides or {})
+    configured_argv = overrides.pop("argv", argv)
     parser = build_parser()
-    args = parser.parse_args(argv if argv is not None else [])
+    args = parser.parse_args(configured_argv if configured_argv is not None else [])
     if bool(getattr(args, "check", False)):
         args.no_run_logs = True
     if not getattr(args, "run_id", None):
@@ -400,9 +395,5 @@ def build_solver(argv: Optional[list] = None, *, case_root: Optional[Path] = Non
     solver = _build_solver_from_args(args, resource_context=resource_context)
     from nsgablack.project import apply_solver_component_overrides
 
-    apply_solver_component_overrides(solver, component_overrides)
+    apply_solver_component_overrides(solver, overrides)
     return solver
-
-
-
-

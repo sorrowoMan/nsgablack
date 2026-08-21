@@ -19,7 +19,6 @@ STAGES = [
         "name": "main",
         "cases": ["symbolic_kernel_digits_outer_search"],
         "resource_requests": {"symbolic_kernel_digits_outer_search": {"threads": 1, "gpus": 0, "backend": "local"}},
-        "mode": "cli",
     },
 ]
 

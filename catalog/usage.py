@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import inspect
 from dataclasses import dataclass, replace
-from pathlib import Path
 from typing import Iterable, Sequence, Tuple
 
 from .contract_relations import _entry_field_values
@@ -133,21 +132,6 @@ def _infer_example_entry(entry) -> str:
     explicit = str(getattr(entry, "example_entry", "") or "").strip()
     if explicit:
         return explicit
-
-    import_path = str(getattr(entry, "import_path", "") or "")
-    module_path, _, sym = import_path.partition(":")
-    if module_path == "nsgablack.examples_registry" and sym:
-        try:
-            fn = entry.load()
-            if callable(fn):
-                path = str(fn() or "").strip()
-                if path:
-                    p = Path(path)
-                    if p.suffix == ".py":
-                        return f"{path}:build_solver"
-                    return path
-        except Exception:
-            pass
 
     key = str(getattr(entry, "key", "") or "")
     token = key.split(".")[-1] if "." in key else key

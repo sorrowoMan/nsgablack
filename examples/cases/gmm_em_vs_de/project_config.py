@@ -19,7 +19,18 @@ STAGES = [
         "name": "main",
         "cases": ["gmm_em_vs_de"],
         "resource_requests": {"gmm_em_vs_de": {"threads": 1, "gpus": 0, "backend": "local"}},
-        "mode": "cli",
+        "component_overrides": {
+            "gmm_em_vs_de": {
+                "config": {
+                    "k": 3,
+                    "n_samples": 120,
+                    "n_features": 2,
+                    "pop_size": 8,
+                    "max_steps": 3,
+                    "random_seed": 42,
+                }
+            }
+        },
     },
 ]
 

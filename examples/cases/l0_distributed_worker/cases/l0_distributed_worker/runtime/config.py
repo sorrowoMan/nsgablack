@@ -218,13 +218,23 @@ def apply_runtime_profile(
     return profile
 
 
-def build_l0_worker_backend(namespace: str = "nsgablack_dist"):
+def build_l0_worker_backend(
+    namespace: str = "nsgablack_dist",
+    *,
+    transport_backend: str = "sqlite",
+    sqlite_path: str = "runs/l0_distributed_worker/tasks.sqlite",
+):
     import os
 
-    from blackbase.resources import RedisTaskRuntimeBackend
+    from blackbase.resources import RedisTaskRuntimeBackend, SQLiteTaskRuntimeBackend
 
-    redis_url = os.environ.get("BLACKBASE_TASK_REDIS_URL", "redis://127.0.0.1:6379/0")
-    return RedisTaskRuntimeBackend(
-        redis_url=redis_url,
-        namespace=str(namespace),
-    )
+    backend = str(transport_backend or "sqlite").strip().lower()
+    if backend == "sqlite":
+        return SQLiteTaskRuntimeBackend(str(sqlite_path))
+    if backend == "redis":
+        redis_url = os.environ.get("BLACKBASE_TASK_REDIS_URL", "redis://127.0.0.1:6379/0")
+        return RedisTaskRuntimeBackend(
+            redis_url=redis_url,
+            namespace=str(namespace),
+        )
+    raise ValueError(f"unsupported task transport backend: {transport_backend!r}")

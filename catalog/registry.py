@@ -416,6 +416,7 @@ def _normalize_catalog_profile(profile: Optional[str]) -> str:
 
 
 _CATALOG_BY_PROFILE: Dict[str, Catalog] = {}
+_SOURCE_CATALOG_BY_PROFILE: Dict[str, Catalog] = {}
 
 
 def _uses_examples_path(text: str) -> bool:
@@ -423,7 +424,6 @@ def _uses_examples_path(text: str) -> bool:
     return (
         "examples/" in raw
         or "examples\\" in raw
-        or "nsgablack.examples_registry" in raw
     )
 
 
@@ -494,6 +494,24 @@ def _load_toml_entries(paths: Sequence[Path]) -> List[CatalogEntry]:
     return [CatalogEntry(**entry.as_dict()) for entry in load_catalog_paths(paths)]
 
 
+def _builtin_catalog_paths(entries_dir: Path) -> tuple[Path, ...]:
+    """Keep repository-only example and document records out of wheels.
+
+    The source checkout owns ``examples/`` and ``docs/``.  They are deliberately
+    not package data, so an installed Catalog must not advertise paths that the
+    distribution cannot contain.
+    """
+
+    paths = tuple(sorted(entries_dir.glob("*.toml")))
+    repository_root = entries_dir.parent.parent
+    if (repository_root / "examples" / "cases").is_dir() and (
+        repository_root / "docs"
+    ).is_dir():
+        return paths
+    repository_only = {"example.toml", "doc.toml"}
+    return tuple(path for path in paths if path.name not in repository_only)
+
+
 class BuiltinTomlProvider(CatalogProvider):
     """
     Builtin catalog source:
@@ -504,9 +522,7 @@ class BuiltinTomlProvider(CatalogProvider):
 
     def load(self) -> List[CatalogEntry]:
         return _load_toml_entries(
-            [
-                Path(__file__).with_name("entries"),
-            ]
+            _builtin_catalog_paths(Path(__file__).with_name("entries"))
         )
 
 
@@ -528,20 +544,33 @@ class EnvTomlProvider(CatalogProvider):
 
 
 def _load_external_entries() -> List[CatalogEntry]:
-    """Load entries from configured catalog providers."""
+    """Load source entries without consulting a materialized Catalog cache."""
     providers: List[CatalogProvider] = [BuiltinTomlProvider(), EnvTomlProvider()]
-    try:
-        from .store.mysql import mysql_config_enabled, mysql_config_mode
-        from .providers.mysql_provider import MySQLCatalogProvider
-
-        if mysql_config_enabled() and mysql_config_mode() != "off":
-            providers.append(MySQLCatalogProvider())
-    except Exception:
-        pass
     out: List[CatalogEntry] = []
     for provider in providers:
         out.extend(provider.load())
     return out
+
+
+def get_source_catalog(*, refresh: bool = False, profile: Optional[str] = None) -> Catalog:
+    """Return the source registry, never a configured database materialization."""
+
+    global _SOURCE_CATALOG_BY_PROFILE
+    profile_name = _normalize_catalog_profile(profile)
+    if refresh or profile_name not in _SOURCE_CATALOG_BY_PROFILE:
+        from .usage import enrich_context_contracts, enrich_usage_contracts
+
+        merged: Dict[str, CatalogEntry] = {entry.key: entry for entry in _load_external_entries()}
+        for entry in _load_entrypoint_entries():
+            merged[entry.key] = entry
+        profiled_entries = _apply_catalog_profile(list(merged.values()), profile_name)
+        enriched = enrich_context_contracts(
+            profiled_entries,
+            kinds=("plugin", "adapter", "bias", "representation", "resource", "backend"),
+        )
+        enriched = enrich_usage_contracts(enriched)
+        _SOURCE_CATALOG_BY_PROFILE[profile_name] = Catalog(enriched)
+    return _SOURCE_CATALOG_BY_PROFILE[profile_name]
 
 
 def get_catalog(*, refresh: bool = False, profile: Optional[str] = None) -> Catalog:
@@ -592,20 +621,8 @@ def get_catalog(*, refresh: bool = False, profile: Optional[str] = None) -> Cata
                 _CATALOG_BY_PROFILE[profile_name] = Catalog(enriched)
                 return _CATALOG_BY_PROFILE[profile_name]
 
-        extra = _load_external_entries()
-        eps = _load_entrypoint_entries()
-
-        # TOML/provider records are authoritative; explicit package entry points
-        # may override them by key.
-        merged: Dict[str, CatalogEntry] = {e.key: e for e in extra}
-        for e in eps:
-            merged[e.key] = e
-        profiled_entries = _apply_catalog_profile(list(merged.values()), profile_name)
-
-        enriched = enrich_context_contracts(
-            profiled_entries,
-            kinds=("plugin", "adapter", "bias", "representation", "resource", "backend"),
+        _CATALOG_BY_PROFILE[profile_name] = get_source_catalog(
+            refresh=refresh,
+            profile=profile_name,
         )
-        enriched = enrich_usage_contracts(enriched)
-        _CATALOG_BY_PROFILE[profile_name] = Catalog(enriched)
     return _CATALOG_BY_PROFILE[profile_name]

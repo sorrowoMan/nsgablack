@@ -1,14 +1,13 @@
-"""Canonical distributed-worker CLI; supports a side-effect-free ``--check``."""
+"""Canonical distributed-worker Case CLI with the shared ``--check`` contract."""
 
 from __future__ import annotations
 
-from build_solver import main as _main
+from blackbase.project import run_standard_case_cli
 
 
 def main(argv: list[str] | None = None) -> int:
-    _main(argv)
-    return 0
+    return run_standard_case_cli(__file__, framework="nsgablack", argv=argv)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

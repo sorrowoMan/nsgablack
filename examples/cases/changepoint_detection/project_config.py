@@ -19,7 +19,16 @@ STAGES = [
         "name": "main",
         "cases": ["changepoint_detection"],
         "resource_requests": {"changepoint_detection": {"threads": 1, "gpus": 0, "backend": "local"}},
-        "mode": "cli",
+        "component_overrides": {
+            "changepoint_detection": {
+                "config": {
+                    "max_changepoints": 3,
+                    "adapter": "de",
+                    "pop_size": 8,
+                    "max_steps": 3,
+                }
+            }
+        },
     },
 ]
 

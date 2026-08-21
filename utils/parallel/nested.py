@@ -19,6 +19,8 @@ import numpy as np
 from ...core.nested_solver import InnerRuntimeEvaluator
 from blackbase.resources import (
     InMemoryResourceScheduler,
+    ResourceContext,
+    ResourceGrantPool,
     ResourceRequirement,
     TaskRuntimeBackend,
     coerce_resource_context,
@@ -116,17 +118,6 @@ def _build_nested_task_envelope(
     }
     if bool(getattr(solver, "_resource_context_explicit", False)):
         parent_resource = _solver_resource_context(solver)
-        child_resource = parent_resource.derive_child(
-            scope="inner_evaluation",
-            namespace_suffix=f"nested.{run_id}.{resolved_task_id}",
-            threads=int(requirement.threads),
-            execution_backend=str(executor_backend or parent_resource.execution_backend),
-            metadata={
-                "task_id": resolved_task_id,
-                "run_id": str(run_id),
-            },
-        )
-        payload["resource_context"] = child_resource.as_dict()
         task_meta["parent_resource_namespace"] = str(parent_resource.namespace)
         task_meta["parent_lease_id"] = str(dict(parent_resource.lease).get("lease_id", ""))
     return TaskEnvelope(
@@ -210,6 +201,9 @@ def _attach_task_metadata_to_result(result: TaskResult, task: TaskEnvelope, *, w
     metadata.setdefault("index", int(payload.get("index", 0)))
     metadata.setdefault("generation", payload.get("generation"))
     metadata.setdefault("task_type", str(task.task_type))
+    for key in ("parent_resource_namespace", "parent_lease_id"):
+        if key in task.metadata:
+            metadata.setdefault(key, task.metadata[key])
     merged_resource_context = dict(result.resource_context or {})
     merged_resource_context.setdefault("run_id", _task_run_id(task))
     merged_resource_context.setdefault("task_id", str(task.task_id))
@@ -323,21 +317,42 @@ class NestedParallelEvaluator:
             )
             for i in range(n)
         ]
-        scheduler = InMemoryResourceScheduler(
-            workers=(
-                WorkerDescriptor(
-                    worker_id=f"{run_id}:local-thread",
-                    executor_backend="thread",
-                    resource_backend="local",
-                    capabilities=("nested_eval", "cpu", "numpy"),
-                    offer={"threads": workers, "gpus": 0, "metadata": {"executor": "thread"}},
-                    max_inflight=workers,
-                ),
+        if bool(getattr(solver, "_resource_context_explicit", False)):
+            parent_grant = _solver_resource_context(solver)
+        else:
+            capabilities = tuple(
+                dict.fromkeys(
+                    capability
+                    for task in tasks
+                    for capability in task.requirement.capabilities
+                )
             )
-        )
+            parent_grant = ResourceContext(
+                scope="solver",
+                execution_backend="thread",
+                compute_backend="numpy",
+                device="cpu",
+                threads=workers,
+                namespace=run_id,
+                grant={
+                    "workers": workers,
+                    "threads": workers,
+                    "gpus": 0,
+                    "backend": "local",
+                    "compute_backend": "numpy",
+                    "device": "cpu",
+                    "device_tokens": [],
+                    "capabilities": list(capabilities),
+                },
+                metadata={"source": "nsgablack.nested_runtime.standalone"},
+            )
+        grant_pool = ResourceGrantPool(parent_grant)
         pool = ThreadPoolExecutor(max_workers=workers)
         try:
-            futures = {pool.submit(self._evaluate_task, solver, evaluator, tasks[i], scheduler): i for i in range(n)}
+            futures = {
+                pool.submit(self._evaluate_task, solver, evaluator, tasks[i], grant_pool): i
+                for i in range(n)
+            }
             done, pending = wait(
                 futures,
                 timeout=self.task_timeout_seconds,
@@ -399,31 +414,32 @@ class NestedParallelEvaluator:
         solver: Any,
         evaluator: Any,
         task: TaskEnvelope,
-        scheduler: InMemoryResourceScheduler,
+        grant_pool: ResourceGrantPool,
     ) -> TaskResult:
-        scheduled = scheduler.acquire(task, owner_id=str(task.task_id), scope=str(task.task_type))
         plugin_proxy = _PluginManagerProxy(getattr(solver, "plugin_manager"), self._plugin_lock)
         worker_solver = _NestedWorkerSolverProxy(solver, plugin_proxy)
         local_evaluator = _clone_evaluator(evaluator)
         x = _task_candidate(task)
         idx = _task_index(task)
-        resource_context = dict(scheduled.resource_context)
-        result_lease_id = str(scheduled.lease.lease_id)
-        parent_resource = _solver_resource_context(solver)
-        if bool(getattr(solver, "_resource_context_explicit", False)) or bool(parent_resource.lease):
-            local_lease = scheduled.lease.as_dict()
-            resource_context = parent_resource.derive_child(
-                scope="inner_evaluation",
-                namespace_suffix=f"nested.{_task_run_id(task)}.{task.task_id}",
-                threads=int(task.requirement.threads),
-                metadata={
-                    "task_id": str(task.task_id),
-                    "worker_id": str(scheduled.worker.worker_id),
-                    "local_execution_lease": local_lease,
-                },
-            ).as_dict()
-            result_lease_id = str(dict(parent_resource.lease).get("lease_id", "")) or result_lease_id
-        try:
+        case_runtime = getattr(solver, "case_runtime", None)
+        control = getattr(case_runtime, "control", None)
+        deadline_at = float(getattr(control, "deadline_at", 0.0) or 0.0)
+        checkpoint = getattr(case_runtime, "checkpoint", None)
+        with grant_pool.acquire(
+            task.requirement,
+            scope="inner_evaluation",
+            namespace_suffix=f"nested.{_task_run_id(task)}.{task.task_id}",
+            checkpoint=checkpoint if callable(checkpoint) else None,
+            deadline_at=deadline_at,
+            metadata={
+                "task_id": str(task.task_id),
+                "run_id": _task_run_id(task),
+            },
+        ) as subgrant:
+            resource_context = subgrant.resource_context.as_dict()
+            result_lease_id = str(
+                dict(subgrant.resource_context.lease).get("lease_id", "")
+            )
             nested = local_evaluator.evaluate(
                 solver=worker_solver,
                 x=x,
@@ -457,17 +473,16 @@ class NestedParallelEvaluator:
                 task_id=str(task.task_id),
                 objectives=tuple(float(v) for v in obj),
                 violations=(float(vio),),
-                worker_id=str(scheduled.worker.worker_id),
+                worker_id=str(subgrant.grant_id),
                 lease_id=result_lease_id,
                 resource_context=resource_context,
                 metrics={
                     "index": int(idx),
                     "generation": int(getattr(solver, "generation", 0)),
                     "executor_backend": "thread",
+                    "resource_subgrant_id": str(subgrant.grant_id),
                 },
             )
-        finally:
-            scheduler.release(scheduled)
 
 class RedisNestedDistributedEvaluator:
     """Submit nested evaluation tasks to Redis and collect worker results.
@@ -635,9 +650,26 @@ def run_nested_redis_worker_once(
     scheduled = None
     try:
         scheduled = scheduler.acquire(task, owner_id=str(worker), scope=str(task.task_type))
-        raw = task_runner(task)
+        runner_payload = dict(task.payload)
+        runner_payload["resource_context"] = dict(scheduled.resource_context)
+        runner_task = TaskEnvelope(
+            task_id=task.task_id,
+            task_type=task.task_type,
+            payload=runner_payload,
+            requirement=task.requirement,
+            executor_backend=task.executor_backend,
+            input_refs=task.input_refs,
+            output_refs=task.output_refs,
+            parent_task_id=task.parent_task_id,
+            trace_id=task.trace_id,
+            namespace=task.namespace,
+            max_retries=task.max_retries,
+            created_at=task.created_at,
+            metadata=task.metadata,
+        )
+        raw = task_runner(runner_task)
         if isinstance(raw, TaskResult):
-            result = _attach_task_metadata_to_result(raw, task, worker_id=worker)
+            result = _attach_task_metadata_to_result(raw, runner_task, worker_id=worker)
         elif isinstance(raw, dict):
             status = str(raw.get("status", "ok" if bool(raw.get("ok", True)) else "failed"))
             result = TaskResult(
@@ -650,7 +682,7 @@ def run_nested_redis_worker_once(
                 metrics=dict(raw.get("metrics", {}) or {}),
                 metadata=dict(raw.get("metadata", {}) or {}),
             )
-            result = _attach_task_metadata_to_result(result, task, worker_id=worker)
+            result = _attach_task_metadata_to_result(result, runner_task, worker_id=worker)
         else:
             raise TypeError("task_runner must return TaskResult or mapping")
         effective_context, effective_lease_id = _distributed_result_resource_context(task, scheduled)

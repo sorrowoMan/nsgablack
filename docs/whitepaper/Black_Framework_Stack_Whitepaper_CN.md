@@ -324,7 +324,7 @@ Provider 短路不能绕过运行语义。批量 Provider 路径仍需增加 eva
 
 `_latest_snapshot_handle` 不能只在 `None` 时写入。第一次快照后，每一代都必须更新引用，否则所有后续 Context 会持续指向旧快照。快照 key 可以包含 generation 或版本，handle 则代表当前权威提交。
 
-mlblack 也遵循同一规则。LearningSolver 在 nsgablack Adapter.update 之后读取 Adapter 的权威 population，而不是继续保存评估前状态；`get_population/set_population` 与 runtime state 合同由统一 AlgorithmAdapter 提供。
+mlblack 也遵循同一规则。LearningSolver 在 nsgablack Adapter.update 之后读取 Adapter 的权威状态，而不是继续保存评估前状态；L2 `get_population_snapshot/set_population_snapshot` 与 L1 `get_current_candidates/set_current_candidates` 由统一 AlgorithmAdapter 明确区分。
 
 ## 2.9 反馈与候选的语义对齐
 
@@ -568,11 +568,11 @@ class MyAdapter(AlgorithmAdapter):
         # 使用评估后的最新 context，更新 Adapter 权威状态。
         self.population = selected_population
 
-    def get_population(self):
-        return self.population
+    def get_population_snapshot(self):
+        return self.population, self.objectives, self.violations
 ```
 
-`propose()` 不应直接执行 Problem 评估；`update()` 不应写外部数据库；`get_population()` 应返回更新后的权威种群。若 Adapter 需要 checkpoint，再实现 `get_state()/set_state()`；若需要在 Context 中展示阶段、温度或策略权重，实现 runtime context projection。
+`propose()` 不应直接执行 Problem 评估；`update()` 不应写外部数据库；L2 Adapter 的 `get_population_snapshot()` 应返回对齐的权威 `(X, F, V)`。单轨迹 Adapter 只暴露 `get_current_candidates()`，不能让运行治理误把当前点当成完整种群。若 Adapter 需要 checkpoint，再实现 `get_state()/set_state()`；若需要在 Context 中展示阶段、温度或策略权重，实现 runtime context projection。
 
 Representation 的学习重点不是“怎样随机生成向量”，而是保持候选语义。对 permutation、graph、matrix 或混合变量，repair 必须保证基本合法性，fingerprint 必须稳定，decode 必须只依赖 state 和明确 Context。业务目标仍由 Problem 计算。
 

@@ -19,7 +19,16 @@ STAGES = [
         "name": "main",
         "cases": ["tsp_vrp"],
         "resource_requests": {"tsp_vrp": {"threads": 1, "gpus": 0, "backend": "local"}},
-        "mode": "cli",
+        "component_overrides": {
+            "tsp_vrp": {
+                "config": {
+                    "n_cities": 10,
+                    "pop_size": 8,
+                    "max_steps": 5,
+                    "random_seed": 2,
+                }
+            }
+        },
     },
 ]
 

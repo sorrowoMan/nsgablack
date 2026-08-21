@@ -70,7 +70,7 @@ def test_complete_inner_case_uses_public_request_and_explicit_projection() -> No
     assert np.allclose(objectives, [2.0])
     assert violation == 0.5
     assert runtime.last_request is not None
-    assert runtime.last_request.inputs["candidate"] == [1.0, 2.0]
+    assert runtime.last_request.inputs["candidate"] == (1.0, 2.0)
     assert runtime.last_request.resource_context == {}
     assert runtime.last_request.budget_request == {"evaluations": 3}
     assert runtime.last_request.control.deadline_at > 0

@@ -19,7 +19,19 @@ STAGES = [
         "name": "main",
         "cases": ["anomaly_detection"],
         "resource_requests": {"anomaly_detection": {"threads": 1, "gpus": 0, "backend": "local"}},
-        "mode": "cli",
+        "component_overrides": {
+            "anomaly_detection": {
+                "config": {
+                    "mode": "lof",
+                    "pop_size": 8,
+                    "max_steps": 3,
+                    "n_samples": 160,
+                    "n_outliers": 16,
+                    "n_features": 4,
+                    "seed": 42,
+                }
+            }
+        },
     },
 ]
 

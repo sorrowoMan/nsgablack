@@ -26,7 +26,8 @@ class NSGA3Adapter(NSGA2Adapter):
     context_notes = "NSGA-III style adapter with reference-point niching in environmental selection."
     state_recovery_level = "L2"
     state_recovery_notes = (
-        "Inherits NSGA-II population snapshot roundtrip (get_state/set_state + get_population/set_population). "
+        "Inherits NSGA-II population snapshot roundtrip "
+        "(get_state/set_state + get_population_snapshot/set_population_snapshot). "
         "Reference points are re-generated from problem geometry on restore."
     )
 

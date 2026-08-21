@@ -57,6 +57,6 @@ TSP 被表达为排列搜索：
 ## 运行和验证
 
 ```powershell
-python build_solver.py --seed 42 --n-cities 15 --pop-size 20 --max-steps 2000
+python run_solver.py --seed 42 --n-cities 15 --pop-size 20 --max-steps 2000
 python -m nsgablack project doctor --path . --strict --format problem
 ```

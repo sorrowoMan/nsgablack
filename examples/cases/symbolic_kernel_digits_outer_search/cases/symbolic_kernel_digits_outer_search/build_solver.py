@@ -1,26 +1,25 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-if __package__ in {None, ""}:
-    _THIS_DIR = Path(__file__).resolve().parent
-    if str(_THIS_DIR) not in sys.path:
-        sys.path.insert(0, str(_THIS_DIR))
-    from _bootstrap import ensure_nsgablack_importable  # noqa: E402
-    from case_scaffold.config import SymbolicKernelDigitsOuterSearchConfig  # noqa: E402
-    from pipeline.main import build_pipeline  # noqa: E402
-    from case_scaffold.problem import SymbolicKernelDigitsOuterSearchProblem  # noqa: E402
-else:
-    from ._bootstrap import ensure_nsgablack_importable  # noqa: E402
-    from .case_scaffold.config import SymbolicKernelDigitsOuterSearchConfig  # noqa: E402
-    from .pipeline.main import build_pipeline  # noqa: E402
-    from .case_scaffold.problem import SymbolicKernelDigitsOuterSearchProblem  # noqa: E402
-
-ensure_nsgablack_importable(Path(__file__))
+try:
+    from .case_scaffold.config import SymbolicKernelDigitsOuterSearchConfig
+    from .case_scaffold.problem import SymbolicKernelDigitsOuterSearchProblem
+    from .pipeline.main import build_pipeline
+except ImportError:  # direct Case CLI execution
+    from case_scaffold.config import SymbolicKernelDigitsOuterSearchConfig
+    from case_scaffold.problem import SymbolicKernelDigitsOuterSearchProblem
+    from pipeline.main import build_pipeline
 
 from nsgablack.adapters import NSGA2Adapter, NSGA2Config
 from nsgablack.core.evolution_solver import EvolutionSolver
+
+
+class SymbolicKernelDigitsOuterSolver(EvolutionSolver):
+    def set_case_runtime(self, runtime):
+        self.case_runtime = runtime
+        self.problem.set_case_runtime(runtime)
+        return self
 
 
 def build_symbolic_kernel_digits_outer_search_solver(
@@ -41,7 +40,7 @@ def build_symbolic_kernel_digits_outer_search_solver(
         ),
         name="symbolic_kernel_digits_outer_nsga2",
     )
-    solver = EvolutionSolver(
+    solver = SymbolicKernelDigitsOuterSolver(
         problem=problem,
         adapter=adapter,
         representation_pipeline=pipeline,

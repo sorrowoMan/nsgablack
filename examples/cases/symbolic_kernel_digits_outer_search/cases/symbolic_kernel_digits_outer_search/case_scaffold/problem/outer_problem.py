@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -12,26 +11,6 @@ from nsgablack.core.base import BlackBoxProblem
 from ..config import SymbolicKernelDigitsOuterSearchConfig
 from .inner_refinement import run_inner_refinement
 
-
-def _ensure_mlblack_path() -> None:
-    repo_root = None
-    for parent in Path(__file__).resolve().parents:
-        if (parent / "pyproject.toml").exists() and (parent / "__init__.py").exists():
-            repo_root = parent
-            break
-    if repo_root is None:
-        return
-    mlblack_root = repo_root.parent / "mlblack"
-    if mlblack_root.exists() and str(mlblack_root) not in sys.path:
-        sys.path.insert(0, str(mlblack_root))
-
-
-def _missing_inner_case(name: str):
-    raise RuntimeError(
-        f"Missing inner standard Case: {name}. Restore it as a Project/Case scaffold "
-        "and call it through the formal build_solver/resource_context surface; "
-        "legacy direct demo imports are no longer supported."
-    )
 
 def _toggle(value: float) -> bool:
     return float(value) >= 0.5
@@ -59,6 +38,7 @@ class SymbolicKernelDigitsOuterSearchProblem(BlackBoxProblem):
         self._structure_access_count: dict[str, int] = {}
         self.best_result: dict[str, Any] | None = None
         self.best_score: float | None = None
+        self._case_runtime: Any | None = None
         self.max_kernel_shape = (5, 5)
         self.coeff_dims = int(self.max_kernel_shape[0] * self.max_kernel_shape[1])
         self.symbolic_basis_library = ("identity", "sobel_x", "sobel_y", "laplacian")
@@ -76,6 +56,9 @@ class SymbolicKernelDigitsOuterSearchProblem(BlackBoxProblem):
             bounds=bounds,
             objectives=("strict_primary_loss",),
         )
+
+    def set_case_runtime(self, runtime: Any) -> None:
+        self._case_runtime = runtime
 
     @staticmethod
     def _typed_choice(value: float, labels: tuple[Any, ...]) -> Any:
@@ -151,8 +134,6 @@ class SymbolicKernelDigitsOuterSearchProblem(BlackBoxProblem):
         }
 
     def evaluate(self, candidate: np.ndarray) -> np.ndarray:
-        _ensure_mlblack_path()
-
         structure_bundle = self.decode_structure_bundle(candidate)
         bundle_key = hashlib.sha1(json.dumps(structure_bundle, sort_keys=True).encode("utf-8")).hexdigest()[:12]
         self._structure_access_count[bundle_key] = int(self._structure_access_count.get(bundle_key, 0)) + 1
@@ -171,6 +152,7 @@ class SymbolicKernelDigitsOuterSearchProblem(BlackBoxProblem):
             output_dir=eval_dir / "refinement",
             label_prefix=label,
             seed=refinement_seed,
+            case_runtime=self._case_runtime,
         )
         best_inner = dict(refinement.get("best_result", {}) or {})
         bundle = dict(refinement.get("best_bundle", {}) or {})

@@ -9,9 +9,12 @@
 - mlblack 通过 image-classification proxy 和 orthogonal source governance 评估解码后的 bundle。
 - 搜索目标是在提升分类质量的同时，惩罚 redundant、complex、unstable 或 expensive 的 feature bundles。
 
-## 是否使用 mlblack
+## 跨框架调用边界
 
-使用。Inner evaluation path 通过 `evaluate_phi_bundle` 和 `PhiBundleEvaluationConfig` 调用 mlblack-side image objectification surface。
+使用 mlblack，但外层 Problem 不直接调用其内部函数。候选评估通过共享 Case runtime
+发起正式 `phi_bundle_image_evaluation` Trainer Case；该子 Case 再装配 mlblack 图像
+objectification 组件，并通过版本化 `TrainerResult` 返回指标。父子 lineage、资源、预算和
+取消控制均由 blackbase 协议派生。
 
 ## nsgablack 侧能力
 
@@ -60,16 +63,16 @@ Lane families 包括：
 |---|---|
 | `build_solver.py` | 标准 assembly entry。 |
 | `run_solver.py` | CLI entry。 |
-| `problem/outer_problem.py` | 解码 typed bundle genomes，并调用 mlblack evaluation proxy。 |
+| `problem/outer_problem.py` | 解码 typed bundle genomes，并调用正式 Trainer 子 Case。 |
 | `pipeline/` | Outer bundle genome 的 representation pipeline。 |
 | `adapter/` | Outer search configuration。 |
-| `solver/` | Solver defaults 和 assembly helpers。 |
+| `../phi_bundle_image_evaluation/` | mlblack 图像语义评估的标准 Case。 |
 
 ## 运行
 
 ```powershell
-python examples\cases\phi_bundle_image_search\run_project.py --check
-python examples\cases\phi_bundle_image_search\run_project.py --suite-id digits_phi_outer_v1
+python examples\cases\phi_bundle_image_search\run_project.py --check --build-check
+python examples\cases\phi_bundle_image_search\run_project.py
 ```
 
 ## 预期信号（Expected signal）

@@ -17,7 +17,7 @@ nsgablack components used：
 
 - `EvolutionSolver` / NSGA-style default search loop。
 - `RepresentationPipeline`，包含 `UniformInitializer`、`GaussianMutation`、`ClipRepair`。
-- 通过 `build_solver.py`、`config.py`、`??????` 和 registries 使用标准 scaffold assembly。
+- 通过 `build_solver.py`、`config.py`、`assembly.py` 和 registries 使用标准 scaffold assembly。
 
 ## 这个 case 验证什么
 

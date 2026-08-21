@@ -1,15 +1,17 @@
-"""Dual-framework RAG indexer — catalog entries → source files → chunks → embeddings → PG."""
+"""Optional framework-operator indexer over public Catalog surfaces."""
 
 from __future__ import annotations
 
 import logging
+import inspect
+from importlib import import_module
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 
 from .chunker import Chunk, chunk_document, chunk_module
-from .config import MLBLACK_ROOT, NSGABLACK_ROOT, RagConfig
+from .config import RagConfig, resolve_framework_root
 from .embed import Embedder
 from .store import RagChunk, RagStore
 
@@ -23,6 +25,8 @@ def build_index(
     local_embed: bool = False,
     include_docs: bool = True,
     store: RagStore | None = None,
+    framework_roots: Mapping[str, Path | str] | None = None,
+    catalog_loaders: Mapping[str, Callable[[str], Any]] | None = None,
 ) -> dict[str, Any]:
     """Build (or refresh) the RAG index for one or both frameworks.
 
@@ -32,21 +36,35 @@ def build_index(
     store = store or RagStore(config)
     embedder = Embedder(config, local=local_embed)
 
-    store.init_tables()
+    if not store.init_tables():
+        raise RuntimeError("RAG store schema initialization failed")
 
     summary: dict[str, Any] = {}
-    sources: list[tuple[str, str, Path]] = []  # (framework, kind, root)
+    roots = dict(framework_roots or {})
+    loaders = dict(catalog_loaders or {})
+    sources: list[tuple[str, Path]] = []
+    unresolved: list[str] = []
+    for raw_name in frameworks:
+        framework = str(raw_name or "").strip()
+        if not framework or not framework.replace("_", "").isalnum():
+            raise ValueError(f"invalid framework package name: {raw_name!r}")
+        configured_root = roots.get(framework)
+        root = (
+            Path(configured_root).expanduser().resolve()
+            if configured_root is not None
+            else resolve_framework_root(framework)
+        )
+        if root is None or not root.is_dir():
+            unresolved.append(framework)
+            continue
+        sources.append((framework, root))
 
-    if "nsgablack" in frameworks:
-        root = Path(NSGABLACK_ROOT)
-        if root.is_dir():
-            sources.append(("nsgablack", "module", root))
-    if "mlblack" in frameworks:
-        root = Path(MLBLACK_ROOT)
-        if root.is_dir():
-            sources.append(("mlblack", "module", root))
+    if unresolved:
+        raise RuntimeError(
+            "cannot resolve requested framework roots: " + ", ".join(unresolved)
+        )
 
-    for framework, _, root in sources:
+    for framework, root in sources:
         count = _index_framework(
             framework=framework,
             root=root,
@@ -54,6 +72,7 @@ def build_index(
             store=store,
             embedder=embedder,
             include_docs=include_docs,
+            catalog_loader=loaders.get(framework),
         )
         summary[framework] = count
 
@@ -68,10 +87,11 @@ def _index_framework(
     store: RagStore,
     embedder: Embedder,
     include_docs: bool,
+    catalog_loader: Callable[[str], Any] | None,
 ) -> int:
     logger.info("Indexing %s from %s (profile=%s)", framework, root, profile)
 
-    catalog_entries = _load_catalog(framework, profile)
+    catalog_entries = _load_catalog(framework, profile, loader=catalog_loader)
     total = 0
 
     # Group entries by import_path
@@ -85,6 +105,7 @@ def _index_framework(
                 by_file.setdefault(resolved, []).append(e)
 
     batch_chunks: list[RagChunk] = []
+    batch_embeddings: list[np.ndarray] = []
 
     for module_path, entries in by_file.items():
         full_path = root / module_path
@@ -128,20 +149,27 @@ def _index_framework(
                     metadata=c.metadata,
                 )
             )
+            batch_embeddings.append(np.asarray(emb, dtype=np.float32))
 
         # Batch insert periodically
         if len(batch_chunks) >= embedder.config.batch_size * 5:
-            store.insert_batch(batch_chunks, np.stack([np.zeros(embedder.dim)] * len(batch_chunks)))
-            # Re-embed and insert properly
-            store.insert_batch(batch_chunks, _collect_embeddings(batch_chunks, embedder))
+            store.insert_batch(
+                batch_chunks,
+                np.stack(batch_embeddings),
+                embedding_space=embedder.space,
+            )
             total += len(batch_chunks)
             logger.debug("Inserted %d chunks (total: %d)", len(batch_chunks), total)
             batch_chunks = []
+            batch_embeddings = []
 
     # Insert remaining
     if batch_chunks:
-        emb_arrays = _collect_embeddings(batch_chunks, embedder)
-        store.insert_batch(batch_chunks, emb_arrays)
+        store.insert_batch(
+            batch_chunks,
+            np.stack(batch_embeddings),
+            embedding_space=embedder.space,
+        )
         total += len(batch_chunks)
 
     # Index tutorial docs
@@ -192,7 +220,11 @@ def _index_docs(root: Path, framework: str, store: RagStore, embedder: Embedder)
             )
             for c in chunks
         ]
-        store.insert_batch(rag_chunks, embeddings)
+        store.insert_batch(
+            rag_chunks,
+            embeddings,
+            embedding_space=embedder.space,
+        )
         count += len(chunks)
 
     if count:
@@ -200,16 +232,29 @@ def _index_docs(root: Path, framework: str, store: RagStore, embedder: Embedder)
     return count
 
 
-def _load_catalog(framework: str, profile: str) -> list[dict]:
+def _load_catalog(
+    framework: str,
+    profile: str,
+    *,
+    loader: Callable[[str], Any] | None = None,
+) -> list[dict]:
     """Load catalog entries for a framework."""
     entries: list[dict] = []
     try:
-        if framework == "nsgablack":
-            from nsgablack.catalog import get_catalog
-            cat = get_catalog(profile=profile)
+        if loader is not None:
+            cat = loader(profile)
         else:
-            from mlblack.catalog import get_catalog as get_mlblack_catalog
-            cat = get_mlblack_catalog()
+            catalog_module = import_module(f"{framework}.catalog")
+            get_catalog = getattr(catalog_module, "get_catalog", None)
+            if not callable(get_catalog):
+                raise TypeError(f"{framework}.catalog does not expose get_catalog()")
+            signature = inspect.signature(get_catalog)
+            try:
+                signature.bind(profile=profile)
+            except TypeError:
+                cat = get_catalog()
+            else:
+                cat = get_catalog(profile=profile)
 
         list_entries = getattr(cat, "list", None)
         if not callable(list_entries):
@@ -231,11 +276,23 @@ def _load_catalog(framework: str, profile: str) -> list[dict]:
                         d[attr] = val
                 entries.append(d)
     except Exception as exc:
-        logger.warning("Cannot load %s catalog: %s", framework, exc)
+        raise RuntimeError(
+            f"cannot load public Catalog for {framework}: {exc}"
+        ) from exc
 
     # Filter by profile
     if profile == "framework-core":
-        entries = [e for e in entries if "example" not in (e.get("tags") or []) and "doc" not in (e.get("tags") or [])]
+        entries = [
+            e
+            for e in entries
+            if str(e.get("kind", "")) not in {"example", "doc"}
+            and "example" not in (e.get("tags") or [])
+            and "doc" not in (e.get("tags") or [])
+        ]
+    if not entries:
+        raise RuntimeError(
+            f"public Catalog for {framework} returned no entries for profile {profile}"
+        )
     return entries
 
 
@@ -287,9 +344,3 @@ def _collect_tags(entries: list[dict]) -> list[str]:
             if isinstance(t, str):
                 tags.add(t)
     return sorted(tags)
-
-
-def _collect_embeddings(chunks: list[RagChunk], embedder: Embedder) -> np.ndarray:
-    """Embed a batch of RagChunks."""
-    texts = [c.content for c in chunks]
-    return embedder.embed_batch(texts)

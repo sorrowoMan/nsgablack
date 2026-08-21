@@ -430,17 +430,11 @@ def _cmd_run_inspector(args: argparse.Namespace) -> int:
 
 
 def _cmd_rag_index(args: argparse.Namespace) -> int:
-    import sys
     from .rag import build_index, RagConfig
-
-    # Ensure mlblack is importable
-    ml_root = __import__("pathlib").Path("C:/Users/hp/Desktop/mlblack")
-    if str(ml_root.parent) not in sys.path:
-        sys.path.insert(0, str(ml_root.parent))
 
     config = RagConfig()
     if not config.pg_available:
-        print("RAG index:  (PG not configured — check catalog config)")
+        print("RAG index:  (set NSGABLACK_RAG_DB_URL to a PostgreSQL URL)")
         return 1
 
     frameworks = [f.strip() for f in args.frameworks.split(",") if f.strip()]
@@ -461,7 +455,7 @@ def _cmd_rag_search(args: argparse.Namespace) -> int:
 
     config = RagConfig()
     if not config.pg_available:
-        print("RAG search:  (not configured — check catalog PG config and run 'rag index')")
+        print("RAG search:  (set NSGABLACK_RAG_DB_URL and run 'rag index')")
         print("Fallback:    use 'python -m nsgablack catalog search <query>' instead")
         return 1
 
@@ -484,39 +478,47 @@ def _cmd_rag_status(args: argparse.Namespace) -> int:
 
     config = RagConfig()
     if not config.pg_available:
-        print("RAG store:  (not configured — check catalog PG config)")
+        print("RAG store:  (set NSGABLACK_RAG_DB_URL to a PostgreSQL URL)")
         return 1
 
     store = RagStore(config)
-    try:
-        store.init_tables()
-    except Exception:
-        pass  # may already exist
-    total = store.chunk_count()
-    nsga_count = store.chunk_count(framework="nsgablack")
-    ml_count = store.chunk_count(framework="mlblack")
-    last_ts = store.last_indexed_at()
+    health = store.health()
+    if not health.current:
+        print(f"RAG store status: {health.status}")
+        if health.error_type:
+            print(f"Error: {health.error_type}: {health.error_message or ''}")
+        return 1
 
-    print(f"Total chunks:  {total}")
-    print(f"  nsgablack:   {nsga_count}")
-    print(f"  mlblack:     {ml_count}")
-    if last_ts:
-        print(f"Last indexed:  {last_ts}")
+    print(f"Total chunks:  {health.total_chunks}")
+    for framework, count in sorted(health.framework_counts.items()):
+        print(f"  {framework}: {count}")
+    if health.embedding_space_counts:
+        print("Embedding spaces:")
+        for space, count in sorted(health.embedding_space_counts.items()):
+            print(f"  {space}: {count}")
+    if health.last_indexed_at:
+        print(f"Last indexed:  {health.last_indexed_at}")
     else:
         print("Last indexed:  (never — run 'python -m nsgablack rag index')")
     return 0
 
 
 def _cmd_rag_clear(args: argparse.Namespace) -> int:
-    from .rag import RagStore
+    from .rag import RagConfig, RagStore
 
     if not args.yes:
         print("This will drop all RAG index tables. Add --yes to confirm.")
         return 1
 
-    store = RagStore()
+    config = RagConfig()
+    if not config.pg_available:
+        print("RAG store:  (set NSGABLACK_RAG_DB_URL to a PostgreSQL URL)")
+        return 1
+    store = RagStore(config)
     store.drop_tables()
-    store.init_tables()
+    if not store.init_tables():
+        print("RAG index was dropped but schema re-initialization failed.")
+        return 1
     print("RAG index cleared and tables re-initialized.")
     return 0
 

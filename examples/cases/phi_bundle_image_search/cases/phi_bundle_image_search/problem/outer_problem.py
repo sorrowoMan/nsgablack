@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sys
 from pathlib import Path
 from typing import Any, Mapping
 
 import numpy as np
 
+from blackbase.project import CaseRunRequest
 from nsgablack.core.base import BlackBoxProblem
 
 try:
@@ -49,23 +49,6 @@ BUDGET_FIELDS: tuple[str, ...] = (
     "orth_max_pair_abs_corr",
     "candidate_keep_top",
 )
-
-
-def _ensure_mlblack_path() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
-    mlblack_root = repo_root.parent / "mlblack"
-    if mlblack_root.exists() and str(mlblack_root) not in sys.path:
-        sys.path.insert(0, str(mlblack_root))
-    mlblack_project = mlblack_root / "my_project"
-    if mlblack_project.exists():
-        try:
-            import my_project  # type: ignore
-
-            project_path = getattr(my_project, "__path__", None)
-            if project_path is not None and str(mlblack_project) not in list(project_path):
-                project_path.append(str(mlblack_project))
-        except (ImportError, AttributeError, TypeError):
-            return
 
 
 def _clip_int(value: float, *, low: int, high: int) -> int:
@@ -132,6 +115,7 @@ class PhiBundleImageSearchProblem(BlackBoxProblem):
         self.best_result: dict[str, Any] | None = None
         self.best_accuracy_result: dict[str, Any] | None = None
         self.best_score: float | None = None
+        self._case_runtime: Any | None = None
         self.toggle_offset = 0
         self.typed_param_fields: tuple[tuple[str, str], ...] = tuple(
             (family, field)
@@ -158,6 +142,9 @@ class PhiBundleImageSearchProblem(BlackBoxProblem):
             bounds=bounds,
             objectives=("classification_error", "redundancy", "complexity", "instability", "cost"),
         )
+
+    def set_case_runtime(self, runtime: Any) -> None:
+        self._case_runtime = runtime
 
     def decode_bundle(self, x: np.ndarray) -> dict[str, Any]:
         arr = np.asarray(x, dtype=float).reshape(self.dimension)
@@ -193,12 +180,6 @@ class PhiBundleImageSearchProblem(BlackBoxProblem):
         }
 
     def evaluate(self, candidate: np.ndarray) -> np.ndarray:
-        _ensure_mlblack_path()
-        from my_project.orthogonal_source_image_classification.pipeline import (  # type: ignore
-            PhiBundleEvaluationConfig,
-            evaluate_phi_bundle,
-        )
-
         bundle = self.decode_bundle(candidate)
         key = hashlib.sha1(json.dumps(bundle, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:12]
         cached = self._cache.get(key)
@@ -206,18 +187,43 @@ class PhiBundleImageSearchProblem(BlackBoxProblem):
             return np.asarray(cached["objectives"], dtype=float)
 
         label = f"eval_{len(self.evaluation_records):05d}_{key}"
-        artifact_dir = self.output_dir / "evaluations" / label
-        result = evaluate_phi_bundle(
-            bundle,
-            config=PhiBundleEvaluationConfig(
-                dataset_key=str(self.cfg.dataset_key),
-                train_ratio=float(self.cfg.train_ratio),
-                seed=int(self.cfg.seed),
-                max_rows=int(self.cfg.max_rows),
-            ),
-            output_dir=artifact_dir,
-            run_label=label,
+        if self._case_runtime is None:
+            raise RuntimeError(
+                "phi_bundle_image_search requires an injected Case runtime; "
+                "run it through its standard Project entry"
+            )
+        child = self._case_runtime.invoke(
+            CaseRunRequest(
+                project_name="phi_bundle_image_search",
+                stage_name="bundle_evaluation",
+                case_name="phi_bundle_image_evaluation",
+                case_kind="trainer",
+                resource_request={
+                    "workers": 1,
+                    "threads": 1,
+                    "gpus": 0,
+                    "backend": "local",
+                    "compute_backend": "numpy",
+                    "device": "cpu",
+                },
+                component_overrides={
+                    "config": {
+                        "dataset_key": str(self.cfg.dataset_key),
+                        "train_ratio": float(self.cfg.train_ratio),
+                        "seed": int(self.cfg.seed),
+                        "max_rows": int(self.cfg.max_rows),
+                    },
+                    "bundle": bundle,
+                    "label": label,
+                },
+                metadata={"bundle_digest": key},
+            )
         )
+        child.raise_for_failure("PhiBundle evaluation Case failed")
+        payload = dict(child.output or {})
+        if str(payload.get("protocol_type", "")) != "blackbase.trainer_result":
+            raise TypeError("PhiBundle evaluation Case did not return TrainerResult")
+        result = dict(dict(payload.get("report", {}) or {}).get("summary", {}) or {})
         objectives = np.asarray(result.get("objectives", (10.0, 10.0, 10.0, 10.0, 10.0)), dtype=float)
         record = {
             "label": label,
@@ -228,7 +234,8 @@ class PhiBundleImageSearchProblem(BlackBoxProblem):
             "metrics": dict(result.get("metrics", {}) or {}),
             "representation_report": dict(result.get("representation_report", {}) or {}),
             "source_report": dict(result.get("source_report", {}) or {}),
-            "artifact_dir": str(artifact_dir),
+            "artifact_dir": "",
+            "child_case_run": child.request.identity.as_dict(),
             "status": str(result.get("status", "")),
         }
         self.evaluation_records.append(record)

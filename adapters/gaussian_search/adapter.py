@@ -220,12 +220,12 @@ class GaussianSearchAdapter(AlgorithmAdapter):
             )
         return array
 
-    def get_population(self) -> tuple[Any, ...] | None:
+    def get_current_candidates(self) -> tuple[Any, ...] | None:
         if self.best_x is None:
             return None
         return (self._wrap_candidate(self.best_x),)
 
-    def set_population(
+    def set_current_candidates(
         self,
         population: Any,
         objectives: Any | None = None,

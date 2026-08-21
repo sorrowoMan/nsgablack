@@ -122,6 +122,7 @@ def run_solver_loop(
     steps_executed = 0
     termination_reason = "step_limit"
     primary_error: BaseException | None = None
+    completed_result: Any = None
 
     try:
         _checkpoint_case_runtime(solver)
@@ -204,6 +205,54 @@ def run_solver_loop(
                     getattr(solver, "stop_reason", None) or "user_stop"
                 )
                 break
+
+        elapsed = max(
+            0.0,
+            float(time.time() - float(getattr(solver, "start_time", time.time()))),
+        )
+        total_steps = int(start_step) + int(steps_executed)
+        set_generation = getattr(solver, "set_generation", None)
+        if callable(set_generation):
+            set_generation(total_steps)
+        else:
+            solver.generation = total_steps
+        result.update(
+            {
+                "status": (
+                    "ok"
+                    if not bool(getattr(solver, "stop_requested", False))
+                    else "stopped"
+                ),
+                "termination_reason": termination_reason,
+                "generation": int(total_steps),
+                "steps": int(total_steps),
+                "steps_executed": int(steps_executed),
+                "resume_from": int(start_step) if resume_loaded else 0,
+                "evaluation_count": int(
+                    getattr(solver, "evaluation_count", 0) or 0
+                ),
+                "elapsed_sec": elapsed,
+            }
+        )
+        builder = getattr(solver, "_build_run_result", None)
+        if callable(builder):
+            result = builder(result)
+        else:
+            result = format_run_result(
+                solver=solver,
+                base_result=result,
+                return_dict=True,
+            )
+        finalizer = getattr(solver, "finalize_run_result", None)
+        if callable(finalizer):
+            finalized = finalizer(result)
+            if finalized is not None:
+                result = finalized
+        setattr(solver, "last_result", result)
+        _checkpoint_case_runtime(solver)
+        _call_optional(solver, "_runtime_governance_on_solver_finish", result)
+        _call_optional(solver.plugin_manager, "on_solver_finish", result)
+        completed_result = result
     except BaseException as exc:
         primary_error = exc
         dispatcher = getattr(solver, "_dispatch_error_once", None)
@@ -225,6 +274,9 @@ def run_solver_loop(
                 solver.teardown()
             except BaseException as teardown_error:
                 if primary_error is None:
+                    dispatcher = getattr(solver, "_dispatch_error_once", None)
+                    if callable(dispatcher):
+                        dispatcher(teardown_error)
                     raise
                 cleanup_evidence = {
                     "type": type(teardown_error).__name__,
@@ -241,35 +293,21 @@ def run_solver_loop(
         finally:
             solver.running = False
 
-    elapsed = max(0.0, float(time.time() - float(getattr(solver, "start_time", time.time()))))
-    total_steps = int(start_step) + int(steps_executed)
-    set_generation = getattr(solver, "set_generation", None)
-    if callable(set_generation):
-        set_generation(total_steps)
-    else:
-        solver.generation = total_steps
-    result.update(
-        {
-            "status": "ok" if not bool(getattr(solver, "stop_requested", False)) else "stopped",
-            "termination_reason": termination_reason,
-            "generation": int(total_steps),
-            "steps": int(total_steps),
-            "steps_executed": int(steps_executed),
-            "resume_from": int(start_step) if resume_loaded else 0,
-            "evaluation_count": int(getattr(solver, "evaluation_count", 0) or 0),
-            "elapsed_sec": elapsed,
-        }
-    )
-    builder = getattr(solver, "_build_run_result", None)
-    if callable(builder):
-        result = builder(result)
-    else:
-        result = format_run_result(solver=solver, base_result=result, return_dict=True)
-    setattr(solver, "last_result", result)
-    _checkpoint_case_runtime(solver)
-    _call_optional(solver, "_runtime_governance_on_solver_finish", result)
-    _call_optional(solver.plugin_manager, "on_solver_finish", result)
-    return result
+    if completed_result is None:  # pragma: no cover - guarded by lifecycle flow
+        raise RuntimeError("solver lifecycle completed without a result")
+    post_teardown = getattr(solver, "finalize_after_teardown", None)
+    if callable(post_teardown):
+        try:
+            finalized = post_teardown(completed_result)
+            if finalized is not None:
+                completed_result = finalized
+        except BaseException as exc:
+            dispatcher = getattr(solver, "_dispatch_error_once", None)
+            if callable(dispatcher):
+                dispatcher(exc)
+            raise
+    setattr(solver, "last_result", completed_result)
+    return completed_result
 
 
 __all__ = [

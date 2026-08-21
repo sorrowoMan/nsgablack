@@ -3,12 +3,14 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, replace
 from pathlib import Path
+import re
 from typing import Any, Iterable, Mapping, Sequence
 
 from nsgablack.project.catalog import find_project_root, load_project_catalog
 
 from .contract_relations import build_contract_neighbor_sections
-from .registry import Catalog, CatalogEntry, get_catalog
+from .fingerprint import catalog_entries_digest
+from .registry import Catalog, CatalogEntry, get_catalog, get_source_catalog
 from .store import catalog_db_config_backend, catalog_db_config_enabled, catalog_db_config_info, catalog_db_config_mode, resolve_catalog_store
 from .usage import build_usage_profile, enrich_context_contracts, enrich_usage_contracts
 
@@ -89,6 +91,10 @@ class CatalogReadRoute:
     db_error: str | None = None
     explicit_db_path: bool = False
     config_enabled: bool = False
+    db_stale: bool = False
+    db_stale_reason: str | None = None
+    source_digest: str | None = None
+    db_source_digest: str | None = None
 
 
 def _normalize_kind(kind: str | None) -> str | None:
@@ -147,6 +153,52 @@ def _normalize_mode(mode: str | None) -> str:
     if raw == "disabled":
         return "off"
     return "prefer"
+
+
+def _preferred_cache_digests(store: Any, *, profile: str) -> tuple[str, str | None]:
+    source_entries = get_source_catalog(profile=profile).list()
+    source_digest = catalog_entries_digest(source_entries)
+    digest_reader = getattr(store, "profile_source_digest", None)
+    if callable(digest_reader):
+        db_digest = digest_reader(profile=profile)
+    else:
+        db_entries = store.list_catalog_entries(profile=profile, limit=None)
+        db_digest = catalog_entries_digest(db_entries)
+    normalized = str(db_digest or "").strip().lower() or None
+    return source_digest, normalized
+
+
+def _stale_registry_route(
+    *,
+    profile: str,
+    mode: str,
+    backend: str,
+    config_enabled: bool,
+    source_digest: str,
+    db_source_digest: str | None,
+) -> CatalogReadRoute:
+    if db_source_digest is None:
+        reason = (
+            f"Catalog DB profile {profile!r} has no source fingerprint; "
+            "materialize it with the current framework before prefer-mode reads."
+        )
+    else:
+        reason = (
+            f"Catalog DB profile {profile!r} is stale "
+            f"(db={db_source_digest[:12]}, source={source_digest[:12]})."
+        )
+    return CatalogReadRoute(
+        profile=profile,
+        source_mode=mode,
+        effective_source="registry",
+        db_store=None,
+        db_backend=backend,
+        config_enabled=config_enabled,
+        db_stale=True,
+        db_stale_reason=reason,
+        source_digest=source_digest,
+        db_source_digest=db_source_digest,
+    )
 
 
 def _resolve_read_route(
@@ -209,6 +261,20 @@ def _resolve_read_route(
         if callable(profile_check) and not bool(profile_check(profile=profile_name)):
             raise RuntimeError(f"Catalog DB profile not materialized: {profile_name}")
         backend = str(getattr(store, "backend", "db") or "db")
+        if mode == "prefer":
+            source_digest, db_source_digest = _preferred_cache_digests(
+                store,
+                profile=profile_name,
+            )
+            if source_digest != db_source_digest:
+                return _stale_registry_route(
+                    profile=profile_name,
+                    mode=mode,
+                    backend=backend,
+                    config_enabled=True,
+                    source_digest=source_digest,
+                    db_source_digest=db_source_digest,
+                )
         return CatalogReadRoute(
             profile=profile_name,
             source_mode=mode,
@@ -216,6 +282,8 @@ def _resolve_read_route(
             db_store=store,
             db_backend=backend,
             config_enabled=True,
+            source_digest=source_digest if mode == "prefer" else None,
+            db_source_digest=db_source_digest if mode == "prefer" else None,
         )
     except Exception as exc:
         if mode == "only":
@@ -378,6 +446,46 @@ def _filter_entry_collection(
     return _sort_entries(selected)
 
 
+def _search_relevance(entry: CatalogEntry, query: str) -> tuple[int, str, str]:
+    """Rank semantic name matches ahead of incidental cross-word substrings."""
+
+    tokens = [token for token in re.split(r"\s+", str(query or "").strip().lower()) if token]
+    key = entry.key.lower()
+    title = entry.title.lower()
+    key_parts = [part for part in re.split(r"[^a-z0-9]+", key) if part]
+    title_parts = [part for part in re.split(r"[^a-z0-9]+", title) if part]
+    tags = [str(tag).strip().lower() for tag in entry.tags]
+
+    score = 0
+    for token in tokens:
+        if token == key or token == title:
+            token_score = 0
+        elif any(part == token for part in key_parts):
+            token_score = 1
+        elif any(part.startswith(token) for part in key_parts):
+            token_score = 2
+        elif any(part == token for part in title_parts):
+            token_score = 3
+        elif any(part.startswith(token) for part in title_parts):
+            token_score = 4
+        elif any(tag == token for tag in tags):
+            token_score = 5
+        elif any(tag.startswith(token) for tag in tags):
+            token_score = 6
+        elif token in key:
+            token_score = 7
+        elif token in title:
+            token_score = 8
+        else:
+            token_score = 9
+        score += token_score
+    return score, entry.kind, entry.key
+
+
+def _rank_search_hits(entries: Iterable[CatalogEntry], query: str) -> list[CatalogEntry]:
+    return sorted(entries, key=lambda entry: _search_relevance(entry, query))
+
+
 def _search_entry_collection(
     entries: Sequence[CatalogEntry],
     query: str,
@@ -401,7 +509,7 @@ def _search_entry_collection(
         limit=len(filtered) or max(20, int(limit)),
     )
     hydrated = _hydrate_entries(hits, catalog=catalog)
-    ordered = _sort_entries(hydrated)
+    ordered = _rank_search_hits(hydrated, text)
     return ordered[: max(0, int(limit))]
 
 
@@ -660,7 +768,8 @@ def search_entries(
                 limit=limit,
                 field_filters=field_filters,
             )
-            return _enrich_preferred_db_entries(matches, route=route)
+            enriched = _enrich_preferred_db_entries(matches, route=route)
+            return _rank_search_hits(enriched, text)[: max(0, int(limit))]
         context = _load_catalog_context(
             profile=profile,
             scope="framework",
@@ -774,6 +883,10 @@ def catalog_source_info(
         "route_db_backend": route.db_backend,
         "explicit_db_path": bool(route.explicit_db_path),
         "db_error": route.db_error,
+        "db_stale": bool(route.db_stale),
+        "db_stale_reason": route.db_stale_reason,
+        "source_digest": route.source_digest,
+        "db_source_digest": route.db_source_digest,
     }
     info.update(framework_info)
     info.update(catalog_db_config_info())

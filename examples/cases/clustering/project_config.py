@@ -19,7 +19,11 @@ STAGES = [
         "name": "main",
         "cases": ["clustering"],
         "resource_requests": {"clustering": {"threads": 1, "gpus": 0, "backend": "local"}},
-        "mode": "cli",
+        "component_overrides": {
+            "clustering": {
+                "config": {"k": 3, "adapter": "sa", "pop_size": 8, "max_steps": 3}
+            }
+        },
     },
 ]
 

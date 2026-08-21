@@ -61,7 +61,7 @@ NSGA2 外层搜索与 COPT 数值求解后端共享同一批线程。外层提�
 ## 运行和验证
 
 ```powershell
-cd C:\Users\hp\Desktop\nsgablack
+# 先进入 nsgablack 仓库根目录
 
 # COPT 未装时自动降级 mock
 python examples\cases\pooled_backend_handoff\run_project.py --check

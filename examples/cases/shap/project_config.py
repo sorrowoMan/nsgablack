@@ -19,7 +19,9 @@ STAGES = [
         "name": "main",
         "cases": ["shap"],
         "resource_requests": {"shap": {"threads": 1, "gpus": 0, "backend": "local"}},
-        "mode": "cli",
+        "component_overrides": {
+            "shap": {"config": {"seed": 42, "n_coalitions": 32, "max_steps": 3}}
+        },
     },
 ]
 

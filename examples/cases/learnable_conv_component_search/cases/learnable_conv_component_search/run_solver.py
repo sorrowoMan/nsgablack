@@ -107,11 +107,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     solver = build_learnable_conv_component_search_solver(cfg, suite_id=suite_id)
     if bool(args.check):
         print(
-            "learnable_conv_component_search scaffold ok | "
+            "[check] learnable_conv_component_search scaffold ok | "
             f"dimension={solver.problem.dimension} objectives={solver.problem.objectives}"
         )
         return
-    result = solver.run(return_dict=True)
+    result = solver.run()
     problem = solver.problem
     output_dir = Path(getattr(solver, "learnable_conv_output_dir")).expanduser().resolve()
     structure_cache = dict(getattr(problem, "get_cache_summary")())
@@ -138,7 +138,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     print(f"[conv-outer] unique_structure_count={summary.get('unique_structure_count')}")
     print(f"[conv-outer] structure_cache={summary.get('structure_cache')}")
     print(f"[conv-outer] best_score={best.get('score')}")
-    print(f"[conv-outer] best_legacy_score={best.get('legacy_score')}")
+    print(f"[conv-outer] best_fit_complexity_score={best.get('fit_complexity_score')}")
     print(f"[conv-outer] best_refinement={best.get('refinement')}")
     print(f"[conv-outer] best_bundle={best.get('bundle')}")
     print(f"[conv-outer] best_metrics={best.get('metrics')}")

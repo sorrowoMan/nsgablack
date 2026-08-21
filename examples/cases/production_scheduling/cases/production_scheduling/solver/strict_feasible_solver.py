@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from blackbase.contracts import BatchDisposition
+
 from nsgablack.core.composable_solver import ComposableSolver
 from nsgablack.core.state.context_keys import KEY_STEP
 from nsgablack.utils.extension_contracts import normalize_candidates, stack_population
@@ -102,6 +104,22 @@ class StrictFeasibleProductionSolver(ComposableSolver):
             except (TypeError, ValueError):
                 selected_mask = np.ones(len(population_all), dtype=bool)
         if np.any(selected_mask):
+            accepted_indices = tuple(
+                int(index) for index in np.flatnonzero(selected_mask).tolist()
+            )
+            if len(accepted_indices) != int(len(population_all)):
+                self.adapter.on_proposal_disposition(
+                    self,
+                    BatchDisposition(
+                        proposed_count=int(len(population_all)),
+                        accepted_indices=accepted_indices,
+                        reason="strict_feasible_filter",
+                        metadata={
+                            "constraint_tolerance": float(self.strict_constraint_tol),
+                        },
+                    ),
+                    context,
+                )
             self.population = np.asarray(population_all[selected_mask], dtype=float)
             self.objectives = np.asarray(objectives_all[selected_mask], dtype=float)
             self.constraint_violations = np.asarray(violations_all[selected_mask], dtype=float)

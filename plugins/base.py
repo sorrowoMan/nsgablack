@@ -58,7 +58,7 @@ class Plugin(PluginBase):
 
         Priority:
         1) solver.read_snapshot() (snapshot store)
-        2) adapter.get_population()
+        2) adapter.get_population_snapshot()
         3) solver.{population, objectives, constraint_violations}
         """
         from blackbase.context.context_keys import (
@@ -146,10 +146,13 @@ class Plugin(PluginBase):
 
         adapter = getattr(target, "adapter", None)
         if adapter is not None:
-            getter = getattr(adapter, "get_population", None)
+            getter = getattr(adapter, "get_population_snapshot", None)
             if callable(getter):
                 try:
-                    x, f, v = getter()
+                    snapshot = getter()
+                    if snapshot is None:
+                        raise LookupError("Adapter does not own an evaluated population snapshot")
+                    x, f, v = snapshot
                     x_arr = np.asarray(x, dtype=float)
                     f_arr = np.asarray(f, dtype=float)
                     v_arr = np.asarray(v, dtype=float).reshape(-1)
@@ -161,7 +164,7 @@ class Plugin(PluginBase):
                 except Exception as exc:
                     report_soft_error(
                         component="Plugin",
-                        event="get_population_snapshot.adapter_get_population",
+                        event="get_population_snapshot.adapter_population_snapshot",
                         exc=exc,
                         logger=logger,
                         strict=False,

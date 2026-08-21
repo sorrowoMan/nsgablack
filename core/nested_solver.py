@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, Mapping, Optional
 import numpy as np
 
 from blackbase.project import (
+    CaseInvocationError,
     CaseRunResult,
     CaseStage,
     CaseStageRunner,
@@ -45,13 +46,11 @@ InnerRunner = Callable[[Any, Any, Dict[str, Any]], Mapping[str, Any]]
 CaseResultProjector = Callable[[Any, np.ndarray, CaseRunResult], tuple[np.ndarray, float]]
 
 
-class ChildCaseExecutionError(RuntimeError):
+class ChildCaseExecutionError(CaseInvocationError):
     """Raised when a complete child Case returns a failed result envelope."""
 
     def __init__(self, result: CaseRunResult) -> None:
-        self.result = result
-        message = result.error or f"child Case finished with status={result.status}"
-        super().__init__(message)
+        super().__init__(result, message="inner Solver Case failed")
 
 
 class CaseInnerRuntimeEvaluator:

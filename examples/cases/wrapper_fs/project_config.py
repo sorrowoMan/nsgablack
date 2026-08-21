@@ -19,7 +19,9 @@ STAGES = [
         "name": "main",
         "cases": ["wrapper_fs"],
         "resource_requests": {"wrapper_fs": {"threads": 1, "gpus": 0, "backend": "local"}},
-        "mode": "cli",
+        "component_overrides": {
+            "wrapper_fs": {"config": {"pop_size": 8, "max_steps": 3}}
+        },
     },
 ]
 

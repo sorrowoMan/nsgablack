@@ -36,7 +36,7 @@
 |---|---|
 | `build_solver.py` | 主 assembly entry。 |
 | `run_solver.py` | CLI smoke entry。 |
-| `??????` | Attach/build helpers。 |
+| `assembly.py` | Attach/build helpers。 |
 | `problem/` | Tiny black-box problem，用于隔离 worker backend。 |
 | `pipeline/` | Representation pipeline。 |
 | `runtime/` | L0 distributed runtime pieces。 |

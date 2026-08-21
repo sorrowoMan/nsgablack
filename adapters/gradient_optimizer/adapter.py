@@ -413,12 +413,12 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         self._provider_transition_count += 1
         self._provider_transition_needs_slot_seed = False
 
-    def get_population(self) -> tuple[Any, ...] | None:
+    def get_current_candidates(self) -> tuple[Any, ...] | None:
         if self.current_x is None:
             return None
         return (self._wrap_candidate(self.current_x.copy()),)
 
-    def set_population(
+    def set_current_candidates(
         self,
         population: Any,
         objectives: Any | None = None,

@@ -11,20 +11,20 @@
 ## 2. 关键对象
 - `cases/<inner>/build_solver.py`：内层 canonical assembly entry。
 - `build_trainer.py`：如存在，只能是 alias。
-- `ResourceContext`：Project L0 或 parent case 派生的有效资源授权。
+- `ResourceContext`：Project L0 发放、由公共 child grant ledger 分账的有效资源授权。
 - `component_overrides`：外层候选解码出的内层组件参数。
 - result payload / Artifact ref / Snapshot ref：层间唯一稳定通信形态。
 
 ## 3. 推荐接线
 1. 外层 Project 在 `project_config.py` 声明资源池和 case requirements。
-2. 外层 Case 在 `Problem.evaluate()` 中构造 inner task payload。
-3. 外层调用内层 `build_solver(..., resource_context=child_context, component_overrides=...)`。
+2. 外层 Case 在 `Problem.evaluate()` 中构造 `CaseRunRequest`，或使用 `CaseInnerRuntimeEvaluator` 的等价公共入口。
+3. BlackBase `CaseInvoker` 统一派生 lineage、deadline、cancellation、budget 与 child resource grant，再调用内层 canonical builder。
 4. 内层运行后返回稳定 result payload，并把大对象写成 Artifact/Snapshot ref。
 5. 外层只做 objective/constraint projection。
 
-## 4. 兼容对象
+## 4. 禁止的旧入口
 
-历史上的 `problem.inner_runtime_evaluator`、`build_inner_solver(...)`、inner backend helper 可以作为过渡层保留，但推荐把它们收敛到标准 inner Case surface。新机制不要继续扩展旧私有入口。
+不得通过修改 `sys.path`、直接导入另一仓库内部 workflow、私自派生资源上下文或调用私有 `build_inner_solver(...)` 完成嵌套。这些路径不具备完整 lineage、预算结算、取消传播与标准结果信封。
 
 ## 5. 示例
 
@@ -32,6 +32,5 @@
 
 - `docs/standard_scaffold_tutorial/07_nested_orchestration_standard.md`
 - `examples/cases/supply_adjustment_nested/`
-- `examples/cases/mlblack_nested_scaffold/`
 
 不要把旧单文件脚本作为新增机制的入口。若需要保留旧脚本，只保留 thin wrapper 或 compatibility note。

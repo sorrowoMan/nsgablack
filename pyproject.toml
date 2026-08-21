@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nsgablack"
-version = "0.3.7"
+version = "0.3.9"
 description = "A decomposed optimization system with pipelines, biases, adapters, plugins"
 readme = "README.md"
 license = {text = "MIT"}
@@ -40,7 +40,7 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "blackbase>=0.3.6,<0.4.0",
+    "blackbase>=0.3.8,<0.4.0",
     "numpy>=1.20.0",
     "scipy>=1.7.0",
     "scikit-learn>=1.0.0",
@@ -52,6 +52,9 @@ visualization = ["matplotlib>=3.5.0"]
 parallel = ["joblib>=1.1.0"]
 bayesian = ["skopt>=0.9.0"]
 distributed = ["ray>=1.10.0"]
+rag = ["openai>=1.0.0", "psycopg[binary]>=3.1.0"]
+rag-local = ["sentence-transformers>=2.2.0", "psycopg[binary]>=3.1.0"]
+rag-mcp = ["mcp>=1.0.0", "sentence-transformers>=2.2.0", "psycopg[binary]>=3.1.0"]
 dev = [
     "pytest>=6.0.0",
     "pytest-cov>=2.12.0",
@@ -84,51 +87,135 @@ nsgablack = "nsgablack.__main__:main"
 
 [tool.setuptools]
 include-package-data = false
+packages = [
+    "nsgablack",
+    "nsgablack.adapters",
+    "nsgablack.adapters.astar",
+    "nsgablack.adapters.async_event_driven",
+    "nsgablack.adapters.differential_evolution",
+    "nsgablack.adapters.fixed_candidate",
+    "nsgablack.adapters.gaussian_search",
+    "nsgablack.adapters.gradient_descent",
+    "nsgablack.adapters.gradient_optimizer",
+    "nsgablack.adapters.mas",
+    "nsgablack.adapters.moa_star",
+    "nsgablack.adapters.moead",
+    "nsgablack.adapters.multi_strategy",
+    "nsgablack.adapters.nsga2",
+    "nsgablack.adapters.nsga3",
+    "nsgablack.adapters.pattern_search",
+    "nsgablack.adapters.role_adapters",
+    "nsgablack.adapters.serial_strategy",
+    "nsgablack.adapters.simulated_annealing",
+    "nsgablack.adapters.single_trajectory_adaptive",
+    "nsgablack.adapters.spea2",
+    "nsgablack.adapters.trust_region_base",
+    "nsgablack.adapters.trust_region_dfo",
+    "nsgablack.adapters.trust_region_mo_dfo",
+    "nsgablack.adapters.trust_region_nonsmooth",
+    "nsgablack.adapters.trust_region_subspace",
+    "nsgablack.adapters.vns",
+    "nsgablack.bias",
+    "nsgablack.bias.algorithmic",
+    "nsgablack.bias.algorithmic.signal_driven",
+    "nsgablack.bias.core",
+    "nsgablack.bias.domain",
+    "nsgablack.bias.managers",
+    "nsgablack.bias.specialized",
+    "nsgablack.bias.specialized.graph",
+    "nsgablack.bias.specialized.production",
+    "nsgablack.bias.surrogate",
+    "nsgablack.bias.utils",
+    "nsgablack.catalog",
+    "nsgablack.catalog.providers",
+    "nsgablack.catalog.store",
+    "nsgablack.core",
+    "nsgablack.core.solver_helpers",
+    "nsgablack.core.state",
+    "nsgablack.experiment",
+    "nsgablack.plugins",
+    "nsgablack.plugins.domain_backends",
+    "nsgablack.plugins.domain_backends.copt_templates",
+    "nsgablack.plugins.evaluation",
+    "nsgablack.plugins.ops",
+    "nsgablack.plugins.runtime",
+    "nsgablack.plugins.storage",
+    "nsgablack.plugins.system",
+    "nsgablack.project",
+    "nsgablack.project.doctor_core",
+    "nsgablack.project.doctor_core.rules",
+    "nsgablack.project.scaffold",
+    "nsgablack.project.scaffold.case_template_solver",
+    "nsgablack.project.scaffold.case_template_solver.adapter",
+    "nsgablack.project.scaffold.case_template_solver.bias",
+    "nsgablack.project.scaffold.case_template_solver.evaluation",
+    "nsgablack.project.scaffold.case_template_solver.pipeline",
+    "nsgablack.project.scaffold.case_template_solver.plugins",
+    "nsgablack.project.scaffold.case_template_solver.problem",
+    "nsgablack.project.scaffold.case_template_solver.runtime",
+    "nsgablack.project.scaffold.case_template_solver.solver",
+    "nsgablack.project.scaffold.case_template_trainer",
+    "nsgablack.project.scaffold.case_template_trainer.adapter",
+    "nsgablack.project.scaffold.case_template_trainer.bias",
+    "nsgablack.project.scaffold.case_template_trainer.evaluation",
+    "nsgablack.project.scaffold.case_template_trainer.pipeline",
+    "nsgablack.project.scaffold.case_template_trainer.plugins",
+    "nsgablack.project.scaffold.case_template_trainer.problem",
+    "nsgablack.project.scaffold.case_template_trainer.runtime",
+    "nsgablack.project.scaffold.case_template_trainer.solver",
+    "nsgablack.project.scaffold.components",
+    "nsgablack.project.scaffold.config",
+    "nsgablack.project.scaffold.project_template.cases",
+    "nsgablack.project.templates",
+    "nsgablack.rag",
+    "nsgablack.representation",
+    "nsgablack.ui",
+    "nsgablack.utils",
+    "nsgablack.utils.analysis",
+    "nsgablack.utils.constraints",
+    "nsgablack.utils.dynamic",
+    "nsgablack.utils.engineering",
+    "nsgablack.utils.evaluation",
+    "nsgablack.utils.parallel",
+    "nsgablack.utils.performance",
+    "nsgablack.utils.runtime",
+    "nsgablack.utils.surrogate",
+    "nsgablack.utils.viz",
+    "nsgablack.utils.viz.ui",
+    "nsgablack.utils.wiring",
+]
 
-[tool.setuptools.packages.find]
-include = [
-    "adapters*",
-    "bias*",
-    "catalog*",
-    "core*",
-    "experiment*",
-    "nsgablack*",
-    "plugins*",
-    "project*",
-    "representation*",
-    "ui*",
-    "utils*",
-]
-exclude = [
-    "build*",
-    "dist*",
-    "docs*",
-    "examples*",
-    "out*",
-    "project_template_base*",
-    "tests*",
-]
-namespaces = true
+[tool.setuptools.package-dir]
+"nsgablack" = "nsgablack"
+"nsgablack.adapters" = "adapters"
+"nsgablack.bias" = "bias"
+"nsgablack.catalog" = "catalog"
+"nsgablack.core" = "core"
+"nsgablack.experiment" = "experiment"
+"nsgablack.plugins" = "plugins"
+"nsgablack.project" = "project"
+"nsgablack.representation" = "representation"
+"nsgablack.ui" = "ui"
+"nsgablack.utils" = "utils"
 
 [tool.setuptools.package-data]
-"catalog" = [
+"nsgablack.catalog" = [
     "DASHBOARD_PROTOCOL.md",
     "db.toml.example",
     "entries/*.toml",
 ]
-"experiment" = ["db.toml.example"]
-"project.scaffold" = [
+"nsgablack.experiment" = ["db.toml.example"]
+"nsgablack.project.scaffold" = [
     "project_template/*.md",
     "project_template/*.template",
     "project_template/cases/*.md",
 ]
-"project.scaffold.case_template" = ["*.template"]
-"project.scaffold.case_template_solver" = [
+"nsgablack.project.scaffold.case_template_solver" = [
     "*.template",
     "pipeline/*.template",
     "pipeline/operators/.gitkeep",
 ]
-"project.scaffold.case_template_trainer" = [
+"nsgablack.project.scaffold.case_template_trainer" = [
     "*.template",
     "pipeline/*.template",
     "pipeline/operators/.gitkeep",

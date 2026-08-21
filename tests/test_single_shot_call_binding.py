@@ -120,7 +120,7 @@ def test_population_setter_body_type_error_is_not_retried() -> None:
         def __init__(self) -> None:
             self.calls = 0
 
-        def set_population(self, population, objectives, violations):
+        def set_population_snapshot(self, population, objectives, violations):
             del population, objectives, violations
             self.calls += 1
             raise TypeError("setter body failed")
@@ -149,7 +149,7 @@ def test_population_setter_solver_aware_form_is_bound_before_call() -> None:
         def __init__(self) -> None:
             self.calls = 0
 
-        def set_population(self, solver, population, objectives, violations):
+        def set_population_snapshot(self, solver, population, objectives, violations):
             del population, objectives, violations
             self.calls += 1
             assert solver is outer_solver

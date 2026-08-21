@@ -164,7 +164,7 @@ def test_redis_task_runtime_uses_task_envelope_and_task_result():
     claimed = queue.claim_task(worker, run_id="r1", timeout_seconds=1)
     assert claimed is not None
     assert claimed.task.task_id == task.task_id
-    assert claimed.task.payload["candidate"] == [1.0]
+    assert claimed.task.payload["candidate"] == (1.0,)
 
     result = TaskResult(
         task_id=task.task_id,
@@ -202,7 +202,11 @@ def test_redis_nested_distributed_evaluator_uses_external_worker_loop_with_l0_pr
             {
                 "threads": 1,
                 "namespace": "project.outer",
-                "grant": {"threads": 1, "workers": 1},
+            "grant": {
+                "threads": 1,
+                "workers": 1,
+                "capabilities": ["nested_eval"],
+            },
                 "lease": {"lease_id": "project-lease", "owner_id": "outer"},
             }
         )
@@ -245,10 +249,10 @@ def test_redis_nested_distributed_evaluator_uses_external_worker_loop_with_l0_pr
     assert np.allclose(objectives, [[3.0, 0.0], [7.0, 1.0], [11.0, 2.0]])
     assert np.allclose(violations, [0.0, 0.0, 0.0])
     assert len(seen_resource_contexts) == int(population.shape[0])
-    assert all(item["lease"]["lease_id"] == "project-lease" for item in seen_resource_contexts)
+    assert all(item["lease"]["lease_id"] != "project-lease" for item in seen_resource_contexts)
     assert len(evaluator.last_task_results) == int(population.shape[0])
     for item in evaluator.last_task_results:
         assert item["lease_id"]
         assert item["resource_context"]["lease"]["lease_id"] == item["lease_id"]
         assert item["resource_context"]["task_id"] == item["task_id"]
-        assert item["resource_context"]["metadata"]["local_execution_lease"]["lease_id"]
+        assert item["metadata"]["parent_lease_id"] == "project-lease"

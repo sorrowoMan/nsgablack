@@ -6,9 +6,9 @@ Backend adapters for numeric solvers and inner-runtime tools:
 - `ngspice_backend.py`
 - `copt_backend.py`
 
-ML/symbolic 语义 backend 位于
-`mlblack.integrations.nsgablack_symbolic_backend`；nsgablack 只消费其正式
-Case/provider surface，不保存 ML 实现副本。
+ML/symbolic 语义由 `mlblack.integrations.nsgablack_symbolic` 提供 Problem、
+Codec、Artifact 等组件；需要独立求解生命周期时必须组装为标准子 Case，
+通过 `CaseInnerRuntimeEvaluator` / `CaseRunRequest` 调用，不能伪装成 domain backend。
 
 ## CoptBackend templates
 

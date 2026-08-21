@@ -7,13 +7,13 @@ from dataclasses import dataclass
 class LearnableConvComponentSearchConfig:
     output_dir: str = "runs/learnable_conv_component_search"
     seed: int = 42
-    pop_size: int = 12
-    offspring_size: int = 12
-    generations: int = 6
+    pop_size: int = 4
+    offspring_size: int = 2
+    generations: int = 1
     mutation_sigma: float = 0.18
     crossover_rate: float = 0.9
     inner_train_ratio: float = 0.75
-    inner_n_samples: int = 1200
+    inner_n_samples: int = 96
     inner_input_dim: int = 64
     inner_image_height: int = 8
     inner_image_width: int = 8
@@ -25,14 +25,14 @@ class LearnableConvComponentSearchConfig:
     inner_execution_backend: str = "serial"
     inner_threads: int = 1
     refinement_mode: str = "gradient_descent"
-    refinement_steps: int = 4
+    refinement_steps: int = 1
     refinement_coeff_bound: float = 2.0
     refinement_test_rmse_weight: float = 1.0
     refinement_gap_weight: float = 1.0
     kernel_alignment_prior_weight: float = 1.0
     refinement_gradient_learning_rate: float = 0.35
     refinement_gradient_epsilon: float = 0.05
-    refinement_gradient_max_directions: int = 3
+    refinement_gradient_max_directions: int = 1
     refinement_gradient_lr_growth: float = 1.05
     refinement_gradient_lr_decay: float = 0.7
     refinement_gradient_min_lr: float = 1.0e-5

@@ -18,7 +18,7 @@ from .contracts import (
     ParamContract,
     UsageContract,
 )
-from .registry import CatalogEntry, get_catalog
+from .registry import CatalogEntry
 from .store import resolve_catalog_store
 from .usage import build_usage_profile
 from blackbase.context.context_keys import CANONICAL_CONTEXT_KEYS
@@ -603,7 +603,9 @@ def _build_health(
 
 def build_catalog_bundle(*, profile: str, runtime: bool = False, entries: List | None = None) -> CatalogBundle:
     if entries is None:
-        c = get_catalog(profile=profile)
+        from .registry import get_source_catalog
+
+        c = get_source_catalog(profile=profile)
         entries = c.list()
     components: List[CatalogComponentContract] = []
     contexts: List[CatalogContextContract] = []
@@ -648,6 +650,8 @@ def build_catalog_bundle(*, profile: str, runtime: bool = False, entries: List |
 
         health.append(_build_health(entry, entry_params, entry_methods, context, runtime=runtime))
 
+    from .fingerprint import CATALOG_SOURCE_SCHEMA, catalog_entries_digest
+
     return CatalogBundle(
         components=components,
         contexts=contexts,
@@ -655,6 +659,8 @@ def build_catalog_bundle(*, profile: str, runtime: bool = False, entries: List |
         params=params,
         methods=methods,
         health=health,
+        source_digest=catalog_entries_digest(entries),
+        source_schema=CATALOG_SOURCE_SCHEMA,
     )
 
 
@@ -675,18 +681,14 @@ def materialize_catalog_to_db(
     runtime: bool = False,
     db_url: str | None = None,
 ) -> dict[str, int | str]:
-    from .registry import _load_external_entries, _load_entrypoint_entries
+    from .registry import get_source_catalog
 
-    extra = _load_external_entries()
-    eps = _load_entrypoint_entries()
-
-    merged: dict[str, Any] = {e.key: e for e in extra}
-    for e in eps:
-        merged[e.key] = e
-    entries = list(merged.values())
-
-    bundle = build_catalog_bundle(profile=profile, runtime=runtime, entries=entries)
     store = resolve_catalog_store(url=db_url, readonly=False)
+    backend = str(getattr(store, "backend", "db") or "db").strip().lower()
+    source_profile = "default" if backend == "mysql" else profile
+    entries = get_source_catalog(refresh=True, profile=source_profile).list()
+
+    bundle = build_catalog_bundle(profile=source_profile, runtime=runtime, entries=entries)
     store.sync_bundle(bundle, profile=profile)
     return {
         "backend": str(getattr(store, "backend", "db")),

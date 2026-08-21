@@ -125,7 +125,11 @@ def test_nested_parallel_uses_parent_l0_grant_and_keeps_local_slot_as_audit_meta
         resource_context={
             "threads": 2,
             "namespace": "project.stage.outer",
-            "grant": {"threads": 2, "workers": 2},
+            "grant": {
+                "threads": 2,
+                "workers": 2,
+                "capabilities": ["nested_eval"],
+            },
             "lease": {"lease_id": "project-lease", "owner_id": "outer"},
         },
     )
@@ -140,4 +144,5 @@ def test_nested_parallel_uses_parent_l0_grant_and_keeps_local_slot_as_audit_meta
         assert context["lease"]["lease_id"] == "project-lease"
         assert context["threads"] == 1
         assert context["metadata"]["parent_lease_id"] == "project-lease"
-        assert context["metadata"]["local_execution_lease"]["lease_id"]
+        assert context["metadata"]["resource_subgrant_id"]
+        assert "local_execution_lease" not in context["metadata"]

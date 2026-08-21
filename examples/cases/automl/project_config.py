@@ -19,7 +19,17 @@ STAGES = [
         "name": "main",
         "cases": ["automl"],
         "resource_requests": {"automl": {"threads": 1, "gpus": 0, "backend": "local"}},
-        "mode": "cli",
+        "component_overrides": {
+            "automl": {
+                "config": {
+                    "n_samples": 120,
+                    "n_features": 6,
+                    "pop_size": 6,
+                    "max_steps": 2,
+                    "random_seed": 42,
+                }
+            }
+        },
     },
 ]
 

@@ -6,19 +6,6 @@ Standard scaffold entry.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_THIS_DIR = Path(__file__).resolve().parent
-if str(_THIS_DIR) not in sys.path:
-    sys.path.insert(0, str(_THIS_DIR))
-from _bootstrap import ensure_nsgablack_importable
-
-ensure_nsgablack_importable(Path(__file__))
-
-from nsgablack.project.scaffold import print_solver_check
-
-
 def build_solver(signal: "np.ndarray | None" = None, max_changepoints: int = 3, *, adapter: str = "de", pop_size: int = 30, max_steps: int = 150, sparsity_weight: float = 100.0, resource_context=None, component_overrides=None):
     """Build a changepoint detection solver.
 
@@ -51,7 +38,15 @@ def build_solver(signal: "np.ndarray | None" = None, max_changepoints: int = 3, 
     from problem.changepoint_problem import ChangepointProblem
 
     overrides = dict(component_overrides or {})
-    signal = overrides.get("signal", signal)
+    config = dict(overrides.pop("config", {}) or {})
+    max_changepoints = int(config.pop("max_changepoints", max_changepoints))
+    adapter = str(config.pop("adapter", adapter))
+    pop_size = int(config.pop("pop_size", pop_size))
+    max_steps = int(config.pop("max_steps", max_steps))
+    sparsity_weight = float(config.pop("sparsity_weight", sparsity_weight))
+    if config:
+        raise ValueError("unsupported changepoint config overrides: " + str(sorted(config)))
+    signal = overrides.pop("signal", signal)
     if signal is None:
         signal = np.concatenate(
             [np.zeros(30, dtype=float), np.ones(30, dtype=float), np.full(30, 0.25)]
@@ -89,57 +84,7 @@ def build_solver(signal: "np.ndarray | None" = None, max_changepoints: int = 3, 
 
     solver = ComposableSolver(problem=prob, adapter=alg, representation_pipeline=pipeline, bias_module=bias)
     solver.set_max_steps(max_steps)
+    from nsgablack.project import apply_solver_component_overrides
+    apply_solver_component_overrides(solver, overrides)
     solver.set_resource_context(resource_context)
     return solver
-
-
-def main():
-    import argparse, time
-    import numpy as np
-
-    parser = argparse.ArgumentParser(description="Changepoint detection benchmark")
-    parser.add_argument("--n", type=int, default=200)
-    parser.add_argument("--max-cp", type=int, default=3)
-    parser.add_argument("--adapter", type=str, default="de")
-    parser.add_argument("--max-steps", type=int, default=150)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--check", action="store_true")
-    args = parser.parse_args()
-
-    rng = np.random.default_rng(args.seed)
-    n = args.n
-    cp1, cp2 = int(n * 0.3), int(n * 0.7)
-    y = np.concatenate([
-        rng.normal(0, 1, cp1),
-        rng.normal(5, 1, cp2 - cp1),
-        rng.normal(2, 1, n - cp2),
-    ])
-
-    solver = build_solver(signal=y, max_changepoints=args.max_cp, adapter=args.adapter, max_steps=args.max_steps)
-    solver.set_random_seed(args.seed)
-    if args.check:
-        print_solver_check(solver)
-        return
-
-    # ruptures PELT
-    try:
-        import ruptures as rpt
-        algo = rpt.Pelt(model="l2").fit(y)
-        cp_ruptures = algo.predict(pen=10)
-        cp_ruptures = [c for c in cp_ruptures if c < n]
-    except ImportError:
-        cp_ruptures = [cp1, cp2]
-
-    # nsgablack
-    t0 = time.perf_counter()
-    solver.run()
-    nsga_t = time.perf_counter() - t0
-    nsga_cps = solver.problem.get_changepoints(solver.best_x).tolist() if solver.best_x is not None else []
-
-    print(f"True:   [{cp1}, {cp2}]")
-    print(f"PELT:   {cp_ruptures}")
-    print(f"nsgablack ({args.adapter}): {nsga_cps}  ({nsga_t:.2f}s)")
-
-
-if __name__ == "__main__":
-    main()

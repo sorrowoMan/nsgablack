@@ -269,7 +269,7 @@ def test_gradient_optimizer_consumes_ml_unknown_state_and_feedback_sequence():
         {},
     )
 
-    population = adapter.get_population()
+    population = adapter.get_current_candidates()
     assert population is not None
     assert isinstance(population[0], UnknownState)
     assert np.allclose(population[0].as_array(), [0.8, -0.8])

@@ -434,8 +434,12 @@ def test_formal_lightweight_data_ref_can_cross_runtime_projection_gate() -> None
     projection = collect_runtime_context_projection(solver)
 
     assert projection["weights_ref"] is not ref
-    projection["weights_ref"].metadata["lineage"]["runs"].append("run-2")
-    assert ref.metadata == {"lineage": {"runs": ["run-1"]}}
+    detached = projection["weights_ref"].as_dict()
+    detached["metadata"]["lineage"]["runs"].append("run-2")
+    assert ref.as_dict()["metadata"] == {"lineage": {"runs": ["run-1"]}}
+    assert projection["weights_ref"].as_dict()["metadata"] == {
+        "lineage": {"runs": ["run-1"]}
+    }
     assert projection[KEY_RUNTIME_PROJECTION_AUDIT]["current"] is True
 
 
@@ -927,7 +931,7 @@ def test_nsga2_and_de_publish_adapter_namespaced_best_fields() -> None:
     )
 
     for adapter in adapters:
-        assert adapter.set_population(population, objectives, violations) is True
+        assert adapter.set_population_snapshot(population, objectives, violations) is True
         projection = adapter.get_runtime_context_projection(None)
         assert KEY_ADAPTER_BEST_X in projection
         assert KEY_ADAPTER_BEST_OBJECTIVES in projection

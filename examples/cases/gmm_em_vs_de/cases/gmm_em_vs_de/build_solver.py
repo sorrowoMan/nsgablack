@@ -1,12 +1,6 @@
 """GMM: nsgablack StrategyChain DE→VNS vs sklearn GaussianMixture (EM)."""
 from __future__ import annotations
-import sys, time, argparse
-from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
-
-_THIS_DIR = Path(__file__).resolve().parent
-if str(_THIS_DIR) not in sys.path: sys.path.insert(0, str(_THIS_DIR))
-from _bootstrap import ensure_nsgablack_importable; ensure_nsgablack_importable(Path(__file__))
+from typing import Any
 
 import numpy as np
 from nsgablack.adapters import (
@@ -19,7 +13,6 @@ from nsgablack.bias.specialized.local_search import NelderMeadBias
 from nsgablack.representation import RepresentationPipeline
 from nsgablack.representation.continuous import UniformInitializer, ContextGaussianMutation, ClipRepair
 from nsgablack.core.composable_solver import ComposableSolver
-from nsgablack.project.scaffold import print_solver_check
 from problem.gmm_problem import GMMProblem
 
 
@@ -47,19 +40,39 @@ class NelderMeadBiasBridge(NelderMeadBias):
             return 0.0
 
 
-def build_solver(*, resource_context=None, component_overrides=None):
+def build_solver(
+    *,
+    pop_size: int = 30,
+    max_steps: int = 300,
+    resource_context=None,
+    component_overrides=None,
+):
     """Canonical scaffold entry: assemble GMM solver (DE→VNS).
 
     Uses synthetic 3-cluster blobs data by default.
     Override the problem via component_overrides={"problem": my_problem}.
     """
     overrides = dict(component_overrides or {})
-    k = 3
+    config = dict(overrides.pop("config", {}) or {})
+    pop_size = int(config.pop("pop_size", pop_size))
+    max_steps = int(config.pop("max_steps", max_steps))
+    k = int(config.pop("k", 3))
+    n_samples = int(config.pop("n_samples", 300))
+    n_features = int(config.pop("n_features", 2))
+    random_seed = int(config.pop("random_seed", 42))
+    if config:
+        raise ValueError("unsupported gmm_em_vs_de config overrides: " + str(sorted(config)))
 
-    problem = overrides.get("problem")
+    problem = overrides.pop("problem", None)
     if problem is None:
         from sklearn.datasets import make_blobs
-        X, _y_true = make_blobs(n_samples=300, n_features=2, centers=k, cluster_std=1.0, random_state=42)
+        X, _y_true = make_blobs(
+            n_samples=n_samples,
+            n_features=n_features,
+            centers=k,
+            cluster_std=1.0,
+            random_state=random_seed,
+        )
         problem = GMMProblem(X, k=k)
 
     low = np.array([b[0] for b in problem.bounds], dtype=float)
@@ -69,17 +82,16 @@ def build_solver(*, resource_context=None, component_overrides=None):
         mutator=ContextGaussianMutation(base_sigma=0.25, low=low, high=high),
         repair=ClipRepair(low=low, high=high))
 
-    max_steps = 300
     de_steps = max(1, max_steps * 80 // 100)
     vns_steps = max_steps - de_steps
     de_phase = SerialPhaseSpec(
         name="global_explore",
-        adapter=DifferentialEvolutionAdapter(DEConfig(batch_size=30)),
+        adapter=DifferentialEvolutionAdapter(DEConfig(batch_size=pop_size)),
         steps=de_steps,
     )
     vns_phase = SerialPhaseSpec(
         name="local_refine",
-        adapter=WarmStartVNSAdapter(batch_size=30),
+        adapter=WarmStartVNSAdapter(batch_size=pop_size),
         steps=vns_steps,
     )
     chain = StrategyChainAdapter(phases=[de_phase, vns_phase])
@@ -94,84 +106,8 @@ def build_solver(*, resource_context=None, component_overrides=None):
         bias_module=bias,
     )
     solver.set_max_steps(max_steps)
+    from nsgablack.project import apply_solver_component_overrides
+
+    apply_solver_component_overrides(solver, overrides)
     solver.set_resource_context(resource_context)
     return solver
-
-
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--k", type=int, default=3)
-    p.add_argument("--pop-size", type=int, default=30)
-    p.add_argument("--max-steps", type=int, default=300)
-    p.add_argument("--n-samples", type=int, default=300)
-    p.add_argument("--n-features", type=int, default=2)
-    p.add_argument("--check", action="store_true")
-    args = p.parse_args()
-
-    from sklearn.datasets import make_blobs
-    from sklearn.mixture import GaussianMixture
-
-    X, y_true = make_blobs(n_samples=args.n_samples, n_features=args.n_features,
-                           centers=args.k, cluster_std=1.0, random_state=args.seed)
-
-    if args.check:
-        solver = build_solver(component_overrides={"problem": GMMProblem(X, k=args.k)})
-        solver.set_random_seed(args.seed)
-        print_solver_check(solver)
-        return
-
-    t0 = time.perf_counter()
-    sk_gmm = GaussianMixture(n_components=args.k, covariance_type="diag",
-                             random_state=args.seed, n_init=3).fit(X)
-    sk_time = time.perf_counter() - t0
-    sk_nll = -sk_gmm.score(X) * X.shape[0]
-
-    prob = GMMProblem(X, k=args.k)
-    low = np.array([b[0] for b in prob.bounds], dtype=float)
-    high = np.array([b[1] for b in prob.bounds], dtype=float)
-    pl = RepresentationPipeline(
-        initializer=UniformInitializer(low=low, high=high),
-        mutator=ContextGaussianMutation(base_sigma=0.25, low=low, high=high),
-        repair=ClipRepair(low=low, high=high))
-
-    de_steps = max(1, args.max_steps * 80 // 100)
-    vns_steps = args.max_steps - de_steps
-    de_phase = SerialPhaseSpec(
-        name="global_explore",
-        adapter=DifferentialEvolutionAdapter(DEConfig(batch_size=args.pop_size)),
-        steps=de_steps,
-    )
-    vns_phase = SerialPhaseSpec(
-        name="local_refine",
-        adapter=WarmStartVNSAdapter(batch_size=args.pop_size),
-        steps=vns_steps,
-    )
-    chain = StrategyChainAdapter(phases=[de_phase, vns_phase])
-
-    bias = BiasModule()
-    bias.add(NelderMeadBiasBridge())
-
-    solver = ComposableSolver(
-        problem=prob,
-        adapter=chain,
-        representation_pipeline=pl,
-        bias_module=bias,
-    )
-    solver.set_max_steps(args.max_steps)
-    solver.set_random_seed(args.seed)
-    t0 = time.perf_counter()
-    solver.run()
-    nsga_time = time.perf_counter() - t0
-    nsga_nll = float(solver.best_objective) if solver.best_objective is not None else float("inf")
-
-    print(f"GMM  k={args.k}  n={X.shape[0]}  d={X.shape[1]}  dimension={solver.problem.dimension}")
-    print(f"sklearn EM       NLL={sk_nll:.3f}  time={sk_time:.3f}s")
-    print(f"nsgablack DE→VNS  NLL={nsga_nll:.3f}  time={nsga_time:.2f}s")
-    if nsga_nll < float("inf") and sk_nll < float("inf"):
-        ratio = nsga_nll / max(sk_nll, 1e-10)
-        print(f"ratio (DE→VNS/EM) = {ratio:.4f}")
-
-
-if __name__ == "__main__":
-    main()

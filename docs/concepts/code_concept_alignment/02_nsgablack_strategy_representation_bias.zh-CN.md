@@ -17,7 +17,7 @@
 | `update(solver, candidates, feedback, context)` | tell / feedback assimilation | 根据 `OptimizationFeedbackBatch` 更新内部状态；纯数值算法可将其解包为 objectives / violations。 | 把评估结果作为正式反馈流，而不是算法内部私算。 |
 | `setup/teardown` | lifecycle hooks | 算法策略挂载/卸载。 | 生命周期存在但弱化，主生命周期仍归 solver。 |
 | `get_state/set_state` | checkpointable optimizer state | adapter 状态恢复。 | checkpoint 可恢复算法策略，而不只恢复 solver 字段。 |
-| `get_population/set_population` | population state IO | 支持插件或 checkpoint 写回种群。 | 运行态 population 归属可在 adapter 和 solver 间对齐。 |
+| `get_population_snapshot/set_population_snapshot` | L2 population state IO | 支持插件或 checkpoint 写回完整 `(X, F, V)`。 | 运行态 population 归属可在 adapter 和 solver 间对齐；L1 当前候选使用独立 accessor。 |
 | `get_context_contract` | component IO contract | 声明 context/artifact/phase 依赖。 | 让算法策略也能被 doctor/catalog 审计。 |
 | `get_runtime_context_projection` | runtime telemetry projection | 暴露 adapter 运行切片。 | 日志/UI 不需要读 adapter 私有字段。 |
 | `CompositeAdapter` | ensemble/portfolio optimizer / hybrid strategy | 合并多个 adapter 候选，并分发反馈。 | 支持多策略组合而不是写一个超级算法。 |

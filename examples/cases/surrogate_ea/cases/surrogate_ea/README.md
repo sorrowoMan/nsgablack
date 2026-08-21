@@ -49,7 +49,7 @@ L4 评估运行时的代理模型装配：
 ## 运行和验证
 
 ```powershell
-cd C:\Users\hp\Desktop\nsgablack
+# 先进入 nsgablack 仓库根目录
 python examples\cases\surrogate_ea\run_project.py --check
 python examples\cases\surrogate_ea\run_project.py
 ```

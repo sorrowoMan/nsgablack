@@ -15,9 +15,9 @@ class _DummyPlugin(Plugin):
         super().__init__("dummy")
 
 
-def test_get_population_snapshot_prefers_adapter_get_population() -> None:
+def test_get_population_snapshot_prefers_adapter_population_snapshot() -> None:
     class _Adapter:
-        def get_population(self):
+        def get_population_snapshot(self):
             x = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=float)
             f = np.array([[10.0], [20.0]], dtype=float)
             v = np.array([0.0, 1.0], dtype=float)
@@ -74,7 +74,7 @@ def test_commit_population_snapshot_uses_adapter_setter() -> None:
             self.calls = 0
             self.payload = None
 
-        def set_population(self, population, objectives, violations):
+        def set_population_snapshot(self, population, objectives, violations):
             self.calls += 1
             self.payload = (
                 np.asarray(population, dtype=float),

@@ -1,27 +1,17 @@
-# START_HERE
+# 快速开始：l0_distributed_worker
 
-`l0_distributed_worker` ????? Project / Case / Scaffold / L0 substrate?
+1. 先检查整个 Project 的装配契约：
 
-## 1) ???????
-
-```powershell
+~~~powershell
 python examples/cases/l0_distributed_worker/run_project.py --check
-```
+~~~
 
-## 2) ??? Project ??
+2. 再执行默认 smoke profile：
 
-```powershell
+~~~powershell
 python examples/cases/l0_distributed_worker/run_project.py
-```
+~~~
 
-## 3) ??????
+3. 在输出中核对 Case、有效 **ResourceContext**、执行后端和运行命名空间。
 
-- Project ???? Case ?????????????
-- Case ??????? `build_solver.py` / `run_solver.py` surface?
-- `ResourceContext` ? Project L0 grant???? Case ???
-
-## 4) ????
-
-- `README.md`????????
-- `cases/l0_distributed_worker/README.md`?? Case ????????
-- `cases/l0_distributed_worker/START_HERE.md`?Case ?????
+Project 负责跨 Case 编排和 L0 授权；具体求解或训练语义留在 **cases/<case>/** 内。

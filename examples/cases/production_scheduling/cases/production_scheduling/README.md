@@ -20,7 +20,7 @@
 | `bias/` | 软生产偏好和先验信号 |
 | `plugins/` | progress、export、Pareto batch、audit/report wiring |
 | `solver/` | 薄 runner helper |
-| `build_solver.py` | ?? Case ???? |
+| `build_solver.py` | 标准 Case 组装入口 |
 | `run_solver.py` | Case-level CLI/debug entry |
 
 `working_integrated_optimizer.py` 是 legacy compatibility wrapper，不再作为当前 assembly 参考。

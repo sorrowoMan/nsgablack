@@ -93,7 +93,7 @@ def test_population_based_adapters_support_set_population_contract(adapter):
     obj = np.column_stack([np.sum(pop * pop, axis=1), np.sum(np.abs(pop), axis=1)])
     vio = np.zeros(16, dtype=float)
 
-    assert adapter.set_population(pop, obj, vio) is True
+    assert adapter.set_population_snapshot(pop, obj, vio) is True
     projection = adapter.get_runtime_context_projection(solver)
     assert isinstance(projection, dict)
 

@@ -58,7 +58,7 @@
 ## 运行和验证
 
 ```powershell
-python build_solver.py --seed 42 --n-vars 5 --pop-size 20 --max-steps 100 --mode pc
-python build_solver.py --mode lingam --seed 123 --n-vars 5 --pop-size 20 --max-steps 100
+python run_solver.py --seed 42 --n-vars 5 --pop-size 20 --max-steps 100 --mode pc
+python run_solver.py --mode lingam --seed 123 --n-vars 5 --pop-size 20 --max-steps 100
 python -m pytest tests/ -v
 ```

@@ -46,7 +46,7 @@ Adapter 层的可替换性：
 ## 运行和验证
 
 ```powershell
-cd C:\Users\hp\Desktop\nsgablack
+# 先进入 nsgablack 仓库根目录
 python examples\cases\trust_region_dfo\run_project.py --check
 python examples\cases\trust_region_dfo\run_project.py
 ```

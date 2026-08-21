@@ -63,11 +63,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     solver = build_phi_bundle_image_search_solver(cfg, suite_id=suite_id)
     if bool(args.check):
         print(
-            "phi_bundle_image_search scaffold ok | "
+            "[check] phi_bundle_image_search scaffold ok | "
             f"dimension={solver.problem.dimension} | objectives={solver.problem.objectives}"
         )
         return
-    result = solver.run(return_dict=True)
+    result = solver.run()
     problem = solver.problem
     output_dir = Path(getattr(solver, "phi_bundle_output_dir")).expanduser().resolve()
     summary = {

@@ -9,8 +9,10 @@ project_config.py
 run_project.py
 cases/
   <case_name>/
-    build_solver.py or build_trainer.py
-    run_solver.py or run_trainer.py
+    build_solver.py
+    build_trainer.py  # trainer Case only; thin alias
+    run_solver.py
+    run_trainer.py    # trainer Case only; thin alias
     config.py
     problem/
     pipeline/
@@ -23,7 +25,8 @@ cases/
 
 ## Key rules
 
-- One case has one primary build/run entry by `.case kind`.
+- Every Case has one canonical build/run entry: `build_solver.py` and `run_solver.py`.
+- Trainer aliases never contain a second assembly or CLI implementation.
 - One case has one pipeline primary entry (`pipeline/main.py` recommended).
 - Fine-grained pipeline logic goes to `pipeline/operators/*`.
 - Formal orchestration starts at `run_project.py`.

@@ -11,13 +11,15 @@ from __future__ import annotations
 from pathlib import Path
 from pkgutil import extend_path
 
-# Allow this package to discover the existing top-level modules (core/, bias/, etc.)
+# Source checkouts still keep implementation packages beside this directory.
+# Wheels map every implementation package directly under ``nsgablack.*`` and
+# must never extend into the surrounding site-packages directory.
 __path__ = extend_path(__path__, __name__)
-_PARENT = Path(__file__).resolve().parent.parent
-if str(_PARENT) not in __path__:
-    __path__.append(str(_PARENT))
+_SOURCE_ROOT = Path(__file__).resolve().parent.parent
+if (_SOURCE_ROOT / "pyproject.toml").is_file() and str(_SOURCE_ROOT) not in __path__:
+    __path__.append(str(_SOURCE_ROOT))
 
-__version__ = "0.3.7"
+__version__ = "0.3.9"
 
 __author__ = "SorrowoMan"
 __email__ = "sorrowo@foxmail.com"

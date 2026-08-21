@@ -2559,8 +2559,16 @@ class SolverBase:
                     inline_best
                 ):
                     store.delete(KEY_BEST_X)
-            except Exception:
-                pass
+            except Exception as exc:
+                report_soft_error(
+                    component="SolverBase",
+                    event="context_store_delete_oversized_incumbent",
+                    exc=exc,
+                    logger=logger,
+                    context_store=self.context_store,
+                    strict=False,
+                    level="debug",
+                )
         for key in (
             KEY_POPULATION,
             KEY_OBJECTIVES,

@@ -51,7 +51,7 @@
 | `backend_contract.py` | backend request/response contract | 后端求解请求协议。 |
 | `copt_backend.py` / `copt_templates/*` | mathematical programming backend | COPT/锥优化/线性/二次/半定等后端模板。 |
 | `ngspice_backend.py` | simulator backend | 电路仿真后端。 |
-| `mlblack.integrations.nsgablack_symbolic_backend` | inner ML/symbolic workflow backend | nsgablack 通过 mlblack 正式集成面调用符号共识流。 |
+| `CaseInnerRuntimeEvaluator` + `mlblack.integrations.nsgablack_symbolic` | nested ML/symbolic Case | nsgablack 通过完整子 Case 调用 ML 符号语义组件，不在 backend 内维护第二套搜索循环。 |
 | `timeout_budget.py` | timeout/budget guard | 后端预算与超时控制。 |
 | `contract_bridge.py` | backend contract adapter | 后端契约转换。 |
 

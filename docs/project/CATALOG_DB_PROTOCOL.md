@@ -137,7 +137,9 @@ Read mode resolution follows this order:
 
 Supported modes:
 
-- `prefer`
+- `prefer`: 数据库只作为当前源码 Catalog 的物化缓存。读取前会比较稳定的
+  `source_digest`；摘要缺失或不一致时只读回退到 registry，并通过
+  `catalog_source_info()` 暴露 `db_stale` / `db_stale_reason`。
 - `only`
 - `off`
 - `disabled` as alias for `off` in env/file mode parsing
@@ -322,6 +324,10 @@ payload = materialize_catalog_to_db(
 Write behavior:
 
 - catalog contracts are materialized into the selected backend
+- PostgreSQL 在每个 profile 的 `schema_json` 中保存源码 schema 与稳定摘要；
+  `default` 和 `framework-core` 必须分别物化
+- MySQL 保留默认全集并在查询时应用 profile；再次物化会删除源码中已经退役的
+  component 及其 contract/health/scalar 子记录，而不是永久累积旧条目
 - returned payload includes `backend`
 - local `readonly` config prevents accidental writes when store is constructed in readonly mode
 - explicit `--db-url` materialization is the normal intentional write path
@@ -426,6 +432,7 @@ After changing local DB config, verify all four:
 2. `python -m nsgablack catalog search vns --profile framework-core`
 3. `python -m nsgablack catalog ui --profile framework-core --db-path "..." --source-mode only`
 4. `catalog_source_info(...)` reports the expected backend, for example `postgresql`
+   and `db_stale == False`
 
 ## Troubleshooting
 
@@ -437,6 +444,8 @@ Check:
 - are you passing explicit `--db-path`
 - are you running with `--source-mode only`
 - does `catalog_source_info(...)` show `effective_source = postgresql` or `mysql`
+- if `db_stale == True`, materialize the requested profile again; `prefer` deliberately
+  refuses to advertise retired entries from an older database snapshot
 
 ### Problem: config file exists but is ignored
 

@@ -1,2 +1,0 @@
-"""Trainer assembly alias — delegates to build_solver."""
-from .build_solver import build_solver as build_trainer

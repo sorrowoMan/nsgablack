@@ -541,43 +541,24 @@ class EvolutionSolver(ComposableSolver):
         adapter = getattr(self, "adapter", None)
         if adapter is None:
             return
-        setter = getattr(adapter, "set_population", None)
+        setter = getattr(adapter, "set_population_snapshot", None)
         if not callable(setter):
             return
         if self.population is None or self.objectives is None or self.constraint_violations is None:
             return
-        try:
-            setter(self.population, self.objectives, self.constraint_violations)
-        except Exception as exc:
-            report_soft_error(
-                component="EvolutionSolver",
-                event="sync_adapter_from_solver",
-                exc=exc,
-                logger=logger,
-                context_store=self.context_store,
-                strict=False,
-            )
-            return
+        setter(self.population, self.objectives, self.constraint_violations)
 
     def _sync_solver_from_adapter(self) -> None:
         adapter = getattr(self, "adapter", None)
         if adapter is None:
             return
-        getter = getattr(adapter, "get_population", None)
+        getter = getattr(adapter, "get_population_snapshot", None)
         if not callable(getter):
             return
-        try:
-            pop, obj, vio = getter()
-        except Exception as exc:
-            report_soft_error(
-                component="EvolutionSolver",
-                event="sync_solver_from_adapter",
-                exc=exc,
-                logger=logger,
-                context_store=self.context_store,
-                strict=False,
-            )
+        snapshot = getter()
+        if snapshot is None:
             return
+        pop, obj, vio = snapshot
         pop_arr = np.asarray(pop, dtype=float)
         obj_arr = np.asarray(obj, dtype=float)
         vio_arr = np.asarray(vio, dtype=float).reshape(-1)

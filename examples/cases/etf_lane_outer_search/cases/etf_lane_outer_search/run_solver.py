@@ -126,11 +126,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     solver = build_etf_lane_outer_search_solver(cfg, suite_id=suite_id)
     if bool(args.check):
         print(
-            "etf_lane_outer_search scaffold ok | "
+            "[check] etf_lane_outer_search scaffold ok | "
             f"dimension={solver.problem.dimension} objectives={solver.problem.objectives}"
         )
         return
-    result = solver.run(return_dict=True)
+    result = solver.run()
     problem = solver.problem
     output_dir = Path(getattr(solver, "etf_outer_output_dir")).expanduser().resolve()
     summary = {

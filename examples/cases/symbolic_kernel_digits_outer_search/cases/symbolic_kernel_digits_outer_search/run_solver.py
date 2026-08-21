@@ -93,11 +93,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     solver = build_symbolic_kernel_digits_outer_search_solver(cfg, suite_id=suite_id)
     if bool(args.check):
         print(
-            "symbolic_kernel_digits_outer_search scaffold ok | "
+            "[check] symbolic_kernel_digits_outer_search scaffold ok | "
             f"dimension={solver.problem.dimension} objectives={solver.problem.objectives}"
         )
         return
-    result = solver.run(return_dict=True)
+    result = solver.run()
     problem = solver.problem
     output_dir = Path(getattr(solver, "symbolic_kernel_digits_output_dir")).expanduser().resolve()
     structure_cache = dict(getattr(problem, "get_cache_summary")())

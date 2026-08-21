@@ -140,7 +140,7 @@ class NSGA2Adapter(AlgorithmAdapter):
         self._refresh_ranking()
         self._sync_runtime_projection()
 
-    def set_population(self, population: np.ndarray, objectives: np.ndarray, violations: np.ndarray) -> bool:
+    def set_population_snapshot(self, population: np.ndarray, objectives: np.ndarray, violations: np.ndarray) -> bool:
         pop, obj, vio = self.validate_population_snapshot(population, objectives, violations)
         preserve_tokens = (
             self.population is not None
@@ -175,7 +175,7 @@ class NSGA2Adapter(AlgorithmAdapter):
         self._population_candidate_tokens = tokens
         return True
 
-    def get_population(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def get_population_snapshot(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if self.population is None or self.objectives is None or self.violations is None:
             return np.zeros((0, 0), dtype=float), np.zeros((0, 0), dtype=float), np.zeros((0,), dtype=float)
         return (

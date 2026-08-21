@@ -146,15 +146,32 @@ class AlgorithmAdapter(AdapterBase):
             )
         return pop, obj, vio
 
-    # --- Override: population write-back with validation ---
+    # --- Override: authoritative evaluated-population snapshot contract ---
 
-    def set_population(self, population: np.ndarray, objectives: np.ndarray, violations: np.ndarray) -> bool:
-        """Optional population write-back contract for runtime plugins."""
+    def get_population_snapshot(
+        self,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+        """Return the Adapter-owned evaluated population, or ``None``.
+
+        L1/single-trajectory Adapters must not expose their unevaluated successor
+        state through this method.  They may provide component-specific current
+        candidate accessors instead.
+        """
+
+        return None
+
+    def set_population_snapshot(
+        self,
+        population: np.ndarray,
+        objectives: np.ndarray,
+        violations: np.ndarray,
+    ) -> bool:
+        """Optional authoritative population write-back for L2 Adapters."""
         _ = self.validate_population_snapshot(population, objectives, violations)
         return False
 
     def get_population_candidate_tokens(self) -> tuple[str | None, ...] | None:
-        """Return tokens aligned with ``get_population()`` when Adapter owns selection.
+        """Return tokens aligned with ``get_population_snapshot()``.
 
         Returning ``None`` means that the Adapter does not expose a population
         lineage surface.  A Solver may only infer tokens when the authoritative
@@ -168,7 +185,7 @@ class AlgorithmAdapter(AdapterBase):
         self,
         candidate_tokens: Sequence[str | None],
     ) -> bool:
-        """Optional token write-back paired with ``set_population()``."""
+        """Optional token write-back paired with ``set_population_snapshot()``."""
 
         del candidate_tokens
         return False

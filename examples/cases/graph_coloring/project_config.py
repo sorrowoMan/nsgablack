@@ -19,7 +19,11 @@ STAGES = [
         "name": "main",
         "cases": ["graph_coloring"],
         "resource_requests": {"graph_coloring": {"threads": 1, "gpus": 0, "backend": "local"}},
-        "mode": "cli",
+        "component_overrides": {
+            "graph_coloring": {
+                "config": {"max_colors": 6, "pop_size": 8, "max_steps": 3}
+            }
+        },
     },
 ]
 

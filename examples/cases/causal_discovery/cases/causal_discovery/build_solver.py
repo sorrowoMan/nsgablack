@@ -12,25 +12,12 @@ Component composition (all from framework, no custom bias files):
 """
 from __future__ import annotations
 
-import sys
-import time
-import argparse
-from pathlib import Path
-
-_THIS_DIR = Path(__file__).resolve().parent
-if str(_THIS_DIR) not in sys.path:
-    sys.path.insert(0, str(_THIS_DIR))
-from _bootstrap import ensure_nsgablack_importable
-
-ensure_nsgablack_importable(Path(__file__))
-
 import numpy as np
 
 from nsgablack.adapters import DEConfig, DifferentialEvolutionAdapter
 from nsgablack.bias import BiasModule
 from nsgablack.bias.domain.callable_bias import CallableBias
 from nsgablack.core.composable_solver import ComposableSolver
-from nsgablack.project.scaffold import print_solver_check
 from nsgablack.representation import RepresentationPipeline
 from nsgablack.representation.continuous import ClipRepair, ContextGaussianMutation
 from nsgablack.representation.matrix import IntegerMatrixInitializer
@@ -65,25 +52,53 @@ def acyclicity_penalty(x: np.ndarray, n_vars: int, cycle_weight: float = 100.0) 
     return float((n_cycle_nodes + n_cycle_edges) * cycle_weight)
 
 
-def build_solver(*, resource_context=None, component_overrides=None) -> ComposableSolver:
-    """Canonical scaffold entry: assemble PC causal discovery solver.
+def build_solver(
+    *,
+    mode: str = "pc",
+    n_vars: int = 6,
+    pop_size: int = 40,
+    max_steps: int = 400,
+    random_seed: int = 42,
+    resource_context=None,
+    component_overrides=None,
+) -> ComposableSolver:
+    """Canonical scaffold entry for PC or LiNGAM structure search.
 
     Uses synthetic 6-variable DAG data by default.
     Override the problem via component_overrides={"problem": my_problem}.
     """
     overrides = dict(component_overrides or {})
-    n_vars = 6
+    config = dict(overrides.pop("config", {}) or {})
+    mode = str(config.pop("mode", mode))
+    n_vars = int(config.pop("n_vars", n_vars))
+    pop_size = int(config.pop("pop_size", pop_size))
+    max_steps = int(config.pop("max_steps", max_steps))
+    random_seed = int(config.pop("random_seed", random_seed))
+    if config:
+        raise ValueError("unsupported causal_discovery config overrides: " + str(sorted(config)))
+    mode = str(mode).strip().lower()
+    if mode not in {"pc", "lingam"}:
+        raise ValueError("mode must be 'pc' or 'lingam'")
+    n_vars = int(n_vars)
 
-    problem = overrides.get("problem")
+    problem = overrides.pop("problem", None)
     if problem is None:
-        _W_true, data, _corr = _generate_random_dag(n_vars, seed=42)
-        n_samples = data.shape[0]
-        problem = PCDiscoveryProblem(data, n_samples=n_samples, sparsity_lambda=0.5)
+        _weights, data, _correlation = _generate_random_dag(n_vars, seed=random_seed)
+        problem = (
+            PCDiscoveryProblem(data, n_samples=data.shape[0], sparsity_lambda=0.5)
+            if mode == "pc"
+            else LiNGAMDiscoveryProblem(data, sparsity_lambda=0.1)
+        )
 
-    initializer = IntegerMatrixInitializer(rows=n_vars, cols=n_vars, low=0, high=1)
-    mutator = ContextGaussianMutation(base_sigma=0.25)
-    repair = ClipRepair(low=0.0, high=1.0)
-    cycle_weight = 1000.0
+    if mode == "pc":
+        initializer = IntegerMatrixInitializer(rows=n_vars, cols=n_vars, low=0, high=1)
+        repair = ClipRepair(low=0.0, high=1.0)
+        cycle_weight = 1000.0
+    else:
+        initializer = IntegerMatrixInitializer(rows=n_vars, cols=n_vars, low=-2, high=2)
+        repair = ClipRepair(low=-2.0, high=2.0)
+        cycle_weight = 500.0
+    mutator = ContextGaussianMutation(base_sigma=0.25 if mode == "pc" else 0.3)
 
     pipeline = RepresentationPipeline(
         initializer=initializer,
@@ -100,7 +115,9 @@ def build_solver(*, resource_context=None, component_overrides=None) -> Composab
     bias.add(CallableBias(name="acyclicity", func=_acyclicity, weight=1.0, mode="penalty"))
 
     def _sparsity(x, constraints, context):
-        adj = np.asarray(x, dtype=float).reshape(n_vars, n_vars)
+        # Bias evaluation is observational: mutating ``x`` would desynchronise
+        # the Solver-owned CandidateBatch semantic and numeric views.
+        adj = np.asarray(x, dtype=float).reshape(n_vars, n_vars).copy()
         np.fill_diagonal(adj, 0)
         return {"penalty": float(np.abs(adj).sum() * 10.0)}
 
@@ -108,10 +125,15 @@ def build_solver(*, resource_context=None, component_overrides=None) -> Composab
 
     solver = ComposableSolver(
         problem=problem,
-        adapter=DifferentialEvolutionAdapter(DEConfig(batch_size=40)),
+        adapter=DifferentialEvolutionAdapter(DEConfig(batch_size=pop_size)),
         representation_pipeline=pipeline,
         bias_module=bias,
     )
+    solver.set_max_steps(max_steps)
+    solver.set_random_seed(random_seed)
+    from nsgablack.project import apply_solver_component_overrides
+
+    apply_solver_component_overrides(solver, overrides)
     solver.set_resource_context(resource_context)
     return solver
 
@@ -176,106 +198,3 @@ def _shd(A_true: np.ndarray, A_est: np.ndarray) -> int:
     """Structural Hamming Distance between two binary adjacency matrices."""
     diff = np.abs(A_true - A_est)
     return int(diff.sum())
-
-
-def main(argv: list[str] | None = None) -> None:
-    p = argparse.ArgumentParser(
-        description="Causal Discovery via nsgablack DE optimization",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    p.add_argument("--mode", default="pc", choices=["pc", "lingam"], help="Discovery mode")
-    p.add_argument("--n-vars", type=int, default=6, help="Number of variables")
-    p.add_argument("--edge-prob", type=float, default=0.35, help="Edge probability in true DAG")
-    p.add_argument("--pop-size", type=int, default=40, help="DE population size")
-    p.add_argument("--max-steps", type=int, default=400, help="DE iterations")
-    p.add_argument("--seed", type=int, default=42, help="Random seed")
-    p.add_argument("--check", action="store_true")
-    args = p.parse_args(argv)
-
-    print(f"[causal-discovery] mode={args.mode}  n_vars={args.n_vars}  seed={args.seed}")
-    print(f"[causal-discovery] pop_size={args.pop_size}  max_steps={args.max_steps}")
-
-    W_true, data, corr = _generate_random_dag(
-        args.n_vars, edge_prob=args.edge_prob, seed=args.seed
-    )
-    true_adj = (np.abs(W_true) > 1e-8).astype(float)
-    n_edges_true = int(true_adj.sum())
-    print(f"[causal-discovery] true DAG edges: {n_edges_true}")
-    print(f"[causal-discovery] true adjacency:\n{true_adj.astype(int)}")
-
-    if args.mode == "pc":
-        solver_input = data
-        solver_n_samples = data.shape[0]
-    else:
-        solver_input = data
-        solver_n_samples = data.shape[0]
-
-    t0 = time.perf_counter()
-    n_vars = args.n_vars
-    mode = args.mode
-
-    if mode == "pc":
-        prob = PCDiscoveryProblem(data, n_samples=data.shape[0], sparsity_lambda=0.5)
-        init = IntegerMatrixInitializer(rows=n_vars, cols=n_vars, low=0, high=1)
-        mut = ContextGaussianMutation(base_sigma=0.25)
-        rep = ClipRepair(low=0.0, high=1.0)
-        cw = 1000.0
-    else:
-        prob = LiNGAMDiscoveryProblem(data, sparsity_lambda=0.1)
-        wb = 2.0
-        init = IntegerMatrixInitializer(rows=n_vars, cols=n_vars, low=int(-wb), high=int(wb))
-        mut = ContextGaussianMutation(base_sigma=0.3)
-        rep = ClipRepair(low=-wb, high=wb)
-        cw = 500.0
-
-    pl = RepresentationPipeline(initializer=init, mutator=mut, repair=rep)
-    bm = BiasModule()
-
-    def _acyc(x, constraints, context):
-        return {"penalty": float(acyclicity_penalty(x, n_vars, cycle_weight=cw))}
-
-    bm.add(CallableBias(name="acyclicity", func=_acyc, weight=1.0, mode="penalty"))
-
-    def _sparse(x, constraints, context):
-        adj = np.asarray(x, dtype=float).reshape(n_vars, n_vars)
-        np.fill_diagonal(adj, 0)
-        return {"penalty": float(np.abs(adj).sum() * 10.0)}
-
-    bm.add(CallableBias(name="sparsity", func=_sparse, weight=1.0, mode="penalty"))
-
-    solver = ComposableSolver(
-        problem=prob,
-        adapter=DifferentialEvolutionAdapter(DEConfig(batch_size=args.pop_size)),
-        representation_pipeline=pl,
-        bias_module=bm,
-    )
-    solver.set_max_steps(args.max_steps)
-    solver.set_random_seed(args.seed)
-    if args.check:
-        print_solver_check(solver)
-        return
-    solver.run()
-    elapsed = time.perf_counter() - t0
-
-    best_x = solver.best_x
-    if best_x is None:
-        print("[causal-discovery] ERROR: solver returned no best_x")
-        return
-
-    est_adj = _adj_from_solution(best_x, args.n_vars, args.mode)
-    est_adj_bin = (np.abs(est_adj) > 1e-8) if args.mode == "lingam" else est_adj
-    shd = _shd(true_adj, est_adj_bin)
-    n_edges_est = int(est_adj_bin.sum())
-
-    edges_correct = int((true_adj * est_adj_bin).sum())
-    edges_extra = n_edges_est - edges_correct
-    edges_missed = n_edges_true - edges_correct
-
-    print(f"[causal-discovery] recovered edges: {n_edges_est}")
-    print(f"[causal-discovery] SHD: {shd}  (correct={edges_correct}  extra={edges_extra}  missed={edges_missed})")
-    print(f"[causal-discovery] time: {elapsed:.2f}s")
-    print(f"[causal-discovery] estimated adjacency:\n{est_adj_bin.astype(int)}")
-
-
-if __name__ == "__main__":
-    main()

@@ -26,9 +26,17 @@ class Embedder:
 
     @property
     def dim(self) -> int:
-        if self._local:
-            return 384
         return self.config.embedding_dim
+
+    @property
+    def space(self) -> str:
+        provider = "sentence-transformers" if self._local else "openai"
+        model = (
+            self.config.local_embedding_model
+            if self._local
+            else self.config.embedding_model
+        )
+        return f"{provider}:{model}:{self.dim}"
 
     def embed(self, text: str) -> np.ndarray:
         return self.embed_batch([text])[0]
@@ -50,6 +58,7 @@ class Embedder:
         resp = client.embeddings.create(
             model=self.config.embedding_model,
             input=list(texts),
+            dimensions=self.config.embedding_dim,
         )
         embeddings = [np.array(d.embedding, dtype=np.float32) for d in resp.data]
         return np.stack(embeddings)
@@ -60,5 +69,15 @@ class Embedder:
 
             self._local_model = SentenceTransformer(self.config.local_embedding_model)
 
-        result = self._local_model.encode(list(texts), normalize_embeddings=True)
-        return np.asarray(result, dtype=np.float32)
+        result = np.asarray(
+            self._local_model.encode(list(texts), normalize_embeddings=True),
+            dtype=np.float32,
+        )
+        if result.ndim != 2 or result.shape[1] > self.dim:
+            raise ValueError(
+                "local embedding dimension exceeds configured RAG dimension: "
+                f"{result.shape} vs {self.dim}"
+            )
+        if result.shape[1] < self.dim:
+            result = np.pad(result, ((0, 0), (0, self.dim - result.shape[1])))
+        return result

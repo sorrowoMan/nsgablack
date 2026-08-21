@@ -39,7 +39,7 @@ def test_moead_adapter_runs_and_updates_archive():
     solver.max_steps = 15
     solver.run()
 
-    X, F, V = adapter.get_population()
+    X, F, V = adapter.get_population_snapshot()
     assert X.shape[0] == 40
     assert F.shape[1] == 2
     assert V.shape[0] == 40

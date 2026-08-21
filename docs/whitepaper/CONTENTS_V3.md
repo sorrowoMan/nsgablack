@@ -69,7 +69,7 @@
 
 ## 第五章　Adapter 负责搜索，Solver 负责运行
 
-先写一个最小随机搜索 Adapter，再把它升级为保留精英的策略，最后对照 NSGA-II/MOEAD/VNS 等 Adapter 的共同接口。重点解释 `propose()`、`update()`、`get_population()`、`get_state()` 各自解决什么问题。
+先写一个最小随机搜索 Adapter，再把它升级为保留精英的策略，最后对照 NSGA-II/MOEAD/VNS 等 Adapter 的共同接口。重点解释 `propose()`、`update()`、`get_population_snapshot()`、`get_current_candidates()`、`get_state()` 各自解决什么问题。
 
 本章会完整走一代：评估前 Context 怎样进入 propose，Feedback 怎样进入 update，Adapter 为什么是更新后权威 population 的首选来源。反例是让 Solver 和 Adapter 各维护一套种群，最终快照与算法状态分叉。
 

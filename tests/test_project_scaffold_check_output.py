@@ -141,13 +141,6 @@ def test_migrated_build_entries_are_assembly_only():
         root
         / "examples"
         / "cases"
-        / "mlblack_symbolic_consensus_scaffold"
-        / "cases"
-        / "mlblack_symbolic_consensus_scaffold"
-        / "build_solver.py",
-        root
-        / "examples"
-        / "cases"
         / "supply_adjustment_nested"
         / "cases"
         / "supply_adjustment_nested"

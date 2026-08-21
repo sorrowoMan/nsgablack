@@ -19,7 +19,9 @@ STAGES = [
         "name": "main",
         "cases": ["ransac"],
         "resource_requests": {"ransac": {"threads": 1, "gpus": 0, "backend": "local"}},
-        "mode": "cli",
+        "component_overrides": {
+            "ransac": {"config": {"pop_size": 8, "max_steps": 3}}
+        },
     },
 ]
 

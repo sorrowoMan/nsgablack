@@ -28,3 +28,12 @@ def test_catalog_store_prefers_postgres_when_both_backends_are_enabled(monkeypat
 
     assert isinstance(store, _FakePostgresStore)
     assert store_mod.catalog_db_config_backend() == "postgresql"
+
+
+def test_framework_core_sql_filter_binds_every_placeholder_once() -> None:
+    from nsgablack.catalog.store.mysql import _profile_sql_filters
+
+    clause, params = _profile_sql_filters("framework-core")
+
+    assert clause.count("%s") == len(params)
+    assert params[:2] == ["example", "doc"]

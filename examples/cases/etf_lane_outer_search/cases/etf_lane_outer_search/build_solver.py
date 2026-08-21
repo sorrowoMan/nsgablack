@@ -15,6 +15,15 @@ except ImportError:
     from problem import EtfLaneOuterSearchProblem
 
 
+class EtfLaneOuterSolver(EvolutionSolver):
+    """Forward the shared Case runtime to the nested ML evaluation Problem."""
+
+    def set_case_runtime(self, runtime):
+        self.case_runtime = runtime
+        self.problem.set_case_runtime(runtime)
+        return self
+
+
 def build_etf_lane_outer_search_solver(
     cfg: EtfLaneOuterSearchConfig | None = None,
     *,
@@ -33,7 +42,7 @@ def build_etf_lane_outer_search_solver(
         ),
         name="etf_lane_outer_nsga2",
     )
-    solver = EvolutionSolver(
+    solver = EtfLaneOuterSolver(
         problem=problem,
         adapter=adapter,
         representation_pipeline=pipeline,

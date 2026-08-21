@@ -96,7 +96,7 @@ def test_population_contract_for_population_based_adapters():
         NSGA3Adapter(NSGA3Config(population_size=12, offspring_size=6, divisions=2)),
         SPEA2Adapter(SPEA2Config(population_size=12, offspring_size=6)),
     ):
-        ok = adapter.set_population(pop, obj, vio)
+        ok = adapter.set_population_snapshot(pop, obj, vio)
         assert ok is True
         assert isinstance(adapter.get_runtime_context_projection(solver), dict)
 

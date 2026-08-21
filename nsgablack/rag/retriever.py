@@ -47,6 +47,7 @@ def search(
         framework=framework,
         top_k=top_k,
         threshold=threshold,
+        embedding_space=embedder.space,
     )
     return results
 

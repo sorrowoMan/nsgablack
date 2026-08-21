@@ -2,25 +2,18 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sys
 from pathlib import Path
 from typing import Any, Mapping
 
 import numpy as np
 
+from blackbase.project import CaseRunRequest
 from nsgablack.core.base import BlackBoxProblem
 
 try:
     from ..config import EtfLaneOuterSearchConfig
 except ImportError:
     from config import EtfLaneOuterSearchConfig
-
-
-def _ensure_mlblack_path() -> None:
-    repo_root = Path(__file__).resolve().parents[4]
-    mlblack_root = repo_root.parent / "mlblack"
-    if mlblack_root.exists() and str(mlblack_root.parent) not in sys.path:
-        sys.path.insert(0, str(mlblack_root.parent))
 
 
 def _clip_int(value: float, low: int, high: int) -> int:
@@ -44,6 +37,7 @@ class EtfLaneOuterSearchProblem(BlackBoxProblem):
         self._cache: dict[str, dict[str, Any]] = {}
         self.best_result: dict[str, Any] | None = None
         self.best_score: float | None = None
+        self._case_runtime: Any | None = None
         # [base_alpha, active_alpha, feedback_alpha, max_feedback_weight, rounds,
         #  active_top_k, feedback_top_k, active_min_score, dead_score,
         #  base_blend, active_blend, feedback_blend,
@@ -79,6 +73,9 @@ class EtfLaneOuterSearchProblem(BlackBoxProblem):
                 "weighted_rank_ic_std",
             ),
         )
+
+    def set_case_runtime(self, runtime: Any) -> None:
+        self._case_runtime = runtime
 
     def decode_lane_bundle(self, x: np.ndarray) -> dict[str, Any]:
         arr = np.asarray(x, dtype=float).reshape(self.dimension)
@@ -134,12 +131,11 @@ class EtfLaneOuterSearchProblem(BlackBoxProblem):
         }
 
     def evaluate(self, candidate: np.ndarray) -> np.ndarray:
-        _ensure_mlblack_path()
-        from mlblack.integrations.etf_temporal_forecast import (  # type: ignore
-            WalkForwardSpec,
-            run_etf_walkforward_multi_seed,
-        )
-
+        if self._case_runtime is None:
+            raise RuntimeError(
+                "etf_lane_outer_search requires an injected Case runtime; "
+                "run it through its standard Project entry"
+            )
         lane_bundle = self.decode_lane_bundle(candidate)
         bundle_key = hashlib.sha1(json.dumps(lane_bundle, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:12]
         cached = self._cache.get(bundle_key)
@@ -149,86 +145,82 @@ class EtfLaneOuterSearchProblem(BlackBoxProblem):
         label = f"eval_{len(self.evaluation_records):04d}_{bundle_key}"
         eval_dir = self.output_dir / "evaluations" / label
         eval_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            result = run_etf_walkforward_multi_seed(
-                cfg={
-                    "dataset_url": str(self.cfg.dataset_url),
-                    "dataset_label": str(self.cfg.dataset_label),
-                    "baseline_models": str(self.cfg.baseline_models),
-                    "output_dir": str(eval_dir),
+        child = self._case_runtime.invoke(
+            CaseRunRequest(
+                project_name="etf_lane_outer_search",
+                stage_name="lane_evaluation",
+                case_name="etf_lane_evaluation",
+                case_kind="trainer",
+                resource_request={
+                    "workers": 1,
+                    "threads": 1,
+                    "gpus": 0,
+                    "backend": "local",
+                    "device": "cpu",
+                    "compute_backend": "auto",
                 },
-                walkforward=WalkForwardSpec(
-                    min_train_size=int(self.cfg.wf_min_train_size),
-                    test_size=int(self.cfg.wf_test_size),
-                    step_size=int(self.cfg.wf_step_size),
-                    mode=str(self.cfg.wf_mode),
-                    train_window_size=int(self.cfg.wf_train_window_size),
-                    max_folds=int(self.cfg.wf_max_folds),
-                    max_train_panel_rows=int(self.cfg.wf_max_train_panel_rows),
-                    max_test_panel_rows=int(self.cfg.wf_max_test_panel_rows),
-                ),
-                seeds=tuple(int(s) for s in tuple(self.cfg.seeds)),
-                suite_id=label,
-                output_dir=str(eval_dir),
-                potential_params_override=lane_bundle,
+                component_overrides={
+                    "config": {
+                        "dataset_url": str(self.cfg.dataset_url),
+                        "dataset_label": str(self.cfg.dataset_label),
+                        "baseline_models": str(self.cfg.baseline_models),
+                        "seeds": list(self.cfg.seeds),
+                        "suite_id": label,
+                        "output_dir": str(eval_dir),
+                    },
+                    "walkforward": {
+                        "min_train_size": int(self.cfg.wf_min_train_size),
+                        "test_size": int(self.cfg.wf_test_size),
+                        "step_size": int(self.cfg.wf_step_size),
+                        "mode": str(self.cfg.wf_mode),
+                        "train_window_size": int(self.cfg.wf_train_window_size),
+                        "max_folds": int(self.cfg.wf_max_folds),
+                        "max_train_panel_rows": int(self.cfg.wf_max_train_panel_rows),
+                        "max_test_panel_rows": int(self.cfg.wf_max_test_panel_rows),
+                    },
+                    "lane_bundle": lane_bundle,
+                },
+                metadata={"candidate_digest": bundle_key},
             )
-            agg = dict(dict(result.summary).get("aggregate", {}) or {})
-            net_sharpe = float(agg.get("composite_net_sharpe_proxy_mean", 0.0))
-            max_drawdown_abs = float(agg.get("composite_max_drawdown_abs_mean", 1.0))
-            turnover_proxy = float(agg.get("composite_turnover_proxy_mean", 1.0))
-            rank_ic_mean = float(agg.get("composite_rank_ic_mean", 0.0))
-            rank_ic_std = float(agg.get("composite_rank_ic_std", 1.0))
-            raw_objectives = {
-                "neg_net_sharpe": float(-net_sharpe),
-                "max_drawdown_abs": float(max_drawdown_abs),
-                "turnover_proxy": float(turnover_proxy),
-                "neg_rank_ic_mean": float(-rank_ic_mean),
-                "rank_ic_std": float(rank_ic_std),
-            }
-            weights = {
-                "neg_net_sharpe": float(self.cfg.objective_weight_neg_net_sharpe),
-                "max_drawdown_abs": float(self.cfg.objective_weight_max_drawdown_abs),
-                "turnover_proxy": float(self.cfg.objective_weight_turnover_proxy),
-                "neg_rank_ic_mean": float(self.cfg.objective_weight_neg_rank_ic_mean),
-                "rank_ic_std": float(self.cfg.objective_weight_rank_ic_std),
-            }
-            objectives = np.asarray(
-                [
-                    float(weights["neg_net_sharpe"]) * float(raw_objectives["neg_net_sharpe"]),
-                    float(weights["max_drawdown_abs"]) * float(raw_objectives["max_drawdown_abs"]),
-                    float(weights["turnover_proxy"]) * float(raw_objectives["turnover_proxy"]),
-                    float(weights["neg_rank_ic_mean"]) * float(raw_objectives["neg_rank_ic_mean"]),
-                    float(weights["rank_ic_std"]) * float(raw_objectives["rank_ic_std"]),
-                ],
-                dtype=float,
-            )
-            record = {
-                "label": label,
-                "bundle_key": bundle_key,
-                "lane_bundle": lane_bundle,
-                "objectives": objectives.tolist(),
-                "score": float(np.sum(objectives)),
-                "raw_objectives": raw_objectives,
-                "objective_weights": weights,
-                "aggregate": agg,
-                "fold_count": int(dict(result.summary).get("fold_count", 0)),
-                "output_dir": str(result.output_dir),
-                "status": "ok",
-            }
-        except Exception as exc:
-            objectives = np.asarray([10.0, 10.0, 10.0, 10.0, 10.0], dtype=float)
-            record = {
-                "label": label,
-                "bundle_key": bundle_key,
-                "lane_bundle": lane_bundle,
-                "objectives": objectives.tolist(),
-                "score": float(np.sum(objectives)),
-                "aggregate": {},
-                "fold_count": 0,
-                "output_dir": str(eval_dir),
-                "status": "error",
-                "error": repr(exc),
-            }
+        )
+        child.raise_for_failure("ETF lane evaluation Case failed")
+        payload = dict(child.output or {})
+        if str(payload.get("protocol_type", "")) != "blackbase.trainer_result":
+            raise TypeError("ETF lane evaluation Case did not return TrainerResult")
+        summary = dict(dict(payload.get("report", {}) or {}).get("summary", {}) or {})
+        agg = dict(summary.get("aggregate", {}) or {})
+        raw_objectives = {
+            "neg_net_sharpe": -float(agg.get("composite_net_sharpe_proxy_mean", 0.0)),
+            "max_drawdown_abs": float(agg.get("composite_max_drawdown_abs_mean", 1.0)),
+            "turnover_proxy": float(agg.get("composite_turnover_proxy_mean", 1.0)),
+            "neg_rank_ic_mean": -float(agg.get("composite_rank_ic_mean", 0.0)),
+            "rank_ic_std": float(agg.get("composite_rank_ic_std", 1.0)),
+        }
+        weights = {
+            "neg_net_sharpe": float(self.cfg.objective_weight_neg_net_sharpe),
+            "max_drawdown_abs": float(self.cfg.objective_weight_max_drawdown_abs),
+            "turnover_proxy": float(self.cfg.objective_weight_turnover_proxy),
+            "neg_rank_ic_mean": float(self.cfg.objective_weight_neg_rank_ic_mean),
+            "rank_ic_std": float(self.cfg.objective_weight_rank_ic_std),
+        }
+        objectives = np.asarray(
+            [weights[name] * raw_objectives[name] for name in weights],
+            dtype=float,
+        )
+        record = {
+            "label": label,
+            "bundle_key": bundle_key,
+            "lane_bundle": lane_bundle,
+            "objectives": objectives.tolist(),
+            "score": float(np.sum(objectives)),
+            "raw_objectives": raw_objectives,
+            "objective_weights": weights,
+            "aggregate": agg,
+            "fold_count": int(summary.get("fold_count", 0)),
+            "output_dir": str(summary.get("output_dir", eval_dir)),
+            "child_case_run": child.request.identity.as_dict(),
+            "status": "ok",
+        }
         self.evaluation_records.append(record)
         self._cache[bundle_key] = record
         score = float(record["score"])

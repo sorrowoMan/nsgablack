@@ -13,7 +13,7 @@ use_when = [
 minimal_wiring = ["Open the document path in example_entry."]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "docs/AUTHORITATIVE_EXAMPLES.md"
+example_entry = "docs/project/AUTHORITATIVE_EXAMPLES.md"
 
 [[entry]]
 key = "doc.component_examples_index"
@@ -28,7 +28,7 @@ use_when = [
 minimal_wiring = ["Open the document path in example_entry."]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "docs/COMPONENT_EXAMPLES_INDEX.md"
+example_entry = "docs/indexes/COMPONENT_EXAMPLES_INDEX.md"
 
 [[entry]]
 key = "doc.index_manual"
@@ -43,7 +43,7 @@ use_when = [
 minimal_wiring = ["Open the document path in example_entry."]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "docs/INDEX_MANUAL.md"
+example_entry = "docs/indexes/INDEX_MANUAL.md"
 
 [[entry]]
 key = "doc.user_guide.getting_started"
@@ -193,7 +193,7 @@ use_when = [
 minimal_wiring = ["Open the document path in example_entry."]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "docs/user_guide/surrogate_workflow.md"
+example_entry = "docs/user_guide/SURROGATE_CAPABILITY_PATTERN.md"
 
 [[entry]]
 key = "doc.user_guide.surrogate_cheatsheet"
@@ -457,7 +457,7 @@ use_when = [
 minimal_wiring = ["Open the document path in example_entry."]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "docs/ALGORITHM_DECOMPOSITION_HANDS_ON.md"
+example_entry = "docs/guides/ALGORITHM_DECOMPOSITION_HANDS_ON.md"
 
 [[entry]]
 key = "doc.user_guide.bias_system"
@@ -579,7 +579,7 @@ summary = "Redis 下 ContextStore 与 SnapshotStore：契约、键流、TTL 与�
 use_when = [
   "需要设计/排障 Redis 混合流程（context 小字段 + snapshot 大对象）时。 / Need to design or debug mixed Redis workflows for context small fields and snapshot large objects.",
 ]
-minimal_wiring = ["Open docs/user_guide/REDIS_CONTEXT_SNAPSHOT_WORKFLOW.md."]
+minimal_wiring = ["Open docs/user_guide/REDIS_CONTEXT_SNAPSHOT_STORES.md."]
 required_companions = ["doc.user_guide.redis_context_backend", "doc.user_guide.context_contracts"]
 config_keys = [
   "context_store_backend",
@@ -591,7 +591,7 @@ config_keys = [
   "snapshot_store_key_prefix",
   "snapshot_store_ttl_seconds",
 ]
-example_entry = "docs/user_guide/REDIS_CONTEXT_SNAPSHOT_WORKFLOW.md"
+example_entry = "docs/user_guide/REDIS_CONTEXT_SNAPSHOT_STORES.md"
 
 [[entry]]
 key = "doc.user_guide.decision_replay_engine"

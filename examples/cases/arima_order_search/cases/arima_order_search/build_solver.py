@@ -5,26 +5,11 @@ Searches (p, d, q) to minimize AIC on a synthetic ARIMA time series.
 Compares DE-found orders against ground truth and grid search baseline.
 
 Usage:
-  python build_solver.py --seed 42 --pop-size 20 --max-steps 80
-  python build_solver.py --check
+  python run_solver.py --seed 42 --pop-size 20 --max-steps 80
+  python run_solver.py --check
 """
 
 from __future__ import annotations
-
-import argparse
-import sys
-import warnings
-from pathlib import Path
-
-warnings.filterwarnings("ignore")
-
-_THIS_DIR = Path(__file__).resolve().parent
-if str(_THIS_DIR) not in sys.path:
-    sys.path.insert(0, str(_THIS_DIR))
-
-from _bootstrap import ensure_nsgablack_importable
-
-ensure_nsgablack_importable(Path(__file__))
 
 import numpy as np
 
@@ -104,125 +89,51 @@ def _try_pmdarima(series: np.ndarray) -> tuple[tuple[int, int, int] | None, floa
         return None, None
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="ARIMA order search via Differential Evolution.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument("--seed", type=int, default=42, help="Random seed.")
-    parser.add_argument("--pop-size", type=int, default=20, help="DE population size.")
-    parser.add_argument("--max-steps", type=int, default=80, help="Max DE generations.")
-    parser.add_argument("--n-samples", type=int, default=200, help="Synthetic series length.")
-    parser.add_argument("--check", action="store_true", help="Validate assembly only.")
-    return parser
+def build_solver(
+    *,
+    pop_size: int = 20,
+    max_steps: int = 80,
+    resource_context=None,
+    component_overrides=None,
+):
+    """Assemble the canonical ARIMA order-search Case."""
 
-
-def build_solver(*, resource_context=None, component_overrides=None):
-    """Canonical scaffold entry: assemble ARIMA order search solver.
-
-    Uses synthetic ARIMA(2,1,2) data by default.
-    Override the problem via component_overrides={"problem": my_problem}.
-    """
     overrides = dict(component_overrides or {})
-
-    problem = overrides.get("problem")
+    case_config = dict(overrides.pop("config", {}) or {})
+    pop_size = max(4, int(case_config.get("pop_size", pop_size)))
+    max_steps = max(1, int(case_config.get("max_steps", max_steps)))
+    problem = overrides.pop("problem", None)
     if problem is None:
-        series = _generate_arima_series(ar=[0.5, -0.3], ma=[0.4, 0.2], d=1, n=200, seed=42)
-        problem = ARIMAOrderProblem(series, max_p=5, max_d=2, max_q=5)
-
-    pipeline = RepresentationPipeline(
-        initializer=IntegerInitializer(),
-        repair=IntegerRepair(),
-    )
-
-    de_config = DEConfig(population_size=20, batch_size=10)
-    adapter = DifferentialEvolutionAdapter(config=de_config)
+        series = _generate_arima_series(
+            ar=[0.5, -0.3],
+            ma=[0.4, 0.2],
+            d=1,
+            n=max(40, int(case_config.get("series_length", 200))),
+            seed=int(case_config.get("seed", 42)),
+        )
+        problem = ARIMAOrderProblem(
+            series,
+            max_p=max(1, int(case_config.get("max_p", 5))),
+            max_d=max(0, int(case_config.get("max_d", 2))),
+            max_q=max(1, int(case_config.get("max_q", 5))),
+        )
 
     solver = ComposableSolver(
         problem=problem,
-        adapter=adapter,
-        representation_pipeline=pipeline,
+        adapter=DifferentialEvolutionAdapter(
+            config=DEConfig(
+                population_size=pop_size,
+                batch_size=max(1, pop_size // 2),
+            )
+        ),
+        representation_pipeline=RepresentationPipeline(
+            initializer=IntegerInitializer(),
+            repair=IntegerRepair(),
+        ),
     )
+    solver.set_max_steps(max_steps)
+    from nsgablack.project import apply_solver_component_overrides
+
+    apply_solver_component_overrides(solver, overrides)
     solver.set_resource_context(resource_context)
     return solver
-
-
-def main(argv: list[str] | None = None) -> None:
-    parser = _build_parser()
-    args = parser.parse_args(argv)
-
-    true_order = (2, 1, 2)
-    series = _generate_arima_series(
-        ar=[0.5, -0.3],
-        ma=[0.4, 0.2],
-        d=1,
-        n=args.n_samples,
-        seed=args.seed,
-    )
-
-    problem = ARIMAOrderProblem(series, max_p=5, max_d=2, max_q=5)
-
-    pipeline = RepresentationPipeline(
-        initializer=IntegerInitializer(),
-        repair=IntegerRepair(),
-    )
-
-    de_config = DEConfig(
-        population_size=args.pop_size,
-        batch_size=max(1, args.pop_size // 2),
-    )
-    adapter = DifferentialEvolutionAdapter(config=de_config)
-
-    solver = ComposableSolver(
-        problem=problem,
-        adapter=adapter,
-        representation_pipeline=pipeline,
-    )
-    solver.set_random_seed(args.seed)
-
-    if bool(args.check):
-        print(
-            f"[check] assembly ok | "
-            f"problem={type(problem).__name__} | "
-            f"pipeline={type(pipeline).__name__} | "
-            f"adapter={type(adapter).__name__} | "
-            f"pop_size={args.pop_size} | "
-            f"max_steps={args.max_steps}"
-        )
-        return
-
-    result = solver.run(max_steps=args.max_steps)
-
-    best_x = solver.best_x
-    best_obj = solver.best_objective
-    if best_x is None:
-        print("[arima_order_search] no best solution found")
-        return
-
-    p = int(round(float(best_x[0])))
-    d = int(round(float(best_x[1])))
-    q = int(round(float(best_x[2])))
-
-    print(f"True order:       {true_order}")
-    print(f"DE best order:    ({p}, {d}, {q})")
-    print(f"DE best AIC:      {best_obj:.4f}")
-    print(f"Evaluations:      {problem.evaluation_count}")
-    print(f"Steps executed:   {result.get('steps_executed', result.get('steps', 0))}")
-
-    gs_order, gs_aic = _grid_search_aic(series)
-    if gs_order is not None:
-        match = "==" if gs_order == true_order else "!="
-        print(f"Grid search best: {gs_order}  (AIC={gs_aic:.4f})  {match} true")
-    else:
-        print("Grid search:      failed")
-
-    pm_order, pm_aic = _try_pmdarima(series)
-    if pm_order is not None:
-        match = "==" if pm_order == true_order else "!="
-        print(f"pmdarima order:   {pm_order}  (AIC={pm_aic:.4f})  {match} true")
-    else:
-        print("pmdarima:         not installed")
-
-
-if __name__ == "__main__":
-    main()

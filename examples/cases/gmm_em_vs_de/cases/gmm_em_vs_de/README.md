@@ -61,6 +61,6 @@ DE→VNS 的 NLL 约为 EM 的 1.66 倍——这是预期的：黑盒搜索不�
 ## 运行和验证
 
 ```powershell
-python build_solver.py --seed 42 --k 3 --n-samples 300 --pop-size 20 --max-steps 80
+python run_solver.py --seed 42 --k 3 --n-samples 300 --pop-size 20 --max-steps 80
 python -m nsgablack project doctor --path . --strict --format problem
 ```

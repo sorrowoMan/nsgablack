@@ -5,6 +5,13 @@ from pathlib import Path
 from nsgablack.adapters import NSGA2Adapter, NSGA2Config
 from nsgablack.core.evolution_solver import EvolutionSolver
 
+
+class PhiBundleOuterSolver(EvolutionSolver):
+    def set_case_runtime(self, runtime):
+        self.case_runtime = runtime
+        self.problem.set_case_runtime(runtime)
+        return self
+
 try:
     from .config import PhiBundleImageSearchConfig
     from .pipeline import build_representation_pipeline
@@ -33,7 +40,7 @@ def build_phi_bundle_image_search_solver(
         ),
         name="phi_bundle_outer_nsga2",
     )
-    solver = EvolutionSolver(
+    solver = PhiBundleOuterSolver(
         problem=problem,
         adapter=adapter,
         representation_pipeline=pipeline,

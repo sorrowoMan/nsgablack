@@ -95,8 +95,8 @@ def test_non_l0_stateful_adapters_declare_recovery_notes():
         assert notes, f"{path}:{class_node.name} with {level} should declare non-empty state_recovery_notes"
 
 
-def test_l2_adapters_define_population_methods():
-    """L2 adapters must define both get_population and set_population (own or inherited).
+def test_l2_adapters_define_population_snapshot_methods():
+    """L2 adapters must define both population snapshot methods (own or inherited).
 
     This static check covers only *own* method definitions. If a class inherits these
     methods from a parent (e.g. NSGA3Adapter from NSGA2Adapter), it is still valid.
@@ -114,14 +114,18 @@ def test_l2_adapters_define_population_methods():
         # Classes that inherit population methods from L2 parent are fine.
         # We flag only if the class re-declares state_recovery_level="L2" without
         # providing any population-management methods AND has no L2 parent.
-        has_own_pop = "get_population" in methods or "set_population" in methods
+        has_own_pop = (
+            "get_population_snapshot" in methods
+            or "set_population_snapshot" in methods
+        )
         # If the class declares its own get_state (i.e. is a root L2), it MUST also
         # declare population methods in-tree. Subclasses that inherit are checked at runtime.
         has_own_state = "get_state" in methods
         if has_own_state and not has_own_pop:
             assert False, (
                 f"{path}:{class_node.name} declares state_recovery_level='L2' and owns "
-                f"get_state() but does not define get_population() / set_population(). "
+                "get_state() but does not define get_population_snapshot() / "
+                "set_population_snapshot(). "
                 "A root L2 adapter must provide both pairs."
             )
 
@@ -166,37 +170,40 @@ _L2_ADAPTERS = [
 
 
 @pytest.mark.parametrize("module,cls_name", _L2_ADAPTERS, ids=[c for _, c in _L2_ADAPTERS])
-def test_l2_get_population_returns_triple_before_init(module, cls_name):
-    """Before any population is loaded, get_population() returns (ndarray, ndarray, ndarray)."""
+def test_l2_get_population_snapshot_returns_triple_before_init(module, cls_name):
+    """Before initialization, the snapshot method returns three ndarrays."""
     import importlib
     cls = getattr(importlib.import_module(module), cls_name)
     adapter = _make_adapter(cls)
-    result = adapter.get_population()
+    result = adapter.get_population_snapshot()
     assert isinstance(result, tuple) and len(result) == 3
     for i, arr in enumerate(result):
         assert isinstance(arr, np.ndarray), (
-            f"{cls_name}.get_population()[{i}] must be ndarray, got {type(arr).__name__}"
+            f"{cls_name}.get_population_snapshot()[{i}] must be ndarray, "
+            f"got {type(arr).__name__}"
         )
 
 
 @pytest.mark.parametrize("module,cls_name", _L2_ADAPTERS, ids=[c for _, c in _L2_ADAPTERS])
-def test_l2_set_population_returns_true_on_valid_input(module, cls_name):
-    """set_population() with valid (N,D) pop + (N,M) obj + (N,) vio must return True."""
+def test_l2_set_population_snapshot_returns_true_on_valid_input(module, cls_name):
+    """A valid evaluated population snapshot must be accepted."""
     import importlib
     cls = getattr(importlib.import_module(module), cls_name)
     adapter = _make_adapter(cls)
-    ok = adapter.set_population(_POP.copy(), _OBJ.copy(), _VIO.copy())
-    assert ok is True, f"{cls_name}.set_population() returned {ok!r} (expected True)"
+    ok = adapter.set_population_snapshot(_POP.copy(), _OBJ.copy(), _VIO.copy())
+    assert ok is True, (
+        f"{cls_name}.set_population_snapshot() returned {ok!r} (expected True)"
+    )
 
 
 @pytest.mark.parametrize("module,cls_name", _L2_ADAPTERS, ids=[c for _, c in _L2_ADAPTERS])
-def test_l2_population_roundtrip_shape_and_values(module, cls_name):
-    """After set_population(), get_population() must return matching shapes and values."""
+def test_l2_population_snapshot_roundtrip_shape_and_values(module, cls_name):
+    """Population snapshot roundtrip must preserve shapes and values."""
     import importlib
     cls = getattr(importlib.import_module(module), cls_name)
     adapter = _make_adapter(cls)
-    adapter.set_population(_POP.copy(), _OBJ.copy(), _VIO.copy())
-    pop, obj, vio = adapter.get_population()
+    adapter.set_population_snapshot(_POP.copy(), _OBJ.copy(), _VIO.copy())
+    pop, obj, vio = adapter.get_population_snapshot()
     assert pop.shape == _POP.shape, f"{cls_name}: pop shape {pop.shape} != expected {_POP.shape}"
     assert obj.shape == _OBJ.shape, f"{cls_name}: obj shape {obj.shape} != expected {_OBJ.shape}"
     assert vio.shape == _VIO.shape, f"{cls_name}: vio shape {vio.shape} != expected {_VIO.shape}"
@@ -231,7 +238,8 @@ def test_l2_get_state_set_state_roundtrip(module, cls_name):
 def test_moead_declares_l2():
     from nsgablack.adapters.moead import MOEADAdapter
     assert MOEADAdapter.state_recovery_level == "L2", (
-        "MOEADAdapter must declare state_recovery_level='L2' (has get/set_population)."
+        "MOEADAdapter must declare state_recovery_level='L2' "
+        "(has population snapshot roundtrip)."
     )
 
 
@@ -278,9 +286,9 @@ def test_nsga3_explicitly_declares_l2():
 def test_nsga3_inherits_population_methods():
     from nsgablack.adapters.nsga3 import NSGA3Adapter
     adapter = NSGA3Adapter()
-    assert callable(getattr(adapter, "get_population", None))
-    assert callable(getattr(adapter, "set_population", None))
-    ok = adapter.set_population(_POP.copy(), _OBJ.copy(), _VIO.copy())
+    assert callable(getattr(adapter, "get_population_snapshot", None))
+    assert callable(getattr(adapter, "set_population_snapshot", None))
+    ok = adapter.set_population_snapshot(_POP.copy(), _OBJ.copy(), _VIO.copy())
     assert ok is True
-    pop, obj, vio = adapter.get_population()
+    pop, obj, vio = adapter.get_population_snapshot()
     assert pop.shape == _POP.shape

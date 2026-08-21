@@ -48,8 +48,8 @@
 
 | 路径 | 作用 |
 |---|---|
-| `solver/??????` | L1/L2 正式 nested assembly。 |
-| `solver/blacklist_??????` | L0/L1/L2 正式 design assembly。 |
+| `solver/assembly.py` | L1/L2 正式 nested assembly。 |
+| `solver/blacklist_assembly.py` | L0/L1/L2 正式 design assembly。 |
 | `solver/run_case.py` | L1/L2 CLI。 |
 | `solver/run_blacklist_case.py` | L0/L1/L2 CLI。 |
 | `solver/run_nested_worker.py` | Redis worker，用于分布式 nested evaluation。 |

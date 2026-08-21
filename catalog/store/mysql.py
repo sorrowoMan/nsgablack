@@ -39,7 +39,6 @@ _FRAMEWORK_CORE_EXCLUDED_KINDS = ("example", "doc")
 _FRAMEWORK_CORE_EXCLUDED_IMPORT_PATTERNS = (
     "%examples/%",
     "%examples\\%",
-    "%nsgablack.examples_registry%",
 )
 _CONTEXT_FIELD_NAMES = (
     "context_requires",
@@ -241,7 +240,7 @@ def _trim_field_value(value: object) -> str:
 
 def _entry_uses_examples_path(text: object) -> bool:
     raw = str(text or "").lower()
-    return "examples/" in raw or "examples\\" in raw or "nsgablack.examples_registry" in raw
+    return "examples/" in raw or "examples\\" in raw
 
 
 def _apply_profile_to_entry(entry: CatalogEntry, *, profile: str) -> CatalogEntry | None:
@@ -282,7 +281,6 @@ def _profile_sql_filters(profile: str) -> tuple[str, List[object]]:
         return "", []
     clauses = [
         "c.kind NOT IN (%s, %s)",
-        "LOWER(c.import_path) NOT LIKE %s",
         "LOWER(c.import_path) NOT LIKE %s",
         "LOWER(c.import_path) NOT LIKE %s",
     ]
@@ -794,6 +792,10 @@ VALUES (%s, %s, %s, %s, %s)
         conn = _connect_mysql(self._cfg)
         try:
             self._ensure_schema(conn)
+            self._delete_stale_components(
+                conn,
+                current_keys=tuple(component.key for component in bundle.components),
+            )
             component_ids = self._upsert_components(conn, bundle.components)
             self._upsert_contexts(conn, component_ids, bundle.contexts)
             self._upsert_usages(conn, component_ids, bundle.usages)
@@ -1133,6 +1135,41 @@ ON DUPLICATE KEY UPDATE
                     json.dumps(list(h.issues), ensure_ascii=False),
                 ),
             )
+        cur.close()
+
+    def _delete_stale_components(self, conn, *, current_keys: Sequence[str]) -> None:
+        """Replace the source-owned component set instead of accumulating tombstones."""
+
+        keep = {str(key).strip() for key in current_keys if str(key).strip()}
+        cur = conn.cursor()
+        cur.execute("SELECT id, `key` FROM catalog_component")
+        rows = cur.fetchall() or []
+        stale_ids: List[int] = []
+        for row in rows:
+            component_id = int(row.get("id")) if isinstance(row, Mapping) else int(row[0])
+            key = str(row.get("key", "") if isinstance(row, Mapping) else row[1]).strip()
+            if key not in keep:
+                stale_ids.append(component_id)
+        if stale_ids:
+            placeholders = ", ".join(["%s"] * len(stale_ids))
+            params = tuple(stale_ids)
+            for table in (
+                "catalog_field_value",
+                "catalog_param_contract",
+                "catalog_method_contract",
+                "catalog_health",
+                "catalog_context_contract",
+                "catalog_usage_contract",
+            ):
+                cur.execute(
+                    f"DELETE FROM {table} WHERE component_id IN ({placeholders})",
+                    params,
+                )
+            cur.execute(
+                f"DELETE FROM catalog_component WHERE id IN ({placeholders})",
+                params,
+            )
+        conn.commit()
         cur.close()
 
     def _load_json_tuple(self, value: object) -> Tuple[str, ...]:

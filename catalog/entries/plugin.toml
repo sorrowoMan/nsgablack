@@ -80,7 +80,7 @@ config_keys = [
   "parallel",
 ]
 companions = ["bias.robustness"]
-example_entry = "examples/monte_carlo_dp_robust_demo.py:build_solver"
+example_entry = ""
 context_provides = [
   "metrics.mc_samples",
   "metrics.mc_mean",
@@ -112,7 +112,7 @@ config_keys = [
   "model_type",
   "fallback_on_error",
 ]
-example_entry = "examples/surrogate_plugin_demo.py:build_solver"
+example_entry = "python examples\\cases\\surrogate_lab\\run_project.py"
 context_provides = ["metrics.surrogate_std"]
 context_mutates = ["metrics"]
 
@@ -137,7 +137,7 @@ config_keys = [
   "budget",
   "fallback_to_high_fidelity",
 ]
-example_entry = "examples/multi_fidelity_demo.py:build_solver"
+example_entry = ""
 
 [[entry]]
 key = "plugin.newton_solver"
@@ -321,7 +321,7 @@ config_keys = [
   "export_path",
 ]
 companions = ["adapter.multi_strategy", "adapter.moead"]
-example_entry = "examples/dynamic_multi_strategy_demo.py:build_solver"
+example_entry = "python examples\\cases\\multi_strategy\\run_project.py"
 
 [[entry]]
 key = "plugin.benchmark_harness"
@@ -346,7 +346,7 @@ config_keys = [
   "save_population",
 ]
 companions = ["plugin.module_report"]
-example_entry = "examples/benchmark_harness_demo.py:build_solver"
+example_entry = ""
 
 [[entry]]
 key = "plugin.module_report"
@@ -371,7 +371,7 @@ config_keys = [
   "include_hash",
 ]
 companions = ["plugin.benchmark_harness"]
-example_entry = "examples/dynamic_multi_strategy_demo.py:build_solver"
+example_entry = "python examples\\cases\\multi_strategy\\run_project.py"
 
 [[entry]]
 key = "plugin.profiler"
@@ -395,7 +395,7 @@ config_keys = [
   "enabled_events",
 ]
 companions = ["plugin.benchmark_harness"]
-example_entry = "examples/plugin_gallery_demo.py:build_solver"
+example_entry = ""
 
 [[entry]]
 key = "plugin.dynamic_switch"
@@ -419,7 +419,7 @@ config_keys = [
   "signal_provider",
   "config",
 ]
-example_entry = "examples/dynamic_multi_strategy_demo.py:build_solver"
+example_entry = "python examples\\cases\\dynamic_strategy\\run_project.py"
 context_provides = ["dynamic", "phase_id"]
 context_mutates = ["dynamic", "phase_id"]
 
@@ -445,7 +445,7 @@ config_keys = [
   "drop_policy",
   "events_key",
 ]
-example_entry = "examples/async_event_driven_demo.py:build_solver"
+example_entry = "python examples\\cases\\async_event\\run_project.py"
 context_provides = ["context_events"]
 context_mutates = ["context_events"]
 context_notes = [
@@ -491,7 +491,7 @@ use_when = [
 ]
 minimal_wiring = ["from nsgablack.plugins import DiversityInitPlugin", "solver.add_plugin(DiversityInitPlugin())"]
 config_keys = ["similarity_threshold", "rejection_prob"]
-example_entry = "examples/blank_solver_plugin_demo.py:build_solver"
+example_entry = ""
 
 [[entry]]
 key = "plugin.elite"
@@ -503,7 +503,7 @@ summary = "精英保留以降低质量退化。 / Plugin: elite retention to red
 use_when = ["后期解质量波动较大时。 / When late-stage solution quality fluctuates.", "需要提升最优解稳定性时。 / Need improved best-solution stability."]
 minimal_wiring = ["from nsgablack.plugins import BasicElitePlugin", "solver.add_plugin(BasicElitePlugin())"]
 config_keys = ["retention_prob", "retention_ratio"]
-example_entry = "examples/nsga2_solver_demo.py:build_solver"
+example_entry = "python examples\\cases\\nsga2_basic\\run_project.py"
 
 [[entry]]
 key = "plugin.memory"
@@ -518,7 +518,7 @@ use_when = [
 ]
 minimal_wiring = ["from nsgablack.plugins import MemoryPlugin", "solver.add_plugin(MemoryPlugin())"]
 config_keys = ["cleanup_interval", "enable_auto_gc"]
-example_entry = "examples/plugin_gallery_demo.py:build_solver"
+example_entry = ""
 
 [[entry]]
 key = "plugin.gpu_eval_template"
@@ -580,7 +580,7 @@ config_keys = [
   "trace_plugin_events",
 ]
 companions = ["plugin.profiler", "plugin.module_report"]
-example_entry = "examples/otel_tracing_demo.py:build_solver"
+example_entry = ""
 context_requires = ["generation"]
 context_notes = [
   "Emit spans for evaluate calls, adapter propose/update, and plugin event dispatch.",
@@ -616,7 +616,7 @@ companions = [
   "plugin.profiler",
   "plugin.otel_tracing",
 ]
-example_entry = "examples/decision_trace_demo.py:build_solver"
+example_entry = ""
 context_requires = ["generation"]
 context_provides = ["decision_trace_ref"]
 context_mutates = ["decision_trace_ref"]
@@ -658,7 +658,7 @@ config_keys = [
   "trace_seed",
 ]
 companions = ["plugin.decision_trace", "plugin.module_report"]
-example_entry = "examples/sequence_graph_demo.py:build_solver"
+example_entry = ""
 context_provides = ["sequence_graph_ref"]
 context_mutates = ["sequence_graph_ref"]
 context_notes = [

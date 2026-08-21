@@ -26,7 +26,6 @@ class _FakeSolver:
 @pytest.mark.parametrize(
     ("case_name", "inner_builder"),
     (
-        ("mlblack_symbolic_consensus_scaffold", "build_solver_from_args"),
         ("supply_adjustment_nested", "_build_solver"),
         ("production_scheduling", "_build_solver_from_args"),
     ),

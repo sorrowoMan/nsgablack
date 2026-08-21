@@ -55,7 +55,7 @@ def test_algorithm_adapter_population_snapshot_contract_validation():
     assert pop.shape == (1, 2)
     assert obj.shape == (1, 1)
     assert vio.shape == (1,)
-    assert adapter.set_population(pop, obj, vio) is False
+    assert adapter.set_population_snapshot(pop, obj, vio) is False
 
 
 def test_algorithm_adapter_population_snapshot_contract_shape_mismatch_raises():

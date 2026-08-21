@@ -62,17 +62,26 @@ def _coerce_population_snapshot(value: Any) -> Tuple[np.ndarray, np.ndarray, np.
     return x_arr, f_arr, v_arr
 
 
-def _adapter_population_snapshot(solver: Any) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+def _adapter_population_snapshot(
+    solver: Any,
+    *,
+    strict: bool = False,
+) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     adapter = getattr(solver, "adapter", None)
-    getter = getattr(adapter, "get_population", None)
+    getter = getattr(adapter, "get_population_snapshot", None)
     if not callable(getter):
         return None
     try:
-        return _coerce_population_snapshot(getter())
+        value = getter()
+        if value is None:
+            return None
+        return _coerce_population_snapshot(value)
     except Exception as exc:
+        if strict:
+            raise
         report_soft_error(
             component="RuntimeGovernance",
-            event="resolve_population_snapshot.adapter_get_population",
+            event="resolve_population_snapshot.adapter_population_snapshot",
             exc=exc,
             logger=logger,
             context_store=getattr(solver, "context_store", None),
@@ -144,11 +153,13 @@ def resolve_population_snapshot(
     if solver is None:
         return np.zeros((0, 0), dtype=float), np.zeros((0, 0), dtype=float), np.zeros((0,), dtype=float)
 
-    sources = (
-        (_adapter_population_snapshot, _solver_population_snapshot, _stored_population_snapshot)
-        if prefer_adapter
-        else (_stored_population_snapshot, _adapter_population_snapshot, _solver_population_snapshot)
-    )
+    if prefer_adapter:
+        adapter_snapshot = _adapter_population_snapshot(solver, strict=True)
+        sources = (_solver_population_snapshot, _stored_population_snapshot)
+        if adapter_snapshot is not None:
+            return adapter_snapshot
+    else:
+        sources = (_stored_population_snapshot, _adapter_population_snapshot, _solver_population_snapshot)
     empty: Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]] = None
     for source in sources:
         snapshot = source(solver)
@@ -226,7 +237,7 @@ def commit_population_snapshot(
     adapter_handled = False
     adapter = getattr(solver, "adapter", None)
     if adapter is not None:
-        for method_name in ("set_population", "set_population_snapshot", "update_population"):
+        for method_name in ("set_population_snapshot",):
             setter = getattr(adapter, method_name, None)
             if not callable(setter):
                 continue

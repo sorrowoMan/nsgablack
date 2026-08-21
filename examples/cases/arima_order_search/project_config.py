@@ -19,6 +19,19 @@ STAGES = [
         "name": "main",
         "cases": ["arima_order_search"],
         "resource_requests": {"arima_order_search": {"threads": 1, "gpus": 0, "backend": "local"}},
+        "component_overrides": {
+            "arima_order_search": {
+                "config": {
+                    "pop_size": 4,
+                    "max_steps": 1,
+                    "series_length": 80,
+                    "max_p": 2,
+                    "max_d": 1,
+                    "max_q": 2,
+                    "seed": 42,
+                }
+            }
+        },
     },
 ]
 

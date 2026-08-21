@@ -17,6 +17,7 @@ from nsgablack.core.control_plane import (
     EvaluationBudgetExceeded,
 )
 from nsgablack.core.evolution_solver import EvolutionSolver
+from nsgablack.core.runtime_governance import resolve_population_snapshot
 from nsgablack.plugins import Plugin
 from nsgablack.utils.extension_contracts import ContractError
 
@@ -181,10 +182,10 @@ class _AuthoritativeAdapter(AlgorithmAdapter):
         self.objectives = np.array([[value * value]], dtype=float)
         self.violations = np.array([0.0], dtype=float)
 
-    def get_population(self):
+    def get_population_snapshot(self):
         return self.population, self.objectives, self.violations
 
-    def set_population(self, population, objectives, violations):
+    def set_population_snapshot(self, population, objectives, violations):
         self.population = np.asarray(population, dtype=float).copy()
         self.objectives = np.asarray(objectives, dtype=float).copy()
         self.violations = np.asarray(violations, dtype=float).reshape(-1).copy()
@@ -208,6 +209,30 @@ class _ContextCapturingAdapter(_AuthoritativeAdapter):
         return super().update(control, candidates, feedback, context)
 
 
+class _BrokenPopulationSnapshotAdapter(_AuthoritativeAdapter):
+    def get_population_snapshot(self):
+        raise RuntimeError("authoritative snapshot failed")
+
+
+class _SingleTrajectoryAdapter(AlgorithmAdapter):
+    state_recovery_level = "L1"
+
+    def __init__(self) -> None:
+        super().__init__(name="single-trajectory")
+        self.current_candidate_reads = 0
+
+    def propose(self, control, context):
+        del control, context
+        return [np.array([1.0])]
+
+    def update(self, control, candidates, feedback, context):
+        del control, candidates, feedback, context
+
+    def get_current_candidates(self):
+        self.current_candidate_reads += 1
+        return (np.array([99.0]),)
+
+
 def test_composable_step_commits_adapter_authoritative_generation_snapshot() -> None:
     solver = ComposableSolver(_Problem(), adapter=_AuthoritativeAdapter())
 
@@ -218,6 +243,34 @@ def test_composable_step_commits_adapter_authoritative_generation_snapshot() -> 
     assert float(np.asarray(snapshot["population"])[0, 0]) == 11.0
     assert float(np.asarray(solver.population)[0, 0]) == 11.0
     assert solver._snapshot_generation == 1
+
+
+def test_authoritative_population_snapshot_failure_is_not_silently_masked() -> None:
+    solver = ComposableSolver(
+        _Problem(),
+        adapter=_BrokenPopulationSnapshotAdapter(),
+    )
+
+    with pytest.raises(RuntimeError, match="authoritative snapshot failed"):
+        resolve_population_snapshot(solver, prefer_adapter=True)
+
+
+def test_single_trajectory_candidate_state_is_not_treated_as_population_snapshot() -> None:
+    adapter = _SingleTrajectoryAdapter()
+    solver = ComposableSolver(_Problem(), adapter=adapter)
+    solver.population = np.array([[3.0]], dtype=float)
+    solver.objectives = np.array([[9.0]], dtype=float)
+    solver.constraint_violations = np.array([0.0], dtype=float)
+
+    population, objectives, violations = resolve_population_snapshot(
+        solver,
+        prefer_adapter=True,
+    )
+
+    assert adapter.current_candidate_reads == 0
+    np.testing.assert_allclose(population, [[3.0]])
+    np.testing.assert_allclose(objectives, [[9.0]])
+    np.testing.assert_allclose(violations, [0.0])
 
 
 def test_composable_update_receives_post_evaluation_context() -> None:

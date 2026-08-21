@@ -70,13 +70,13 @@ nsgablack DE 以更高的评估次数为代价，在无需梯度或统计假设�
 
 ```powershell
 # 验证装配
-python build_solver.py --check
+python run_solver.py --check
 
 # 默认运行（seed=42, pop=20, steps=80）
-python build_solver.py
+python run_solver.py
 
 # 自定义参数
-python build_solver.py --seed 123 --pop-size 30 --max-steps 100 --n-samples 300
+python run_solver.py --seed 123 --pop-size 30 --max-steps 100 --n-samples 300
 ```
 
 预期输出包含：

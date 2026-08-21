@@ -81,6 +81,8 @@ class CatalogBundle:
     params: Sequence[ParamContract]
     methods: Sequence[MethodContract]
     health: Sequence[HealthContract]
+    source_digest: str = ""
+    source_schema: str = ""
 
 
 @dataclass(frozen=True)
