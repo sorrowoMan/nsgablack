@@ -214,7 +214,7 @@ class StoreProfile:
     snapshot_store_hmac_env_var: str = "NSGABLACK_SNAPSHOT_HMAC_KEY"
     snapshot_store_unsafe_allow_unsigned: bool = False
     snapshot_store_max_payload_bytes: int = 8_388_608
-    snapshot_schema: str = "population_snapshot_v1"
+    snapshot_schema: str = "nsgablack.population_snapshot/v2"
 
 
 @dataclass(frozen=True)

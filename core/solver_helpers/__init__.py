@@ -1,10 +1,17 @@
 """Internal helper utilities for SolverBase implementation."""
 
 from .snapshot_helpers import (
+    LAST_EVALUATED_BATCH_KEY,
+    POPULATION_AUTHORITY_KEY,
+    POPULATION_PARTITIONS_KEY,
+    POPULATION_SNAPSHOT_SCHEMA_V2,
+    PartitionedPopulationSnapshotError,
     build_snapshot_payload,
     build_snapshot_refs,
     snapshot_meta,
     strip_large_context_fields,
+    population_snapshot_authority_mode,
+    require_single_population_payload,
 )
 from .control_plane_helpers import (
     collect_adapter_runtime_context_projection,
@@ -60,4 +67,11 @@ __all__ = [
     "set_pareto_snapshot_fields",
     "snapshot_meta",
     "strip_large_context_fields",
+    "LAST_EVALUATED_BATCH_KEY",
+    "POPULATION_AUTHORITY_KEY",
+    "POPULATION_PARTITIONS_KEY",
+    "POPULATION_SNAPSHOT_SCHEMA_V2",
+    "PartitionedPopulationSnapshotError",
+    "population_snapshot_authority_mode",
+    "require_single_population_payload",
 ]

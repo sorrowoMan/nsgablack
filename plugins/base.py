@@ -72,6 +72,16 @@ class Plugin(PluginBase):
         target = solver if solver is not None else self.solver
         if target is None:
             return np.zeros((0, 0), dtype=float), np.zeros((0, 0), dtype=float), np.zeros((0,), dtype=float)
+        from nsgablack.core.solver_helpers.snapshot_helpers import (
+            PartitionedPopulationSnapshotError,
+            require_single_population_payload,
+        )
+
+        if str(getattr(target, "population_authority_mode", "single") or "single") == "partitioned":
+            raise PartitionedPopulationSnapshotError(
+                "Plugin requested one population from a partitioned Adapter; "
+                "consume get_candidate_population_partitions() explicitly"
+            )
 
         reader = getattr(target, "read_snapshot", None)
         if callable(reader):
@@ -93,6 +103,8 @@ class Plugin(PluginBase):
                 if callable(getter):
                     try:
                         ctx = getter()
+                    except PartitionedPopulationSnapshotError:
+                        raise
                     except Exception as exc:
                         report_soft_error(
                             component="Plugin",
@@ -122,6 +134,7 @@ class Plugin(PluginBase):
                 data = payload.data if hasattr(payload, "data") else payload
                 if isinstance(data, dict):
                     try:
+                        data = require_single_population_payload(data)
                         x = np.asarray(data.get(KEY_POPULATION, np.zeros((0, 0))), dtype=float)
                         f = np.asarray(data.get(KEY_OBJECTIVES, np.zeros((0, 0))), dtype=float)
                         v = np.asarray(
@@ -134,6 +147,8 @@ class Plugin(PluginBase):
                             f = f.reshape(-1, 1) if f.size > 0 else f.reshape(0, 0)
                         if x.size > 0 or f.size > 0:
                             return x, f, v
+                    except PartitionedPopulationSnapshotError:
+                        raise
                     except Exception as exc:
                         report_soft_error(
                             component="Plugin",

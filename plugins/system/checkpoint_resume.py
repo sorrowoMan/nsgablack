@@ -57,7 +57,8 @@ class CheckpointResumePlugin(Plugin):
     SCHEMA_V3 = "nsgablack.checkpoint.v3"
     SCHEMA_V4 = "nsgablack.checkpoint.v4"
     SCHEMA_V5 = "nsgablack.checkpoint.v5"
-    SCHEMA = SCHEMA_V5
+    SCHEMA_V6 = "nsgablack.checkpoint.v6"
+    SCHEMA = SCHEMA_V6
     ENVELOPE_VERSION = "nsgablack.checkpoint.envelope.v1"
     RESUME_ISSUE_SAMPLE_LIMIT = 32
 
@@ -90,7 +91,7 @@ class CheckpointResumePlugin(Plugin):
     # ------------------------------------------------------------------
     # Lifecycle hooks
     # ------------------------------------------------------------------
-    def on_solver_init(self, solver):
+    def prepare_restore(self, solver):
         if not bool(self.cfg.auto_resume):
             return None
         try:
@@ -183,7 +184,12 @@ class CheckpointResumePlugin(Plugin):
             setup_complete = bool(
                 getattr(solver, "_runtime_setup_complete", False)
             )
-            if callable(queue_restore) and not setup_complete:
+            restore_collection_active = bool(
+                getattr(solver, "_restore_collection_active", False)
+            )
+            if callable(queue_restore) and (
+                not setup_complete or restore_collection_active
+            ):
                 def _apply_queued_restore() -> None:
                     try:
                         self._restore_payload(solver=solver, payload=payload)
@@ -233,6 +239,13 @@ class CheckpointResumePlugin(Plugin):
                 )
                 self._finish_resume_audit(status="queued", current=False)
                 return True
+            if bool(getattr(solver, "running", False)) and not bool(
+                getattr(solver, "_restore_apply_active", False)
+            ):
+                raise RuntimeError(
+                    "checkpoint restore cannot mutate a running Solver outside "
+                    "the post-setup restore transaction"
+                )
             self._restore_payload(solver=solver, payload=payload)
             self.last_loaded_path = str(path)
             self.last_loaded_generation = int(getattr(solver, "generation", 0))
@@ -541,7 +554,34 @@ class CheckpointResumePlugin(Plugin):
 
     def _build_payload(self, *, solver: Any, reason: str) -> Dict[str, Any]:
         generation = int(getattr(solver, "generation", 0))
-        snap_pop, snap_obj, snap_vio = self.get_population_snapshot(solver)
+        authority_mode = str(
+            getattr(solver, "population_authority_mode", "single") or "single"
+        ).strip().lower()
+        if authority_mode not in {"single", "partitioned", "step_batch"}:
+            raise ValueError(
+                f"unsupported checkpoint population authority mode: {authority_mode}"
+            )
+        if authority_mode == "partitioned":
+            snap_pop = snap_obj = snap_vio = None
+            event_reader = getattr(
+                solver,
+                "get_last_evaluated_batch_snapshot",
+                None,
+            )
+            if not callable(event_reader):
+                raise TypeError(
+                    "partitioned checkpoint target must expose "
+                    "get_last_evaluated_batch_snapshot()"
+                )
+            event_pop, event_obj, event_vio = event_reader()
+            last_evaluated_batch = {
+                "population": self._safe_copy(event_pop),
+                "objectives": self._safe_copy(event_obj),
+                "constraint_violations": self._safe_copy(event_vio),
+            }
+        else:
+            snap_pop, snap_obj, snap_vio = self.get_population_snapshot(solver)
+            last_evaluated_batch = None
         projection_payload: Dict[str, Any] = {}
         export_incumbent = getattr(solver, "export_incumbent_checkpoint_state", None)
         if callable(export_incumbent):
@@ -605,9 +645,11 @@ class CheckpointResumePlugin(Plugin):
         solver_state = {
             "generation": generation,
             "evaluation_count": int(getattr(solver, "evaluation_count", 0)),
+            "population_authority_mode": authority_mode,
             "population": self._safe_copy(snap_pop),
             "objectives": self._safe_copy(snap_obj),
             "constraint_violations": self._safe_copy(snap_vio),
+            "last_evaluated_batch": self._safe_copy(last_evaluated_batch),
             "pareto_solutions": self._safe_copy(getattr(solver, "pareto_solutions", None)),
             "pareto_objectives": self._safe_copy(getattr(solver, "pareto_objectives", None)),
             "history": self._safe_copy(getattr(solver, "history", None)),
@@ -716,14 +758,31 @@ class CheckpointResumePlugin(Plugin):
             restored_sequence = max(0, int(state.get("run_sequence", 0) or 0))
             current_sequence = max(0, int(getattr(solver, "_run_sequence", 0) or 0))
             _set_field("_run_sequence", max(current_sequence, restored_sequence))
-        if (
-            "population" in state
-            and "objectives" in state
-            and "constraint_violations" in state
-        ):
+        authority_mode = str(
+            state.get("population_authority_mode", "single") or "single"
+        ).strip().lower()
+        if authority_mode not in {"single", "partitioned", "step_batch"}:
+            raise ValueError(
+                f"unsupported checkpoint population authority mode: {authority_mode}"
+            )
+        last_evaluated = state.get("last_evaluated_batch")
+        if authority_mode == "partitioned":
+            if not isinstance(last_evaluated, Mapping):
+                raise ValueError(
+                    "partitioned checkpoint is missing last_evaluated_batch"
+                )
+            population = last_evaluated.get("population")
+            objectives = last_evaluated.get("objectives")
+            violations = last_evaluated.get("constraint_violations")
+        else:
             population = state.get("population")
             objectives = state.get("objectives")
             violations = state.get("constraint_violations")
+
+        has_numeric_state = all(
+            value is not None for value in (population, objectives, violations)
+        )
+        if has_numeric_state:
             # Establish the numeric side first without publishing a Snapshot.
             # CandidateBatch restore validates against these exact values; one
             # final writer call below then publishes both views together.
@@ -759,6 +818,7 @@ class CheckpointResumePlugin(Plugin):
                 restore_candidate_partitions(
                     state.get("candidate_population_partitions")
                 )
+            _set_field("population_authority_mode", authority_mode)
             writer = getattr(solver, "write_population_snapshot", None)
             if callable(writer):
                 try:
@@ -792,6 +852,27 @@ class CheckpointResumePlugin(Plugin):
                 restore_candidate_partitions(
                     state.get("candidate_population_partitions")
                 )
+            _set_field("population_authority_mode", authority_mode)
+            if authority_mode == "partitioned":
+                partition_writer = getattr(
+                    solver,
+                    "write_partitioned_population_snapshot",
+                    None,
+                )
+                if not callable(partition_writer):
+                    raise TypeError(
+                        "partitioned checkpoint target cannot publish partition authority"
+                    )
+                try:
+                    partition_writer()
+                except Exception as exc:
+                    self._record_resume_issue(
+                        "solver.population_partitions_snapshot",
+                        "publish_failed",
+                        exc,
+                    )
+                    if bool(self.cfg.strict):
+                        raise
 
         if "pareto_solutions" in state or "pareto_objectives" in state:
             set_pareto = getattr(solver, "set_pareto_snapshot", None)
@@ -1135,13 +1216,14 @@ class CheckpointResumePlugin(Plugin):
     @classmethod
     def _migrate_payload(cls, payload: Dict[str, Any]) -> Dict[str, Any]:
         schema = str(payload.get("schema", "")).strip()
-        if schema == cls.SCHEMA_V5:
+        if schema == cls.SCHEMA_V6:
             return payload
         if schema not in {
             cls.SCHEMA_V1,
             cls.SCHEMA_V2,
             cls.SCHEMA_V3,
             cls.SCHEMA_V4,
+            cls.SCHEMA_V5,
         }:
             raise ValueError(f"unsupported checkpoint schema: {schema or '<missing>'}")
 
@@ -1180,6 +1262,29 @@ class CheckpointResumePlugin(Plugin):
         migrated.setdefault("adapter_population_partitions", [])
         state.setdefault("candidate_population", None)
         state.setdefault("candidate_population_partitions", None)
+        partition_payload = state.get("candidate_population_partitions")
+        partitioned = bool(
+            isinstance(partition_payload, Mapping)
+            and tuple(partition_payload.get("partitions", ()) or ())
+        )
+        state.setdefault(
+            "population_authority_mode",
+            "partitioned" if partitioned else "single",
+        )
+        if str(state.get("population_authority_mode")) == "partitioned":
+            state.setdefault(
+                "last_evaluated_batch",
+                {
+                    "population": state.get("population"),
+                    "objectives": state.get("objectives"),
+                    "constraint_violations": state.get("constraint_violations"),
+                },
+            )
+            state["population"] = None
+            state["objectives"] = None
+            state["constraint_violations"] = None
+        else:
+            state.setdefault("last_evaluated_batch", None)
         state.setdefault(
             "run_progress",
             {
@@ -1198,7 +1303,7 @@ class CheckpointResumePlugin(Plugin):
                 "reason": f"migrated_from_{schema}",
             },
         )
-        migrated["schema"] = cls.SCHEMA_V5
+        migrated["schema"] = cls.SCHEMA_V6
         migrated["migrated_from_schema"] = schema
         return migrated
 

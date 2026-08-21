@@ -275,15 +275,17 @@ Collaboration rules:
 - `get_current_candidates()/set_current_candidates()`：L1/trajectory Adapter 的当前候选访问；不得冒充 population snapshot
 - `get_runtime_context_projection()`：可视化/日志运行切片
 
-恢复顺序是 `prepare -> setup -> apply restore envelope -> initialize if fresh -> run`。`set_state()`、外部 Case 预加载与 checkpoint 插件必须先排队恢复信封，不能在 `setup()` 之前直接污染 Adapter 运行态，也不能由各 Adapter 私自维护 `_state_loaded` 分支。
+恢复顺序是 `prepare -> setup -> Plugin.prepare_restore -> apply restore envelope -> ordinary init hooks -> initialize if fresh -> run`。`set_state()`、外部 Case 预加载与 checkpoint 插件必须先排队恢复信封，不能在 `setup()` 之前直接污染 Adapter 运行态，也不能由各 Adapter 私自维护 `_state_loaded` 分支。普通 `on_solver_init` 钩子必须只观察恢复后的状态。
 
-运行级完成条件必须消费可恢复的 `RunProgressState`（逻辑步数、累计耗时、剩余 deadline 与可选 policy state），不得把“已经完成但未执行求值”的空步骤计入 generation/step。
+运行级完成条件必须消费可恢复的 `RunProgressState`（逻辑步数、累计耗时、剩余 deadline 与可选 policy state）。`Solver.step()` 必须返回 `StepOutcome`；只有 `status=committed` 才计入 generation/step 并触发 `on_step/on_generation_end`，空执行、拒绝与取消不得制造幽灵步骤。
+
+Population Snapshot 正式 schema 是 `nsgablack.population_snapshot/v2`。`population_state_mode=partitioned` 时，快照顶层不得出现单一 population/objectives/violations；必须保存 partitions，并把最后评估批次放入独立事件字段。单 population 消费者遇到 partitioned authority 必须 fail-closed。
 
 ### 6.2 Plugin API（生命周期增强）
 
 常见入口：
 
-- `on_solver_init/on_population_init/on_generation_start/on_step/on_generation_end/on_solver_finish`
+- `prepare_restore/on_solver_init/on_population_init/on_generation_start/on_step/on_generation_end/on_solver_finish`
 
 能力边界：
 

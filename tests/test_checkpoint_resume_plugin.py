@@ -445,7 +445,7 @@ def test_checkpoint_writer_uses_v5_and_carries_component_and_selection_audit(
     payload = plugin._build_payload(solver=solver, reason="schema-test")
     state = payload["solver_state"]
 
-    assert payload["schema"] == "nsgablack.checkpoint.v5"
+    assert payload["schema"] == "nsgablack.checkpoint.v6"
     assert "adapter" in payload["stateful_components"]
     assert state["run_sequence"] == 1
     assert state["incumbent_selection"] == {

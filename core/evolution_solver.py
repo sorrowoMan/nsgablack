@@ -20,6 +20,7 @@ from .runtime_governance import (
     ConvergenceConfig,
     commit_population_snapshot,
 )
+from .state.step_outcome import StepOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ class EvolutionSolver(ComposableSolver):
         snapshot_store_unsafe_allow_unsigned: bool = False,
         snapshot_store_max_payload_bytes: int = 8_388_608,
         context_inline_candidate_max_bytes: int = 4_096,
-        snapshot_schema: str = "population_snapshot_v1",
+        snapshot_schema: str = "nsgablack.population_snapshot/v2",
         pop_size: int = 80,
         max_generations: int = 150,
         mutation_rate: float = 0.15,
@@ -508,12 +509,14 @@ class EvolutionSolver(ComposableSolver):
             self._refresh_best()
             self._commit_evolution_runtime_state()
 
-    def step(self) -> None:
+    def step(self) -> StepOutcome:
         self._sync_nsga2_adapter_config()
         max_g = max(1, int(self.max_generations))
         progress = min(1.0, max(0.0, float(self.generation) / float(max_g)))
         self.mutation_range = max(0.01, float(self.initial_mutation_range) * (1.0 - progress))
-        super().step()
+        outcome = super().step()
+        if not outcome.committed:
+            return outcome
         self._sync_solver_from_adapter()
         self.update_pareto_solutions()
         self.record_history()
@@ -522,6 +525,7 @@ class EvolutionSolver(ComposableSolver):
         if self.enable_progress_log and self.report_interval > 0:
             if (int(self.generation) + 1) % int(self.report_interval) == 0:
                 self._log_progress()
+        return outcome
 
     def _commit_evolution_runtime_state(self) -> None:
         """Persist authoritative population plus current Pareto/history fields."""

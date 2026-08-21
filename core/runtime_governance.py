@@ -25,6 +25,13 @@ from blackbase.context.context_keys import (
 from blackbase.context import make_snapshot_key
 from blackbase.plugin import report_soft_error
 
+from .solver_helpers.snapshot_helpers import (
+    POPULATION_PARTITIONS_KEY,
+    PartitionedPopulationSnapshotError,
+    population_snapshot_authority_mode,
+    require_single_population_payload,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -76,6 +83,8 @@ def _adapter_population_snapshot(
         if value is None:
             return None
         return _coerce_population_snapshot(value)
+    except PartitionedPopulationSnapshotError:
+        raise
     except Exception as exc:
         if strict:
             raise
@@ -92,6 +101,11 @@ def _adapter_population_snapshot(
 
 
 def _solver_population_snapshot(solver: Any) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if str(getattr(solver, "population_authority_mode", "single") or "single") == "partitioned":
+        raise PartitionedPopulationSnapshotError(
+            "Solver population authority is partitioned; use "
+            "resolve_population_partitions() instead of the last evaluated batch"
+        )
     return _coerce_population_snapshot(
         (
             getattr(solver, "population", np.zeros((0, 0))),
@@ -124,6 +138,7 @@ def _stored_population_snapshot(solver: Any) -> Optional[Tuple[np.ndarray, np.nd
     if not isinstance(data, dict):
         return None
     try:
+        data = require_single_population_payload(data)
         return _coerce_population_snapshot(
             (
                 data.get(KEY_POPULATION, np.zeros((0, 0))),
@@ -131,6 +146,8 @@ def _stored_population_snapshot(solver: Any) -> Optional[Tuple[np.ndarray, np.nd
                 data.get(KEY_CONSTRAINT_VIOLATIONS, np.zeros((0,))),
             )
         )
+    except PartitionedPopulationSnapshotError:
+        raise
     except Exception as exc:
         report_soft_error(
             component="RuntimeGovernance",
@@ -144,6 +161,57 @@ def _stored_population_snapshot(solver: Any) -> Optional[Tuple[np.ndarray, np.nd
         return None
 
 
+def resolve_population_partitions(solver: Any) -> tuple[Any, ...]:
+    """Resolve the authoritative evaluated partitions without concatenating them.
+
+    The returned values are ``PopulationPartition`` instances when the live
+    Adapter is available.  Stored snapshots are decoded through the same class
+    so callers receive one stable protocol regardless of the source.
+    """
+
+    if solver is None:
+        return ()
+    adapter = getattr(solver, "adapter", None)
+    getter = getattr(adapter, "get_population_partitions", None)
+    if callable(getter):
+        values = tuple(getter() or ())
+        if values:
+            return values
+
+    exporter = getattr(
+        solver,
+        "export_candidate_population_partitions_checkpoint_state",
+        None,
+    )
+    stored = exporter() if callable(exporter) else None
+    if isinstance(stored, dict) and tuple(stored.get("partitions", ()) or ()):
+        from ..adapters.algorithm_adapter import PopulationPartition
+
+        return tuple(
+            PopulationPartition.from_dict(dict(item.get("partition", {}) or {}))
+            for item in tuple(stored.get("partitions", ()) or ())
+            if isinstance(item, dict)
+        )
+
+    reader = getattr(solver, "read_snapshot", None)
+    payload = reader() if callable(reader) else None
+    data = payload.data if hasattr(payload, "data") else payload
+    if not isinstance(data, dict):
+        return ()
+    if population_snapshot_authority_mode(data) != "partitioned":
+        return ()
+    stored = data.get(POPULATION_PARTITIONS_KEY)
+    if not isinstance(stored, dict):
+        return ()
+    from ..adapters.algorithm_adapter import PopulationPartition
+
+    return tuple(
+        PopulationPartition.from_dict(dict(item.get("partition", {}) or {}))
+        for item in tuple(stored.get("partitions", ()) or ())
+        if isinstance(item, dict)
+    )
+
+
 def resolve_population_snapshot(
     solver: Any,
     *,
@@ -152,6 +220,12 @@ def resolve_population_snapshot(
     """Resolve population state, optionally treating the Adapter as authoritative."""
     if solver is None:
         return np.zeros((0, 0), dtype=float), np.zeros((0, 0), dtype=float), np.zeros((0,), dtype=float)
+
+    if str(getattr(solver, "population_authority_mode", "single") or "single") == "partitioned":
+        raise PartitionedPopulationSnapshotError(
+            "population authority is partitioned; use "
+            "resolve_population_partitions() and select a partition explicitly"
+        )
 
     if prefer_adapter:
         adapter_snapshot = _adapter_population_snapshot(solver, strict=True)

@@ -59,6 +59,7 @@ from .incumbent import (
     ScalarizationError,
 )
 from .run_progress import RunProgressState
+from .step_outcome import STEP_OUTCOME_STATUSES, StepOutcome
 
 __all__ = [
     # Keys
@@ -123,4 +124,6 @@ __all__ = [
     "IncumbentState",
     "ScalarizationError",
     "RunProgressState",
+    "STEP_OUTCOME_STATUSES",
+    "StepOutcome",
 ]

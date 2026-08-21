@@ -30,6 +30,59 @@ from blackbase.context.context_keys import (
 )
 
 
+POPULATION_SNAPSHOT_SCHEMA_V2 = "nsgablack.population_snapshot/v2"
+POPULATION_AUTHORITY_KEY = "population_authority"
+POPULATION_PARTITIONS_KEY = "population_partitions"
+LAST_EVALUATED_BATCH_KEY = "last_evaluated_batch"
+
+
+class PartitionedPopulationSnapshotError(RuntimeError):
+    """Raised when a single-population consumer sees partitioned authority."""
+
+
+def population_snapshot_authority_mode(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return "single"
+    authority = payload.get(POPULATION_AUTHORITY_KEY)
+    if not isinstance(authority, dict):
+        if POPULATION_PARTITIONS_KEY in payload or LAST_EVALUATED_BATCH_KEY in payload:
+            return "partitioned"
+        return "single"
+    mode = str(authority.get("authority_mode", "single") or "single").strip().lower()
+    if mode not in {"single", "partitioned", "step_batch"}:
+        raise ValueError(f"unsupported population snapshot authority mode: {mode}")
+    has_single_fields = any(
+        key in payload
+        for key in (KEY_POPULATION, KEY_OBJECTIVES, KEY_CONSTRAINT_VIOLATIONS)
+    )
+    if mode == "partitioned" and has_single_fields:
+        raise ValueError(
+            "partitioned population snapshot must not expose top-level "
+            "population/objectives/constraint_violations"
+        )
+    if mode != "partitioned" and (
+        POPULATION_PARTITIONS_KEY in payload or LAST_EVALUATED_BATCH_KEY in payload
+    ):
+        raise ValueError(
+            "single/step_batch snapshot must not contain partition-only fields"
+        )
+    return mode
+
+
+def require_single_population_payload(payload: Any) -> Dict[str, Any]:
+    """Return the numeric payload unless its authority is partitioned."""
+
+    if not isinstance(payload, dict):
+        raise TypeError("population snapshot payload must be a dict")
+    mode = population_snapshot_authority_mode(payload)
+    if mode == "partitioned":
+        raise PartitionedPopulationSnapshotError(
+            "population authority is partitioned; consume population_partitions "
+            "instead of treating last_evaluated_batch as one population"
+        )
+    return payload
+
+
 def build_snapshot_payload(
     population: Any = None,
     objectives: Any = None,
@@ -72,6 +125,7 @@ def build_snapshot_refs(
     has_pareto_objectives: bool = False,
     has_history: bool = False,
     has_decision_trace: bool = False,
+    authority_mode: str = "single",
 ) -> Dict[str, Any]:
     """Build lightweight context refs to snapshot payload."""
     refs = {
@@ -79,10 +133,15 @@ def build_snapshot_refs(
         KEY_SNAPSHOT_BACKEND: str(backend),
         KEY_SNAPSHOT_SCHEMA: str(schema),
         KEY_SNAPSHOT_META: dict(meta or {}),
-        KEY_POPULATION_REF: str(key),
-        KEY_OBJECTIVES_REF: str(key),
-        KEY_CONSTRAINT_VIOLATIONS_REF: str(key),
     }
+    if str(authority_mode or "single") != "partitioned":
+        refs.update(
+            {
+                KEY_POPULATION_REF: str(key),
+                KEY_OBJECTIVES_REF: str(key),
+                KEY_CONSTRAINT_VIOLATIONS_REF: str(key),
+            }
+        )
     if has_pareto_solutions:
         refs[KEY_PARETO_SOLUTIONS_REF] = str(key)
     if has_pareto_objectives:
@@ -144,4 +203,11 @@ __all__ = [
     "build_snapshot_refs",
     "snapshot_meta",
     "strip_large_context_fields",
+    "POPULATION_SNAPSHOT_SCHEMA_V2",
+    "POPULATION_AUTHORITY_KEY",
+    "POPULATION_PARTITIONS_KEY",
+    "LAST_EVALUATED_BATCH_KEY",
+    "PartitionedPopulationSnapshotError",
+    "population_snapshot_authority_mode",
+    "require_single_population_payload",
 ]

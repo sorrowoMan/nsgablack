@@ -9,7 +9,8 @@ The format is based on Keep a Changelog, and this project aims to follow SemVer.
 ### Added
 - `PopulationPartition` 与复合 Adapter 的 `single/delegate/partitioned` 权威 population 协议。
 - 可恢复的 `RunProgressState`，统一逻辑步数、累计耗时、deadline 与 ML CompletionPolicy 状态。
-- checkpoint v5：保存语义 population partitions、candidate lineage 与运行进度。
+- checkpoint v6：显式保存 population authority、语义 partitions、独立的 last-evaluated event、candidate lineage 与运行进度。
+- `StepOutcome`：区分 committed、idle、rejected、cancelled 与 terminal，空执行不再制造逻辑步骤。
 - API stability policy and release process documentation.
 - Pipeline repair guardrails: ComposableSolver uses repair_batch when available; NSGA-II evaluates repaired candidates.
 - ParallelRepair wrapper for optional parallel repair_batch (thread/process).
@@ -20,7 +21,8 @@ The format is based on Keep a Changelog, and this project aims to follow SemVer.
 - `docs/concepts/CONTEXT_SCHEMA.md`：修复乱码，重写为可读中文。
 
 ### Changed
-- 恢复生命周期统一为 `prepare -> setup -> restore -> initialize-if-fresh -> run`，预加载状态不再被 Adapter `setup()` 清空。
+- 恢复生命周期统一为 `prepare -> setup -> Plugin.prepare_restore -> restore -> ordinary init hooks -> initialize-if-fresh -> run`，预加载状态不再被 Adapter `setup()` 清空，普通插件只观察恢复后的状态。
+- Population Snapshot 升级为 `nsgablack.population_snapshot/v2`；partitioned authority 不再把最后评估批次伪装成单一 population。
 - mutate 创建带 `parent_token` 的新候选 lineage；repair 保持 token 并更新语义状态。
 - Project doctor strict mode escalates missing contracts as errors.
 - Run Inspector Context panel gains throttled refresh, local cache, and in-UI error visibility.

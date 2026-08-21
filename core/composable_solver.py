@@ -23,6 +23,7 @@ from .state.incumbent import (
     IncumbentState,
     ScalarizationError,
 )
+from .state.step_outcome import StepOutcome
 from .runtime_governance import commit_population_snapshot
 from ..utils.extension_contracts import normalize_candidate_batch, stack_population
 
@@ -54,7 +55,7 @@ class ComposableSolver(SolverBase):
         snapshot_store_unsafe_allow_unsigned: bool = False,
         snapshot_store_max_payload_bytes: int = 8_388_608,
         context_inline_candidate_max_bytes: int = 4_096,
-        snapshot_schema: str = "population_snapshot_v1",
+        snapshot_schema: str = "nsgablack.population_snapshot/v2",
         enable_convergence_monitor: bool = False,
         convergence_config: Optional[object] = None,
         enable_adaptive_parameters: bool = False,
@@ -268,9 +269,28 @@ class ComposableSolver(SolverBase):
             context,
         )
 
-    def step(self) -> None:
-        if self.adapter is None or bool(getattr(self, "stop_requested", False)):
-            return
+    def step(self) -> StepOutcome:
+        if self.adapter is None:
+            return StepOutcome(
+                status="terminal",
+                stop_requested=True,
+                reason="adapter_unavailable",
+            )
+        if bool(getattr(self, "stop_requested", False)):
+            return StepOutcome(
+                status="cancelled",
+                stop_requested=True,
+                reason=str(getattr(self, "stop_reason", None) or "stop_requested"),
+            )
+
+        declared_authority = str(
+            getattr(self.adapter, "population_state_mode", "none") or "none"
+        ).strip().lower()
+        self.population_authority_mode = (
+            declared_authority
+            if declared_authority in {"single", "partitioned"}
+            else "step_batch"
+        )
 
         previous_population_batch = self.get_candidate_population_batch()
         previous_population_provenance = self.get_candidate_population_provenance()
@@ -310,7 +330,16 @@ class ComposableSolver(SolverBase):
                     "budget_truncated": True,
                 }
                 self.request_stop()
-            return
+            return StepOutcome(
+                status="rejected" if requested_count > 0 else "idle",
+                proposals=requested_count,
+                stop_requested=bool(requested_count > 0),
+                reason=(
+                    "evaluation_budget_exhausted"
+                    if requested_count > 0
+                    else "adapter_proposed_no_candidates"
+                ),
+            )
         if approved_count < requested_count:
             candidates = candidates[:approved_count]
             candidate_provenance = candidate_provenance[:approved_count]
@@ -389,7 +418,12 @@ class ComposableSolver(SolverBase):
                 "budget_truncated": True,
             }
             self.request_stop()
-            return
+            return StepOutcome(
+                status="rejected",
+                proposals=requested_count,
+                stop_requested=True,
+                reason="evaluation_budget_race",
+            )
         incumbent_selection = self.select_best_with_score(
             self.objectives,
             self.constraint_violations,
@@ -530,6 +564,7 @@ class ComposableSolver(SolverBase):
                 self.objectives,
                 self.constraint_violations,
             )
+
         else:
             self._candidate_population_partitions = {}
             self.population_authority_mode = "step_batch"
@@ -543,6 +578,20 @@ class ComposableSolver(SolverBase):
                 self.objectives,
                 self.constraint_violations,
             )
+
+        return StepOutcome(
+            status="committed",
+            evaluations=accepted_count,
+            proposals=requested_count,
+            stop_requested=bool(getattr(self, "stop_requested", False)),
+            reason=str(getattr(self, "stop_reason", None) or ""),
+            metadata={
+                "authority_mode": self.population_authority_mode,
+                "budget_truncated": bool(
+                    approved_count < requested_count or reservation_truncated
+                ),
+            },
+        )
 
     def _commit_candidate_population_partitions(
         self,
@@ -580,8 +629,17 @@ class ComposableSolver(SolverBase):
                 partition.candidate_tokens,
                 sources=tuple(sources),
             )
+            normalized_partition = PopulationPartition(
+                partition_id=partition.partition_id,
+                population=partition.population,
+                objectives=partition.objectives,
+                violations=partition.violations,
+                candidate_tokens=batch.candidate_tokens,
+                owner=partition.owner,
+                metadata=partition.metadata,
+            )
             committed[partition.partition_id] = (
-                partition,
+                normalized_partition,
                 batch,
                 provenance,
             )

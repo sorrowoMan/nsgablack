@@ -8,6 +8,7 @@ from typing import Any, Callable, Mapping, Optional
 
 from blackbase.plugin import report_soft_error
 from .result_helpers import format_run_result
+from ..state.step_outcome import StepOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,8 @@ def run_solver_loop(
     solver.start_time = time.time()
     result: dict[str, Any] = {}
     steps_executed = 0
+    step_attempts = 0
+    last_step_outcome: StepOutcome | None = None
     termination_reason = "step_limit"
     primary_error: BaseException | None = None
     completed_result: Any = None
@@ -140,7 +143,13 @@ def run_solver_loop(
             solver.reset_evaluation_budget()
         solver.setup()
         setattr(solver, "_runtime_setup_complete", True)
+        setattr(solver, "_restore_collection_active", True)
+        try:
+            _call_optional(solver.plugin_manager, "prepare_restore", solver)
+        finally:
+            setattr(solver, "_restore_collection_active", False)
         _call_optional(solver, "_apply_pending_restore_envelopes")
+        _call_optional(solver, "_merge_run_progress_deadline_with_case_control")
         _checkpoint_case_runtime(solver)
         _call_optional(solver.plugin_manager, "on_solver_init", solver)
         _call_optional(solver, "_runtime_governance_on_solver_init")
@@ -157,8 +166,9 @@ def run_solver_loop(
         setattr(solver, "_resume_cursor", 0)
         _call_optional(solver, "_start_run_progress_clock")
 
-        for step_index in range(start_step, limit):
+        for _attempt_index in range(start_step, limit):
             _checkpoint_case_runtime(solver)
+            step_index = int(start_step) + int(steps_executed)
             set_generation = getattr(solver, "set_generation", None)
             if callable(set_generation):
                 set_generation(step_index)
@@ -191,8 +201,29 @@ def run_solver_loop(
                 break
             _call_optional(solver.plugin_manager, "on_generation_start", generation)
             _checkpoint_case_runtime(solver)
-            solver.step()
+            raw_step_outcome = solver.step()
+            step_outcome = StepOutcome.from_value(raw_step_outcome)
+            last_step_outcome = step_outcome
+            step_attempts += 1
+            setattr(solver, "last_step_outcome", step_outcome.as_dict())
             _checkpoint_case_runtime(solver)
+            if not step_outcome.committed:
+                if step_outcome.stop_requested and not bool(
+                    getattr(solver, "stop_requested", False)
+                ):
+                    request_stop = getattr(solver, "request_stop", None)
+                    if callable(request_stop):
+                        request_stop(step_outcome.reason or step_outcome.status)
+                if step_outcome.terminal or bool(
+                    getattr(solver, "stop_requested", False)
+                ):
+                    termination_reason = str(
+                        getattr(solver, "stop_reason", None)
+                        or step_outcome.reason
+                        or step_outcome.status
+                    )
+                    break
+                continue
             steps_executed += 1
             _call_optional(solver, "_record_completed_run_step")
             _call_optional(solver.plugin_manager, "on_step", solver, generation)
@@ -208,6 +239,13 @@ def run_solver_loop(
                     getattr(solver, "stop_reason", None) or "user_stop"
                 )
                 break
+
+        if (
+            step_attempts >= max(0, int(limit) - int(start_step))
+            and int(start_step) + int(steps_executed) < int(limit)
+            and not bool(getattr(solver, "stop_requested", False))
+        ):
+            termination_reason = "attempt_limit"
 
         elapsed = max(
             0.0,
@@ -228,6 +266,12 @@ def run_solver_loop(
                 ),
                 "termination_reason": termination_reason,
                 "generation": int(total_steps),
+                "step_attempts": int(step_attempts),
+                "last_step_outcome": (
+                    None
+                    if last_step_outcome is None
+                    else last_step_outcome.as_dict()
+                ),
                 "steps": int(total_steps),
                 "steps_executed": int(steps_executed),
                 "resume_from": int(start_step) if resume_loaded else 0,
@@ -303,6 +347,8 @@ def run_solver_loop(
         finally:
             solver.running = False
             setattr(solver, "_runtime_setup_complete", False)
+            setattr(solver, "_restore_collection_active", False)
+            setattr(solver, "_restore_apply_active", False)
 
     if completed_result is None:  # pragma: no cover - guarded by lifecycle flow
         raise RuntimeError("solver lifecycle completed without a result")

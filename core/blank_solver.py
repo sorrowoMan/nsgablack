@@ -69,6 +69,10 @@ from .interfaces import (
     load_bias_module,
 )
 from .solver_helpers import (
+    LAST_EVALUATED_BATCH_KEY,
+    POPULATION_AUTHORITY_KEY,
+    POPULATION_PARTITIONS_KEY,
+    POPULATION_SNAPSHOT_SCHEMA_V2,
     ComponentDependencyScheduler,
     apply_bias_module,
     build_context_store_or_memory,
@@ -129,7 +133,7 @@ logger = logging.getLogger(__name__)
 _SEMANTIC_METADATA_KEY = "candidate.semantic_metadata"
 _CANDIDATE_BATCH_SNAPSHOT_KEY = "candidate_batch"
 _CANDIDATE_PROVENANCE_SNAPSHOT_KEY = "candidate_provenance"
-_CANDIDATE_PARTITIONS_SNAPSHOT_KEY = "candidate_population_partitions"
+_CANDIDATE_PARTITIONS_SNAPSHOT_KEY = POPULATION_PARTITIONS_KEY
 
 
 @dataclass(frozen=True)
@@ -180,7 +184,7 @@ class SolverBase:
         context_inline_candidate_max_bytes: int = 4_096,
         runtime_context_projection_field_max_bytes: int = 4_096,
         runtime_context_projection_total_max_bytes: int = 32_768,
-        snapshot_schema: str = "population_snapshot_v1",
+        snapshot_schema: str = "nsgablack.population_snapshot/v2",
         enable_convergence_monitor: bool = False,
         convergence_config: Optional[ConvergenceConfig] = None,
         enable_adaptive_parameters: bool = False,
@@ -326,6 +330,9 @@ class SolverBase:
         self.running = False
         self.stop_requested = False
         self._runtime_setup_complete = False
+        self._restore_collection_active = False
+        self._restore_apply_active = False
+        self._restore_transaction_lock = threading.RLock()
         self._pending_restore_envelopes: list[
             tuple[str, Callable[[], None]]
         ] = []
@@ -368,7 +375,7 @@ class SolverBase:
             0,
             int(runtime_context_projection_total_max_bytes),
         )
-        self.snapshot_schema = str(snapshot_schema or "population_snapshot_v1")
+        self.snapshot_schema = str(snapshot_schema or "nsgablack.population_snapshot/v2")
         self.snapshot_store: SnapshotStore = self._build_snapshot_store()
         self._latest_snapshot_handle = None
         self._snapshot_generation = None
@@ -2467,6 +2474,23 @@ class SolverBase:
         )
         return True
 
+    def write_partitioned_population_snapshot(self) -> bool:
+        """Publish partition authority when no last-evaluated batch exists."""
+
+        if str(getattr(self, "population_authority_mode", "single") or "single") != "partitioned":
+            raise RuntimeError(
+                "write_partitioned_population_snapshot requires partitioned authority"
+            )
+        self._persist_snapshot(
+            population=None,
+            objectives=None,
+            violations=None,
+            include_pareto=True,
+            include_history=True,
+            include_decision_trace=True,
+        )
+        return self._latest_snapshot_handle is not None
+
     def _snapshot_run_id(self) -> Optional[str]:
         for attr in ("run_id", "_run_id", "experiment_id"):
             rid = getattr(self, attr, None)
@@ -2491,7 +2515,10 @@ class SolverBase:
         pareto_objectives: Optional[np.ndarray] = None,
         complete: bool = True,
     ) -> Dict[str, Any]:
-        return snapshot_meta(
+        authority_mode = str(
+            getattr(self, "population_authority_mode", "single") or "single"
+        )
+        meta = snapshot_meta(
             population,
             objectives,
             violations,
@@ -2499,6 +2526,50 @@ class SolverBase:
             pareto_objectives=pareto_objectives,
             complete=complete,
         )
+        meta.update(
+            {
+                "population_snapshot_schema": POPULATION_SNAPSHOT_SCHEMA_V2,
+                "authority_mode": authority_mode,
+            }
+        )
+        if authority_mode == "partitioned":
+            export_partitions = getattr(
+                self,
+                "export_candidate_population_partitions_checkpoint_state",
+                None,
+            )
+            partition_payload = (
+                export_partitions() if callable(export_partitions) else None
+            )
+            partitions = (
+                tuple(partition_payload.get("partitions", ()) or ())
+                if isinstance(partition_payload, Mapping)
+                else ()
+            )
+            meta.update(
+                {
+                    "population_shape": None,
+                    "objectives_shape": None,
+                    "violations_shape": None,
+                    "partition_count": len(partitions),
+                    "last_evaluated_population_shape": (
+                        list(getattr(population, "shape", ()))
+                        if population is not None
+                        else None
+                    ),
+                    "last_evaluated_objectives_shape": (
+                        list(getattr(objectives, "shape", ()))
+                        if objectives is not None
+                        else None
+                    ),
+                    "last_evaluated_violations_shape": (
+                        list(getattr(violations, "shape", ()))
+                        if violations is not None
+                        else None
+                    ),
+                }
+            )
+        return meta
 
     def _prepare_snapshot_payload(
         self,
@@ -2511,15 +2582,41 @@ class SolverBase:
         history: Optional[Any] = None,
         decision_trace: Optional[Any] = None,
     ) -> Dict[str, Any]:
-        payload = build_snapshot_payload(
+        event_payload = build_snapshot_payload(
             population,
             objectives,
             violations,
-            pareto_solutions=pareto_solutions,
-            pareto_objectives=pareto_objectives,
-            history=history,
-            decision_trace=decision_trace,
         )
+        authority_mode = str(
+            getattr(self, "population_authority_mode", "single") or "single"
+        )
+        if authority_mode == "partitioned":
+            payload = build_snapshot_payload(
+                None,
+                None,
+                None,
+                pareto_solutions=pareto_solutions,
+                pareto_objectives=pareto_objectives,
+                history=history,
+                decision_trace=decision_trace,
+            )
+            payload[LAST_EVALUATED_BATCH_KEY] = event_payload
+            semantic_target = event_payload
+        else:
+            payload = build_snapshot_payload(
+                population,
+                objectives,
+                violations,
+                pareto_solutions=pareto_solutions,
+                pareto_objectives=pareto_objectives,
+                history=history,
+                decision_trace=decision_trace,
+            )
+            semantic_target = payload
+        payload[POPULATION_AUTHORITY_KEY] = {
+            "schema": POPULATION_SNAPSHOT_SCHEMA_V2,
+            "authority_mode": authority_mode,
+        }
         batch = self._candidate_population_batch
         if batch is not None and population is not None:
             numeric = np.asarray(population, dtype=float)
@@ -2528,8 +2625,8 @@ class SolverBase:
                 batch.numeric_matrix,
                 equal_nan=True,
             ):
-                payload[_CANDIDATE_BATCH_SNAPSHOT_KEY] = batch.as_dict()
-                payload[_CANDIDATE_PROVENANCE_SNAPSHOT_KEY] = [
+                semantic_target[_CANDIDATE_BATCH_SNAPSHOT_KEY] = batch.as_dict()
+                semantic_target[_CANDIDATE_PROVENANCE_SNAPSHOT_KEY] = [
                     item.as_dict()
                     for item in self._candidate_population_provenance
                 ]
@@ -2583,7 +2680,24 @@ class SolverBase:
 
         is_complete = complete
         if is_complete is None:
-            is_complete = objectives is not None and violations is not None
+            authority_mode = str(
+                getattr(self, "population_authority_mode", "single") or "single"
+            )
+            if authority_mode == "partitioned":
+                export_partitions = getattr(
+                    self,
+                    "export_candidate_population_partitions_checkpoint_state",
+                    None,
+                )
+                partition_payload = (
+                    export_partitions() if callable(export_partitions) else None
+                )
+                is_complete = bool(
+                    isinstance(partition_payload, Mapping)
+                    and tuple(partition_payload.get("partitions", ()) or ())
+                )
+            else:
+                is_complete = objectives is not None and violations is not None
 
         meta = self._snapshot_meta(
             population=np.asarray(population) if population is not None else None,
@@ -2659,6 +2773,25 @@ class SolverBase:
             return None
         return dict(record.data)
 
+    def get_last_evaluated_batch_snapshot(
+        self,
+    ) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None]:
+        """Return an isolated event view, never an authoritative population.
+
+        Partition-aware consumers use this only for audit/checkpoint evidence.
+        Population selection must continue through the single or partitioned
+        authority APIs instead of treating this event as solver state.
+        """
+
+        def _copy(value: Any) -> np.ndarray | None:
+            return None if value is None else np.array(value, copy=True)
+
+        return (
+            _copy(getattr(self, "population", None)),
+            _copy(getattr(self, "objectives", None)),
+            _copy(getattr(self, "constraint_violations", None)),
+        )
+
     def _strip_large_context(self, ctx: Dict[str, Any]) -> None:
         strip_large_context_fields(ctx)
 
@@ -2731,6 +2864,25 @@ class SolverBase:
                 handle = self._latest_snapshot_handle
         if handle is None:
             return
+        if str(getattr(self, "population_authority_mode", "single") or "single") == "partitioned":
+            for key in (
+                KEY_POPULATION_REF,
+                KEY_OBJECTIVES_REF,
+                KEY_CONSTRAINT_VIOLATIONS_REF,
+            ):
+                ctx.pop(key, None)
+                try:
+                    self.context_store.delete(key)
+                except Exception as exc:
+                    report_soft_error(
+                        component="SolverBase",
+                        event="partitioned_snapshot_ref_delete",
+                        exc=exc,
+                        logger=logger,
+                        context_store=self.context_store,
+                        strict=False,
+                        level="debug",
+                    )
         ctx.update(
             build_snapshot_refs(
                 key=str(handle.key),
@@ -2741,6 +2893,9 @@ class SolverBase:
                 has_pareto_objectives=getattr(self, "pareto_objectives", None) is not None,
                 has_history=getattr(self, "history", None) is not None,
                 has_decision_trace=getattr(self, "decision_trace", None) is not None,
+                authority_mode=str(
+                    getattr(self, "population_authority_mode", "single") or "single"
+                ),
             )
         )
 
@@ -3013,6 +3168,17 @@ class SolverBase:
         """Pre-step predicate evaluated before generation hooks and counters."""
 
         del step_index
+        remaining = self._run_progress_deadline_remaining_seconds
+        if remaining is not None:
+            current = float(remaining)
+            if self._run_progress_clock_started_at is not None:
+                current -= max(
+                    0.0,
+                    float(time.monotonic() - self._run_progress_clock_started_at),
+                )
+            if current <= 0.0:
+                self.request_stop("logical_deadline")
+                return False
         return True
 
     def queue_restore_envelope(
@@ -3025,22 +3191,30 @@ class SolverBase:
 
         if not callable(apply):
             raise TypeError("restore envelope apply callback must be callable")
-        if bool(self.running) or bool(self._runtime_setup_complete):
-            raise RuntimeError(
-                "restore envelopes may only be queued before runtime setup"
-            )
-        self._pending_restore_envelopes.append((str(source), apply))
+        with self._restore_transaction_lock:
+            if (
+                bool(self.running) or bool(self._runtime_setup_complete)
+            ) and not bool(self._restore_collection_active):
+                raise RuntimeError(
+                    "restore envelopes may only be queued before runtime setup"
+                )
+            self._pending_restore_envelopes.append((str(source), apply))
 
     def _apply_pending_restore_envelopes(self) -> None:
-        pending = list(self._pending_restore_envelopes)
-        self._pending_restore_envelopes = []
-        if len(pending) > 1:
-            raise RuntimeError(
-                "multiple restore envelopes were queued for one Solver run: "
-                + ", ".join(source for source, _apply in pending)
-            )
-        for _source, apply in pending:
-            apply()
+        with self._restore_transaction_lock:
+            pending = list(self._pending_restore_envelopes)
+            self._pending_restore_envelopes = []
+            if len(pending) > 1:
+                raise RuntimeError(
+                    "multiple restore envelopes were queued for one Solver run: "
+                    + ", ".join(source for source, _apply in pending)
+                )
+            self._restore_apply_active = True
+            try:
+                for _source, apply in pending:
+                    apply()
+            finally:
+                self._restore_apply_active = False
         if pending and not bool(getattr(self, "_resume_loaded", False)):
             raise RuntimeError(
                 "restore envelope completed without establishing resume state"
@@ -3049,6 +3223,27 @@ class SolverBase:
     def _start_run_progress_clock(self) -> None:
         if self._run_progress_clock_started_at is None:
             self._run_progress_clock_started_at = time.monotonic()
+
+    def _merge_run_progress_deadline_with_case_control(self) -> None:
+        """Clamp logical run time to the active parent Case authorization."""
+
+        runtime = getattr(self, "case_runtime", None)
+        control = getattr(runtime, "control", None)
+        deadline_at = float(getattr(control, "deadline_at", 0.0) or 0.0)
+        parent_remaining = (
+            None
+            if deadline_at <= 0
+            else max(0.0, deadline_at - time.time())
+        )
+        checkpoint_remaining = self._run_progress_deadline_remaining_seconds
+        candidates = [
+            float(value)
+            for value in (checkpoint_remaining, parent_remaining)
+            if value is not None
+        ]
+        self._run_progress_deadline_remaining_seconds = (
+            min(candidates) if candidates else None
+        )
 
     def _pause_run_progress_clock(self) -> None:
         started = self._run_progress_clock_started_at
