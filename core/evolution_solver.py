@@ -1,13 +1,16 @@
 """Population-based evolutionary solver built on ComposableSolver + adapters."""
 
 from __future__ import annotations
+import copy
 import logging
 import random
 from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple
 import numpy as np
 from blackbase.call_binding import CallCandidate, invoke_bound_once
+from blackbase.context import StateStoreConfig
+from blackbase.types import PopulationSnapshot
 from ..adapters import NSGA2Adapter, NSGA2Config
-from .composable_solver import ComposableSolver
+from .composable_solver import ComposableSolver, _rollback_step_failure
 from blackbase.resources import RedisTaskRuntimeBackend
 from .solver_helpers import evaluate_external_population_with_contract, format_run_result
 from blackbase.plugin import report_soft_error
@@ -44,10 +47,15 @@ class EvolutionSolver(ComposableSolver):
         plugin_strict: bool = False,
         snapshot_strict: bool = False,
         resource_context: Optional[Mapping[str, Any]] = None,
+        storage_config: Optional[StateStoreConfig] = None,
         context_store_backend: str = "memory",
         context_store_ttl_seconds: Optional[float] = None,
         context_store_redis_url: str = "redis://localhost:6379/0",
         context_store_key_prefix: str = "nsgablack:context",
+        context_store_serializer: str = "safe",
+        context_store_hmac_env_var: str = "NSGABLACK_CONTEXT_HMAC_KEY",
+        context_store_unsafe_allow_legacy_pickle: bool = False,
+        context_store_max_payload_bytes: int = 262_144,
         snapshot_store_backend: str = "memory",
         snapshot_store_ttl_seconds: Optional[float] = None,
         snapshot_store_redis_url: str = "redis://localhost:6379/0",
@@ -126,10 +134,15 @@ class EvolutionSolver(ComposableSolver):
             plugin_strict=bool(plugin_strict),
             snapshot_strict=bool(snapshot_strict),
             resource_context=resource_context,
+            storage_config=storage_config,
             context_store_backend=context_store_backend,
             context_store_ttl_seconds=context_store_ttl_seconds,
             context_store_redis_url=context_store_redis_url,
             context_store_key_prefix=context_store_key_prefix,
+            context_store_serializer=context_store_serializer,
+            context_store_hmac_env_var=context_store_hmac_env_var,
+            context_store_unsafe_allow_legacy_pickle=context_store_unsafe_allow_legacy_pickle,
+            context_store_max_payload_bytes=context_store_max_payload_bytes,
             snapshot_store_backend=snapshot_store_backend,
             snapshot_store_ttl_seconds=snapshot_store_ttl_seconds,
             snapshot_store_redis_url=snapshot_store_redis_url,
@@ -155,6 +168,7 @@ class EvolutionSolver(ComposableSolver):
         self.history: List[Tuple[int, List[np.ndarray]]] = []
         self.pareto_solutions: Optional[Dict[str, np.ndarray]] = None
         self.pareto_objectives: Optional[np.ndarray] = None
+        self.pareto_population_snapshot: Optional[PopulationSnapshot] = None
         self.best_f: Optional[float] = None
         self.last_result: Dict[str, Any] = {}
         self.run_count: int = 0
@@ -244,8 +258,16 @@ class EvolutionSolver(ComposableSolver):
     def set_context_store(self, store: Any) -> None:
         super().set_context_store(store)
 
-    def set_snapshot_store(self, store: Any) -> None:
-        super().set_snapshot_store(store)
+    def set_snapshot_store(
+        self,
+        store: Any,
+        *,
+        evaluation_evidence_journal: Any = None,
+    ) -> None:
+        super().set_snapshot_store(
+            store,
+            evaluation_evidence_journal=evaluation_evidence_journal,
+        )
 
     def set_context_store_backend(
         self,
@@ -254,12 +276,20 @@ class EvolutionSolver(ComposableSolver):
         ttl_seconds: Optional[float] = None,
         redis_url: Optional[str] = None,
         key_prefix: Optional[str] = None,
+        serializer: Optional[str] = None,
+        hmac_env_var: Optional[str] = None,
+        unsafe_allow_legacy_pickle: Optional[bool] = None,
+        max_payload_bytes: Optional[int] = None,
     ) -> None:
         super().set_context_store_backend(
             backend,
             ttl_seconds=ttl_seconds,
             redis_url=redis_url,
             key_prefix=key_prefix,
+            serializer=serializer,
+            hmac_env_var=hmac_env_var,
+            unsafe_allow_legacy_pickle=unsafe_allow_legacy_pickle,
+            max_payload_bytes=max_payload_bytes,
         )
 
     def set_snapshot_store_backend(
@@ -495,6 +525,26 @@ class EvolutionSolver(ComposableSolver):
         self.mutation_range = float(self.initial_mutation_range)
 
         super().setup()
+        self._require_single_population_topology()
+
+    def _require_single_population_topology(self) -> None:
+        """Reject partitioned authority until an explicit aggregation exists."""
+
+        adapter = getattr(self, "adapter", None)
+        if adapter is None:
+            return
+        resolver = getattr(adapter, "supported_population_state_modes", None)
+        modes = (
+            frozenset(str(item) for item in resolver())
+            if callable(resolver)
+            else frozenset()
+        )
+        if "partitioned" in modes:
+            raise TypeError(
+                "EvolutionSolver requires one authoritative population; "
+                f"Adapter {type(adapter).__name__} may expose partitioned authority. "
+                "Use ComposableSolver or provide a formal population aggregation policy."
+            )
 
     def _initialize_run_state(self) -> None:
         """Initialize fresh population state after run-start plugins have fired."""
@@ -510,13 +560,143 @@ class EvolutionSolver(ComposableSolver):
             self._commit_evolution_runtime_state()
 
     def step(self) -> StepOutcome:
+        previous_projection = self._capture_authority_projection()
+        previous_incumbent = self._capture_incumbent_transaction_state()
+        previous_snapshot_handle = self._latest_snapshot_handle
+        previous_snapshot_generation = self._snapshot_generation
+        previous_event_id = self._last_evaluation_event_id
+        previous_history = copy.deepcopy(self.history)
+        previous_pareto_solutions = copy.deepcopy(self.pareto_solutions)
+        previous_pareto_objectives = (
+            None
+            if self.pareto_objectives is None
+            else np.array(self.pareto_objectives, copy=True)
+        )
+        previous_pareto_population_snapshot = self.pareto_population_snapshot
+        previous_mutation_range = float(self.mutation_range)
+        adapter_transaction = (
+            self.adapter.begin_step_transaction()
+            if self.adapter is not None
+            else None
+        )
+        self.begin_snapshot_step_transaction()
+        try:
+            outcome = self._step_transaction_body_evolution()
+            outcome = self._finalize_evaluation_disposition(
+                outcome,
+                previous_authority_key=(
+                    None
+                    if previous_snapshot_handle is None
+                    else str(previous_snapshot_handle.key)
+                ),
+            )
+            if outcome.committed:
+                self.commit_snapshot_step_transaction()
+                outcome = self._settle_evaluation_disposition_best_effort(outcome)
+            else:
+                self.rollback_snapshot_step_transaction()
+        except BaseException as exc:
+            self._record_failed_evaluation_disposition(
+                exc,
+                previous_event_id=previous_event_id,
+                previous_authority_key=(
+                    None
+                    if previous_snapshot_handle is None
+                    else str(previous_snapshot_handle.key)
+                ),
+            )
+            callbacks = [("snapshot", self.rollback_snapshot_step_transaction)]
+            if adapter_transaction is not None:
+                callbacks.append(("adapter", adapter_transaction.rollback))
+            callbacks.extend(
+                (
+                    (
+                        "solver.authority",
+                        lambda: self._restore_authority_projection(previous_projection),
+                    ),
+                    (
+                        "solver.incumbent",
+                        lambda: self._restore_incumbent_transaction_state(
+                            previous_incumbent
+                        ),
+                    ),
+                    (
+                        "solver.snapshot_handle",
+                        lambda: setattr(
+                            self,
+                            "_latest_snapshot_handle",
+                            previous_snapshot_handle,
+                        ),
+                    ),
+                    (
+                        "solver.snapshot_generation",
+                        lambda: setattr(
+                            self,
+                            "_snapshot_generation",
+                            previous_snapshot_generation,
+                        ),
+                    ),
+                    (
+                        "solver.history",
+                        lambda: setattr(self, "history", previous_history),
+                    ),
+                    (
+                        "solver.pareto_solutions",
+                        lambda: setattr(
+                            self,
+                            "pareto_solutions",
+                            previous_pareto_solutions,
+                        ),
+                    ),
+                    (
+                        "solver.pareto_objectives",
+                        lambda: setattr(
+                            self,
+                            "pareto_objectives",
+                            previous_pareto_objectives,
+                        ),
+                    ),
+                    (
+                        "solver.pareto_population_snapshot",
+                        lambda: setattr(
+                            self,
+                            "pareto_population_snapshot",
+                            previous_pareto_population_snapshot,
+                        ),
+                    ),
+                    (
+                        "solver.mutation_range",
+                        lambda: setattr(
+                            self,
+                            "mutation_range",
+                            previous_mutation_range,
+                        ),
+                    ),
+                )
+            )
+            _rollback_step_failure(exc, callbacks)
+            raise
+        if adapter_transaction is not None:
+            report = adapter_transaction.commit()
+            outcome = self._attach_adapter_commit_report(outcome, report)
+        return outcome
+
+    def _step_transaction_body_evolution(self) -> StepOutcome:
+        self._require_single_population_topology()
         self._sync_nsga2_adapter_config()
         max_g = max(1, int(self.max_generations))
         progress = min(1.0, max(0.0, float(self.generation) / float(max_g)))
         self.mutation_range = max(0.01, float(self.initial_mutation_range) * (1.0 - progress))
-        outcome = super().step()
+        # The outer Evolution transaction already covers Adapter/Solver state;
+        # call the Composable transaction body directly to avoid a second full
+        # Adapter snapshot for every generation.
+        outcome = self._step_transaction_body()
         if not outcome.committed:
             return outcome
+        if self.population_authority_mode == "partitioned":
+            raise RuntimeError(
+                "EvolutionSolver cannot derive Pareto/history/best from partitioned authority"
+            )
         self._sync_solver_from_adapter()
         self.update_pareto_solutions()
         self.record_history()
@@ -734,6 +914,11 @@ class EvolutionSolver(ComposableSolver):
         self.population = pop[keep]
         self.objectives = obj[keep]
         self.constraint_violations = vio[keep]
+        # This ndarray-only helper has no semantic input surface.  Establish a
+        # fresh numeric CandidateBatch for the selected rows instead of letting
+        # the result boundary recover identity by value.  Semantic callers must
+        # use the Adapter update path, which supplies aligned candidate tokens.
+        self.commit_candidate_population(self.population, None)
         self._sync_adapter_from_solver()
         self.update_pareto_solutions()
         self.record_history()
@@ -743,16 +928,19 @@ class EvolutionSolver(ComposableSolver):
         if self.population is None or self.objectives is None:
             self.pareto_solutions = {"individuals": np.array([]), "objectives": np.array([])}
             self.pareto_objectives = np.array([])
+            self.pareto_population_snapshot = None
             return
         rank, crowding, _ = self.non_dominated_sorting()
         if rank.size == 0:
             self.pareto_solutions = {"individuals": np.array([]), "objectives": np.array([])}
             self.pareto_objectives = np.array([])
+            self.pareto_population_snapshot = None
             return
         front0 = np.where(rank == 0)[0]
         if front0.size == 0:
             self.pareto_solutions = {"individuals": np.array([]), "objectives": np.array([])}
             self.pareto_objectives = np.array([])
+            self.pareto_population_snapshot = None
             return
         keep = front0
         limit = max(1, int(self.max_pareto_solutions))
@@ -764,6 +952,42 @@ class EvolutionSolver(ComposableSolver):
             "objectives": np.asarray(self.objectives, dtype=float)[keep],
         }
         self.pareto_objectives = np.asarray(self.objectives, dtype=float)[keep]
+        authority_batch = self.get_candidate_population_batch()
+        population = np.asarray(self.population, dtype=float)
+        if authority_batch is None:
+            raise RuntimeError(
+                "Pareto publication requires an authoritative CandidateBatch"
+            )
+        if (
+            authority_batch.numeric_matrix.shape != population.shape
+            or not np.array_equal(
+                authority_batch.numeric_matrix,
+                population,
+                equal_nan=True,
+            )
+        ):
+            raise RuntimeError(
+                "Pareto publication CandidateBatch disagrees with authoritative population"
+            )
+        front_batch = authority_batch.subset(keep)
+        violations = np.asarray(
+            self.constraint_violations
+            if self.constraint_violations is not None
+            else np.zeros((population.shape[0],), dtype=float),
+            dtype=float,
+        ).reshape(-1)
+        if violations.shape[0] != population.shape[0]:
+            raise RuntimeError(
+                "Pareto publication constraint feedback is not population-aligned"
+            )
+        self.pareto_population_snapshot = PopulationSnapshot(
+            candidates=front_batch.semantic_states,
+            candidate_tokens=front_batch.candidate_tokens,
+            objectives=self.pareto_objectives,
+            constraints=violations[keep],
+            generation=int(getattr(self, "generation", 0) or 0),
+            metadata={"source": "nsgablack.authoritative_pareto"},
+        )
 
     def record_history(self) -> None:
         if self.objectives is None:
@@ -864,12 +1088,38 @@ class EvolutionSolver(ComposableSolver):
         self.run_count += 1
         return out
 
-    def run(self, return_experiment: bool = False, return_dict: bool = False):
-        try:
+    def set_max_steps(self, max_steps: int) -> None:
+        """Set the single logical-generation budget exposed by the control plane.
+
+        ``max_generations`` is retained as an EvolutionSolver configuration alias,
+        but it must not silently overwrite a later control-plane budget.
+        """
+
+        value = int(max_steps)
+        self.max_steps = value
+        self.max_generations = value
+
+    def set_max_generations(self, max_generations: int) -> None:
+        """Compatibility alias for :meth:`set_max_steps`."""
+
+        self.set_max_steps(max_generations)
+
+    def run(
+        self,
+        return_experiment: bool = False,
+        return_dict: bool = False,
+        *,
+        max_steps: Optional[int] = None,
+        max_step_attempts: Optional[int] = None,
+    ):
+        if max_steps is not None:
+            self.set_max_steps(max_steps)
+        else:
+            # Preserve the historical public configuration attribute.  The
+            # formal setter keeps both names synchronized, while callers that
+            # still assign ``max_generations`` directly remain supported.
             self.max_steps = int(self.max_generations)
-        except Exception:
-            pass
-        base = super().run()
+        base = super().run(max_step_attempts=max_step_attempts)
 
         def _build_experiment():
             experiment_cls = self._experiment_result_class()

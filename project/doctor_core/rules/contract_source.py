@@ -77,6 +77,7 @@ _ALLOWED_METRICS_FALLBACK_VALUES = {
     "problem_data",
     "warn",
     "ignore",
+    "strict",
 }
 _CONTEXT_LARGE_OBJECT_KEYS = {
     KEY_POPULATION,
@@ -201,23 +202,24 @@ def _collect_declared_contract_keys(class_node: ast.ClassDef) -> dict[str, set[s
 
 
 def _is_known_context_key(key: str) -> bool:
-    text = str(key).strip().lower()
-    if not text:
+    normalized = normalize_context_key(str(key))
+    if not normalized:
         return False
-    if text in CANONICAL_CONTEXT_KEYS:
+    if normalized in CANONICAL_CONTEXT_KEYS:
         return True
-    if text.startswith("metrics."):
+    if normalized.startswith("metrics."):
         return True
     return False
 
 
 def _is_declared_key_covered(key: str, declared: set[str]) -> bool:
-    text = str(key).strip().lower()
-    if not text:
+    normalized = normalize_context_key(str(key))
+    if not normalized:
         return False
-    if text in declared:
+    normalized_declared = {normalize_context_key(item) for item in declared}
+    if normalized in normalized_declared:
         return True
-    if text.startswith("metrics.") and "metrics" in declared:
+    if normalized.startswith("metrics.") and "metrics" in normalized_declared:
         return True
     return False
 

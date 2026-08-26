@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from blackbase.resources import DataRef
-from blackbase.types import SolveQuality, SolverResult, UnknownState
+from blackbase.types import PopulationSnapshot, SolveQuality, SolverResult, UnknownState
 from nsgablack.core import (
     BlackBoxProblem,
     ComposableSolver,
@@ -49,6 +49,17 @@ def _solver() -> SolverBase:
         "objectives": solver.objectives[:2],
     }
     solver.pareto_objectives = solver.objectives[:2]
+    solver.pareto_population_snapshot = PopulationSnapshot(
+        candidates=(
+            UnknownState([1.0, 2.0], metadata={"model": "first"}),
+            UnknownState([2.0, 1.0], metadata={"model": "second"}),
+        ),
+        candidate_tokens=("candidate:first", "candidate:second"),
+        objectives=solver.objectives[:2],
+        constraints=solver.constraint_violations[:2],
+        generation=5,
+        metadata={"source": "test.authority"},
+    )
     solver.generation = 5
     solver.evaluation_count = 12
     return solver
@@ -64,12 +75,50 @@ def test_build_solver_result_preserves_vector_objectives_and_pareto_front() -> N
     assert result.best_constraint_violation == 0.0
     assert result.pareto_front is not None
     assert len(result.pareto_front.candidates) == 2
+    assert result.pareto_front.candidate_tokens == (
+        "candidate:first",
+        "candidate:second",
+    )
+    assert result.pareto_front.candidates[0].metadata["model"] == "first"
     assert np.allclose(result.pareto_front.constraints, [0.0, 0.1])
     assert result.report["generation"] == 5
     assert result.report["evaluation_count"] == 12
     assert result.solve_status == "feasible"
     assert result.feasibility == "feasible"
     assert result.termination_reason == "completed"
+
+
+def test_pareto_result_preserves_equal_numeric_candidates_by_token() -> None:
+    solver = SolverBase(_Problem())
+    duplicated = np.asarray([[1.0, 2.0], [1.0, 2.0]])
+    objectives = np.asarray([[0.2, 0.8], [0.5, 0.4]])
+    solver.population = duplicated
+    solver.objectives = objectives
+    solver.constraint_violations = np.asarray([0.0, 3.0])
+    solver.pareto_solutions = {
+        "individuals": duplicated,
+        "objectives": objectives,
+    }
+    solver.pareto_objectives = objectives
+    solver.pareto_population_snapshot = PopulationSnapshot(
+        candidates=(
+            UnknownState(duplicated[0], metadata={"structure": "a"}),
+            UnknownState(duplicated[1], metadata={"structure": "b"}),
+        ),
+        candidate_tokens=("token:a", "token:b"),
+        objectives=objectives,
+        constraints=np.asarray([0.0, 3.0]),
+    )
+
+    result = build_solver_result(solver, {"status": "ok"})
+
+    assert result.pareto_front is not None
+    assert result.pareto_front.candidate_tokens == ("token:a", "token:b")
+    assert [state.metadata["structure"] for state in result.pareto_front.candidates] == [
+        "a",
+        "b",
+    ]
+    assert np.array_equal(result.pareto_front.constraints, [0.0, 3.0])
 
 
 def test_solver_base_case_export_returns_versioned_shared_payload() -> None:
@@ -148,6 +197,63 @@ def test_formal_solver_result_is_passed_through_without_field_loss() -> None:
     assert result.metadata["incumbent_context_projection_error"] is None
 
 
+def test_formal_solver_result_is_completed_from_authoritative_incumbent() -> None:
+    solver = SolverBase(_Problem())
+    solver.set_incumbent(
+        IncumbentState(
+            candidate=[1.0, 2.0],
+            objectives=[0.2, 0.8],
+            constraint_violation=0.0,
+            score=1.0,
+            candidate_token="candidate:best",
+            evaluation_id="evaluation:best",
+            source="evaluation",
+            source_run_id="solver-run:1",
+            proposal_id="proposal:1",
+        )
+    )
+
+    result = build_solver_result(
+        solver,
+        SolverResult(
+            solve_status="feasible",
+            feasibility="feasible",
+        ),
+    )
+
+    assert np.allclose(result.best_solution.as_array(), [1.0, 2.0])
+    assert np.allclose(result.best_objectives, [0.2, 0.8])
+    assert result.best_constraint_violation == 0.0
+    assert result.best_candidate_token == "candidate:best"
+    assert result.best_evaluation_id == "evaluation:best"
+    assert result.best_provenance["proposal_id"] == "proposal:1"
+
+
+@pytest.mark.parametrize(
+    "formal",
+    (
+        SolverResult(best_candidate_token="wrong"),
+        SolverResult(best_evaluation_id="wrong"),
+        SolverResult(best_objectives=[9.0, 9.0]),
+        SolverResult(best_solution=UnknownState([9.0, 9.0])),
+        SolverResult(best_provenance={"source": "rewritten"}),
+        SolverResult(
+            best_solution_ref=DataRef(
+                uri="artifact://unbound-best",
+                checksum="sha256:" + "a" * 64,
+            )
+        ),
+    ),
+)
+def test_formal_solver_result_rejects_incumbent_authority_conflicts(
+    formal: SolverResult,
+) -> None:
+    solver = _solver()
+
+    with pytest.raises(RuntimeError, match="formal SolverResult"):
+        build_solver_result(solver, formal)
+
+
 def test_large_pareto_front_requires_real_artifact_authority() -> None:
     solver = _solver()
     solver.clear_incumbent()
@@ -194,6 +300,7 @@ def test_large_best_solution_requires_real_artifact_authority() -> None:
     solver = _solver()
     solver.pareto_solutions = None
     solver.pareto_objectives = None
+    solver.pareto_population_snapshot = None
     solver.set_incumbent(
         IncumbentState(
             candidate=np.arange(128, dtype=float),
@@ -228,6 +335,7 @@ def test_large_best_solution_is_published_through_case_runtime() -> None:
     solver = _solver()
     solver.pareto_solutions = None
     solver.pareto_objectives = None
+    solver.pareto_population_snapshot = None
     solver.set_incumbent(
         IncumbentState(
             candidate=np.arange(128, dtype=float),
@@ -651,15 +759,29 @@ def test_strict_incumbent_snapshot_failure_leaves_previous_commit_unchanged() ->
         KEY_BEST_OBJECTIVE,
     )
 
-    class FailingSnapshotStore:
+    from blackbase.context import InMemorySnapshotStore
+
+    class FailingSnapshotStore(InMemorySnapshotStore):
+        def __init__(self):
+            super().__init__()
+            self.fail_writes = False
+
         def write(self, *args, **kwargs):
-            del args, kwargs
-            raise RuntimeError("snapshot unavailable")
+            if self.fail_writes:
+                raise RuntimeError("snapshot unavailable")
+            return super().write(*args, **kwargs)
 
     solver = SolverBase(
         _Problem(),
         context_inline_candidate_max_bytes=1,
         snapshot_strict=True,
+    )
+    from blackbase.evaluation import InMemoryEvaluationEvidenceJournal
+
+    failing_store = FailingSnapshotStore()
+    solver.set_snapshot_store(
+        failing_store,
+        evaluation_evidence_journal=InMemoryEvaluationEvidenceJournal(),
     )
     old_state = solver.set_incumbent(
         IncumbentState(
@@ -670,7 +792,7 @@ def test_strict_incumbent_snapshot_failure_leaves_previous_commit_unchanged() ->
         )
     )
     old_ref = solver.context_store.get(KEY_BEST_CANDIDATE_REF)
-    solver.set_snapshot_store(FailingSnapshotStore())
+    failing_store.fail_writes = True
 
     with pytest.raises(RuntimeError, match="snapshot unavailable"):
         solver.set_incumbent(
@@ -924,7 +1046,12 @@ def test_incumbent_commit_revalidates_policy_after_snapshot_staging() -> None:
     solver = ComposableSolver(_Problem())
     solver.context_inline_candidate_max_bytes = 1
     store = BlockingSnapshotStore()
-    solver.set_snapshot_store(store)
+    from blackbase.evaluation import InMemoryEvaluationEvidenceJournal
+
+    solver.set_snapshot_store(
+        store,
+        evaluation_evidence_journal=InMemoryEvaluationEvidenceJournal(),
+    )
     errors = []
 
     def commit_incumbent() -> None:

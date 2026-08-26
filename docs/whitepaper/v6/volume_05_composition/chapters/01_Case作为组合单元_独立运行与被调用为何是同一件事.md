@@ -64,12 +64,13 @@ CaseRunRequest
   budget_handles
   component_overrides
   input_artifacts
+  input_artifact_bindings
   inputs
   argv
   metadata
 ```
 
-这些字段不是一份随意拼出的参数字典。`identity` 明确 Project/root/case/parent/invocation/attempt/depth；`control` 携带当前 cancellation ref、祖先取消链和有效绝对 deadline；`resource_request` 与 `budget_request` 表示子任务愿望，`resource_context`、`child_grant` 与 `budget_handles` 则表示上层权威真正批准的范围。`component_overrides` 只承载本次装配允许改变的声明，`input_artifacts` 只传入带身份的 `DataRef`，`inputs` 只承载可序列化轻量输入。协议自身带严格 `schema_version`，跨进程和恢复读取不会猜测旧字典含义。
+这些字段不是一份随意拼出的参数字典。`identity` 明确 Project/root/case/parent/invocation/attempt/depth；`control` 携带当前 cancellation ref、祖先取消链和有效绝对 deadline；`resource_request` 与 `budget_request` 表示子任务愿望，`resource_context`、`child_grant` 与 `budget_handles` 则表示上层权威真正批准的范围。`component_overrides` 只承载本次装配允许改变的声明；正式 `input_artifacts` 由 `ArtifactBinding` 中的 `DataRef + Case-finalization-sealed receipt` 自动派生，普通裸 `DataRef` 只能放在轻量 `inputs` 中作为非权威数据引用。协议自身带严格 `schema_version`，跨进程和恢复读取不会猜测旧字典含义。
 
 相应的 `CaseRunResult` 是串行、进程池、外部 worker 与父子调用共用的版本化信封。[S]
 
@@ -226,7 +227,7 @@ child grant ⊆ parent effective grant
 
 状态的继承也遵循类似原则。父子之间需要交换的大对象，应写入 SnapshotStore 或 Artifact backend，再传递带 schema、版本、校验和与 namespace 的引用；轻量 Context 只保存 ref、身份、计数和控制投影。[I] 上游 Case 不应把自己的整个 population、模型实例或历史列表直接交给下游，原因不只是内存占用。裸对象没有稳定身份：调用者无法判断它来自哪次提交，失败重试时也无法确认拿到的是提交前还是提交后的版本；并行分支若原地修改，还会让结果依赖线程时序。
 
-当前 Project runner 会先从 Stage 声明中解析 `input_artifacts`，在 Artifact registry 中查找对应 `DataRef`，然后要求目标 Case 实现 `set_input_artifacts(refs)`。[S] 若引用不存在或 Case 没有正式接收入口，运行会明确失败，而不是把 `None` 继续传下去。一个顺序组合可以这样声明：
+当前 Project runner 会先从 Stage 声明中解析 `input_artifacts`，在 Artifact registry 中查找带最终发布收据的 `ArtifactBinding`，再次验证账本和物理内容后才把其中的 `DataRef` 交给目标 Case 的 `set_input_artifacts(refs)`。[S] 若绑定不存在、验证失败或 Case 没有正式接收入口，运行会明确失败，而不是把裸引用或 `None` 继续传下去。一个顺序组合可以这样声明：
 
 ```python
 STAGES = [

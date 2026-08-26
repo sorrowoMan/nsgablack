@@ -17,6 +17,8 @@
 - `ExecutionControl`：当前 cancellation ref、祖先取消链与有效绝对 deadline；
 - `ChildResourceGrant`：父 grant 内原子划分的子授权；
 - `BudgetHandle`：父预算预留后形成的有界子预算；
+- `ArtifactBinding`：把 `DataRef` 与 Case-finalization-sealed publication receipt
+  绑定在一起的跨 Case 输入能力；
 - `CaseExecutor` / `CaseInvoker`：标准装配与递归调用的唯一执行边界。
 
 `nsgablack` 与 `mlblack` 不各自实现一套 nested runner。
@@ -44,7 +46,7 @@ class OuterCase:
                     "gpus": 0,
                 },
                 budget_request={"evaluations": 100},
-                input_artifacts={"dataset": self.dataset_ref},
+                input_artifact_bindings={"dataset": self.dataset_binding},
                 inputs={"model_width": 128},
                 component_overrides={"trainer.max_steps": 500},
             )
@@ -74,6 +76,39 @@ def set_case_runtime(self, runtime):
 ```
 
 普通可设置属性的对象不必实现该 setter。
+
+`DataRef` 只描述数据位置，不证明它来自一个成功 Case。正式 `input_artifacts` 由
+`input_artifact_bindings` 自动派生；调用方不得手工把裸 `DataRef` 提升为跨 Case
+权威产物。Project Stage 的 `input_artifacts` 声明会由 Registry 自动解析为绑定。
+
+### Project 静态 DAG 与动态子 Case
+
+运行前已经知道的 Case 关系应放在 BlackBase Project DAG：
+
+```python
+{
+    "name": "workflow",
+    "policy": "dag",
+    "cases": ["prepare", "baseline", "outer_search"],
+    "depends_on": {"outer_search": ["prepare"]},
+    "input_artifacts": {
+        "outer_search": {"baseline": "baseline.summary"},
+    },
+}
+```
+
+`baseline.summary` 会自动形成 `baseline → outer_search` 依赖边；调度器只在所有上游
+成功并发布权威 Artifact 后启动下游。环、未知节点和自依赖在运行前拒绝，实际并行度仍
+由 L0 grant 决定。
+
+候选数量只有运行时才知道的调用不展开成静态 DAG。例如外层 Solver 每次评估调用一个
+Trainer，Trainer 再调用一个 Solver，仍使用 `case_runtime.invoke()`。因此完整视图是：
+
+```text
+Project 静态 DAG
+└─ Case 动态调用树
+   └─ Solver/Trainer 内部迭代状态机
+```
 
 ## 3. Lineage 与控制继承
 
@@ -122,6 +157,7 @@ request + identity + control
 status
 output
 artifact_refs
+artifact_publications
 resource_usage
 budget_usage
 started_at / finished_at / elapsed_seconds
@@ -150,7 +186,7 @@ Solver 与 Trainer 的目录形状一致：
 
 - 父子均为完整标准 Case，且可以独立 build/run；
 - 父 Case 只调用 `case_runtime.invoke()`；
-- 子输入是轻量 `inputs` 或 `DataRef`，不是父对象内部状态；
+- 子输入是轻量 `inputs` 或经验证的 `ArtifactBinding`，不是父对象内部状态；
 - 子资源来自 `ChildResourceGrant`，预算来自 `BudgetHandle`；
 - 长运行逻辑设置 checkpoint；
 - 调用方检查 `CaseRunResult.ok` 并保留失败信封；

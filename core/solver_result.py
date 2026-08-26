@@ -9,7 +9,13 @@ from typing import Any, Mapping
 import numpy as np
 
 from blackbase.resources import DataRef
-from blackbase.types import PopulationSnapshot, SolveQuality, SolverResult, UnknownState
+from blackbase.types import (
+    PopulationSnapshot,
+    SolveQuality,
+    SolverResult,
+    UnknownState,
+    decode_shared_value,
+)
 
 
 DEFAULT_CASE_RESULT_INLINE_MAX_BYTES = 64 * 1024
@@ -34,7 +40,11 @@ def build_solver_result(solver: Any, raw_output: Any) -> SolverResult:
     """
 
     formal = _formal_solver_result(raw_output)
-    result = formal if formal is not None else _build_declared_solver_result(solver, raw_output)
+    result = (
+        _align_formal_solver_result(solver, formal)
+        if formal is not None
+        else _build_declared_solver_result(solver, raw_output)
+    )
     result = _merge_incumbent_projection_audit(solver, result)
     result = _merge_runtime_projection_audit(solver, result)
     result = _merge_runtime_artifact_refs(solver, result)
@@ -57,6 +67,90 @@ def _formal_solver_result(raw_output: Any) -> SolverResult | None:
     ):
         return SolverResult.from_dict(nested)
     return None
+
+
+def _incumbent_provenance_payload(incumbent: Any) -> dict[str, Any]:
+    if incumbent is None:
+        return {}
+    return {
+        "candidate_token": incumbent.candidate_token,
+        "evaluation_id": incumbent.evaluation_id,
+        "source": incumbent.source,
+        "source_run_id": incumbent.source_run_id,
+        "warm_start_id": incumbent.warm_start_id,
+        "proposal_id": incumbent.proposal_id,
+    }
+
+
+def _align_formal_solver_result(solver: Any, result: SolverResult) -> SolverResult:
+    """Reject split authority and enrich a formal result with incumbent identity."""
+
+    incumbent = _solver_incumbent(solver)
+    if incumbent is None:
+        return result
+    canonical_solution = _declared_best_solution(solver)
+    canonical_provenance = _incumbent_provenance_payload(incumbent)
+    if (
+        result.best_candidate_token is not None
+        and result.best_candidate_token != incumbent.candidate_token
+    ):
+        raise RuntimeError("formal SolverResult best token disagrees with incumbent")
+    if (
+        result.best_evaluation_id is not None
+        and result.best_evaluation_id != incumbent.evaluation_id
+    ):
+        raise RuntimeError("formal SolverResult evaluation identity disagrees with incumbent")
+    if result.best_provenance and dict(result.best_provenance) != canonical_provenance:
+        raise RuntimeError("formal SolverResult provenance disagrees with incumbent")
+    if result.best_objectives is not None and not np.array_equal(
+        np.asarray(result.best_objectives, dtype=float),
+        incumbent.objectives,
+        equal_nan=True,
+    ):
+        raise RuntimeError("formal SolverResult objectives disagree with incumbent")
+    if (
+        result.best_constraint_violation is not None
+        and float(result.best_constraint_violation)
+        != float(incumbent.constraint_violation)
+    ):
+        raise RuntimeError("formal SolverResult violation disagrees with incumbent")
+    if result.best_solution_ref is not None:
+        authoritative_ref = _coerce_ref(
+            getattr(solver, "best_solution_ref", None)
+            or getattr(solver, "best_state_ref", None)
+        )
+        if authoritative_ref is None or result.best_solution_ref != authoritative_ref:
+            raise RuntimeError(
+                "formal SolverResult best_solution_ref is not bound to the incumbent"
+            )
+    elif result.best_solution is not None:
+        if not isinstance(result.best_solution, UnknownState):
+            raise RuntimeError(
+                "formal SolverResult inline best solution must be UnknownState"
+            )
+        if result.best_solution.as_dict() != canonical_solution.as_dict():
+            raise RuntimeError("formal SolverResult best solution disagrees with incumbent")
+    return replace(
+        result,
+        best_solution=(
+            result.best_solution
+            if result.best_solution_ref is not None or result.best_solution is not None
+            else canonical_solution
+        ),
+        best_objectives=(
+            result.best_objectives
+            if result.best_objectives is not None
+            else incumbent.objectives.copy()
+        ),
+        best_constraint_violation=(
+            result.best_constraint_violation
+            if result.best_constraint_violation is not None
+            else float(incumbent.constraint_violation)
+        ),
+        best_candidate_token=incumbent.candidate_token,
+        best_evaluation_id=incumbent.evaluation_id,
+        best_provenance=canonical_provenance,
+    )
 
 
 def _merge_incumbent_projection_audit(
@@ -150,6 +244,11 @@ def _build_declared_solver_result(solver: Any, raw_output: Any) -> SolverResult:
         best_solution_ref=best_solution_ref,
         best_objectives=best_objectives,
         best_constraint_violation=best_violation,
+        best_candidate_token=(
+            None if incumbent is None else incumbent.candidate_token
+        ),
+        best_evaluation_id=(None if incumbent is None else incumbent.evaluation_id),
+        best_provenance=_incumbent_provenance_payload(incumbent),
         pareto_front=None if pareto_front_ref is not None else pareto_front,
         pareto_front_ref=pareto_front_ref,
         solve_status=solve_status,
@@ -289,7 +388,16 @@ def _result_feasibility(
 def _declared_best_solution(solver: Any) -> Any:
     incumbent = _solver_incumbent(solver)
     if incumbent is not None:
-        return incumbent.candidate.copy()
+        semantic_metadata: dict[str, Any] = {}
+        raw_metadata = incumbent.metadata.get("candidate.semantic_metadata")
+        if isinstance(raw_metadata, Mapping):
+            decoded = decode_shared_value(dict(raw_metadata))
+            if isinstance(decoded, Mapping):
+                semantic_metadata = dict(decoded)
+        return UnknownState(
+            values=incumbent.candidate.copy(),
+            metadata=semantic_metadata,
+        )
     return None
 
 
@@ -317,59 +425,67 @@ def _pareto_front(
     population: np.ndarray | None,
     violations: np.ndarray | None,
 ) -> PopulationSnapshot | None:
-    raw_solutions = getattr(solver, "pareto_solutions", None)
-    raw_objectives = getattr(solver, "pareto_objectives", None)
-    if isinstance(raw_solutions, Mapping):
-        solutions = raw_solutions.get("individuals")
-        if raw_objectives is None:
-            raw_objectives = raw_solutions.get("objectives")
-    else:
-        solutions = raw_solutions
-    solution_matrix = _matrix(solutions)
-    objective_matrix = _objective_matrix(raw_objectives)
-    if (
-        solution_matrix is None
-        or objective_matrix is None
-        or solution_matrix.shape[0] != objective_matrix.shape[0]
-    ):
-        return None
-    candidates = tuple(
-        UnknownState(
-            row,
-            metadata={"source": "nsgablack.pareto_front", "index": index},
+    formal = getattr(solver, "pareto_population_snapshot", None)
+    if isinstance(formal, Mapping):
+        formal = PopulationSnapshot.from_dict(formal)
+    if formal is None:
+        raw_solutions = getattr(solver, "pareto_solutions", None)
+        solutions = (
+            raw_solutions.get("individuals")
+            if isinstance(raw_solutions, Mapping)
+            else raw_solutions
         )
-        for index, row in enumerate(solution_matrix)
-    )
-    front_violations = _match_front_violations(solution_matrix, population, violations)
-    return PopulationSnapshot(
-        candidates=candidates,
-        objectives=objective_matrix,
-        constraints=front_violations,
-        generation=int(getattr(solver, "generation", 0) or 0),
-        metadata={"source": "nsgablack"},
-    )
-
-
-def _match_front_violations(
-    front: np.ndarray,
-    population: np.ndarray | None,
-    violations: np.ndarray | None,
-) -> np.ndarray | None:
-    if population is None or violations is None or population.shape[0] != violations.shape[0]:
+        solution_matrix = _matrix(solutions)
+        if solution_matrix is not None and solution_matrix.shape[0] > 0:
+            raise RuntimeError(
+                "Pareto result has numeric rows but no token-aligned "
+                "PopulationSnapshot; refusing to infer semantic identity by value"
+            )
         return None
-    output: list[float] = []
-    for row in front:
-        matches = np.where(np.all(np.isclose(population, row, equal_nan=True), axis=1))[0]
-        if not matches.size:
-            return None
-        output.append(float(violations[int(matches[0])]))
-    return np.asarray(output, dtype=float)
+    if not isinstance(formal, PopulationSnapshot):
+        raise TypeError("pareto_population_snapshot must be PopulationSnapshot")
+    if any(token is None for token in formal.candidate_tokens):
+        raise RuntimeError(
+            "nsgablack Pareto result requires a stable token for every candidate"
+        )
+    raw_solutions = getattr(solver, "pareto_solutions", None)
+    solutions = (
+        raw_solutions.get("individuals")
+        if isinstance(raw_solutions, Mapping)
+        else raw_solutions
+    )
+    solution_matrix = _matrix(solutions)
+    if solution_matrix is not None:
+        semantic_matrix = np.stack(
+            [candidate.as_array().reshape(-1) for candidate in formal.candidates],
+            axis=0,
+        ) if formal.candidates else np.empty((0, 0), dtype=float)
+        if (
+            semantic_matrix.shape != solution_matrix.shape
+            or not np.array_equal(semantic_matrix, solution_matrix, equal_nan=True)
+        ):
+            raise RuntimeError(
+                "token-aligned Pareto Snapshot disagrees with the numeric Pareto view"
+            )
+    raw_objectives = _objective_matrix(getattr(solver, "pareto_objectives", None))
+    if raw_objectives is not None and (
+        raw_objectives.shape != formal.objectives.shape
+        or not np.array_equal(raw_objectives, formal.objectives, equal_nan=True)
+    ):
+        raise RuntimeError(
+            "token-aligned Pareto Snapshot disagrees with Pareto objectives"
+        )
+    return formal
 
 
 def _merge_runtime_artifact_refs(solver: Any, result: SolverResult) -> SolverResult:
     merged = dict(result.artifact_refs)
     runtime = getattr(solver, "case_runtime", None)
-    for key, value in dict(getattr(runtime, "artifact_refs", {}) or {}).items():
+    visible_runtime_refs = {
+        **dict(getattr(runtime, "artifact_refs", {}) or {}),
+        **dict(getattr(runtime, "finalization_artifact_refs", {}) or {}),
+    }
+    for key, value in visible_runtime_refs.items():
         if isinstance(value, DataRef):
             merged[str(key)] = value
     for key, value in dict(getattr(solver, "result_artifact_refs", {}) or {}).items():

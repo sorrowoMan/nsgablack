@@ -8,7 +8,9 @@ enhancements (numpy RNG, strict snapshot validation, extended contract).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import copy
+from dataclasses import dataclass, field, fields, is_dataclass
+from types import MappingProxyType
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -19,6 +21,10 @@ from blackbase.contracts import BatchDisposition
 from blackbase.context import RuntimeContextProjection
 
 from .runtime_projection import aggregate_adapter_runtime_projections
+from .empty_outcome import (
+    aggregate_named_empty_outcomes,
+    child_empty_proposal_outcome,
+)
 
 
 @dataclass(frozen=True)
@@ -206,9 +212,100 @@ class AlgorithmAdapter(AdapterBase):
     state_recovery_notes = "No adapter-owned runtime state is guaranteed to roundtrip."
     population_state_mode = "none"
 
+    def resolve_population_state_mode(self) -> str:
+        """Return the Adapter's current authoritative population shape.
+
+        Transparent wrappers override this method and resolve through their
+        current authority owner.  Returning ``unresolved`` is deliberate: it
+        tells the Solver to retain its last confirmed authority instead of
+        inventing a step-batch projection during a transient wrapper state.
+        """
+
+        mode = str(getattr(self, "population_state_mode", "none") or "none")
+        mode = mode.strip().lower()
+        if mode == "delegate":
+            return "unresolved"
+        if mode not in {"none", "single", "partitioned"}:
+            raise ValueError(
+                f"Adapter {self.name!r} declares invalid population_state_mode={mode!r}"
+            )
+        return mode
+
+    def supported_population_state_modes(self) -> frozenset[str]:
+        """Return authority modes this Adapter topology may expose."""
+
+        mode = self.resolve_population_state_mode()
+        return frozenset() if mode == "unresolved" else frozenset((mode,))
+
+    def get_empty_proposal_outcome(
+        self,
+        control: Any,
+        context: Mapping[str, Any],
+    ) -> Any | None:
+        """Explain an empty proposal when it represents a terminal condition.
+
+        Returning ``None`` keeps the ordinary ``idle`` meaning. Search
+        adapters with an explicit goal or an exhaustible frontier may return a
+        ``StepOutcome(status="terminal", ...)`` instead. The Solver validates
+        the concrete outcome so an Adapter cannot silently manufacture a
+        committed generation without an evaluated batch.
+        """
+
+        _ = (control, context)
+        return None
+
     def __init__(self, name: str, priority: int = 0) -> None:
         self.name = name
         self.priority = priority
+
+    def begin_step_transaction(self) -> "AdapterStepTransaction":
+        """Capture explicit transaction participants before one step attempt."""
+
+        return AdapterStepTransaction.capture(self)
+
+    def step_transaction_children(self) -> Sequence["AlgorithmAdapter"]:
+        """Return Adapter children that own independent step state.
+
+        Composite Adapters must expose children explicitly instead of relying on
+        ``__dict__`` traversal.  Their own :meth:`snapshot_step_state` payload
+        must then contain local state only; every child is captured and restored
+        through its own transaction contract exactly once.
+        """
+
+        return ()
+
+    def snapshot_step_state(self) -> Mapping[str, Any]:
+        """Return rollback state without copying the live Python object graph.
+
+        External Adapters may override this when their transaction state is
+        intentionally different from checkpoint state.  The returned payload
+        must be detached and must not contain live sessions, locks or clients.
+        """
+
+        state = self.get_state()
+        if not isinstance(state, Mapping):
+            raise TypeError("Adapter.get_state() must return a Mapping")
+        memo: dict[int, Any] = {}
+        _memoize_immutable_protocol_values(state, memo)
+        return copy.deepcopy(dict(state), memo)
+
+    def restore_step_state(self, state: Mapping[str, Any]) -> None:
+        """Restore a payload produced by :meth:`snapshot_step_state`."""
+
+        if not isinstance(state, Mapping):
+            raise TypeError("Adapter step transaction state must be a Mapping")
+        memo: dict[int, Any] = {}
+        _memoize_immutable_protocol_values(state, memo)
+        self.set_state(copy.deepcopy(dict(state), memo))
+
+    def commit_step_state(
+        self,
+        state: Mapping[str, Any],
+    ) -> Mapping[str, Any] | None:
+        """Finalize resources and optionally return structured cleanup evidence."""
+
+        _ = state
+        return None
 
     @staticmethod
     def resolve_config(
@@ -500,6 +597,22 @@ class CompositeAdapter(AlgorithmAdapter):
             self._last_ranges.append((adapter, start, end))
         return candidates
 
+    def get_empty_proposal_outcome(
+        self,
+        control: Any,
+        context: Mapping[str, Any],
+    ) -> Any | None:
+        return aggregate_named_empty_outcomes(
+            (
+                (
+                    f"{index}:{adapter.name}",
+                    child_empty_proposal_outcome(adapter, control, context),
+                )
+                for index, adapter in enumerate(self.adapters)
+            ),
+            owner=self.name,
+        )
+
     def update(
         self,
         control: Any,
@@ -658,6 +771,7 @@ class CompositeAdapter(AlgorithmAdapter):
             "notes": "composite",
         }
 
+
     def get_runtime_context_projection(self, solver: Any) -> RuntimeContextProjection:
         aggregation = aggregate_adapter_runtime_projections(
             solver,
@@ -676,3 +790,264 @@ class CompositeAdapter(AlgorithmAdapter):
     def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
         del solver
         return dict(self._last_projection_writers)
+
+    def step_transaction_children(self) -> Sequence[AlgorithmAdapter]:
+        return tuple(self.adapters)
+
+    def snapshot_step_state(self) -> Mapping[str, Any]:
+        child_index = {id(adapter): index for index, adapter in enumerate(self.adapters)}
+        return {
+            "schema": "nsgablack.composite_step_transaction/v1",
+            "last_ranges": [
+                {
+                    "child_index": int(child_index[id(adapter)]),
+                    "start": int(start),
+                    "end": int(end),
+                }
+                for adapter, start, end in self._last_ranges
+            ],
+            "projection_writers": dict(self._last_projection_writers),
+        }
+
+    def restore_step_state(self, state: Mapping[str, Any]) -> None:
+        if str(state.get("schema", "")) != "nsgablack.composite_step_transaction/v1":
+            raise ValueError("unsupported CompositeAdapter step transaction schema")
+        restored_ranges: list[tuple[AlgorithmAdapter, int, int]] = []
+        for item in tuple(state.get("last_ranges", ()) or ()):
+            index = int(item.get("child_index", -1))
+            if index < 0 or index >= len(self.adapters):
+                raise ValueError("CompositeAdapter step transaction child is unavailable")
+            restored_ranges.append(
+                (
+                    self.adapters[index],
+                    int(item.get("start", 0)),
+                    int(item.get("end", 0)),
+                )
+            )
+        self._last_ranges = restored_ranges
+        self._last_projection_writers = {
+            str(key): str(value)
+            for key, value in dict(state.get("projection_writers", {}) or {}).items()
+        }
+
+
+class AdapterRollbackError(RuntimeError):
+    """One or more Adapter participants failed while all were being restored."""
+
+    def __init__(self, errors: Sequence[tuple[str, BaseException]]) -> None:
+        self.errors = tuple(errors)
+        summary = "; ".join(
+            f"{name}: {type(exc).__name__}: {exc}" for name, exc in self.errors
+        )
+        super().__init__(f"adapter step rollback failed: {summary}")
+
+
+@dataclass(frozen=True)
+class AdapterCommitIssue:
+    participant: str
+    error_type: str
+    message: str
+
+    def as_dict(self) -> Dict[str, str]:
+        return {
+            "participant": self.participant,
+            "error_type": self.error_type,
+            "message": self.message,
+        }
+
+
+@dataclass(frozen=True)
+class AdapterCommitEvidence:
+    participant: str
+    payload: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        participant = str(self.participant or "").strip()
+        if not participant:
+            raise ValueError("Adapter commit evidence participant is required")
+        if not isinstance(self.payload, Mapping):
+            raise TypeError("Adapter commit evidence payload must be a Mapping")
+        object.__setattr__(self, "participant", participant)
+        object.__setattr__(self, "payload", dict(self.payload))
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "participant": self.participant,
+            "payload": dict(self.payload),
+        }
+
+
+@dataclass(frozen=True)
+class AdapterCommitReport:
+    """Post-commit cleanup evidence for every Adapter participant."""
+
+    participants: Tuple[str, ...] = ()
+    issues: Tuple[AdapterCommitIssue, ...] = ()
+    evidence: Tuple[AdapterCommitEvidence, ...] = ()
+
+    @property
+    def cleanup_complete(self) -> bool:
+        return not self.issues
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "schema": "nsgablack.adapter_commit_report/v2",
+            "cleanup_complete": self.cleanup_complete,
+            "participants": list(self.participants),
+            "issues": [issue.as_dict() for issue in self.issues],
+            "evidence": [item.as_dict() for item in self.evidence],
+        }
+
+
+class AdapterStepTransaction:
+    """Rollback coordinator over explicit Adapter transaction participants."""
+
+    def __init__(
+        self,
+        adapters: Sequence[AlgorithmAdapter],
+        states: Mapping[int, Mapping[str, Any]],
+    ) -> None:
+        self._adapters = tuple(adapters)
+        self._states = dict(states)
+        self._active = True
+
+    @classmethod
+    def capture(cls, root: AlgorithmAdapter) -> "AdapterStepTransaction":
+        adapters = _collect_adapter_graph(root)
+        states: dict[int, Mapping[str, Any]] = {}
+        try:
+            for adapter in adapters:
+                snapshot = adapter.snapshot_step_state()
+                if not isinstance(snapshot, Mapping):
+                    raise TypeError(
+                        f"{type(adapter).__name__}.snapshot_step_state() must return a Mapping"
+                    )
+                states[id(adapter)] = snapshot
+        except Exception as exc:
+            raise RuntimeError(
+                f"Adapter {type(root).__name__} cannot enter a rollback-safe step transaction"
+            ) from exc
+        return cls(adapters, states)
+
+    def commit(self) -> AdapterCommitReport:
+        if not self._active:
+            return AdapterCommitReport()
+        participants: list[str] = []
+        issues: list[AdapterCommitIssue] = []
+        evidence: list[AdapterCommitEvidence] = []
+        try:
+            for adapter in reversed(self._adapters):
+                participant = f"{adapter.name}:{type(adapter).__name__}"
+                participants.append(participant)
+                try:
+                    payload = adapter.commit_step_state(self._states[id(adapter)])
+                    if payload is not None:
+                        if not isinstance(payload, Mapping):
+                            raise TypeError(
+                                "commit_step_state() evidence must be a Mapping or None"
+                            )
+                        evidence.append(
+                            AdapterCommitEvidence(
+                                participant=participant,
+                                payload=payload,
+                            )
+                        )
+                except BaseException as exc:
+                    issues.append(
+                        AdapterCommitIssue(
+                            participant=participant,
+                            error_type=type(exc).__name__,
+                            message=str(exc),
+                        )
+                    )
+        finally:
+            self._active = False
+            self._states.clear()
+        return AdapterCommitReport(
+            participants=tuple(participants),
+            issues=tuple(issues),
+            evidence=tuple(evidence),
+        )
+
+    def rollback(self) -> None:
+        if not self._active:
+            return
+        errors: list[tuple[str, BaseException]] = []
+        try:
+            for adapter in reversed(self._adapters):
+                try:
+                    adapter.restore_step_state(self._states[id(adapter)])
+                except BaseException as exc:
+                    errors.append(
+                        (
+                            f"{adapter.name}:{type(adapter).__name__}",
+                            exc,
+                        )
+                    )
+        finally:
+            self._active = False
+            self._states.clear()
+        if errors:
+            raise AdapterRollbackError(errors) from errors[0][1]
+
+
+def _collect_adapter_graph(root: AlgorithmAdapter) -> tuple[AlgorithmAdapter, ...]:
+    adapters: list[AlgorithmAdapter] = []
+    adapter_ids: set[int] = set()
+
+    def visit(adapter: AlgorithmAdapter) -> None:
+        if not isinstance(adapter, AlgorithmAdapter):
+            raise TypeError("step transaction participants must be AlgorithmAdapter instances")
+        if id(adapter) in adapter_ids:
+            return
+        adapter_ids.add(id(adapter))
+        adapters.append(adapter)
+        children = adapter.step_transaction_children()
+        if children is None:
+            raise TypeError("step_transaction_children() must return a sequence")
+        for child in tuple(children):
+            visit(child)
+
+    visit(root)
+    return tuple(adapters)
+
+
+def _memoize_immutable_protocol_values(
+    value: Any,
+    memo: dict[int, Any],
+    seen: set[int] | None = None,
+) -> None:
+    """Teach deepcopy that recursively frozen wire mappings are atomic.
+
+    Shared refs and semantic protocol objects intentionally contain
+    ``mappingproxy`` evidence.  The proxy is immutable and may be retained by
+    identity inside a transaction snapshot; mutable containers surrounding it
+    are still copied normally.
+    """
+
+    if seen is None:
+        seen = set()
+    object_id = id(value)
+    if object_id in seen or object_id in memo:
+        return
+    seen.add(object_id)
+    if isinstance(value, MappingProxyType):
+        memo[object_id] = value
+        return
+    if isinstance(value, AlgorithmAdapter):
+        return
+    if isinstance(value, Mapping):
+        for item in value.values():
+            _memoize_immutable_protocol_values(item, memo, seen)
+        return
+    if isinstance(value, (list, tuple, set, frozenset)):
+        for item in value:
+            _memoize_immutable_protocol_values(item, memo, seen)
+        return
+    if is_dataclass(value) and not isinstance(value, type):
+        for item in fields(value):
+            _memoize_immutable_protocol_values(
+                getattr(value, item.name),
+                memo,
+                seen,
+            )

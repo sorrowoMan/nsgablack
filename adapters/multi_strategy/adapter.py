@@ -24,6 +24,7 @@ from blackbase.call_binding import CallCandidate, invoke_bound_once
 from blackbase.contracts import BatchDisposition
 from blackbase.context import (
     RuntimeContextProjection,
+    detach_context_value,
 )
 
 from ..algorithm_adapter import (
@@ -34,6 +35,10 @@ from ..algorithm_adapter import (
     subset_adapter_feedback,
 )
 from ..runtime_projection import aggregate_adapter_runtime_projections
+from ..empty_outcome import (
+    aggregate_named_empty_outcomes,
+    child_empty_proposal_outcome,
+)
 from blackbase.context.context_keys import (
     KEY_GENERATION,
     KEY_CANDIDATE_ROLES,
@@ -254,6 +259,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self.unit_reports: Dict[Tuple[str, int], Dict[str, Any]] = {}
         self._unit_tasks: Dict[Tuple[str, int], Dict[str, Any]] = {}
         self._unit_proposal_contexts: Dict[Tuple[str, int], Dict[str, Any]] = {}
+        self._unit_base_dispositions: Dict[Tuple[str, int], BatchDisposition] = {}
         self._last_task_projection: Dict[str, Any] = {}
         self._last_projection_writers: Dict[str, str] = {}
         self._runtime_shared_projection: Dict[str, Any] = {}
@@ -279,6 +285,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self.unit_reports.clear()
         self._unit_tasks.clear()
         self._unit_proposal_contexts.clear()
+        self._unit_base_dispositions.clear()
         self._last_task_projection = {}
         self._last_projection_writers = {}
         self._runtime_shared_projection = {}
@@ -882,6 +889,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
 
         self._unit_tasks = {}
         self._unit_proposal_contexts = {}
+        self._unit_base_dispositions = {}
         for unit in self.units:
             if not unit.enabled:
                 continue
@@ -944,20 +952,19 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 continue
 
             selected = proposed[:k]
-            if len(selected) < len(proposed):
-                unit.adapter.on_proposal_disposition(
-                    control,
-                    BatchDisposition.prefix(
-                        proposed_count=len(proposed),
-                        accepted_count=len(selected),
-                        reason="strategy_allocation",
-                        metadata={
-                            "role": unit.role,
-                            "unit_id": int(unit.unit_id),
-                        },
-                    ),
-                    ctx,
-                )
+            self._unit_base_dispositions[unit_key] = BatchDisposition.prefix(
+                proposed_count=len(proposed),
+                accepted_count=len(selected),
+                reason=(
+                    "strategy_allocation"
+                    if len(selected) < len(proposed)
+                    else "strategy_allocation_passthrough"
+                ),
+                metadata={
+                    "role": unit.role,
+                    "unit_id": int(unit.unit_id),
+                },
+            )
             start = cursor
             for cand in selected:
                 candidates.append(cand)
@@ -973,6 +980,29 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         }
         self._broadcast_state(control)
         return candidates
+
+    def get_empty_proposal_outcome(
+        self,
+        control: Any,
+        context: Dict[str, Any],
+    ) -> Any | None:
+        by_key = {(unit.role, int(unit.unit_id)): unit for unit in self.units}
+        rows = []
+        for key, proposal_context in self._unit_proposal_contexts.items():
+            unit = by_key.get(key)
+            if unit is None:
+                continue
+            rows.append(
+                (
+                    f"{unit.role}:{unit.unit_id}",
+                    child_empty_proposal_outcome(
+                        unit.adapter,
+                        control,
+                        proposal_context,
+                    ),
+                )
+            )
+        return aggregate_named_empty_outcomes(rows, owner=self.name)
 
     def on_proposal_disposition(
         self,
@@ -1000,6 +1030,13 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 )
             child_context = dict(context)
             child_context.update(proposal_context)
+            base_disposition = self._unit_base_dispositions.get(task_key)
+            if base_disposition is not None:
+                child_disposition = base_disposition.compose(
+                    child_disposition,
+                    reason=child_disposition.reason,
+                    metadata={"role": role, "unit_id": int(unit_id)},
+                )
             unit.adapter.on_proposal_disposition(
                 control,
                 child_disposition,
@@ -1020,6 +1057,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self._last_allocations = reconciled
         self._unit_tasks = retained_tasks
         self._unit_proposal_contexts = retained_contexts
+        self._unit_base_dispositions = {}
         self._runtime_meta_projection = {
             KEY_CANDIDATE_ROLES: [
                 role for role, _unit_id, start, end in reconciled for _ in range(end - start)
@@ -1140,6 +1178,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self._broadcast_state(control)
 
         self._unit_proposal_contexts = {}
+        self._unit_base_dispositions = {}
         self._step += 1
 
     def _unit_prefix(self, unit: UnitSpec) -> str:
@@ -1331,6 +1370,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         if isinstance(rng_state, Mapping):
             self._rng.bit_generator.state = copy.deepcopy(dict(rng_state))
         self._unit_proposal_contexts = {}
+        self._unit_base_dispositions = {}
         self._runtime_shared_projection = {}
         self._runtime_meta_projection = {}
         self._last_projection_writers = {}
@@ -1340,6 +1380,173 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             self.set_population_partitions(
                 tuple(PopulationPartition.from_dict(item) for item in raw_partitions)
             )
+
+    def step_transaction_children(self) -> Sequence[AlgorithmAdapter]:
+        if not self.units:
+            self.units = self._build_units()
+        return tuple(unit.adapter for unit in self.units)
+
+    def snapshot_step_state(self) -> Mapping[str, Any]:
+        if not self.units:
+            self.units = self._build_units()
+        return {
+            "schema": "nsgablack.strategy_router_step_transaction/v1",
+            "step": int(self._step),
+            "current_phase_name": str(self._current_phase_name),
+            "phase_step": int(self._phase_step),
+            "best_score": copy.deepcopy(self._best_score),
+            "ema_score": copy.deepcopy(self._ema_score),
+            "last_improve_step": copy.deepcopy(self._last_improve_step),
+            "last_allocations": [list(item) for item in self._last_allocations],
+            "shared_state": copy.deepcopy(self.shared_state),
+            "unit_reports": self._encode_keyed_mapping(self.unit_reports),
+            "unit_tasks": self._encode_keyed_mapping(self._unit_tasks),
+            "unit_proposal_contexts": [
+                {
+                    "role": str(role),
+                    "unit_id": int(unit_id),
+                    "context": detach_context_value(
+                        value,
+                        path=f"strategy_router.step_context.{role}.{unit_id}",
+                    ),
+                }
+                for (role, unit_id), value in sorted(
+                    self._unit_proposal_contexts.items(),
+                    key=lambda item: (str(item[0][0]), int(item[0][1])),
+                )
+            ],
+            "unit_base_dispositions": [
+                {
+                    "role": str(role),
+                    "unit_id": int(unit_id),
+                    "disposition": value.as_dict(),
+                }
+                for (role, unit_id), value in sorted(
+                    self._unit_base_dispositions.items(),
+                    key=lambda item: (str(item[0][0]), int(item[0][1])),
+                )
+            ],
+            "last_task_projection": copy.deepcopy(self._last_task_projection),
+            "projection_writers": dict(self._last_projection_writers),
+            "runtime_shared_projection": copy.deepcopy(
+                self._runtime_shared_projection
+            ),
+            "runtime_meta_projection": copy.deepcopy(self._runtime_meta_projection),
+            "regions": copy.deepcopy(self._regions),
+            "unit_region": [
+                {
+                    "role": str(role),
+                    "unit_id": int(unit_id),
+                    "region_id": int(region_id),
+                }
+                for (role, unit_id), region_id in sorted(
+                    self._unit_region.items(),
+                    key=lambda item: (str(item[0][0]), int(item[0][1])),
+                )
+            ],
+            "rng_state": copy.deepcopy(self._rng.bit_generator.state),
+            "unit_enabled": [
+                {
+                    "role": str(unit.role),
+                    "unit_id": int(unit.unit_id),
+                    "enabled": bool(unit.enabled),
+                }
+                for unit in self.units
+            ],
+        }
+
+    def restore_step_state(self, state: Mapping[str, Any]) -> None:
+        if str(state.get("schema", "")) != "nsgablack.strategy_router_step_transaction/v1":
+            raise ValueError("unsupported StrategyRouterAdapter step transaction schema")
+        if not self.units:
+            self.units = self._build_units()
+        expected = {(unit.role, int(unit.unit_id)): unit for unit in self.units}
+        enabled_rows = tuple(state.get("unit_enabled", ()) or ())
+        if len(enabled_rows) != len(expected):
+            raise ValueError("StrategyRouterAdapter transaction unit count mismatch")
+        for item in enabled_rows:
+            key = (str(item.get("role", "")), int(item.get("unit_id", 0)))
+            unit = expected.get(key)
+            if unit is None:
+                raise ValueError(
+                    f"StrategyRouterAdapter transaction references unknown unit {key[0]}:{key[1]}"
+                )
+            unit.enabled = bool(item.get("enabled", unit.enabled))
+
+        self._step = max(0, int(state.get("step", 0) or 0))
+        self._current_phase_name = str(state.get("current_phase_name", "explore"))
+        self._phase_step = max(0, int(state.get("phase_step", 0) or 0))
+        self._best_score = {
+            str(key): float(value)
+            for key, value in dict(state.get("best_score", {}) or {}).items()
+        }
+        self._ema_score = {
+            str(key): float(value)
+            for key, value in dict(state.get("ema_score", {}) or {}).items()
+        }
+        self._last_improve_step = {
+            str(key): int(value)
+            for key, value in dict(state.get("last_improve_step", {}) or {}).items()
+        }
+        self._last_allocations = [
+            (str(role), int(unit_id), int(start), int(end))
+            for role, unit_id, start, end in tuple(
+                state.get("last_allocations", ()) or ()
+            )
+        ]
+        self.shared_state = copy.deepcopy(dict(state.get("shared_state", {}) or {}))
+        self.unit_reports = self._decode_keyed_mapping(
+            tuple(state.get("unit_reports", ()) or ())
+        )
+        self._unit_tasks = self._decode_keyed_mapping(
+            tuple(state.get("unit_tasks", ()) or ())
+        )
+        self._unit_proposal_contexts = {}
+        for item in tuple(state.get("unit_proposal_contexts", ()) or ()):
+            key = (str(item.get("role", "")), int(item.get("unit_id", 0)))
+            if key not in expected:
+                raise ValueError("StrategyRouterAdapter transaction context unit is unknown")
+            self._unit_proposal_contexts[key] = dict(item.get("context", {}) or {})
+        self._unit_base_dispositions = {}
+        for item in tuple(state.get("unit_base_dispositions", ()) or ()):
+            key = (str(item.get("role", "")), int(item.get("unit_id", 0)))
+            if key not in expected:
+                raise ValueError("StrategyRouterAdapter transaction disposition unit is unknown")
+            raw = dict(item.get("disposition", {}) or {})
+            self._unit_base_dispositions[key] = BatchDisposition(
+                proposed_count=int(raw.get("proposed_count", 0)),
+                accepted_indices=tuple(
+                    int(index)
+                    for index in tuple(raw.get("accepted_indices", ()) or ())
+                ),
+                reason=str(raw.get("reason", "unspecified")),
+                reservation_id=str(raw.get("reservation_id", "")),
+                metadata=dict(raw.get("metadata", {}) or {}),
+            )
+        self._last_task_projection = copy.deepcopy(
+            dict(state.get("last_task_projection", {}) or {})
+        )
+        self._last_projection_writers = {
+            str(key): str(value)
+            for key, value in dict(state.get("projection_writers", {}) or {}).items()
+        }
+        self._runtime_shared_projection = copy.deepcopy(
+            dict(state.get("runtime_shared_projection", {}) or {})
+        )
+        self._runtime_meta_projection = copy.deepcopy(
+            dict(state.get("runtime_meta_projection", {}) or {})
+        )
+        self._regions = copy.deepcopy(list(state.get("regions", ()) or ()))
+        self._unit_region = {}
+        for item in tuple(state.get("unit_region", ()) or ()):
+            key = (str(item.get("role", "")), int(item.get("unit_id", 0)))
+            if key not in expected:
+                raise ValueError("StrategyRouterAdapter transaction region unit is unknown")
+            self._unit_region[key] = int(item.get("region_id", 0))
+        rng_state = state.get("rng_state")
+        if not isinstance(rng_state, Mapping):
+            raise TypeError("StrategyRouterAdapter transaction RNG state is invalid")
+        self._rng.bit_generator.state = copy.deepcopy(dict(rng_state))
 
     def get_runtime_context_projection(self, solver: Any) -> RuntimeContextProjection:
         own_fields: Dict[str, Any] = {}

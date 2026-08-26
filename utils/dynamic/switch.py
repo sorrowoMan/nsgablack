@@ -87,7 +87,9 @@ class DynamicSwitchBase(Plugin, ABC):
     def on_solver_init(self, solver) -> None:
         self._sync_solver_state(solver)
 
-    def on_generation_start(self, generation: int) -> None:
+    def on_step_attempt_start(self, attempt: int, logical_step: int) -> None:
+        del attempt
+        generation = int(logical_step)
         solver = getattr(self, "solver", None)
         if solver is None:
             return

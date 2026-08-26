@@ -22,6 +22,8 @@ from blackbase.context import detach_context_value
 from blackbase.evaluation import (
     EvaluationGateway,
     StateMaterializationRequest,
+    StateReleaseRequest,
+    StateReleaseResult,
     StateTransitionRequest,
 )
 from blackbase.resources import ResourceContext
@@ -151,6 +153,9 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         self._provider_transition_count = 0
         self._provider_transition_needs_slot_seed = False
         self._provider_resource_context: ResourceContext | None = None
+        self._step_transaction_slot_refs: Dict[str, StateRef] = {}
+        self._step_transaction_resource_context: ResourceContext | None = None
+        self._provider_cleanup_refs: Dict[str, StateRef] = {}
 
     def setup(self, control: Any) -> None:
         _ = control
@@ -168,6 +173,9 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         self._provider_transition_count = 0
         self._provider_transition_needs_slot_seed = False
         self._provider_resource_context = None
+        self._step_transaction_slot_refs = {}
+        self._step_transaction_resource_context = None
+        self._provider_cleanup_refs = {}
         self._proposal_pending = False
         self._refresh_runtime_projection()
 
@@ -183,13 +191,69 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         return (self._wrap_candidate(candidate),)
 
     def teardown(self, control: Any) -> None:
-        del control
         had_live_slots = bool(self._provider_slot_refs)
-        self._refresh_provider_slot_shadow()
-        self._provider_slot_refs = {}
-        self._provider_resource_context = None
+        cleanup_errors: list[BaseException] = []
+        try:
+            self._refresh_provider_slot_shadow()
+        except BaseException as exc:
+            cleanup_errors.append(exc)
+        release_refs = {
+            ref.state_id: ref
+            for ref in (
+                *self._provider_cleanup_refs.values(),
+                *self._provider_slot_refs.values(),
+                *self._step_transaction_slot_refs.values(),
+            )
+            if isinstance(ref, StateRef)
+        }
+        released = not release_refs
+        if release_refs:
+            try:
+                control_resource = None
+                resource_getter = getattr(control, "get_resource_context", None)
+                if callable(resource_getter):
+                    candidate = resource_getter()
+                    if isinstance(candidate, ResourceContext):
+                        control_resource = candidate
+                    elif isinstance(candidate, Mapping):
+                        control_resource = ResourceContext.from_mapping(candidate)
+                elif isinstance(
+                    getattr(control, "resource_context", None),
+                    ResourceContext,
+                ):
+                    control_resource = control.resource_context
+                self._release_attempt_provider_slots(
+                    release_refs,
+                    self._provider_resource_context
+                    or self._step_transaction_resource_context
+                    or control_resource,
+                    reason="adapter_teardown",
+                )
+                released = True
+            except BaseException as exc:
+                cleanup_errors.append(exc)
+        if released:
+            self._provider_cleanup_refs = {}
+            self._provider_slot_refs = {}
+            self._step_transaction_slot_refs = {}
+            self._provider_resource_context = None
+            self._step_transaction_resource_context = None
         if had_live_slots and self.cfg.optimizer in {"adam", "adamw"}:
             self._provider_transition_needs_slot_seed = True
+        if cleanup_errors:
+            primary = cleanup_errors[0]
+            add_note = getattr(primary, "add_note", None)
+            if callable(add_note) and len(cleanup_errors) > 1:
+                add_note(
+                    "additional GradientOptimizerAdapter teardown failures: "
+                    + "; ".join(
+                        f"{type(exc).__name__}: {exc}"
+                        for exc in cleanup_errors[1:]
+                    )
+                )
+            raise RuntimeError(
+                "GradientOptimizerAdapter Provider teardown did not close cleanly"
+            ) from primary
 
     def on_proposal_disposition(
         self,
@@ -386,6 +450,10 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
             ),
             resource,
         )
+        # Keep exact attempt-local Provider effects until the enclosing Solver
+        # commits. Rollback can then release only these slot records.
+        self._step_transaction_slot_refs = dict(transition.slot_refs)
+        self._step_transaction_resource_context = resource
         materialized = gateway.materialize(
             StateMaterializationRequest(
                 state_ref=transition.state_ref,
@@ -627,8 +695,233 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
                 },
                 "checkpoint_mode": "on_demand_materialized_slot_shadow",
                 "needs_slot_seed": bool(self._provider_transition_needs_slot_seed),
+                "cleanup_refs": {
+                    state_id: ref.as_dict()
+                    for state_id, ref in self._provider_cleanup_refs.items()
+                    if ref.transport_scope in {"host", "cluster"}
+                },
+                "nonportable_cleanup_ref_count": sum(
+                    1
+                    for ref in self._provider_cleanup_refs.values()
+                    if ref.transport_scope == "process"
+                ),
             },
         }
+
+    def snapshot_step_state(self) -> Mapping[str, Any]:
+        """Capture local rollback state without materializing live Provider slots."""
+
+        if self._step_transaction_slot_refs:
+            raise RuntimeError(
+                "gradient optimizer still owns uncommitted Provider slot effects"
+            )
+        return {
+            "schema": "nsgablack.gradient_optimizer_step_transaction/v1",
+            "current_x": None if self.current_x is None else self.current_x.copy(),
+            "current_score": self.current_score,
+            "best_score": self.best_score,
+            "last_gradient_norm": self.last_gradient_norm,
+            "step_index": int(self.step_index),
+            "first_moment": (
+                None if self._first_moment is None else self._first_moment.copy()
+            ),
+            "second_moment": (
+                None if self._second_moment is None else self._second_moment.copy()
+            ),
+            "candidate_kind": self._candidate_kind,
+            "candidate_metadata": detach_context_value(
+                self._candidate_metadata,
+                path="gradient_optimizer.step_candidate_metadata",
+            ),
+            "provider_state_ref": self._provider_state_ref,
+            "provider_slot_refs": dict(self._provider_slot_refs),
+            "provider_transition_count": int(self._provider_transition_count),
+            "provider_transition_needs_slot_seed": bool(
+                self._provider_transition_needs_slot_seed
+            ),
+            "provider_resource_context": self._provider_resource_context,
+            "proposal_pending": bool(self._proposal_pending),
+            "runtime_projection": dict(self._runtime_projection),
+        }
+
+    def restore_step_state(self, state: Mapping[str, Any]) -> None:
+        if str(state.get("schema", "")) != (
+            "nsgablack.gradient_optimizer_step_transaction/v1"
+        ):
+            raise ValueError("unsupported GradientOptimizerAdapter transaction schema")
+
+        release_error: BaseException | None = None
+        transitioned_slots = dict(self._step_transaction_slot_refs)
+        transition_resource = self._step_transaction_resource_context
+        if transitioned_slots:
+            try:
+                self._release_attempt_provider_slots(
+                    transitioned_slots,
+                    transition_resource,
+                )
+            except BaseException as exc:
+                release_error = exc
+
+        current_x = state.get("current_x")
+        self.current_x = (
+            None
+            if current_x is None
+            else np.asarray(current_x, dtype=float).reshape(-1).copy()
+        )
+        score = state.get("current_score")
+        self.current_score = None if score is None else float(score)
+        best = state.get("best_score")
+        self.best_score = None if best is None else float(best)
+        norm = state.get("last_gradient_norm")
+        self.last_gradient_norm = None if norm is None else float(norm)
+        self.step_index = int(state.get("step_index", 0) or 0)
+        first = state.get("first_moment")
+        second = state.get("second_moment")
+        self._first_moment = (
+            None if first is None else np.asarray(first, dtype=float).reshape(-1).copy()
+        )
+        self._second_moment = (
+            None if second is None else np.asarray(second, dtype=float).reshape(-1).copy()
+        )
+        self._candidate_kind = str(state.get("candidate_kind", "array"))
+        self._candidate_metadata = detach_context_value(
+            dict(state.get("candidate_metadata", {}) or {}),
+            path="gradient_optimizer.restore_step_candidate_metadata",
+        )
+        provider_state_ref = state.get("provider_state_ref")
+        self._provider_state_ref = (
+            provider_state_ref if isinstance(provider_state_ref, StateRef) else None
+        )
+        old_slot_refs = {
+            str(name): ref
+            for name, ref in dict(state.get("provider_slot_refs", {}) or {}).items()
+            if isinstance(ref, StateRef)
+        }
+        self._provider_transition_count = int(
+            state.get("provider_transition_count", 0) or 0
+        )
+        old_needs_seed = bool(state.get("provider_transition_needs_slot_seed", False))
+        if transitioned_slots:
+            # Applied slot transitions are copy-on-write. Aborting releases the
+            # successor IDs and restores the still-live predecessor refs.
+            self._provider_slot_refs = old_slot_refs
+            self._provider_transition_needs_slot_seed = old_needs_seed
+        else:
+            self._provider_slot_refs = old_slot_refs
+            self._provider_transition_needs_slot_seed = old_needs_seed
+        resource = state.get("provider_resource_context")
+        self._provider_resource_context = (
+            resource if isinstance(resource, ResourceContext) else None
+        )
+        self._proposal_pending = bool(state.get("proposal_pending", False))
+        self._runtime_projection = dict(state.get("runtime_projection", {}) or {})
+        self._step_transaction_slot_refs = {}
+        self._step_transaction_resource_context = None
+        if release_error is not None:
+            raise RuntimeError(
+                "failed to release Provider slot effects from aborted gradient step"
+            ) from release_error
+
+    def commit_step_state(
+        self,
+        state: Mapping[str, Any],
+    ) -> Mapping[str, Any] | None:
+        old_slot_refs = {
+            str(name): ref
+            for name, ref in dict(state.get("provider_slot_refs", {}) or {}).items()
+            if isinstance(ref, StateRef)
+        }
+        successor_ids = {
+            ref.state_id
+            for ref in self._step_transaction_slot_refs.values()
+            if isinstance(ref, StateRef)
+        }
+        retired = {
+            name: ref
+            for name, ref in old_slot_refs.items()
+            if ref.state_id not in successor_ids
+        }
+        for ref in retired.values():
+            self._provider_cleanup_refs[ref.state_id] = ref
+        self._step_transaction_slot_refs = {}
+        self._step_transaction_resource_context = None
+        release_results: tuple[StateReleaseResult, ...] = ()
+        if self._provider_cleanup_refs:
+            resource = (
+                state.get("provider_resource_context")
+                or self._provider_resource_context
+                or self._step_transaction_resource_context
+            )
+            release_results = self._release_attempt_provider_slots(
+                self._provider_cleanup_refs,
+                resource if isinstance(resource, ResourceContext) else None,
+                reason="committed_step_retired_slots",
+            )
+            self._provider_cleanup_refs = {}
+        if not release_results:
+            return None
+        return {
+            "schema": "nsgablack.gradient_provider_cleanup/v1",
+            "provider_releases": [item.as_dict() for item in release_results],
+        }
+
+    def _release_attempt_provider_slots(
+        self,
+        slot_refs: Mapping[str, StateRef],
+        resource: ResourceContext | None,
+        *,
+        reason: str = "aborted_step_transaction",
+    ) -> tuple[StateReleaseResult, ...]:
+        gateway = self.state_gateway
+        if gateway is None or resource is None:
+            raise RuntimeError(
+                "Provider slot rollback requires the transition gateway and ResourceContext"
+            )
+        grouped: dict[tuple[str, str, str], list[StateRef]] = {}
+        for ref in slot_refs.values():
+            if not isinstance(ref, StateRef):
+                raise TypeError("Provider slot rollback received an invalid StateRef")
+            grouped.setdefault(
+                (ref.provider_id, ref.scope_id, ref.trajectory_id),
+                [],
+            ).append(ref)
+        results: list[StateReleaseResult] = []
+        for (provider_id, scope_id, trajectory_id), refs in grouped.items():
+            if not scope_id:
+                raise ValueError("Provider slot rollback requires a scoped StateRef")
+            requested_ids = tuple(ref.state_id for ref in refs)
+            request = StateReleaseRequest(
+                provider_id=provider_id,
+                scope_id=scope_id,
+                trajectory_id=trajectory_id,
+                state_ids=requested_ids,
+                metadata={
+                    "adapter": self.name,
+                    "reason": str(reason),
+                },
+            )
+            result = gateway.release(request, resource)
+            if not isinstance(result, StateReleaseResult):
+                raise TypeError(
+                    "Provider release must return StateReleaseResult"
+                )
+            if result.request_id != request.request_id:
+                raise RuntimeError("Provider release result belongs to another request")
+            if result.provider_id != request.provider_id:
+                raise RuntimeError("Provider release result belongs to another provider")
+            requested = set(requested_ids)
+            accounted = set(result.released_state_ids).union(
+                result.not_found_state_ids
+            )
+            if accounted != requested:
+                missing = tuple(sorted(requested - accounted))
+                unexpected = tuple(sorted(accounted - requested))
+                raise RuntimeError(
+                    "Provider release did not account for exact requested State IDs: "
+                    f"missing={missing!r}, unexpected={unexpected!r}"
+                )
+            results.append(result)
+        return tuple(results)
 
     def set_state(self, state: Mapping[str, Any]) -> None:
         saved_optimizer = str(state.get("optimizer", self.cfg.optimizer) or "").strip().lower()
@@ -667,6 +960,30 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         # optimizer shadow, so restore does not permanently change execution mode.
         self._provider_state_ref = None
         self._provider_slot_refs = {}
+        cleanup_payload = dict(
+            provider_transition.get("cleanup_refs", {}) or {}
+        )
+        restored_cleanup: Dict[str, StateRef] = {}
+        for state_id, payload in cleanup_payload.items():
+            if not isinstance(payload, Mapping):
+                raise TypeError(
+                    "gradient optimizer cleanup StateRef payload must be a mapping"
+                )
+            ref = StateRef.from_dict(payload)
+            if ref.state_id != str(state_id):
+                raise ValueError(
+                    "gradient optimizer cleanup StateRef key disagrees with state_id"
+                )
+            if ref.transport_scope not in {"host", "cluster"}:
+                raise ValueError(
+                    "gradient optimizer checkpoint cleanup debt must be host/cluster addressable"
+                )
+            if not ref.scope_id:
+                raise ValueError(
+                    "gradient optimizer checkpoint cleanup debt requires scope_id"
+                )
+            restored_cleanup[ref.state_id] = ref
+        self._provider_cleanup_refs = restored_cleanup
         self._provider_transition_needs_slot_seed = bool(
             provider_transition.get("needs_slot_seed")
             or provider_transition.get("state_ref")
@@ -697,6 +1014,8 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         if self.step_index < 0:
             raise ValueError("gradient optimizer checkpoint step_index must be non-negative")
         self._proposal_pending = False
+        self._step_transaction_slot_refs = {}
+        self._step_transaction_resource_context = None
         self._refresh_runtime_projection()
 
 

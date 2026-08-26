@@ -2,6 +2,8 @@
 
 from .snapshot_helpers import (
     LAST_EVALUATED_BATCH_KEY,
+    LAST_EVALUATION_EVENT_KEY,
+    LAST_EVALUATION_DISPOSITION_KEY,
     POPULATION_AUTHORITY_KEY,
     POPULATION_PARTITIONS_KEY,
     POPULATION_SNAPSHOT_SCHEMA_V2,
@@ -12,6 +14,7 @@ from .snapshot_helpers import (
     strip_large_context_fields,
     population_snapshot_authority_mode,
     require_single_population_payload,
+    validate_population_snapshot_v2,
 )
 from .control_plane_helpers import (
     collect_adapter_runtime_context_projection,
@@ -68,10 +71,13 @@ __all__ = [
     "snapshot_meta",
     "strip_large_context_fields",
     "LAST_EVALUATED_BATCH_KEY",
+    "LAST_EVALUATION_EVENT_KEY",
+    "LAST_EVALUATION_DISPOSITION_KEY",
     "POPULATION_AUTHORITY_KEY",
     "POPULATION_PARTITIONS_KEY",
     "POPULATION_SNAPSHOT_SCHEMA_V2",
     "PartitionedPopulationSnapshotError",
     "population_snapshot_authority_mode",
     "require_single_population_payload",
+    "validate_population_snapshot_v2",
 ]

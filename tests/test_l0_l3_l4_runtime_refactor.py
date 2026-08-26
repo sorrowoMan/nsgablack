@@ -31,7 +31,7 @@ class _Problem(BlackBoxProblem):
 
 class _StopCtl(BaseController):
     domain = "stopping"
-    slots = ("gen_end",)
+    slots = ("generation_end",)
 
     def __init__(self, name: str = "stop") -> None:
         super().__init__(name=name, priority=0)

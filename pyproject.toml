@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nsgablack"
-version = "0.3.11"
+version = "0.3.26"
 description = "A decomposed optimization system with pipelines, biases, adapters, plugins"
 readme = "README.md"
 license = {text = "MIT"}
@@ -40,7 +40,7 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "blackbase>=0.3.9,<0.4.0",
+    "blackbase>=0.3.24,<0.4.0",
     "numpy>=1.20.0",
     "scipy>=1.7.0",
     "scikit-learn>=1.0.0",

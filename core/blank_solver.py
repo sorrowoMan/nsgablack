@@ -7,13 +7,14 @@ enforcing any specific optimization loop.
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import logging
 import random
 import threading
 import time
 import uuid
-import warnings
 import weakref
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple
@@ -21,6 +22,15 @@ from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple
 from .acceleration import AccelerationFacade, AccelerationRegistry, ExecutionResult
 from .acceleration_helpers import maybe_accel_map, maybe_accel_run
 from blackbase.context import StateStoreConfig
+from blackbase.evaluation import (
+    EvaluationDispositionEnvelope,
+    EvaluationDispositionVerificationReceipt,
+    EvaluationEvidenceJournal,
+    EvaluationEvidenceRecord,
+    EvaluationEventEnvelope,
+    create_evaluation_evidence_journal,
+    evaluation_disposition_digest,
+)
 from blackbase.types import (
     CandidateBatch,
     UnknownState,
@@ -49,6 +59,7 @@ from .state.incumbent import (
     IncumbentState,
 )
 from .state.run_progress import RunProgressState
+from .state.step_outcome import StepOutcome
 
 import numpy as np
 
@@ -70,6 +81,8 @@ from .interfaces import (
 )
 from .solver_helpers import (
     LAST_EVALUATED_BATCH_KEY,
+    LAST_EVALUATION_EVENT_KEY,
+    LAST_EVALUATION_DISPOSITION_KEY,
     POPULATION_AUTHORITY_KEY,
     POPULATION_PARTITIONS_KEY,
     POPULATION_SNAPSHOT_SCHEMA_V2,
@@ -93,6 +106,7 @@ from .solver_helpers import (
     set_pareto_snapshot_fields,
     snapshot_meta,
     strip_large_context_fields,
+    validate_population_snapshot_v2,
 )
 from blackbase.context.context_keys import (
     KEY_BEST_CANDIDATE_REF,
@@ -120,7 +134,7 @@ from blackbase.context.context_keys import (
 )
 from blackbase.context import ContextStore
 from blackbase.context import SnapshotStore, make_snapshot_key
-from blackbase.plugin import report_soft_error
+from blackbase.plugin import PluginLifecycleReceipt, report_soft_error
 from ..utils.extension_contracts import (
     normalize_bias_output,
     normalize_candidate,
@@ -172,6 +186,10 @@ class SolverBase:
         context_store_ttl_seconds: Optional[float] = None,
         context_store_redis_url: str = "redis://localhost:6379/0",
         context_store_key_prefix: str = "nsgablack:context",
+        context_store_serializer: str = "safe",
+        context_store_hmac_env_var: str = "NSGABLACK_CONTEXT_HMAC_KEY",
+        context_store_unsafe_allow_legacy_pickle: bool = False,
+        context_store_max_payload_bytes: int = 262_144,
         snapshot_store_backend: str = "memory",
         snapshot_store_ttl_seconds: Optional[float] = None,
         snapshot_store_redis_url: str = "redis://localhost:6379/0",
@@ -200,6 +218,16 @@ class SolverBase:
             context_store_ttl_seconds = _sc.get("context_store_ttl_seconds", context_store_ttl_seconds)
             context_store_redis_url = _sc.get("context_store_redis_url", context_store_redis_url)
             context_store_key_prefix = _sc.get("context_store_key_prefix", context_store_key_prefix)
+            context_store_serializer = _sc.get("context_store_serializer", context_store_serializer)
+            context_store_hmac_env_var = _sc.get("context_store_hmac_env_var", context_store_hmac_env_var)
+            context_store_unsafe_allow_legacy_pickle = _sc.get(
+                "context_store_unsafe_allow_legacy_pickle",
+                context_store_unsafe_allow_legacy_pickle,
+            )
+            context_store_max_payload_bytes = _sc.get(
+                "context_store_max_payload_bytes",
+                context_store_max_payload_bytes,
+            )
             snapshot_store_backend = _sc.get("snapshot_store_backend", snapshot_store_backend)
             snapshot_store_ttl_seconds = _sc.get("snapshot_store_ttl_seconds", snapshot_store_ttl_seconds)
             snapshot_store_redis_url = _sc.get("snapshot_store_redis_url", snapshot_store_redis_url)
@@ -287,6 +315,24 @@ class SolverBase:
         self.constraint_violations = None
         self._last_individual_feedback = None
         self._last_feedback_batch: OptimizationFeedbackBatch | None = None
+        self._last_evaluated_event_batch: CandidateBatch | None = None
+        self._last_evaluated_event_feedback: OptimizationFeedbackBatch | None = None
+        self._last_evaluated_event_provenance: tuple[CandidateProvenance, ...] = ()
+        self._last_evaluated_event_arrays: tuple[
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+        ] | None = None
+        self._last_evaluation_event_id: str | None = None
+        self._last_evaluation_event_identity: dict[str, Any] = {}
+        self._last_evaluation_event_snapshot_key: str | None = None
+        self._last_evaluation_disposition: dict[str, Any] | None = None
+        self._last_evaluation_evidence_record: dict[str, Any] | None = None
+        self._evaluation_evidence_recovery_report: dict[str, Any] = {
+            "status": "not_run",
+            "run_id": None,
+            "records": [],
+        }
         self._incumbent_lock = threading.RLock()
         self._incumbent_commit = _IncumbentCommit(None, None, 0)
         self._incumbent: IncumbentState | None = None
@@ -339,10 +385,15 @@ class SolverBase:
         self._resume_loaded = False
         self._resume_cursor = 0
         self._run_progress_steps = 0
+        self._run_progress_attempts = 0
+        self._run_progress_consecutive_idle_attempts = 0
         self._run_progress_elapsed_seconds = 0.0
         self._run_progress_clock_started_at: float | None = None
         self._run_progress_deadline_remaining_seconds: float | None = None
         self.max_steps = 1
+        self.max_step_attempts: int | None = None
+        self.max_consecutive_idle_attempts: int | None = None
+        self.allow_legacy_step_outcomes = False
         self.start_time = 0.0
         self.random_seed: Optional[int] = None
         self._rng = np.random.default_rng()
@@ -351,6 +402,14 @@ class SolverBase:
         self.context_store_ttl_seconds = context_store_ttl_seconds
         self.context_store_redis_url = str(context_store_redis_url)
         self.context_store_key_prefix = str(context_store_key_prefix)
+        self.context_store_serializer = str(context_store_serializer or "safe")
+        self.context_store_hmac_env_var = str(
+            context_store_hmac_env_var or "NSGABLACK_CONTEXT_HMAC_KEY"
+        )
+        self.context_store_unsafe_allow_legacy_pickle = bool(
+            context_store_unsafe_allow_legacy_pickle
+        )
+        self.context_store_max_payload_bytes = int(context_store_max_payload_bytes)
         self.context_store: ContextStore = self._build_context_store()
         self.snapshot_store_backend = str(snapshot_store_backend or "memory")
         self.snapshot_store_ttl_seconds = snapshot_store_ttl_seconds
@@ -377,8 +436,14 @@ class SolverBase:
         )
         self.snapshot_schema = str(snapshot_schema or "nsgablack.population_snapshot/v2")
         self.snapshot_store: SnapshotStore = self._build_snapshot_store()
+        self.evaluation_evidence_journal: EvaluationEvidenceJournal = (
+            self._build_evaluation_evidence_journal()
+        )
         self._latest_snapshot_handle = None
+        self._latest_evaluation_snapshot_handle = None
+        self._latest_evaluation_disposition_snapshot_handle = None
         self._snapshot_generation = None
+        self._snapshot_step_transaction: Optional[Dict[str, Any]] = None
         self.snapshot_pre_evaluate_population = False
         self.context_store_update_on_build = True
         self._pending_plugin_order_updates: list[dict[str, Any]] = []
@@ -389,6 +454,10 @@ class SolverBase:
             ttl_seconds=self.context_store_ttl_seconds,
             redis_url=self.context_store_redis_url,
             key_prefix=self.context_store_key_prefix,
+            serializer=self.context_store_serializer,
+            hmac_env_var=self.context_store_hmac_env_var,
+            unsafe_allow_legacy_pickle=self.context_store_unsafe_allow_legacy_pickle,
+            max_payload_bytes=self.context_store_max_payload_bytes,
             report_soft_error_fn=report_soft_error,
             logger=logger,
         )
@@ -421,8 +490,65 @@ class SolverBase:
             }
             self._publish_incumbent_context(self._incumbent_commit)
 
-    def set_snapshot_store(self, store: SnapshotStore) -> None:
+    def set_snapshot_store(
+        self,
+        store: SnapshotStore,
+        *,
+        evaluation_evidence_journal: EvaluationEvidenceJournal | None = None,
+    ) -> None:
+        if evaluation_evidence_journal is None:
+            raise ValueError(
+                "replacing SnapshotStore requires its paired "
+                "EvaluationEvidenceJournal"
+            )
+        if not isinstance(evaluation_evidence_journal, EvaluationEvidenceJournal):
+            raise TypeError(
+                "evaluation_evidence_journal must implement "
+                "EvaluationEvidenceJournal"
+            )
+        self._assert_snapshot_store_replacement_allowed()
+        if not all(
+            callable(getattr(store, name, None))
+            for name in ("write", "read", "delete")
+        ):
+            raise TypeError("store must implement the SnapshotStore protocol")
         self.snapshot_store = store
+        self.evaluation_evidence_journal = evaluation_evidence_journal
+
+    def _assert_snapshot_store_replacement_allowed(self) -> None:
+        """Fail before constructing or assigning a replacement state pair."""
+
+        if bool(getattr(self, "running", False)):
+            raise RuntimeError("cannot replace state stores while Solver is running")
+        stateful_fields = {
+            "latest_snapshot": self._latest_snapshot_handle,
+            "latest_evaluation_snapshot": self._latest_evaluation_snapshot_handle,
+            "latest_disposition_snapshot": (
+                self._latest_evaluation_disposition_snapshot_handle
+            ),
+            "snapshot_transaction": self._snapshot_step_transaction,
+            "incumbent_candidate_ref": self._incumbent_candidate_ref,
+            "evaluation_event_snapshot_key": self._last_evaluation_event_snapshot_key,
+            "evaluation_evidence_record": self._last_evaluation_evidence_record,
+        }
+        active_state = tuple(
+            name for name, value in stateful_fields.items() if value is not None
+        )
+        if active_state:
+            raise RuntimeError(
+                "cannot replace SnapshotStore after state publication without an "
+                f"explicit migration transaction: active={active_state!r}"
+            )
+
+    def set_evaluation_evidence_journal(
+        self,
+        journal: EvaluationEvidenceJournal,
+    ) -> None:
+        del journal
+        raise RuntimeError(
+            "EvaluationEvidenceJournal cannot be replaced independently; use "
+            "set_snapshot_store(store, evaluation_evidence_journal=journal)"
+        )
 
     def set_resource_context(
         self,
@@ -532,12 +658,30 @@ class SolverBase:
         self.constraint_violations = None
         self._last_individual_feedback = None
         self._last_feedback_batch = None
+        self._last_evaluated_event_batch = None
+        self._last_evaluated_event_feedback = None
+        self._last_evaluated_event_provenance = ()
+        self._last_evaluated_event_arrays = None
+        self._last_evaluation_event_id = None
+        self._last_evaluation_event_identity = {}
+        self._last_evaluation_event_snapshot_key = None
+        self._last_evaluation_disposition = None
+        self._last_evaluation_evidence_record = None
+        self._evaluation_evidence_recovery_report = {
+            "status": "not_run",
+            "run_id": self._active_run_id,
+            "records": [],
+        }
         self.pareto_solutions = None
         self.pareto_objectives = None
+        self.pareto_population_snapshot = None
         self.history = []
         self.last_result = None
         self._latest_snapshot_handle = None
+        self._latest_evaluation_snapshot_handle = None
+        self._latest_evaluation_disposition_snapshot_handle = None
         self._snapshot_generation = None
+        self._snapshot_step_transaction = None
         self._consumed_warm_starts = []
         self._proposal_sequence = 0
         self._candidate_sequence = 0
@@ -548,6 +692,8 @@ class SolverBase:
         self._candidate_population_batch = None
         self._candidate_population_provenance = ()
         self._run_progress_steps = 0
+        self._run_progress_attempts = 0
+        self._run_progress_consecutive_idle_attempts = 0
         self._run_progress_elapsed_seconds = 0.0
         self._run_progress_clock_started_at = None
         self._run_progress_deadline_remaining_seconds = None
@@ -662,6 +808,10 @@ class SolverBase:
         ttl_seconds: Optional[float] = None,
         redis_url: Optional[str] = None,
         key_prefix: Optional[str] = None,
+        serializer: Optional[str] = None,
+        hmac_env_var: Optional[str] = None,
+        unsafe_allow_legacy_pickle: Optional[bool] = None,
+        max_payload_bytes: Optional[int] = None,
     ) -> None:
         self.context_store_backend = str(backend or "memory")
         if ttl_seconds is not None:
@@ -670,6 +820,16 @@ class SolverBase:
             self.context_store_redis_url = str(redis_url)
         if key_prefix is not None:
             self.context_store_key_prefix = str(key_prefix)
+        if serializer is not None:
+            self.context_store_serializer = str(serializer)
+        if hmac_env_var is not None:
+            self.context_store_hmac_env_var = str(hmac_env_var)
+        if unsafe_allow_legacy_pickle is not None:
+            self.context_store_unsafe_allow_legacy_pickle = bool(
+                unsafe_allow_legacy_pickle
+            )
+        if max_payload_bytes is not None:
+            self.context_store_max_payload_bytes = int(max_payload_bytes)
         self.set_context_store(self._build_context_store())
 
     def set_snapshot_store_backend(
@@ -685,24 +845,82 @@ class SolverBase:
         unsafe_allow_unsigned: Optional[bool] = None,
         max_payload_bytes: Optional[int] = None,
     ) -> None:
-        self.snapshot_store_backend = str(backend or "memory")
-        if ttl_seconds is not None:
-            self.snapshot_store_ttl_seconds = ttl_seconds
-        if redis_url is not None:
-            self.snapshot_store_redis_url = str(redis_url)
-        if key_prefix is not None:
-            self.snapshot_store_key_prefix = str(key_prefix)
-        if base_dir is not None:
-            self.snapshot_store_dir = str(base_dir)
-        if serializer is not None:
-            self.snapshot_store_serializer = str(serializer)
-        if hmac_env_var is not None:
-            self.snapshot_store_hmac_env_var = str(hmac_env_var)
-        if unsafe_allow_unsigned is not None:
-            self.snapshot_store_unsafe_allow_unsigned = bool(unsafe_allow_unsigned)
-        if max_payload_bytes is not None:
-            self.snapshot_store_max_payload_bytes = int(max_payload_bytes)
-        self.snapshot_store = self._build_snapshot_store()
+        self._assert_snapshot_store_replacement_allowed()
+        proposed_backend = str(backend or "memory")
+        proposed_ttl = (
+            self.snapshot_store_ttl_seconds
+            if ttl_seconds is None
+            else ttl_seconds
+        )
+        proposed_redis_url = (
+            self.snapshot_store_redis_url
+            if redis_url is None
+            else str(redis_url)
+        )
+        proposed_key_prefix = (
+            self.snapshot_store_key_prefix
+            if key_prefix is None
+            else str(key_prefix)
+        )
+        proposed_base_dir = (
+            self.snapshot_store_dir
+            if base_dir is None
+            else str(base_dir)
+        )
+        proposed_serializer = (
+            self.snapshot_store_serializer
+            if serializer is None
+            else str(serializer)
+        )
+        proposed_hmac = (
+            self.snapshot_store_hmac_env_var
+            if hmac_env_var is None
+            else str(hmac_env_var)
+        )
+        proposed_unsafe = (
+            self.snapshot_store_unsafe_allow_unsigned
+            if unsafe_allow_unsigned is None
+            else bool(unsafe_allow_unsigned)
+        )
+        proposed_max_bytes = (
+            self.snapshot_store_max_payload_bytes
+            if max_payload_bytes is None
+            else int(max_payload_bytes)
+        )
+        resolved_base_dir = proposed_base_dir or "runs/snapshots"
+        new_store = build_snapshot_store_or_memory(
+            backend=proposed_backend,
+            ttl_seconds=proposed_ttl,
+            redis_url=proposed_redis_url,
+            key_prefix=proposed_key_prefix,
+            base_dir=resolved_base_dir,
+            serializer=proposed_serializer,
+            hmac_env_var=proposed_hmac,
+            unsafe_allow_unsigned=proposed_unsafe,
+            max_payload_bytes=proposed_max_bytes,
+            context_store=self.context_store,
+            report_soft_error_fn=report_soft_error,
+            logger=logger,
+        )
+        new_journal = create_evaluation_evidence_journal(
+            backend=proposed_backend,
+            redis_url=proposed_redis_url,
+            key_prefix=f"{proposed_key_prefix}:evaluation-evidence",
+            base_dir=resolved_base_dir,
+        )
+        self.set_snapshot_store(
+            new_store,
+            evaluation_evidence_journal=new_journal,
+        )
+        self.snapshot_store_backend = proposed_backend
+        self.snapshot_store_ttl_seconds = proposed_ttl
+        self.snapshot_store_redis_url = proposed_redis_url
+        self.snapshot_store_key_prefix = proposed_key_prefix
+        self.snapshot_store_dir = proposed_base_dir
+        self.snapshot_store_serializer = proposed_serializer
+        self.snapshot_store_hmac_env_var = proposed_hmac
+        self.snapshot_store_unsafe_allow_unsigned = proposed_unsafe
+        self.snapshot_store_max_payload_bytes = proposed_max_bytes
 
     # ------------------------------------------------------------------
     # Optional dependency accessors (mirrors core solver behavior)
@@ -1306,6 +1524,28 @@ class SolverBase:
     def set_max_steps(self, max_steps: int) -> None:
         self.max_steps = int(max_steps)
 
+    def set_max_step_attempts(self, max_step_attempts: int | None) -> None:
+        self.max_step_attempts = (
+            None
+            if max_step_attempts is None
+            else max(0, int(max_step_attempts))
+        )
+
+    def set_max_consecutive_idle_attempts(
+        self,
+        max_consecutive_idle_attempts: int | None,
+    ) -> None:
+        self.max_consecutive_idle_attempts = (
+            None
+            if max_consecutive_idle_attempts is None
+            else max(0, int(max_consecutive_idle_attempts))
+        )
+
+    def set_legacy_step_outcome_compatibility(self, enabled: bool) -> None:
+        """Explicitly opt into the temporary legacy outcome converter."""
+
+        self.allow_legacy_step_outcomes = bool(enabled)
+
     def set_generation(self, generation: int) -> int:
         return set_generation_value(self, generation)
 
@@ -1571,6 +1811,78 @@ class SolverBase:
                     ),
                 },
             }
+
+    def _capture_incumbent_transaction_state(self) -> Dict[str, Any]:
+        """Capture every mutable projection of the atomic incumbent commit."""
+
+        with self._incumbent_lock:
+            return {
+                "commit": self._incumbent_commit,
+                "incumbent": self._incumbent,
+                "best_x": None if self.best_x is None else self.best_x.copy(),
+                "best_objectives": (
+                    None
+                    if self.best_objectives is None
+                    else self.best_objectives.copy()
+                ),
+                "best_constraint_violation": self.best_constraint_violation,
+                "best_score": self.best_score,
+                "best_objective": self.best_objective,
+                "best_f": self.best_f,
+                "candidate_ref": self._incumbent_candidate_ref,
+                "projection_revision": self._incumbent_context_projection_revision,
+                "projection_error": (
+                    None
+                    if self._incumbent_context_projection_error is None
+                    else dict(self._incumbent_context_projection_error)
+                ),
+            }
+
+    def _restore_incumbent_transaction_state(
+        self,
+        state: Mapping[str, Any],
+    ) -> None:
+        """Restore a pre-step incumbent and republish its Context projection."""
+
+        staged_ref: str | None = None
+        with self._incumbent_lock:
+            current_ref = self._incumbent_candidate_ref
+            previous_ref = state.get("candidate_ref")
+            if current_ref and current_ref != previous_ref:
+                staged_ref = str(current_ref)
+            self._incumbent_commit = state["commit"]
+            self._incumbent = state.get("incumbent")
+            best_x = state.get("best_x")
+            best_objectives = state.get("best_objectives")
+            self.best_x = (
+                None if best_x is None else np.array(best_x, dtype=float, copy=True)
+            )
+            self.best_objectives = (
+                None
+                if best_objectives is None
+                else np.array(best_objectives, dtype=float, copy=True)
+            )
+            self.best_constraint_violation = state.get(
+                "best_constraint_violation"
+            )
+            self.best_score = state.get("best_score")
+            self.best_objective = state.get("best_objective")
+            self.best_f = state.get("best_f")
+            self._incumbent_candidate_ref = (
+                None if previous_ref is None else str(previous_ref)
+            )
+            self._incumbent_context_projection_revision = int(
+                state.get("projection_revision", -1)
+            )
+            projection_error = state.get("projection_error")
+            self._incumbent_context_projection_error = (
+                None
+                if projection_error is None
+                else dict(projection_error)
+            )
+            self._publish_incumbent_context(self._incumbent_commit)
+        if staged_ref is not None:
+            self._discard_staged_incumbent_candidate(staged_ref)
 
     def _validate_incumbent_commit(self, state: IncumbentState) -> None:
         """Validate a state before artifact staging and again before commit."""
@@ -2436,6 +2748,771 @@ class SolverBase:
         )
         return self.population
 
+    def _evaluation_evidence_run_id(self) -> str:
+        return str(
+            self._active_run_id
+            or self._case_run_id()
+            or f"direct-solver-{id(self):x}"
+        )
+
+    def _evaluation_evidence_snapshot_key(
+        self,
+        kind: str,
+        event_id: str,
+    ) -> str:
+        kind_text = str(kind or "").strip().lower().replace("_", "-")
+        if kind_text not in {"event", "disposition"}:
+            raise ValueError(f"unsupported evaluation evidence snapshot kind: {kind}")
+        digest = hashlib.sha256(
+            (
+                self._evaluation_evidence_run_id()
+                + "\x00"
+                + str(event_id)
+                + "\x00"
+                + kind_text
+            ).encode("utf-8")
+        ).hexdigest()
+        return f"evaluation-evidence/{kind_text}/{digest}"
+
+    def _remember_evaluation_evidence_record(
+        self,
+        record: EvaluationEvidenceRecord,
+    ) -> EvaluationEvidenceRecord:
+        self._last_evaluation_evidence_record = record.as_dict()
+        if (
+            record.status in {"committed", "rejected", "failed"}
+            and record.disposition is not None
+        ):
+            self._last_evaluation_disposition = (
+                EvaluationDispositionEnvelope.from_dict(
+                    record.disposition
+                ).as_dict()
+            )
+        elif record.status == "abandoned" and isinstance(
+            self._last_evaluation_disposition,
+            Mapping,
+        ):
+            last_event_id = str(
+                self._last_evaluation_disposition.get("event_id", "")
+            )
+            if last_event_id == record.event_id:
+                self._last_evaluation_disposition = None
+        return record
+
+    def get_last_evaluation_evidence_record(
+        self,
+    ) -> EvaluationEvidenceRecord | None:
+        payload = self._last_evaluation_evidence_record
+        if not isinstance(payload, Mapping):
+            return None
+        return EvaluationEvidenceRecord.from_dict(payload)
+
+    def get_evaluation_evidence_recovery_report(self) -> dict[str, Any]:
+        return copy.deepcopy(self._evaluation_evidence_recovery_report)
+
+    def release_evaluation_evidence_snapshots(self, event_id: str) -> dict[str, Any]:
+        """Release retention pins after external archival of terminal evidence."""
+
+        event_key = str(event_id or "").strip()
+        record = self.evaluation_evidence_journal.get(event_key)
+        if record is None:
+            raise KeyError(f"Unknown evaluation evidence event '{event_key}'")
+        if record.status not in {"committed", "rejected", "failed"}:
+            raise RuntimeError("only terminal verified evidence may release Snapshot pins")
+        verification = dict(record.verification or {})
+        if not verification:
+            raise RuntimeError("terminal evidence has no verification receipt")
+        destination_key = str(verification.get("destination_snapshot_key", "") or "")
+        owner = f"evaluation-evidence:{record.event_id}"
+        released: list[str] = []
+        for key in (record.event_snapshot_key, destination_key):
+            if not key or key in released:
+                continue
+            self.snapshot_store.unpin(key, owner=owner)
+            released.append(key)
+        return {
+            "event_id": record.event_id,
+            "status": record.status,
+            "released_snapshot_keys": released,
+            "verification": verification,
+        }
+
+    def record_evaluation_event(
+        self,
+        batch: CandidateBatch,
+        feedback: OptimizationFeedbackBatch,
+        provenance: Iterable[CandidateProvenance],
+    ) -> None:
+        """Record one complete evaluated batch without changing authority.
+
+        Evaluation evidence and population authority are deliberately separate:
+        acceptance may reject every row while the completed evaluations remain
+        replayable and auditable.
+        """
+
+        if not isinstance(batch, CandidateBatch):
+            raise TypeError("evaluation event requires CandidateBatch")
+        if not isinstance(feedback, OptimizationFeedbackBatch):
+            raise TypeError("evaluation event requires OptimizationFeedbackBatch")
+        records = tuple(provenance)
+        candidate_count = len(batch.semantic_states)
+        if candidate_count != feedback.candidate_count:
+            raise ValueError("evaluation event batch and feedback counts must match")
+        if len(records) != candidate_count:
+            raise ValueError("evaluation event provenance must align with batch rows")
+        for token, record in zip(batch.candidate_tokens, records):
+            if token != record.candidate_token:
+                raise ValueError("evaluation event token disagrees with provenance")
+        self._last_evaluated_event_batch = CandidateBatch.from_dict(batch.as_dict())
+        self._last_evaluated_event_feedback = OptimizationFeedbackBatch(
+            objectives=feedback.objectives,
+            violations=feedback.violations,
+            items=feedback.items,
+            metadata=feedback.metadata,
+        )
+        self._last_evaluated_event_provenance = records
+        event_arrays = (
+            np.array(batch.numeric_matrix, dtype=float, copy=True),
+            np.array(feedback.objectives, dtype=float, copy=True),
+            np.array(feedback.violations, dtype=float, copy=True).reshape(-1),
+        )
+        for value in event_arrays:
+            value.setflags(write=False)
+        self._last_evaluated_event_arrays = event_arrays
+        self._last_evaluation_event_id = uuid.uuid4().hex
+        self._last_evaluation_event_snapshot_key = None
+        self._last_evaluation_disposition = None
+        progress = getattr(self, "run_progress_state", None)
+        self._last_evaluation_event_identity = {
+            "run_id": self._evaluation_evidence_run_id(),
+            "logical_step": int(self.generation),
+            "attempt": int(getattr(progress, "attempts_completed", 0)) + 1,
+        }
+
+    def export_evaluation_event_checkpoint_state(self) -> dict[str, Any] | None:
+        """Export full semantic evaluation evidence without inventing lineage."""
+
+        if (
+            self._last_evaluated_event_batch is None
+            or self._last_evaluated_event_feedback is None
+        ):
+            return None
+        event_id = self._last_evaluation_event_id or uuid.uuid4().hex
+        self._last_evaluation_event_id = event_id
+        identity = dict(self._last_evaluation_event_identity)
+        if self._last_evaluation_event_snapshot_key:
+            identity["event_snapshot_key"] = str(
+                self._last_evaluation_event_snapshot_key
+            )
+        authority_handle = getattr(self, "_latest_snapshot_handle", None)
+        if authority_handle is not None:
+            identity["authority_snapshot_key"] = str(authority_handle.key)
+        return EvaluationEventEnvelope(
+            event_id=event_id,
+            candidate_codec="blackbase.candidate_batch/v1",
+            candidate_payload=self._last_evaluated_event_batch.as_dict(),
+            feedback_codec="nsgablack.optimization_feedback_batch/v1",
+            feedback_payload=self._last_evaluated_event_feedback.as_dict(),
+            provenance=tuple(
+                item.as_dict() for item in self._last_evaluated_event_provenance
+            ),
+            identity=identity,
+            evaluation_count=int(self.evaluation_count),
+            semantic_complete=True,
+        ).as_dict()
+
+    def get_last_evaluation_event(self) -> EvaluationEventEnvelope | None:
+        """Return the canonical immutable envelope for the latest evaluation."""
+
+        payload = self.export_evaluation_event_checkpoint_state()
+        if payload is None:
+            return None
+        return EvaluationEventEnvelope.from_dict(payload)
+
+    def restore_evaluation_event_checkpoint_state(
+        self,
+        payload: Mapping[str, Any] | None,
+    ) -> None:
+        if payload is None:
+            self.restore_evaluation_event_arrays(None, None, None)
+            return
+        envelope = EvaluationEventEnvelope.from_dict(payload)
+        if not envelope.semantic_complete:
+            numeric = dict(envelope.candidate_payload)
+            feedback = dict(envelope.feedback_payload)
+            self.restore_evaluation_event_arrays(
+                numeric.get("population"),
+                feedback.get("objectives"),
+                feedback.get("constraint_violations"),
+            )
+            self._last_evaluation_event_id = envelope.event_id
+            self._last_evaluation_event_identity = dict(envelope.identity)
+            self._last_evaluation_event_snapshot_key = str(
+                envelope.identity.get("event_snapshot_key", "") or ""
+            ) or None
+            return
+        if envelope.candidate_codec != "blackbase.candidate_batch/v1":
+            raise ValueError(
+                f"unsupported evaluation candidate codec: {envelope.candidate_codec}"
+            )
+        if envelope.feedback_codec != "nsgablack.optimization_feedback_batch/v1":
+            raise ValueError(
+                f"unsupported evaluation feedback codec: {envelope.feedback_codec}"
+            )
+        batch = CandidateBatch.from_dict(envelope.candidate_payload)
+        feedback = OptimizationFeedbackBatch.from_dict(envelope.feedback_payload)
+        provenance = tuple(
+            CandidateProvenance.from_dict(item) for item in envelope.provenance
+        )
+        self.record_evaluation_event(batch, feedback, provenance)
+        self._last_evaluation_event_id = envelope.event_id
+        self._last_evaluation_event_identity = dict(envelope.identity)
+        self._last_evaluation_event_snapshot_key = str(
+            envelope.identity.get("event_snapshot_key", "") or ""
+        ) or None
+
+    def restore_evaluation_event_arrays(
+        self,
+        population: Any,
+        objectives: Any,
+        violations: Any,
+    ) -> None:
+        """Restore numeric event evidence without fabricating semantic lineage."""
+
+        if population is None and objectives is None and violations is None:
+            self._last_evaluated_event_batch = None
+            self._last_evaluated_event_feedback = None
+            self._last_evaluated_event_provenance = ()
+            self._last_evaluated_event_arrays = None
+            self._last_evaluation_event_id = None
+            self._last_evaluation_event_identity = {}
+            self._last_evaluation_event_snapshot_key = None
+            self._last_evaluation_disposition = None
+            return
+        if population is None or objectives is None or violations is None:
+            raise ValueError("evaluation event arrays must be present together")
+        pop = np.asarray(population, dtype=float)
+        obj = np.asarray(objectives, dtype=float)
+        vio = np.asarray(violations, dtype=float).reshape(-1)
+        if pop.ndim == 1:
+            pop = pop.reshape(1, -1) if pop.size else pop.reshape(0, 0)
+        if obj.ndim == 1:
+            obj = obj.reshape(-1, 1) if obj.size else obj.reshape(0, 0)
+        if pop.ndim != 2 or obj.ndim != 2:
+            raise ValueError("evaluation event population/objectives must be 2D")
+        if pop.shape[0] != obj.shape[0] or pop.shape[0] != vio.shape[0]:
+            raise ValueError("evaluation event arrays must have matching rows")
+        self._last_evaluated_event_batch = None
+        self._last_evaluated_event_feedback = None
+        self._last_evaluated_event_provenance = ()
+        event_arrays = (
+            np.array(pop, copy=True),
+            np.array(obj, copy=True),
+            np.array(vio, copy=True),
+        )
+        for value in event_arrays:
+            value.setflags(write=False)
+        self._last_evaluated_event_arrays = event_arrays
+        self._last_evaluation_event_id = None
+        self._last_evaluation_event_identity = {}
+        self._last_evaluation_event_snapshot_key = None
+        self._last_evaluation_disposition = None
+
+    def write_evaluation_event_snapshot(
+        self,
+        *,
+        authority_population: Any,
+        authority_objectives: Any,
+        authority_violations: Any,
+        authority_complete: bool,
+    ) -> str | None:
+        """Publish and index the Event before any acceptance decision runs."""
+
+        event_id = str(self._last_evaluation_event_id or "").strip()
+        if not event_id:
+            raise RuntimeError("cannot publish evaluation evidence without event_id")
+        key = self._evaluation_evidence_snapshot_key("event", event_id)
+        journal = self.evaluation_evidence_journal
+        reserved = journal.reserve(
+            event_id=event_id,
+            run_id=self._evaluation_evidence_run_id(),
+            event_snapshot_key=key,
+            identity=dict(self._last_evaluation_event_identity),
+            metadata={
+                "authority_mode_before_decision": str(
+                    self.population_authority_mode
+                ),
+            },
+        )
+        self._remember_evaluation_evidence_record(reserved)
+        self._last_evaluation_event_snapshot_key = key
+        written = self._persist_snapshot(
+            population=authority_population,
+            objectives=authority_objectives,
+            violations=authority_violations,
+            include_pareto=True,
+            include_history=True,
+            include_decision_trace=True,
+            force_key=key,
+            complete=bool(authority_complete),
+            resolve_defaults=False,
+            publication="evaluation_event",
+        )
+        if not written:
+            return None
+        handle = self._latest_evaluation_snapshot_handle
+        if handle is None or str(handle.key) != key:
+            raise RuntimeError("Evaluation Event snapshot handle disagrees with journal")
+        # ``mark_event_durable`` is a semantic transition, not an assertion
+        # performed by the storage-agnostic journal.  Verify read-after-write
+        # here so an eventually-consistent or faulty SnapshotStore cannot move
+        # the record to ``pending`` while the Event evidence is still absent.
+        durable_record = self.snapshot_store.read(key)
+        if durable_record is None:
+            raise RuntimeError(
+                "Evaluation Event snapshot is not durably readable after write"
+            )
+        if self._snapshot_event_id(durable_record.data) != event_id:
+            raise RuntimeError(
+                "Evaluation Event snapshot payload disagrees with the reserved event"
+            )
+        pending = journal.mark_event_durable(
+            event_id,
+            expected_revision=reserved.revision,
+        )
+        self._remember_evaluation_evidence_record(pending)
+        return key
+
+    def prepare_evaluation_disposition(
+        self,
+        envelope: EvaluationDispositionEnvelope,
+        *,
+        disposition_snapshot_key: str = "",
+    ) -> EvaluationEvidenceRecord:
+        record = self.evaluation_evidence_journal.prepare_disposition(
+            envelope,
+            disposition_snapshot_key=disposition_snapshot_key,
+        )
+        self._last_evaluation_disposition = envelope.as_dict()
+        return self._remember_evaluation_evidence_record(record)
+
+    def settle_evaluation_disposition(
+        self,
+        event_id: str,
+    ) -> EvaluationEvidenceRecord:
+        journal = self.evaluation_evidence_journal
+        current = journal.get(event_id)
+        if current is None:
+            raise KeyError(f"unknown evaluation evidence event: {event_id}")
+        if current.status == "abandoned":
+            return self._remember_evaluation_evidence_record(current)
+        if current.terminal_verified:
+            return self._remember_evaluation_evidence_record(current)
+        inspection = self._inspect_evaluation_disposition_destination(current)
+        if not bool(inspection["valid"]):
+            raise RuntimeError(
+                "evaluation disposition destination is not durably readable: "
+                f"{inspection['reason']}"
+            )
+        record = journal.settle(
+            event_id,
+            verification=inspection["verification"],
+            expected_revision=current.revision,
+        )
+        return self._remember_evaluation_evidence_record(record)
+
+    @staticmethod
+    def _snapshot_event_id(payload: Mapping[str, Any]) -> str:
+        for key in (LAST_EVALUATION_EVENT_KEY, LAST_EVALUATED_BATCH_KEY):
+            event_slot = payload.get(key)
+            if not isinstance(event_slot, Mapping):
+                continue
+            envelope = event_slot.get("evaluation_event_envelope")
+            if not isinstance(envelope, Mapping):
+                continue
+            try:
+                return EvaluationEventEnvelope.from_dict(envelope).event_id
+            except Exception:
+                return ""
+        return ""
+
+    @staticmethod
+    def _snapshot_disposition(
+        payload: Mapping[str, Any],
+    ) -> EvaluationDispositionEnvelope | None:
+        raw = payload.get(LAST_EVALUATION_DISPOSITION_KEY)
+        if not isinstance(raw, Mapping):
+            return None
+        try:
+            return EvaluationDispositionEnvelope.from_dict(raw)
+        except Exception:
+            return None
+
+    def _inspect_evaluation_disposition_destination(
+        self,
+        record: EvaluationEvidenceRecord,
+    ) -> dict[str, Any]:
+        """Read and compare the Event, intent, and terminal Snapshot edge."""
+
+        inspection: dict[str, Any] = {
+            "valid": False,
+            "reason": "missing_disposition_intent",
+            "destination_snapshot_key": "",
+        }
+        if record.disposition is None:
+            return inspection
+        try:
+            intent = EvaluationDispositionEnvelope.from_dict(record.disposition)
+        except Exception as exc:
+            inspection.update(
+                reason="invalid_disposition_intent",
+                error_type=type(exc).__name__,
+                message=str(exc),
+            )
+            return inspection
+        if intent.event_id != record.event_id:
+            inspection["reason"] = "disposition_event_id_mismatch"
+            return inspection
+        if not intent.event_snapshot_key:
+            inspection["reason"] = "event_snapshot_key_missing"
+            return inspection
+        if intent.event_snapshot_key != record.event_snapshot_key:
+            inspection["reason"] = "event_snapshot_key_mismatch"
+            return inspection
+        event_record = self.snapshot_store.read(intent.event_snapshot_key)
+        if event_record is None:
+            inspection["reason"] = "event_snapshot_unreadable"
+            return inspection
+        if self._snapshot_event_id(event_record.data) != intent.event_id:
+            inspection["reason"] = "event_snapshot_mismatch"
+            return inspection
+        destination_key = (
+            intent.authority_snapshot_key
+            if intent.status == "committed"
+            else record.disposition_snapshot_key
+        )
+        inspection["destination_snapshot_key"] = destination_key
+        if not destination_key:
+            inspection["reason"] = "destination_snapshot_key_missing"
+            return inspection
+        destination = self.snapshot_store.read(destination_key)
+        if destination is None:
+            inspection["reason"] = "destination_snapshot_unreadable"
+            return inspection
+        observed = self._snapshot_disposition(destination.data)
+        if observed is None:
+            inspection["reason"] = "destination_disposition_missing"
+            return inspection
+        if observed.as_dict() != intent.as_dict():
+            inspection["reason"] = "destination_disposition_mismatch"
+            return inspection
+        if intent.status == "committed":
+            expected_mode = str(
+                intent.metadata.get("authority_mode", "") or ""
+            ).strip().lower()
+            if not expected_mode:
+                inspection["reason"] = "authority_mode_missing"
+                return inspection
+            try:
+                validate_population_snapshot_v2(
+                    destination.data,
+                    snapshot_schema=destination.schema,
+                    expected_authority_mode=expected_mode,
+                    require_semantic_identity=True,
+                )
+            except Exception as exc:
+                inspection.update(
+                    reason="authority_snapshot_semantically_invalid",
+                    error_type=type(exc).__name__,
+                    message=str(exc),
+                )
+                return inspection
+        pin_owner = f"evaluation-evidence:{intent.event_id}"
+        pinned_event = False
+        pinned_destination = False
+        try:
+            event_record = self.snapshot_store.pin(
+                intent.event_snapshot_key,
+                owner=pin_owner,
+            )
+            pinned_event = True
+            destination = self.snapshot_store.pin(
+                destination_key,
+                owner=pin_owner,
+            )
+            pinned_destination = True
+        except Exception as exc:
+            if pinned_destination:
+                try:
+                    self.snapshot_store.unpin(destination_key, owner=pin_owner)
+                except Exception:
+                    pass
+            if pinned_event:
+                try:
+                    self.snapshot_store.unpin(
+                        intent.event_snapshot_key,
+                        owner=pin_owner,
+                    )
+                except Exception:
+                    pass
+            inspection.update(
+                reason="snapshot_retention_pin_failed",
+                error_type=type(exc).__name__,
+                message=str(exc),
+            )
+            return inspection
+        if not event_record.content_digest or not destination.content_digest:
+            try:
+                self.snapshot_store.unpin(destination_key, owner=pin_owner)
+            finally:
+                self.snapshot_store.unpin(
+                    intent.event_snapshot_key,
+                    owner=pin_owner,
+                )
+            inspection["reason"] = "snapshot_content_identity_missing"
+            return inspection
+        inspection.update(valid=True, reason="verified")
+        inspection["verification"] = EvaluationDispositionVerificationReceipt(
+            event_id=intent.event_id,
+            event_snapshot_key=intent.event_snapshot_key,
+            event_snapshot_revision=event_record.revision,
+            event_snapshot_digest=event_record.content_digest,
+            event_snapshot_schema=event_record.schema,
+            destination_snapshot_key=destination_key,
+            destination_snapshot_revision=destination.revision,
+            destination_snapshot_digest=destination.content_digest,
+            destination_snapshot_schema=destination.schema,
+            disposition_digest=evaluation_disposition_digest(intent),
+            verifier="nsgablack.snapshot_store",
+            verified_at=time.time(),
+            metadata={
+                "snapshot_backend": str(
+                    getattr(self.snapshot_store, "backend", "unknown")
+                ),
+                "retention_owner": pin_owner,
+            },
+        )
+        return inspection
+
+    def reconcile_evaluation_evidence(
+        self,
+        run_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Close orphaned evidence conservatively after restoring one run.
+
+        A durable disposition snapshot is settled idempotently.  An Event with
+        no durable decision is archived as ``abandoned``; evaluation or policy
+        execution is never replayed implicitly.  Storage read failures leave
+        the record unresolved so a later recovery pass can retry safely.
+        """
+
+        target_run_id = str(run_id or self._active_run_id or "").strip()
+        if not target_run_id:
+            raise ValueError("evaluation evidence recovery requires a run_id")
+        journal = self.evaluation_evidence_journal
+        records = journal.list_unresolved(run_id=target_run_id)
+        audit: list[dict[str, Any]] = []
+        deferred = 0
+        abandoned = 0
+        settled = 0
+        for original in records:
+            current = original
+            entry: dict[str, Any] = {
+                "event_id": current.event_id,
+                "from_status": current.status,
+                "action": "none",
+            }
+            try:
+                if current.status == "preparing":
+                    event_record = self.snapshot_store.read(
+                        current.event_snapshot_key
+                    )
+                    if event_record is None:
+                        deferred += 1
+                        entry["action"] = "deferred"
+                        entry["reason"] = "event_snapshot_unreadable"
+                    elif self._snapshot_event_id(event_record.data) != current.event_id:
+                        current = journal.abandon(
+                            current.event_id,
+                            reason="event_snapshot_mismatch",
+                            expected_revision=current.revision,
+                        )
+                        abandoned += 1
+                        entry["action"] = "abandoned"
+                    else:
+                        current = journal.mark_event_durable(
+                            current.event_id,
+                            expected_revision=current.revision,
+                        )
+                        entry["action"] = "event_confirmed"
+
+                if current.status == "pending":
+                    current = journal.abandon(
+                        current.event_id,
+                        reason="decision_not_durable",
+                        metadata={"recovery_policy": "no_implicit_replay"},
+                        expected_revision=current.revision,
+                    )
+                    abandoned += 1
+                    entry["action"] = "abandoned"
+
+                if current.status == "deciding" or (
+                    current.status in {"committed", "rejected", "failed"}
+                    and not current.terminal_verified
+                ):
+                    inspection = self._inspect_evaluation_disposition_destination(
+                        current
+                    )
+                    if bool(inspection["valid"]):
+                        current = journal.settle(
+                            current.event_id,
+                            verification=inspection["verification"],
+                            expected_revision=current.revision,
+                        )
+                        settled += 1
+                        entry["action"] = "settled"
+                    elif str(inspection["reason"]).endswith("_unreadable") or str(
+                        inspection["reason"]
+                    ) in {
+                        "authority_mode_missing",
+                        "authority_snapshot_semantically_invalid",
+                        "snapshot_retention_pin_failed",
+                        "snapshot_content_identity_missing",
+                    }:
+                        deferred += 1
+                        entry["action"] = "deferred"
+                        entry["reason"] = str(inspection["reason"])
+                    else:
+                        current = journal.abandon(
+                            current.event_id,
+                            reason=str(inspection["reason"]),
+                            metadata={
+                                "destination_snapshot_key": inspection[
+                                    "destination_snapshot_key"
+                                ]
+                            },
+                            expected_revision=current.revision,
+                        )
+                        abandoned += 1
+                        entry["action"] = "abandoned"
+                entry["to_status"] = current.status
+                entry["revision"] = current.revision
+                self._remember_evaluation_evidence_record(current)
+            except Exception as exc:
+                deferred += 1
+                entry.update(
+                    {
+                        "action": "deferred",
+                        "to_status": current.status,
+                        "error_type": type(exc).__name__,
+                        "message": str(exc),
+                    }
+                )
+            audit.append(entry)
+        report = {
+            "status": "deferred" if deferred else "complete",
+            "run_id": target_run_id,
+            "unresolved_count": len(records),
+            "settled_count": settled,
+            "abandoned_count": abandoned,
+            "deferred_count": deferred,
+            "records": audit,
+        }
+        self._evaluation_evidence_recovery_report = report
+        return copy.deepcopy(report)
+
+    def export_evaluation_disposition_checkpoint_state(
+        self,
+    ) -> dict[str, Any] | None:
+        """Export the latest Event -> disposition -> authority edge."""
+
+        if self._last_evaluation_disposition is None:
+            return None
+        return EvaluationDispositionEnvelope.from_dict(
+            self._last_evaluation_disposition
+        ).as_dict()
+
+    def restore_evaluation_disposition_checkpoint_state(
+        self,
+        payload: Mapping[str, Any] | None,
+    ) -> None:
+        if payload is None:
+            self._last_evaluation_disposition = None
+            return
+        envelope = EvaluationDispositionEnvelope.from_dict(payload)
+        self._last_evaluation_disposition = envelope.as_dict()
+
+    def pending_snapshot_step_key(self) -> str | None:
+        """Return the staged authority key without publishing it."""
+
+        transaction = self._snapshot_step_transaction
+        if not isinstance(transaction, Mapping):
+            return None
+        pending = transaction.get("pending")
+        if not isinstance(pending, Mapping):
+            return None
+        key = str(pending.get("key", "") or "")
+        return key or None
+
+    def attach_evaluation_disposition_to_pending_snapshot(
+        self,
+        envelope: EvaluationDispositionEnvelope,
+    ) -> bool:
+        """Atomically couple a committed disposition to staged authority."""
+
+        if not isinstance(envelope, EvaluationDispositionEnvelope):
+            raise TypeError("envelope must be EvaluationDispositionEnvelope")
+        self._last_evaluation_disposition = envelope.as_dict()
+        transaction = self._snapshot_step_transaction
+        if not isinstance(transaction, dict):
+            return False
+        pending = transaction.get("pending")
+        if not isinstance(pending, dict):
+            return False
+        data = pending.get("data")
+        if not isinstance(data, dict):
+            raise RuntimeError("staged authority Snapshot has no mutable data envelope")
+        data[LAST_EVALUATION_DISPOSITION_KEY] = envelope.as_dict()
+        return True
+
+    def write_evaluation_disposition_snapshot(
+        self,
+        envelope: EvaluationDispositionEnvelope,
+        *,
+        force_key: str | None = None,
+    ) -> str | None:
+        """Publish a rejected/failed disposition without changing authority."""
+
+        if not isinstance(envelope, EvaluationDispositionEnvelope):
+            raise TypeError("envelope must be EvaluationDispositionEnvelope")
+        self._last_evaluation_disposition = envelope.as_dict()
+        if self.snapshot_store is None:
+            return None
+        key = str(
+            force_key
+            or self._evaluation_evidence_snapshot_key(
+                "disposition",
+                envelope.event_id,
+            )
+        )
+        handle = self._write_snapshot_record(
+            {
+                "data": {LAST_EVALUATION_DISPOSITION_KEY: envelope.as_dict()},
+                "key": key,
+                "meta": {
+                    "publication": "evaluation_disposition",
+                    "event_id": envelope.event_id,
+                    "status": envelope.status,
+                },
+                "schema": "nsgablack.evaluation_disposition_snapshot/v1",
+                "ttl_seconds": self.snapshot_store_ttl_seconds,
+                "generation": getattr(self, "generation", None),
+                "publication": "evaluation_disposition",
+            },
+            strict=bool(getattr(self, "snapshot_strict", False)),
+        )
+        return None if handle is None else str(handle.key)
+
     def write_population_snapshot(
         self,
         population: np.ndarray,
@@ -2464,7 +3541,7 @@ class SolverBase:
         self.population = pop
         self.objectives = obj
         self.constraint_violations = vio
-        self._persist_snapshot(
+        return self._persist_snapshot(
             population=pop,
             objectives=obj,
             violations=vio,
@@ -2472,7 +3549,6 @@ class SolverBase:
             include_history=True,
             include_decision_trace=True,
         )
-        return True
 
     def write_partitioned_population_snapshot(self) -> bool:
         """Publish partition authority when no last-evaluated batch exists."""
@@ -2481,15 +3557,45 @@ class SolverBase:
             raise RuntimeError(
                 "write_partitioned_population_snapshot requires partitioned authority"
             )
-        self._persist_snapshot(
+        return self._persist_snapshot(
             population=None,
             objectives=None,
             violations=None,
             include_pareto=True,
             include_history=True,
             include_decision_trace=True,
+            resolve_defaults=False,
         )
-        return self._latest_snapshot_handle is not None
+
+    def begin_snapshot_step_transaction(self) -> None:
+        """Begin one deferred authoritative Snapshot publication."""
+
+        if self._snapshot_step_transaction is not None:
+            raise RuntimeError("a Snapshot step transaction is already active")
+        self._snapshot_step_transaction = {
+            "schema": "nsgablack.snapshot_step_transaction/v1",
+            "pending": None,
+        }
+
+    def commit_snapshot_step_transaction(self) -> None:
+        """Durably publish the last staged authority under a fresh key."""
+
+        transaction = self._snapshot_step_transaction
+        if transaction is None:
+            return
+        pending = transaction.get("pending")
+        if pending is None:
+            self._snapshot_step_transaction = None
+            return
+        handle = self._write_snapshot_record(pending, strict=True)
+        if handle is None:  # pragma: no cover - strict writes raise
+            raise RuntimeError("authoritative Snapshot transaction did not publish")
+        self._snapshot_step_transaction = None
+
+    def rollback_snapshot_step_transaction(self) -> None:
+        """Discard a staged authority without touching committed Snapshots."""
+
+        self._snapshot_step_transaction = None
 
     def _snapshot_run_id(self) -> Optional[str]:
         for attr in ("run_id", "_run_id", "experiment_id"):
@@ -2532,6 +3638,20 @@ class SolverBase:
                 "authority_mode": authority_mode,
             }
         )
+        event_arrays = self._last_evaluated_event_arrays
+        meta.update(
+            {
+                "last_evaluated_population_shape": (
+                    None if event_arrays is None else list(event_arrays[0].shape)
+                ),
+                "last_evaluated_objectives_shape": (
+                    None if event_arrays is None else list(event_arrays[1].shape)
+                ),
+                "last_evaluated_violations_shape": (
+                    None if event_arrays is None else list(event_arrays[2].shape)
+                ),
+            }
+        )
         if authority_mode == "partitioned":
             export_partitions = getattr(
                 self,
@@ -2552,21 +3672,6 @@ class SolverBase:
                     "objectives_shape": None,
                     "violations_shape": None,
                     "partition_count": len(partitions),
-                    "last_evaluated_population_shape": (
-                        list(getattr(population, "shape", ()))
-                        if population is not None
-                        else None
-                    ),
-                    "last_evaluated_objectives_shape": (
-                        list(getattr(objectives, "shape", ()))
-                        if objectives is not None
-                        else None
-                    ),
-                    "last_evaluated_violations_shape": (
-                        list(getattr(violations, "shape", ()))
-                        if violations is not None
-                        else None
-                    ),
                 }
             )
         return meta
@@ -2582,10 +3687,29 @@ class SolverBase:
         history: Optional[Any] = None,
         decision_trace: Optional[Any] = None,
     ) -> Dict[str, Any]:
+        stored_event_batch = self._last_evaluated_event_batch
+        stored_event_feedback = self._last_evaluated_event_feedback
+        stored_event_arrays = self._last_evaluated_event_arrays
+        has_semantic_event = (
+            stored_event_batch is not None and stored_event_feedback is not None
+        )
+        has_stored_event = stored_event_arrays is not None
         event_payload = build_snapshot_payload(
-            population,
-            objectives,
-            violations,
+            (
+                stored_event_arrays[0]
+                if has_stored_event
+                else population
+            ),
+            (
+                stored_event_arrays[1]
+                if has_stored_event
+                else objectives
+            ),
+            (
+                stored_event_arrays[2]
+                if has_stored_event
+                else violations
+            ),
         )
         authority_mode = str(
             getattr(self, "population_authority_mode", "single") or "single"
@@ -2600,8 +3724,9 @@ class SolverBase:
                 history=history,
                 decision_trace=decision_trace,
             )
+            # Keep the partition event slot present even when no evaluation
+            # has happened; v2 readers use this as a legacy authority hint.
             payload[LAST_EVALUATED_BATCH_KEY] = event_payload
-            semantic_target = event_payload
         else:
             payload = build_snapshot_payload(
                 population,
@@ -2612,24 +3737,40 @@ class SolverBase:
                 history=history,
                 decision_trace=decision_trace,
             )
-            semantic_target = payload
+            if has_stored_event:
+                payload[LAST_EVALUATION_EVENT_KEY] = event_payload
         payload[POPULATION_AUTHORITY_KEY] = {
             "schema": POPULATION_SNAPSHOT_SCHEMA_V2,
             "authority_mode": authority_mode,
         }
-        batch = self._candidate_population_batch
-        if batch is not None and population is not None:
+        if self._last_evaluation_disposition is not None:
+            payload[LAST_EVALUATION_DISPOSITION_KEY] = copy.deepcopy(
+                self._last_evaluation_disposition
+            )
+        authority_batch = self._candidate_population_batch
+        if authority_batch is not None and population is not None:
             numeric = np.asarray(population, dtype=float)
-            if numeric.shape == batch.numeric_matrix.shape and np.array_equal(
+            if numeric.shape == authority_batch.numeric_matrix.shape and np.array_equal(
                 numeric,
-                batch.numeric_matrix,
+                authority_batch.numeric_matrix,
                 equal_nan=True,
             ):
-                semantic_target[_CANDIDATE_BATCH_SNAPSHOT_KEY] = batch.as_dict()
-                semantic_target[_CANDIDATE_PROVENANCE_SNAPSHOT_KEY] = [
+                payload[_CANDIDATE_BATCH_SNAPSHOT_KEY] = authority_batch.as_dict()
+                payload[_CANDIDATE_PROVENANCE_SNAPSHOT_KEY] = [
                     item.as_dict()
                     for item in self._candidate_population_provenance
                 ]
+        if has_semantic_event:
+            event_payload[_CANDIDATE_BATCH_SNAPSHOT_KEY] = (
+                stored_event_batch.as_dict()
+            )
+            event_payload[_CANDIDATE_PROVENANCE_SNAPSHOT_KEY] = [
+                item.as_dict()
+                for item in self._last_evaluated_event_provenance
+            ]
+            event_payload["evaluation_event_envelope"] = (
+                self.export_evaluation_event_checkpoint_state()
+            )
         export_partitions = getattr(
             self,
             "export_candidate_population_partitions_checkpoint_state",
@@ -2652,16 +3793,25 @@ class SolverBase:
         include_decision_trace: bool = False,
         force_key: Optional[str] = None,
         complete: Optional[bool] = None,
-    ) -> None:
+        resolve_defaults: bool = True,
+        publication: str = "authority",
+    ) -> bool:
         store = getattr(self, "snapshot_store", None)
         if store is None:
-            return
+            return False
+        publication_kind = str(publication or "authority").strip().lower()
+        if publication_kind not in {
+            "authority",
+            "evaluation_event",
+            "evaluation_disposition",
+        }:
+            raise ValueError(f"unsupported Snapshot publication kind: {publication_kind}")
         try:
-            if population is None:
+            if resolve_defaults and population is None:
                 population = getattr(self, "population", None)
-            if objectives is None:
+            if resolve_defaults and objectives is None:
                 objectives = getattr(self, "objectives", None)
-            if violations is None:
+            if resolve_defaults and violations is None:
                 violations = getattr(self, "constraint_violations", None)
         except Exception as exc:
             report_soft_error(
@@ -2710,9 +3860,6 @@ class SolverBase:
 
         key = force_key
         gen = getattr(self, "generation", None)
-        if key is None and self._latest_snapshot_handle is not None:
-            if self._snapshot_generation == gen:
-                key = self._latest_snapshot_handle.key
         if key is None:
             key = self._build_snapshot_key()
 
@@ -2725,15 +3872,49 @@ class SolverBase:
             history=history,
             decision_trace=decision_trace,
         )
+        record = {
+            "data": copy.deepcopy(payload),
+            "key": str(key),
+            "meta": copy.deepcopy(meta),
+            "schema": self.snapshot_schema,
+            "ttl_seconds": self.snapshot_store_ttl_seconds,
+            "generation": gen,
+            "publication": publication_kind,
+        }
+        transaction = self._snapshot_step_transaction
+        if publication_kind == "authority" and transaction is not None:
+            transaction["pending"] = record
+            return True
+        return self._write_snapshot_record(
+            record,
+            strict=bool(getattr(self, "snapshot_strict", False)),
+        ) is not None
+
+    def _write_snapshot_record(
+        self,
+        record: Mapping[str, Any],
+        *,
+        strict: bool,
+    ) -> Any:
+        store = getattr(self, "snapshot_store", None)
+        if store is None:
+            if strict:
+                raise RuntimeError("SnapshotStore is unavailable")
+            return None
         # Cancellation/deadline must win before a durable snapshot commit.
         self.checkpoint_case_runtime()
         try:
             handle = store.write(
-                payload,
-                key=key,
-                meta=meta,
-                schema=self.snapshot_schema,
-                ttl_seconds=self.snapshot_store_ttl_seconds,
+                record["data"],
+                key=str(record["key"]),
+                meta=dict(record.get("meta", {}) or {}),
+                schema=str(record.get("schema", self.snapshot_schema)),
+                ttl_seconds=record.get("ttl_seconds"),
+                write_once=str(record.get("publication", "authority")) in {
+                    "authority",
+                    "evaluation_event",
+                    "evaluation_disposition",
+                },
             )
         except Exception as exc:
             report_soft_error(
@@ -2742,11 +3923,19 @@ class SolverBase:
                 exc=exc,
                 logger=logger,
                 context_store=self.context_store,
-                strict=bool(getattr(self, "snapshot_strict", False)),
+                strict=bool(strict),
             )
-            return
-        self._latest_snapshot_handle = handle
-        self._snapshot_generation = gen
+            if strict:
+                raise
+            return None
+        if str(record.get("publication", "authority")) == "evaluation_event":
+            self._latest_evaluation_snapshot_handle = handle
+        elif str(record.get("publication", "authority")) == "evaluation_disposition":
+            self._latest_evaluation_disposition_snapshot_handle = handle
+        else:
+            self._latest_snapshot_handle = handle
+            self._snapshot_generation = record.get("generation")
+        return handle
 
     def read_snapshot(self, key: Optional[str] = None) -> Optional[Dict[str, Any]]:
         store = getattr(self, "snapshot_store", None)
@@ -2787,9 +3976,9 @@ class SolverBase:
             return None if value is None else np.array(value, copy=True)
 
         return (
-            _copy(getattr(self, "population", None)),
-            _copy(getattr(self, "objectives", None)),
-            _copy(getattr(self, "constraint_violations", None)),
+            _copy(None if self._last_evaluated_event_arrays is None else self._last_evaluated_event_arrays[0]),
+            _copy(None if self._last_evaluated_event_arrays is None else self._last_evaluated_event_arrays[1]),
+            _copy(None if self._last_evaluated_event_arrays is None else self._last_evaluated_event_arrays[2]),
         )
 
     def _strip_large_context(self, ctx: Dict[str, Any]) -> None:
@@ -2883,8 +4072,7 @@ class SolverBase:
                         strict=False,
                         level="debug",
                     )
-        ctx.update(
-            build_snapshot_refs(
+        snapshot_refs = build_snapshot_refs(
                 key=str(handle.key),
                 backend=str(handle.backend),
                 schema=str(handle.schema),
@@ -2897,7 +4085,27 @@ class SolverBase:
                     getattr(self, "population_authority_mode", "single") or "single"
                 ),
             )
-        )
+        if dict(handle.meta or {}).get("population_shape") is None:
+            for key in (
+                KEY_POPULATION_REF,
+                KEY_OBJECTIVES_REF,
+                KEY_CONSTRAINT_VIOLATIONS_REF,
+            ):
+                snapshot_refs.pop(key, None)
+                ctx.pop(key, None)
+                try:
+                    self.context_store.delete(key)
+                except Exception as exc:
+                    report_soft_error(
+                        component="SolverBase",
+                        event="empty_authority_snapshot_ref_delete",
+                        exc=exc,
+                        logger=logger,
+                        context_store=self.context_store,
+                        strict=False,
+                        level="debug",
+                    )
+        ctx.update(snapshot_refs)
 
     def set_random_seed(self, seed: Optional[int]) -> None:
         self.random_seed = None if seed is None else int(seed)
@@ -3055,6 +4263,15 @@ class SolverBase:
             logger=logger,
         )
 
+    def _build_evaluation_evidence_journal(self) -> EvaluationEvidenceJournal:
+        base_dir = self.snapshot_store_dir or "runs/snapshots"
+        return create_evaluation_evidence_journal(
+            backend=self.snapshot_store_backend,
+            redis_url=self.snapshot_store_redis_url,
+            key_prefix=f"{self.snapshot_store_key_prefix}:evaluation-evidence",
+            base_dir=base_dir,
+        )
+
     def get_runtime_projection_audit(self) -> Dict[str, Any]:
         """Return lightweight evidence for the latest Adapter telemetry gate."""
 
@@ -3097,9 +4314,53 @@ class SolverBase:
             dict(getattr(error, "_nsgablack_error_context", {}) or {})
         )
         manager = getattr(self, "plugin_manager", None)
-        on_error = getattr(manager, "on_error", None)
-        if callable(on_error):
-            on_error(error, error_context)
+        if manager is None:
+            return
+        receipt = getattr(self, "_run_plugin_receipt", None)
+        try:
+            if isinstance(receipt, PluginLifecycleReceipt):
+                manager.finish_lifecycle(
+                    receipt,
+                    "on_error",
+                    error,
+                    error_context,
+                )
+            else:
+                on_error = getattr(manager, "on_error", None)
+                if callable(on_error):
+                    on_error(error, error_context)
+        except BaseException as dispatch_error:
+            failures = tuple(
+                {
+                    "plugin": str(name),
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                }
+                for name, exc in tuple(
+                    getattr(dispatch_error, "errors", ()) or ()
+                )
+            ) or (
+                {
+                    "plugin": "plugin_manager",
+                    "error_type": type(dispatch_error).__name__,
+                    "message": str(dispatch_error),
+                },
+            )
+            try:
+                setattr(error, "_nsgablack_on_error_failures", failures)
+            except Exception:
+                pass
+            add_note = getattr(error, "add_note", None)
+            if callable(add_note):
+                add_note(f"Plugin on_error handlers also failed: {failures!r}")
+            logger.error(
+                "Plugin on_error dispatch failed while preserving the primary error",
+                exc_info=(
+                    type(dispatch_error),
+                    dispatch_error,
+                    dispatch_error.__traceback__,
+                ),
+            )
 
     def evaluate_individual(self, x: np.ndarray, individual_id: Optional[int] = None) -> Tuple[np.ndarray, float]:
         try:
@@ -3261,9 +4522,26 @@ class SolverBase:
     def _record_completed_run_step(self) -> None:
         self._run_progress_steps = int(self._run_progress_steps) + 1
 
+    def _record_run_step_attempt(self, status: str) -> None:
+        self._run_progress_attempts = int(self._run_progress_attempts) + 1
+        if str(status) in {"idle", "rejected"}:
+            self._run_progress_consecutive_idle_attempts = (
+                int(self._run_progress_consecutive_idle_attempts) + 1
+            )
+        else:
+            self._run_progress_consecutive_idle_attempts = 0
+
     @property
     def run_progress_steps(self) -> int:
         return int(self._run_progress_steps)
+
+    @property
+    def run_progress_attempts(self) -> int:
+        return int(self._run_progress_attempts)
+
+    @property
+    def run_progress_consecutive_idle_attempts(self) -> int:
+        return int(self._run_progress_consecutive_idle_attempts)
 
     @property
     def run_progress_elapsed_seconds(self) -> float:
@@ -3288,6 +4566,8 @@ class SolverBase:
             )
         return RunProgressState(
             steps_completed=self.run_progress_steps,
+            attempts_completed=self.run_progress_attempts,
+            consecutive_idle_attempts=self.run_progress_consecutive_idle_attempts,
             elapsed_seconds=self.run_progress_elapsed_seconds,
             deadline_remaining_seconds=remaining,
             run_id=self._active_run_id,
@@ -3299,6 +4579,8 @@ class SolverBase:
     ) -> None:
         if not isinstance(payload, Mapping):
             self._run_progress_steps = 0
+            self._run_progress_attempts = 0
+            self._run_progress_consecutive_idle_attempts = 0
             self._run_progress_elapsed_seconds = 0.0
             self._run_progress_clock_started_at = None
             self._run_progress_deadline_remaining_seconds = None
@@ -3315,6 +4597,10 @@ class SolverBase:
                 f"progress={state.run_id!r}, solver={active_run_id!r}"
             )
         self._run_progress_steps = state.steps_completed
+        self._run_progress_attempts = state.attempts_completed
+        self._run_progress_consecutive_idle_attempts = (
+            state.consecutive_idle_attempts
+        )
         self._run_progress_elapsed_seconds = state.elapsed_seconds
         self._run_progress_clock_started_at = None
         self._run_progress_deadline_remaining_seconds = (
@@ -3332,22 +4618,36 @@ class SolverBase:
         """
 
         components: dict[str, Any] = {}
-        if self.adapter is not None:
-            components["adapter"] = self.adapter
-        if self.representation_pipeline is not None:
-            components["representation"] = self.representation_pipeline
+        adapter = getattr(self, "adapter", None)
+        if adapter is not None:
+            components["adapter"] = adapter
+        representation = getattr(self, "representation_pipeline", None)
+        if representation is not None:
+            components["representation"] = representation
+        components["runtime_controller"] = self.runtime_controller
         return components
 
-    def step(self) -> None:
-        return None
+    def step(self) -> StepOutcome:
+        raise NotImplementedError(
+            f"{type(self).__name__}.step() must return a StepOutcome"
+        )
 
     def teardown(self) -> None:
         return None
 
-    def run(self, max_steps: Optional[int] = None) -> Dict[str, Any]:
+    def run(
+        self,
+        max_steps: Optional[int] = None,
+        *,
+        max_step_attempts: Optional[int] = None,
+    ) -> Dict[str, Any]:
         self.validate_plugin_order()
         self.validate_control_plane()
-        return run_solver_loop(self, max_steps=max_steps)
+        return run_solver_loop(
+            self,
+            max_steps=max_steps,
+            max_step_attempts=max_step_attempts,
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers

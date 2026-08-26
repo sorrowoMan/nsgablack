@@ -1,0 +1,4 @@
+"""Nested Trainer defaults."""
+
+INNER_TIMEOUT_SECONDS = 10.0
+INNER_EVALUATION_BUDGET = 2

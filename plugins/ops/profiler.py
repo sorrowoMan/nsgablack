@@ -55,17 +55,23 @@ class ProfilerPlugin(Plugin):
         self.is_algorithmic = False
 
         self._t0: float = 0.0
-        self._gen_t0: Optional[float] = None
-        self._eval0: int = 0
+        self._attempt_t0: Optional[float] = None
+        self._attempt_eval0: int = 0
+        self._attempt_number: Optional[int] = None
+        self._attempt_logical_step: Optional[int] = None
         self._records: List[Dict[str, Any]] = []
+        self._attempt_records: List[Dict[str, Any]] = []
         self._out_dir: Optional[Path] = None
         self._path: Optional[Path] = None
 
     def on_solver_init(self, solver: Any):
         self._t0 = time.time()
-        self._gen_t0 = None
-        self._eval0 = int(getattr(solver, "evaluation_count", 0) or 0)
+        self._attempt_t0 = None
+        self._attempt_eval0 = int(getattr(solver, "evaluation_count", 0) or 0)
+        self._attempt_number = None
+        self._attempt_logical_step = None
         self._records = []
+        self._attempt_records = []
 
         out_dir = Path(str(self.cfg.output_dir)).expanduser().resolve()
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -75,25 +81,60 @@ class ProfilerPlugin(Plugin):
             raise FileExistsError(f"ProfilerPlugin: file exists: {self._path}")
         return None
 
-    def on_generation_start(self, generation: int):
-        self._gen_t0 = time.time()
+    def on_step_attempt_start(self, attempt: int, logical_step: int):
+        solver = self.solver
+        self._attempt_t0 = time.time()
+        self._attempt_eval0 = int(
+            getattr(solver, "evaluation_count", 0) or 0
+        ) if solver is not None else 0
+        self._attempt_number = int(attempt)
+        self._attempt_logical_step = int(logical_step)
         return None
 
     def on_generation_end(self, generation: int):
+        # Generation-end occurs before attempt-end.  Final accounting belongs
+        # to the attempt boundary so rejected/failed evaluations cannot leak
+        # into the next committed generation's numerator.
+        del generation
+        return None
+
+    def on_step_attempt_end(
+        self,
+        attempt: int,
+        logical_step: int,
+        outcome: Dict[str, Any],
+    ):
         solver = self.solver
         if solver is None:
             return None
 
         t1 = time.time()
-        t0 = self._gen_t0 if self._gen_t0 is not None else t1
+        t0 = self._attempt_t0 if self._attempt_t0 is not None else t1
         dt = max(0.0, float(t1 - float(t0)))
 
         eval1 = int(getattr(solver, "evaluation_count", 0) or 0)
-        de = int(eval1 - int(self._eval0))
-        self._eval0 = eval1
+        de = int(eval1 - int(self._attempt_eval0))
+        status = str(dict(outcome or {}).get("status", "unknown") or "unknown")
+        committed = bool(dict(outcome or {}).get("committed", False))
+
+        attempt_rec = {
+            "attempt": int(attempt),
+            "logical_step": int(logical_step),
+            "status": status,
+            "committed": committed,
+            "wall_s": float(dt),
+            "eval_delta": int(de),
+            "eval_per_s": float(de) / dt if dt > 1e-12 else 0.0,
+        }
+        self._attempt_records.append(attempt_rec)
+
+        if not committed:
+            self._attempt_t0 = None
+            return None
 
         rec = {
-            "generation": int(generation),
+            "generation": int(logical_step),
+            "attempt": int(attempt),
             "wall_s": float(dt),
             "eval_delta": int(de),
             "eval_per_s": float(de) / dt if dt > 1e-12 else 0.0,
@@ -117,6 +158,7 @@ class ProfilerPlugin(Plugin):
                     json.dumps(self._build_payload(final=False), ensure_ascii=False, indent=2),
                     encoding="utf-8",
                 )
+        self._attempt_t0 = None
         return None
 
     def on_solver_finish(self, result: Dict[str, Any]):
@@ -171,6 +213,20 @@ class ProfilerPlugin(Plugin):
 
         summary = {
             "generations": int(len(self._records)),
+            "attempts": int(len(self._attempt_records)),
+            "attempt_status_counts": {
+                status: sum(
+                    1
+                    for record in self._attempt_records
+                    if str(record.get("status", "unknown")) == status
+                )
+                for status in sorted(
+                    {
+                        str(record.get("status", "unknown"))
+                        for record in self._attempt_records
+                    }
+                )
+            },
             "wall_s_p50": _pct(wall_times, 0.50),
             "wall_s_p95": _pct(wall_times, 0.95),
             "eval_per_s_p50": _pct(eval_rates, 0.50),
@@ -185,6 +241,7 @@ class ProfilerPlugin(Plugin):
             "throughput_eval_s": float(eval_count) / elapsed if elapsed > 1e-12 else 0.0,
             "summary": summary,
             "per_generation": list(self._records),
+            "per_attempt": list(self._attempt_records),
             "plugins_profile": plugin_profiles,
         }
 

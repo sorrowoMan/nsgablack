@@ -4,6 +4,7 @@ Pattern Search adapter.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Sequence, Tuple
 
@@ -117,6 +118,7 @@ class PatternSearchAdapter(AlgorithmAdapter):
             "current_x": None if self.current_x is None else self.current_x.tolist(),
             "current_score": self.current_score,
             "step_size": float(self.step_size),
+            "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
@@ -127,6 +129,9 @@ class PatternSearchAdapter(AlgorithmAdapter):
         score = state.get("current_score")
         self.current_score = None if score is None else float(score)
         self.step_size = float(state.get("step_size", self.cfg.step_size))
+        rng_state = state.get("rng_state")
+        if isinstance(rng_state, dict):
+            self._rng.bit_generator.state = copy.deepcopy(rng_state)
         self._runtime_projection = {
             KEY_MUTATION_SIGMA: float(self.step_size),
             KEY_ADAPTER_BEST_SCORE: None if self.current_score is None else float(self.current_score),

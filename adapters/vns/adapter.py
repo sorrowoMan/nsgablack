@@ -94,40 +94,31 @@ class VNSAdapter(AlgorithmAdapter):
         }
 
     def _warn_if_pipeline_does_not_consume_context(self, control: Any) -> None:
+        """Emit diagnostics without depending on the host source-code code page."""
         if self._warned_missing_operator:
             return
-
         pipeline = getattr(control, "representation_pipeline", None)
         mutator = getattr(pipeline, "mutator", None) if pipeline is not None else None
         if mutator is None:
             warnings.warn(
-                "VNSAdapter 未检测到 representation_pipeline.mutator；"
-                "VNS 只能产生固定邻域或直接失败。"
-                "请配置 RepresentationPipeline(mutator=...)；"
-                "连续变量推荐 ContextGaussianMutation，离散/排列推荐 ContextSelectMutator。",
+                "VNSAdapter found no representation_pipeline.mutator; VNS can only "
+                "produce a fixed candidate or fail. Configure a context-aware "
+                "ContextGaussianMutation or ContextSelectMutator.",
                 RuntimeWarning,
                 stacklevel=3,
             )
             self._warned_missing_operator = True
             return
-
-        # Heuristic detection: if a mutator exposes a context key it consumes,
-        # it's likely context-aware. Otherwise, VNS still runs but neighborhood
-        # switching may silently degrade.
-        consumes = False
-        for attr in ("sigma_key", "k_key", "context_key", "key"):
-            if hasattr(mutator, attr):
-                consumes = True
-                break
-
+        consumes = any(
+            hasattr(mutator, attr)
+            for attr in ("sigma_key", "k_key", "context_key", "key")
+        )
         if not consumes:
             warnings.warn(
-                "VNSAdapter 检测到当前 mutator 可能不会消费 context"
-                "（未发现 sigma_key/k_key 等属性）。"
-                "这会导致 VNS 的 k 邻域变化退化为“固定扰动”。"
-                "建议：连续变量使用 ContextGaussianMutation(sigma_key='mutation_sigma')；"
-                "非连续/多邻域使用 ContextSelectMutator(k_key='vns_k') "
-                "或自定义可读取 context 的 mutator。",
+                "VNSAdapter found a mutator that may not consume context (no "
+                "sigma_key/k_key-like attribute). Neighborhood changes may degrade "
+                "to fixed perturbations. Use ContextGaussianMutation, "
+                "ContextSelectMutator, or another context-aware mutator.",
                 RuntimeWarning,
                 stacklevel=3,
             )

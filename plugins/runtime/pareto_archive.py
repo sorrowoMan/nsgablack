@@ -96,7 +96,8 @@ class ParetoArchivePlugin(Plugin):
 
     # ---- Plugin hooks ----------------------------------------------------
 
-    def on_generation_end(self, generation: int):
+    def on_generation_committed(self, generation: int, outcome):
+        del outcome
         if not self._should_update(int(generation)):
             return None
         self._update_from_solver(generation=int(generation))

@@ -1,6 +1,6 @@
-# 11. 自定义 Plugin：10 钩子完整实战（nsgablack）
+# 11. 自定义 Plugin：15 钩子完整实战（nsgablack）
 
-本章是“能直接抄”的插件说明书，覆盖 10 个统一钩子与一个可运行样例。
+本章是“能直接抄”的插件说明书，覆盖 15 个统一钩子与一个可运行样例。
 
 ## 0. 插件定位
 
@@ -20,20 +20,33 @@ Plugin 不负责：
 
 ---
 
-## 1. 10 个统一钩子
+## 1. 15 个统一钩子
 
 按生命周期顺序：
 
 1. `on_solver_init(self, solver)`
 2. `on_population_init(self, population, objectives, violations)`
-3. `on_generation_start(self, generation)`
-4. `on_evaluate_start(self, candidate, context=None)`
-5. `on_evaluate_end(self, candidate, feedback, context=None)`
-6. `on_step(self, solver, generation)`
-7. `on_generation_end(self, generation)`
-8. `on_solver_finish(self, result)`
-9. `on_error(self, error, context=None)`
-10. `on_context_build(self, context) -> context`
+3. `on_step_attempt_start(self, attempt, logical_step)`
+4. `on_generation_start(self, generation)`
+5. `on_evaluate_start(self, candidate, context=None)`
+6. `on_evaluate_end(self, candidate, feedback, context=None)`
+7. `on_step(self, solver, generation)`（仅 committed）
+8. `on_generation_committed(self, generation, outcome)`（仅 committed）
+9. `on_generation_end(self, generation)`
+10. `on_step_attempt_end(self, attempt, logical_step, outcome)`
+11. `on_solver_finish(self, result)`
+12. `on_solver_finalization_prepare(self, result)`
+13. `on_solver_finalized(self, result)`
+14. `on_error(self, error, context=None)`
+15. `on_context_build(self, context) -> context`
+
+`on_step_attempt_start/end` 表达物理尝试事务，即使结果是 idle、rejected、
+cancelled 或 error 也成对触发。`on_generation_start/end` 只包围已经确认
+committed 的逻辑代；持久化、checkpoint、archive 等完成副作用应实现
+`on_generation_committed`。
+
+`on_solver_finalization_prepare` 发生在 teardown 成功后、事务型结果正式提交前，
+严格插件可以在这里否决发布；`on_solver_finalized` 只接收已经提交并具有权威语义的结果。
 
 ---
 
@@ -45,7 +58,7 @@ python -m nsgablack project add-component --case my_solver --kind plugin --name 
 
 ---
 
-## 3. 可运行完整样例（10 钩子全实现）
+## 3. 可运行完整样例（15 钩子全实现）
 
 ```python
 from __future__ import annotations
@@ -88,6 +101,9 @@ class TraceAuditPlugin(Plugin):
     def on_generation_start(self, generation: int):
         self._push("on_generation_start", {"generation": int(generation)})
 
+    def on_step_attempt_start(self, attempt: int, logical_step: int):
+        self._push("on_step_attempt_start", {"attempt": attempt, "logical_step": logical_step})
+
     def on_evaluate_start(self, candidate, context: Optional[Dict[str, Any]] = None):
         self._push("on_evaluate_start", {"has_context": isinstance(context, dict)})
 
@@ -97,12 +113,24 @@ class TraceAuditPlugin(Plugin):
     def on_step(self, solver, generation: int):
         self._push("on_step", {"generation": int(generation)})
 
+    def on_generation_committed(self, generation: int, outcome):
+        self._push("on_generation_committed", {"generation": generation, "outcome": dict(outcome)})
+
     def on_generation_end(self, generation: int):
         self._push("on_generation_end", {"generation": int(generation)})
+
+    def on_step_attempt_end(self, attempt: int, logical_step: int, outcome):
+        self._push("on_step_attempt_end", {"attempt": attempt, "logical_step": logical_step, "outcome": dict(outcome)})
 
     def on_solver_finish(self, result: Dict[str, Any]):
         elapsed = 0.0 if self._t0 is None else time.time() - self._t0
         self._push("on_solver_finish", {"elapsed_s": float(elapsed)})
+
+    def on_solver_finalization_prepare(self, result: Dict[str, Any]):
+        self._push("on_solver_finalization_prepare", {"ready": bool(result.get("trainer_result_ready", False))})
+
+    def on_solver_finalized(self, result: Dict[str, Any]):
+        self._push("on_solver_finalized", {"status": str(result.get("status", ""))})
 
     def on_error(self, error: BaseException, context: Optional[Dict[str, Any]] = None):
         self._push("on_error", {"error": f"{type(error).__name__}: {error}"})

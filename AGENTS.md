@@ -120,12 +120,17 @@ mlblack `Capability` maps into the unified nsgablack `Plugin` lifecycle. `nsgabl
 |---|---|---|
 | `on_solver_init` | nsgablack / mlblack `on_fit_start` | run start |
 | `on_population_init` | nsgablack | after initial population |
-| `on_generation_start` | nsgablack / mlblack `on_step_start` | generation/step start |
+| `on_step_attempt_start` | unified | every physical attempt start |
+| `on_generation_start` | nsgablack / mlblack `on_step_start` | committed logical generation start |
 | `on_evaluate_start` | mlblack / unified | before candidate evaluation |
 | `on_evaluate_end` | mlblack / unified | after candidate evaluation |
 | `on_step` | nsgablack | after generation step |
-| `on_generation_end` | nsgablack / mlblack `on_step_end` | generation/step end |
+| `on_generation_committed` | unified | committed logical generation only |
+| `on_generation_end` | nsgablack / mlblack `on_step_end` | committed logical generation end |
+| `on_step_attempt_end` | unified | every physical attempt end, including failures |
 | `on_solver_finish` | nsgablack / mlblack `on_fit_end` | run finish |
+| `on_solver_finalization_prepare` | unified | teardown 成功后、事务提交前的严格发布校验 |
+| `on_solver_finalized` | unified | 最终结果与 Artifact 已成为权威状态后的通知 |
 | `on_error` | mlblack / unified | error handling |
 | `on_context_build` | nsgablack | context construction |
 
@@ -219,8 +224,10 @@ Collaboration rules:
 
 1. `on_solver_init`
 2. `on_population_init`
-3. 每代：`on_generation_start` -> `on_step` -> `on_generation_end`
-4. `on_solver_finish`
+3. 每次物理尝试：`on_step_attempt_start` -> `on_step_attempt_end`（即使 idle/rejected/cancelled/error 也必须成对）
+4. 只有提交逻辑代：`on_generation_start` -> `on_step` -> `on_generation_committed` -> `on_generation_end`
+5. `on_solver_finish`
+6. 事务型结果发布：`on_solver_finalization_prepare` -> atomic commit -> `on_solver_finalized`
 
 ### 4.2 评估路径
 
@@ -269,6 +276,14 @@ Collaboration rules:
 建议实现：
 
 - `get_state()/set_state()`：checkpoint 恢复
+- `snapshot_step_state()/restore_step_state()`：步骤事务回滚；默认可复用脱离后的
+  `get_state()/set_state()`，禁止通过 `deepcopy(adapter.__dict__)` 复制锁、executor、
+  Provider/session 或任意第三方对象图
+- `step_transaction_children()`：复合 Adapter 显式声明拥有独立事务状态的子 Adapter；
+  父级事务快照只能保存局部状态，禁止再嵌套保存同一子 Adapter 的 checkpoint state
+- `commit_step_state()`：只执行 semantic commit 之后的资源清理；所有参与者都必须被
+  尝试并生成 `AdapterCommitReport`。Provider-backed Adapter 按稳定 state ID 清理，
+  失败引用必须保留为可重试 cleanup queue，禁止把清理失败伪装成整代未提交
 - `population_state_mode`：L2 Adapter 必须显式声明 `single`、`delegate` 或 `partitioned`
 - `get_population_snapshot()/set_population_snapshot()`：仅用于 `single/delegate` 模式下完整 L2 population `(X, F, V)` 的权威读写
 - `get_population_partitions()/set_population_partitions()`：`partitioned` 复合 Adapter 按稳定 unit/role/phase ID 保存多个 `PopulationPartition`，不得把不同子群体无语义拼接
@@ -277,15 +292,28 @@ Collaboration rules:
 
 恢复顺序是 `prepare -> setup -> Plugin.prepare_restore -> apply restore envelope -> ordinary init hooks -> initialize if fresh -> run`。`set_state()`、外部 Case 预加载与 checkpoint 插件必须先排队恢复信封，不能在 `setup()` 之前直接污染 Adapter 运行态，也不能由各 Adapter 私自维护 `_state_loaded` 分支。普通 `on_solver_init` 钩子必须只观察恢复后的状态。
 
-运行级完成条件必须消费可恢复的 `RunProgressState`（逻辑步数、累计耗时、剩余 deadline 与可选 policy state）。`Solver.step()` 必须返回 `StepOutcome`；只有 `status=committed` 才计入 generation/step 并触发 `on_step/on_generation_end`，空执行、拒绝与取消不得制造幽灵步骤。
+`RuntimeController` 与有状态 Controller 属于正式 checkpoint component；Controller 必须
+按稳定 name/type 导出恢复状态。生命周期结束通知必须独立清理并聚合异常，一个严格
+参与者失败不能阻止其他已启动 Plugin/Controller 收到对应 end。
+
+运行级完成条件必须消费可恢复的 `RunProgressState`（逻辑步数、物理尝试数、累计耗时、剩余 deadline 与可选 policy state）。`Solver.step()` 必须返回 `StepOutcome`；只有 `status=committed` 才计入 generation/step 并触发 `on_step/on_generation_committed`，空执行、拒绝与取消不得制造幽灵步骤。`max_steps` 是逻辑提交预算，`max_step_attempts` 是独立活性保护。
 
 Population Snapshot 正式 schema 是 `nsgablack.population_snapshot/v2`。`population_state_mode=partitioned` 时，快照顶层不得出现单一 population/objectives/violations；必须保存 partitions，并把最后评估批次放入独立事件字段。单 population 消费者遇到 partitioned authority 必须 fail-closed。
+
+步骤内权威 Snapshot 必须先 staging，只有 `StepOutcome.committed` 才能用新 key 发布；
+Evaluation Event 使用独立 key，失败/拒绝尝试不得覆盖上一份权威 Population Snapshot。
+Event 写入前必须在 BlackBase `EvaluationEvidenceJournal` 预留索引，落盘后标记 pending，
+Disposition 发布前登记 intent，目标 Snapshot 可读后才结算 terminal。恢复只能按 durable
+evidence 补结算或归档 abandoned，不得隐式重跑 Problem、AcceptancePolicy 或 Adapter。
+`on_solver_finish` 是 teardown 前的 finishing 通知。事务型发布在 teardown 成功后先调用
+`on_solver_finalization_prepare`；该严格钩子可在正式引用公开前否决整组暂存产物。原子 commit
+成功后才调用 `on_solver_finalized`，此时最终结果、最终 checkpoint 与成功证据已经具有权威语义。
 
 ### 6.2 Plugin API（生命周期增强）
 
 常见入口：
 
-- `prepare_restore/on_solver_init/on_population_init/on_generation_start/on_step/on_generation_end/on_solver_finish`
+- `prepare_restore/on_solver_init/on_population_init/on_step_attempt_start/on_generation_start/on_step/on_generation_committed/on_generation_end/on_step_attempt_end/on_solver_finish/on_solver_finalization_prepare/on_solver_finalized`
 
 能力边界：
 

@@ -12,6 +12,7 @@ from nsgablack.adapters import (
     PopulationPartition,
 )
 from nsgablack.core.composable_solver import ComposableSolver
+from nsgablack.core.evolution_solver import EvolutionSolver
 
 
 class _PopulationAdapter(AlgorithmAdapter):
@@ -147,6 +148,42 @@ def test_composite_keeps_child_populations_as_stable_partitions() -> None:
     assert [item.as_dict() for item in restored_partitions] == [
         item.as_dict() for item in partitions
     ]
+
+
+def test_serial_delegate_resolves_the_last_confirmed_population_owner() -> None:
+    from nsgablack.adapters.serial_strategy import SerialPhaseSpec, StrategyChainAdapter
+
+    single = _PopulationAdapter("single")
+    partitioned = CompositeAdapter(
+        (_PopulationAdapter("left"), _PopulationAdapter("right"))
+    )
+    chain = StrategyChainAdapter(
+        (
+            SerialPhaseSpec("single", single, steps=1),
+            SerialPhaseSpec("partitioned", partitioned, steps=-1),
+        )
+    )
+    chain.setup(object())
+    chain._population_owner_idx = 0
+    chain._current_idx = 1
+
+    assert chain.resolve_population_state_mode() == "single"
+    assert chain.supported_population_state_modes() == frozenset(
+        {"single", "partitioned"}
+    )
+
+    chain._population_owner_idx = 1
+    assert chain.resolve_population_state_mode() == "partitioned"
+
+
+def test_evolution_solver_rejects_partitioned_adapter_topology(sample_problem) -> None:
+    adapter = CompositeAdapter(
+        (_PopulationAdapter("left"), _PopulationAdapter("right"))
+    )
+    solver = EvolutionSolver(sample_problem, adapter=adapter, pop_size=2)
+
+    with pytest.raises(TypeError, match="one authoritative population"):
+        solver.setup()
 
 
 def test_checkpoint_queues_restore_until_after_adapter_setup(

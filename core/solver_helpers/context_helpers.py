@@ -47,10 +47,7 @@ def _store_snapshot(store: Any) -> Dict[str, Any]:
         return {}
     snap = getattr(store, "snapshot", None)
     if callable(snap):
-        try:
-            return dict(snap())
-        except Exception:
-            return {}
+        return dict(snap())
     if isinstance(store, Mapping):
         return dict(store)
     return {}
@@ -61,18 +58,12 @@ def _set_store_values(store: Any, values: Mapping[str, Any]) -> None:
         return
     update = getattr(store, "update", None)
     if callable(update):
-        try:
-            update(dict(values))
-            return
-        except Exception:
-            pass
+        update(dict(values))
+        return
     set_fn = getattr(store, "set", None)
     if callable(set_fn):
         for key, value in values.items():
-            try:
-                set_fn(str(key), value)
-            except Exception:
-                continue
+            set_fn(str(key), value)
 
 
 def build_solver_context(

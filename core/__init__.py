@@ -20,6 +20,7 @@ from .control_plane import (
     BaseController,
     BudgetController,
     ControlArbiter,
+    ControllerDispatchError,
     ControlDecision,
     EvaluationBudgetExceeded,
     RuntimeController,
@@ -35,6 +36,10 @@ from .evaluation_runtime import (
     PopulationEvaluationResult,
 )
 from .evaluation_feedback import AdapterFeedback, OptimizationFeedbackBatch
+from .evaluation_acceptance import (
+    EvaluationAcceptancePolicy,
+    FeasibleEvaluationAcceptance,
+)
 from .nested_solver import (
     CaseInnerRuntimeEvaluator,
     ChildCaseExecutionError,
@@ -92,6 +97,7 @@ __all__ = [
     "BudgetController",
     "ControlDecision",
     "ControlArbiter",
+    "ControllerDispatchError",
     "EvaluationBudgetExceeded",
     "RuntimeController",
     "StopController",
@@ -103,6 +109,8 @@ __all__ = [
     "PopulationEvaluationResult",
     "AdapterFeedback",
     "OptimizationFeedbackBatch",
+    "EvaluationAcceptancePolicy",
+    "FeasibleEvaluationAcceptance",
     "InnerSolveRequest",
     "InnerSolveResult",
     "CaseInnerRuntimeEvaluator",

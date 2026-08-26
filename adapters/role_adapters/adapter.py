@@ -9,8 +9,9 @@ Design goals:
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 import warnings
 
 import numpy as np
@@ -25,6 +26,10 @@ from ..algorithm_adapter import (
     subset_adapter_feedback,
 )
 from ..runtime_projection import aggregate_adapter_runtime_projections
+from ..empty_outcome import (
+    aggregate_named_empty_outcomes,
+    child_empty_proposal_outcome,
+)
 from blackbase.context.context_keys import (
     KEY_CANDIDATE_ROLES,
     KEY_ROLE,
@@ -81,6 +86,7 @@ class RoleAdapter(AlgorithmAdapter):
         self._warned: set[str] = set()
         self.last_report: Dict[str, Any] = {}
         self._last_projection_writers: Dict[str, str] = {}
+        self._inner_proposal_disposition: BatchDisposition | None = None
 
     def _warn_once(self, key: str, message: str) -> None:
         if key in self._warned:
@@ -109,6 +115,7 @@ class RoleAdapter(AlgorithmAdapter):
 
     def setup(self, control: Any) -> None:
         self._last_projection_writers = {}
+        self._inner_proposal_disposition = None
         if self.inner is not None:
             self.inner.setup(control)
 
@@ -123,18 +130,29 @@ class RoleAdapter(AlgorithmAdapter):
         proposed_count = len(proposed)
         if self.max_candidates is not None:
             proposed = proposed[: int(self.max_candidates)]
-        if len(proposed) < proposed_count:
-            self.inner.on_proposal_disposition(
-                control,
-                BatchDisposition.prefix(
-                    proposed_count=proposed_count,
-                    accepted_count=len(proposed),
-                    reason="role_candidate_limit",
-                    metadata={"role": self.role},
-                ),
-                ctx,
-            )
+        self._inner_proposal_disposition = BatchDisposition.prefix(
+            proposed_count=proposed_count,
+            accepted_count=len(proposed),
+            reason=(
+                "role_candidate_limit"
+                if len(proposed) < proposed_count
+                else "role_candidate_passthrough"
+            ),
+            metadata={"role": self.role},
+        )
         return proposed
+
+    def get_empty_proposal_outcome(
+        self,
+        control: Any,
+        context: Mapping[str, Any],
+    ) -> Any | None:
+        if self.inner is None:
+            return None
+        ctx = dict(context)
+        ctx[KEY_ROLE] = self.role
+        ctx[KEY_ROLE_ADAPTER] = self.name
+        return child_empty_proposal_outcome(self.inner, control, ctx)
 
     def on_proposal_disposition(
         self,
@@ -147,7 +165,15 @@ class RoleAdapter(AlgorithmAdapter):
         ctx = dict(context)
         ctx[KEY_ROLE] = self.role
         ctx[KEY_ROLE_ADAPTER] = self.name
-        self.inner.on_proposal_disposition(control, disposition, ctx)
+        child = disposition
+        if self._inner_proposal_disposition is not None:
+            child = self._inner_proposal_disposition.compose(
+                disposition,
+                reason=disposition.reason,
+                metadata={"role": self.role},
+            )
+        self.inner.on_proposal_disposition(control, child, ctx)
+        self._inner_proposal_disposition = None
 
     def update(
         self,
@@ -316,11 +342,68 @@ class RoleAdapter(AlgorithmAdapter):
                 tuple(PopulationPartition.from_dict(item) for item in raw_partitions)
             )
 
+    def step_transaction_children(self) -> Sequence[AlgorithmAdapter]:
+        return () if self.inner is None else (self.inner,)
+
+    def snapshot_step_state(self) -> Mapping[str, Any]:
+        disposition = self._inner_proposal_disposition
+        return {
+            "schema": "nsgablack.role_adapter_step_transaction/v1",
+            "warned": sorted(self._warned),
+            "last_report": copy.deepcopy(self.last_report),
+            "projection_writers": dict(self._last_projection_writers),
+            "inner_proposal_disposition": (
+                None if disposition is None else disposition.as_dict()
+            ),
+        }
+
+    def restore_step_state(self, state: Mapping[str, Any]) -> None:
+        if str(state.get("schema", "")) != "nsgablack.role_adapter_step_transaction/v1":
+            raise ValueError("unsupported RoleAdapter step transaction schema")
+        self._warned = {str(item) for item in tuple(state.get("warned", ()) or ())}
+        self.last_report = copy.deepcopy(dict(state.get("last_report", {}) or {}))
+        self._last_projection_writers = {
+            str(key): str(value)
+            for key, value in dict(state.get("projection_writers", {}) or {}).items()
+        }
+        raw_disposition = state.get("inner_proposal_disposition")
+        if raw_disposition is None:
+            self._inner_proposal_disposition = None
+        elif isinstance(raw_disposition, Mapping):
+            self._inner_proposal_disposition = BatchDisposition(
+                proposed_count=int(raw_disposition.get("proposed_count", 0)),
+                accepted_indices=tuple(
+                    int(index)
+                    for index in tuple(raw_disposition.get("accepted_indices", ()) or ())
+                ),
+                reason=str(raw_disposition.get("reason", "unspecified")),
+                reservation_id=str(raw_disposition.get("reservation_id", "")),
+                metadata=dict(raw_disposition.get("metadata", {}) or {}),
+            )
+        else:
+            raise TypeError("RoleAdapter step disposition must be a mapping")
+
     def get_population_snapshot(
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
         getter = getattr(self.inner, "get_population_snapshot", None)
         return getter() if callable(getter) else None
+
+    def resolve_population_state_mode(self) -> str:
+        if self.inner is None:
+            return "unresolved"
+        resolver = getattr(self.inner, "resolve_population_state_mode", None)
+        if callable(resolver):
+            return str(resolver())
+        return "unresolved"
+
+    def supported_population_state_modes(self) -> frozenset[str]:
+        if self.inner is None:
+            return frozenset()
+        resolver = getattr(self.inner, "supported_population_state_modes", None)
+        if callable(resolver):
+            return frozenset(str(item) for item in resolver())
+        return frozenset()
 
     def set_population_snapshot(
         self,
@@ -457,6 +540,24 @@ class RoleRouterAdapter(AlgorithmAdapter):
         self._runtime_projection[KEY_ROLE_REPORTS] = self._collect_role_reports()
         return candidates
 
+    def get_empty_proposal_outcome(
+        self,
+        control: Any,
+        context: Mapping[str, Any],
+    ) -> Any | None:
+        rows = []
+        for index, role in enumerate(self.roles):
+            ctx = dict(context)
+            ctx[KEY_ROLE] = role.role
+            ctx[KEY_ROLE_INDEX] = index
+            rows.append(
+                (
+                    role.name,
+                    child_empty_proposal_outcome(role, control, ctx),
+                )
+            )
+        return aggregate_named_empty_outcomes(rows, owner=self.name)
+
     def on_proposal_disposition(
         self,
         control: Any,
@@ -559,6 +660,53 @@ class RoleRouterAdapter(AlgorithmAdapter):
             self.set_population_partitions(
                 tuple(PopulationPartition.from_dict(item) for item in raw_partitions)
             )
+
+    def step_transaction_children(self) -> Sequence[AlgorithmAdapter]:
+        return tuple(self.roles)
+
+    def snapshot_step_state(self) -> Mapping[str, Any]:
+        role_index = {id(role): index for index, role in enumerate(self.roles)}
+        return {
+            "schema": "nsgablack.role_router_step_transaction/v1",
+            "last_ranges": [
+                {
+                    "role_index": int(role_index[id(role)]),
+                    "start": int(start),
+                    "end": int(end),
+                }
+                for role, start, end in self._last_ranges
+            ],
+            "last_candidate_roles": list(self.last_candidate_roles),
+            "runtime_projection": copy.deepcopy(self._runtime_projection),
+            "projection_writers": dict(self._last_projection_writers),
+        }
+
+    def restore_step_state(self, state: Mapping[str, Any]) -> None:
+        if str(state.get("schema", "")) != "nsgablack.role_router_step_transaction/v1":
+            raise ValueError("unsupported RoleRouterAdapter step transaction schema")
+        restored_ranges: list[tuple[RoleAdapter, int, int]] = []
+        for item in tuple(state.get("last_ranges", ()) or ()):
+            index = int(item.get("role_index", -1))
+            if index < 0 or index >= len(self.roles):
+                raise ValueError("RoleRouterAdapter step role is unavailable")
+            restored_ranges.append(
+                (
+                    self.roles[index],
+                    int(item.get("start", 0)),
+                    int(item.get("end", 0)),
+                )
+            )
+        self._last_ranges = restored_ranges
+        self.last_candidate_roles = [
+            str(item) for item in tuple(state.get("last_candidate_roles", ()) or ())
+        ]
+        self._runtime_projection = copy.deepcopy(
+            dict(state.get("runtime_projection", {}) or {})
+        )
+        self._last_projection_writers = {
+            str(key): str(value)
+            for key, value in dict(state.get("projection_writers", {}) or {}).items()
+        }
 
     def _role_prefix(self, index: int, role: RoleAdapter) -> str:
         return f"role:{int(index)}:{role.role}:{role.name}"

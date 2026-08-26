@@ -52,20 +52,26 @@ class RobustnessBias(AlgorithmicBias):
     def compute(self, x: np.ndarray, context: OptimizationContext) -> float:
         std = context.metrics.get("mc_std")
         if std is None:
-            if not self._missing_metrics_warned:
-                warnings.warn(
-                    "RobustnessBias 未检测到 context.metrics['mc_std']，将退化为 0.0。"
-                    "如需鲁棒性/稳定性引导，请配合提供 MC 统计的能力层插件（例如 MonteCarloEvaluationProviderPlugin）。",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-                self._missing_metrics_warned = True
+            self._warn_missing_metrics()
             return 0.0
+        return self._compute_from_std(std)
 
+    def _warn_missing_metrics(self) -> None:
+        if not self._missing_metrics_warned:
+            warnings.warn(
+                "RobustnessBias did not receive context.metrics['mc_std'] and will "
+                "degrade to 0.0. Add a capability plugin that publishes Monte Carlo "
+                "statistics, such as MonteCarloEvaluationProviderPlugin.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+            self._missing_metrics_warned = True
+
+    def _compute_from_std(self, std: Any) -> float:
+        """Compute the robustness penalty from an available MC deviation."""
         std_arr = self._to_1d_float(std)
         if std_arr.size == 0:
             return 0.0
-
         val = self._aggregate(std_arr)
         if self.power != 1.0:
             val = float(val) ** float(self.power)

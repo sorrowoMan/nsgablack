@@ -4,6 +4,7 @@ Shared base for trust-region adapters.
 
 from __future__ import annotations
 
+import copy
 from abc import abstractmethod
 from typing import Any, Dict, Optional, Sequence, Tuple, List
 
@@ -106,6 +107,7 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
             "center": None if self._center is None else self._center.tolist(),
             "radius": float(self._radius),
             "best_score": None if self._best_score is None else float(self._best_score),
+            "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
         extra = self._extra_state()
         if extra:
@@ -120,6 +122,9 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
         if state.get("radius") is not None:
             self._radius = float(state["radius"])
         self._best_score = state.get("best_score")
+        rng_state = state.get("rng_state")
+        if isinstance(rng_state, dict):
+            self._rng.bit_generator.state = copy.deepcopy(rng_state)
         self._load_extra_state(state)
 
     def _init_center(self, control: Any, context: Optional[Dict[str, Any]] = None) -> np.ndarray:

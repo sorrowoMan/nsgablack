@@ -6,9 +6,33 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Tuple
 
+from blackbase.plugin import (
+    ATTEMPT_START,
+    GENERATION_END,
+    normalize_lifecycle_slot,
+)
+
 
 class ControlConflictError(RuntimeError):
     """Raised when decisions conflict under strict policy."""
+
+
+class ControllerDispatchError(RuntimeError):
+    """One or more Controllers failed after every slot participant ran."""
+
+    def __init__(
+        self,
+        *,
+        slot: str,
+        errors: Sequence[tuple[str, BaseException]],
+    ) -> None:
+        self.slot = str(slot)
+        self.errors = tuple(errors)
+        summary = "; ".join(
+            f"{name}: {type(exc).__name__}: {exc}"
+            for name, exc in self.errors
+        )
+        super().__init__(f"controller slot '{self.slot}' failed: {summary}")
 
 
 class EvaluationBudgetExceeded(RuntimeError):
@@ -30,7 +54,7 @@ class BaseController(ABC):
     """Abstract controller for L3 runtime control decisions."""
 
     domain: str = "generic"
-    slots: Tuple[str, ...] = ("gen_end",)
+    slots: Tuple[str, ...] = (GENERATION_END,)
     owns_domains: Tuple[str, ...] = ()
 
     def __init__(self, *, name: str, priority: int = 0, enabled: bool = True) -> None:
@@ -43,6 +67,31 @@ class BaseController(ABC):
     @abstractmethod
     def propose(self, solver: Any, slot: str, context: Mapping[str, Any]) -> Optional[ControlDecision]:
         raise NotImplementedError
+
+    def checkpoint_identity(self) -> Mapping[str, Any]:
+        return {
+            "name": self.name,
+            "module": type(self).__module__,
+            "class": type(self).__qualname__,
+            "domain": self.domain,
+            "slots": list(self.slots),
+            "priority": self.priority,
+        }
+
+    def get_state(self) -> Mapping[str, Any]:
+        return {
+            "schema": "nsgablack.controller_state/v1",
+            "name": self.name,
+            "enabled": self.enabled,
+        }
+
+    def set_state(self, state: Mapping[str, Any]) -> None:
+        data = dict(state or {})
+        if str(data.get("schema", "")) != "nsgablack.controller_state/v1":
+            raise ValueError("unsupported controller state schema")
+        if str(data.get("name", "")) != self.name:
+            raise ValueError("controller state name mismatch")
+        self.enabled = bool(data.get("enabled", self.enabled))
 
 
 class ControlArbiter:
@@ -122,6 +171,10 @@ class RuntimeController:
     def register_controller(self, controller: BaseController) -> None:
         if any(c.name == controller.name for c in self._controllers):
             raise ValueError(f"Controller '{controller.name}' already registered")
+        controller.slots = tuple(
+            normalize_lifecycle_slot(slot)
+            for slot in tuple(getattr(controller, "slots", ()) or ())
+        )
         for owner_domain in tuple(getattr(controller, "owns_domains", ()) or ()):
             owner_domain_text = str(owner_domain).strip()
             if not owner_domain_text:
@@ -138,16 +191,24 @@ class RuntimeController:
         return tuple(self._controllers)
 
     def collect(self, solver: Any, *, slot: str, context: Mapping[str, Any]) -> Tuple[ControlDecision, ...]:
+        slot = normalize_lifecycle_slot(slot)
         out: List[ControlDecision] = []
+        errors: List[tuple[str, BaseException]] = []
         for c in sorted(self._controllers, key=lambda x: (int(x.priority), str(x.name))):
             if not bool(c.enabled):
                 continue
-            if str(slot) not in set(str(s) for s in c.slots):
+            if slot not in set(str(s) for s in c.slots):
                 continue
-            d = c.propose(solver, str(slot), context)
+            try:
+                d = c.propose(solver, slot, context)
+            except BaseException as exc:
+                errors.append((str(c.name), exc))
+                continue
             if d is None:
                 continue
             out.append(d)
+        if errors:
+            raise ControllerDispatchError(slot=slot, errors=errors) from errors[0][1]
         return tuple(out)
 
     def resolve(self, solver: Any, *, slot: str, context: Mapping[str, Any]) -> Dict[str, ControlDecision]:
@@ -167,6 +228,52 @@ class RuntimeController:
                         f"Domain '{owner_domain_text}' has multiple owners: {existing}, {controller.name}"
                     )
                 owners[owner_domain_text] = controller.name
+
+    def checkpoint_identity(self) -> Mapping[str, Any]:
+        return {
+            "schema": "nsgablack.runtime_controller_identity/v1",
+            "controllers": [
+                dict(controller.checkpoint_identity())
+                for controller in sorted(
+                    self._controllers,
+                    key=lambda item: str(item.name),
+                )
+            ],
+        }
+
+    def get_state(self) -> Mapping[str, Any]:
+        return {
+            "schema": "nsgablack.runtime_controller_state/v1",
+            "controllers": {
+                controller.name: {
+                    "module": type(controller).__module__,
+                    "class": type(controller).__qualname__,
+                    "state": dict(controller.get_state()),
+                }
+                for controller in self._controllers
+            },
+        }
+
+    def set_state(self, state: Mapping[str, Any]) -> None:
+        data = dict(state or {})
+        if str(data.get("schema", "")) != "nsgablack.runtime_controller_state/v1":
+            raise ValueError("unsupported RuntimeController state schema")
+        saved = dict(data.get("controllers", {}) or {})
+        current = {controller.name: controller for controller in self._controllers}
+        if set(saved) != set(current):
+            raise ValueError(
+                "RuntimeController checkpoint names do not match the configured controllers"
+            )
+        for name, controller in current.items():
+            payload = saved[name]
+            if not isinstance(payload, Mapping):
+                raise ValueError(f"invalid controller checkpoint payload: {name}")
+            if (
+                str(payload.get("module", "")) != type(controller).__module__
+                or str(payload.get("class", "")) != type(controller).__qualname__
+            ):
+                raise ValueError(f"controller checkpoint type mismatch: {name}")
+            controller.set_state(dict(payload.get("state", {}) or {}))
 
     def evaluation_allowance(
         self,
@@ -198,7 +305,7 @@ class BudgetController(BaseController):
     """Concrete controller for budget-domain decisions (max generations, evaluations)."""
 
     domain = "budget"
-    slots: Tuple[str, ...] = ("gen_start", "gen_end")
+    slots: Tuple[str, ...] = (ATTEMPT_START, GENERATION_END)
     owns_domains: Tuple[str, ...] = ("budget",)
 
     def __init__(self, *, max_generations: int | None = None, max_evaluations: int | None = None, name: str = "budget", priority: int = 0) -> None:
@@ -231,7 +338,7 @@ class BudgetController(BaseController):
 
     def propose(self, solver: Any, slot: str, context: Mapping[str, Any]) -> Optional[ControlDecision]:
         payload: Dict[str, float] = {}
-        if self.max_generations is not None and str(slot) == "gen_end":
+        if self.max_generations is not None and str(slot) == GENERATION_END:
             gen = int(context.get("generation", 0))
             if gen + 1 >= self.max_generations:
                 payload["stop"] = 1.0
@@ -254,12 +361,19 @@ class BudgetController(BaseController):
             reason=reason,
         )
 
+    def checkpoint_identity(self) -> Mapping[str, Any]:
+        return {
+            **dict(super().checkpoint_identity()),
+            "max_generations": self.max_generations,
+            "max_evaluations": self.max_evaluations,
+        }
+
 
 class StopController(BaseController):
     """Concrete controller for stopping-domain decisions."""
 
     domain = "stopping"
-    slots: Tuple[str, ...] = ("gen_end",)
+    slots: Tuple[str, ...] = (GENERATION_END,)
     owns_domains: Tuple[str, ...] = ("stopping",)
 
     def __init__(self, *, patience: int | None = None, min_delta: float = 1e-8, name: str = "stop", priority: int = 0) -> None:
@@ -285,3 +399,24 @@ class StopController(BaseController):
         if self.patience is not None and self._stale >= self.patience:
             return ControlDecision(domain="stopping", slot=slot, controller=self.name, payload={"stop": True}, reason="patience exhausted")
         return None
+
+    def checkpoint_identity(self) -> Mapping[str, Any]:
+        return {
+            **dict(super().checkpoint_identity()),
+            "patience": self.patience,
+            "min_delta": self.min_delta,
+        }
+
+    def get_state(self) -> Mapping[str, Any]:
+        return {
+            **dict(super().get_state()),
+            "best": self._best,
+            "stale": self._stale,
+        }
+
+    def set_state(self, state: Mapping[str, Any]) -> None:
+        super().set_state(state)
+        data = dict(state or {})
+        raw_best = data.get("best")
+        self._best = None if raw_best is None else float(raw_best)
+        self._stale = max(0, int(data.get("stale", 0) or 0))

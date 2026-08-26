@@ -19,7 +19,7 @@ _SOURCE_ROOT = Path(__file__).resolve().parent.parent
 if (_SOURCE_ROOT / "pyproject.toml").is_file() and str(_SOURCE_ROOT) not in __path__:
     __path__.append(str(_SOURCE_ROOT))
 
-__version__ = "0.3.11"
+__version__ = "0.3.26"
 
 __author__ = "SorrowoMan"
 __email__ = "sorrowo@foxmail.com"

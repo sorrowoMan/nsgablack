@@ -17,7 +17,7 @@ _PARENT = Path(__file__).resolve().parent.parent
 if str(_PARENT) not in __path__:
     __path__.append(str(_PARENT))
 
-__version__ = "0.3.11"
+__version__ = "0.3.26"
 
 __author__ = "SorrowoMan"
 __email__ = "sorrowo@foxmail.com"

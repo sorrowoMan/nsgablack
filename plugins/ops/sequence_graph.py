@@ -124,7 +124,8 @@ class SequenceGraphPlugin(Plugin):
                 self._wrap_method(adapter, "update", kind="adapter", name=adapter_name, action="update")
         return None
 
-    def on_generation_end(self, generation: int):
+    def on_generation_committed(self, generation: int, outcome):
+        del outcome
         if int(self.cfg.flush_every) <= 0:
             return None
         if (int(generation) + 1) % int(self.cfg.flush_every) != 0:

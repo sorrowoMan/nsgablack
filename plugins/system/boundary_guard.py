@@ -38,7 +38,8 @@ class BoundaryGuardPlugin(Plugin):
         self.last_warnings: List[str] = []
         self.is_algorithmic = False
 
-    def on_generation_end(self, generation: int):
+    def on_generation_committed(self, generation: int, outcome):
+        del generation, outcome
         solver = self.solver
         if solver is None or not hasattr(solver, "get_context"):
             return None

@@ -15,6 +15,7 @@ Notes:
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Sequence, Tuple
 import math
@@ -214,6 +215,7 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
             "t0": float(self.t0),
             "current_x": None if self.current_x is None else np.asarray(self.current_x, dtype=float).tolist(),
             "current_score": None if self.current_score is None else float(self.current_score),
+            "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
@@ -226,6 +228,22 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
         cx = state.get("current_x")
         self.current_x = None if cx is None else np.asarray(cx, dtype=float)
         self.current_score = state.get("current_score")
+        rng_state = state.get("rng_state")
+        if isinstance(rng_state, dict):
+            self._rng.bit_generator.state = copy.deepcopy(rng_state)
+        self._last_runtime_projection = {
+            KEY_TEMPERATURE: float(self.temperature),
+            **(
+                {}
+                if self.current_x is None
+                else {"sa_current_x": np.asarray(self.current_x, dtype=float)}
+            ),
+            **(
+                {}
+                if self.current_score is None
+                else {"sa_current_score": float(self.current_score)}
+            ),
+        }
 
     def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
         _ = solver

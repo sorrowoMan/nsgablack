@@ -21,6 +21,7 @@ from blackbase.resources import (
 )
 from blackbase.plugin import PluginBase as PluginInterface
 from blackbase.kernel import PipelineKernelBuild as OrchestrationInterface
+from .control_plane import BaseController
 
 
 class OptimizationContext(ABC):
@@ -147,14 +148,6 @@ class VisualizationInterface(ABC):
     
     @abstractmethod
     def visualize(self, data: Any, context: Mapping[str, Any] | None = None) -> Any:
-        pass
-
-
-class BaseController(ABC):
-    """Abstract base controller."""
-    
-    @abstractmethod
-    def run(self) -> Any:
         pass
 
 

@@ -90,7 +90,8 @@ class DecisionTracePlugin(Plugin):
                 self._wrap_method(pm, "trigger", "plugin.trigger", event_name_arg_index=0)
         return None
 
-    def on_generation_end(self, generation: int):
+    def on_generation_committed(self, generation: int, outcome):
+        del outcome
         # Flush periodically to keep replay robust for long runs.
         if int(self.cfg.flush_every) > 0 and (int(generation) + 1) % int(self.cfg.flush_every) == 0:
             self._flush_summary(final=False)

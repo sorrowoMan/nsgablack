@@ -1,13 +1,8 @@
-"""Solver components for production_scheduling case."""
+"""Case-local solver namespace.
 
-from .strict_feasible_solver import (
-    StrictFeasibleProductionSolver,
-    project_candidate_material_feasible,
-    project_schedule_material_feasible,
-)
+The Case uses the canonical ``ComposableSolver``.  Material projection belongs
+to ``pipeline`` and post-evaluation feasibility admission belongs to the
+shared control-plane policy surface.
+"""
 
-__all__ = [
-    "StrictFeasibleProductionSolver",
-    "project_schedule_material_feasible",
-    "project_candidate_material_feasible",
-]
+__all__: list[str] = []

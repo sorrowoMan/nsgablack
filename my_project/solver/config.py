@@ -128,6 +128,10 @@ class StoreProfile:
     context_store_redis_url: str = "redis://localhost:6379/0"
     context_store_key_prefix: str = "nsgablack:context"
     context_store_ttl_seconds: float | None = None
+    context_store_serializer: str = "safe"
+    context_store_hmac_env_var: str = "NSGABLACK_CONTEXT_HMAC_KEY"
+    context_store_unsafe_allow_legacy_pickle: bool = False
+    context_store_max_payload_bytes: int = 262_144
 
     snapshot_store_backend: str = "memory"  # memory | file | redis
     snapshot_store_redis_url: str = "redis://localhost:6379/0"
@@ -196,6 +200,12 @@ def create_evolution_solver(
         context_store_redis_url=str(store.context_store_redis_url),
         context_store_key_prefix=str(store.context_store_key_prefix),
         context_store_ttl_seconds=store.context_store_ttl_seconds,
+        context_store_serializer=str(store.context_store_serializer),
+        context_store_hmac_env_var=str(store.context_store_hmac_env_var),
+        context_store_unsafe_allow_legacy_pickle=bool(
+            store.context_store_unsafe_allow_legacy_pickle
+        ),
+        context_store_max_payload_bytes=int(store.context_store_max_payload_bytes),
         snapshot_store_backend=str(store.snapshot_store_backend),
         snapshot_store_redis_url=str(store.snapshot_store_redis_url),
         snapshot_store_key_prefix=str(store.snapshot_store_key_prefix),

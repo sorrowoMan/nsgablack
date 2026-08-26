@@ -42,7 +42,8 @@ class ConsoleProgressPlugin(Plugin):
         self._t0 = time.time()
         self._last_t = self._t0
 
-    def on_generation_end(self, generation: int):
+    def on_generation_committed(self, generation: int, outcome):
+        del outcome
         if generation % self.report_every != 0:
             return
         solver = getattr(self, "solver", None)

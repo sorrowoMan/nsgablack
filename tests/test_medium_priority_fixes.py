@@ -27,7 +27,7 @@ def test_pareto_archive_truncates_with_crowding() -> None:
 
     solver = _Solver()
     plugin.attach(solver)
-    plugin.on_generation_end(0)
+    plugin.on_generation_committed(0, {"status": "committed"})
     kept = {tuple(row.tolist()) for row in plugin.archive_F}
     assert (0.0, 2.0) in kept
     assert (2.0, 0.0) in kept
@@ -63,6 +63,7 @@ def test_update_pareto_solutions_keeps_front_boundaries_with_crowding() -> None:
     solver.population = np.column_stack([xs, xs])
     solver.objectives = np.column_stack([xs, 59.0 - xs])
     solver.constraint_violations = np.zeros(60, dtype=float)
+    solver.commit_candidate_population(solver.population, None)
     solver.update_pareto_solutions()
     kept_first_dim = set(np.asarray(solver.pareto_solutions["individuals"])[:, 0].astype(float).tolist())
     assert 0.0 in kept_first_dim

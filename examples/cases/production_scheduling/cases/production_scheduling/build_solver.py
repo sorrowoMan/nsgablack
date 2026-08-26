@@ -35,6 +35,9 @@ from nsgablack.adapters import (  # noqa: E402
     VNSConfig,
 )
 from nsgablack.core.composable_solver import ComposableSolver  # noqa: E402
+from nsgablack.core.evaluation_acceptance import (  # noqa: E402
+    FeasibleEvaluationAcceptance,
+)
 from nsgablack.plugins import ParetoArchiveConfig, ParetoArchivePlugin  # noqa: E402
 from nsgablack.utils.parallel import with_parallel_evaluation  # noqa: E402
 from nsgablack.utils.wiring import attach_default_observability_plugins  # noqa: E402
@@ -47,7 +50,10 @@ from adapter import (  # noqa: E402
 )
 from bias import build_production_bias_module  # noqa: E402
 from cli import build_parser  # noqa: E402
-from pipeline import build_schedule_pipeline  # noqa: E402
+from pipeline import (  # noqa: E402
+    build_schedule_pipeline,
+    project_schedule_material_feasible,
+)
 from plugins import ConsoleProgressPlugin, ProductionExportPlugin  # noqa: E402
 from plugins.export_utils import (  # noqa: E402
     choose_pareto_solutions,
@@ -59,10 +65,12 @@ from plugins.export_utils import (  # noqa: E402
     write_export_summary,
 )
 from problem import build_problem, build_problem_factory  # noqa: E402
-from solver.strict_feasible_solver import (  # noqa: E402
-    StrictFeasibleProductionSolver,
-    project_schedule_material_feasible,
-)
+
+
+def _evaluation_acceptance_policy(args):
+    if bool(getattr(args, "allow_infeasible_update", False)):
+        return None
+    return FeasibleEvaluationAcceptance(constraint_tolerance=1e-9)
 
 
 def _export_pareto_batch_with_projection(problem, individuals, objectives, base_export, mode, limit) -> int:
@@ -250,8 +258,7 @@ def build_multi_agent_solver(problem, args):
     )
     controller = StrategyRouterAdapter(roles=roles, config=cfg)
 
-    base_solver_cls = ComposableSolver if bool(getattr(args, "allow_infeasible_update", False)) else StrictFeasibleProductionSolver
-    SolverClass = with_parallel_evaluation(base_solver_cls)
+    SolverClass = with_parallel_evaluation(ComposableSolver)
     factory = (
         build_problem_factory(args, base_dir=_THIS_DIR)
         if args.parallel and args.parallel_backend in ("process", "ray")
@@ -261,6 +268,7 @@ def build_multi_agent_solver(problem, args):
         problem=problem,
         adapter=controller,
         representation_pipeline=pipeline,
+        evaluation_acceptance_policy=_evaluation_acceptance_policy(args),
         bias_module=bias_module,
         enable_parallel=bool(args.parallel),
         parallel_backend=args.parallel_backend,
@@ -326,8 +334,7 @@ def build_baseline_solver(problem, args, *, mode: str) -> ComposableSolver:
     else:
         adapter = ProductionGreedyBaselineAdapter()
 
-    base_solver_cls = ComposableSolver if bool(getattr(args, "allow_infeasible_update", False)) else StrictFeasibleProductionSolver
-    SolverClass = with_parallel_evaluation(base_solver_cls)
+    SolverClass = with_parallel_evaluation(ComposableSolver)
     factory = (
         build_problem_factory(args, base_dir=_THIS_DIR)
         if args.parallel and args.parallel_backend in ("process", "ray")
@@ -337,6 +344,7 @@ def build_baseline_solver(problem, args, *, mode: str) -> ComposableSolver:
         problem=problem,
         adapter=adapter,
         representation_pipeline=pipeline,
+        evaluation_acceptance_policy=_evaluation_acceptance_policy(args),
         bias_module=bias_module,
         enable_parallel=bool(args.parallel),
         parallel_backend=args.parallel_backend,

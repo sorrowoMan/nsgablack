@@ -14,6 +14,7 @@ import numpy as np
 from nsgablack.core.blank_solver import SolverBase
 from nsgablack.core.composable_solver import ComposableSolver
 from nsgablack.core.evolution_solver import EvolutionSolver
+from nsgablack.core.state import StepOutcome
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.plugins.base import Plugin
 from nsgablack.adapters.algorithm_adapter import AlgorithmAdapter
@@ -140,6 +141,7 @@ def test_hook_order_consistency_blank_solver():
         
         def step(self):
             self.step_count += 1
+            return StepOutcome(status="committed")
     
     solver = TestSolver(problem=SimpleProblem())
     solver.add_plugin(recorder)
@@ -253,12 +255,14 @@ def test_max_steps_parameter_compatibility():
         
         def step(self):
             self.steps_executed += 1
+            return StepOutcome(status="committed")
     
     solver = TestSolver(problem=SimpleProblem())
     result = solver.run(max_steps=7)
     assert solver.steps_executed == 7
     
-    # EvolutionSolver currently uses max_generations, not max_steps parameter
+    # EvolutionSolver exposes max_generations as an alias of the shared
+    # logical-step budget.
     evo_solver = EvolutionSolver(
         problem=SimpleProblem(),
         pop_size=10,
@@ -268,11 +272,25 @@ def test_max_steps_parameter_compatibility():
     assert result['steps'] == 7
     assert result['generation'] in (6, 7)
     
-    # KNOWN LIMITATION: run(max_steps=5) is ignored by EvolutionSolver
-    # TODO: After fix, this should work:
-    # evo_solver2 = EvolutionSolver(problem=SimpleProblem(), pop_size=10)
-    # result2 = evo_solver2.run(max_steps=5, return_dict=True)
-    # assert result2['generation'] == 5
+    evo_solver2 = EvolutionSolver(
+        problem=SimpleProblem(),
+        pop_size=10,
+        max_generations=20,
+    )
+    result2 = evo_solver2.run(max_steps=5, return_dict=True)
+    assert result2['steps'] == 5
+    assert evo_solver2.max_steps == 5
+    assert evo_solver2.max_generations == 5
+
+    evo_solver3 = EvolutionSolver(
+        problem=SimpleProblem(),
+        pop_size=10,
+        max_generations=20,
+    )
+    evo_solver3.set_max_steps(2)
+    result3 = evo_solver3.run(return_dict=True)
+    assert result3['steps'] == 2
+    assert evo_solver3.max_generations == 2
 
 
 def test_stop_requested_behavior():
@@ -351,7 +369,7 @@ def test_return_type_consistency():
     # SolverBase.run() returns Dict
     class TestSolver(SolverBase):
         def step(self):
-            pass
+            return StepOutcome(status="committed")
     
     solver = TestSolver(problem=problem)
     result = solver.run(max_steps=2)
@@ -446,7 +464,7 @@ def test_plugin_on_step_hook_availability():
     
     class TestSolver(SolverBase):
         def step(self):
-            pass
+            return StepOutcome(status="committed")
     
     solver2 = TestSolver(problem=SimpleProblem())
     solver2.add_plugin(plugin2)

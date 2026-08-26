@@ -131,8 +131,29 @@ def _iter_case_roots(container: Path) -> Iterable[Path]:
         child_dirs = {path.name for path in directory.iterdir() if path.is_dir()}
         if _PROJECT_MARKER_FILES.issubset(child_files) and "cases" in child_dirs:
             continue
+        # Ignore untracked/generated directory shells that contain only empty
+        # component folders, caches, run output, or artifacts.  A real Case
+        # candidate must contain at least one declarative/source file; otherwise
+        # a local cache tree can manufacture Doctor errors for a Case that does
+        # not exist in the repository.
+        if not _contains_case_source(directory):
+            continue
         if child_files & _CASE_MARKER_FILES or child_dirs & _CASE_MARKER_DIRS:
             yield directory
+
+
+def _contains_case_source(directory: Path) -> bool:
+    ignored = {"__pycache__", "runs", "artifacts", ".blackbase"}
+    source_suffixes = {".py", ".toml", ".json", ".yaml", ".yml"}
+    for path in directory.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(directory)
+        if any(part in ignored for part in relative.parts[:-1]):
+            continue
+        if path.suffix.lower() in source_suffixes:
+            return True
+    return False
 
 
 def _check_case_root_scaffold(

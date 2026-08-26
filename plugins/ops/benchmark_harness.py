@@ -129,7 +129,8 @@ class BenchmarkHarnessPlugin(Plugin):
         self._fp.flush()
         return None
 
-    def on_generation_end(self, generation: int):
+    def on_generation_committed(self, generation: int, outcome):
+        del outcome
         solver = self.solver
         if solver is None or self._writer is None:
             return None

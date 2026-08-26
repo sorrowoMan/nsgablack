@@ -18,6 +18,7 @@ import numpy as np
 from blackbase.contracts import BatchDisposition
 
 from ..algorithm_adapter import AlgorithmAdapter
+from ...core.state import StepOutcome
 
 
 State = np.ndarray
@@ -204,6 +205,26 @@ class MOAStarAdapter(AlgorithmAdapter):
                 break
 
         return candidates
+
+    def get_empty_proposal_outcome(
+        self,
+        control: Any,
+        context: Dict[str, Any],
+    ) -> StepOutcome | None:
+        _ = (control, context)
+        if self.found and self.cfg.stop_on_goal:
+            return StepOutcome(
+                status="terminal",
+                reason="goal_reached",
+                metadata={"adapter": self.name, "completion": "success"},
+            )
+        if not self._open:
+            return StepOutcome(
+                status="terminal",
+                reason="search_exhausted",
+                metadata={"adapter": self.name, "completion": "exhausted"},
+            )
+        return None
 
     def on_proposal_disposition(
         self,

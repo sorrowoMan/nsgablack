@@ -51,7 +51,7 @@ def test_basic_elite_plugin_writes_back_via_adapter_population_snapshot() -> Non
 
     X0, F0, V0 = solver.adapter.get_population_snapshot()
     plugin.on_population_init(X0, F0, V0)
-    plugin.on_generation_end(1)
+    plugin.on_generation_committed(1, {"status": "committed"})
 
     assert solver.adapter.set_calls >= 1
     X1, F1, V1 = solver.adapter.get_population_snapshot()

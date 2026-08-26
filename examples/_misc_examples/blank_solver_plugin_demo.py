@@ -1,116 +1,112 @@
-"""SolverBase + 偏置/管线/插件 的最小可运行示例。
+"""ComposableSolver + 表示管线 + 偏置 + Plugin 的最小可运行示例。
 
-目标：展示 SolverBase 在保持核心求解循环简洁的同时，
-可以自然接入表示管线、偏置模块与插件能力。
+算法推进属于 Adapter，Plugin 只观察已经提交的逻辑代。这样示例与正式
+StepOutcome 生命周期一致，不会让 generation hook 反过来承担算法执行。
 """
+
+from __future__ import annotations
+
+from typing import Any, Mapping
 
 import numpy as np
 
 try:
-    from nsgablack.core.base import BlackBoxProblem
-    from nsgablack.core.blank_solver import SolverBase
-    from nsgablack.representation import RepresentationPipeline
-    from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
+    from nsgablack.adapters import (
+        SingleTrajectoryAdaptiveAdapter,
+        SingleTrajectoryAdaptiveConfig,
+    )
     from nsgablack.bias import BiasModule, ConvergenceBias
+    from nsgablack.core.base import BlackBoxProblem
+    from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.plugins import Plugin
+    from nsgablack.representation import RepresentationPipeline
+    from nsgablack.representation.continuous import (
+        ClipRepair,
+        GaussianMutation,
+        UniformInitializer,
+    )
 except ModuleNotFoundError:  # pragma: no cover - convenience for direct script runs
     import sys
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from nsgablack.core.base import BlackBoxProblem
-    from nsgablack.core.blank_solver import SolverBase
-    from nsgablack.representation import RepresentationPipeline
-    from nsgablack.representation.continuous import UniformInitializer, GaussianMutation, ClipRepair
+    from nsgablack.adapters import (
+        SingleTrajectoryAdaptiveAdapter,
+        SingleTrajectoryAdaptiveConfig,
+    )
     from nsgablack.bias import BiasModule, ConvergenceBias
+    from nsgablack.core.base import BlackBoxProblem
+    from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.plugins import Plugin
+    from nsgablack.representation import RepresentationPipeline
+    from nsgablack.representation.continuous import (
+        ClipRepair,
+        GaussianMutation,
+        UniformInitializer,
+    )
 
 
 class SimpleSphereProblem(BlackBoxProblem):
     """简单 Sphere 测试问题。"""
 
-    def __init__(self, dimension=5, low=-5.0, high=5.0):
+    def __init__(self, dimension: int = 5, low: float = -5.0, high: float = 5.0):
         super().__init__(
             name="SimpleSphere",
             dimension=dimension,
             bounds={f"x{i}": (low, high) for i in range(dimension)},
         )
-        self.low = low
-        self.high = high
+        self.low = float(low)
+        self.high = float(high)
 
-    def evaluate(self, candidate):
-        candidate = np.asarray(candidate, dtype=float)
-        return float(np.sum(candidate ** 2))
+    def evaluate(self, candidate: Any) -> float:
+        values = np.asarray(candidate, dtype=float)
+        return float(np.sum(values**2))
 
 
-class RandomWalkPlugin(Plugin):
-    """随机游走插件：维护候选缓冲并记录当前最优。"""
+class CommitAuditPlugin(Plugin):
+    """只审计正式提交，不持有或修改算法权威状态。"""
 
-    def __init__(self, name="random_walk", buffer_size=20):
+    def __init__(self, name: str = "commit_audit") -> None:
         super().__init__(name=name)
-        self.buffer_size = buffer_size
-        self.best_x = None
-        self.best_f = None
-        self._population = []
-        self._objectives = []
-        self._violations = []
+        self.committed_steps = 0
+        self.last_outcome: dict[str, Any] = {}
 
-    def on_solver_init(self, solver):
-        context = {"generation": 0, "bounds": solver.var_bounds}
-        candidate = solver.init_candidate(context)
-        candidate = solver.repair_candidate(candidate, context)
-        obj, vio = solver.evaluate_individual(candidate, individual_id=0)
-        self._update_buffers(solver, candidate, obj, vio)
-        self._maybe_update_best(candidate, obj)
-
-    def on_step(self, solver, generation):
-        context = {"generation": generation, "bounds": solver.var_bounds}
-        if self.best_x is None:
-            candidate = solver.init_candidate(context)
-        else:
-            candidate = solver.mutate_candidate(self.best_x, context)
-        candidate = solver.repair_candidate(candidate, context)
-
-        obj, vio = solver.evaluate_individual(candidate, individual_id=0)
-        self._update_buffers(solver, candidate, obj, vio)
-        self._maybe_update_best(candidate, obj)
-
-    def _update_buffers(self, solver, candidate, obj, vio):
-        self._population.append(np.asarray(candidate))
-        self._objectives.append(np.asarray(obj))
-        self._violations.append(float(vio))
-
-        if len(self._population) > self.buffer_size:
-            self._population.pop(0)
-            self._objectives.pop(0)
-            self._violations.pop(0)
-
-        solver.population = np.asarray(self._population)
-        solver.objectives = np.asarray(self._objectives)
-        solver.constraint_violations = np.asarray(self._violations)
-
-    def _maybe_update_best(self, candidate, obj):
-        value = float(obj[0]) if np.asarray(obj).size > 0 else float(obj)
-        if self.best_f is None or value < self.best_f:
-            self.best_f = value
-            self.best_x = np.asarray(candidate)
+    def on_generation_committed(
+        self,
+        generation: int,
+        outcome: Mapping[str, Any],
+    ) -> None:
+        _ = generation
+        self.committed_steps += 1
+        self.last_outcome = dict(outcome)
 
 
-def build_solver():
+def build_solver() -> ComposableSolver:
     problem = SimpleSphereProblem(dimension=6, low=-5.0, high=5.0)
-
     pipeline = RepresentationPipeline(
         initializer=UniformInitializer(low=problem.low, high=problem.high),
         mutator=GaussianMutation(sigma=0.5, low=problem.low, high=problem.high),
         repair=ClipRepair(low=problem.low, high=problem.high),
     )
-
+    adapter = SingleTrajectoryAdaptiveAdapter(
+        SingleTrajectoryAdaptiveConfig(
+            batch_size=4,
+            initial_sigma=0.5,
+            min_sigma=0.05,
+            max_sigma=1.5,
+        )
+    )
     bias = BiasModule()
     bias.add(ConvergenceBias(weight=0.2, early_gen=5, late_gen=25))
 
-    solver = SolverBase(problem, bias_module=bias, representation_pipeline=pipeline)
+    solver = ComposableSolver(
+        problem,
+        adapter=adapter,
+        bias_module=bias,
+        representation_pipeline=pipeline,
+    )
     solver.set_max_steps(40)
-    solver.add_plugin(RandomWalkPlugin(buffer_size=20))
+    solver.add_plugin(CommitAuditPlugin())
     return solver
 
 
@@ -118,9 +114,11 @@ if __name__ == "__main__":
     solver = build_solver()
     result = solver.run()
 
-    plugin = solver.get_plugin("random_walk")
+    audit = solver.get_plugin("commit_audit")
+    adapter = solver.adapter
     print("运行状态:", result["status"], "steps:", result["steps"])
-    if plugin is not None and plugin.best_x is not None:
-        print("最优目标值:", f"{plugin.best_f:.6f}")
-        print("最优解:", plugin.best_x)
-
+    if audit is not None:
+        print("Plugin 已审计提交:", audit.committed_steps)
+    if adapter is not None and adapter.best_x is not None:
+        print("最优目标值:", f"{adapter.best_score:.6f}")
+        print("最优解:", adapter.best_x)

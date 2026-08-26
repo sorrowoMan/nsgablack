@@ -9,8 +9,9 @@ Design goals (framework-aligned):
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 import warnings
 
 import numpy as np
@@ -345,6 +346,9 @@ class MOEADAdapter(AlgorithmAdapter):
             "weights": None if self.weights is None else self.weights.tolist(),
             "neighbors": None if self.neighbors is None else self.neighbors.tolist(),
             "candidate_tokens": list(self._population_candidate_tokens),
+            "pending_indices": list(self._pending_indices),
+            "pending_modes": list(self._pending_modes),
+            "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
@@ -364,6 +368,60 @@ class MOEADAdapter(AlgorithmAdapter):
         neighbors = state.get("neighbors")
         self.neighbors = None if neighbors is None else np.asarray(neighbors, dtype=int)
         self._population_candidate_tokens = tuple(state.get("candidate_tokens", ()) or ())
+        self._pending_indices = [
+            int(index) for index in tuple(state.get("pending_indices", ()) or ())
+        ]
+        self._pending_modes = [
+            str(mode) for mode in tuple(state.get("pending_modes", ()) or ())
+        ]
+        if len(self._pending_indices) != len(self._pending_modes):
+            raise ValueError("MOEA/D checkpoint proposal bookkeeping is misaligned")
+        rng_state = state.get("rng_state")
+        if isinstance(rng_state, Mapping):
+            self._rng.bit_generator.state = copy.deepcopy(dict(rng_state))
+
+    def snapshot_step_state(self) -> Mapping[str, Any]:
+        return {
+            "schema": "nsgablack.moead_step_transaction/v1",
+            "adapter_state": super().snapshot_step_state(),
+            "population": None if self.pop_X is None else np.array(self.pop_X, copy=True),
+            "objectives": None if self.pop_F is None else np.array(self.pop_F, copy=True),
+            "violations": None if self.pop_V is None else np.array(self.pop_V, copy=True),
+            "runtime_projection": copy.deepcopy(self._last_context_projection),
+        }
+
+    def restore_step_state(self, state: Mapping[str, Any]) -> None:
+        if str(state.get("schema", "")) != "nsgablack.moead_step_transaction/v1":
+            raise ValueError("unsupported MOEADAdapter step transaction schema")
+        adapter_state = state.get("adapter_state")
+        if not isinstance(adapter_state, Mapping):
+            raise TypeError("MOEADAdapter transaction state is invalid")
+        self.set_state(dict(adapter_state))
+        population = state.get("population")
+        objectives = state.get("objectives")
+        violations = state.get("violations")
+        if population is None or objectives is None or violations is None:
+            if not (population is None and objectives is None and violations is None):
+                raise ValueError("MOEA/D transaction population is incomplete")
+            self.pop_X = None
+            self.pop_F = None
+            self.pop_V = None
+        else:
+            x_arr, f_arr, v_arr = self.validate_population_snapshot(
+                population,
+                objectives,
+                violations,
+            )
+            self.pop_X = x_arr
+            self.pop_F = f_arr
+            self.pop_V = v_arr
+            if len(self._population_candidate_tokens) not in {0, int(x_arr.shape[0])}:
+                raise ValueError("MOEA/D transaction tokens do not align with population")
+            if not self._population_candidate_tokens:
+                self._population_candidate_tokens = (None,) * int(x_arr.shape[0])
+        self._last_context_projection = copy.deepcopy(
+            dict(state.get("runtime_projection", {}) or {})
+        )
 
     # ------------------------------------------------------------------
     # Public helpers for plugins

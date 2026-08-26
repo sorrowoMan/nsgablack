@@ -8,6 +8,7 @@ This module is adapter-first:
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -255,6 +256,9 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
             "violations": None if self.violations is None else self.violations.tolist(),
             "candidate_tokens": list(self._population_candidate_tokens),
             "strategy": str(self.cfg.strategy),
+            "last_target_indices": list(self._last_target_indices),
+            "last_target_scores": self._last_target_scores.tolist(),
+            "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
@@ -274,6 +278,18 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
             raise ValueError("DE checkpoint tokens do not align with population")
         if self.population is not None and not self._population_candidate_tokens:
             self._population_candidate_tokens = (None,) * int(self.population.shape[0])
+        self._last_target_indices = [
+            int(index) for index in tuple(state.get("last_target_indices", ()) or ())
+        ]
+        self._last_target_scores = np.asarray(
+            state.get("last_target_scores", ()) or (),
+            dtype=float,
+        ).reshape(-1)
+        if len(self._last_target_indices) != len(self._last_target_scores):
+            raise ValueError("DE checkpoint proposal bookkeeping is misaligned")
+        rng_state = state.get("rng_state")
+        if isinstance(rng_state, dict):
+            self._rng.bit_generator.state = copy.deepcopy(rng_state)
         self._sync_runtime_projection({})
 
     def _ensure_population(self, control: Any, context: Dict[str, Any]) -> None:

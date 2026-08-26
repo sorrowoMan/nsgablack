@@ -65,7 +65,8 @@ class BasicElitePlugin(Plugin):
         context[KEY_EVALUATION_COUNT] = int(getattr(self.solver, "evaluation_count", 0))
         return context
 
-    def on_generation_end(self, generation: int) -> None:
+    def on_generation_committed(self, generation: int, outcome) -> None:
+        del generation, outcome
         if self.solver is None:
             return None
         population, objectives, violations = self.get_population_snapshot(self.solver)
@@ -177,7 +178,8 @@ class HistoricalElitePlugin(Plugin):
         context[KEY_EVALUATION_COUNT] = int(getattr(self.solver, "evaluation_count", 0))
         return context
 
-    def on_generation_end(self, generation: int) -> None:
+    def on_generation_committed(self, generation: int, outcome) -> None:
+        del outcome
         if self.solver is None or not self.enabled:
             return None
 

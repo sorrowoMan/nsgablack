@@ -279,6 +279,19 @@ class RunView:
             "ttl_seconds": ttl,
             "key_prefix": str(key_prefix) if key_prefix is not None else None,
             "redis_url": self._mask_redis_url(redis_url),
+            "serializer": getattr(solver, "context_store_serializer", "safe"),
+            "max_payload_bytes": getattr(
+                solver,
+                "context_store_max_payload_bytes",
+                None,
+            ),
+            "unsafe_legacy_pickle": bool(
+                getattr(
+                    solver,
+                    "context_store_unsafe_allow_legacy_pickle",
+                    False,
+                )
+            ),
         }
         return out
 
@@ -295,6 +308,15 @@ class RunView:
             "key_prefix": str(key_prefix) if key_prefix is not None else None,
             "redis_url": self._mask_redis_url(redis_url),
             "schema": getattr(solver, "snapshot_schema", None),
+            "serializer": getattr(solver, "snapshot_store_serializer", "safe"),
+            "max_payload_bytes": getattr(
+                solver,
+                "snapshot_store_max_payload_bytes",
+                None,
+            ),
+            "unsafe_legacy_pickle": bool(
+                getattr(solver, "snapshot_store_unsafe_allow_unsigned", False)
+            ),
         }
         return out
 

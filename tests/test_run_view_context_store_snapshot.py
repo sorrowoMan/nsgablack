@@ -10,11 +10,17 @@ def test_context_store_snapshot_masks_redis_password() -> None:
         context_store_ttl_seconds=30,
         context_store_redis_url="redis://user:secret@127.0.0.1:6379/0",
         context_store_key_prefix="nsgablack:demo_project",
+        context_store_serializer="safe",
+        context_store_max_payload_bytes=262144,
+        context_store_unsafe_allow_legacy_pickle=False,
     )
     snap = RunView._context_store_snapshot(view, solver)
     assert snap["backend"] == "redis"
     assert snap["ttl_seconds"] == 30
     assert snap["key_prefix"] == "nsgablack:demo_project"
+    assert snap["serializer"] == "safe"
+    assert snap["max_payload_bytes"] == 262144
+    assert snap["unsafe_legacy_pickle"] is False
     assert "secret" not in str(snap["redis_url"])
     assert "***" in str(snap["redis_url"])
 

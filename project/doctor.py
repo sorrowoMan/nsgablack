@@ -35,6 +35,7 @@ from .doctor_core.rules import (
     check_standard_case_scaffolds as _check_standard_case_scaffolds_rule,
     check_snapshot_refs as _check_snapshot_refs_rule,
     check_snapshot_store_policy as _check_snapshot_store_policy_rule,
+    check_solver_step_outcomes as _check_solver_step_outcomes_rule,
     collect_bias_instances as _collect_bias_instances_rule,
     collect_solver_components as _collect_solver_components_rule,
     looks_like_scaffold_project as _looks_like_scaffold_project_rule,
@@ -193,16 +194,22 @@ def _looks_like_scaffold_project(root: Path) -> bool:
 
 
 def _looks_like_framework_repository(root: Path) -> bool:
-    """Return whether ``root`` is the nsgablack source repository, not a Case."""
+    """Return whether ``root`` is a framework repository, not a Case."""
 
-    return all(
-        path.exists()
-        for path in (
-            root / "pyproject.toml",
-            root / "core" / "blank_solver.py",
-            root / "catalog" / "entries",
-            root / "project" / "doctor.py",
-        )
+    if not (root / "pyproject.toml").is_file():
+        return False
+    if not (root / "catalog" / "entries").is_dir():
+        return False
+    nsgablack_markers = (
+        root / "core" / "blank_solver.py",
+        root / "project" / "doctor.py",
+    )
+    mlblack_markers = (
+        root / "core" / "problem.py",
+        root / "integrations" / "nsgablack_control.py",
+    )
+    return all(path.exists() for path in nsgablack_markers) or all(
+        path.exists() for path in mlblack_markers
     )
 
 
@@ -472,6 +479,20 @@ def _check_contract_source(root: Path, diags: List[DoctorDiagnostic], *, strict:
     )
 
 
+def _check_solver_step_outcomes(
+    root: Path,
+    diags: List[DoctorDiagnostic],
+    *,
+    strict: bool,
+) -> None:
+    _check_solver_step_outcomes_rule(
+        root=root,
+        diags=diags,
+        strict=bool(strict),
+        add=_add,
+    )
+
+
 def _check_examples_suites_solver_control_writes(
     root: Path,
     diags: List[DoctorDiagnostic],
@@ -572,6 +593,7 @@ def run_project_doctor(
     _check_registry(root, diags)
     _check_build_solver(root, diags, instantiate=instantiate_solver, strict=bool(strict))
     _check_contract_source(root, diags, strict=bool(strict))
+    _check_solver_step_outcomes(root, diags, strict=bool(strict))
     _check_component_order_constraints(root, diags, strict=bool(strict))
     _check_runtime_private_surface(root, diags, strict=bool(strict))
     _check_no_plugin_evaluation_short_circuit_rule(

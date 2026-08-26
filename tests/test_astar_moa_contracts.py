@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from nsgablack.adapters import AStarAdapter, AStarConfig, MOAStarAdapter, MOAStarConfig
+from nsgablack.adapters import (
+    AStarAdapter,
+    AStarConfig,
+    MOAStarAdapter,
+    MOAStarConfig,
+    RoleAdapter,
+)
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.core.composable_solver import ComposableSolver
 
@@ -41,7 +47,28 @@ def test_astar_adapter_smoke_run(sample_problem):
     solver.set_max_steps(12)
     result = solver.run()
     assert result["status"] == "ok"
+    assert result["termination_reason"] == "goal_reached"
+    assert result["last_step_outcome"]["status"] == "terminal"
     assert solver.best_objective is not None
+
+
+def test_role_wrapper_preserves_astar_empty_terminal_semantics(sample_problem):
+    inner = AStarAdapter(
+        neighbors=_grid_neighbors,
+        heuristic=lambda s, _c: float(np.linalg.norm(np.asarray(s, dtype=float))),
+        goal_test=_goal_near_zero,
+        start_state=np.asarray([2.0, 2.0], dtype=float),
+        config=AStarConfig(max_expand_per_step=4, max_candidates_per_step=32),
+    )
+    solver = ComposableSolver(
+        problem=sample_problem,
+        adapter=RoleAdapter("search", inner),
+    )
+
+    result = solver.run(max_steps=12)
+
+    assert result["termination_reason"] == "goal_reached"
+    assert result["last_step_outcome"]["status"] == "terminal"
 
 
 def test_astar_adapter_contract_propose_update_and_checkpoint_roundtrip(sample_problem):

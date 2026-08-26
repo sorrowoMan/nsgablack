@@ -26,6 +26,7 @@ from .snapshot_context_policy import (
     check_snapshot_refs,
     check_snapshot_store_policy,
 )
+from .solver_step import check_solver_step_outcomes
 
 __all__ = [
     "check_adapter_layer_purity",
@@ -47,6 +48,7 @@ __all__ = [
     "check_structure",
     "check_snapshot_refs",
     "check_snapshot_store_policy",
+    "check_solver_step_outcomes",
     "collect_bias_instances",
     "collect_solver_components",
     "looks_like_scaffold_project",

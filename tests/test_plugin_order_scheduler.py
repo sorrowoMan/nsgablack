@@ -5,6 +5,7 @@ import pytest
 
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.core.blank_solver import SolverBase
+from nsgablack.core.state import StepOutcome
 from nsgablack.plugins.base import Plugin
 
 
@@ -31,12 +32,17 @@ class _RequestOrderPlugin(Plugin):
             self.solver.request_plugin_order("a", after=("b",))
 
 
+class _StepSolver(SolverBase):
+    def step(self) -> StepOutcome:
+        return StepOutcome(status="committed")
+
+
 def _names(solver: SolverBase):
     return [str(p.name) for p in solver.plugin_manager.plugins]
 
 
 def test_plugin_order_default_priority_and_stability() -> None:
-    solver = SolverBase(problem=_Problem())
+    solver = _StepSolver(problem=_Problem())
     solver.add_plugin(_OrderPlugin("p0", priority=0))
     solver.add_plugin(_OrderPlugin("p1", priority=10))
     solver.add_plugin(_OrderPlugin("p2", priority=0))
@@ -107,7 +113,7 @@ def test_set_plugin_order_rejected_while_running() -> None:
 
 
 def test_request_plugin_order_applies_at_next_generation_boundary() -> None:
-    solver = SolverBase(problem=_Problem())
+    solver = _StepSolver(problem=_Problem())
     solver.add_plugin(_OrderPlugin("a", priority=0))
     solver.add_plugin(_OrderPlugin("b", priority=0))
     solver.add_plugin(_RequestOrderPlugin())

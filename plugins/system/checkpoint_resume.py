@@ -11,12 +11,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
+import numpy as np
+
 from ..base import Plugin
 from ...core.state.incumbent import DEFAULT_INCUMBENT_POLICY_ID, IncumbentState
+from ...core.state.run_progress import RunProgressState
 from blackbase.context.context_keys import (
     KEY_CHECKPOINT_LAST_LOADED_PATH,
     KEY_CHECKPOINT_LATEST_PATH,
 )
+from blackbase.types import PopulationSnapshot
 
 
 @dataclass
@@ -58,7 +62,10 @@ class CheckpointResumePlugin(Plugin):
     SCHEMA_V4 = "nsgablack.checkpoint.v4"
     SCHEMA_V5 = "nsgablack.checkpoint.v5"
     SCHEMA_V6 = "nsgablack.checkpoint.v6"
-    SCHEMA = SCHEMA_V6
+    SCHEMA_V7 = "nsgablack.checkpoint.v7"
+    SCHEMA_V8 = "nsgablack.checkpoint.v8"
+    SCHEMA_V9 = "nsgablack.checkpoint.v9"
+    SCHEMA = SCHEMA_V9
     ENVELOPE_VERSION = "nsgablack.checkpoint.envelope.v1"
     RESUME_ISSUE_SAMPLE_LIMIT = 32
 
@@ -74,6 +81,8 @@ class CheckpointResumePlugin(Plugin):
         self.last_loaded_path: Optional[str] = None
         self.last_saved_generation: Optional[int] = None
         self.last_loaded_generation: Optional[int] = None
+        self._frozen_final_checkpoint: tuple[Path, Dict[str, Any], bytes] | None = None
+        self._staged_final_checkpoint_ref: Any = None
         self._last_resume_audit: Dict[str, Any] = {
             "status": "not_attempted",
             "current": False,
@@ -101,22 +110,111 @@ class CheckpointResumePlugin(Plugin):
                 raise
         return None
 
-    def on_generation_end(self, generation: int):
+    def on_generation_committed(self, generation: int, outcome):
+        del generation, outcome
         save_every = int(self.cfg.save_every)
         if save_every <= 0:
             return None
-        if int(generation) <= 0:
+        solver = self.solver
+        if solver is None:
             return None
-        if int(generation) % save_every != 0:
+        completed_steps = self._completed_logical_steps(solver)
+        if completed_steps <= 0 or completed_steps % save_every != 0:
             return None
         self.save_checkpoint(reason="generation_end")
         return None
 
     def on_solver_finish(self, result: Dict[str, Any]):
-        if bool(self.cfg.save_on_finish):
-            path = self.save_checkpoint(reason="solver_finish")
-            if path is not None and isinstance(result, dict):
-                result["checkpoint_latest"] = str(path)
+        del result
+        if not bool(self.cfg.save_on_finish):
+            return None
+        solver = self.solver
+        if solver is None:
+            return None
+        self._assert_strict_security_ready()
+        target = self._next_checkpoint_path(solver)
+        payload = self._build_payload(solver=solver, reason="solver_finish")
+        envelope = self._wrap_payload(payload)
+        encoded = pickle.dumps(envelope, protocol=pickle.HIGHEST_PROTOCOL)
+        # Freeze while Provider/Adapter state is still alive.  Publication is
+        # delayed until teardown and every strict prepare participant succeed.
+        self._frozen_final_checkpoint = (target, payload, encoded)
+        return None
+
+    def on_solver_finalization_prepare(self, result: Dict[str, Any]):
+        frozen = self._frozen_final_checkpoint
+        if frozen is None:
+            return None
+        solver = self.solver
+        runtime = getattr(solver, "case_runtime", None)
+        begin = getattr(runtime, "begin_finalization_transaction", None)
+        if not callable(begin):
+            return None
+        target, payload, encoded = frozen
+        transaction = begin("case_finalization")
+        self._staged_final_checkpoint_ref = transaction.publish(
+            "checkpoint_final",
+            encoded,
+            serializer="bytes",
+            kind="checkpoint",
+            media_type="application/x-python-pickle",
+            metadata={
+                "framework": "nsgablack",
+                "checkpoint_schema": str(payload.get("schema", self.SCHEMA)),
+                "checkpoint_filename": target.name,
+                "checkpoint_generation": int(
+                    getattr(solver, "generation", 0) or 0
+                ),
+                "state_frozen_before_teardown": True,
+            },
+        )
+        if isinstance(result, dict):
+            result["checkpoint_latest"] = str(self._staged_final_checkpoint_ref.uri)
+            result["checkpoint_latest_ref"] = (
+                self._staged_final_checkpoint_ref.as_dict()
+            )
+        return None
+
+    def on_solver_finalized(self, result: Dict[str, Any]):
+        frozen = self._frozen_final_checkpoint
+        if frozen is None:
+            return None
+        target, payload, _ = frozen
+        solver = self.solver
+        runtime = getattr(solver, "case_runtime", None)
+        try:
+            if runtime is not None:
+                publications = dict(
+                    getattr(runtime, "artifact_publications", {}) or {}
+                )
+                receipt = publications.get("checkpoint_final")
+                if receipt is None:
+                    raise RuntimeError(
+                        "final checkpoint did not receive an authoritative "
+                        "PublicationReceipt"
+                    )
+                if receipt.metadata.get("case_finalization_sealed") is not True:
+                    raise RuntimeError(
+                        "final checkpoint receipt is not Case-finalization sealed"
+                    )
+                ref = receipt.ref
+                self.latest_checkpoint_path = str(ref.uri)
+                if isinstance(result, dict):
+                    result["checkpoint_latest"] = str(ref.uri)
+                    result["checkpoint_latest_ref"] = ref.as_dict()
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                self._atomic_write_pickle(target, payload)
+                self.latest_checkpoint_path = str(target)
+                self._apply_retention(target.parent)
+                if isinstance(result, dict):
+                    result["checkpoint_latest"] = str(target)
+            self.last_saved_generation = int(
+                getattr(solver, "generation", 0) or 0
+            )
+        finally:
+            self._frozen_final_checkpoint = None
+            self._staged_final_checkpoint_ref = None
         return None
 
     # ------------------------------------------------------------------
@@ -128,13 +226,11 @@ class CheckpointResumePlugin(Plugin):
             return None
         self._assert_strict_security_ready()
 
-        ckpt_dir = Path(self.cfg.checkpoint_dir).resolve()
+        target = self._next_checkpoint_path(solver)
+        ckpt_dir = target.parent
         ckpt_dir.mkdir(parents=True, exist_ok=True)
 
         generation = int(getattr(solver, "generation", 0))
-        stamp = time.strftime("%Y%m%d_%H%M%S")
-        filename = f"{self.cfg.file_prefix}_g{generation:06d}_{stamp}.pkl"
-        target = ckpt_dir / filename
 
         payload = self._build_payload(solver=solver, reason=reason)
         self._atomic_write_pickle(target, payload)
@@ -143,6 +239,13 @@ class CheckpointResumePlugin(Plugin):
 
         self._apply_retention(ckpt_dir)
         return target
+
+    def _next_checkpoint_path(self, solver: Any) -> Path:
+        ckpt_dir = Path(self.cfg.checkpoint_dir).resolve()
+        generation = int(getattr(solver, "generation", 0))
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        filename = f"{self.cfg.file_prefix}_g{generation:06d}_{stamp}.pkl"
+        return ckpt_dir / filename
 
     def resume(self, checkpoint: str = "latest") -> bool:
         self._begin_resume_audit(checkpoint)
@@ -220,17 +323,11 @@ class CheckpointResumePlugin(Plugin):
                 self.last_loaded_path = str(path)
                 self.latest_checkpoint_path = str(path)
                 state = payload.get("solver_state", {})
-                resume_cursor = payload.get("resume_cursor")
+                resume_cursor = self._resume_cursor_from_payload(payload)
                 setattr(
                     solver,
                     "_resume_cursor",
-                    int(
-                        resume_cursor
-                        if isinstance(resume_cursor, int)
-                        else state.get("generation", 0)
-                        if isinstance(state, Mapping)
-                        else 0
-                    ),
+                    int(resume_cursor),
                 )
                 self.last_loaded_generation = int(
                     state.get("generation", 0)
@@ -547,13 +644,40 @@ class CheckpointResumePlugin(Plugin):
             }
         return out
 
-    def _infer_resume_cursor(self, solver: Any, generation: int) -> int:
-        if hasattr(solver, "max_steps") and not hasattr(solver, "max_generations"):
-            return max(0, int(generation) + 1)
-        return max(0, int(generation))
+    @staticmethod
+    def _run_progress_state(solver: Any) -> RunProgressState:
+        exporter = getattr(solver, "export_run_progress_state", None)
+        if not callable(exporter):
+            raise TypeError(
+                "checkpoint target must expose export_run_progress_state()"
+            )
+        payload = exporter()
+        if not isinstance(payload, Mapping):
+            raise TypeError(
+                "solver.export_run_progress_state() must return a Mapping"
+            )
+        return RunProgressState.from_dict(payload)
+
+    @classmethod
+    def _completed_logical_steps(cls, solver: Any) -> int:
+        return int(cls._run_progress_state(solver).steps_completed)
+
+    @staticmethod
+    def _resume_cursor_from_payload(payload: Mapping[str, Any]) -> int:
+        state = payload.get("solver_state")
+        if isinstance(state, Mapping):
+            progress = state.get("run_progress")
+            if isinstance(progress, Mapping):
+                return int(RunProgressState.from_dict(progress).steps_completed)
+        cursor = payload.get("resume_cursor")
+        if isinstance(cursor, int):
+            return max(0, int(cursor))
+        generation = state.get("generation", 0) if isinstance(state, Mapping) else 0
+        return max(0, int(generation or 0))
 
     def _build_payload(self, *, solver: Any, reason: str) -> Dict[str, Any]:
         generation = int(getattr(solver, "generation", 0))
+        run_progress = self._run_progress_state(solver)
         authority_mode = str(
             getattr(solver, "population_authority_mode", "single") or "single"
         ).strip().lower()
@@ -561,27 +685,54 @@ class CheckpointResumePlugin(Plugin):
             raise ValueError(
                 f"unsupported checkpoint population authority mode: {authority_mode}"
             )
-        if authority_mode == "partitioned":
-            snap_pop = snap_obj = snap_vio = None
-            event_reader = getattr(
-                solver,
-                "get_last_evaluated_batch_snapshot",
-                None,
+        event_reader = getattr(
+            solver,
+            "get_last_evaluated_batch_snapshot",
+            None,
+        )
+        if authority_mode == "partitioned" and not callable(event_reader):
+            raise TypeError(
+                "partitioned checkpoint target must expose "
+                "get_last_evaluated_batch_snapshot()"
             )
-            if not callable(event_reader):
-                raise TypeError(
-                    "partitioned checkpoint target must expose "
-                    "get_last_evaluated_batch_snapshot()"
-                )
+        if callable(event_reader):
             event_pop, event_obj, event_vio = event_reader()
-            last_evaluated_batch = {
+        else:
+            event_pop = event_obj = event_vio = None
+        has_event = any(
+            value is not None for value in (event_pop, event_obj, event_vio)
+        )
+        last_evaluated_batch = (
+            {
                 "population": self._safe_copy(event_pop),
                 "objectives": self._safe_copy(event_obj),
                 "constraint_violations": self._safe_copy(event_vio),
             }
+            if authority_mode == "partitioned" or has_event
+            else None
+        )
+        event_exporter = getattr(
+            solver,
+            "export_evaluation_event_checkpoint_state",
+            None,
+        )
+        evaluation_event = (
+            event_exporter() if callable(event_exporter) else None
+        )
+        disposition_exporter = getattr(
+            solver,
+            "export_evaluation_disposition_checkpoint_state",
+            None,
+        )
+        evaluation_disposition = (
+            disposition_exporter()
+            if callable(disposition_exporter)
+            else None
+        )
+        if authority_mode == "partitioned":
+            snap_pop = snap_obj = snap_vio = None
         else:
             snap_pop, snap_obj, snap_vio = self.get_population_snapshot(solver)
-            last_evaluated_batch = None
         projection_payload: Dict[str, Any] = {}
         export_incumbent = getattr(solver, "export_incumbent_checkpoint_state", None)
         if callable(export_incumbent):
@@ -650,8 +801,19 @@ class CheckpointResumePlugin(Plugin):
             "objectives": self._safe_copy(snap_obj),
             "constraint_violations": self._safe_copy(snap_vio),
             "last_evaluated_batch": self._safe_copy(last_evaluated_batch),
+            "evaluation_event": self._safe_copy(evaluation_event),
+            "evaluation_disposition": self._safe_copy(
+                evaluation_disposition
+            ),
             "pareto_solutions": self._safe_copy(getattr(solver, "pareto_solutions", None)),
             "pareto_objectives": self._safe_copy(getattr(solver, "pareto_objectives", None)),
+            "pareto_population_snapshot": (
+                None
+                if getattr(solver, "pareto_population_snapshot", None) is None
+                else self._safe_copy(
+                    solver.pareto_population_snapshot.as_dict()
+                )
+            ),
             "history": self._safe_copy(getattr(solver, "history", None)),
             "incumbent": (
                 None
@@ -664,7 +826,7 @@ class CheckpointResumePlugin(Plugin):
             "incumbent_selection": self._safe_copy(selection_payload),
             "random_seed": self._safe_copy(getattr(solver, "random_seed", None)),
             "run_progress": self._safe_copy(
-                getattr(solver, "export_run_progress_state", lambda: None)()
+                run_progress.as_dict()
             ),
         }
         export_candidate_population = getattr(
@@ -707,7 +869,7 @@ class CheckpointResumePlugin(Plugin):
             "solver_module": str(solver.__class__.__module__),
             "solver_class": str(solver.__class__.__name__),
             "solver_state": solver_state,
-            "resume_cursor": self._infer_resume_cursor(solver, generation),
+            "resume_cursor": int(run_progress.steps_completed),
             "adapter_state": self._collect_adapter_state(solver),
             "adapter_population_partitions": (
                 self._collect_adapter_population_partitions(solver)
@@ -779,6 +941,37 @@ class CheckpointResumePlugin(Plugin):
             objectives = state.get("objectives")
             violations = state.get("constraint_violations")
 
+        full_event = state.get("evaluation_event")
+        restore_full_event = getattr(
+            solver,
+            "restore_evaluation_event_checkpoint_state",
+            None,
+        )
+        restore_event = getattr(solver, "restore_evaluation_event_arrays", None)
+        if isinstance(full_event, Mapping) and callable(restore_full_event):
+            restore_full_event(full_event)
+        elif callable(restore_event):
+            if isinstance(last_evaluated, Mapping):
+                restore_event(
+                    last_evaluated.get("population"),
+                    last_evaluated.get("objectives"),
+                    last_evaluated.get("constraint_violations"),
+                )
+            else:
+                restore_event(None, None, None)
+        restore_disposition = getattr(
+            solver,
+            "restore_evaluation_disposition_checkpoint_state",
+            None,
+        )
+        if callable(restore_disposition):
+            full_disposition = state.get("evaluation_disposition")
+            restore_disposition(
+                full_disposition
+                if isinstance(full_disposition, Mapping)
+                else None
+            )
+
         has_numeric_state = all(
             value is not None for value in (population, objectives, violations)
         )
@@ -835,6 +1028,13 @@ class CheckpointResumePlugin(Plugin):
                     )
                     if bool(self.cfg.strict):
                         raise
+            if authority_mode == "partitioned":
+                _set_field("population", None)
+                _set_field("objectives", None)
+                _set_field("constraint_violations", None)
+                _set_field("_candidate_population_batch", None)
+                _set_field("_candidate_population_provenance", ())
+                _set_field("_active_candidate_provenance", [])
         else:
             restore_candidate_population = getattr(
                 solver,
@@ -885,6 +1085,17 @@ class CheckpointResumePlugin(Plugin):
             else:
                 _set_field("pareto_solutions", state.get("pareto_solutions"))
                 _set_field("pareto_objectives", state.get("pareto_objectives"))
+        pareto_population_payload = state.get("pareto_population_snapshot")
+        if isinstance(pareto_population_payload, Mapping):
+            _set_field(
+                "pareto_population_snapshot",
+                PopulationSnapshot.from_dict(pareto_population_payload),
+            )
+        elif callable(getattr(solver, "update_pareto_solutions", None)):
+            # Older checkpoints did not persist token-aligned Pareto identity.
+            # Reconstruct from the already-restored authoritative CandidateBatch,
+            # never by matching equal numeric rows.
+            solver.update_pareto_solutions()
 
         if "history" in state:
             _set_field("history", state.get("history"))
@@ -1216,7 +1427,7 @@ class CheckpointResumePlugin(Plugin):
     @classmethod
     def _migrate_payload(cls, payload: Dict[str, Any]) -> Dict[str, Any]:
         schema = str(payload.get("schema", "")).strip()
-        if schema == cls.SCHEMA_V6:
+        if schema == cls.SCHEMA_V9:
             return payload
         if schema not in {
             cls.SCHEMA_V1,
@@ -1224,6 +1435,9 @@ class CheckpointResumePlugin(Plugin):
             cls.SCHEMA_V3,
             cls.SCHEMA_V4,
             cls.SCHEMA_V5,
+            cls.SCHEMA_V6,
+            cls.SCHEMA_V7,
+            cls.SCHEMA_V8,
         }:
             raise ValueError(f"unsupported checkpoint schema: {schema or '<missing>'}")
 
@@ -1262,6 +1476,7 @@ class CheckpointResumePlugin(Plugin):
         migrated.setdefault("adapter_population_partitions", [])
         state.setdefault("candidate_population", None)
         state.setdefault("candidate_population_partitions", None)
+        state.setdefault("pareto_population_snapshot", None)
         partition_payload = state.get("candidate_population_partitions")
         partitioned = bool(
             isinstance(partition_payload, Mapping)
@@ -1285,16 +1500,60 @@ class CheckpointResumePlugin(Plugin):
             state["constraint_violations"] = None
         else:
             state.setdefault("last_evaluated_batch", None)
-        state.setdefault(
-            "run_progress",
-            {
-                "schema": "nsgablack.run_progress/v1",
-                "steps_completed": int(state.get("generation", 0) or 0),
-                "elapsed_seconds": 0.0,
-                "deadline_remaining_seconds": None,
-                "run_id": state.get("active_run_id"),
-            },
-        )
+        if "evaluation_event" not in state:
+            legacy_event = state.get("last_evaluated_batch")
+            if isinstance(legacy_event, Mapping) and all(
+                legacy_event.get(key) is not None
+                for key in ("population", "objectives", "constraint_violations")
+            ):
+                state["evaluation_event"] = {
+                    "schema": "blackbase.evaluation_event/v1",
+                    "event_id": (
+                        f"migrated:{state.get('active_run_id') or 'unknown'}:"
+                        f"{int(state.get('generation', 0) or 0)}"
+                    ),
+                    "candidate_codec": "blackbase.numeric_candidate_batch/v1",
+                    "candidate_payload": {
+                        "population": np.asarray(
+                            legacy_event.get("population"), dtype=float
+                        ).tolist(),
+                    },
+                    "feedback_codec": "nsgablack.numeric_optimization_feedback/v1",
+                    "feedback_payload": {
+                        "objectives": np.asarray(
+                            legacy_event.get("objectives"), dtype=float
+                        ).tolist(),
+                        "constraint_violations": np.asarray(
+                            legacy_event.get("constraint_violations"), dtype=float
+                        ).tolist(),
+                    },
+                    "provenance": [],
+                    "identity": {
+                        "run_id": state.get("active_run_id"),
+                        "logical_step": int(state.get("generation", 0) or 0),
+                    },
+                    "evaluation_count": int(
+                        state.get("evaluation_count", 0) or 0
+                    ),
+                    "semantic_complete": False,
+                    "metadata": {"migrated_from_schema": schema},
+                }
+            else:
+                state["evaluation_event"] = None
+        run_progress = state.get("run_progress")
+        if isinstance(run_progress, Mapping):
+            state["run_progress"] = RunProgressState.from_dict(
+                run_progress
+            ).as_dict()
+        else:
+            completed = int(state.get("generation", 0) or 0)
+            state["run_progress"] = RunProgressState(
+                steps_completed=completed,
+                attempts_completed=completed,
+                elapsed_seconds=0.0,
+                deadline_remaining_seconds=None,
+                run_id=state.get("active_run_id"),
+            ).as_dict()
         state.setdefault(
             "candidate_population_audit",
             {
@@ -1303,7 +1562,7 @@ class CheckpointResumePlugin(Plugin):
                 "reason": f"migrated_from_{schema}",
             },
         )
-        migrated["schema"] = cls.SCHEMA_V6
+        migrated["schema"] = cls.SCHEMA_V9
         migrated["migrated_from_schema"] = schema
         return migrated
 
@@ -1444,8 +1703,8 @@ class CheckpointResumePlugin(Plugin):
             raise ValueError("invalid checkpoint payload: missing solver_state")
         self._validate_incumbent_selection(solver, state)
 
-        resume_cursor = payload.get("resume_cursor")
-        self._apply_solver_state(solver, state, resume_cursor if isinstance(resume_cursor, int) else None)
+        resume_cursor = self._resume_cursor_from_payload(payload)
+        self._apply_solver_state(solver, state, resume_cursor)
         restored_components = self._apply_component_states(
             solver,
             payload.get("stateful_components", {}),

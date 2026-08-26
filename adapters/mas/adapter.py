@@ -4,8 +4,9 @@ Model-and-Search (MAS) adapter: alternates model update and search steps.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -157,6 +158,11 @@ class MASAdapter(AlgorithmAdapter):
     def get_state(self) -> Dict[str, Any]:
         return {
             "center": None if self._center is None else self._center.tolist(),
+            "history_x": [np.asarray(row, dtype=float).tolist() for row in self._X],
+            "history_y": [np.asarray(row, dtype=float).tolist() for row in self._Y],
+            "surrogate_present": self._surrogate is not None,
+            "surrogate_fitted": self._surrogate_is_fitted(),
+            "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
@@ -164,6 +170,97 @@ class MASAdapter(AlgorithmAdapter):
             return
         center = state.get("center")
         self._center = None if center is None else np.asarray(center, dtype=float)
+        self._X = [
+            np.asarray(row, dtype=float).reshape(-1)
+            for row in tuple(state.get("history_x", ()) or ())
+        ]
+        self._Y = [
+            np.asarray(row, dtype=float).reshape(-1)
+            for row in tuple(state.get("history_y", ()) or ())
+        ]
+        if len(self._X) != len(self._Y):
+            raise ValueError("MAS checkpoint surrogate history is misaligned")
+        rng_state = state.get("rng_state")
+        if isinstance(rng_state, Mapping):
+            self._rng.bit_generator.state = copy.deepcopy(dict(rng_state))
+        self._restore_surrogate_from_history(
+            present=bool(state.get("surrogate_present", False)),
+            fitted=bool(state.get("surrogate_fitted", False)),
+        )
+
+    def snapshot_step_state(self) -> Mapping[str, Any]:
+        return {
+            "schema": "nsgablack.mas_step_transaction/v1",
+            "center": None if self._center is None else np.array(self._center, copy=True),
+            "history_x": (
+                None
+                if not self._X
+                else np.asarray(self._X, dtype=float).copy()
+            ),
+            "history_y": (
+                None
+                if not self._Y
+                else np.asarray(self._Y, dtype=float).copy()
+            ),
+            "surrogate_present": self._surrogate is not None,
+            "surrogate_fitted": self._surrogate_is_fitted(),
+            "rng_state": copy.deepcopy(self._rng.bit_generator.state),
+        }
+
+    def restore_step_state(self, state: Mapping[str, Any]) -> None:
+        if str(state.get("schema", "")) != "nsgablack.mas_step_transaction/v1":
+            raise ValueError("unsupported MASAdapter step transaction schema")
+        center = state.get("center")
+        self._center = None if center is None else np.asarray(center, dtype=float).copy()
+        history_x = state.get("history_x")
+        history_y = state.get("history_y")
+        self._X = (
+            []
+            if history_x is None
+            else [np.array(row, copy=True) for row in np.asarray(history_x, dtype=float)]
+        )
+        self._Y = (
+            []
+            if history_y is None
+            else [np.array(row, copy=True) for row in np.asarray(history_y, dtype=float)]
+        )
+        if len(self._X) != len(self._Y):
+            raise ValueError("MAS transaction surrogate history is misaligned")
+        rng_state = state.get("rng_state")
+        if not isinstance(rng_state, Mapping):
+            raise TypeError("MAS transaction RNG state is invalid")
+        self._rng.bit_generator.state = copy.deepcopy(dict(rng_state))
+        self._restore_surrogate_from_history(
+            present=bool(state.get("surrogate_present", False)),
+            fitted=bool(state.get("surrogate_fitted", False)),
+        )
+
+    def _surrogate_is_fitted(self) -> bool:
+        surrogate = self._surrogate
+        if surrogate is None:
+            return False
+        for trainer in surrogate.trainers:
+            model = getattr(trainer, "model", None)
+            if model is not None and (
+                hasattr(model, "estimators_") or hasattr(model, "_fit_X")
+            ):
+                return True
+        return False
+
+    def _restore_surrogate_from_history(self, *, present: bool, fitted: bool) -> None:
+        self._surrogate = None
+        if not present:
+            return
+        objectives = None if not self._Y else np.asarray(self._Y, dtype=float)
+        self._ensure_surrogate(self.solver, objectives)
+        if not fitted:
+            return
+        if self._surrogate is None or not self._X or not self._Y:
+            raise ValueError("MAS fitted surrogate checkpoint is missing training history")
+        self._surrogate.fit(
+            np.asarray(self._X, dtype=float),
+            np.asarray(self._Y, dtype=float),
+        )
 
     def _score(self, objectives: np.ndarray, violations: np.ndarray) -> np.ndarray:
         obj = np.asarray(objectives, dtype=float)

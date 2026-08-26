@@ -4,12 +4,31 @@ import numpy as np
 
 from blackbase.contracts import BatchDisposition
 from nsgablack.adapters import (
+    AlgorithmAdapter,
     AStarAdapter,
     DifferentialEvolutionAdapter,
     GradientDescentAdapter,
     MOAStarAdapter,
     MOEADAdapter,
+    RoleAdapter,
 )
+
+
+class _DispositionRecorder(AlgorithmAdapter):
+    def __init__(self) -> None:
+        super().__init__(name="recorder")
+        self.received = []
+
+    def propose(self, control, context):
+        del control, context
+        return [np.asarray([index], dtype=float) for index in range(5)]
+
+    def update(self, control, candidates, feedback, context):
+        del control, candidates, feedback, context
+
+    def on_proposal_disposition(self, control, disposition, context):
+        del control, context
+        self.received.append(disposition)
 
 
 def _non_prefix_disposition(proposed_count: int) -> BatchDisposition:
@@ -75,3 +94,25 @@ def test_moa_star_disposition_keeps_path_metadata_aligned() -> None:
     adapter.on_proposal_disposition(None, _non_prefix_disposition(3), {})
 
     assert [item["parent_key"] for item in adapter._pending] == ["a", "c"]
+
+
+def test_role_wrapper_composes_local_limit_with_one_final_disposition() -> None:
+    inner = _DispositionRecorder()
+    wrapper = RoleAdapter("worker", inner, max_candidates=3)
+    proposed = wrapper.propose(None, {})
+    assert len(proposed) == 3
+    assert inner.received == []
+
+    wrapper.on_proposal_disposition(
+        None,
+        BatchDisposition(
+            proposed_count=3,
+            accepted_indices=(1, 2),
+            reason="global_acceptance",
+        ),
+        {},
+    )
+
+    assert len(inner.received) == 1
+    assert inner.received[0].proposed_count == 5
+    assert inner.received[0].accepted_indices == (1, 2)

@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import os
+import pickle
 from pathlib import Path
 
 import numpy as np
 import pytest
+
+from blackbase import CandidateBatch, Feedback, UnknownState
+from nsgablack.core.evaluation_feedback import OptimizationFeedbackBatch
+from nsgablack.core.state.incumbent import CandidateProvenance
 
 
 def _build_composable_solver(sample_problem):
@@ -24,6 +29,66 @@ def _build_composable_solver(sample_problem):
         representation_pipeline=pipeline,
     )
     return solver
+
+
+def test_checkpoint_v9_preserves_semantic_evaluation_event(sample_problem) -> None:
+    from nsgablack.plugins import CheckpointResumeConfig, CheckpointResumePlugin
+
+    solver = _build_composable_solver(sample_problem)
+    values = np.zeros((int(solver.dimension),), dtype=float)
+    state = UnknownState(values=values, metadata={"model_family": "linear-a"})
+    batch = CandidateBatch(
+        semantic_states=(state,),
+        numeric_matrix=values.reshape(1, -1),
+        candidate_tokens=("candidate-1",),
+    )
+    feedback = OptimizationFeedbackBatch.from_feedback(
+        (
+            Feedback(
+                objectives=np.asarray([1.25]),
+                metrics={"validation_loss": 1.25},
+                info={"constraint_violation": 0.0, "head": "regression"},
+            ),
+        ),
+        metadata={"provider": "test-provider"},
+    )
+    provenance = (
+        CandidateProvenance(
+            candidate_token="candidate-1",
+            source_kind="proposal",
+            source_run_id="run-a",
+            proposal_id="proposal-a",
+        ),
+    )
+    solver.record_evaluation_event(batch, feedback, provenance)
+    writer = CheckpointResumePlugin(
+        config=CheckpointResumeConfig(save_on_finish=False)
+    )
+    writer.attach(solver)
+    payload = writer._build_payload(solver=solver, reason="semantic-event")
+
+    event = payload["solver_state"]["evaluation_event"]
+    assert payload["schema"] == "nsgablack.checkpoint.v9"
+    assert event["semantic_complete"] is True
+
+    restored = _build_composable_solver(sample_problem)
+    reader = CheckpointResumePlugin(
+        config=CheckpointResumeConfig(save_on_finish=False)
+    )
+    reader.attach(restored)
+    reader._apply_solver_state(restored, payload["solver_state"], 0)
+
+    restored_batch = restored._last_evaluated_event_batch
+    restored_feedback = restored._last_evaluated_event_feedback
+    assert restored_batch is not None
+    assert restored_feedback is not None
+    assert dict(restored_batch.semantic_states[0].metadata) == {
+        "model_family": "linear-a"
+    }
+    assert restored_batch.candidate_tokens == ("candidate-1",)
+    assert restored._last_evaluated_event_provenance[0].proposal_id == "proposal-a"
+    assert restored_feedback.items[0].metrics["validation_loss"] == 1.25
+    assert restored_feedback.metadata["provider"] == "test-provider"
 
 
 def test_checkpoint_resume_composable_solver(sample_problem, tmp_path: Path):
@@ -229,6 +294,59 @@ def test_checkpoint_resume_nsga2_solver(sample_problem, tmp_path: Path):
     assert int(result_b["generation"]) == 6
     assert int(result_b["resume_from"]) >= 4
     assert int(getattr(solver_b, "evaluation_count", 0)) >= before_eval
+
+
+def test_periodic_checkpoint_uses_committed_step_cursor_without_replay(
+    sample_problem,
+    tmp_path: Path,
+):
+    from nsgablack.core.evolution_solver import EvolutionSolver
+    from nsgablack.plugins import CheckpointResumeConfig, CheckpointResumePlugin
+
+    checkpoint_dir = tmp_path / "periodic_cursor"
+    solver_a = EvolutionSolver(sample_problem)
+    solver_a.pop_size = 8
+    solver_a.max_generations = 3
+    solver_a.enable_progress_log = False
+    plugin_a = CheckpointResumePlugin(
+        config=CheckpointResumeConfig(
+            checkpoint_dir=str(checkpoint_dir),
+            save_every=2,
+            save_on_finish=False,
+            keep_last=4,
+        )
+    )
+    solver_a.add_plugin(plugin_a)
+
+    solver_a.run(return_dict=True)
+
+    assert plugin_a.latest_checkpoint_path is not None
+    with Path(plugin_a.latest_checkpoint_path).open("rb") as handle:
+        payload = plugin_a._unwrap_and_verify_payload(pickle.load(handle))
+    assert payload["reason"] == "generation_end"
+    assert payload["solver_state"]["generation"] == 1
+    assert payload["solver_state"]["run_progress"]["steps_completed"] == 2
+    assert payload["resume_cursor"] == 2
+
+    solver_b = EvolutionSolver(sample_problem)
+    solver_b.pop_size = 8
+    solver_b.max_generations = 3
+    solver_b.enable_progress_log = False
+    plugin_b = CheckpointResumePlugin(
+        config=CheckpointResumeConfig(
+            checkpoint_dir=str(checkpoint_dir),
+            save_every=0,
+            save_on_finish=False,
+            auto_resume=True,
+        )
+    )
+    solver_b.add_plugin(plugin_b)
+
+    result = solver_b.run(return_dict=True)
+
+    assert result["resume_from"] == 2
+    assert result["steps_executed"] == 1
+    assert result["generation"] == 3
 
 
 def test_checkpoint_resume_hmac_roundtrip(sample_problem, tmp_path: Path):
@@ -445,7 +563,7 @@ def test_checkpoint_writer_uses_v5_and_carries_component_and_selection_audit(
     payload = plugin._build_payload(solver=solver, reason="schema-test")
     state = payload["solver_state"]
 
-    assert payload["schema"] == "nsgablack.checkpoint.v6"
+    assert payload["schema"] == "nsgablack.checkpoint.v9"
     assert "adapter" in payload["stateful_components"]
     assert state["run_sequence"] == 1
     assert state["incumbent_selection"] == {

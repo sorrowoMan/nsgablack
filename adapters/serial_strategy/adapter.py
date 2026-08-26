@@ -9,7 +9,7 @@ Use cases:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from blackbase.call_binding import CallCandidate, invoke_bound_once
@@ -23,6 +23,7 @@ from ..algorithm_adapter import (
     restore_prefixed_population_partitions,
 )
 from ..runtime_projection import aggregate_adapter_runtime_projections
+from ..empty_outcome import child_empty_proposal_outcome
 from blackbase.context.context_keys import KEY_PHASE, KEY_STRATEGY, KEY_STRATEGY_ID
 
 
@@ -125,6 +126,20 @@ class StrategyChainAdapter(AlgorithmAdapter):
         ctx[KEY_STRATEGY] = adapter.name
         ctx[KEY_STRATEGY_ID] = int(self._current_idx)
         return adapter.propose(control, ctx)
+
+    def get_empty_proposal_outcome(
+        self,
+        control: Any,
+        context: Dict[str, Any],
+    ) -> Any | None:
+        adapter = self._current_adapter()
+        if adapter is None:
+            return None
+        ctx = dict(context)
+        ctx[KEY_PHASE] = self._current_phase_name()
+        ctx[KEY_STRATEGY] = adapter.name
+        ctx[KEY_STRATEGY_ID] = int(self._current_idx)
+        return child_empty_proposal_outcome(adapter, control, ctx)
 
     def update(
         self,
@@ -241,6 +256,45 @@ class StrategyChainAdapter(AlgorithmAdapter):
                 tuple(PopulationPartition.from_dict(item) for item in raw_partitions)
             )
 
+    def step_transaction_children(self) -> Sequence[AlgorithmAdapter]:
+        self._materialize_adapters()
+        return tuple(self._adapters)
+
+    def snapshot_step_state(self) -> Mapping[str, Any]:
+        return {
+            "schema": "nsgablack.strategy_chain_step_transaction/v1",
+            "current_idx": int(self._current_idx),
+            "step_in_phase": int(self._step_in_phase),
+            "phase_steps": list(self._phase_steps),
+            "population_owner_idx": self._population_owner_idx,
+            "projection_writers": dict(self._last_projection_writers),
+        }
+
+    def restore_step_state(self, state: Mapping[str, Any]) -> None:
+        if str(state.get("schema", "")) != "nsgablack.strategy_chain_step_transaction/v1":
+            raise ValueError("unsupported StrategyChainAdapter step transaction schema")
+        self._materialize_adapters()
+        current_idx = int(state.get("current_idx", 0))
+        if self._adapters and not 0 <= current_idx < len(self._adapters):
+            raise ValueError("StrategyChainAdapter transaction phase is out of range")
+        phase_steps = [
+            int(value) for value in tuple(state.get("phase_steps", ()) or ())
+        ]
+        if len(phase_steps) != len(self.phases):
+            raise ValueError("StrategyChainAdapter transaction schedule mismatch")
+        raw_owner = state.get("population_owner_idx")
+        owner = None if raw_owner is None else int(raw_owner)
+        if owner is not None and not 0 <= owner < len(self._adapters):
+            raise ValueError("StrategyChainAdapter transaction owner is out of range")
+        self._current_idx = current_idx
+        self._step_in_phase = int(state.get("step_in_phase", 0))
+        self._phase_steps = phase_steps
+        self._population_owner_idx = owner
+        self._last_projection_writers = {
+            str(key): str(value)
+            for key, value in dict(state.get("projection_writers", {}) or {}).items()
+        }
+
     def _population_owner(self) -> tuple[int, AlgorithmAdapter] | None:
         if not self._adapters:
             return None
@@ -252,6 +306,22 @@ class StrategyChainAdapter(AlgorithmAdapter):
         if index < 0 or index >= len(self._adapters):
             raise ValueError("StrategyChainAdapter population owner is out of range")
         return index, self._adapters[index]
+
+    def resolve_population_state_mode(self) -> str:
+        owner = self._population_owner()
+        if owner is None:
+            return "unresolved"
+        _index, adapter = owner
+        resolver = getattr(adapter, "resolve_population_state_mode", None)
+        return str(resolver()) if callable(resolver) else "unresolved"
+
+    def supported_population_state_modes(self) -> frozenset[str]:
+        modes: set[str] = set()
+        for adapter in self._adapters:
+            resolver = getattr(adapter, "supported_population_state_modes", None)
+            if callable(resolver):
+                modes.update(str(item) for item in resolver())
+        return frozenset(modes)
 
     def _population_prefix(self, index: int) -> str:
         phase_name = (

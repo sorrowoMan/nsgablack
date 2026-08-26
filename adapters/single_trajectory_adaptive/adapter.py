@@ -7,6 +7,7 @@ neighborhood scale online from observed improvement rate.
 
 from __future__ import annotations
 
+import copy
 from collections import deque
 from dataclasses import dataclass
 from typing import Any, Deque, Dict, Optional, Sequence, Tuple
@@ -194,6 +195,7 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
             "no_improve_steps": int(self.no_improve_steps),
             "success_history": list(self.success_history),
             "step_count": int(self.step_count),
+            "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
@@ -210,6 +212,9 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
             maxlen=max(1, int(self.cfg.success_window)),
         )
         self.step_count = int(state.get("step_count", 0))
+        rng_state = state.get("rng_state")
+        if isinstance(rng_state, dict):
+            self._rng.bit_generator.state = copy.deepcopy(rng_state)
 
     def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
         _ = solver

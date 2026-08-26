@@ -17,11 +17,15 @@ domain-aware adapters can consume ``feedback.items``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from types import MappingProxyType
 from typing import Any, Iterator, Mapping, Sequence
 
 import numpy as np
+from blackbase import normalize_row_selector
 from blackbase.types import Feedback
+from blackbase.wire import freeze_wire_mapping, thaw_wire_mapping
+
+
+OPTIMIZATION_FEEDBACK_BATCH_SCHEMA = "nsgablack.optimization_feedback_batch/v1"
 
 
 def _readonly_array(value: Any, *, ndim: int | None = None) -> np.ndarray:
@@ -201,7 +205,14 @@ class OptimizationFeedbackBatch:
         object.__setattr__(self, "objectives", _readonly_array(objectives, ndim=2))
         object.__setattr__(self, "violations", _readonly_array(violations, ndim=1))
         object.__setattr__(self, "items", tuple(normalized_items))
-        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata or {})))
+        object.__setattr__(
+            self,
+            "metadata",
+            freeze_wire_mapping(
+                self.metadata,
+                path="optimization_feedback_batch.metadata",
+            ),
+        )
 
     @property
     def candidate_count(self) -> int:
@@ -350,13 +361,38 @@ class OptimizationFeedbackBatch:
         )
 
     def subset(self, selector: slice | Sequence[int] | np.ndarray) -> "OptimizationFeedbackBatch":
-        indices = np.arange(self.candidate_count)[selector]
-        indices = np.asarray(indices, dtype=int).reshape(-1)
+        indices = normalize_row_selector(selector, row_count=self.candidate_count)
         return type(self)(
             objectives=self.objectives[indices],
             violations=self.violations[indices],
             items=tuple(self.items[int(index)] for index in indices),
             metadata=dict(self.metadata),
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema": OPTIMIZATION_FEEDBACK_BATCH_SCHEMA,
+            "objectives": self.objectives.tolist(),
+            "violations": self.violations.tolist(),
+            "items": [item.as_dict() for item in self.items],
+            "metadata": thaw_wire_mapping(self.metadata),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "OptimizationFeedbackBatch":
+        schema = str(payload.get("schema", OPTIMIZATION_FEEDBACK_BATCH_SCHEMA))
+        if schema != OPTIMIZATION_FEEDBACK_BATCH_SCHEMA:
+            raise ValueError(
+                f"unsupported OptimizationFeedbackBatch schema: {schema}"
+            )
+        return cls(
+            objectives=np.asarray(payload.get("objectives", ()), dtype=float),
+            violations=np.asarray(payload.get("violations", ()), dtype=float),
+            items=tuple(
+                Feedback.from_dict(item)
+                for item in tuple(payload.get("items", ()) or ())
+            ),
+            metadata=dict(payload.get("metadata", {}) or {}),
         )
 
 
@@ -366,6 +402,7 @@ AdapterFeedback = OptimizationFeedbackBatch | tuple[np.ndarray, np.ndarray]
 __all__ = [
     "AdapterFeedback",
     "OptimizationFeedbackBatch",
+    "OPTIMIZATION_FEEDBACK_BATCH_SCHEMA",
     "coerce_individual_feedback",
     "copy_feedback_with_result",
     "feedback_constraint_violation",

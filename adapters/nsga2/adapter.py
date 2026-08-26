@@ -4,6 +4,7 @@ NSGA-II adapter.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -200,6 +201,7 @@ class NSGA2Adapter(AlgorithmAdapter):
             "objectives": None if self.objectives is None else self.objectives.tolist(),
             "violations": None if self.violations is None else self.violations.tolist(),
             "candidate_tokens": list(self._population_candidate_tokens),
+            "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
@@ -219,6 +221,9 @@ class NSGA2Adapter(AlgorithmAdapter):
             raise ValueError("NSGA2 checkpoint tokens do not align with population")
         if self.population is not None and not self._population_candidate_tokens:
             self._population_candidate_tokens = (None,) * int(self.population.shape[0])
+        rng_state = state.get("rng_state")
+        if isinstance(rng_state, dict):
+            self._rng.bit_generator.state = copy.deepcopy(rng_state)
         self._refresh_ranking()
         self._sync_runtime_projection()
 

@@ -4,6 +4,7 @@ Finite-difference Gradient Descent adapter.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -176,6 +177,8 @@ class GradientDescentAdapter(AlgorithmAdapter):
             "current_x": None if self.current_x is None else self.current_x.tolist(),
             "current_score": self.current_score,
             "learning_rate": float(self.learning_rate),
+            "pending_probes": [list(item) for item in self._pending_probes],
+            "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
@@ -186,6 +189,13 @@ class GradientDescentAdapter(AlgorithmAdapter):
         score = state.get("current_score")
         self.current_score = None if score is None else float(score)
         self.learning_rate = float(state.get("learning_rate", self.cfg.learning_rate))
+        self._pending_probes = [
+            (int(item[0]), int(item[1]))
+            for item in tuple(state.get("pending_probes", ()) or ())
+        ]
+        rng_state = state.get("rng_state")
+        if isinstance(rng_state, dict):
+            self._rng.bit_generator.state = copy.deepcopy(rng_state)
         self._runtime_projection = {
             KEY_MUTATION_SIGMA: float(self.learning_rate),
             KEY_ADAPTER_BEST_SCORE: None if self.current_score is None else float(self.current_score),

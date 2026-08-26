@@ -19,7 +19,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 from blackbase.contracts import BatchDisposition
-from blackbase.context import RuntimeContextProjection
+from blackbase.context import RuntimeContextProjection, detach_context_value
 
 from ..algorithm_adapter import (
     AlgorithmAdapter,
@@ -29,6 +29,10 @@ from ..algorithm_adapter import (
     subset_adapter_feedback,
 )
 from ..runtime_projection import aggregate_adapter_runtime_projections
+from ..empty_outcome import (
+    aggregate_named_empty_outcomes,
+    child_empty_proposal_outcome,
+)
 from blackbase.context.context_keys import (
     KEY_EVENT_ARCHIVE,
     KEY_EVENT_HISTORY,
@@ -160,6 +164,10 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         self._last_allocations: List[
             Tuple[AlgorithmAdapter, int, int, Dict[str, Any]]
         ] = []
+        self._last_empty_proposals: List[
+            Tuple[str, AlgorithmAdapter, Dict[str, Any]]
+        ] = []
+        self._base_dispositions: Dict[str, BatchDisposition] = {}
         self.archive: List[Dict[str, Any]] = []
         self.event_history: List[Dict[str, Any]] = []
         self.shared_state: Dict[str, Any] = {}
@@ -180,6 +188,8 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         self._queue = []
         self._inflight = []
         self._last_allocations = []
+        self._last_empty_proposals = []
+        self._base_dispositions = {}
         self.archive = []
         self.event_history = []
         self.shared_state = {}
@@ -247,6 +257,8 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         out: List[np.ndarray] = []
         inflight: List[Dict[str, Any]] = []
         allocations: List[Tuple[AlgorithmAdapter, int, int, Dict[str, Any]]] = []
+        empty_proposals: List[Tuple[str, AlgorithmAdapter, Dict[str, Any]]] = []
+        base_dispositions: Dict[str, BatchDisposition] = {}
         for strategy_name in order:
             group = grouped[strategy_name]
             spec = group["spec"]
@@ -262,18 +274,21 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             local_ctx["step"] = int(self._step)
 
             proposed = self.coerce_candidates(spec.adapter.propose(control, local_ctx))
-            selected = proposed[:total_budget]
-            if len(selected) < len(proposed):
-                spec.adapter.on_proposal_disposition(
-                    control,
-                    BatchDisposition.prefix(
-                        proposed_count=len(proposed),
-                        accepted_count=len(selected),
-                        reason="event_budget",
-                        metadata={"strategy": strategy_name},
-                    ),
-                    local_ctx,
+            if not proposed:
+                empty_proposals.append(
+                    (strategy_name, spec.adapter, dict(local_ctx))
                 )
+            selected = proposed[:total_budget]
+            base_dispositions[strategy_name] = BatchDisposition.prefix(
+                proposed_count=len(proposed),
+                accepted_count=len(selected),
+                reason=(
+                    "event_budget"
+                    if len(selected) < len(proposed)
+                    else "event_budget_passthrough"
+                ),
+                metadata={"strategy": strategy_name},
+            )
 
             event_slots = [
                 event
@@ -309,8 +324,27 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
 
         self._inflight = inflight
         self._last_allocations = allocations
+        self._last_empty_proposals = empty_proposals
+        self._base_dispositions = base_dispositions
         self._publish_state(control)
         return out
+
+    def get_empty_proposal_outcome(
+        self,
+        control: Any,
+        context: Dict[str, Any],
+    ) -> Any | None:
+        del context
+        return aggregate_named_empty_outcomes(
+            (
+                (
+                    name,
+                    child_empty_proposal_outcome(adapter, control, child_context),
+                )
+                for name, adapter, child_context in self._last_empty_proposals
+            ),
+            owner=self.name,
+        )
 
     def on_proposal_disposition(
         self,
@@ -331,6 +365,14 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             child = disposition.for_range(start, end)
             child_context = dict(context)
             child_context.update(proposal_context)
+            strategy_name = str(proposal_context.get("strategy", ""))
+            base_disposition = self._base_dispositions.get(strategy_name)
+            if base_disposition is not None:
+                child = base_disposition.compose(
+                    child,
+                    reason=child.reason,
+                    metadata={"strategy": strategy_name},
+                )
             adapter.on_proposal_disposition(control, child, child_context)
             if child.accepted_count == 0:
                 continue
@@ -338,6 +380,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             reconciled.append((adapter, cursor, next_cursor, proposal_context))
             cursor = next_cursor
         self._last_allocations = reconciled
+        self._base_dispositions = {}
 
     def update(
         self,
@@ -428,6 +471,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
 
         self._inflight = []
         self._last_allocations = []
+        self._base_dispositions = {}
         self._step += 1
         if not self._uses_event_cases():
             self._topup_queue()
@@ -838,6 +882,9 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
+        self._last_allocations = []
+        self._last_empty_proposals = []
+        self._base_dispositions = {}
         schema = str(state.get("schema", "nsgablack.async_event_state/v1"))
         if schema not in {
             "nsgablack.async_event_state/v1",
@@ -885,6 +932,138 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             self.set_population_partitions(
                 tuple(PopulationPartition.from_dict(item) for item in raw_partitions)
             )
+
+    def step_transaction_children(self) -> Sequence[AlgorithmAdapter]:
+        return tuple(spec.adapter for spec in self.strategies)
+
+    def snapshot_step_state(self) -> Mapping[str, Any]:
+        child_index = {
+            id(spec.adapter): index for index, spec in enumerate(self.strategies)
+        }
+        return {
+            "schema": "nsgablack.async_event_step_transaction/v1",
+            "step": int(self._step),
+            "event_id": int(self._event_id),
+            "queue": copy.deepcopy(self._queue),
+            "inflight": copy.deepcopy(self._inflight),
+            "archive": copy.deepcopy(self.archive),
+            "event_history": copy.deepcopy(self.event_history),
+            "stats": copy.deepcopy(self._stats),
+            "active_case_name": self._active_case_name,
+            "active_case_since": self._active_case_since,
+            "case_last_exit": copy.deepcopy(self._case_last_exit),
+            "last_event_decision": copy.deepcopy(self._last_event_decision),
+            "shared_state": copy.deepcopy(self.shared_state),
+            "rng_state": copy.deepcopy(self._rng.bit_generator.state),
+            "last_allocations": [
+                {
+                    "child_index": int(child_index[id(adapter)]),
+                    "start": int(start),
+                    "end": int(end),
+                    "context": detach_context_value(
+                        context,
+                        path=f"async_event.step_allocation.{index}",
+                    ),
+                }
+                for index, (adapter, start, end, context) in enumerate(
+                    self._last_allocations
+                )
+            ],
+            "last_empty_proposals": [
+                {
+                    "name": str(name),
+                    "child_index": int(child_index[id(adapter)]),
+                    "context": detach_context_value(
+                        context,
+                        path=f"async_event.empty_proposal.{index}",
+                    ),
+                }
+                for index, (name, adapter, context) in enumerate(
+                    self._last_empty_proposals
+                )
+            ],
+            "base_dispositions": {
+                str(name): disposition.as_dict()
+                for name, disposition in self._base_dispositions.items()
+            },
+            "last_runtime_projection": copy.deepcopy(self._last_runtime_projection),
+            "projection_writers": dict(self._last_projection_writers),
+        }
+
+    def restore_step_state(self, state: Mapping[str, Any]) -> None:
+        if str(state.get("schema", "")) != "nsgablack.async_event_step_transaction/v1":
+            raise ValueError("unsupported AsyncEventDrivenAdapter step transaction schema")
+        self._step = int(state.get("step", 0))
+        self._event_id = int(state.get("event_id", 0))
+        self._queue = copy.deepcopy(list(state.get("queue", ()) or ()))
+        self._inflight = copy.deepcopy(list(state.get("inflight", ()) or ()))
+        self.archive = copy.deepcopy(list(state.get("archive", ()) or ()))
+        self.event_history = copy.deepcopy(
+            list(state.get("event_history", ()) or ())
+        )
+        self._stats = copy.deepcopy(dict(state.get("stats", {}) or {}))
+        active = state.get("active_case_name")
+        self._active_case_name = None if active is None else str(active)
+        since = state.get("active_case_since")
+        self._active_case_since = None if since is None else int(since)
+        self._case_last_exit = {
+            str(key): int(value)
+            for key, value in dict(state.get("case_last_exit", {}) or {}).items()
+        }
+        self._last_event_decision = copy.deepcopy(
+            dict(state.get("last_event_decision", {}) or {})
+        )
+        self.shared_state = copy.deepcopy(dict(state.get("shared_state", {}) or {}))
+        rng_state = state.get("rng_state")
+        if not isinstance(rng_state, Mapping):
+            raise TypeError("AsyncEventDrivenAdapter transaction RNG state is invalid")
+        self._rng.bit_generator.state = copy.deepcopy(dict(rng_state))
+
+        self._last_allocations = []
+        for item in tuple(state.get("last_allocations", ()) or ()):
+            index = int(item.get("child_index", -1))
+            if index < 0 or index >= len(self.strategies):
+                raise ValueError("AsyncEventDrivenAdapter transaction child is unavailable")
+            self._last_allocations.append(
+                (
+                    self.strategies[index].adapter,
+                    int(item.get("start", 0)),
+                    int(item.get("end", 0)),
+                    dict(item.get("context", {}) or {}),
+                )
+            )
+        self._last_empty_proposals = []
+        for item in tuple(state.get("last_empty_proposals", ()) or ()):
+            index = int(item.get("child_index", -1))
+            if index < 0 or index >= len(self.strategies):
+                raise ValueError("AsyncEventDrivenAdapter empty child is unavailable")
+            self._last_empty_proposals.append(
+                (
+                    str(item.get("name", self.strategies[index].name)),
+                    self.strategies[index].adapter,
+                    dict(item.get("context", {}) or {}),
+                )
+            )
+        self._base_dispositions = {}
+        for name, raw_value in dict(state.get("base_dispositions", {}) or {}).items():
+            raw = dict(raw_value or {})
+            self._base_dispositions[str(name)] = BatchDisposition(
+                proposed_count=int(raw.get("proposed_count", 0)),
+                accepted_indices=tuple(
+                    int(index)
+                    for index in tuple(raw.get("accepted_indices", ()) or ())
+                ),
+                reason=str(raw.get("reason", "unspecified")),
+                reservation_id=str(raw.get("reservation_id", "")),
+                metadata=dict(raw.get("metadata", {}) or {}),
+            )
+        self._last_runtime_projection = copy.deepcopy(
+            dict(state.get("last_runtime_projection", {}) or {})
+        )
+        self._last_projection_writers = {
+            str(key): str(value)
+            for key, value in dict(state.get("projection_writers", {}) or {}).items()
+        }
 
     def _strategy_prefix(self, index: int, spec: EventStrategySpec) -> str:
         return f"event:{int(index)}:{spec.name}"

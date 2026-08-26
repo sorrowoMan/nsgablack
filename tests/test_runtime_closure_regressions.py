@@ -17,6 +17,7 @@ from nsgablack.core.control_plane import (
     EvaluationBudgetExceeded,
 )
 from nsgablack.core.evolution_solver import EvolutionSolver
+from nsgablack.core.state import StepOutcome
 from nsgablack.core.runtime_governance import resolve_population_snapshot
 from nsgablack.plugins import Plugin
 from nsgablack.utils.extension_contracts import ContractError
@@ -37,8 +38,9 @@ class _Problem(BlackBoxProblem):
 
 
 class _CountingSolver(SolverBase):
-    def step(self) -> None:
+    def step(self) -> StepOutcome:
         self.evaluate_individual(np.array([1.0], dtype=float))
+        return StepOutcome(status="committed", evaluations=1)
 
 
 def test_budget_controller_uses_evaluation_count_and_requests_stop() -> None:
@@ -54,7 +56,7 @@ def test_budget_controller_uses_evaluation_count_and_requests_stop() -> None:
 
 class _StrategyController(BaseController):
     domain = "strategy"
-    slots = ("gen_end",)
+    slots = ("generation_end",)
 
     def __init__(self) -> None:
         super().__init__(name="strategy")
@@ -76,6 +78,9 @@ class _StrategyAwareSolver(SolverBase):
 
     def apply_strategy_control(self, decision) -> None:
         self.applied_strategy = dict(decision.payload or {}).get("strategy")
+
+    def step(self) -> StepOutcome:
+        return StepOutcome(status="committed")
 
 
 def test_runtime_controller_applies_non_stopping_domain_handler() -> None:
@@ -358,8 +363,9 @@ class _FailingProblem(_Problem):
 
 
 class _FailingEvaluationSolver(SolverBase):
-    def step(self) -> None:
+    def step(self) -> StepOutcome:
         self.evaluate_population(np.array([[1.0], [2.0]], dtype=float))
+        return StepOutcome(status="committed", evaluations=2)
 
 
 def test_evaluation_error_is_dispatched_once_by_run_lifecycle() -> None:

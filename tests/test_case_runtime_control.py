@@ -8,6 +8,7 @@ import pytest
 from blackbase.resources import CancellationRef, CancellationToken, CaseDeadlineExceeded
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.core.blank_solver import SolverBase
+from nsgablack.core.state import StepOutcome
 
 
 class _Sphere(BlackBoxProblem):
@@ -23,9 +24,10 @@ class _SlowSolver(SolverBase):
         super().__init__(_Sphere())
         self.executed = 0
 
-    def step(self) -> None:
+    def step(self) -> StepOutcome:
         self.executed += 1
         time.sleep(0.01)
+        return StepOutcome(status="committed", evaluations=0)
 
 
 class _TokenRuntime:

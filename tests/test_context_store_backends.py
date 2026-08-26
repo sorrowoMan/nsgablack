@@ -8,6 +8,8 @@ import pytest
 from nsgablack.core.base import BlackBoxProblem
 from nsgablack.core.blank_solver import SolverBase
 from nsgablack.core.evolution_solver import EvolutionSolver
+from blackbase.context import StateStoreConfig
+from blackbase.context import RedisValueCodecError
 from nsgablack.core.state.context_store import (
     InMemoryContextStore,
     create_context_store,
@@ -54,6 +56,33 @@ def test_solver_uses_configured_context_store_backend_memory() -> None:
     ctx = solver.get_context()
     assert solver.context_store.get("k") == "v"
     assert "generation" in ctx
+
+
+def test_evolution_solver_projects_shared_context_codec_config() -> None:
+    config = StateStoreConfig(
+        context_store_backend="memory",
+        context_store_serializer="pickle_signed",
+        context_store_hmac_env_var="TEST_CONTEXT_HMAC",
+        context_store_max_payload_bytes=8192,
+    )
+
+    solver = EvolutionSolver(_Sphere(), storage_config=config)
+
+    assert solver.context_store_serializer == "pickle_signed"
+    assert solver.context_store_hmac_env_var == "TEST_CONTEXT_HMAC"
+    assert solver.context_store_max_payload_bytes == 8192
+
+
+def test_solver_context_build_does_not_hide_corrupt_store_state() -> None:
+    class CorruptContextStore:
+        def snapshot(self):
+            raise RedisValueCodecError("corrupt context envelope")
+
+    solver = SolverBase(problem=_Sphere(), context_store_backend="memory")
+    solver.context_store = CorruptContextStore()
+
+    with pytest.raises(RedisValueCodecError, match="corrupt context envelope"):
+        solver.build_context()
 
 
 @pytest.mark.slow

@@ -6,6 +6,7 @@ from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 from blackbase.call_binding import CallCandidate, invoke_bound_once
+from blackbase.project import attach_failure_evidence
 from blackbase.resources import BudgetClaim
 from blackbase.types import Feedback
 
@@ -163,6 +164,14 @@ def _annotate_evaluation_error(
             details[key] = context[key]
     try:
         setattr(exc, "_nsgablack_error_context", details)
+    except Exception:
+        pass
+    try:
+        attach_failure_evidence(
+            exc,
+            "nsgablack_evaluation",
+            {"phase": str(phase), **details},
+        )
     except Exception:
         pass
 

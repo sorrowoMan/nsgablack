@@ -92,6 +92,71 @@ def check_context_store_policy(
                 build_file,
             )
 
+    serializer = str(
+        getattr(solver, "context_store_serializer", "safe") or ""
+    ).strip().lower()
+    if serializer not in {"safe", "pickle_signed", "pickle_unsafe"}:
+        add(
+            diags,
+            level,
+            "redis-context-serializer-unknown",
+            f"Unknown context_store_serializer: {serializer!r}.",
+            build_file,
+        )
+    elif serializer == "pickle_unsafe":
+        add(
+            diags,
+            level,
+            "redis-context-pickle-unsafe",
+            (
+                "context_store_serializer=pickle_unsafe permits arbitrary-code "
+                "deserialization. Use serializer='safe'."
+            ),
+            build_file,
+        )
+    elif serializer == "pickle_signed":
+        env_var = str(
+            getattr(
+                solver,
+                "context_store_hmac_env_var",
+                "NSGABLACK_CONTEXT_HMAC_KEY",
+            )
+            or ""
+        ).strip()
+        if not env_var:
+            add(
+                diags,
+                level,
+                "redis-context-pickle-signed-missing-key",
+                "context_store_hmac_env_var is empty while serializer=pickle_signed.",
+                build_file,
+            )
+
+    if bool(getattr(solver, "context_store_unsafe_allow_legacy_pickle", False)):
+        add(
+            diags,
+            level,
+            "redis-context-legacy-pickle-enabled",
+            (
+                "context_store_unsafe_allow_legacy_pickle enables pre-verification "
+                "legacy pickle execution and is only valid in an isolated migration job."
+            ),
+            build_file,
+        )
+
+    max_payload = getattr(solver, "context_store_max_payload_bytes", 262_144)
+    try:
+        if int(max_payload) <= 0:
+            raise ValueError
+    except Exception:
+        add(
+            diags,
+            level,
+            "redis-context-max-payload-invalid",
+            "context_store_max_payload_bytes must be a positive integer.",
+            build_file,
+        )
+
     ttl = getattr(solver, "context_store_ttl_seconds", None)
     if ttl is None:
         add(
@@ -207,6 +272,18 @@ def check_snapshot_store_policy(
                 "snapshot_store_hmac_env_var is empty while serializer=pickle_signed.",
                 build_file,
             )
+
+    if bool(getattr(solver, "snapshot_store_unsafe_allow_unsigned", False)):
+        add(
+            diags,
+            level,
+            "snapshot-redis-legacy-pickle-enabled",
+            (
+                "snapshot_store_unsafe_allow_unsigned permits legacy outer-pickle "
+                "migration before integrity verification. Disable it for normal runs."
+            ),
+            build_file,
+        )
 
     ttl = getattr(solver, "snapshot_store_ttl_seconds", None)
     if ttl is None:
