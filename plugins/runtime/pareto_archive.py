@@ -12,6 +12,7 @@ is frozen for history and a new one is created.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -59,7 +60,8 @@ class ParetoArchivePlugin(Plugin):
     context_mutates = ()
     context_cache = ()
     context_notes = (
-        "Reads solver population/objectives/violations or adapter population; "
+        "Reads solver population/objectives/violations or compatible committed "
+        "Adapter population partitions; "
         "updates runtime pareto snapshot (pareto_solutions/pareto_objectives). "
         "Objective-space labelling creates isolated segments; dominance is "
         "only compared within a segment."
@@ -130,6 +132,11 @@ class ParetoArchivePlugin(Plugin):
             return
 
         labels = self._read_objective_labels(solver)
+        if len(labels) != int(F.shape[1]):
+            raise ValueError(
+                "ParetoArchive objective labels must align with objective columns: "
+                f"{len(labels)} != {int(F.shape[1])}"
+            )
         lk = _label_key(labels)
 
         # ---- segment housekeeping -----------------------------------------
@@ -213,22 +220,17 @@ class ParetoArchivePlugin(Plugin):
         # 2) from problem
         problem = getattr(solver, "problem", None)
         if problem is not None:
-            for attr in ("objective_names", "objective_labels", "obj_names"):
+            for attr in (
+                "objective_names",
+                "objective_labels",
+                "obj_names",
+                "objectives",
+            ):
                 value = getattr(problem, attr, None)
                 if isinstance(value, (list, tuple)):
                     return [str(x) for x in value]
 
-        # 3) from adapter population dimension
-        adapter = getattr(solver, "adapter", None)
-        pop = getattr(adapter, "population", None)
-        if pop is not None:
-            try:
-                dim = int(pop.shape[1])
-                return [f"obj_{i}" for i in range(dim)]
-            except Exception:
-                pass
-
-        # 4) last resort — use dimension of current F
+        # 3) last resort — use dimension of current F
         population = self._get_population(solver)
         if population[1].size > 0:
             dim = int(population[1].shape[1])
@@ -251,7 +253,142 @@ class ParetoArchivePlugin(Plugin):
     # ---- solver I/O -------------------------------------------------------
 
     def _get_population(self, solver: Any) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        return self.get_population_snapshot(solver)
+        authority_mode = str(
+            getattr(solver, "population_authority_mode", "single") or "single"
+        )
+        if authority_mode != "partitioned":
+            return self.get_population_snapshot(solver)
+
+        from nsgablack.core.runtime_governance import resolve_population_partitions
+
+        partitions = tuple(resolve_population_partitions(solver))
+        if not partitions:
+            return (
+                np.zeros((0, 0), dtype=float),
+                np.zeros((0, 0), dtype=float),
+                np.zeros((0,), dtype=float),
+            )
+
+        committed_getter = getattr(
+            solver,
+            "get_candidate_population_partitions",
+            None,
+        )
+        if not callable(committed_getter):
+            raise TypeError(
+                "ParetoArchive requires Solver committed CandidateBatch partitions "
+                "before consuming partitioned Adapter state"
+            )
+        committed = committed_getter()
+        if not isinstance(committed, Mapping):
+            raise TypeError(
+                "get_candidate_population_partitions() must return a mapping"
+            )
+
+        partition_ids = tuple(str(item.partition_id) for item in partitions)
+        if len(set(partition_ids)) != len(partition_ids):
+            raise ValueError("ParetoArchive population partition IDs must be unique")
+        committed_ids = {str(key) for key in committed}
+        if committed_ids != set(partition_ids):
+            missing = sorted(set(partition_ids) - committed_ids)
+            extra = sorted(committed_ids - set(partition_ids))
+            raise ValueError(
+                "ParetoArchive Adapter/Solver committed partition IDs are not aligned; "
+                f"missing={missing}, extra={extra}"
+            )
+
+        populations: list[np.ndarray] = []
+        objectives: list[np.ndarray] = []
+        violations: list[np.ndarray] = []
+        decision_width: int | None = None
+        objective_width: int | None = None
+        inherited_labels: tuple[str, ...] | None = None
+
+        for partition in partitions:
+            partition_id = str(partition.partition_id)
+            population = np.asarray(partition.population, dtype=float)
+            objective_values = np.asarray(partition.objectives, dtype=float)
+            violation_values = np.asarray(
+                partition.violations,
+                dtype=float,
+            ).reshape(-1)
+            if population.ndim != 2 or objective_values.ndim != 2:
+                raise ValueError(
+                    f"ParetoArchive partition {partition_id!r} must expose 2D X/F"
+                )
+            row_count = int(population.shape[0])
+            if (
+                int(objective_values.shape[0]) != row_count
+                or int(violation_values.shape[0]) != row_count
+            ):
+                raise ValueError(
+                    f"ParetoArchive partition {partition_id!r} has unaligned X/F/V rows"
+                )
+
+            batch = committed[partition_id]
+            batch_population = np.asarray(batch.numeric_matrix, dtype=float)
+            if batch_population.shape != population.shape or not np.array_equal(
+                batch_population,
+                population,
+                equal_nan=True,
+            ):
+                raise ValueError(
+                    f"ParetoArchive partition {partition_id!r} differs from the "
+                    "Solver committed CandidateBatch"
+                )
+            if tuple(batch.candidate_tokens) != tuple(partition.candidate_tokens):
+                raise ValueError(
+                    f"ParetoArchive partition {partition_id!r} candidate tokens "
+                    "differ from the Solver committed CandidateBatch"
+                )
+
+            current_decision_width = int(population.shape[1])
+            current_objective_width = int(objective_values.shape[1])
+            if decision_width is None:
+                decision_width = current_decision_width
+                objective_width = current_objective_width
+            elif (
+                current_decision_width != decision_width
+                or current_objective_width != objective_width
+            ):
+                raise ValueError(
+                    "ParetoArchive cannot aggregate population partitions with "
+                    "different decision or objective dimensions"
+                )
+
+            metadata = getattr(partition, "metadata", {})
+            declared_labels = None
+            if isinstance(metadata, Mapping):
+                declared_labels = metadata.get("objective_labels")
+            if declared_labels is not None:
+                if not isinstance(declared_labels, (list, tuple)):
+                    raise TypeError(
+                        f"ParetoArchive partition {partition_id!r} objective_labels "
+                        "must be a sequence"
+                    )
+                normalized_labels = tuple(str(value) for value in declared_labels)
+                if len(normalized_labels) != current_objective_width:
+                    raise ValueError(
+                        f"ParetoArchive partition {partition_id!r} objective_labels "
+                        "do not align with objective columns"
+                    )
+                if inherited_labels is None:
+                    inherited_labels = normalized_labels
+                elif normalized_labels != inherited_labels:
+                    raise ValueError(
+                        "ParetoArchive cannot aggregate partitions with different "
+                        "objective labels"
+                    )
+
+            populations.append(population)
+            objectives.append(objective_values)
+            violations.append(violation_values)
+
+        return (
+            np.vstack(populations),
+            np.vstack(objectives),
+            np.concatenate(violations),
+        )
 
     def _write_pareto_snapshot(self, solver: Any) -> None:
         setter = getattr(solver, "set_pareto_snapshot", None)

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
+from blackbase.types import CandidateBatch
+from nsgablack.adapters import PopulationPartition
 from nsgablack.adapters.moead import MOEADAdapter, MOEADConfig
 from nsgablack.adapters.vns import VNSAdapter, VNSConfig
 from nsgablack.core.base import BlackBoxProblem
@@ -32,6 +35,126 @@ def test_pareto_archive_truncates_with_crowding() -> None:
     assert (0.0, 2.0) in kept
     assert (2.0, 0.0) in kept
     assert len(kept) == 2
+
+
+class _PartitionedArchiveAdapter:
+    def __init__(self, partitions) -> None:
+        self._partitions = tuple(partitions)
+
+    def get_population_partitions(self):
+        return self._partitions
+
+
+class _PartitionedArchiveSolver:
+    population_authority_mode = "partitioned"
+    objective_names = ("cost", "risk")
+
+    def __init__(self, partitions, committed) -> None:
+        self.adapter = _PartitionedArchiveAdapter(partitions)
+        self._committed = dict(committed)
+        self.pareto_solutions = None
+        self.pareto_objectives = None
+
+    def get_candidate_population_partitions(self):
+        return dict(self._committed)
+
+    def set_pareto_snapshot(self, solutions, objectives):
+        self.pareto_solutions = solutions
+        self.pareto_objectives = objectives
+
+
+def _committed_batch(partition: PopulationPartition) -> CandidateBatch:
+    return CandidateBatch.from_candidates(
+        tuple(partition.population),
+        candidate_tokens=partition.candidate_tokens,
+    )
+
+
+def test_pareto_archive_aggregates_aligned_committed_partitions() -> None:
+    explorer = PopulationPartition(
+        partition_id="explorer/population",
+        population=np.asarray([[0.0], [1.0]], dtype=float),
+        objectives=np.asarray([[0.0, 2.0], [2.0, 2.0]], dtype=float),
+        violations=np.zeros(2, dtype=float),
+        candidate_tokens=("explorer:0", "explorer:1"),
+        metadata={"objective_labels": ["cost", "risk"]},
+    )
+    exploiter = PopulationPartition(
+        partition_id="exploiter/population",
+        population=np.asarray([[2.0], [3.0]], dtype=float),
+        objectives=np.asarray([[2.0, 0.0], [3.0, 3.0]], dtype=float),
+        violations=np.zeros(2, dtype=float),
+        candidate_tokens=("exploiter:0", "exploiter:1"),
+        metadata={"objective_labels": ["cost", "risk"]},
+    )
+    solver = _PartitionedArchiveSolver(
+        (explorer, exploiter),
+        {
+            explorer.partition_id: _committed_batch(explorer),
+            exploiter.partition_id: _committed_batch(exploiter),
+        },
+    )
+    plugin = ParetoArchivePlugin()
+    plugin.attach(solver)
+
+    plugin.on_generation_committed(0, {"status": "committed"})
+
+    assert {
+        tuple(row.tolist()) for row in np.asarray(plugin.archive_F, dtype=float)
+    } == {(0.0, 2.0), (2.0, 0.0)}
+    assert np.array_equal(solver.pareto_objectives, plugin.archive_F)
+
+
+def test_pareto_archive_rejects_incompatible_partition_dimensions() -> None:
+    two_objectives = PopulationPartition(
+        partition_id="explorer/population",
+        population=np.asarray([[0.0]], dtype=float),
+        objectives=np.asarray([[0.0, 2.0]], dtype=float),
+        violations=np.zeros(1, dtype=float),
+        candidate_tokens=("explorer:0",),
+    )
+    one_objective = PopulationPartition(
+        partition_id="exploiter/population",
+        population=np.asarray([[1.0]], dtype=float),
+        objectives=np.asarray([[1.0]], dtype=float),
+        violations=np.zeros(1, dtype=float),
+        candidate_tokens=("exploiter:0",),
+    )
+    solver = _PartitionedArchiveSolver(
+        (two_objectives, one_objective),
+        {
+            two_objectives.partition_id: _committed_batch(two_objectives),
+            one_objective.partition_id: _committed_batch(one_objective),
+        },
+    )
+    plugin = ParetoArchivePlugin()
+    plugin.attach(solver)
+
+    with pytest.raises(ValueError, match="different decision or objective dimensions"):
+        plugin.on_generation_committed(0, {"status": "committed"})
+
+
+def test_pareto_archive_rejects_uncommitted_partition_state() -> None:
+    partition = PopulationPartition(
+        partition_id="explorer/population",
+        population=np.asarray([[0.0]], dtype=float),
+        objectives=np.asarray([[0.0, 2.0]], dtype=float),
+        violations=np.zeros(1, dtype=float),
+        candidate_tokens=("explorer:0",),
+    )
+    stale_batch = CandidateBatch.from_candidates(
+        (np.asarray([9.0]),),
+        candidate_tokens=partition.candidate_tokens,
+    )
+    solver = _PartitionedArchiveSolver(
+        (partition,),
+        {partition.partition_id: stale_batch},
+    )
+    plugin = ParetoArchivePlugin()
+    plugin.attach(solver)
+
+    with pytest.raises(ValueError, match="committed CandidateBatch"):
+        plugin.on_generation_committed(0, {"status": "committed"})
 
 
 class _ToyProblem(BlackBoxProblem):

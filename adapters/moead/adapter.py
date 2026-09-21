@@ -478,9 +478,12 @@ class MOEADAdapter(AlgorithmAdapter):
             and np.array_equal(self.pop_X, x_arr, equal_nan=True)
             and len(self._population_candidate_tokens) == int(x_arr.shape[0])
         )
-        self.pop_X = x_arr
-        self.pop_F = f_arr
-        self.pop_V = v_arr
+        # PopulationPartition intentionally exposes immutable arrays.  MOEA/D
+        # owns a mutable runtime population, so accepting a Snapshot must cross
+        # that ownership boundary with defensive copies.
+        self.pop_X = np.array(x_arr, dtype=float, copy=True)
+        self.pop_F = np.array(f_arr, dtype=float, copy=True)
+        self.pop_V = np.array(v_arr, dtype=float, copy=True).reshape(-1)
         if not preserve_tokens:
             self._population_candidate_tokens = (None,) * int(x_arr.shape[0])
 
