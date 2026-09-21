@@ -143,10 +143,12 @@ experiment/db.toml
 # Local runs/artifacts
 runs/
 out/
+outputs/
 artifacts/
 !artifacts/.gitkeep
 results/test_runs/
 deprecated/legacy/experiments/results/
+/snapshot_test_*.claim
 
 # Local diagnostic/generated workspaces
 /scratch/

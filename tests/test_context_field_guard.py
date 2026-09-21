@@ -7,6 +7,7 @@ def test_context_field_guard_catalog_has_no_noncanonical_keys():
     assert not issues
 
 
-def test_context_field_guard_doc_schema_markers_match_code():
+def test_context_field_guard_doc_schema_markers_match_code(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
     issues = check_context_field_rules_doc()
     assert not issues
