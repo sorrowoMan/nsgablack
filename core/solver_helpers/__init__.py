@@ -1,6 +1,9 @@
 """Internal helper utilities for SolverBase implementation."""
 
 from .snapshot_helpers import (
+    AUTHORITY_BEFORE_REF_KEY,
+    EVALUATION_EVENT_KEY,
+    EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1,
     LAST_EVALUATED_BATCH_KEY,
     LAST_EVALUATION_EVENT_KEY,
     LAST_EVALUATION_DISPOSITION_KEY,
@@ -9,12 +12,15 @@ from .snapshot_helpers import (
     POPULATION_SNAPSHOT_SCHEMA_V2,
     PartitionedPopulationSnapshotError,
     build_snapshot_payload,
+    build_evaluation_event_snapshot_payload,
     build_snapshot_refs,
     snapshot_meta,
     strip_large_context_fields,
     population_snapshot_authority_mode,
     require_single_population_payload,
     validate_population_snapshot_v2,
+    evaluation_event_envelope_from_snapshot,
+    validate_evaluation_event_snapshot,
 )
 from .control_plane_helpers import (
     collect_adapter_runtime_context_projection,
@@ -57,6 +63,7 @@ __all__ = [
     "evaluate_population_with_plugins_and_bias",
     "get_solver_context_view",
     "build_snapshot_payload",
+    "build_evaluation_event_snapshot_payload",
     "build_snapshot_refs",
     "increment_evaluation_counter",
     "apply_runtime_control_slot",
@@ -76,8 +83,13 @@ __all__ = [
     "POPULATION_AUTHORITY_KEY",
     "POPULATION_PARTITIONS_KEY",
     "POPULATION_SNAPSHOT_SCHEMA_V2",
+    "EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1",
+    "EVALUATION_EVENT_KEY",
+    "AUTHORITY_BEFORE_REF_KEY",
     "PartitionedPopulationSnapshotError",
     "population_snapshot_authority_mode",
     "require_single_population_payload",
     "validate_population_snapshot_v2",
+    "evaluation_event_envelope_from_snapshot",
+    "validate_evaluation_event_snapshot",
 ]

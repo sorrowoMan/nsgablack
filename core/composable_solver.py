@@ -109,6 +109,7 @@ class ComposableSolver(SolverBase):
         snapshot_store_redis_url: str = "redis://localhost:6379/0",
         snapshot_store_key_prefix: str = "nsgablack:snapshot",
         snapshot_store_dir: Optional[str] = None,
+        snapshot_store_scope: Optional[str] = None,
         snapshot_store_serializer: str = "safe",
         snapshot_store_hmac_env_var: str = "NSGABLACK_SNAPSHOT_HMAC_KEY",
         snapshot_store_unsafe_allow_unsigned: bool = False,
@@ -144,6 +145,7 @@ class ComposableSolver(SolverBase):
             snapshot_store_redis_url=snapshot_store_redis_url,
             snapshot_store_key_prefix=snapshot_store_key_prefix,
             snapshot_store_dir=snapshot_store_dir,
+            snapshot_store_scope=snapshot_store_scope,
             snapshot_store_serializer=snapshot_store_serializer,
             snapshot_store_hmac_env_var=snapshot_store_hmac_env_var,
             snapshot_store_unsafe_allow_unsigned=snapshot_store_unsafe_allow_unsigned,
@@ -398,6 +400,13 @@ class ComposableSolver(SolverBase):
             )
 
     def step(self) -> StepOutcome:
+        self.ensure_evaluation_evidence_ready_for_next_step()
+        previous_authority = self.get_population_authority_identity()
+        previous_authority_key = (
+            None
+            if previous_authority is None
+            else str(previous_authority.snapshot.key)
+        )
         if self.adapter is None:
             return self._step_transaction_body()
         previous_projection = self._capture_authority_projection()
@@ -411,11 +420,7 @@ class ComposableSolver(SolverBase):
             outcome = self._step_transaction_body()
             outcome = self._finalize_evaluation_disposition(
                 outcome,
-                previous_authority_key=(
-                    None
-                    if previous_snapshot_handle is None
-                    else str(previous_snapshot_handle.key)
-                ),
+                previous_authority_key=previous_authority_key,
             )
             if outcome.committed:
                 self.commit_snapshot_step_transaction()
@@ -426,11 +431,7 @@ class ComposableSolver(SolverBase):
             self._record_failed_evaluation_disposition(
                 exc,
                 previous_event_id=previous_event_id,
-                previous_authority_key=(
-                    None
-                    if previous_snapshot_handle is None
-                    else str(previous_snapshot_handle.key)
-                ),
+                previous_authority_key=previous_authority_key,
             )
             _rollback_step_failure(
                 exc,
@@ -578,6 +579,21 @@ class ComposableSolver(SolverBase):
 
         event_id = str(self._last_evaluation_event_id or "")
         if not event_id or event_id == str(previous_event_id or ""):
+            return
+        existing = self.evaluation_evidence_journal.get(event_id)
+        if existing is not None and existing.phase == "decision_ready":
+            context = dict(getattr(error, "_nsgablack_error_context", {}) or {})
+            context["evaluation_disposition"] = {
+                "status": "decision_ready",
+                "outcome": existing.outcome,
+                "journal_record": existing.as_dict(),
+                "authority_commit_deferred": True,
+            }
+            try:
+                setattr(error, "_nsgablack_error_context", context)
+                attach_failure_evidence(error, "nsgablack", context)
+            except Exception:
+                pass
             return
         try:
             envelope = EvaluationDispositionEnvelope(
@@ -931,34 +947,7 @@ class ComposableSolver(SolverBase):
                 full_feedback_batch,
                 full_evaluated_provenance,
             )
-            previous_mode = str(previous_projection["authority_mode"])
-            previous_complete = (
-                bool(previous_projection["partitions"])
-                if previous_mode == "partitioned"
-                else (
-                    previous_projection["population"] is not None
-                    and previous_projection["objectives"] is not None
-                    and previous_projection["violations"] is not None
-                )
-            )
-            event_snapshot_key = self.write_evaluation_event_snapshot(
-                authority_population=(
-                    None
-                    if previous_mode == "partitioned"
-                    else previous_projection["population"]
-                ),
-                authority_objectives=(
-                    None
-                    if previous_mode == "partitioned"
-                    else previous_projection["objectives"]
-                ),
-                authority_violations=(
-                    None
-                    if previous_mode == "partitioned"
-                    else previous_projection["violations"]
-                ),
-                authority_complete=previous_complete,
-            )
+            event_snapshot_key = self.write_evaluation_event_snapshot()
             acceptance_context = self.build_context()
             if event_snapshot_key is not None:
                 acceptance_context[KEY_SNAPSHOT_KEY] = event_snapshot_key
@@ -1283,6 +1272,7 @@ class ComposableSolver(SolverBase):
             str,
             tuple[PopulationPartition, CandidateBatch, tuple[Any, ...]],
         ] = {}
+        occupied_candidate_tokens: set[str] = set()
         for partition in tuple(partitions or ()):
             if partition.partition_id in committed:
                 raise ValueError(
@@ -1293,6 +1283,7 @@ class ComposableSolver(SolverBase):
                 partition.population,
                 partition.candidate_tokens,
                 sources=tuple(sources),
+                occupied_candidate_tokens=occupied_candidate_tokens,
             )
             normalized_partition = PopulationPartition(
                 partition_id=partition.partition_id,
@@ -1307,6 +1298,18 @@ class ComposableSolver(SolverBase):
                 normalized_partition,
                 batch,
                 provenance,
+            )
+        normalized_partitions = tuple(
+            partition for partition, _batch, _provenance in committed.values()
+        )
+        partition_setter = getattr(self.adapter, "set_population_partitions", None)
+        if not callable(partition_setter):
+            raise TypeError(
+                "partitioned Adapter must implement set_population_partitions()"
+            )
+        if partition_setter(normalized_partitions) is not True:
+            raise RuntimeError(
+                "partitioned Adapter rejected normalized population partitions"
             )
         self._candidate_population_partitions = committed
 

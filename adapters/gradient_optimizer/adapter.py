@@ -154,6 +154,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         self._provider_transition_needs_slot_seed = False
         self._provider_resource_context: ResourceContext | None = None
         self._step_transaction_slot_refs: Dict[str, StateRef] = {}
+        self._step_transaction_state_ref: StateRef | None = None
         self._step_transaction_resource_context: ResourceContext | None = None
         self._provider_cleanup_refs: Dict[str, StateRef] = {}
 
@@ -174,6 +175,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         self._provider_transition_needs_slot_seed = False
         self._provider_resource_context = None
         self._step_transaction_slot_refs = {}
+        self._step_transaction_state_ref = None
         self._step_transaction_resource_context = None
         self._provider_cleanup_refs = {}
         self._proposal_pending = False
@@ -203,6 +205,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
                 *self._provider_cleanup_refs.values(),
                 *self._provider_slot_refs.values(),
                 *self._step_transaction_slot_refs.values(),
+                self._step_transaction_state_ref,
             )
             if isinstance(ref, StateRef)
         }
@@ -236,6 +239,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
             self._provider_cleanup_refs = {}
             self._provider_slot_refs = {}
             self._step_transaction_slot_refs = {}
+            self._step_transaction_state_ref = None
             self._provider_resource_context = None
             self._step_transaction_resource_context = None
         if had_live_slots and self.cfg.optimizer in {"adam", "adamw"}:
@@ -453,6 +457,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         # Keep exact attempt-local Provider effects until the enclosing Solver
         # commits. Rollback can then release only these slot records.
         self._step_transaction_slot_refs = dict(transition.slot_refs)
+        self._step_transaction_state_ref = transition.state_ref
         self._step_transaction_resource_context = resource
         materialized = gateway.materialize(
             StateMaterializationRequest(
@@ -464,6 +469,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         )
         if not isinstance(materialized.value, UnknownState):
             raise TypeError("gradient transition materialization must return UnknownState")
+        self._step_transaction_state_ref = None
         self._capture_candidate_template(materialized.value)
         self.current_x = self._candidate_array(materialized.value)
         gradient_norm = transition.metrics.get("gradient_norm")
@@ -711,7 +717,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
     def snapshot_step_state(self) -> Mapping[str, Any]:
         """Capture local rollback state without materializing live Provider slots."""
 
-        if self._step_transaction_slot_refs:
+        if self._step_transaction_slot_refs or self._step_transaction_state_ref is not None:
             raise RuntimeError(
                 "gradient optimizer still owns uncommitted Provider slot effects"
             )
@@ -752,11 +758,15 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
 
         release_error: BaseException | None = None
         transitioned_slots = dict(self._step_transaction_slot_refs)
+        transitioned_state_ref = self._step_transaction_state_ref
         transition_resource = self._step_transaction_resource_context
-        if transitioned_slots:
+        attempt_refs = dict(transitioned_slots)
+        if transitioned_state_ref is not None:
+            attempt_refs["__parameter_state__"] = transitioned_state_ref
+        if attempt_refs:
             try:
                 self._release_attempt_provider_slots(
-                    transitioned_slots,
+                    attempt_refs,
                     transition_resource,
                 )
             except BaseException as exc:
@@ -816,6 +826,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         self._proposal_pending = bool(state.get("proposal_pending", False))
         self._runtime_projection = dict(state.get("runtime_projection", {}) or {})
         self._step_transaction_slot_refs = {}
+        self._step_transaction_state_ref = None
         self._step_transaction_resource_context = None
         if release_error is not None:
             raise RuntimeError(
@@ -844,6 +855,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         for ref in retired.values():
             self._provider_cleanup_refs[ref.state_id] = ref
         self._step_transaction_slot_refs = {}
+        self._step_transaction_state_ref = None
         self._step_transaction_resource_context = None
         release_results: tuple[StateReleaseResult, ...] = ()
         if self._provider_cleanup_refs:
@@ -1015,6 +1027,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
             raise ValueError("gradient optimizer checkpoint step_index must be non-negative")
         self._proposal_pending = False
         self._step_transaction_slot_refs = {}
+        self._step_transaction_state_ref = None
         self._step_transaction_resource_context = None
         self._refresh_runtime_projection()
 

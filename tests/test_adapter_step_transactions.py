@@ -235,6 +235,31 @@ def test_gradient_transaction_does_not_materialize_and_releases_aborted_slots() 
     assert adapter._second_moment.tolist() == [0.2]
 
 
+def test_gradient_rollback_releases_unmaterialized_successor_parameter_state() -> None:
+    gateway = _Gateway()
+    resource = ResourceContext(namespace="case.fit", grant={"threads": 1})
+    adapter = GradientOptimizerAdapter(state_gateway=gateway)
+    adapter.current_x = np.asarray([1.0])
+    transaction = adapter.begin_step_transaction()
+    successor = StateRef(
+        provider_id="provider/v1",
+        state_id="parameter-next",
+        state_kind="parameter_state",
+        scope_id="case.fit",
+        trajectory_id="fit-1",
+    )
+    adapter._step_transaction_state_ref = successor
+    adapter._step_transaction_resource_context = resource
+
+    transaction.rollback()
+
+    assert len(gateway.releases) == 1
+    request, released_resource = gateway.releases[0]
+    assert request.state_ids == ("parameter-next",)
+    assert released_resource is resource
+    assert adapter._step_transaction_state_ref is None
+
+
 def test_gradient_transaction_commit_retires_only_predecessor_slots() -> None:
     gateway = _Gateway()
     resource = ResourceContext(namespace="case.fit", grant={"threads": 1})

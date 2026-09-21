@@ -13,6 +13,7 @@ from typing import Any, Dict, Mapping, Optional
 
 import numpy as np
 
+from blackbase.context import AuthorityIdentity
 from ..base import Plugin
 from ...core.state.incumbent import DEFAULT_INCUMBENT_POLICY_ID, IncumbentState
 from ...core.state.run_progress import RunProgressState
@@ -65,7 +66,8 @@ class CheckpointResumePlugin(Plugin):
     SCHEMA_V7 = "nsgablack.checkpoint.v7"
     SCHEMA_V8 = "nsgablack.checkpoint.v8"
     SCHEMA_V9 = "nsgablack.checkpoint.v9"
-    SCHEMA = SCHEMA_V9
+    SCHEMA_V10 = "nsgablack.checkpoint.v10"
+    SCHEMA = SCHEMA_V10
     ENVELOPE_VERSION = "nsgablack.checkpoint.envelope.v1"
     RESUME_ISSUE_SAMPLE_LIMIT = 32
 
@@ -685,6 +687,22 @@ class CheckpointResumePlugin(Plugin):
             raise ValueError(
                 f"unsupported checkpoint population authority mode: {authority_mode}"
             )
+        authority_reader = getattr(
+            solver,
+            "get_population_authority_identity",
+            None,
+        )
+        population_authority_identity = (
+            authority_reader() if callable(authority_reader) else None
+        )
+        if (
+            population_authority_identity is not None
+            and not isinstance(population_authority_identity, AuthorityIdentity)
+        ):
+            raise TypeError(
+                "solver.get_population_authority_identity() must return an "
+                "AuthorityIdentity or None"
+            )
         event_reader = getattr(
             solver,
             "get_last_evaluated_batch_snapshot",
@@ -797,6 +815,11 @@ class CheckpointResumePlugin(Plugin):
             "generation": generation,
             "evaluation_count": int(getattr(solver, "evaluation_count", 0)),
             "population_authority_mode": authority_mode,
+            "population_authority_identity": (
+                None
+                if population_authority_identity is None
+                else self._safe_copy(population_authority_identity.as_dict())
+            ),
             "population": self._safe_copy(snap_pop),
             "objectives": self._safe_copy(snap_obj),
             "constraint_violations": self._safe_copy(snap_vio),
@@ -890,9 +913,118 @@ class CheckpointResumePlugin(Plugin):
         }
         return payload
 
+    def _coordinate_population_authority_restore(
+        self,
+        solver: Any,
+        state: Mapping[str, Any],
+    ) -> Any | None:
+        """Reconcile durable evidence before deciding whether restore may publish.
+
+        A returned Snapshot record means the checkpoint's exact Authority edge
+        already exists in the target store and was rebound without advancing
+        its epoch. ``None`` means the target store is empty/new and the caller
+        must publish the restored population into that target scope.
+        """
+
+        authority_reader = getattr(
+            solver,
+            "get_population_authority_identity",
+            None,
+        )
+        authority_store = getattr(solver, "authority_store", None)
+        current_reader = getattr(authority_store, "current", None)
+        authority_key_builder = getattr(solver, "_population_authority_key", None)
+        if (
+            not callable(authority_reader)
+            or authority_store is None
+            or not callable(current_reader)
+            or not callable(authority_key_builder)
+        ):
+            return None
+
+        run_id = str(
+            state.get("active_run_id")
+            or getattr(solver, "_active_run_id", None)
+            or ""
+        ).strip()
+        journal = getattr(solver, "evaluation_evidence_journal", None)
+        list_unresolved = getattr(journal, "list_unresolved", None)
+        if run_id and callable(list_unresolved):
+            unresolved = tuple(list_unresolved(run_id=run_id))
+            if unresolved:
+                ensure_ready = getattr(
+                    solver,
+                    "ensure_evaluation_evidence_ready_for_next_step",
+                    None,
+                )
+                if not callable(ensure_ready):
+                    raise RuntimeError(
+                        "checkpoint restore found unresolved evaluation evidence "
+                        "but the target cannot reconcile it"
+                    )
+                ensure_ready(run_id=run_id)
+
+        authority_key = authority_key_builder(run_id or None)
+        current = current_reader(authority_key)
+        raw_checkpoint_identity = state.get("population_authority_identity")
+        if raw_checkpoint_identity is None:
+            if current is None:
+                return None
+            raise RuntimeError(
+                "checkpoint has no population AuthorityIdentity for a non-empty "
+                "target AuthorityStore"
+            )
+        if not isinstance(raw_checkpoint_identity, Mapping):
+            raise TypeError(
+                "checkpoint population_authority_identity must be a Mapping or None"
+            )
+        checkpoint_identity = AuthorityIdentity.from_dict(raw_checkpoint_identity)
+
+        target_scope = str(getattr(authority_store, "authority_scope", "") or "")
+        if current is None:
+            if checkpoint_identity.authority_scope == target_scope:
+                raise RuntimeError(
+                    "checkpoint population AuthorityIdentity is missing from its "
+                    "target durable AuthorityStore"
+                )
+            return None
+
+        if current != checkpoint_identity:
+            raise RuntimeError(
+                "checkpoint population AuthorityIdentity is stale or conflicts "
+                "with the target durable Authority edge: "
+                f"checkpoint_epoch={checkpoint_identity.epoch}, "
+                f"current_epoch={current.epoch}"
+            )
+
+        snapshots = getattr(solver, "snapshot_store", None)
+        read_verified = getattr(snapshots, "read_verified", None)
+        if not callable(read_verified):
+            raise TypeError(
+                "checkpoint Authority reuse requires SnapshotStore.read_verified()"
+            )
+        record = read_verified(current.snapshot)
+        setattr(solver, "_latest_authority_identity", current)
+        setattr(solver, "_latest_snapshot_handle", record)
+        setattr(solver, "_snapshot_generation", state.get("generation"))
+        return record
+
     def _apply_solver_state(self, solver: Any, state: Dict[str, Any], resume_cursor: Optional[int]) -> None:
         generation = int(state.get("generation", getattr(solver, "generation", 0)))
         eval_count = int(state.get("evaluation_count", getattr(solver, "evaluation_count", 0)))
+        authority_mode = str(
+            state.get("population_authority_mode", "single") or "single"
+        ).strip().lower()
+        if authority_mode not in {"single", "partitioned", "step_batch"}:
+            raise ValueError(
+                f"unsupported checkpoint population authority mode: {authority_mode}"
+            )
+        reused_authority_record = self._coordinate_population_authority_restore(
+            solver,
+            state,
+        )
+        reuse_population_authority = reused_authority_record is not None
+
         def _set_field(field: str, value: Any) -> None:
             setattr(solver, str(field), value)
 
@@ -920,15 +1052,37 @@ class CheckpointResumePlugin(Plugin):
             restored_sequence = max(0, int(state.get("run_sequence", 0) or 0))
             current_sequence = max(0, int(getattr(solver, "_run_sequence", 0) or 0))
             _set_field("_run_sequence", max(current_sequence, restored_sequence))
-        authority_mode = str(
-            state.get("population_authority_mode", "single") or "single"
-        ).strip().lower()
-        if authority_mode not in {"single", "partitioned", "step_batch"}:
-            raise ValueError(
-                f"unsupported checkpoint population authority mode: {authority_mode}"
-            )
+        authoritative_payload: Mapping[str, Any] | None = None
+        if reused_authority_record is not None:
+            raw_authoritative_payload = getattr(reused_authority_record, "data", None)
+            if not isinstance(raw_authoritative_payload, Mapping):
+                raise TypeError(
+                    "reused population Authority Snapshot must contain a Mapping"
+                )
+            authoritative_payload = raw_authoritative_payload
+            raw_authority = authoritative_payload.get("population_authority")
+            if not isinstance(raw_authority, Mapping):
+                raise ValueError(
+                    "reused population Authority Snapshot is missing its mode"
+                )
+            durable_mode = str(
+                raw_authority.get("authority_mode", "single") or "single"
+            ).strip().lower()
+            if durable_mode != authority_mode:
+                raise RuntimeError(
+                    "checkpoint population authority mode disagrees with its "
+                    "durable Authority Snapshot"
+                )
+
         last_evaluated = state.get("last_evaluated_batch")
+        candidate_population_state = state.get("candidate_population")
+        candidate_partitions_state = state.get("candidate_population_partitions")
         if authority_mode == "partitioned":
+            if authoritative_payload is not None:
+                last_evaluated = authoritative_payload.get("last_evaluated_batch")
+                candidate_partitions_state = authoritative_payload.get(
+                    "population_partitions"
+                )
             if not isinstance(last_evaluated, Mapping):
                 raise ValueError(
                     "partitioned checkpoint is missing last_evaluated_batch"
@@ -937,11 +1091,36 @@ class CheckpointResumePlugin(Plugin):
             objectives = last_evaluated.get("objectives")
             violations = last_evaluated.get("constraint_violations")
         else:
-            population = state.get("population")
-            objectives = state.get("objectives")
-            violations = state.get("constraint_violations")
+            population_source = authoritative_payload or state
+            population = population_source.get("population")
+            objectives = population_source.get("objectives")
+            violations = population_source.get("constraint_violations")
+            if authoritative_payload is not None:
+                batch_payload = authoritative_payload.get("candidate_batch")
+                candidate_population_state = (
+                    {
+                        "batch": batch_payload,
+                        "provenance": authoritative_payload.get(
+                            "candidate_provenance",
+                            (),
+                        ),
+                    }
+                    if isinstance(batch_payload, Mapping)
+                    else None
+                )
 
         full_event = state.get("evaluation_event")
+        if authoritative_payload is not None:
+            event_slot = authoritative_payload.get(
+                "last_evaluated_batch"
+                if authority_mode == "partitioned"
+                else "last_evaluation_event"
+            )
+            if isinstance(event_slot, Mapping) and isinstance(
+                event_slot.get("evaluation_event_envelope"),
+                Mapping,
+            ):
+                full_event = event_slot.get("evaluation_event_envelope")
         restore_full_event = getattr(
             solver,
             "restore_evaluation_event_checkpoint_state",
@@ -966,6 +1145,10 @@ class CheckpointResumePlugin(Plugin):
         )
         if callable(restore_disposition):
             full_disposition = state.get("evaluation_disposition")
+            if authoritative_payload is not None:
+                full_disposition = authoritative_payload.get(
+                    "last_evaluation_disposition"
+                )
             restore_disposition(
                 full_disposition
                 if isinstance(full_disposition, Mapping)
@@ -974,6 +1157,9 @@ class CheckpointResumePlugin(Plugin):
 
         has_numeric_state = all(
             value is not None for value in (population, objectives, violations)
+        )
+        requires_population_authority = callable(
+            getattr(solver, "get_population_authority_identity", None)
         )
         if has_numeric_state:
             # Establish the numeric side first without publishing a Snapshot.
@@ -989,7 +1175,7 @@ class CheckpointResumePlugin(Plugin):
             )
             if callable(restore_candidate_population):
                 try:
-                    restore_candidate_population(state.get("candidate_population"))
+                    restore_candidate_population(candidate_population_state)
                 except Exception as exc:
                     self._record_resume_issue(
                         "solver.candidate_population",
@@ -1009,24 +1195,37 @@ class CheckpointResumePlugin(Plugin):
             )
             if callable(restore_candidate_partitions):
                 restore_candidate_partitions(
-                    state.get("candidate_population_partitions")
+                    candidate_partitions_state
                 )
             _set_field("population_authority_mode", authority_mode)
             writer = getattr(solver, "write_population_snapshot", None)
-            if callable(writer):
+            if callable(writer) and not reuse_population_authority:
                 try:
-                    writer(
+                    published = writer(
                         population,
                         objectives,
                         violations,
                     )
+                    if published is False:
+                        raise RuntimeError(
+                            "checkpoint restore could not establish the "
+                            "authoritative population Snapshot"
+                        )
+                    if (
+                        requires_population_authority
+                        and solver.get_population_authority_identity() is None
+                    ):
+                        raise RuntimeError(
+                            "checkpoint restore completed without a population "
+                            "Authority edge"
+                        )
                 except Exception as exc:
                     self._record_resume_issue(
                         "solver.population_snapshot",
                         "publish_failed",
                         exc,
                     )
-                    if bool(self.cfg.strict):
+                    if bool(self.cfg.strict) or requires_population_authority:
                         raise
             if authority_mode == "partitioned":
                 _set_field("population", None)
@@ -1042,7 +1241,7 @@ class CheckpointResumePlugin(Plugin):
                 None,
             )
             if callable(restore_candidate_population):
-                restore_candidate_population(state.get("candidate_population"))
+                restore_candidate_population(candidate_population_state)
             restore_candidate_partitions = getattr(
                 solver,
                 "restore_candidate_population_partitions_checkpoint_state",
@@ -1050,10 +1249,10 @@ class CheckpointResumePlugin(Plugin):
             )
             if callable(restore_candidate_partitions):
                 restore_candidate_partitions(
-                    state.get("candidate_population_partitions")
+                    candidate_partitions_state
                 )
             _set_field("population_authority_mode", authority_mode)
-            if authority_mode == "partitioned":
+            if authority_mode == "partitioned" and not reuse_population_authority:
                 partition_writer = getattr(
                     solver,
                     "write_partitioned_population_snapshot",
@@ -1064,14 +1263,27 @@ class CheckpointResumePlugin(Plugin):
                         "partitioned checkpoint target cannot publish partition authority"
                     )
                 try:
-                    partition_writer()
+                    published = partition_writer()
+                    if published is False:
+                        raise RuntimeError(
+                            "checkpoint restore could not establish the "
+                            "authoritative partition Snapshot"
+                        )
+                    if (
+                        requires_population_authority
+                        and solver.get_population_authority_identity() is None
+                    ):
+                        raise RuntimeError(
+                            "checkpoint restore completed without a partition "
+                            "Authority edge"
+                        )
                 except Exception as exc:
                     self._record_resume_issue(
                         "solver.population_partitions_snapshot",
                         "publish_failed",
                         exc,
                     )
-                    if bool(self.cfg.strict):
+                    if bool(self.cfg.strict) or requires_population_authority:
                         raise
 
         if "pareto_solutions" in state or "pareto_objectives" in state:
@@ -1427,7 +1639,7 @@ class CheckpointResumePlugin(Plugin):
     @classmethod
     def _migrate_payload(cls, payload: Dict[str, Any]) -> Dict[str, Any]:
         schema = str(payload.get("schema", "")).strip()
-        if schema == cls.SCHEMA_V9:
+        if schema == cls.SCHEMA_V10:
             return payload
         if schema not in {
             cls.SCHEMA_V1,
@@ -1438,6 +1650,7 @@ class CheckpointResumePlugin(Plugin):
             cls.SCHEMA_V6,
             cls.SCHEMA_V7,
             cls.SCHEMA_V8,
+            cls.SCHEMA_V9,
         }:
             raise ValueError(f"unsupported checkpoint schema: {schema or '<missing>'}")
 
@@ -1476,6 +1689,7 @@ class CheckpointResumePlugin(Plugin):
         migrated.setdefault("adapter_population_partitions", [])
         state.setdefault("candidate_population", None)
         state.setdefault("candidate_population_partitions", None)
+        state.setdefault("population_authority_identity", None)
         state.setdefault("pareto_population_snapshot", None)
         partition_payload = state.get("candidate_population_partitions")
         partitioned = bool(
@@ -1562,7 +1776,7 @@ class CheckpointResumePlugin(Plugin):
                 "reason": f"migrated_from_{schema}",
             },
         )
-        migrated["schema"] = cls.SCHEMA_V9
+        migrated["schema"] = cls.SCHEMA_V10
         migrated["migrated_from_schema"] = schema
         return migrated
 

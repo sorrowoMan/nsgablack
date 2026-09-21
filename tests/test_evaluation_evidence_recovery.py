@@ -4,15 +4,25 @@ import numpy as np
 import pytest
 
 from blackbase import CandidateBatch, UnknownState
-from blackbase.context import InMemorySnapshotStore
+from blackbase.context import AuthorityFenceMismatchError, InMemorySnapshotStore
+from blackbase.contracts import BatchDisposition
 from blackbase.evaluation import (
+    EVALUATION_EVIDENCE_ARCHIVE_KIND,
     EvaluationDispositionEnvelope,
+    EvaluationEvidenceArchiveManifest,
+    EvaluationEvidenceDeferred,
+    EvaluationEvidenceInvalid,
     EvaluationEventEnvelope,
     InMemoryEvaluationEvidenceJournal,
 )
+from blackbase.resources import ArtifactAuthority, ArtifactBinding, ArtifactPublisher
 from nsgablack.adapters import AlgorithmAdapter
 from nsgablack.core import BlackBoxProblem, ComposableSolver
 from nsgablack.core.state.incumbent import CandidateProvenance
+from nsgablack.core.solver_helpers import (
+    EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1,
+    POPULATION_SNAPSHOT_SCHEMA_V2,
+)
 
 
 class _Problem(BlackBoxProblem):
@@ -44,20 +54,39 @@ def _event(event_id: str, run_id: str, snapshot_key: str) -> EvaluationEventEnve
         candidate_payload={"rows": [[0.5]]},
         feedback_codec="test.feedback/v1",
         feedback_payload={"objectives": [[0.25]]},
-        identity={"run_id": run_id, "event_snapshot_key": snapshot_key},
+        identity={
+            "run_id": run_id,
+            "event_snapshot_key": snapshot_key,
+            "authority_before_ref": None,
+        },
         evaluation_count=1,
     )
 
 
-def _write_event_snapshot(solver, event: EvaluationEventEnvelope, key: str) -> None:
-    solver.snapshot_store.write(
-        {
+def _write_event_snapshot(
+    solver,
+    event: EvaluationEventEnvelope,
+    key: str,
+    *,
+    legacy: bool = False,
+) -> None:
+    if legacy:
+        payload = {
             "last_evaluation_event": {
                 "evaluation_event_envelope": event.as_dict(),
             }
-        },
+        }
+        schema = "nsgablack.population_snapshot/v2"
+    else:
+        payload = {
+            "evaluation_event": event.as_dict(),
+            "authority_before_ref": None,
+        }
+        schema = EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1
+    solver.snapshot_store.write(
+        payload,
         key=key,
-        schema="nsgablack.population_snapshot/v2",
+        schema=schema,
     )
 
 
@@ -90,14 +119,82 @@ def _authority_payload(
     }
 
 
-def test_recovery_archives_pending_event_without_replaying_policy_or_adapter() -> None:
+def _publish_evidence_archive(tmp_path, manifest):
+    publisher = ArtifactPublisher(
+        ArtifactAuthority(root=str(tmp_path / "artifacts"), namespace="test"),
+        project_run_id="project-run",
+        case_run_id="case-run",
+    )
+    name = f"evaluation-evidence-{manifest.event_id}"
+    transaction_id = f"archive-{manifest.event_id}"
+    publisher.reserve_publication(name, transaction_id)
+    ref = publisher.publish(
+        name,
+        manifest.as_dict(),
+        serializer="json",
+        kind=EVALUATION_EVIDENCE_ARCHIVE_KIND,
+        media_type="application/json",
+        metadata=manifest.artifact_metadata(),
+    )
+    publisher.record_provisional_publication(name, transaction_id, ref)
+    receipt = publisher.commit_publications(
+        transaction_id,
+        {name: ref},
+        metadata={"case_finalization_sealed": True},
+    )[name]
+    return ArtifactBinding(ref=ref, publication=receipt), publisher.publication_ledger
+
+
+class _ArchiveCaseRuntime:
+    def __init__(self, tmp_path) -> None:
+        self.artifact_publisher = ArtifactPublisher(
+            ArtifactAuthority(
+                root=str(tmp_path / "case-artifacts"),
+                namespace="case-test",
+            ),
+            project_run_id="project-run",
+            case_run_id="case-run",
+        )
+        self.transaction_id = "case-finalization"
+        self.refs = {}
+        self.observers = []
+
+    def publish_artifact(self, name, value, **kwargs):
+        self.artifact_publisher.reserve_publication(name, self.transaction_id)
+        ref = self.artifact_publisher.publish(name, value, **kwargs)
+        self.artifact_publisher.record_provisional_publication(
+            name,
+            self.transaction_id,
+            ref,
+        )
+        self.refs[name] = ref
+        return ref
+
+    def register_finalization_observer(self, observer, *, name=""):
+        self.observers.append((name, observer))
+
+    def seal(self):
+        receipts = self.artifact_publisher.commit_publications(
+            self.transaction_id,
+            self.refs,
+            metadata={"case_finalization_sealed": True},
+        )
+        for _, observer in self.observers:
+            observer(receipts)
+        return receipts
+
+
+@pytest.mark.parametrize("legacy", (False, True))
+def test_recovery_archives_pending_event_without_replaying_policy_or_adapter(
+    legacy,
+) -> None:
     adapter = _Adapter()
     solver = ComposableSolver(_Problem(), adapter=adapter)
     solver._active_run_id = "run-recovery"
     event_id = "event-pending"
     event_key = "evaluation-evidence/event/event-pending"
     event = _event(event_id, solver._active_run_id, event_key)
-    _write_event_snapshot(solver, event, event_key)
+    _write_event_snapshot(solver, event, event_key, legacy=legacy)
     solver.evaluation_evidence_journal.reserve(
         event_id=event_id,
         run_id=solver._active_run_id,
@@ -115,6 +212,151 @@ def test_recovery_archives_pending_event_without_replaying_policy_or_adapter() -
     assert report["abandoned_count"] == 1
     assert adapter.update_calls == 0
     assert solver.evaluation_count == 0
+
+
+def test_event_publication_failure_stops_before_acceptance_policy() -> None:
+    class _FailingEventStore(InMemorySnapshotStore):
+        def write(self, data, **kwargs):
+            if kwargs.get("schema") == EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1:
+                raise OSError("event store unavailable")
+            return super().write(data, **kwargs)
+
+    class _Policy:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def select(self, candidates, feedback, context):
+            del feedback, context
+            self.calls += 1
+            return BatchDisposition.prefix(
+                proposed_count=len(candidates.semantic_states),
+                accepted_count=len(candidates.semantic_states),
+                reason="test",
+            )
+
+    adapter = _Adapter()
+    policy = _Policy()
+    solver = ComposableSolver(
+        _Problem(),
+        adapter=adapter,
+        evaluation_acceptance_policy=policy,
+    )
+    journal = InMemoryEvaluationEvidenceJournal()
+    solver.set_snapshot_store(
+        _FailingEventStore(),
+        evaluation_evidence_journal=journal,
+    )
+
+    with pytest.raises(OSError, match="event store unavailable"):
+        solver.step()
+
+    assert policy.calls == 0
+    assert adapter.update_calls == 0
+    assert [record.status for record in journal.list_records()] == ["preparing"]
+
+
+def test_event_reader_dispatches_strictly_by_snapshot_schema() -> None:
+    solver = ComposableSolver(_Problem(), adapter=_Adapter())
+    event_key = "events/direct-in-population-schema"
+    event = _event("event-direct", "run-direct", event_key)
+    solver.snapshot_store.write(
+        {
+            "evaluation_event": event.as_dict(),
+            "authority_before_ref": None,
+        },
+        key=event_key,
+        schema=POPULATION_SNAPSHOT_SCHEMA_V2,
+    )
+    with pytest.raises(ValueError, match="must not contain the Event v1 slot"):
+        solver.read_evaluation_event_snapshot(event_key)
+
+    legacy_key = "events/legacy-in-event-schema"
+    legacy = _event("event-legacy", "run-legacy", legacy_key)
+    solver.snapshot_store.write(
+        {
+            "last_evaluation_event": {
+                "evaluation_event_envelope": legacy.as_dict(),
+            }
+        },
+        key=legacy_key,
+        schema=EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1,
+    )
+    with pytest.raises(ValueError, match="missing evaluation_event"):
+        solver.read_evaluation_event_snapshot(legacy_key)
+
+
+def test_recovery_rejects_event_with_mismatched_snapshot_identity() -> None:
+    solver = ComposableSolver(_Problem(), adapter=_Adapter())
+    solver._active_run_id = "run-recovery"
+    event_id = "event-invalid-identity"
+    event_key = "evaluation-evidence/event/event-invalid-identity"
+    event_payload = _event(event_id, solver._active_run_id, event_key).as_dict()
+    event_payload["identity"]["event_snapshot_key"] = "events/other"
+    solver.snapshot_store.write(
+        {
+            "evaluation_event": event_payload,
+            "authority_before_ref": None,
+        },
+        key=event_key,
+        schema=EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1,
+    )
+    solver.evaluation_evidence_journal.reserve(
+        event_id=event_id,
+        run_id=solver._active_run_id,
+        event_snapshot_key=event_key,
+    )
+
+    report = solver.reconcile_evaluation_evidence()
+
+    record = solver.evaluation_evidence_journal.get(event_id)
+    assert record is not None
+    assert record.status == "abandoned"
+    assert record.metadata["abandon_reason"] == "event_snapshot_invalid"
+    assert report["records"][0]["reason"] == "event_snapshot_invalid"
+
+
+def test_event_full_authority_edge_must_match_journal_reservation() -> None:
+    solver = ComposableSolver(_Problem(), adapter=_Adapter())
+    solver.step()
+    before = solver.get_population_authority_identity()
+    assert before is not None
+
+    event_id = "event-tampered-authority-edge"
+    event_key = f"evaluation-evidence/event/{event_id}"
+    tampered_edge = before.as_dict()
+    tampered_edge["epoch"] = before.epoch + 7
+    envelope = _event(event_id, solver._evaluation_evidence_run_id(), event_key)
+    envelope_payload = envelope.as_dict()
+    envelope_payload["identity"].update(
+        {
+            "authority_before_ref": before.snapshot.as_dict(),
+            "authority_snapshot_key": before.snapshot.key,
+            "authority_before_edge": tampered_edge,
+        }
+    )
+    solver.snapshot_store.put_immutable(
+        {
+            "evaluation_event": envelope_payload,
+            "authority_before_ref": before.snapshot.as_dict(),
+        },
+        key=event_key,
+        schema=EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1,
+    )
+    reserved = solver.evaluation_evidence_journal.reserve(
+        event_id=event_id,
+        run_id=solver._evaluation_evidence_run_id(),
+        event_snapshot_key=event_key,
+        authority_before_ref=before,
+    )
+
+    with pytest.raises(
+        EvaluationEvidenceInvalid,
+        match="Authority edge disagrees",
+    ):
+        solver.evaluation_evidence_coordinator.confirm_event(
+            event_id,
+            expected_revision=reserved.revision,
+        )
 
 
 def test_recovery_settles_committed_authority_after_process_crash_window() -> None:
@@ -217,7 +459,7 @@ def test_recovery_keeps_semantically_invalid_authority_retryable() -> None:
     )
 
 
-def test_normal_step_closes_journal_to_same_committed_disposition() -> None:
+def test_normal_step_closes_journal_to_same_committed_disposition(tmp_path) -> None:
     solver = ComposableSolver(_Problem(), adapter=_Adapter())
 
     outcome = solver.step()
@@ -226,6 +468,12 @@ def test_normal_step_closes_journal_to_same_committed_disposition() -> None:
     record = solver.evaluation_evidence_journal.get(evidence["event_id"])
     assert record is not None
     assert record.status == "committed"
+    assert record.phase == "finalized"
+    assert record.outcome == "accepted"
+    assert record.event_ref is not None
+    assert record.authority_after_ref is not None
+    assert record.decision_carrier_ref is not None
+    assert record.authority_after_ref["snapshot"] == record.decision_carrier_ref
     assert record.disposition is not None
     assert record.disposition["authority_snapshot_key"] == str(
         solver._latest_snapshot_handle.key
@@ -239,9 +487,19 @@ def test_normal_step_closes_journal_to_same_committed_disposition() -> None:
     assert event_snapshot is not None and event_snapshot.pinned
     assert authority_snapshot is not None and authority_snapshot.pinned
 
-    release = solver.release_evaluation_evidence_snapshots(evidence["event_id"])
+    manifest = EvaluationEvidenceArchiveManifest.from_record(
+        record,
+        snapshots=solver.snapshot_store,
+    )
+    binding, ledger = _publish_evidence_archive(tmp_path, manifest)
+    solver.evaluation_evidence_coordinator.archive_verifier = ledger
+    release = solver.release_evaluation_evidence_snapshots(
+        evidence["event_id"],
+        manifest=manifest,
+        archive_binding=binding,
+    )
 
-    assert set(release["released_snapshot_keys"]) == {
+    assert set(release["snapshot_results"]) == {
         record.event_snapshot_key,
         record.verification["destination_snapshot_key"],
     }
@@ -252,9 +510,182 @@ def test_normal_step_closes_journal_to_same_committed_disposition() -> None:
         ).pinned
         is False
     )
+    archived = solver.evaluation_evidence_journal.get(evidence["event_id"])
+    assert archived is not None
+    assert archived.archive_binding == binding.as_dict()
+    assert archived.retention_released is True
 
 
-def test_normal_settlement_defers_until_authority_snapshot_is_readable() -> None:
+def test_population_authority_epoch_is_independent_and_fences_stale_steps() -> None:
+    solver = ComposableSolver(_Problem(), adapter=_Adapter())
+    solver.step()
+    first = solver.get_population_authority_identity()
+    assert first is not None
+    stale_plan = solver._authority_commit_plan()
+
+    solver.step()
+    second = solver.get_population_authority_identity()
+    assert second is not None
+    assert (first.epoch, second.epoch) == (1, 2)
+    assert first.snapshot.revision == second.snapshot.revision == 1
+
+    current = solver.snapshot_store.read_verified(second.snapshot)
+    stale_record = {
+        "data": dict(current.data),
+        "key": "authority/stale-writer",
+        "meta": {"test": "stale-fence"},
+        "schema": current.schema,
+        "ttl_seconds": None,
+        "generation": solver.generation,
+        "publication": "authority",
+        "authority_commit": stale_plan,
+    }
+    with pytest.raises(AuthorityFenceMismatchError):
+        solver._write_snapshot_record(stale_record, strict=True)
+
+    assert solver.get_population_authority_identity() == second
+
+
+def test_next_step_fails_closed_until_prior_decision_converges(monkeypatch) -> None:
+    adapter = _Adapter()
+    solver = ComposableSolver(_Problem(), adapter=adapter)
+    normal_settle = solver.settle_evaluation_disposition
+
+    def _defer_live_settlement(event_id):
+        raise RuntimeError(f"deferred live settlement: {event_id}")
+
+    monkeypatch.setattr(solver, "settle_evaluation_disposition", _defer_live_settlement)
+    first_outcome = solver.step()
+    first_event_id = first_outcome.metadata["evaluation_disposition"]["event_id"]
+    first_record = solver.evaluation_evidence_journal.get(first_event_id)
+    first_authority = solver.get_population_authority_identity()
+    assert first_record is not None and first_record.phase == "decision_ready"
+    assert first_authority is not None and first_authority.epoch == 1
+    assert adapter.update_calls == 1
+
+    coordinator = solver.evaluation_evidence_coordinator
+    normal_coordinator_settle = coordinator.settle_decision
+
+    def _defer_recovery(*args, **kwargs):
+        del args, kwargs
+        raise EvaluationEvidenceDeferred("test storage outage")
+
+    monkeypatch.setattr(coordinator, "settle_decision", _defer_recovery)
+    with pytest.raises(
+        EvaluationEvidenceDeferred,
+        match="prior evaluation evidence must converge",
+    ):
+        solver.step()
+    assert adapter.update_calls == 1
+    assert solver.get_population_authority_identity() == first_authority
+
+    monkeypatch.setattr(coordinator, "settle_decision", normal_coordinator_settle)
+    monkeypatch.setattr(solver, "settle_evaluation_disposition", normal_settle)
+    solver.step()
+
+    settled = solver.evaluation_evidence_journal.get(first_event_id)
+    current = solver.get_population_authority_identity()
+    assert settled is not None and settled.phase == "finalized"
+    assert current is not None and current.epoch == 2
+    assert adapter.update_calls == 2
+
+
+def test_rejected_step_uses_persisted_authority_when_local_handle_is_absent() -> None:
+    class _RejectAll:
+        def select(self, candidates, feedback, context):
+            del feedback, context
+            return BatchDisposition.prefix(
+                proposed_count=len(candidates.semantic_states),
+                accepted_count=0,
+                reason="test rejection",
+            )
+
+    adapter = _Adapter()
+    solver = ComposableSolver(_Problem(), adapter=adapter)
+    solver.step()
+    before = solver.get_population_authority_identity()
+    assert before is not None
+
+    solver._latest_snapshot_handle = None
+    solver.evaluation_acceptance_policy = _RejectAll()
+    rejected = solver.step()
+
+    evidence = rejected.metadata["evaluation_disposition"]
+    record = solver.evaluation_evidence_journal.get(evidence["event_id"])
+    assert rejected.committed is False
+    assert record is not None and record.outcome == "rejected"
+    assert record.disposition is not None
+    assert record.disposition["authority_snapshot_key"] == before.snapshot.key
+    assert solver.get_population_authority_identity() == before
+
+
+def test_case_finalization_archives_before_releasing_evidence(tmp_path) -> None:
+    solver = ComposableSolver(_Problem(), adapter=_Adapter())
+    outcome = solver.step()
+    event_id = outcome.metadata["evaluation_disposition"]["event_id"]
+    before = solver.evaluation_evidence_journal.get(event_id)
+    assert before is not None and before.retention_released is False
+    assert solver.snapshot_store.read(before.event_ref["key"]).pinned is True
+
+    runtime = _ArchiveCaseRuntime(tmp_path)
+    solver.set_case_runtime(runtime)
+    staged = solver.stage_evaluation_evidence_archives()
+
+    assert set(staged) == {event_id}
+    during = solver.evaluation_evidence_journal.get(event_id)
+    assert during is not None and during.archive_binding is None
+    assert solver.snapshot_store.read(during.event_ref["key"]).pinned is True
+
+    runtime.seal()
+
+    archived = solver.evaluation_evidence_journal.get(event_id)
+    assert archived is not None
+    assert archived.archive_binding is not None
+    assert archived.retention_released is True
+    assert solver.snapshot_store.read(archived.event_ref["key"]).pinned is False
+    assert (
+        solver.snapshot_store.read(archived.decision_carrier_ref["key"]).pinned
+        is False
+    )
+
+
+def test_bound_archive_release_redrives_without_process_staging(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    solver = ComposableSolver(_Problem(), adapter=_Adapter())
+    outcome = solver.step()
+    event_id = outcome.metadata["evaluation_disposition"]["event_id"]
+    runtime = _ArchiveCaseRuntime(tmp_path)
+    solver.set_case_runtime(runtime)
+    solver.stage_evaluation_evidence_archives()
+
+    journal = solver.evaluation_evidence_journal
+    normal_mark = journal.mark_retention_released
+
+    def _lose_release_ack(*args, **kwargs):
+        del args, kwargs
+        raise OSError("journal acknowledgement unavailable")
+
+    monkeypatch.setattr(journal, "mark_retention_released", _lose_release_ack)
+    with pytest.raises(OSError, match="journal acknowledgement unavailable"):
+        runtime.seal()
+
+    interrupted = journal.get(event_id)
+    assert interrupted is not None
+    assert interrupted.archive_binding is not None
+    assert interrupted.retention_released is False
+
+    monkeypatch.setattr(journal, "mark_retention_released", normal_mark)
+    solver._evaluation_evidence_archive_staging = {}
+    resumed = solver.stage_evaluation_evidence_archives()
+
+    assert set(resumed) == {event_id}
+    recovered = journal.get(event_id)
+    assert recovered is not None and recovered.retention_released is True
+
+
+def test_authority_commit_stays_recoverable_until_snapshot_is_readable() -> None:
     class _DelayedReadSnapshotStore(InMemorySnapshotStore):
         def __init__(self) -> None:
             super().__init__()
@@ -279,18 +710,27 @@ def test_normal_settlement_defers_until_authority_snapshot_is_readable() -> None
         evaluation_evidence_journal=journal,
     )
 
-    outcome = solver.step()
+    with pytest.raises(KeyError, match="Snapshot identity is no longer readable"):
+        solver.step()
 
-    evidence = outcome.metadata["evaluation_disposition"]
-    record = journal.get(evidence["event_id"])
+    records = journal.list_records()
+    assert len(records) == 1
+    record = records[0]
     assert record is not None
     assert record.status == "deciding"
-    assert evidence["journal_settlement"]["status"] == "deferred"
+    assert record.outcome == "accepted"
+    assert solver.get_population_authority_identity() is None
 
     store.blocked.clear()
-    settled = solver.settle_evaluation_disposition(evidence["event_id"])
+    report = solver.reconcile_evaluation_evidence(record.run_id)
+    settled = journal.get(record.event_id)
+    assert report["settled_count"] == 1
+    assert settled is not None
     assert settled.status == "committed"
     assert settled.terminal_verified
+    authority = solver.get_population_authority_identity()
+    assert authority is not None
+    assert authority.snapshot.key == settled.decision_carrier_ref["key"]
 
 
 def test_event_must_be_readable_before_acceptance_or_adapter_update() -> None:

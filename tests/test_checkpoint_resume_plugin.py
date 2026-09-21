@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import os
 import pickle
 from pathlib import Path
@@ -12,7 +13,7 @@ from nsgablack.core.evaluation_feedback import OptimizationFeedbackBatch
 from nsgablack.core.state.incumbent import CandidateProvenance
 
 
-def _build_composable_solver(sample_problem):
+def _build_composable_solver(sample_problem, **solver_kwargs):
     from nsgablack.adapters import SAConfig, SimulatedAnnealingAdapter
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.representation import RepresentationPipeline
@@ -27,11 +28,12 @@ def _build_composable_solver(sample_problem):
         problem=sample_problem,
         adapter=SimulatedAnnealingAdapter(SAConfig(batch_size=6)),
         representation_pipeline=pipeline,
+        **solver_kwargs,
     )
     return solver
 
 
-def test_checkpoint_v9_preserves_semantic_evaluation_event(sample_problem) -> None:
+def test_checkpoint_v10_preserves_semantic_evaluation_event(sample_problem) -> None:
     from nsgablack.plugins import CheckpointResumeConfig, CheckpointResumePlugin
 
     solver = _build_composable_solver(sample_problem)
@@ -68,7 +70,7 @@ def test_checkpoint_v9_preserves_semantic_evaluation_event(sample_problem) -> No
     payload = writer._build_payload(solver=solver, reason="semantic-event")
 
     event = payload["solver_state"]["evaluation_event"]
-    assert payload["schema"] == "nsgablack.checkpoint.v9"
+    assert payload["schema"] == "nsgablack.checkpoint.v10"
     assert event["semantic_complete"] is True
 
     restored = _build_composable_solver(sample_problem)
@@ -89,6 +91,341 @@ def test_checkpoint_v9_preserves_semantic_evaluation_event(sample_problem) -> No
     assert restored._last_evaluated_event_provenance[0].proposal_id == "proposal-a"
     assert restored_feedback.items[0].metrics["validation_loss"] == 1.25
     assert restored_feedback.metadata["provider"] == "test-provider"
+
+
+def test_checkpoint_restore_fails_closed_when_population_authority_is_not_published(
+    sample_problem,
+    monkeypatch,
+) -> None:
+    from nsgablack.plugins import CheckpointResumeConfig, CheckpointResumePlugin
+
+    source = _build_composable_solver(sample_problem)
+    population = np.zeros((1, int(source.dimension)), dtype=float)
+    objectives = np.zeros((1, 1), dtype=float)
+    violations = np.zeros((1,), dtype=float)
+    assert source.write_population_snapshot(population, objectives, violations)
+    writer = CheckpointResumePlugin(
+        config=CheckpointResumeConfig(save_on_finish=False)
+    )
+    writer.attach(source)
+    payload = writer._build_payload(solver=source, reason="authority-restore")
+
+    target = _build_composable_solver(sample_problem)
+    reader = CheckpointResumePlugin(
+        config=CheckpointResumeConfig(
+            save_on_finish=False,
+            strict=False,
+        )
+    )
+    reader.attach(target)
+    monkeypatch.setattr(
+        target,
+        "write_population_snapshot",
+        lambda *args, **kwargs: False,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="could not establish the authoritative population Snapshot",
+    ):
+        reader._apply_solver_state(target, payload["solver_state"], 0)
+
+    assert target.get_population_authority_identity() is None
+
+
+def test_checkpoint_restore_fails_closed_when_partition_authority_is_not_published(
+    sample_problem,
+    monkeypatch,
+) -> None:
+    from nsgablack.plugins import CheckpointResumeConfig, CheckpointResumePlugin
+
+    target = _build_composable_solver(sample_problem)
+    reader = CheckpointResumePlugin(
+        config=CheckpointResumeConfig(save_on_finish=False, strict=False)
+    )
+    reader.attach(target)
+    monkeypatch.setattr(
+        target,
+        "restore_candidate_population_partitions_checkpoint_state",
+        lambda payload: None,
+    )
+    monkeypatch.setattr(
+        target,
+        "write_partitioned_population_snapshot",
+        lambda: False,
+    )
+    state = {
+        "generation": 0,
+        "evaluation_count": 0,
+        "population_authority_mode": "partitioned",
+        "population": None,
+        "objectives": None,
+        "constraint_violations": None,
+        "last_evaluated_batch": {
+            "population": None,
+            "objectives": None,
+            "constraint_violations": None,
+        },
+        "evaluation_event": None,
+        "evaluation_disposition": None,
+        "candidate_population": None,
+        "candidate_population_partitions": {"schema": "test"},
+    }
+
+    with pytest.raises(
+        RuntimeError,
+        match="could not establish the authoritative partition Snapshot",
+    ):
+        reader._apply_solver_state(target, state, 0)
+
+    assert target.get_population_authority_identity() is None
+
+
+def test_checkpoint_restore_redrives_durable_decision_before_reusing_authority(
+    sample_problem,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from nsgablack.plugins import CheckpointResumeConfig, CheckpointResumePlugin
+
+    state_dir = tmp_path / "durable-state"
+    store_options = {
+        "snapshot_store_backend": "file",
+        "snapshot_store_dir": str(state_dir),
+        "snapshot_store_key_prefix": "checkpoint-redrive",
+    }
+    source = _build_composable_solver(sample_problem, **store_options)
+    source.max_steps = 1
+
+    def _defer_settlement(event_id):
+        raise RuntimeError(f"simulated crash before journal settlement: {event_id}")
+
+    monkeypatch.setattr(
+        source,
+        "settle_evaluation_disposition",
+        _defer_settlement,
+    )
+    source.run()
+
+    run_id = str(source._active_run_id)
+    unresolved = source.evaluation_evidence_journal.list_unresolved(run_id=run_id)
+    assert len(unresolved) == 1
+    pending = unresolved[0]
+    assert pending.phase == "decision_ready"
+    authority_after_cas = source.get_population_authority_identity()
+    assert authority_after_cas is not None
+
+    writer = CheckpointResumePlugin(
+        config=CheckpointResumeConfig(save_on_finish=False)
+    )
+    writer.attach(source)
+    payload = writer._build_payload(solver=source, reason="crash-window")
+    state = copy.deepcopy(payload["solver_state"])
+    assert state["population_authority_identity"] == authority_after_cas.as_dict()
+    checkpoint_population = np.asarray(state["population"], dtype=float)
+    state["population"] = np.full_like(checkpoint_population, 999.0)
+
+    target = _build_composable_solver(sample_problem, **store_options)
+    reader = CheckpointResumePlugin(
+        config=CheckpointResumeConfig(save_on_finish=False, strict=False)
+    )
+    reader.attach(target)
+
+    def _unexpected_authority_publication(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError(
+            "checkpoint restore advanced an already committed Authority edge"
+        )
+
+    monkeypatch.setattr(
+        target,
+        "write_population_snapshot",
+        _unexpected_authority_publication,
+    )
+    monkeypatch.setattr(
+        target.authority_store,
+        "commit",
+        _unexpected_authority_publication,
+    )
+    reader._apply_solver_state(target, state, payload["resume_cursor"])
+
+    current = target.get_population_authority_identity()
+    settled = target.evaluation_evidence_journal.get(pending.event_id)
+    authoritative = target.snapshot_store.read_verified(authority_after_cas.snapshot)
+    assert current == authority_after_cas
+    assert current.epoch == authority_after_cas.epoch
+    assert settled is not None and settled.phase == "finalized"
+    assert settled.terminal_verified
+    assert settled.authority_after_ref == authority_after_cas.as_dict()
+    assert settled.decision_carrier_ref == authority_after_cas.snapshot.as_dict()
+    assert target.evaluation_evidence_journal.list_unresolved(run_id=run_id) == ()
+    assert np.array_equal(
+        np.asarray(target.population),
+        np.asarray(authoritative.data["population"]),
+        equal_nan=True,
+    )
+    assert not np.array_equal(target.population, state["population"], equal_nan=True)
+
+
+def test_checkpoint_restore_rejects_stale_identity_without_advancing_authority(
+    sample_problem,
+    tmp_path: Path,
+) -> None:
+    from nsgablack.plugins import CheckpointResumeConfig, CheckpointResumePlugin
+
+    state_dir = tmp_path / "durable-state"
+    store_options = {
+        "snapshot_store_backend": "file",
+        "snapshot_store_dir": str(state_dir),
+        "snapshot_store_key_prefix": "checkpoint-stale",
+    }
+    source = _build_composable_solver(sample_problem, **store_options)
+    source.max_steps = 1
+    source.run()
+    checkpoint_authority = source.get_population_authority_identity()
+    assert checkpoint_authority is not None
+
+    writer = CheckpointResumePlugin(
+        config=CheckpointResumeConfig(save_on_finish=False)
+    )
+    writer.attach(source)
+    payload = writer._build_payload(solver=source, reason="stale-authority")
+
+    authoritative = source.snapshot_store.read_verified(
+        checkpoint_authority.snapshot
+    )
+    newer_handle = source.snapshot_store.write(
+        authoritative.data,
+        key="checkpoint-restore/newer-authority",
+        meta={"test": "newer-authority"},
+        schema=authoritative.schema,
+        write_once=True,
+    )
+    newer_snapshot = source.snapshot_store.identity(newer_handle)
+    source.snapshot_store.read_verified(newer_snapshot)
+    newer_authority = source.authority_store.commit(
+        checkpoint_authority.authority_key,
+        newer_snapshot,
+        expected_epoch=checkpoint_authority.epoch,
+    )
+
+    target = _build_composable_solver(sample_problem, **store_options)
+    reader = CheckpointResumePlugin(
+        config=CheckpointResumeConfig(save_on_finish=False, strict=False)
+    )
+    reader.attach(target)
+
+    with pytest.raises(
+        RuntimeError,
+        match="AuthorityIdentity is stale or conflicts",
+    ):
+        reader._apply_solver_state(
+            target,
+            payload["solver_state"],
+            payload["resume_cursor"],
+        )
+
+    assert (
+        target.authority_store.current(checkpoint_authority.authority_key)
+        == newer_authority
+    )
+    assert target._active_run_id is None
+    assert target.generation == 0
+    assert target.evaluation_count == 0
+
+
+@pytest.mark.parametrize("with_last_evaluated_batch", (False, True))
+def test_partitioned_checkpoint_reuses_exact_durable_authority_without_publication(
+    sample_problem,
+    tmp_path: Path,
+    monkeypatch,
+    with_last_evaluated_batch: bool,
+) -> None:
+    from nsgablack.adapters import PopulationPartition
+    from nsgablack.plugins import CheckpointResumeConfig, CheckpointResumePlugin
+
+    state_dir = tmp_path / f"partitioned-{with_last_evaluated_batch}"
+    store_options = {
+        "snapshot_store_backend": "file",
+        "snapshot_store_dir": str(state_dir),
+        "snapshot_store_key_prefix": "checkpoint-partitioned",
+    }
+    source = _build_composable_solver(sample_problem, **store_options)
+    source._active_run_id = "checkpoint-partitioned-run"
+    values = np.zeros((1, int(source.dimension)), dtype=float)
+    objectives = np.zeros((1, 1), dtype=float)
+    violations = np.zeros((1,), dtype=float)
+    token = "partitioned-candidate"
+    batch = CandidateBatch(
+        semantic_states=(UnknownState(values=values[0], metadata={}),),
+        numeric_matrix=values,
+        candidate_tokens=(token,),
+    )
+    partition_payload = {
+        "schema": "nsgablack.candidate_population_partitions/v1",
+        "authority_mode": "partitioned",
+        "partitions": [
+            {
+                "partition": PopulationPartition(
+                    partition_id="child/population",
+                    population=values,
+                    objectives=objectives,
+                    violations=violations,
+                    candidate_tokens=(token,),
+                ).as_dict(),
+                "batch": batch.as_dict(),
+                "provenance": [
+                    CandidateProvenance(
+                        candidate_token=token,
+                        source_kind="test",
+                        source_run_id=source._active_run_id,
+                    ).as_dict()
+                ],
+            }
+        ],
+    }
+    source.restore_candidate_population_partitions_checkpoint_state(
+        partition_payload
+    )
+    if with_last_evaluated_batch:
+        source.restore_evaluation_event_arrays(values, objectives, violations)
+    assert source.write_partitioned_population_snapshot()
+    authority = source.get_population_authority_identity()
+    assert authority is not None
+
+    writer = CheckpointResumePlugin(
+        config=CheckpointResumeConfig(save_on_finish=False)
+    )
+    writer.attach(source)
+    payload = writer._build_payload(solver=source, reason="partitioned-reuse")
+
+    target = _build_composable_solver(sample_problem, **store_options)
+    reader = CheckpointResumePlugin(
+        config=CheckpointResumeConfig(save_on_finish=False, strict=False)
+    )
+    reader.attach(target)
+
+    def _unexpected_publication(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("checkpoint restore advanced an exact Authority edge")
+
+    monkeypatch.setattr(target, "write_population_snapshot", _unexpected_publication)
+    monkeypatch.setattr(
+        target,
+        "write_partitioned_population_snapshot",
+        _unexpected_publication,
+    )
+    reader._apply_solver_state(
+        target,
+        payload["solver_state"],
+        payload["resume_cursor"],
+    )
+
+    assert target.get_population_authority_identity() == authority
+    assert target.population is None
+    assert target.objectives is None
+    assert target.constraint_violations is None
+    assert target._snapshot_generation == payload["solver_state"]["generation"]
 
 
 def test_checkpoint_resume_composable_solver(sample_problem, tmp_path: Path):
@@ -548,7 +885,7 @@ def test_attach_checkpoint_resume_strict_conflicts_with_trust_checkpoint(sample_
         )
 
 
-def test_checkpoint_writer_uses_v5_and_carries_component_and_selection_audit(
+def test_checkpoint_writer_uses_v10_and_carries_component_and_selection_audit(
     sample_problem,
 ) -> None:
     from nsgablack.plugins import CheckpointResumePlugin
@@ -563,7 +900,7 @@ def test_checkpoint_writer_uses_v5_and_carries_component_and_selection_audit(
     payload = plugin._build_payload(solver=solver, reason="schema-test")
     state = payload["solver_state"]
 
-    assert payload["schema"] == "nsgablack.checkpoint.v9"
+    assert payload["schema"] == "nsgablack.checkpoint.v10"
     assert "adapter" in payload["stateful_components"]
     assert state["run_sequence"] == 1
     assert state["incumbent_selection"] == {

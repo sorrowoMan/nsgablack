@@ -708,6 +708,28 @@ def run_solver_loop(
         setattr(solver, "last_result", completed_result)
         if run_plugin_receipt.participants:
             def notify_finalized(_publications=None) -> None:
+                if isinstance(completed_result, dict):
+                    publications = dict(_publications or {})
+                    committed_at = max(
+                        (
+                            float(getattr(receipt, "committed_at", 0.0) or 0.0)
+                            for receipt in publications.values()
+                        ),
+                        default=time.time(),
+                    )
+                    completed_result["artifact_publications"] = {
+                        str(name): (
+                            receipt.as_dict()
+                            if callable(getattr(receipt, "as_dict", None))
+                            else dict(receipt)
+                        )
+                        for name, receipt in publications.items()
+                    }
+                    completed_result["finalization"] = {
+                        "status": "sealed",
+                        "sealed_at": committed_at,
+                        "publication_count": len(publications),
+                    }
                 solver.plugin_manager.finish_lifecycle(
                     run_plugin_receipt,
                     "on_solver_finalized",

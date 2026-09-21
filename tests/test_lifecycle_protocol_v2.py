@@ -220,6 +220,10 @@ class _PartitionedAdapter(AlgorithmAdapter):
     def get_population_partitions(self):
         return self._partitions
 
+    def set_population_partitions(self, partitions):
+        self._partitions = tuple(partitions)
+        return True
+
 
 def test_partitioned_snapshot_never_exposes_last_batch_as_one_population(tmp_path) -> None:
     solver = ComposableSolver(_Problem(), adapter=_PartitionedAdapter())
@@ -257,7 +261,7 @@ def test_partitioned_snapshot_never_exposes_last_batch_as_one_population(tmp_pat
     checkpoint.attach(solver)
     payload = checkpoint._build_payload(solver=solver, reason="partitioned")
     state = payload["solver_state"]
-    assert payload["schema"] == "nsgablack.checkpoint.v9"
+    assert payload["schema"] == "nsgablack.checkpoint.v10"
     assert state["population_authority_mode"] == "partitioned"
     assert state["population"] is None
     assert state["last_evaluated_batch"]["population"] is not None

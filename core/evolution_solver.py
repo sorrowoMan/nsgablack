@@ -61,6 +61,7 @@ class EvolutionSolver(ComposableSolver):
         snapshot_store_redis_url: str = "redis://localhost:6379/0",
         snapshot_store_key_prefix: str = "nsgablack:snapshot",
         snapshot_store_dir: Optional[str] = None,
+        snapshot_store_scope: Optional[str] = None,
         snapshot_store_serializer: str = "safe",
         snapshot_store_hmac_env_var: str = "NSGABLACK_SNAPSHOT_HMAC_KEY",
         snapshot_store_unsafe_allow_unsigned: bool = False,
@@ -148,6 +149,7 @@ class EvolutionSolver(ComposableSolver):
             snapshot_store_redis_url=snapshot_store_redis_url,
             snapshot_store_key_prefix=snapshot_store_key_prefix,
             snapshot_store_dir=snapshot_store_dir,
+            snapshot_store_scope=snapshot_store_scope,
             snapshot_store_serializer=snapshot_store_serializer,
             snapshot_store_hmac_env_var=snapshot_store_hmac_env_var,
             snapshot_store_unsafe_allow_unsigned=snapshot_store_unsafe_allow_unsigned,
@@ -263,10 +265,12 @@ class EvolutionSolver(ComposableSolver):
         store: Any,
         *,
         evaluation_evidence_journal: Any = None,
+        authority_store: Any = None,
     ) -> None:
         super().set_snapshot_store(
             store,
             evaluation_evidence_journal=evaluation_evidence_journal,
+            authority_store=authority_store,
         )
 
     def set_context_store_backend(
@@ -300,6 +304,7 @@ class EvolutionSolver(ComposableSolver):
         redis_url: Optional[str] = None,
         key_prefix: Optional[str] = None,
         base_dir: Optional[str] = None,
+        store_scope: Optional[str] = None,
         serializer: Optional[str] = None,
         hmac_env_var: Optional[str] = None,
         unsafe_allow_unsigned: Optional[bool] = None,
@@ -311,6 +316,7 @@ class EvolutionSolver(ComposableSolver):
             redis_url=redis_url,
             key_prefix=key_prefix,
             base_dir=base_dir,
+            store_scope=store_scope,
             serializer=serializer,
             hmac_env_var=hmac_env_var,
             unsafe_allow_unsigned=unsafe_allow_unsigned,
@@ -560,6 +566,13 @@ class EvolutionSolver(ComposableSolver):
             self._commit_evolution_runtime_state()
 
     def step(self) -> StepOutcome:
+        self.ensure_evaluation_evidence_ready_for_next_step()
+        previous_authority = self.get_population_authority_identity()
+        previous_authority_key = (
+            None
+            if previous_authority is None
+            else str(previous_authority.snapshot.key)
+        )
         previous_projection = self._capture_authority_projection()
         previous_incumbent = self._capture_incumbent_transaction_state()
         previous_snapshot_handle = self._latest_snapshot_handle
@@ -584,11 +597,7 @@ class EvolutionSolver(ComposableSolver):
             outcome = self._step_transaction_body_evolution()
             outcome = self._finalize_evaluation_disposition(
                 outcome,
-                previous_authority_key=(
-                    None
-                    if previous_snapshot_handle is None
-                    else str(previous_snapshot_handle.key)
-                ),
+                previous_authority_key=previous_authority_key,
             )
             if outcome.committed:
                 self.commit_snapshot_step_transaction()
@@ -599,11 +608,7 @@ class EvolutionSolver(ComposableSolver):
             self._record_failed_evaluation_disposition(
                 exc,
                 previous_event_id=previous_event_id,
-                previous_authority_key=(
-                    None
-                    if previous_snapshot_handle is None
-                    else str(previous_snapshot_handle.key)
-                ),
+                previous_authority_key=previous_authority_key,
             )
             callbacks = [("snapshot", self.rollback_snapshot_step_transaction)]
             if adapter_transaction is not None:
