@@ -1,5 +1,35 @@
 from __future__ import annotations
 
+from pathlib import Path
+import re
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.10
+    import tomli as tomllib
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _source_version(path: Path) -> str:
+    match = re.search(
+        r'^__version__\s*=\s*["\']([^"\']+)["\']',
+        path.read_text(encoding="utf-8"),
+        flags=re.MULTILINE,
+    )
+    assert match is not None, f"missing __version__ in {path}"
+    return match.group(1)
+
+
+def test_source_and_wheel_package_versions_match_build_metadata():
+    project_version = tomllib.loads(
+        (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )["project"]["version"]
+
+    assert _source_version(REPO_ROOT / "__init__.py") == project_version
+    assert _source_version(REPO_ROOT / "nsgablack" / "__init__.py") == project_version
+
 
 def test_stable_top_level_imports():
     import nsgablack
