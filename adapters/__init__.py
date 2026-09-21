@@ -40,6 +40,7 @@ from .gradient_descent import GradientDescentAdapter, GradientDescentConfig
 from .gradient_optimizer import GradientOptimizerAdapter, GradientOptimizerConfig
 from .gaussian_search import GaussianSearchAdapter, GaussianSearchConfig
 from .fixed_candidate import FixedCandidateAdapter
+from .elite_retention import EliteRetentionAdapter, EliteRetentionConfig
 from .pattern_search import PatternSearchAdapter, PatternSearchConfig
 from .nsga2 import NSGA2Adapter, NSGA2Config
 from .nsga3 import NSGA3Adapter, NSGA3Config
@@ -99,6 +100,8 @@ __all__ = [
     "GaussianSearchAdapter",
     "GaussianSearchConfig",
     "FixedCandidateAdapter",
+    "EliteRetentionAdapter",
+    "EliteRetentionConfig",
     "PatternSearchAdapter",
     "PatternSearchConfig",
     "NSGA2Adapter",

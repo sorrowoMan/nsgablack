@@ -37,6 +37,7 @@ def _make(cls: Type[Any]) -> Any:
     _SKIP_INSTANTIATE = {
         "AStarAdapter", "MOAStarAdapter",
         "CompositeAdapter",
+        "EliteRetentionAdapter",
         "RoleAdapter", "RoleRouterAdapter",
         "AsyncEventDrivenAdapter",
     }

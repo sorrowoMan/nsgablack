@@ -495,13 +495,19 @@ example_entry = ""
 
 [[entry]]
 key = "plugin.elite"
-title = "BasicElitePlugin"
+title = "BasicElitePlugin (deprecated compatibility bridge)"
 kind = "plugin"
 import_path = "nsgablack.plugins.runtime.elite_retention:BasicElitePlugin"
-tags = ["runtime", "elite", "retention", "plugin"]
-summary = "精英保留以降低质量退化。 / Plugin: elite retention to reduce quality regression."
-use_when = ["后期解质量波动较大时。 / When late-stage solution quality fluctuates.", "需要提升最优解稳定性时。 / Need improved best-solution stability."]
-minimal_wiring = ["from nsgablack.plugins import BasicElitePlugin", "solver.add_plugin(BasicElitePlugin())"]
+tags = ["compat", "deprecated", "elite", "migration", "plugin", "retention"]
+summary = "旧精英 Plugin 的迁移桥；attach 时将现有 Adapter 包装为事务型 EliteRetentionAdapter，不直接写 population authority。"
+use_when = [
+  "迁移仍调用 BasicElitePlugin 的旧装配代码时；新代码直接使用 adapter.elite_retention。",
+]
+minimal_wiring = [
+  "from nsgablack.plugins import BasicElitePlugin  # deprecated; remove_in=1.0.0",
+  "solver.add_plugin(BasicElitePlugin())  # migrates to EliteRetentionAdapter",
+]
+required_companions = ["adapter.elite_retention"]
 config_keys = ["retention_prob", "retention_ratio"]
 example_entry = "python examples\\cases\\nsga2_basic\\run_project.py"
 

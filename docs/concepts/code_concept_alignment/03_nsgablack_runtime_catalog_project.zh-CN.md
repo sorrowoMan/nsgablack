@@ -28,7 +28,7 @@
 | 代码路径 | 社区常用叫法 | 机制含义 |
 | --- | --- | --- |
 | `plugins/runtime/pareto_archive.py` | Pareto archive / elite set | 保存非支配前沿或精英解。 |
-| `plugins/runtime/elite_retention.py` | elitism / survivor preservation | 精英保留。 |
+| `plugins/runtime/elite_retention.py` | deprecated migration bridge | 旧 Plugin 导入兼容；正式精英保留由 `adapters/elite_retention` 在步骤事务内完成。 |
 | `plugins/runtime/diversity_init.py` | diversity-aware initialization | 多样性初始化。 |
 | `plugins/runtime/dynamic_switch.py` | dynamic strategy switching / adaptive control | 运行中切换策略或参数。 |
 

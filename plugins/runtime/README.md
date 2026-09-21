@@ -1,7 +1,7 @@
 # plugins/runtime
 
 ## Purpose
-Runtime behavior plugins: elite retention, archive, dynamic switch, diversity init.
+Runtime behavior plugins: archive, dynamic switch, diversity init, plus the temporary elite-retention compatibility bridge.
 
 ## Trigger Timing
 Mostly `on_solver_init`, `on_population_init`, `on_generation_end`.
@@ -21,6 +21,6 @@ Default should degrade safely; strict mode may fail fast.
 ## Directory Contents
 - `diversity_init.py`
 - `dynamic_switch.py`
-- `elite_retention.py`
+- `elite_retention.py` — deprecated import bridge to `nsgablack.adapters.EliteRetentionAdapter`; remove_in=1.0.0.
 - `pareto_archive.py`
 

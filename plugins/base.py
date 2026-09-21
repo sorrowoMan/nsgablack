@@ -213,27 +213,18 @@ class Plugin(PluginBase):
         violations,
         solver=None,
     ) -> bool:
-        """Commit one population through the canonical control-plane writer.
+        """Reject Plugin attempts to replace committed population authority.
 
-        Adapter state, Solver fields, semantic CandidateBatch invalidation and
-        Snapshot publication must not be maintained by two helper
-        implementations.  Import locally to avoid a module cycle while keeping
-        the optimization-specific commit protocol in ``runtime_governance``.
+        Algorithmic survivor/replacement behavior belongs in an Adapter or an
+        acceptance policy so it participates in the EvaluationEvent and step
+        transaction.  Keeping this fail-closed method gives third-party Plugins
+        a precise migration error instead of silently publishing split state.
         """
 
-        target = solver if solver is not None else self.solver
-        if target is None:
-            return False
-        from ..core.runtime_governance import commit_population_snapshot
-
-        return bool(
-            commit_population_snapshot(
-                target,
-                population,
-                objectives,
-                violations,
-                strict=False,
-            )
+        _ = (population, objectives, violations, solver)
+        raise RuntimeError(
+            "Plugins cannot commit population authority; move algorithmic "
+            "population changes into an Adapter or EvaluationAcceptancePolicy"
         )
 
 

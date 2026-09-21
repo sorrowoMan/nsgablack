@@ -452,3 +452,14 @@ minimal_wiring = ["from nsgablack.adapters import StrategyChainAdapter", "solver
 required_companions = ["adapter.multi_strategy"]
 config_keys = ["phases", "phase_schedule", "repeat_last"]
 example_entry = "python -m nsgablack catalog search serial_strategy --kind example"
+[[entry]]
+key = "adapter.elite_retention"
+title = "EliteRetentionAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters.elite_retention:EliteRetentionAdapter"
+tags = ["adapter", "elite", "retention", "wrapper", "transactional"]
+summary = "在正式步骤事务内注入精英派生候选，并透明委托内层 Adapter 权威状态。"
+use_when = ["需要精英派生搜索且必须保留 Candidate token、Evaluation Event 与回滚语义时。"]
+minimal_wiring = ["EliteRetentionAdapter(NSGA2Adapter(), EliteRetentionConfig())"]
+config_keys = ["retention_probability", "retention_ratio", "history_size", "mutation_scale"]
+example_entry = "python examples\\cases\\nsga2_basic\\run_project.py"

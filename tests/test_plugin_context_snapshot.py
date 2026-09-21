@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from nsgablack.plugins.base import Plugin
 from nsgablack.core.state.context_keys import (
@@ -68,7 +69,7 @@ def test_get_population_snapshot_falls_back_to_solver_state() -> None:
     assert float(x[0, 0]) == 2.0
 
 
-def test_commit_population_snapshot_uses_adapter_setter() -> None:
+def test_plugin_population_authority_commit_fails_closed() -> None:
     class _Adapter:
         def __init__(self):
             self.calls = 0
@@ -98,17 +99,11 @@ def test_commit_population_snapshot_uses_adapter_setter() -> None:
 
     plugin = _DummyPlugin()
     solver = _Solver()
-    ok = plugin.commit_population_snapshot(
-        population=np.array([[1.0, 2.0]], dtype=float),
-        objectives=np.array([[3.0]], dtype=float),
-        violations=np.array([0.0], dtype=float),
-        solver=solver,
-    )
-    assert ok is True
-    assert solver.adapter.calls == 1
-    px, pf, pv = solver.adapter.payload
-    assert px.shape == (1, 2)
-    assert pf.shape == (1, 1)
-    assert pv.shape == (1,)
-    assert solver.population.tolist() == [[1.0, 2.0]]
-    assert solver.objectives.tolist() == [[3.0]]
+    with pytest.raises(RuntimeError, match="Plugins cannot commit population authority"):
+        plugin.commit_population_snapshot(
+            population=np.array([[1.0, 2.0]], dtype=float),
+            objectives=np.array([[3.0]], dtype=float),
+            violations=np.array([0.0], dtype=float),
+            solver=solver,
+        )
+    assert solver.adapter.calls == 0

@@ -40,16 +40,27 @@ def build_solver(run_id: str | None = None, *, strategy: str | None = None, quic
     )
     from nsgablack.core.composable_solver import ComposableSolver
     solver = ComposableSolver(problem=problem, representation_pipeline=pipeline)
-    from nsgablack.adapters import NSGA2Adapter
-    solver.set_adapter(NSGA2Adapter())
+    from nsgablack.adapters import (
+        EliteRetentionAdapter,
+        EliteRetentionConfig,
+        NSGA2Adapter,
+    )
+    solver.set_adapter(
+        EliteRetentionAdapter(
+            NSGA2Adapter(),
+            EliteRetentionConfig(
+                retention_probability=0.9,
+                retention_ratio=0.1,
+            ),
+        )
+    )
 
     # --- Core ---------------------------------------------------------
     apply_solver_profile(solver, cfg, "default")
     solver.set_max_steps(2)  # quick demo
 
-    # Plugins from original nsga2_solver_demo
-    from nsgablack.plugins import BasicElitePlugin, ModuleReportPlugin
-    solver.add_plugin(BasicElitePlugin(retention_prob=0.9, retention_ratio=0.1))
+    # Observability remains a Plugin; elite search semantics live in the Adapter.
+    from nsgablack.plugins import ModuleReportPlugin
     solver.add_plugin(ModuleReportPlugin())
 
     # --- Search orchestration (built-in) ------------------------------

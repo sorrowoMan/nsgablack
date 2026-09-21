@@ -17,6 +17,7 @@ from importlib import import_module
 __all__ = [
     # Category entrypoints (recommended)
     "analysis",
+    "compat",
     "constraints",
     "context",
     "engineering",
@@ -34,6 +35,7 @@ __all__ = [
 def __getattr__(name):
     if name in {
         "analysis",
+        "compat",
         "constraints",
         "context",
         "engineering",
