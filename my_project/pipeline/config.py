@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, Optional
 
 from nsgablack.representation import (
     ClipRepair,
-    GaussianMutation,
+    ContextGaussianMutation,
     RepresentationPipeline,
     UniformInitializer,
 )
@@ -64,15 +64,19 @@ def _build_pipeline_from_config(cfg: Optional[PipelineConfig] = None) -> Represe
     cfg = cfg or PipelineConfig()
     pipeline = RepresentationPipeline(
         initializer=UniformInitializer(low=cfg.low, high=cfg.high),
-        mutator=GaussianMutation(sigma=cfg.mutation_sigma, low=cfg.low, high=cfg.high),
+        mutator=ContextGaussianMutation(
+            base_sigma=cfg.mutation_sigma,
+            low=cfg.low,
+            high=cfg.high,
+        ),
         repair=ClipRepair(low=cfg.low, high=cfg.high),
         encoder=None,
     )
-    pipeline.context_requires = ()
+    pipeline.context_requires = tuple(pipeline.mutator.context_requires)
     pipeline.context_provides = ()
     pipeline.context_mutates = ()
     pipeline.context_cache = ()
-    pipeline.context_notes = "No context read/write in this minimal pipeline."
+    pipeline.context_notes = "The mutator reads the VNS mutation sigma from step context."
     return pipeline
 
 
