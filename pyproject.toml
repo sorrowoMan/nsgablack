@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nsgablack"
-version = "0.3.26"
+version = "0.4.0"
 description = "A decomposed optimization system with pipelines, biases, adapters, plugins"
 readme = "README.md"
 license = {text = "MIT"}
@@ -40,8 +40,9 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "blackbase>=0.3.24,<0.4.0",
+    "blackbase>=0.3.25,<0.4.0",
     "numpy>=1.20.0",
+    "psutil>=5.9.0",
     "scipy>=1.7.0",
     "scikit-learn>=1.0.0",
     "tomli>=2.0.1; python_version < '3.11'",
@@ -93,6 +94,7 @@ packages = [
     "nsgablack.adapters.astar",
     "nsgablack.adapters.async_event_driven",
     "nsgablack.adapters.differential_evolution",
+    "nsgablack.adapters.elite_retention",
     "nsgablack.adapters.fixed_candidate",
     "nsgablack.adapters.gaussian_search",
     "nsgablack.adapters.gradient_descent",
@@ -171,6 +173,7 @@ packages = [
     "nsgablack.representation",
     "nsgablack.ui",
     "nsgablack.utils",
+    "nsgablack.utils.compat",
     "nsgablack.utils.analysis",
     "nsgablack.utils.constraints",
     "nsgablack.utils.dynamic",

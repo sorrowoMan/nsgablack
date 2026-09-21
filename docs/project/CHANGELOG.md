@@ -6,6 +6,16 @@ The format is based on Keep a Changelog, and this project aims to follow SemVer.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-21
+
+### Breaking
+- `Plugin.commit_population_snapshot()` 现在失败关闭。算法型 survivor/replacement 必须迁移到
+  `AlgorithmAdapter` 或 `EvaluationAcceptancePolicy`，使候选、评估、接纳和 authority
+  Snapshot 处于同一事务证据链；不再允许 Plugin 在 generation commit 后改写 population。
+- `BasicElitePlugin` 与 `HistoricalElitePlugin` 保留到 `1.0.0` 的弃用装配桥，但搜索行为由
+  `EliteRetentionAdapter` 执行。新代码应直接包装现有 Adapter；兼容桥不会恢复旧的
+  post-commit population 写入。
+
 ### Added
 - 正式 `super_topology_orchestration` 跨框架示例：BlackBase Project DAG 自动调度并行
   Solver/MLBlack Trainer 基线与 Artifact 下游，外层复合 Adapter 的每个候选再动态调用
@@ -19,6 +29,7 @@ The format is based on Keep a Changelog, and this project aims to follow SemVer.
 - 可恢复的 `RunProgressState`，统一逻辑步数、累计耗时、deadline 与 ML CompletionPolicy 状态。
 - checkpoint v7：显式保存 population authority、语义 partitions、独立的 last-evaluated event、candidate lineage，以及逻辑步/物理 attempt 运行进度。
 - checkpoint v9：通过 BlackBase `evaluation_event/v1` 信封保存完整 CandidateBatch、Feedback、provenance、Pareto 语义身份和 run/attempt identity；旧数值事件迁移后显式标记语义不完整。
+- checkpoint v10：保存完整 population `AuthorityIdentity`；恢复时先收敛未决 Journal 证据，精确复用 durable Authority edge，冲突时失败关闭且不推进 epoch。
 - `StepOutcome`：区分 committed、idle、rejected、cancelled 与 terminal，空执行不再制造逻辑步骤。
 - `EvaluationAcceptancePolicy`：评估后的可行性/质量门禁通过 `BatchDisposition` 原子裁剪 CandidateBatch、Feedback 和 Adapter proposal ranges。
 - API stability policy and release process documentation.
@@ -31,6 +42,9 @@ The format is based on Keep a Changelog, and this project aims to follow SemVer.
 - `docs/concepts/CONTEXT_SCHEMA.md`：修复乱码，重写为可读中文。
 
 ### Changed
+- Population slot identity 现在在单一与跨 partition 范围内全局唯一；重复入选会派生带
+  `parent_token` 的 `population_slot_alias`，规范化 partitions 严格回写 Adapter，并在连续
+  step 与 checkpoint 恢复后保持稳定。MOEA/D 在接收不可变 partition 时复制为自有可写状态。
 - Evaluation Evidence terminal 必须携带目标 Snapshot 实读验证回执；恢复时暂时不可读的
   Event/authority 保持 unresolved 并允许后续重试，而不是被不可逆归档。
 - committed Evidence 结算会复用 Population Snapshot v2 语义校验器，验证 authority mode、
@@ -86,6 +100,10 @@ The format is based on Keep a Changelog, and this project aims to follow SemVer.
 - (fill in as you cut releases)
 
 ### Fixed
+- `ParetoArchivePlugin` 现在会校验并聚合与 Solver 已提交 `CandidateBatch` 对齐的兼容
+  population partitions；维度、目标标签、分区 ID、数值行或 token 不一致时明确拒绝，
+  不再把 partitioned authority 降为软警告后跳过归档更新。
+- EliteRetention 的契约回归按 wrapper 的真实构造要求检查，并保留 `inner` 为必填依赖。
 - **N-01/N-02 (🔴)**: SurrogateEvaluation double-bias + 训练数据污染。`_true_evaluate()` 不再 apply bias；并行路径传入 `enable_bias=False`。
 - **N-03**: 6 个 adapter 补齐 `set_state()` 对称实现（moa_star/sa/mas/astar/trust_region_subspace/trust_region_nonsmooth）。
 - **N-04**: MOA\* `_labels` dict 追加 `.pop()` 清理，消除内存泄漏。

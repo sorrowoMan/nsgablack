@@ -2,7 +2,11 @@
 
 `nsgablack` 是统一框架栈中的优化与搜索语义层。它面向的不是“调用一个算法”，而是把候选表示、目标与约束、搜索策略、运行能力和结果证据装配成可组合、可恢复、可审计的求解系统。
 
-当前版本：`0.3.26`，依赖 `blackbase>=0.3.24,<0.4.0`。
+当前版本：`0.4.0`，依赖 `blackbase>=0.3.25,<0.4.0`。
+
+0.4.0 将算法型 population 写入收口到 Adapter/Evaluation transaction；旧 Elite Plugin
+保留到 1.0.0 的弃用装配桥。升级步骤见
+[`docs/project/MIGRATION_0_4.md`](docs/project/MIGRATION_0_4.md)。
 
 本版的正式超级拓扑示例改用 BlackBase Project DAG：基线 Solver/Trainer 是并行就绪
 节点，外层 Solver 由权威 Artifact 依赖自动唤醒；外层候选继续动态调用 MLBlack
@@ -65,7 +69,7 @@ Representation 产生语义候选与数值视图
 
 `CandidateBatch` 同时保存 `semantic_states`、`numeric_matrix` 与 candidate token/provenance。数值算法消费矩阵；Representation、Problem、结果绑定和恢复消费语义状态。框架不再通过“数值相等”反推候选身份。
 
-复合 Adapter 不再把多个子群体强行拼成一个虚假的 population。透明包装器委托当前子 Adapter；多策略、角色路由和事件组合器通过稳定 partition ID 发布 `PopulationPartition`。checkpoint 保存 partition、反馈和 token，Solver 只在外层确实完成融合选择时接受单一权威 population。
+复合 Adapter 不再把多个子群体强行拼成一个虚假的 population。透明包装器委托当前子 Adapter；多策略、角色路由和事件组合器通过稳定 partition ID 发布 `PopulationPartition`。同一候选进入多个槽位时，Solver 为后续槽位派生带 `parent_token` 的唯一 `population_slot_alias`，并把规范化 partitions 严格回写 Adapter，使 token 在连续 step 与 checkpoint 恢复后保持稳定。checkpoint 保存 partition、反馈和 token，Solver 只在外层确实完成融合选择时接受单一权威 population。
 
 步骤提交采用显式两阶段边界：评估期间的 Evaluation Event 使用独立 Snapshot key；权威 Population Snapshot 只在 `StepOutcome.committed` 后从内存 staging 发布，拒绝或失败不会覆盖上一份权威快照。Adapter 的 semantic state 随 Solver 提交，`commit_step_state()` 只负责 post-commit cleanup；所有参与者都会执行，失败形成 `AdapterCommitReport` 并进入运行证据。事务型最终结果在 teardown 后先经过 `on_solver_finalization_prepare` 严格校验，再原子提交；`on_solver_finalized` 与 `save_on_finish` checkpoint 只观察已经权威化的最终结果。
 
@@ -73,7 +77,7 @@ Representation 产生语义候选与数值视图
 
 生命周期尾钩子采用独立清理聚合：一个严格 Plugin/Controller 的结束通知失败不会阻止其他已启动参与者收到对应 end。RuntimeController 与各 Controller 进入正式 checkpoint component，StopController 的 patience 状态可恢复。Adapter 的步骤回滚只消费显式 `snapshot_step_state()/restore_step_state()`，不再深拷贝任意 Python 对象内部。复合 Adapter 必须通过 `step_transaction_children()` 声明独立状态参与者，成功时由 `commit_step_state()` 清理尝试期资源；Provider-backed Adapter 依赖 copy-on-write slot，回滚只释放本次尝试创建的 `StateRef` 并恢复旧引用，提交只回收前驱 slot。
 
-Population Snapshot 使用 `nsgablack.population_snapshot/v2`。`single/step_batch` 同时区分权威 `(X, F, V)` 与独立的 `last_evaluation_event`；`partitioned` 只保存稳定分区和独立的 `last_evaluated_batch` 事件证据。checkpoint v9 保存版本化的完整评估事件信封，包括 `CandidateBatch` 语义 metadata、`OptimizationFeedbackBatch.items`、candidate token/provenance、Pareto 语义身份与 run/attempt identity；旧 checkpoint 迁移时只标记为 `semantic_complete=false`，不会伪造语义 lineage。接纳策略收到评估后的计数、事件 best 摘要与 snapshot ref；零接纳不会清空旧权威状态，部分接纳也不会裁掉完整评估证据。
+Population Snapshot 使用 `nsgablack.population_snapshot/v2`。`single/step_batch` 同时区分权威 `(X, F, V)` 与独立的 `last_evaluation_event`；`partitioned` 只保存稳定分区和独立的 `last_evaluated_batch` 事件证据。checkpoint v10 保存版本化的完整评估事件信封和 population `AuthorityIdentity`，包括 `CandidateBatch` 语义 metadata、`OptimizationFeedbackBatch.items`、candidate token/provenance、Pareto 语义身份与 run/attempt identity；恢复时先收敛未决的 Journal 证据，再复用精确匹配的 durable Authority edge，冲突则失败关闭。旧 checkpoint 迁移时只标记为 `semantic_complete=false`，不会伪造语义 lineage。接纳策略收到评估后的计数、事件 best 摘要与 snapshot ref；零接纳不会清空旧权威状态，部分接纳也不会裁掉完整评估证据。
 
 ## 标准项目
 
