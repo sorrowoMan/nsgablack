@@ -1,0 +1,65 @@
+# Derived algorithm features; both catalog profiles expose the same core APIs.
+[[entry]]
+key = "tool.population_change"
+title = "PopulationChange"
+kind = "tool"
+import_path = "nsgablack.units:PopulationChange"
+tags = ["unit", "population", "members", "provenance"]
+summary = "成员操作的明确来源映射：Adapter 决策，Unit 对齐候选/反馈/token 并维护自定义行字段。"
+use_when = ["自定义种群成员字段，需要随选择或替换维护时。"]
+minimal_wiring = ["from nsgablack.units import PopulationChange", "# Declare member_fields and on_members_changed(change) on a PopulationUnit subclass.", "# Return extra field updates using change.previous_member_indices."]
+required_companions = ["PopulationUnit", "UnitBinding"]
+config_keys = ["operation", "previous_count", "incoming_count", "previous_member_indices", "incoming_member_indices"]
+example_entry = "python -m nsgablack catalog show tool.population_change"
+
+[[entry]]
+key = "tool.unit_input_spec"
+title = "UnitInputSpec"
+kind = "tool"
+import_path = "nsgablack.units:UnitInputSpec"
+tags = ["unit", "operator", "dependency", "readonly"]
+summary = "变异算子显式声明 Unit 字段与特征，由实际 Adapter 提供脱离只读输入。"
+use_when = ["变异需要读取种群、区域或其他 Unit 信息时。"]
+minimal_wiring = ["from nsgablack.units import UnitInputSpec", "unit_inputs = UnitInputSpec(fields=('population',))", "# Define mutate(candidate, context, *, unit); read unit.fields['population']"]
+required_companions = ["UnitInputs", "RepresentationPipeline", "owning Adapter"]
+config_keys = ["fields", "features", "feedback_view", "schema"]
+example_entry = "python -m nsgablack catalog show tool.unit_input_spec"
+
+[[entry]]
+key = "tool.unit_inputs"
+title = "UnitInputs"
+kind = "tool"
+import_path = "nsgablack.units:UnitInputs"
+tags = ["unit", "operator", "readonly"]
+summary = "调用局部的只读 Unit 字段/特征投影，携带 unit_id、schema 和依赖版本。"
+use_when = ["读取算子声明的 Unit 依赖，不暴露可写 Unit 或 Solver 时。"]
+minimal_wiring = ["inputs = spec.capture(adapter.get_operator_unit())", "draft = pipeline.mutate(candidate, context, unit=inputs)"]
+required_companions = ["UnitInputSpec"]
+config_keys = ["unit_id", "schema", "revision", "fields", "features"]
+example_entry = "python -m nsgablack catalog show tool.unit_inputs"
+
+[[entry]]
+key = "tool.unit_feature"
+title = "UnitFeature"
+kind = "tool"
+import_path = "nsgablack.units:UnitFeature"
+tags = ["unit", "feature", "dependency", "cache"]
+summary = "候选/集合的算法特征声明：显式字段依赖、raw/selection 反馈视图和可选增量更新。"
+use_when = ["给 Unit 添加按依赖变化维护的派生特征时。"]
+minimal_wiring = ["from nsgablack.units import UnitFeature", "feature = UnitFeature('center', ('population',), lambda data: data['population'].mean(axis=0))", "center = unit.feature(feature)"]
+required_companions = ["FeatureUnit"]
+config_keys = ["name", "depends_on", "compute", "feedback_view", "update"]
+example_entry = "python -m nsgablack catalog show tool.unit_feature"
+
+[[entry]]
+key = "tool.feature_unit"
+title = "FeatureUnit"
+kind = "tool"
+import_path = "nsgablack.units:FeatureUnit"
+tags = ["unit", "feature", "readonly", "cache"]
+summary = "Unit 的按需派生特征能力：按实例隔离、校验依赖内容、只读结果、缓存不进入 checkpoint。"
+use_when = ["使用或扩展内置 Unit 的派生特征维护能力时。"]
+minimal_wiring = ["distances = population_unit.pairwise_distances()", "fresh = population_unit.pairwise_distances(cache=False)"]
+required_companions = ["UnitFeature", "explicit Unit data fields"]
+config_keys = ["cache", "feature_feedback_fields"]
+example_entry = "python -m nsgablack catalog show tool.feature_unit"

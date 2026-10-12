@@ -11,6 +11,7 @@ adapters/suites can be fairly compared under the same protocol.
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
@@ -25,7 +26,7 @@ from ..base import Plugin, report_soft_error
 from ...core.solver_helpers.control_plane_helpers import (
     collect_adapter_runtime_context_projection,
 )
-from blackbase.context.context_keys import KEY_BEST_OBJECTIVE
+from nsgablack.context_keys import KEY_BEST_OBJECTIVE
 from ...utils.engineering.file_io import atomic_write_json
 from ...utils.engineering.schema_version import stamp_schema
 
@@ -99,10 +100,11 @@ class BenchmarkHarnessPlugin(Plugin):
                 try:
                     setter(seed)
                 except Exception:
-                    pass
+                    raise
             try:
                 setattr(solver, "benchmark_seed", seed)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='BenchmarkHarnessPlugin.on_solver_init.fallback_245', exc=_fallback_error)
                 pass
 
         out_dir = os.path.abspath(str(self.cfg.output_dir))
@@ -210,7 +212,8 @@ class BenchmarkHarnessPlugin(Plugin):
         try:
             self._fp.flush()
             self._fp.close()
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='BenchmarkHarnessPlugin._close_writer.fallback_242', exc=_fallback_error)
             pass
         finally:
             self._fp = None
@@ -233,14 +236,14 @@ class BenchmarkHarnessPlugin(Plugin):
         if v is not None:
             try:
                 return float(v)
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 pass
         proj = self._read_adapter_projection(solver)
         shared_proj = proj.get("shared")
         if isinstance(shared_proj, dict) and shared_proj.get("best_score") is not None:
             try:
                 return float(shared_proj["best_score"])
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 pass
         # last fallback: compute from current objectives (sum) if available
         _, obj, vio = self.get_population_snapshot(solver)
@@ -257,7 +260,7 @@ class BenchmarkHarnessPlugin(Plugin):
                 v = np.asarray(vio, dtype=float).reshape(-1)
                 scores = scores + v * 1e6
             return float(np.min(scores))
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return None
 
     def _read_phase(self, solver: Any) -> Optional[str]:
@@ -285,7 +288,7 @@ class BenchmarkHarnessPlugin(Plugin):
             if X.ndim == 1:
                 return 1 if X.size > 0 else 0
             return int(X.shape[0])
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return None
 
     def _read_adapter_projection(self, solver: Any) -> Dict[str, Any]:

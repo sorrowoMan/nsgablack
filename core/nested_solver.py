@@ -536,7 +536,7 @@ class TaskInnerRuntimeEvaluator(InnerRuntimeEvaluator):
         supports_return_dict = False
         try:
             supports_return_dict = "return_dict" in inspect.signature(run).parameters
-        except Exception:
+        except (ValueError, TypeError):
             pass
         raw = run(return_dict=True) if supports_return_dict else run()
         return dict(raw) if isinstance(raw, Mapping) else {"status": "completed", "raw": raw}

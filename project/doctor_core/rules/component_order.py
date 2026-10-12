@@ -192,18 +192,7 @@ class _OrderActionCollector(ast.NodeVisitor):
 
 
 def _classify_component_order_error(exc: Exception) -> str:
-    msg = str(exc).lower()
-    if "unknown component" in msg:
-        return "component-order-unknown-ref"
-    if "cycle" in msg:
-        return "component-order-cycle"
-    if "priority conflict" in msg:
-        return "component-order-priority-conflict"
-    if "contradictory" in msg:
-        return "component-order-mutual-conflict"
-    if "itself" in msg:
-        return "component-order-self-ref"
-    return "component-order-invalid"
+    return "component-order-" + getattr(exc, "code", "invalid")
 
 
 def _extract_class_string_list_assignments(class_node: ast.ClassDef) -> Tuple[Dict[str, Set[str]], Set[str]]:
@@ -393,6 +382,7 @@ def _check_plugin_class_order_declarations(
                     + ", ".join(sorted(spec.nonliteral_order_attrs))
                 ),
                 spec.path,
+                line=spec.line,
             )
         depends_on = {alias_map.get(x, x) for x in spec.depends_on}
         before = {alias_map.get(x, x) for x in spec.before}
@@ -411,6 +401,7 @@ def _check_plugin_class_order_declarations(
                 _classify_component_order_error(exc),
                 f"Plugin class '{spec.class_name}' ({spec.component_name}) @L{spec.line}: {exc}",
                 spec.path,
+                line=spec.line,
             )
 
     try:
@@ -482,8 +473,9 @@ def check_component_order_constraints(
                         diags,
                         level,
                         _classify_component_order_error(exc),
-                        f"{exc} @L{action.line}",
+                        str(exc),
                         build_file,
+                        line=action.line,
                     )
             try:
                 scheduler.resolve_order_strict()
@@ -492,7 +484,7 @@ def check_component_order_constraints(
                     diags,
                     level,
                     _classify_component_order_error(exc),
-                    f"{exc} @L1",
+                    str(exc),
                     build_file,
                 )
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from collections import Counter
 from dataclasses import dataclass, replace
@@ -325,7 +326,8 @@ def _framework_source_info() -> dict[str, Any]:
             info["framework_source"] = str(backend or "db")
         elif enabled and mode != "off":
             info["framework_source"] = f"registry+{str(backend or 'db')}"
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_framework_source_info.fallback_101', exc=_fallback_error)
         pass
     return info
 

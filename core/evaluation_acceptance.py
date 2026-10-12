@@ -36,7 +36,7 @@ class EvaluationAcceptancePolicy(Protocol):
 
 @dataclass(frozen=True)
 class FeasibleEvaluationAcceptance:
-    """Admit only candidates with finite violation no greater than tolerance."""
+    """Admit measured feasible candidates, independently of Bias selection views."""
 
     constraint_tolerance: float = 1e-9
     policy_id: str = "feasible-evaluation/v1"
@@ -64,7 +64,7 @@ class FeasibleEvaluationAcceptance:
                 "acceptance policy candidate/feedback counts must match: "
                 f"candidates={proposed_count}, feedback={feedback.candidate_count}"
             )
-        violations = np.asarray(feedback.violations, dtype=float).reshape(-1)
+        violations = np.asarray(feedback.raw_violations, dtype=float).reshape(-1)
         accepted = tuple(
             int(index)
             for index in np.flatnonzero(
@@ -78,6 +78,7 @@ class FeasibleEvaluationAcceptance:
             reason="feasible_evaluation_filter",
             metadata={
                 "policy_id": self.policy_id,
+                "constraint_view": "raw_evaluation",
                 "constraint_tolerance": float(self.constraint_tolerance),
                 "rejected_nonfinite_count": int(np.sum(~np.isfinite(violations))),
             },

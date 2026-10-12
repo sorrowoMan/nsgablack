@@ -321,7 +321,7 @@ def build_baseline_solver(problem, args, *, mode: str) -> ComposableSolver:
         try:
             setattr(bias_module, "cache_enabled", False)
         except Exception:
-            pass
+            raise
 
     if mode == "baseline-aco":
         adapter = ProductionACOBaselineAdapter(

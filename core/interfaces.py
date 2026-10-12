@@ -4,6 +4,7 @@ Core interfaces for NSGABlack components.
 This module defines nsgablack optimization extension protocols and exposes the
 shared substrate protocol types they reference.
 """
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from abc import ABC, abstractmethod
 from typing import Any, Mapping, Optional, Sequence
@@ -107,7 +108,8 @@ def has_numba() -> bool:
     try:
         import numba
         return True
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='has_numba.fallback_169', exc=_fallback_error)
         return False
 
 

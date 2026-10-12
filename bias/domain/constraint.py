@@ -284,7 +284,7 @@ class PreferenceBias(DomainBias):
                 pref_score = pref_func(x)
                 preference_score += pref_score
             except Exception:
-                pass  # 忽略无效偏好函数
+                raise
 
         return self.weight * preference_score
 
@@ -379,7 +379,7 @@ class RuleBasedBias(DomainBias):
                     rule['fires'] += 1
                     fired_rules.append(rule['description'])
             except Exception:
-                pass  # 忽略无效规则
+                raise
 
         # 记录规则触发历史
         if fired_rules:

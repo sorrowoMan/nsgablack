@@ -1,4 +1,4 @@
-﻿"""Case-local search adapters for production_scheduling."""
+"""Case-local search adapters for production_scheduling."""
 
 from __future__ import annotations
 
@@ -7,41 +7,23 @@ from typing import Optional
 
 import numpy as np
 
-from nsgablack.adapters import AlgorithmAdapter
+from nsgablack.adapters.candidate_proposer import CandidateProposerAdapter
+from nsgablack.adapters.unit_backed import UnitBackedAdapter, UnitField
+if "." in __package__:
+    from ..pipeline.schedule_units import ScheduleUnitBuilder, schedule_parameters
+else:  # Compatibility with the Case's existing flat CLI imports.
+    from pipeline.schedule_units import ScheduleUnitBuilder, schedule_parameters
+import copy
 
 
-@dataclass
-class _GreedyConfig:
-    max_active_machines_per_day: int
-    min_machines_per_day: int
-    min_production_per_machine: int
-    max_production_per_machine: int
-
-
-def _build_greedy_schedule(problem, *, rng: np.random.Generator, pheromone: Optional[np.ndarray] = None,
+def _build_greedy_schedule(unit, *, rng: np.random.Generator, pheromone: Optional[np.ndarray] = None,
                            alpha: float = 1.0, beta: float = 1.0) -> np.ndarray:
-    data = getattr(problem, "data", None)
-    constraints = getattr(problem, "constraints", None)
-    if data is None or constraints is None:
-        raise RuntimeError("Greedy/ACO adapter requires problem.data and problem.constraints")
-
-    machines = int(getattr(problem, "machines", data.machines))
-    days = int(getattr(problem, "days", data.days))
-    bom = np.asarray(data.bom_matrix, dtype=float)
-    supply = np.asarray(data.supply_matrix, dtype=float)
-    weights = np.asarray(getattr(problem, "machine_weights", np.ones(machines)), dtype=float)
-    weights = np.clip(weights, 1e-6, None)
-
-    cfg = _GreedyConfig(
-        max_active_machines_per_day=int(constraints.max_machines_per_day),
-        min_machines_per_day=int(constraints.min_machines_per_day),
-        min_production_per_machine=int(constraints.min_production_per_machine),
-        max_production_per_machine=int(constraints.max_production_per_machine),
-    )
-
+    machines, days = unit.machines, unit.days
+    bom, supply, weights = unit.bom, unit.supply, unit.weights
+    cfg = unit.constraints
     schedule = np.zeros((machines, days), dtype=float)
     stock = np.zeros(supply.shape[0], dtype=float)
-    req_indices = [np.where(bom[m] > 0.0)[0] for m in range(machines)]
+    req_indices = unit.required_materials
     for day in range(days):
         stock += supply[:, day]
         heuristic = weights.copy()
@@ -52,32 +34,32 @@ def _build_greedy_schedule(problem, *, rng: np.random.Generator, pheromone: Opti
         order = np.argsort(heuristic)[::-1]
         active = []
         for m in order:
-            if len(active) >= cfg.max_active_machines_per_day:
+            if len(active) >= cfg["max_machines_per_day"]:
                 break
             req = req_indices[m]
             if req.size == 0:
                 active.append(m)
                 continue
             avail = float(np.min(stock[req]))
-            if avail >= cfg.min_production_per_machine:
+            if avail >= cfg["min_production_per_machine"]:
                 active.append(m)
-        if len(active) < cfg.min_machines_per_day:
-            needed = cfg.min_machines_per_day - len(active)
+        if len(active) < cfg["min_machines_per_day"]:
+            needed = cfg["min_machines_per_day"] - len(active)
             for m in order:
                 if m in active:
                     continue
                 active.append(m)
-                if len(active) >= cfg.min_machines_per_day:
+                if len(active) >= cfg["min_machines_per_day"]:
                     break
         for m in active:
             req = req_indices[m]
             if req.size == 0:
-                upper = cfg.max_production_per_machine
+                upper = cfg["max_production_per_machine"]
             else:
-                upper = min(cfg.max_production_per_machine, int(np.min(stock[req])))
+                upper = min(cfg["max_production_per_machine"], int(np.min(stock[req])))
             if upper <= 0:
                 continue
-            low = min(cfg.min_production_per_machine, upper)
+            low = min(cfg["min_production_per_machine"], upper)
             prod = float(upper) if upper >= low else 0.0
             schedule[m, day] = prod
             if req.size > 0 and prod > 0:
@@ -85,8 +67,8 @@ def _build_greedy_schedule(problem, *, rng: np.random.Generator, pheromone: Opti
     return schedule.reshape(-1)
 
 
-class ProductionRandomSearchAdapter(AlgorithmAdapter):
-    """Explorer: generate diverse feasible candidates via init+repair."""
+class ProductionRandomSearchAdapter(CandidateProposerAdapter):
+    """Explorer: initialize drafts; the control plane owns proposal repair."""
 
     context_requires = ()
     context_provides = ()
@@ -104,16 +86,15 @@ class ProductionRandomSearchAdapter(AlgorithmAdapter):
         out = []
         for _ in range(max(1, self.batch_size)):
             x = control.init_candidate(context)
-            x = control.repair_candidate(x, context)
             out.append(x)
-        return out
+        return self.build_candidate_units(out, context)
 
     def update(self, control, candidates, feedback, context):
         _ = (control, candidates, feedback, context)
 
 
-class ProductionLocalSearchAdapter(AlgorithmAdapter):
-    """Exploiter: refine best solution via mutate+repair."""
+class ProductionLocalSearchAdapter(CandidateProposerAdapter):
+    """Exploiter: mutate drafts; the control plane owns proposal repair."""
 
     context_requires = ()
     context_provides = ()
@@ -134,17 +115,34 @@ class ProductionLocalSearchAdapter(AlgorithmAdapter):
             if base is None:
                 x = control.init_candidate(context)
             else:
-                x = control.mutate_candidate(base, context)
-            x = control.repair_candidate(x, context)
+                x = control.mutate_candidate(np.array(base, copy=True), context)
             out.append(x)
-        return out
+        return self.build_candidate_units(out, context)
 
     def update(self, control, candidates, feedback, context):
         _ = (control, candidates, feedback, context)
 
 
-class ProductionGreedyBaselineAdapter(AlgorithmAdapter):
+class ProductionGreedyBaselineAdapter(UnitBackedAdapter):
     """Baseline: greedy schedule construction (single candidate per step)."""
+    accepts_proposal_replacement = True  # Schedule repair preserves the fixed geometry.
+    unit_build_operations = ("initialize", "layout")
+
+    unit_builder_type = ScheduleUnitBuilder
+    unit_schema = ScheduleUnitBuilder.unit_type.schema
+    state_recovery_level = "L1"
+    state_recovery_notes = "Restores schedule geometry, pheromone and RNG through the Unit codec."
+
+    def _ensure_schedule(self, control):
+        if not self.algorithm_unit.machines:
+            self.rebuild_unit("layout", **schedule_parameters(control.problem))
+
+    def _get_algorithm_state(self):
+        return {"rng_state": copy.deepcopy(self._rng.bit_generator.state)}
+
+    def _set_algorithm_state(self, state):
+        if state.get("rng_state") is not None:
+            self._rng.bit_generator.state = copy.deepcopy(state["rng_state"])
 
     context_requires = ()
     context_provides = ()
@@ -158,16 +156,34 @@ class ProductionGreedyBaselineAdapter(AlgorithmAdapter):
 
     def propose(self, control, context):
         _ = context
-        x = _build_greedy_schedule(control.problem, rng=self._rng)
-        x = control.repair_candidate(x, context)
+        self._ensure_schedule(control)
+        x = _build_greedy_schedule(self.algorithm_unit, rng=self._rng)
         return [x]
 
     def update(self, control, candidates, feedback, context):
         _ = (control, candidates, feedback, context)
 
 
-class ProductionACOBaselineAdapter(AlgorithmAdapter):
+class ProductionACOBaselineAdapter(UnitBackedAdapter):
     """Baseline: light ACO-style scheduling over machine/day activation."""
+    accepts_proposal_replacement = True  # Pheromone is updated from the accepted schedule.
+    unit_build_operations = ("initialize", "layout")
+
+    unit_builder_type = ScheduleUnitBuilder
+    unit_schema = ScheduleUnitBuilder.unit_type.schema
+    state_recovery_level = "L1"
+    state_recovery_notes = "Restores schedule geometry, pheromone and RNG through the Unit codec."
+
+    def _ensure_schedule(self, control):
+        if not self.algorithm_unit.machines:
+            self.rebuild_unit("layout", **schedule_parameters(control.problem))
+
+    def _get_algorithm_state(self):
+        return {"rng_state": copy.deepcopy(self._rng.bit_generator.state)}
+
+    def _set_algorithm_state(self, state):
+        if state.get("rng_state") is not None:
+            self._rng.bit_generator.state = copy.deepcopy(state["rng_state"])
 
     context_requires = ()
     context_provides = ()
@@ -193,12 +209,10 @@ class ProductionACOBaselineAdapter(AlgorithmAdapter):
         self._pheromone: Optional[np.ndarray] = None
         self._rng = np.random.default_rng(42)
 
+    _pheromone = UnitField("pheromone")
+
     def _ensure_pheromone(self, control):
-        if self._pheromone is not None:
-            return
-        machines = int(getattr(control.problem, "machines", 1))
-        days = int(getattr(control.problem, "days", 1))
-        self._pheromone = np.ones((machines, days), dtype=float)
+        self._ensure_schedule(control)
 
     def propose(self, control, context):
         _ = context
@@ -206,13 +220,12 @@ class ProductionACOBaselineAdapter(AlgorithmAdapter):
         out = []
         for _ in range(max(1, self.ants)):
             x = _build_greedy_schedule(
-                control.problem,
+                self.algorithm_unit,
                 rng=self._rng,
                 pheromone=self._pheromone,
                 alpha=self.alpha,
                 beta=self.beta,
             )
-            x = control.repair_candidate(x, context)
             out.append(x)
         return out
 

@@ -43,30 +43,12 @@ class SimpleSphereProblem(BlackBoxProblem):
         return float(np.sum(candidate ** 2))
 
 
-class RandomProbeAdapter(AlgorithmAdapter):
-    def __init__(self, samples=4):
-        super().__init__(name="random_probe")
-        self.samples = samples
-
-    def propose(self, control, context):
-        return [control.init_candidate(context) for _ in range(self.samples)]
-
-    def update(self, control, candidates, feedback, context):
-        _ = (control, candidates, feedback, context)
+# Compatibility import: the implementation lives in the standard Unit Case.
+from nsgablack.examples.cases.algorithm_units.cases.candidate_search.adapter.composable_solver_fusion_demo import RandomProbeAdapter
 
 
-class LocalStepAdapter(AlgorithmAdapter):
-    def __init__(self, samples=2):
-        super().__init__(name="local_step")
-        self.samples = samples
-
-    def propose(self, control, context):
-        if control.best_x is None:
-            return []
-        return [control.mutate_candidate(control.best_x, context) for _ in range(self.samples)]
-
-    def update(self, control, candidates, feedback, context):
-        _ = (control, candidates, feedback, context)
+# Compatibility import: the implementation lives in the standard Unit Case.
+from nsgablack.examples.cases.algorithm_units.cases.candidate_search.adapter.composable_solver_fusion_demo import LocalStepAdapter
 
 
 class StepLoggerPlugin(Plugin):

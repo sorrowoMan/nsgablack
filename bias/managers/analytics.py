@@ -5,6 +5,7 @@ This module is optional; plotting requires matplotlib.
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -196,7 +197,7 @@ class BiasEffectivenessAnalyzer:
             return None
         try:
             return float(min(values))
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return None
 
     def plot_bias_comparison(self, save_path: Optional[str] = None) -> None:
@@ -252,7 +253,8 @@ class BiasEffectivenessAnalyzer:
                 Patch(facecolor="red", alpha=0.7, label="Domain"),
             ]
             axes[1, 1].legend(handles=legend_elements)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='BiasEffectivenessAnalyzer.plot_bias_comparison.fallback_57', exc=_fallback_error)
             pass
 
         plt.tight_layout()

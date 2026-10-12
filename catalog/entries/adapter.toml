@@ -84,7 +84,7 @@ title = "AStarAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.astar:AStarAdapter"
 tags = ["adapter", "astar", "core", "graph", "heuristic", "pathfinding", "strategy"]
-summary = "A*搜索内核：可配置邻居/启发式/目标判定。 / Adapter: A* core with pluggable neighbors/heuristic/goal."
+summary = "A*搜索内核：算法管线通过 UnitBinding 构建节点，Adapter 负责扩展与优先级；支持邻居/启发式/目标判定。"
 
 [[entry]]
 key = "adapter.moa_star"
@@ -252,7 +252,7 @@ title = "StrategyRouterAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:StrategyRouterAdapter"
 tags = ["adapter", "controller", "cooperation", "core", "multi_strategy", "parallel", "roles", "strategy"]
-summary = "多策略控制器：在单一优化回路编排多策略单元。 / Adapter: multi-strategy controller for composing multiple strategy units in one optimization loop."
+summary = "多策略控制器：StrategyTask 隔离子任务，StrategyOrigin 记录候选来源；观测按实例组织。"
 use_when = ["需要编排多策略单元并共享状态时", "需要支持自适应权重的协同控制时"]
 minimal_wiring = ["from nsgablack.adapters import StrategyRouterAdapter", "solver.set_adapter(StrategyRouterAdapter(...))"]
 required_companions = ["plugin.pareto_archive"]

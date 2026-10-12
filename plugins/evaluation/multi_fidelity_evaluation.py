@@ -115,12 +115,12 @@ class MultiFidelityEvaluationProviderPlugin(EvaluationProviderPluginBase):
                 direct(int(delta))
                 return
             except Exception:
-                pass
+                raise
         try:
             key = "evaluation_count"
             setattr(solver, key, int(getattr(solver, key, 0) or 0) + int(delta))
         except Exception:
-            return
+            raise
 
     def _select_indices_for_high_fidelity(self, objectives: np.ndarray) -> list[int]:
         n = int(objectives.shape[0])

@@ -1,6 +1,7 @@
 """
 Bayesian bias implementations and helpers.
 """
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from typing import Callable, List
 
@@ -209,7 +210,8 @@ class BayesianGuidanceBias(AlgorithmicBias):
             for i in range(len(X_train)):
                 try:
                     self.local_bo.observe(X_train[i], y_train[i])
-                except Exception:
+                except Exception as _fallback_error:
+                    _report_optional_failure(component=__name__, event='BayesianGuidanceBias._try_update_with_nsga_surrogate.fallback_64', exc=_fallback_error)
                     continue
 
             print(
@@ -234,7 +236,8 @@ class BayesianGuidanceBias(AlgorithmicBias):
         for i in range(min(len(X), 200)):
             try:
                 self.local_bo.observe(X[i], y[i])
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='BayesianGuidanceBias._try_update_with_nsga_data.fallback_60', exc=_fallback_error)
                 continue
 
         print(
@@ -261,7 +264,8 @@ class BayesianGuidanceBias(AlgorithmicBias):
         for i in range(len(X)):
             try:
                 self.local_bo.observe(X[i], y[i])
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='BayesianGuidanceBias._update_with_evaluation_function.fallback_61', exc=_fallback_error)
                 continue
 
         print(f"Bayesian model updated by re-evaluating {len(y)} points.")
@@ -287,7 +291,8 @@ class BayesianGuidanceBias(AlgorithmicBias):
                 improvement_score += density_bonus
 
             return max(0, improvement_score)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='BayesianGuidanceBias._predict_improvement.fallback_58', exc=_fallback_error)
             return 0.0
 
     def _adaptive_weight_adjustment(self, context: OptimizationContext) -> float:
@@ -362,7 +367,7 @@ class BayesianExplorationBias(AlgorithmicBias):
                 y = eval_func(ind)
                 self.bo.observe(ind, y)
             except Exception:
-                pass
+                raise
 
     def _collect_data_simple(self, population: List[np.ndarray]):
         self.bo.reset()
@@ -370,7 +375,8 @@ class BayesianExplorationBias(AlgorithmicBias):
             estimated_value = len(population) - i
             try:
                 self.bo.observe(ind, estimated_value)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='BayesianExplorationBias._collect_data_simple.fallback_63', exc=_fallback_error)
                 pass
 
     def _predict_uncertainty(self, x: np.ndarray) -> float:
@@ -381,7 +387,8 @@ class BayesianExplorationBias(AlgorithmicBias):
             if hasattr(self.bo, "gp") and self.bo.gp is not None:
                 _, sigma = self.bo.gp.predict(x.reshape(1, -1), return_std=True)
                 return sigma[0]
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='BayesianExplorationBias._predict_uncertainty.fallback_59', exc=_fallback_error)
             pass
 
         return 0.0

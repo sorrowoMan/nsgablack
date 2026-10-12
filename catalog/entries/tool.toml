@@ -1,6 +1,126 @@
 # Canonical tool catalog shard.
 
 [[entry]]
+key = "tool.strategy_task"
+title = "StrategyTask"
+kind = "tool"
+import_path = "nsgablack.adapters:StrategyTask"
+tags = ["composition", "contract", "strategy", "tool"]
+summary = "多策略子任务：实例路径、阶段、原提案预算和局部区域/种子。"
+use_when = ["子 Adapter 需要读取组合器分配的任务时。"]
+minimal_wiring = ["from nsgablack.adapters import StrategyTask", "task = StrategyTask.from_context(context)"]
+required_companions = ["adapter.multi_strategy"]
+config_keys = ["owner_path", "task_id", "phase", "budget", "region_id", "seeds"]
+
+[[entry]]
+key = "tool.strategy_origin"
+title = "StrategyOrigin"
+kind = "tool"
+import_path = "nsgablack.adapters:StrategyOrigin"
+tags = ["composition", "contract", "provenance", "tool"]
+summary = "候选从外到内的策略来源，与 CandidateBatch/token 一起保存和筛选。"
+use_when = ["查询数值相同候选各自的角色、实例和提案行来源时。"]
+minimal_wiring = ["from nsgablack.adapters import StrategyOrigin", "route = StrategyOrigin.from_candidate(batch.semantic_states[index])"]
+required_companions = ["adapter.multi_strategy"]
+config_keys = ["owner_path", "task_id", "proposal_index"]
+
+[[entry]]
+key = "tool.runtime_participant"
+title = "RuntimeParticipant"
+kind = "tool"
+import_path = "blackbase.runtime:RuntimeParticipant"
+tags = ["runtime-contract", "authority", "tool"]
+summary = "通用步骤事务参与者；局部快照、恢复、子参与者与提交后清理。"
+use_when = ["新增有状态运行组件时。"]
+minimal_wiring = ["from blackbase.runtime import RuntimeParticipant", "solver.register_state_participant(component)"]
+required_companions = ["(none)"]
+config_keys = ["snapshot_step_state", "restore_step_state", "commit_step_state", "step_transaction_children"]
+
+[[entry]]
+key = "tool.representation_capabilities"
+title = "RepresentationCapabilities"
+kind = "tool"
+import_path = "blackbase.representation:RepresentationCapabilities"
+tags = ["runtime-contract", "authority", "tool"]
+summary = "候选管线显式操作能力声明。"
+use_when = ["组装 codec、搜索或 repair 的任意子集时。"]
+minimal_wiring = ["from blackbase.representation import RepresentationCapabilities", "RepresentationCapabilities(frozenset({'init', 'repair'}))"]
+required_companions = ["(none)"]
+config_keys = ["operations", "codec_deterministic", "repair_idempotent"]
+
+[[entry]]
+key = "tool.participation_contract"
+title = "ParticipationContract"
+kind = "tool"
+import_path = "blackbase.participation:ParticipationContract"
+tags = ["runtime-contract", "authority", "tool"]
+summary = "Plugin 与 Controller 的建议、决定和否决域。"
+use_when = ["组件接管评估或参与严格结果发布时。"]
+minimal_wiring = ["from blackbase.participation import ParticipationContract", "ParticipationContract(vetoes=('finalization',))"]
+required_companions = ["(none)"]
+config_keys = ["advises", "decides", "vetoes"]
+
+[[entry]]
+key = "tool.preference_delta"
+title = "PreferenceDelta"
+kind = "tool"
+import_path = "blackbase.preferences:PreferenceDelta"
+tags = ["runtime-contract", "authority", "tool"]
+summary = "保留原始反馈的偏好增量值。"
+use_when = ["Bias 需要解释选择目标投影时。"]
+minimal_wiring = ["from blackbase.preferences import PreferenceDelta", "PreferenceDelta('objectives.0', -0.5, 'domain preference')"]
+required_companions = ["(none)"]
+config_keys = ["key", "delta", "reason"]
+
+[[entry]]
+key = "tool.population_authority"
+title = "PopulationAuthority"
+kind = "tool"
+import_path = "nsgablack.core.state.population_authority:PopulationAuthority"
+tags = ["runtime-contract", "authority", "tool"]
+summary = "运行内 population、身份、分区与发布游标所有者。"
+use_when = ["扩展权威状态或检查回滚边界时。"]
+minimal_wiring = ["from nsgablack.core.state.population_authority import PopulationAuthority", "authority = solver.population_authority"]
+required_companions = ["(none)"]
+config_keys = ["mode", "population", "candidate_batch", "partitions", "snapshot_handle"]
+
+[[entry]]
+key = "tool.run_session"
+title = "RunSession"
+kind = "tool"
+import_path = "nsgablack.core.state.run:RunSession"
+tags = ["runtime-contract", "authority", "tool"]
+summary = "运行身份、进度、预算、恢复队列与结果所有者。"
+use_when = ["语义扩展需要恢复或读取运行进度时。"]
+minimal_wiring = ["from nsgablack.core.state.run import RunSession", "run = solver.run_session"]
+required_companions = ["(none)"]
+config_keys = ["run_id", "generation", "result"]
+
+[[entry]]
+key = "tool.finalization_hooks"
+title = "FinalizationHooks"
+kind = "tool"
+import_path = "blackbase.runtime:FinalizationHooks"
+tags = ["runtime-contract", "authority", "tool"]
+summary = "结果准备和事务发布的显式注册入口。"
+use_when = ["结果或 Artifact 需要在 teardown 后发布时。"]
+minimal_wiring = ["from blackbase.runtime import FinalizationHooks", "solver.finalization_hooks = FinalizationHooks(prepare=prepare, freeze=freeze, abort=abort)"]
+required_companions = ["(none)"]
+config_keys = ["prepare_result", "prepare", "freeze", "abort", "publish"]
+
+[[entry]]
+key = "tool.semantic_extension"
+title = "SolverSemanticExtension"
+kind = "tool"
+import_path = "nsgablack.core.semantic_extension:SolverSemanticExtension"
+tags = ["runtime-contract", "authority", "tool"]
+summary = "提交前语义准备与提交后投影扩展。"
+use_when = ["扩展 ML 等语义但复用共享 step 事务时。"]
+minimal_wiring = ["from nsgablack.core.semantic_extension import SolverSemanticExtension", "solver.register_semantic_extension(extension)"]
+required_companions = ["(none)"]
+config_keys = ["name", "before_step", "after_step_committed"]
+
+[[entry]]
 key = "tool.dynamic_cli_signal"
 title = "CLISignalProvider"
 kind = "tool"

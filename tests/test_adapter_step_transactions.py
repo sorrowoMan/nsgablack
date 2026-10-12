@@ -522,7 +522,7 @@ def test_failed_step_never_overwrites_the_last_committed_snapshot() -> None:
 
 
 def test_successful_adapter_cleanup_report_is_durable_and_referenced() -> None:
-    from blackbase.context.context_keys import KEY_ADAPTER_COMMIT_REPORT_REF
+    from nsgablack.context_keys import KEY_ADAPTER_COMMIT_REPORT_REF
 
     solver = ComposableSolver(_Problem(), adapter=_OneCandidateAdapter())
 

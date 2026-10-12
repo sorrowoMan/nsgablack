@@ -101,10 +101,10 @@ class CallableBias(DomainBias):
                 if key in value:
                     try:
                         return float(value[key])
-                    except Exception:
+                    except (TypeError, ValueError, OverflowError):
                         return 0.0
             return 0.0
         try:
             return float(value)
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return 0.0

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
@@ -77,13 +78,13 @@ def _infer_n(spec: Mapping[str, Any]) -> int | None:
     if Q is not None:
         try:
             return int(np.asarray(Q).shape[0])
-        except Exception:
+        except (TypeError, ValueError, IndexError):
             return None
     A = spec.get("A")
     if A is not None:
         try:
             return int(np.asarray(A).shape[1])
-        except Exception:
+        except (TypeError, ValueError, IndexError):
             return None
     return None
 
@@ -250,7 +251,8 @@ def apply_model_params(model: Any, cp: Any, params: Mapping[str, Any] | None) ->
         except Exception:
             try:
                 model.setParam(str(key), value)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='apply_model_params.fallback_228', exc=_fallback_error)
                 continue
 
 
@@ -411,7 +413,8 @@ def apply_feas_relaxation(model: Any, cp: Any, spec: Mapping[str, Any] | None) -
         except Exception:
             try:
                 model.setParam("FeasRelaxMode", mode)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='apply_feas_relaxation.fallback_229', exc=_fallback_error)
                 pass
 
     relax_constr = cfg.get("relax_constr", cfg.get("relax_constraints", True))

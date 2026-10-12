@@ -66,10 +66,10 @@ class MethodContract:
 @dataclass(frozen=True)
 class HealthContract:
     component_key: str
-    import_ok: bool
+    import_ok: bool | None
     context_ok: bool
     methods_ok: bool
-    params_ok: bool
+    params_ok: bool | None
     issues: Tuple[str, ...]
 
 

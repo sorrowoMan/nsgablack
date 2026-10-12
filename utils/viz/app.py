@@ -1,3 +1,4 @@
+from blackbase.plugin import report_soft_error as _report_optional_failure
 import argparse
 import hashlib
 import importlib.util
@@ -33,7 +34,8 @@ def _ensure_utf8_stdio() -> None:
         if callable(reconfigure):
             try:
                 reconfigure(encoding="utf-8", errors="replace")
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='_ensure_utf8_stdio.fallback_333', exc=_fallback_error)
                 pass
 
 
@@ -368,7 +370,8 @@ class VisualizerApp(tk.Tk):
             return
         try:
             selected = notebook.select()
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='VisualizerApp._on_notebook_tab_changed.fallback_331', exc=_fallback_error)
             return
         key = self._tab_key_by_id.get(str(selected), "")
         if not key:
@@ -487,7 +490,8 @@ class VisualizerApp(tk.Tk):
                 "Run Inspector Error",
                 f"{msg}\n\nPlease check current wiring/context and retry.\n\n{trace[-1200:]}",
             )
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='VisualizerApp._on_tk_callback_exception.fallback_332', exc=_fallback_error)
             pass
 
     def search_catalog_for_context_key(self, context_key: str, *, role: str = "all") -> None:
@@ -504,7 +508,8 @@ class VisualizerApp(tk.Tk):
         if getattr(self, "_notebook", None) is not None:
             try:
                 self._notebook.select(self._tab_catalog)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='VisualizerApp.search_catalog_for_context_key.fallback_334', exc=_fallback_error)
                 pass
         self._set_status(f"Catalog context search: key={key} role={role}")
 
@@ -522,7 +527,8 @@ class VisualizerApp(tk.Tk):
         if getattr(self, "_notebook", None) is not None:
             try:
                 self._notebook.select(self._tab_catalog)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='VisualizerApp.search_catalog_for_component.fallback_335', exc=_fallback_error)
                 pass
         self._set_status(f"Catalog component search: {key}")
 
@@ -849,7 +855,8 @@ class VisualizerApp(tk.Tk):
         if getattr(self, "_notebook", None) is not None:
             try:
                 self._notebook.select(self._tab_details)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='VisualizerApp._show_wire_item_detail.fallback_336', exc=_fallback_error)
                 pass
     def _jump_to_missing(self) -> None:
         if not self._missing_rows:
@@ -1186,7 +1193,8 @@ class VisualizerApp(tk.Tk):
         for attr in candidate_attrs:
             try:
                 _append_candidate(getattr(solver, attr, None))
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='VisualizerApp._discover_child_solvers.fallback_337', exc=_fallback_error)
                 continue
         for attr in candidate_lists:
             try:
@@ -1204,7 +1212,8 @@ class VisualizerApp(tk.Tk):
             for attr in candidate_attrs:
                 try:
                     _append_candidate(getattr(plugin, attr, None))
-                except Exception:
+                except Exception as _fallback_error:
+                    _report_optional_failure(component=__name__, event='VisualizerApp._discover_child_solvers.fallback_338', exc=_fallback_error)
                     continue
             for attr in candidate_lists:
                 try:

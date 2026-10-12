@@ -52,6 +52,22 @@ class RepresentationPipelineKernelBuild:
             "has_representation_pipeline": self.representation_pipeline is not None,
         }
 
+    def bind_units(self, builder: Any, *, slot: str = "build_unit", name: str | None = None,
+                   operations: tuple[str, ...] | None = None):
+        """Bind a required construction slot and explicit restoration codec.
+
+        Unlike run_slot(), a missing construction slot must not silently return
+        its request. Use method='build' in the shared PipelineSlotSpec.
+        """
+        from ..units import UnitBinding
+
+        key = str(slot).strip().lower().replace("-", "_").replace(" ", "_")
+        if key not in self.slot_runners:
+            raise ValueError(f"Missing Unit construction slot: {key}")
+        if not name:
+            raise ValueError("Kernel Unit bindings require a stable, versioned name")
+        return UnitBinding(builder, runner=self.slot_runners[key], name=name, operations=operations)
+
 
 def build_pipeline_kernel(
     spec: PipelineSpec | Mapping[str, Any] | None,

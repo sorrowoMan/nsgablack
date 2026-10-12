@@ -200,7 +200,9 @@ test/
 # Docs: keep public docs only; ignore internal/large/unstable docs
 docs/notes/
 docs/qas/
-docs/development/
+docs/development/*
+!docs/development/COMPONENT_API_INDEX_FRAMEWORK_CORE.md
+!docs/development/COMPONENT_API_INDEX_DEFAULT.md
 docs/evidence/
 docs/_archive/
 docs/attachments/

@@ -15,6 +15,12 @@ from mlblack.integrations.etf_temporal_forecast import (
 class EtfLaneEvaluationCase:
     """Evaluate one lane bundle inside the ML semantic boundary."""
 
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Case consumes constructor payload and ResourceContext; returns TrainerResult without a shared ContextStore.",)
+
     def __init__(self, *, config, walkforward, lane_bundle, resource_context=None):
         self.config = dict(config)
         self.walkforward = dict(walkforward)

@@ -17,10 +17,12 @@ _PARENT = Path(__file__).resolve().parent.parent
 if str(_PARENT) not in __path__:
     __path__.append(str(_PARENT))
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 __author__ = "SorrowoMan"
 __email__ = "sorrowo@foxmail.com"
+
+from . import context_keys as context_keys
 
 from .catalog import (
     CatalogEntry,

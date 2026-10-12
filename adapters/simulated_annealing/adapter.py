@@ -14,6 +14,7 @@ Notes:
 """
 
 from __future__ import annotations
+from blackbase.representation import representation_capabilities
 
 import copy
 from dataclasses import dataclass
@@ -23,8 +24,10 @@ import warnings
 
 import numpy as np
 
+from ..unit_backed import UnitBackedAdapter, UnitField, UnitFeedbackField
+from ...representation.structure_builders import TrajectoryUnitBuilder
 from ..algorithm_adapter import AlgorithmAdapter
-from blackbase.context.context_keys import KEY_MUTATION_SIGMA, KEY_TEMPERATURE
+from nsgablack.context_keys import KEY_MUTATION_SIGMA, KEY_TEMPERATURE
 
 
 @dataclass
@@ -49,8 +52,15 @@ class SAConfig:
     random_seed: Optional[int] = None
 
 
-class SimulatedAnnealingAdapter(AlgorithmAdapter):
+class SimulatedAnnealingAdapter(UnitBackedAdapter):
     """Simulated annealing adapter for ComposableSolver."""
+    uses_pipeline_mutation = True
+    accepts_proposal_replacement = True
+    unit_builder_type = TrajectoryUnitBuilder
+    unit_schema = TrajectoryUnitBuilder.unit_type.schema
+    current_x = UnitField("current")
+    current_score = UnitFeedbackField("current")
+
     context_requires = ("generation",)
     context_provides = (KEY_TEMPERATURE, KEY_MUTATION_SIGMA)
     context_mutates = ()
@@ -59,7 +69,7 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
         "SA writes temperature and optional sigma into context for mutator scheduling.",
     )
     state_recovery_level = "L1"
-    state_recovery_notes = "Restores annealing temperature and incumbent state; random stream continues from solver RNG state."
+    state_recovery_notes = "Restores trajectory Unit, annealing temperature and local RNG state."
 
     # Soft partner contracts: SA communicates temperature and (optionally)
     # mutation scale via context. Representation mutator may consume these keys.
@@ -72,7 +82,7 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
         priority: int = 0,
         **config_kwargs,
     ) -> None:
-        super().__init__(name=name, priority=priority)
+        super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
         self.config = self.resolve_config(
             config=config,
             config_cls=SAConfig,
@@ -108,10 +118,9 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
             return
 
         pipeline = getattr(control, "representation_pipeline", None)
-        mutator = getattr(pipeline, "mutator", None) if pipeline is not None else None
-        if mutator is None:
+        if not representation_capabilities(pipeline).supports("mutate"):
             warnings.warn(
-                "SimulatedAnnealingAdapter 未检测到 representation_pipeline.mutator；"
+                "SimulatedAnnealingAdapter 的管线未声明 mutate 能力；"
                 "SA 将无法产生邻域候选（会退化为几乎不移动）。"
                 "建议：连续变量用 GaussianMutation/ContextGaussianMutation；"
                 "离散/多邻域用 ContextSelectMutator 或自定义 mutator。",
@@ -148,10 +157,12 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
 
         out = []
         for _ in range(max(1, int(self.cfg.batch_size))):
-            cand = control.mutate_candidate(self.current_x, ctx)
-            cand = control.repair_candidate(cand, ctx)
+            cand = self.mutate_candidate(control, self.current_x, ctx)
             out.append(np.asarray(cand))
         return out
+
+    def _proposal_contexts(self, proposed_count, context):
+        return tuple(self._build_sa_context(context) for _ in range(proposed_count))
 
     def update(
         self,
@@ -209,7 +220,7 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
             projection["sa_current_score"] = float(self.current_score)
         self._last_runtime_projection = projection
 
-    def get_state(self) -> Dict[str, Any]:
+    def _get_algorithm_state(self) -> Dict[str, Any]:
         return {
             "temperature": float(self.temperature),
             "t0": float(self.t0),
@@ -218,7 +229,7 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
-    def set_state(self, state: Dict[str, Any]) -> None:
+    def _set_algorithm_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
         if "temperature" in state:
@@ -247,7 +258,14 @@ class SimulatedAnnealingAdapter(AlgorithmAdapter):
 
     def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
         _ = solver
-        return dict(self._last_runtime_projection)
+        projection = dict(self._last_runtime_projection)
+        projection.pop("sa_current_score", None)
+        projection.pop("sa_current_x", None)
+        if self.current_x is not None:
+            projection["sa_current_x"] = np.array(self.current_x, copy=True)
+        if self.current_score is not None:
+            projection["sa_current_score"] = self.current_score
+        return projection
 
     def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
         _ = solver

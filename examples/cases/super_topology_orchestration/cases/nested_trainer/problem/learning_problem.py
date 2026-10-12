@@ -6,6 +6,8 @@ import numpy as np
 
 from mlblack.core import Feedback, LearningProblem
 
+from ..evaluation.fit_method import NestedFitMethod
+
 
 class NestedLearningProblem(LearningProblem):
     name = "synthetic_capacity_regularization_fit"
@@ -16,6 +18,44 @@ class NestedLearningProblem(LearningProblem):
         if candidate.shape != (2,):
             raise ValueError("nested Trainer expects a two-dimensional outer candidate")
         self.outer_candidate = candidate.copy()
+        self.provider = NestedFitMethod()
+        self.case_runtime = None
+
+    def prepare_model_for_evaluation(self, model, state, context):
+        del state, context
+        if self.case_runtime is None:
+            raise RuntimeError("nested Trainer requires an injected CaseRuntimeContext")
+        self.case_runtime.checkpoint()
+        calibration, child, result = self.provider.solve_calibration(
+            self.case_runtime, target=self.calibration_target,
+        )
+        resource = child.request.resource_context
+        grant = child.request.child_grant
+        lease = resource.get("lease", {})
+        return {
+            **model,
+            "calibration": calibration,
+            "nested_audit": {
+                "trainer_identity": self.case_runtime.identity.as_dict(),
+                "inner_identity": child.identity.as_dict(),
+                "inner_status": child.status,
+                "inner_resource_grant": dict(child.request.resource_context.get("grant", {})),
+                "inner_resource_lineage": {
+                    "namespace": resource.get("namespace"),
+                    "lease_id": lease.get("lease_id"),
+                    "parent_lease_id": None if grant is None else grant.parent_lease_id,
+                    "fencing_token": lease.get("fencing_token"),
+                    "grant_id": None if grant is None else grant.grant_id,
+                },
+                "inner_resource_binding_current": bool(
+                    child.resource_usage.get("binding", {}).get("current", False)
+                ),
+                "inner_budget_usage": dict(child.budget_usage),
+                "inner_deadline_at": float(child.control.deadline_at),
+                "inner_cancellation": child.control.cancellation.as_dict(),
+                "inner_best_objectives": result.best_objectives.tolist(),
+            },
+        }
 
     @property
     def calibration_target(self) -> float:
@@ -32,12 +72,13 @@ class NestedLearningProblem(LearningProblem):
         complexity = float(capacity**2 + 0.5 * regularization)
         return float(loss), complexity
 
-    def evaluate(self, candidate, context=None) -> Feedback:
-        del context
+    def evaluate(self, candidate, state=None, context=None) -> Feedback:
+        del state, context
         calibration = float(candidate["calibration"])
         loss, complexity = self.score(calibration)
         return Feedback(
             objectives=np.asarray([loss, complexity], dtype=float),
             loss=loss,
             metrics={"validation_loss": loss, "complexity": complexity},
+            info={"nested_audit": candidate.get("nested_audit", {})},
         )

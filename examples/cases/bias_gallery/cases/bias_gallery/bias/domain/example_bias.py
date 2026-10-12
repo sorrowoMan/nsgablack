@@ -3,9 +3,21 @@
 
 from __future__ import annotations
 
-from nsgablack.bias import BiasModule
+from nsgablack.bias import (BiasModule, PopulationDiversityPreference,
+                           UnitPreferenceBias, TabuSearchBias)
 
 from .config import BiasConfig
+
+
+def build_unit_preferences(adapter) -> BiasModule:
+    """Bind preferences to this Case's search instance, after Adapter assembly."""
+    module = BiasModule()
+    module.add(UnitPreferenceBias.from_adapter(
+        PopulationDiversityPreference(), adapter, owner_path=("bias_gallery", "search"),
+        name="population_novelty", weight=0.1,
+    ))
+    module.add(TabuSearchBias(weight=0.15))
+    return module
 
 
 def build_bias_module(enable_bias: bool | None = None, *, cfg: BiasConfig | None = None) -> BiasModule:

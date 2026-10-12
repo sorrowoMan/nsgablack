@@ -15,6 +15,7 @@ Key Features:
 - Extensible graph bias framework
 - Seamless integration with existing bias system
 """
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import numpy as np
 from typing import List, Dict, Tuple, Optional, Union, Any
@@ -207,7 +208,8 @@ class ConnectivityBias(GraphBias):
                     return -self.weight * penalty
             else:
                 return -self.weight * 10.0
-        except:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='ConnectivityBias.compute.fallback_67', exc=_fallback_error)
             return -self.weight * 5.0
 
 
@@ -349,7 +351,8 @@ class ShortestPathBias(GraphBias):
                         return -self.weight * (path_length - self.reference_distance)
                 else:
                     return -self.weight * 50.0  # 惩罚不连通的情况
-        except:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='ShortestPathBias.compute.fallback_68', exc=_fallback_error)
             pass
 
         return -self.weight * 100.0
@@ -391,7 +394,8 @@ class MaxFlowBias(GraphBias):
 
                 # 奖励更大的流值
                 return self.weight * flow_value
-        except:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='MaxFlowBias.compute.fallback_69', exc=_fallback_error)
             pass
 
         return -self.weight * 100.0

@@ -17,10 +17,12 @@ import numpy as np
 from blackbase.wire import freeze_wire_mapping, thaw_wire_mapping
 
 from blackbase.abc import AdapterBase
+from blackbase.runtime import RuntimeTransaction, ParticipantRollbackError, RecoveryCapabilities
 from blackbase.contracts import BatchDisposition
 from blackbase.context import RuntimeContextProjection
 
 from .runtime_projection import aggregate_adapter_runtime_projections
+from .proposal_repair import ProposalRepair
 from .empty_outcome import (
     aggregate_named_empty_outcomes,
     child_empty_proposal_outcome,
@@ -211,6 +213,224 @@ class AlgorithmAdapter(AdapterBase):
     state_recovery_level = "L0"
     state_recovery_notes = "No adapter-owned runtime state is guaranteed to roundtrip."
     population_state_mode = "none"
+    unit_schema = None
+    additional_unit_schemas = {}
+    unit_build_operations = ()
+    unit_builder_methods = ()
+    additional_unit_build_operations = {}
+    unit_contract_mode = "external"
+    # Legacy external adapters accept replacement by default. Structured core
+    # families explicitly declare whether a proposal carries positional meaning.
+    accepts_proposal_replacement = True
+    uses_pipeline_mutation = False
+    mutation_operator = None
+    unit_repair = None
+
+    def set_unit_repair(self, component):
+        """Bind a reusable repair to this structure owner, before execution."""
+        if component is not None:
+            from ..representation.repair_contracts import validate_repair_component, validate_admission_fields
+            from ..units.contracts import UnitBinding
+            validate_repair_component(component, unit=True)
+            if (tuple(self.step_transaction_children()) or not hasattr(self, "algorithm_unit")
+                    or not isinstance(getattr(self, "unit_binding", None), UnitBinding)):
+                raise TypeError("UnitRepair requires an explicit leaf algorithm_unit and UnitBinding")
+            self.unit_binding.validate(self.algorithm_unit)
+            validate_admission_fields(self)
+        self.unit_repair = component
+
+    def proposal_repair_targets(self, repair, context):
+        """Map evidence to actual owners; composites must preserve local indices."""
+        if tuple(self.step_transaction_children()):
+            return tuple(target for child, local, ctx in self.proposal_repair_children(repair, context)
+                         for target in child.proposal_repair_targets(local, ctx))
+        return ((self, repair, dict(context)),)
+
+    def proposal_repair_children(self, repair, context):
+        raise TypeError(f"{self.name}: composite must declare proposal_repair_children")
+
+    def _forward_proposal_repair(self, control, repair, context):
+        for owner, local, ctx in self.proposal_repair_children(repair, context):
+            owner.on_proposal_repair(control, local, ctx)
+
+    def on_joint_repair_rejected(self, control, report):
+        """Called after rollback. The owner can decide the next attempt or stop."""
+        from ..core.state.step_outcome import StepOutcome
+        action = control.joint_repair_policy.on_rejection
+        advanced = action == "advance" and self.advance_after_repair_rejection(control, report, self.name)
+        return StepOutcome(status="rejected", proposals=report["proposed_count"],
+                           stop_requested=action != "retry" and not advanced,
+                           reason="joint_repair_rejected",
+                           metadata={"repair_rejection_action": "advanced" if advanced else action})
+
+    def advance_after_repair_rejection(self, control, report, owner_path):
+        """Plan every affected branch before applying any schedule mutation."""
+        plan = self.plan_repair_rejection_advance(control, report, owner_path)
+        if not plan:
+            return False
+        for apply in plan:
+            apply()
+        return True
+
+    def plan_repair_rejection_advance(self, control, report, owner_path):
+        """Return attempt-local state-only actions, or None if any branch cannot advance."""
+        failures = tuple(report.get("failures", ()))
+        affected = []
+        for index, child in enumerate(self.step_transaction_children()):
+            path = f"{owner_path}/{index}:{child.name}"
+            if any(row["owner_path"] == path or row["owner_path"].startswith(path + "/") for row in failures):
+                plan = child.plan_repair_rejection_advance(control, report, path)
+                if not plan:
+                    return None
+                affected.extend(plan)
+        return tuple(affected) or None
+
+    def set_mutation_operator(self, name):
+        """Select a named operator at assembly time; None uses the default."""
+        if name is not None and (not isinstance(name, str) or not name.strip()):
+            raise ValueError("mutation operator name must be a nonempty string or None")
+        if name is not None and not self.uses_pipeline_mutation:
+            raise ValueError(f"{self.name}: this Adapter does not consume pipeline mutation")
+        self.mutation_operator = name
+
+    def get_mutation_operator(self, control):
+        """Resolve this consumer's binding without modifying shared pipeline state."""
+        pipeline = getattr(control, "representation_pipeline", None)
+        name = self.mutation_operator
+        if name is None:
+            return getattr(pipeline, "mutator", None)
+        resolve = getattr(pipeline, "get_mutator", None)
+        if not callable(resolve):
+            raise ValueError(f"{self.name}: named mutation requires a pipeline with get_mutator(name)")
+        return resolve(name)
+
+    def can_replace_proposals(self) -> bool:
+        return bool(self.accepts_proposal_replacement) and all(
+            child.can_replace_proposals() for child in self.step_transaction_children())
+
+    def get_operator_unit(self):
+        """Return this Adapter's explicit mutation owner; never search by name."""
+        return getattr(self, "algorithm_unit", None)
+
+    def get_proposal_contexts(self, proposed_count, context):
+        """Call-local repair inputs, aligned before budget/admission filtering."""
+        values = tuple(self._proposal_contexts(proposed_count, context))
+        if len(values) != proposed_count or any(not isinstance(item, Mapping) for item in values):
+            raise ValueError(f"{self.name}: proposal contexts must align with original proposals")
+        return tuple(dict(item) for item in values)
+
+    def _proposal_contexts(self, proposed_count, context):
+        return tuple(dict(context) for _ in range(proposed_count))
+
+    def mutate_candidate(self, control, candidate, context):
+        """Give the operator a draft and only its declared Unit dependencies."""
+        from ..units.operator_inputs import mutation_unit_spec
+        from ..representation.structure_builders import encode_unit_value, decode_unit_value
+        spec = mutation_unit_spec(self.get_mutation_operator(control))
+        draft = decode_unit_value(encode_unit_value(candidate))
+        kwargs = {} if self.mutation_operator is None else {"operator": self.mutation_operator}
+        if spec is not None:
+            kwargs["unit"] = spec.capture(self.get_operator_unit())
+        return control.mutate_candidate(draft, context, **kwargs)
+
+    def on_proposal_repair(self, control: Any, repair: ProposalRepair, context: Dict[str, Any]) -> None:
+        """Validate/reconcile transformed proposals before evaluation.
+
+        Structured owners that cannot accept replacement must override this
+        hook to rebuild or validate their invariants. Composite owners must
+        route evidence using their proposal ranges, never broadcast it.
+        """
+        if repair.changed_indices and (not self.accepts_proposal_replacement
+                                      or tuple(self.step_transaction_children())):
+            raise ValueError(f"{self.name}: proposal repair requires explicit owner reconciliation")
+
+    def set_unit_binding(self, binding: Any) -> None:
+        """Configure before setup; bindings belong to each Adapter instance."""
+        self._require_unit_binding(binding)
+        self.unit_binding = binding
+
+    def _require_unit_binding(self, binding: Any, *, slot: str | None = None) -> None:
+        from ..units import UnitBinding
+
+        schema = self.unit_schema if slot is None else self.additional_unit_schemas[slot]
+        if schema is None:
+            raise ValueError(f"{type(self).__name__} has not declared a Unit contract")
+        if not isinstance(binding, UnitBinding):
+            raise TypeError(f"{self.name}/{slot or 'primary'}: expected UnitBinding")
+        try:
+            binding.require(schema,
+                operations=self.unit_build_operations if slot is None else self.additional_unit_build_operations.get(slot, ()),
+                builder_methods=self.unit_builder_methods if slot is None else ())
+        except (TypeError, ValueError) as exc:
+            raise type(exc)(f"{self.name}/{slot or 'primary'}: {exc}") from exc
+
+    def get_unit_alignment(self) -> Dict[str, Any]:
+        """Assembly requirements, distinct from durable structure/codec identity."""
+        report = {}
+        if self.unit_schema is not None:
+            report["primary"] = self.unit_binding.describe_requirement(self.unit_schema,
+                operations=self.unit_build_operations, builder_methods=self.unit_builder_methods)
+        for name, schema in self.additional_unit_schemas.items():
+            report[name] = getattr(self, f"{name}_binding").describe_requirement(schema,
+                operations=self.additional_unit_build_operations.get(name, ()))
+        return report
+
+    def get_unit_contract(self) -> Dict[str, Any]:
+        binding = getattr(self, "unit_binding", None)
+        contract = {} if binding is None else binding.describe()
+        if self.additional_unit_schemas:
+            contract["additional"] = {name: getattr(self, f"{name}_binding").describe()
+                                      for name in self.additional_unit_schemas}
+        return contract
+
+    def get_unit_contracts(self) -> Dict[str, Any]:
+        """Describe bindings in stable child paths without exporting Unit data."""
+        report: Dict[str, Any] = {}
+        seen: set[int] = set()
+
+        def visit(adapter, path):
+            if id(adapter) in seen:
+                return
+            seen.add(id(adapter))
+            contract = adapter.get_unit_contract()
+            if contract:
+                report[path] = {**contract, "alignment": adapter.get_unit_alignment()}
+            if adapter.mutation_operator is not None:
+                report.setdefault(path, {})["mutation_operator"] = adapter.mutation_operator
+            if adapter.unit_repair is not None:
+                component_type = type(adapter.unit_repair)
+                report.setdefault(path, {})["unit_repair"] = f"{component_type.__module__}.{component_type.__qualname__}"
+            for index, child in enumerate(adapter.step_transaction_children()):
+                visit(child, f"{path}/{index}:{child.name}")
+
+        visit(self, self.name)
+        return report
+
+    def validate_unit_bindings(self) -> None:
+        """Inspect a whole composition without constructing or evaluating Units."""
+        visited: set[int] = set()
+
+        def visit(adapter: "AlgorithmAdapter") -> None:
+            if id(adapter) in visited:
+                return
+            visited.add(id(adapter))
+            if adapter.unit_schema is not None:
+                binding = getattr(adapter, "unit_binding", None)
+                if binding is None:
+                    raise ValueError(f"{adapter.name}: missing Unit binding")
+                adapter._require_unit_binding(binding)
+            for name, schema in adapter.additional_unit_schemas.items():
+                binding = getattr(adapter, f"{name}_binding", None)
+                adapter._require_unit_binding(binding, slot=name)
+            adapter.validate_local_unit_contract()
+            for child in adapter.step_transaction_children():
+                visit(child)
+
+        visit(self)
+
+    def validate_local_unit_contract(self) -> None:
+        """Optional local compatibility guard, also called inside compositions."""
+        return None
 
     def resolve_population_state_mode(self) -> str:
         """Return the Adapter's current authoritative population shape.
@@ -257,6 +477,11 @@ class AlgorithmAdapter(AdapterBase):
     def __init__(self, name: str, priority: int = 0) -> None:
         self.name = name
         self.priority = priority
+
+    @property
+    def recovery_capabilities(self) -> RecoveryCapabilities:
+        return RecoveryCapabilities(checkpoint=self.state_recovery_level != "L0",
+                                    rollback=True, commit_cleanup=True)
 
     def begin_step_transaction(self) -> "AdapterStepTransaction":
         """Capture explicit transaction participants before one step attempt."""
@@ -349,7 +574,7 @@ class AlgorithmAdapter(AdapterBase):
                     if isinstance(rng, np.random.Generator):
                         return rng
                 except Exception:
-                    pass
+                    raise
         return np.random.default_rng()
 
     # --- Override: numpy-aware candidate normalization ---
@@ -550,6 +775,15 @@ class AlgorithmAdapter(AdapterBase):
             if text:
                 notes_parts.append(f"{attr}={text}")
 
+        from blackbase.context import get_component_contract
+        repair_contract = get_component_contract(self.unit_repair)
+        if repair_contract is not None:
+            for values, field in ((requires, "requires"), (provides, "provides"),
+                                  (mutates, "mutates"), (cache, "cache"),
+                                  (artifact_requires, "artifact_requires"), (artifact_provides, "artifact_provides"),
+                                  (phase_in, "phase_in"), (phase_out, "phase_out")):
+                values.extend(item for item in getattr(repair_contract, field) if item not in values)
+
         return {
             "requires": requires,
             "provides": provides,
@@ -566,6 +800,7 @@ class AlgorithmAdapter(AdapterBase):
 
 class CompositeAdapter(AlgorithmAdapter):
     """Combine multiple adapters and merge their proposals."""
+    unit_contract_mode = "delegated"
     context_requires = ()
     context_provides = ()
     context_mutates = ()
@@ -582,6 +817,7 @@ class CompositeAdapter(AlgorithmAdapter):
         self._last_projection_writers: Dict[str, str] = {}
 
     def setup(self, control: Any) -> None:
+        self.validate_unit_bindings()
         self._last_projection_writers = {}
         for adapter in self.adapters:
             adapter.setup(control)
@@ -663,6 +899,17 @@ class CompositeAdapter(AlgorithmAdapter):
                 reconciled.append((adapter, cursor, next_cursor))
                 cursor = next_cursor
         self._last_ranges = reconciled
+
+    def on_proposal_repair(self, control: Any, repair: ProposalRepair, context: Dict[str, Any]) -> None:
+        self._forward_proposal_repair(control, repair, context)
+
+    def proposal_repair_children(self, repair, context):
+        return tuple((adapter, repair.for_range(start, end), context)
+                     for adapter, start, end in self._last_ranges)
+
+    def _proposal_contexts(self, proposed_count, context):
+        return tuple(item for adapter, start, end in self._last_ranges
+                     for item in adapter.get_proposal_contexts(end - start, context))
 
     def teardown(self, control: Any) -> None:
         for adapter in self.adapters:
@@ -900,116 +1147,36 @@ class AdapterCommitReport:
 
 
 class AdapterStepTransaction:
-    """Rollback coordinator over explicit Adapter transaction participants."""
+    """Optimization report facade over BlackBase RuntimeParticipant transactions."""
 
-    def __init__(
-        self,
-        adapters: Sequence[AlgorithmAdapter],
-        states: Mapping[int, Mapping[str, Any]],
-    ) -> None:
-        self._adapters = tuple(adapters)
-        self._states = dict(states)
-        self._active = True
+    def __init__(self, transaction: RuntimeTransaction) -> None:
+        self._transaction = transaction
 
     @classmethod
     def capture(cls, root: AlgorithmAdapter) -> "AdapterStepTransaction":
-        adapters = _collect_adapter_graph(root)
-        states: dict[int, Mapping[str, Any]] = {}
         try:
-            for adapter in adapters:
-                snapshot = adapter.snapshot_step_state()
-                if not isinstance(snapshot, Mapping):
-                    raise TypeError(
-                        f"{type(adapter).__name__}.snapshot_step_state() must return a Mapping"
-                    )
-                states[id(adapter)] = snapshot
+            return cls(RuntimeTransaction((root,)))
         except Exception as exc:
             raise RuntimeError(
                 f"Adapter {type(root).__name__} cannot enter a rollback-safe step transaction"
             ) from exc
-        return cls(adapters, states)
 
     def commit(self) -> AdapterCommitReport:
-        if not self._active:
-            return AdapterCommitReport()
-        participants: list[str] = []
-        issues: list[AdapterCommitIssue] = []
-        evidence: list[AdapterCommitEvidence] = []
-        try:
-            for adapter in reversed(self._adapters):
-                participant = f"{adapter.name}:{type(adapter).__name__}"
-                participants.append(participant)
-                try:
-                    payload = adapter.commit_step_state(self._states[id(adapter)])
-                    if payload is not None:
-                        if not isinstance(payload, Mapping):
-                            raise TypeError(
-                                "commit_step_state() evidence must be a Mapping or None"
-                            )
-                        evidence.append(
-                            AdapterCommitEvidence(
-                                participant=participant,
-                                payload=payload,
-                            )
-                        )
-                except BaseException as exc:
-                    issues.append(
-                        AdapterCommitIssue(
-                            participant=participant,
-                            error_type=type(exc).__name__,
-                            message=str(exc),
-                        )
-                    )
-        finally:
-            self._active = False
-            self._states.clear()
+        names, failures, evidence = self._transaction.commit()
         return AdapterCommitReport(
-            participants=tuple(participants),
-            issues=tuple(issues),
-            evidence=tuple(evidence),
+            participants=names,
+            issues=tuple(AdapterCommitIssue(item.participant, type(item.error).__name__, str(item.error))
+                         for item in failures),
+            evidence=tuple(AdapterCommitEvidence(name, payload) for name, payload in evidence),
         )
 
     def rollback(self) -> None:
-        if not self._active:
-            return
-        errors: list[tuple[str, BaseException]] = []
         try:
-            for adapter in reversed(self._adapters):
-                try:
-                    adapter.restore_step_state(self._states[id(adapter)])
-                except BaseException as exc:
-                    errors.append(
-                        (
-                            f"{adapter.name}:{type(adapter).__name__}",
-                            exc,
-                        )
-                    )
-        finally:
-            self._active = False
-            self._states.clear()
-        if errors:
-            raise AdapterRollbackError(errors) from errors[0][1]
+            self._transaction.rollback()
+        except ParticipantRollbackError as exc:
+            raise AdapterRollbackError(tuple((item.participant, item.error) for item in exc.failures)) from exc
 
 
-def _collect_adapter_graph(root: AlgorithmAdapter) -> tuple[AlgorithmAdapter, ...]:
-    adapters: list[AlgorithmAdapter] = []
-    adapter_ids: set[int] = set()
-
-    def visit(adapter: AlgorithmAdapter) -> None:
-        if not isinstance(adapter, AlgorithmAdapter):
-            raise TypeError("step transaction participants must be AlgorithmAdapter instances")
-        if id(adapter) in adapter_ids:
-            return
-        adapter_ids.add(id(adapter))
-        adapters.append(adapter)
-        children = adapter.step_transaction_children()
-        if children is None:
-            raise TypeError("step_transaction_children() must return a sequence")
-        for child in tuple(children):
-            visit(child)
-
-    visit(root)
-    return tuple(adapters)
 
 
 def _memoize_immutable_protocol_values(

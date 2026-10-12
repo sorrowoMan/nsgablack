@@ -8,39 +8,36 @@ from mlblack.core import ModelRepresentation, UnknownState
 
 
 class NestedModelCodec(ModelRepresentation):
-    name = "nested-linear-model-codec/v1"
+    name = "nested-linear-model-spec/v2"
+
+    def __init__(self, outer_candidate=(0.5, 0.5)):
+        self.outer_candidate = np.asarray(outer_candidate, dtype=float).reshape(2).copy()
 
     def init(self, context) -> UnknownState:
-        return self.state(
-            context.get("outer_candidate", [0.5, 0.5]),
-            float(context.get("calibration", 0.0)),
-        )
+        del context
+        return self.state(self.outer_candidate)
 
     def decode(self, state: UnknownState, context=None) -> dict[str, float]:
         del context
-        capacity, regularization, calibration = state.as_array().reshape(-1)
+        capacity, regularization = state.as_array().reshape(-1)
         return {
             "capacity": float(capacity),
             "regularization": float(regularization),
-            "calibration": float(calibration),
         }
 
     def encode(self, model, context=None) -> UnknownState:
         del context
         return self.state(
             [float(model["capacity"]), float(model["regularization"])],
-            float(model["calibration"]),
         )
 
-    def state(self, candidate, calibration: float) -> UnknownState:
-        values = np.concatenate(
-            [np.asarray(candidate, dtype=float).reshape(-1), [float(calibration)]]
-        )
+    def state(self, candidate) -> UnknownState:
+        values = np.asarray(candidate, dtype=float).reshape(2)
         return UnknownState(
             values=values,
             metadata={
                 "codec": self.name,
                 "model_family": "synthetic_linear",
-                "semantic_fields": ["capacity", "regularization", "calibration"],
+                "semantic_fields": ["capacity", "regularization"],
             },
         )

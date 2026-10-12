@@ -1,4 +1,5 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
@@ -13,7 +14,7 @@ from ...utils.extension_contracts import (
     normalize_objectives,
     normalize_violation,
 )
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_METRICS,
     KEY_METRICS_SURROGATE_STD,
 )
@@ -301,8 +302,9 @@ class SurrogateEvaluationProviderPlugin(EvaluationProviderPluginBase):
                 self.stats["true_evals"] += int(np.asarray(X).shape[0])
                 self._increment_evaluation_count(solver, int(np.asarray(X).shape[0]))
                 return np.asarray(objs, dtype=float)
-            except Exception:
+            except Exception as _fallback_error:
                 # 并行失败时回退串行
+                _report_optional_failure(component=__name__, event='SurrogateEvaluationProviderPlugin._true_evaluate.fallback_240', exc=_fallback_error)
                 pass
 
         n = int(np.asarray(X).shape[0])
@@ -327,9 +329,9 @@ class SurrogateEvaluationProviderPlugin(EvaluationProviderPluginBase):
                 direct(int(delta))
                 return
             except Exception:
-                pass
+                raise
         try:
             key = "evaluation_count"
             setattr(solver, key, int(getattr(solver, key, 0) or 0) + int(delta))
         except Exception:
-            return
+            raise

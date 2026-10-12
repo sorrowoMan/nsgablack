@@ -1,6 +1,7 @@
 """Logging configuration helpers with optional JSON output."""
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import json
 import logging
@@ -29,7 +30,8 @@ def _ensure_utf8_stream(stream: object) -> object:
     if callable(reconfigure):
         try:
             reconfigure(encoding="utf-8", errors="replace")
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='_ensure_utf8_stream.fallback_301', exc=_fallback_error)
             pass
     return stream
 

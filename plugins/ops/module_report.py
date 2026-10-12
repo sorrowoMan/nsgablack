@@ -8,6 +8,7 @@ It only inspects solver state and writes JSON/Markdown artifacts.
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -267,13 +268,14 @@ class ModuleReportPlugin(Plugin):
                     continue
                 s = b.get_statistics() if hasattr(b, "get_statistics") else {"name": str(name)}
                 stats.append(s)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='ModuleReportPlugin._collect_bias_contributions.fallback_250', exc=_fallback_error)
                 continue
 
         def _contrib(s: Dict[str, Any]) -> float:
             try:
                 return float(s.get("total_contribution", 0.0) or 0.0)
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 return 0.0
 
         stats.sort(key=_contrib, reverse=True)

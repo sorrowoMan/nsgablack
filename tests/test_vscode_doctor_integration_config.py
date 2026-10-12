@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 
@@ -61,3 +62,23 @@ def test_trigger_task_label_matches_existing_task() -> None:
 
     missing = [label for label in trigger_map.keys() if label not in task_labels]
     assert not missing, f"triggerTaskOnSave references unknown tasks: {missing}"
+
+
+def test_problem_matchers_preserve_file_line_and_column_locations():
+    tasks = _load_json(REPO_ROOT / ".vscode" / "tasks.json")["tasks"]
+    samples = (
+        (r"C:\project\demo.py:18:5: error demo-rule: detail", "location", "18", "5"),
+        (r"C:\project\demo.py:18: warning demo-rule: detail", "location", "18", None),
+        (r"C:\project\demo.py: info demo-rule: detail", "file", None, None),
+    )
+    for task in tasks:
+        for text, kind, line, column in samples:
+            hits = [(matcher["pattern"], re.match(matcher["pattern"]["regexp"], text))
+                    for matcher in task["problemMatcher"]]
+            hits = [(pattern, match) for pattern, match in hits if match]
+            assert len(hits) == 1
+            pattern, match = hits[0]
+            assert pattern.get("kind", "location") == kind
+            assert match.group(pattern["file"]) == r"C:\project\demo.py"
+            assert (match.group(pattern["line"]) if "line" in pattern else None) == line
+            assert (match.group(pattern["column"]) if "column" in pattern else None) == column

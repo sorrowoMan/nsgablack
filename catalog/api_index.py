@@ -1,4 +1,5 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import ast
 from dataclasses import dataclass
@@ -244,7 +245,8 @@ def _load_existing_map(profile: str) -> Dict[Tuple[str, str, str], Tuple[str, st
     try:
         store = MySQLCatalogStore(readonly=True)
         entries = store.load_api_index(profile=_profile_label(profile))
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_load_existing_map.fallback_88', exc=_fallback_error)
         return {}
     out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
     for e in entries:

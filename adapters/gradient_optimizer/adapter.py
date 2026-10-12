@@ -12,7 +12,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence
 
 import numpy as np
 from blackbase.contracts import BatchDisposition, ComponentContract
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_ADAPTER_BEST_SCORE,
     KEY_MUTATION_SIGMA,
     KEY_RESOURCE_CONTEXT,
@@ -30,6 +30,8 @@ from blackbase.resources import ResourceContext
 from blackbase.state_ref import StateRef
 from blackbase.types import UnknownState
 
+from ..unit_backed import UnitBackedAdapter, UnitField
+from ...representation.structure_builders import ParameterUnitBuilder
 from ..algorithm_adapter import AlgorithmAdapter
 from ...core.evaluation_feedback import OptimizationFeedbackBatch
 
@@ -87,8 +89,17 @@ class GradientOptimizerConfig:
         object.__setattr__(self, "objective_aggregation", aggregation)
 
 
-class GradientOptimizerAdapter(AlgorithmAdapter):
+class GradientOptimizerAdapter(UnitBackedAdapter):
     """SGD/Adam/AdamW over gradients supplied by an evaluation provider."""
+    unit_build_operations = ("initialize", "optimizer_slots")
+    unit_builder_type = ParameterUnitBuilder
+    unit_schema = ParameterUnitBuilder.unit_type.schema
+    current_x = UnitField("current")
+    _first_moment = UnitField("first_moment")
+    _second_moment = UnitField("second_moment")
+    _candidate_kind = UnitField("candidate_kind")
+    _candidate_metadata = UnitField("candidate_metadata")
+
 
     context_requires = ()
     # Keep literals here so Doctor can prove the source-level read contract.
@@ -127,7 +138,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
         prefer_provider_transition: bool = False,
         **config_kwargs: Any,
     ) -> None:
-        super().__init__(name=name, priority=priority)
+        super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
         self.config = self.resolve_config(
             config=config,
             config_cls=GradientOptimizerConfig,
@@ -188,9 +199,32 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
             initial = control.init_candidate(context)
             self._capture_candidate_template(initial)
             self.current_x = self._candidate_array(initial)
-        candidate = self._repair_values(control, self.current_x.copy(), context)
+        candidate = self.current_x.copy()
         self._proposal_pending = True
         return (self._wrap_candidate(candidate),)
+
+    def on_proposal_repair(self, control, repair, context):
+        """Align the parameter Unit before evaluating a projected proposal.
+
+        Optimizer moments describe past gradients and survive projection;
+        the next gradient must come from evaluation of the repaired candidate.
+        Provider parameter states must be materialized/released before repair.
+        """
+        if repair.proposed_count != 1 or not self._proposal_pending:
+            raise ValueError("Gradient-optimizer repair must address its pending proposal")
+        if not repair.proposal_indices:
+            return
+        if repair.changed_indices and self._provider_state_ref is not None:
+            raise ValueError("Cannot repair a live Provider parameter state without reconciliation")
+        state = repair.after.semantic_states[0]
+        values = self._candidate_array(state)
+        if self.current_x is None or values.shape != self.current_x.shape:
+            raise ValueError("Gradient-optimizer repair must preserve parameter dimension")
+        self._capture_candidate_template(state)
+        self.current_x = values.copy()
+        if repair.changed_indices:
+            self.current_score = None
+        self._refresh_runtime_projection()
 
     def teardown(self, control: Any) -> None:
         had_live_slots = bool(self._provider_slot_refs)
@@ -593,8 +627,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
             return learning_rate * effective_gradient
 
         if self._first_moment is None or self._first_moment.shape != gradient.shape:
-            self._first_moment = np.zeros_like(gradient)
-            self._second_moment = np.zeros_like(gradient)
+            self.rebuild_unit("optimizer_slots", shape=gradient.shape)
         beta1 = float(self.cfg.beta1)
         beta2 = float(self.cfg.beta2)
         self._first_moment = (beta1 * self._first_moment) + (
@@ -667,7 +700,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
             self._first_moment = materialized["m"]
             self._second_moment = materialized["v"]
 
-    def get_state(self) -> Mapping[str, Any]:
+    def _get_algorithm_state(self) -> Mapping[str, Any]:
         self._refresh_provider_slot_shadow()
         return {
             "current_x": None if self.current_x is None else self.current_x.tolist(),
@@ -714,7 +747,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
             },
         }
 
-    def snapshot_step_state(self) -> Mapping[str, Any]:
+    def _snapshot_algorithm_step_state(self) -> Mapping[str, Any]:
         """Capture local rollback state without materializing live Provider slots."""
 
         if self._step_transaction_slot_refs or self._step_transaction_state_ref is not None:
@@ -750,7 +783,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
             "runtime_projection": dict(self._runtime_projection),
         }
 
-    def restore_step_state(self, state: Mapping[str, Any]) -> None:
+    def _restore_algorithm_step_state(self, state: Mapping[str, Any]) -> None:
         if str(state.get("schema", "")) != (
             "nsgablack.gradient_optimizer_step_transaction/v1"
         ):
@@ -935,7 +968,7 @@ class GradientOptimizerAdapter(AlgorithmAdapter):
             results.append(result)
         return tuple(results)
 
-    def set_state(self, state: Mapping[str, Any]) -> None:
+    def _set_algorithm_state(self, state: Mapping[str, Any]) -> None:
         saved_optimizer = str(state.get("optimizer", self.cfg.optimizer) or "").strip().lower()
         if saved_optimizer != self.cfg.optimizer:
             raise ValueError(

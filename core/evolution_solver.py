@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 import copy
+from blackbase.runtime import OwnedField
+from blackbase.representation import representation_capabilities
+from .state.evolution_state import EvolutionState
 import logging
 import random
 from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple
@@ -36,6 +39,12 @@ def _has_problem_inner_runtime_evaluator(solver: Any) -> bool:
 
 class EvolutionSolver(ComposableSolver):
     """Canonical evolutionary solver with adapter-driven NSGA-II flow."""
+
+    history = OwnedField("evolution_state", "history")
+    pareto_solutions = OwnedField("evolution_state", "pareto_solutions")
+    pareto_objectives = OwnedField("evolution_state", "pareto_objectives")
+    pareto_population_snapshot = OwnedField("evolution_state", "pareto_population_snapshot")
+    mutation_range = OwnedField("evolution_state", "mutation_range")
 
     def __init__(
         self,
@@ -104,8 +113,10 @@ class EvolutionSolver(ComposableSolver):
         enable_companion_orchestrator: bool = False,
         companion_config: Optional[CompanionOrchestratorConfig] = None,
         adapter: Optional[Any] = None,
+        joint_repair_policy: Any = None,
         **_: Any,
     ) -> None:
+        self.evolution_state = EvolutionState()
         self.pop_size = int(pop_size)
         self.max_generations = int(max_generations)
         self.max_steps = int(max_generations)
@@ -131,6 +142,7 @@ class EvolutionSolver(ComposableSolver):
             adapter=adapter if adapter is not None else self._build_default_adapter(),
             bias_module=bias_module,
             representation_pipeline=representation_pipeline,
+            joint_repair_policy=joint_repair_policy,
             ignore_constraint_violation_when_bias=ignore_constraint_violation_when_bias,
             plugin_strict=bool(plugin_strict),
             snapshot_strict=bool(snapshot_strict),
@@ -163,6 +175,7 @@ class EvolutionSolver(ComposableSolver):
             enable_companion_orchestrator=bool(enable_companion_orchestrator),
             companion_config=companion_config,
         )
+        self.register_state_participant(self.evolution_state)
         # SolverBase.__init__ resets max_steps; restore generation semantics here.
         self.max_generations = int(max_generations)
         self.max_steps = int(max_generations)
@@ -326,12 +339,9 @@ class EvolutionSolver(ComposableSolver):
     @staticmethod
     def _detect_l0_pool(solver) -> Optional[Any]:
         """Return a PoolScheduler if one is attached, else None."""
-        try:
-            pool = getattr(solver, "l0_pool", None)
-            if pool is not None and hasattr(pool, "as_executor"):
-                return pool
-        except Exception:
-            pass
+        pool = getattr(solver, "l0_pool", None)
+        if pool is not None and hasattr(pool, "as_executor"):
+            return pool
         return None
 
     def _ensure_parallel_evaluator(self) -> Optional[ParallelEvaluator]:
@@ -566,125 +576,7 @@ class EvolutionSolver(ComposableSolver):
             self._commit_evolution_runtime_state()
 
     def step(self) -> StepOutcome:
-        self.ensure_evaluation_evidence_ready_for_next_step()
-        previous_authority = self.get_population_authority_identity()
-        previous_authority_key = (
-            None
-            if previous_authority is None
-            else str(previous_authority.snapshot.key)
-        )
-        previous_projection = self._capture_authority_projection()
-        previous_incumbent = self._capture_incumbent_transaction_state()
-        previous_snapshot_handle = self._latest_snapshot_handle
-        previous_snapshot_generation = self._snapshot_generation
-        previous_event_id = self._last_evaluation_event_id
-        previous_history = copy.deepcopy(self.history)
-        previous_pareto_solutions = copy.deepcopy(self.pareto_solutions)
-        previous_pareto_objectives = (
-            None
-            if self.pareto_objectives is None
-            else np.array(self.pareto_objectives, copy=True)
-        )
-        previous_pareto_population_snapshot = self.pareto_population_snapshot
-        previous_mutation_range = float(self.mutation_range)
-        adapter_transaction = (
-            self.adapter.begin_step_transaction()
-            if self.adapter is not None
-            else None
-        )
-        self.begin_snapshot_step_transaction()
-        try:
-            outcome = self._step_transaction_body_evolution()
-            outcome = self._finalize_evaluation_disposition(
-                outcome,
-                previous_authority_key=previous_authority_key,
-            )
-            if outcome.committed:
-                self.commit_snapshot_step_transaction()
-                outcome = self._settle_evaluation_disposition_best_effort(outcome)
-            else:
-                self.rollback_snapshot_step_transaction()
-        except BaseException as exc:
-            self._record_failed_evaluation_disposition(
-                exc,
-                previous_event_id=previous_event_id,
-                previous_authority_key=previous_authority_key,
-            )
-            callbacks = [("snapshot", self.rollback_snapshot_step_transaction)]
-            if adapter_transaction is not None:
-                callbacks.append(("adapter", adapter_transaction.rollback))
-            callbacks.extend(
-                (
-                    (
-                        "solver.authority",
-                        lambda: self._restore_authority_projection(previous_projection),
-                    ),
-                    (
-                        "solver.incumbent",
-                        lambda: self._restore_incumbent_transaction_state(
-                            previous_incumbent
-                        ),
-                    ),
-                    (
-                        "solver.snapshot_handle",
-                        lambda: setattr(
-                            self,
-                            "_latest_snapshot_handle",
-                            previous_snapshot_handle,
-                        ),
-                    ),
-                    (
-                        "solver.snapshot_generation",
-                        lambda: setattr(
-                            self,
-                            "_snapshot_generation",
-                            previous_snapshot_generation,
-                        ),
-                    ),
-                    (
-                        "solver.history",
-                        lambda: setattr(self, "history", previous_history),
-                    ),
-                    (
-                        "solver.pareto_solutions",
-                        lambda: setattr(
-                            self,
-                            "pareto_solutions",
-                            previous_pareto_solutions,
-                        ),
-                    ),
-                    (
-                        "solver.pareto_objectives",
-                        lambda: setattr(
-                            self,
-                            "pareto_objectives",
-                            previous_pareto_objectives,
-                        ),
-                    ),
-                    (
-                        "solver.pareto_population_snapshot",
-                        lambda: setattr(
-                            self,
-                            "pareto_population_snapshot",
-                            previous_pareto_population_snapshot,
-                        ),
-                    ),
-                    (
-                        "solver.mutation_range",
-                        lambda: setattr(
-                            self,
-                            "mutation_range",
-                            previous_mutation_range,
-                        ),
-                    ),
-                )
-            )
-            _rollback_step_failure(exc, callbacks)
-            raise
-        if adapter_transaction is not None:
-            report = adapter_transaction.commit()
-            outcome = self._attach_adapter_commit_report(outcome, report)
-        return outcome
+        return self._execute_step_transaction(self._step_transaction_body_evolution)
 
     def _step_transaction_body_evolution(self) -> StepOutcome:
         self._require_single_population_topology()
@@ -855,7 +747,7 @@ class EvolutionSolver(ComposableSolver):
         if pop.ndim != 2 or pop.shape[0] == 0:
             return pop
 
-        if self.representation_pipeline is not None and getattr(self.representation_pipeline, "mutator", None) is not None:
+        if representation_capabilities(self.representation_pipeline).supports("mutate"):
             out = np.zeros_like(pop)
             for i in range(pop.shape[0]):
                 out[i] = np.asarray(

@@ -11,12 +11,14 @@ is frozen for history and a new one is created.
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
+from blackbase.types import CandidateBatch, PopulationSnapshot
 
 from ..base import Plugin
 
@@ -44,6 +46,7 @@ class _Segment:
     X: Optional[np.ndarray] = None
     F: Optional[np.ndarray] = None
     V: Optional[np.ndarray] = None
+    candidates: Optional[CandidateBatch] = None
 
     @property
     def active(self) -> bool:
@@ -54,6 +57,8 @@ class _Segment:
 
 
 class ParetoArchivePlugin(Plugin):
+    state_recovery_level = "L2"
+    state_recovery_notes = "Restores objective segments, aligned semantic candidates and stable tokens."
     is_algorithmic = True
     context_requires = ()
     context_provides = ()
@@ -130,6 +135,7 @@ class ParetoArchivePlugin(Plugin):
         X, F, V = self._get_population(solver)
         if X.size == 0:
             return
+        candidates = self._get_candidates(solver, X)
 
         labels = self._read_objective_labels(solver)
         if len(labels) != int(F.shape[1]):
@@ -169,35 +175,49 @@ class ParetoArchivePlugin(Plugin):
             active.X = np.asarray(X, dtype=float)
             active.F = np.asarray(F, dtype=float)
             active.V = np.asarray(V, dtype=float).reshape(-1)
+            active.candidates = candidates
         else:
+            previous = active.candidates
             active.X = np.vstack([active.X, np.asarray(X, dtype=float)])
             active.F = np.vstack([active.F, np.asarray(F, dtype=float)])
             active.V = np.concatenate([active.V, np.asarray(V, dtype=float).reshape(-1)])
+            if previous is not None and candidates is not None:
+                active.candidates = CandidateBatch(
+                    (*previous.semantic_states, *candidates.semantic_states),
+                    active.X,
+                    (*previous.candidate_tokens, *candidates.candidate_tokens),
+                )
+            else:
+                active.candidates = None
+
+        # A surviving candidate may appear in several committed generations.
+        # Replace repeated identities, never collapse equal numeric values.
+        if active.candidates is not None:
+            tokens = active.candidates.candidate_tokens
+            latest = {token: i for i, token in enumerate(tokens) if token is not None}
+            keep = [i for i, token in enumerate(tokens) if token is None or latest[token] == i]
+            self._select_rows(active, keep)
 
         # ---- filter infeasible --------------------------------------------
         if not self.cfg.keep_infeasible and active.V is not None:
             feas = (active.V <= 0.0)
-            active.X = active.X[feas]
-            active.F = active.F[feas]
-            active.V = active.V[feas]
+            self._select_rows(active, np.flatnonzero(feas))
 
         if active.F is None or active.F.size == 0:
+            self._write_pareto_snapshot(solver)
+            self._last_update_generation = int(generation)
             return
 
         # ---- non-dominated filter (within segment) ------------------------
         nd = self._nondominated_mask(active.F)
-        active.X = active.X[nd]
-        active.F = active.F[nd]
-        active.V = active.V[nd]
+        self._select_rows(active, np.flatnonzero(nd))
 
         # ---- truncate per-segment -----------------------------------------
         max_size = self.cfg.max_size
         if max_size is not None and active.F.shape[0] > int(max_size):
             k = int(max_size)
             idx = self._select_by_crowding(active.F, k)
-            active.X = active.X[idx]
-            active.F = active.F[idx]
-            active.V = active.V[idx]
+            self._select_rows(active, idx)
 
         # ---- cap frozen segments ------------------------------------------
         self._trim_frozen_segments()
@@ -206,6 +226,79 @@ class ParetoArchivePlugin(Plugin):
         self._last_update_generation = int(generation)
 
     # ---- objective label resolution ---------------------------------------
+
+    @staticmethod
+    def _select_rows(segment, indices):
+        indices = np.asarray(indices, dtype=int)
+        segment.X = segment.X[indices]
+        segment.F = segment.F[indices]
+        segment.V = segment.V[indices]
+        if segment.candidates is not None:
+            segment.candidates = segment.candidates.subset(indices)
+
+    def _get_candidates(self, solver, population):
+        if getattr(solver, "population_authority_mode", "single") == "partitioned":
+            from nsgablack.core.runtime_governance import resolve_population_partitions
+            committed = solver.get_candidate_population_partitions()
+            batches = [committed[str(p.partition_id)] for p in resolve_population_partitions(solver)]
+            batch = CandidateBatch(
+                tuple(s for b in batches for s in b.semantic_states), population,
+                tuple(t for b in batches for t in b.candidate_tokens),
+            )
+        else:
+            getter = getattr(solver, "get_candidate_population_batch", None)
+            if not callable(getter):
+                # Numeric-only protocol clients can still inspect this archive,
+                # but receive no fabricated authoritative semantic Snapshot.
+                return None
+            batch = getter()
+        if not isinstance(batch, CandidateBatch) or not np.array_equal(
+            batch.numeric_matrix, population, equal_nan=True
+        ):
+            raise ValueError("ParetoArchive requires the aligned committed CandidateBatch")
+        if any(token is None for token in batch.candidate_tokens):
+            raise ValueError("ParetoArchive requires committed candidate tokens")
+        return batch
+
+    def get_state(self):
+        return {"last_update_generation": self._last_update_generation, "segments": [
+            {"label_key": s.label_key, "labels": list(s.labels),
+             "generation_first": s.generation_first, "generation_last": s.generation_last,
+             "X": None if s.X is None else s.X.tolist(),
+             "F": None if s.F is None else s.F.tolist(),
+             "V": None if s.V is None else s.V.tolist(),
+             "decision_width": None if s.X is None else s.X.shape[1],
+             "candidates": None if s.candidates is None else s.candidates.as_dict()}
+            for s in self._segments.values()
+        ]}
+
+    def set_state(self, state):
+        segments = {}
+        for item in state.get("segments", ()):
+            payload = dict(item)
+            width = payload.pop("decision_width", None)
+            payload["labels"] = tuple(payload["labels"])
+            for key in ("X", "F", "V"):
+                if payload[key] is not None:
+                    payload[key] = np.asarray(payload[key], dtype=float)
+            if payload["X"] is not None:
+                if width is not None:
+                    payload["X"] = payload["X"].reshape(-1, int(width))
+                payload["F"] = payload["F"].reshape(-1, len(payload["labels"]))
+                if len(payload["X"]) != len(payload["F"]) or len(payload["X"]) != len(payload["V"]):
+                    raise ValueError("Saved Pareto X/F/V rows are not aligned")
+            if payload.get("candidates") is not None:
+                payload["candidates"] = CandidateBatch.from_dict(payload["candidates"])
+                if len(payload["X"]) == 0:
+                    payload["candidates"] = CandidateBatch((), payload["X"], ())
+                if not np.array_equal(payload["candidates"].numeric_matrix, payload["X"], equal_nan=True):
+                    raise ValueError("Saved Pareto candidate identity is not row-aligned")
+                if any(t is None for t in payload["candidates"].candidate_tokens):
+                    raise ValueError("Saved Pareto candidates require tokens")
+            segment = _Segment(**payload)
+            segments[segment.label_key] = segment
+        self._segments = segments
+        self._last_update_generation = state.get("last_update_generation")
 
     def _read_objective_labels(self, solver: Any) -> List[str]:
         source = str(getattr(self.cfg, "label_source", "objective_names") or "objective_names")
@@ -397,10 +490,18 @@ class ParetoArchivePlugin(Plugin):
                 active = self.active_segment
                 X = None if active is None else active.X
                 F = None if active is None else active.F
+                batch = None if active is None else active.candidates
+                formal = None if batch is None else PopulationSnapshot(
+                    candidates=batch.semantic_states, candidate_tokens=batch.candidate_tokens,
+                    objectives=F, constraints=active.V,
+                    generation=int(getattr(solver, "generation", 0)),
+                    metadata={"source": "nsgablack.pareto_archive", "objective_labels": list(active.labels)},
+                )
                 setter(X, F)
+                solver.pareto_population_snapshot = formal
                 return
             except Exception:
-                return
+                raise
 
         # fallback: write via solver write_snapshot (preferred) or log
         active = self.active_segment
@@ -412,7 +513,7 @@ class ParetoArchivePlugin(Plugin):
                     pareto_objectives=None if active is None else np.asarray(active.F),
                 )
             except Exception:
-                pass
+                raise
         elif not callable(getattr(solver, "set_pareto_snapshot", None)):
             import warnings
             warnings.warn(
@@ -432,7 +533,8 @@ class ParetoArchivePlugin(Plugin):
                 for seg in self._segments.values()
             ]
             setattr(solver, "pareto_segments", segments_meta)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='ParetoArchivePlugin._write_pareto_snapshot.fallback_262', exc=_fallback_error)
             pass
 
     @property

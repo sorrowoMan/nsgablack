@@ -14,15 +14,20 @@ from .algorithm_adapter import (
     CompositeAdapter,
     PopulationPartition,
 )
+from .candidate_proposer import CandidateProposerAdapter
+from .proposal_repair import ProposalRepair
+from .unit_backed import UnitBackedAdapter, UnitField
 from .role_adapters import RoleAdapter, RoleRouterAdapter
 from .vns import VNSAdapter, VNSConfig
 from .moead import MOEADAdapter, MOEADConfig
 from .simulated_annealing import SimulatedAnnealingAdapter, SAConfig
+from .strategy_task import StrategyTask, StrategyOrigin
 from .multi_strategy import (
     StrategyRouterAdapter,
     MultiStrategyConfig,
     MultiStrategyControlRule,
     StrategySpec,
+    StrategyInstanceSpec,
     RoleSpec,
 )
 from .serial_strategy import StrategyChainAdapter, SerialStrategyConfig, SerialPhaseSpec
@@ -47,6 +52,8 @@ from .nsga3 import NSGA3Adapter, NSGA3Config
 from .spea2 import SPEA2Adapter, SPEA2Config
 
 __all__ = [
+    "ProposalRepair",
+    "CandidateProposerAdapter", "UnitBackedAdapter", "UnitField", "StrategyInstanceSpec",
     "AlgorithmAdapter",
     "AdapterCommitEvidence",
     "AdapterCommitIssue",
@@ -64,6 +71,8 @@ __all__ = [
     "SimulatedAnnealingAdapter",
     "SAConfig",
     "StrategyRouterAdapter",
+    "StrategyTask",
+    "StrategyOrigin",
     "MultiStrategyConfig",
     "MultiStrategyControlRule",
     "StrategySpec",

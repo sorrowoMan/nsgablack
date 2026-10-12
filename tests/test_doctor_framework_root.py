@@ -55,6 +55,7 @@ def test_empty_generated_component_shell_is_not_a_case_scaffold(tmp_path) -> Non
 
 
 def test_contract_keys_preserve_canonical_case_and_strict_is_valid(tmp_path) -> None:
+    (tmp_path / "context_keys.json").write_text('["data.X_train"]', encoding="utf-8")
     pipeline = tmp_path / "pipeline"
     pipeline.mkdir()
     (pipeline / "demo.py").write_text(

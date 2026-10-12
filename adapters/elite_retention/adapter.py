@@ -9,6 +9,8 @@ from typing import Any, Dict, Mapping, Sequence
 import numpy as np
 from blackbase.contracts import BatchDisposition
 
+from ..unit_backed import UnitBackedAdapter, UnitField
+from ...representation.structure_builders import ArchiveUnitBuilder
 from ..algorithm_adapter import AlgorithmAdapter, PopulationPartition
 from ..empty_outcome import child_empty_proposal_outcome
 
@@ -31,7 +33,7 @@ class EliteRetentionConfig:
             raise ValueError("mutation_scale must be non-negative")
 
 
-class EliteRetentionAdapter(AlgorithmAdapter):
+class EliteRetentionAdapter(UnitBackedAdapter):
     """Wrap an Adapter and inject elite-derived candidates before evaluation.
 
     The former Plugin implementation evaluated and published replacement rows
@@ -40,12 +42,29 @@ class EliteRetentionAdapter(AlgorithmAdapter):
     ordinary CandidateBatch token, EvaluationEvent, acceptance decision and
     authority Snapshot transaction.
     """
+    unit_builder_type = ArchiveUnitBuilder
+    unit_schema = ArchiveUnitBuilder.unit_type.schema
+    _archive = UnitField("entries")
+
 
     population_state_mode = "delegate"
     state_recovery_level = "L2"
     state_recovery_notes = (
         "Delegates population authority and checkpoints a bounded elite archive."
     )
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = "Delegates context to the inner Adapter; elite archive and RNG remain in explicit Unit/checkpoint state."
+
+    def validate_local_unit_contract(self):
+        self._validate_injection()
+
+    def _validate_injection(self):
+        if (self.config.retention_probability > 0 and self.config.retention_ratio > 0
+                and not self.inner.can_replace_proposals()):
+            raise ValueError(f"EliteRetention cannot replace structurally bound proposals from {self.inner.name}")
 
     def __init__(
         self,
@@ -54,10 +73,11 @@ class EliteRetentionAdapter(AlgorithmAdapter):
         *,
         name: str = "elite_retention",
         priority: int = 0,
+        unit_binding=None,
     ) -> None:
         if not isinstance(inner, AlgorithmAdapter):
             raise TypeError("EliteRetentionAdapter.inner must be an AlgorithmAdapter")
-        super().__init__(name=name, priority=priority)
+        super().__init__(name=name, priority=priority, unit_binding=unit_binding)
         self.inner = inner
         self.config = config or EliteRetentionConfig()
         self._archive: list[dict[str, Any]] = []
@@ -69,6 +89,7 @@ class EliteRetentionAdapter(AlgorithmAdapter):
 
     def _setup_local_state(self, control: Any) -> None:
         """Initialize wrapper-owned state without reinitializing the inner Adapter."""
+        self._validate_injection()
         self._archive = []
         self._rng = self.create_local_rng(solver=control)
 
@@ -76,9 +97,11 @@ class EliteRetentionAdapter(AlgorithmAdapter):
         self.inner.teardown(control)
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[Any]:
+        self._validate_injection()
         proposed = self.coerce_candidates(self.inner.propose(control, context))
         if (
             not proposed
+            or self.config.retention_ratio <= 0
             or not self._archive
             or self._rng.random() >= float(self.config.retention_probability)
         ):
@@ -91,9 +114,8 @@ class EliteRetentionAdapter(AlgorithmAdapter):
         for offset, archive_index in enumerate(np.asarray(selected).reshape(-1)):
             base = copy.deepcopy(self._archive[int(archive_index)]["candidate"])
             mutate = getattr(control, "mutate_candidate", None)
-            repair = getattr(control, "repair_candidate", None)
             if callable(mutate):
-                derived = mutate(base, context)
+                derived = self.inner.mutate_candidate(control, base, context)
             else:
                 arr = np.asarray(base, dtype=float)
                 derived = arr + self._rng.normal(
@@ -101,10 +123,17 @@ class EliteRetentionAdapter(AlgorithmAdapter):
                     float(self.config.mutation_scale),
                     size=arr.shape,
                 )
-            if callable(repair):
-                derived = repair(derived, context)
             proposed[len(proposed) - count + offset] = derived
         return proposed
+
+    def on_proposal_repair(self, control, repair, context):
+        self._forward_proposal_repair(control, repair, context)
+
+    def proposal_repair_children(self, repair, context):
+        return ((self.inner, repair, context),)
+
+    def _proposal_contexts(self, proposed_count, context):
+        return self.inner.get_proposal_contexts(proposed_count, context)
 
     def on_proposal_disposition(
         self,
@@ -157,7 +186,7 @@ class EliteRetentionAdapter(AlgorithmAdapter):
     ) -> Any | None:
         return child_empty_proposal_outcome(self.inner, control, context)
 
-    def get_state(self) -> Dict[str, Any]:
+    def _get_algorithm_state(self) -> Dict[str, Any]:
         return {
             "schema": "nsgablack.elite_retention_state/v1",
             "name": self.name,
@@ -173,7 +202,7 @@ class EliteRetentionAdapter(AlgorithmAdapter):
             "inner": self.inner.get_state(),
         }
 
-    def set_state(self, state: Dict[str, Any]) -> None:
+    def _set_algorithm_state(self, state: Dict[str, Any]) -> None:
         if str(state.get("schema", "")) != "nsgablack.elite_retention_state/v1":
             raise ValueError("unsupported EliteRetentionAdapter state schema")
         if str(state.get("name", self.name)) != self.name:
@@ -199,14 +228,14 @@ class EliteRetentionAdapter(AlgorithmAdapter):
     def step_transaction_children(self) -> Sequence[AlgorithmAdapter]:
         return (self.inner,)
 
-    def snapshot_step_state(self) -> Mapping[str, Any]:
+    def _snapshot_algorithm_step_state(self) -> Mapping[str, Any]:
         return {
             "schema": "nsgablack.elite_retention_step/v1",
             "archive": copy.deepcopy(self._archive),
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
-    def restore_step_state(self, state: Mapping[str, Any]) -> None:
+    def _restore_algorithm_step_state(self, state: Mapping[str, Any]) -> None:
         if str(state.get("schema", "")) != "nsgablack.elite_retention_step/v1":
             raise ValueError("unsupported EliteRetentionAdapter step schema")
         self._archive = copy.deepcopy(list(state.get("archive", ()) or ()))

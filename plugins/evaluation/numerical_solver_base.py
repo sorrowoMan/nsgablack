@@ -7,7 +7,7 @@ import numpy as np
 from scipy import optimize
 
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_METRICS,
     KEY_METRICS_IMPLICIT_ITERS,
     KEY_METRICS_IMPLICIT_RESIDUAL,

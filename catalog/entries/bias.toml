@@ -1,6 +1,58 @@
 # Canonical bias catalog shard.
 
 [[entry]]
+key = "tool.unit_view"
+title = "UnitView"
+kind = "tool"
+import_path = "nsgablack.units:UnitView"
+tags = ["unit", "preference", "identity", "readonly"]
+summary = "按实例路径、Unit 身份和 revision 交付脱离只读视图；PopulationView 提供成员能力。"
+use_when = ["比较结构或让偏好读取明确的算法结构时。"]
+minimal_wiring = ["view = adapter.preference_view(owner_path=('search',))"]
+required_companions = ["Adapter-owned Unit and UnitBinding"]
+config_keys = ["owner_path", "unit_id", "schema", "revision"]
+example_entry = "python -m nsgablack catalog show tool.unit_view"
+
+[[entry]]
+key = "tool.preference_query"
+title = "PreferenceQuery"
+kind = "tool"
+import_path = "nsgablack.bias:PreferenceQuery"
+tags = ["unit", "bias", "comparison", "contract"]
+summary = "显式区分 candidate、candidate_in_unit、unit、unit_transition 四种评价范围。"
+use_when = ["由 Adapter 明确消费候选、结构或结构变化的偏好时。"]
+minimal_wiring = ["from nsgablack.bias import PreferenceQuery", "query = PreferenceQuery('unit', unit=view)"]
+required_companions = ["UnitView for Unit scopes"]
+config_keys = ["scope", "candidate", "candidate_token", "unit", "proposed_unit"]
+example_entry = "python -m nsgablack catalog show tool.preference_query"
+
+[[entry]]
+key = "bias.population_diversity"
+title = "PopulationDiversityPreference"
+kind = "bias"
+import_path = "nsgablack.bias:PopulationDiversityPreference"
+tags = ["unit", "bias", "diversity", "population"]
+summary = "纯评分：候选最近邻新颖性、群体平均最近邻距离及同一 Unit 的变化增益。"
+use_when = ["需要明确群体实例、成员身份和偏好方向时。"]
+minimal_wiring = ["from nsgablack.bias import PopulationDiversityPreference", "score = PopulationDiversityPreference().evaluate(query)"]
+required_companions = ["PopulationView", "PreferenceQuery"]
+config_keys = ["(none)"]
+example_entry = "python -m nsgablack catalog show bias.population_diversity"
+
+[[entry]]
+key = "bias.unit_preference"
+title = "UnitPreferenceBias"
+kind = "bias"
+import_path = "nsgablack.bias:UnitPreferenceBias"
+tags = ["unit", "bias", "binding", "selection"]
+summary = "绑定一个 Adapter 实例的 Unit 视图，将候选相对 Unit 的偏好投影为选择增量。"
+use_when = ["在标准 Case 中装配依赖 Unit 的可选选择偏好时。"]
+minimal_wiring = ["from nsgablack.bias import UnitPreferenceBias, PopulationDiversityPreference", "bias_module.add(UnitPreferenceBias.from_adapter(PopulationDiversityPreference(), adapter, owner_path=('search',)))"]
+required_companions = ["BiasModule", "UnitBackedAdapter", "candidate_in_unit preference"]
+config_keys = ["name", "weight", "owner_path"]
+example_entry = "python -m nsgablack catalog show bias.unit_preference"
+
+[[entry]]
 key = "bias.module"
 title = "BiasModule"
 kind = "bias"
@@ -1008,7 +1060,7 @@ title = "DiversityBias"
 kind = "bias"
 import_path = "nsgablack.bias.algorithmic.diversity:DiversityBias"
 tags = ["algorithmic", "bias", "diversity", "exploration", "niching"]
-summary = "多样性维护。 / Algorithmic bias: diversity maintenance."
+summary = "旧单种群距离奖励（最小化负增量）；新装配推荐显式 UnitPreferenceBias。"
 use_when = [
   "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
 ]
@@ -1132,7 +1184,7 @@ title = "TabuSearchBias"
 kind = "bias"
 import_path = "nsgablack.bias.algorithmic.tabu_search:TabuSearchBias"
 tags = ["bias", "memory", "strategy", "tabu", "algorithmic"]
-summary = "禁忌记忆避免回环。 / Algorithmic bias: tabu memory to avoid cycling."
+summary = "只读禁忌评分；记忆记录已提交步骤中接纳的提案，通过 BiasModule 参与回滚与恢复。"
 use_when = [
   "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
 ]

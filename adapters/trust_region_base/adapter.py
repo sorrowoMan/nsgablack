@@ -10,11 +10,13 @@ from typing import Any, Dict, Optional, Sequence, Tuple, List
 
 import numpy as np
 
+from ..unit_backed import UnitBackedAdapter, UnitField, UnitFeedbackField
+from ...representation.structure_builders import RegionUnitBuilder
 from ..algorithm_adapter import AlgorithmAdapter
-from blackbase.context.context_keys import KEY_BEST_X
+from nsgablack.context_keys import KEY_BEST_X
 
 
-class TrustRegionBaseAdapter(AlgorithmAdapter):
+class TrustRegionBaseAdapter(UnitBackedAdapter):
     """
     Common trust-region behavior:
     - center initialization
@@ -22,6 +24,14 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
     - candidate propose loop
     - state roundtrip
     """
+    accepts_proposal_replacement = True
+    unit_builder_type = RegionUnitBuilder
+    unit_schema = RegionUnitBuilder.unit_type.schema
+    _center = UnitField("center")
+    _best_score = UnitFeedbackField("center")
+    _basis = UnitField("basis")
+    _weights = UnitField("weights")
+
     context_requires = ()
     context_provides = ()
     context_mutates = ()
@@ -37,8 +47,9 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
         name: str,
         priority: int = 0,
         random_seed: Optional[int] = None,
+        unit_binding=None,
     ) -> None:
-        super().__init__(name=name, priority=priority)
+        super().__init__(name=name, priority=priority, unit_binding=unit_binding)
         self.cfg = config
         self._rng = np.random.default_rng(random_seed)
         self._center: Optional[np.ndarray] = None
@@ -69,6 +80,17 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
         self._after_propose(control, context)
         return candidates
 
+    def _repair_within_region(self, candidate: np.ndarray) -> bool:
+        # DFO/MO/nonsmooth sample a box, so radius uses the infinity norm.
+        delta = np.asarray(candidate, dtype=float) - np.asarray(self._center, dtype=float)
+        return bool(np.all(np.isfinite(delta)) and np.max(np.abs(delta), initial=0.0)
+                    <= self._radius + 1e-12 * max(1.0, abs(self._radius)))
+
+    def on_proposal_repair(self, control, repair, context):
+        for row in repair.changed_rows:
+            if self._center is None or not self._repair_within_region(repair.after.numeric_matrix[row]):
+                raise ValueError(f"{self.name}: repair moved candidate outside the trust region")
+
     def update(
         self,
         control: Any,
@@ -89,8 +111,8 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
             or (float(self._best_score) - best_score) > float(getattr(self.cfg, "success_tolerance", 1e-8))
         )
         if improved:
-            self._best_score = best_score
             self._center = np.asarray(candidates[best_idx], dtype=float).copy()
+            self._best_score = best_score
             self._radius = min(
                 float(self._radius) * float(getattr(self.cfg, "radius_expand", 1.5)),
                 float(getattr(self.cfg, "max_radius", 2.0)),
@@ -102,7 +124,7 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
             )
         self._after_update(control, candidates, objectives, violations, context, improved=improved)
 
-    def get_state(self) -> Dict[str, Any]:
+    def _get_algorithm_state(self) -> Dict[str, Any]:
         state: Dict[str, Any] = {
             "center": None if self._center is None else self._center.tolist(),
             "radius": float(self._radius),
@@ -114,7 +136,7 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
             state.update(extra)
         return state
 
-    def set_state(self, state: Dict[str, Any]) -> None:
+    def _set_algorithm_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
         center = state.get("center")
@@ -139,7 +161,7 @@ class TrustRegionBaseAdapter(AlgorithmAdapter):
             try:
                 return np.asarray(pipeline.init({"problem": control.problem}), dtype=float)
             except Exception:
-                pass
+                raise
         low, high = self._extract_bounds(control)
         if low is None or high is None:
             dim = int(getattr(control, "dimension", 1) or 1)

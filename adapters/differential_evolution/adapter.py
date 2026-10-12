@@ -15,8 +15,10 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 from blackbase.contracts import BatchDisposition
 
+from ..unit_backed import UnitBackedAdapter, UnitField
+from ...representation.structure_builders import DifferentialPopulationBuilder
 from ..algorithm_adapter import AlgorithmAdapter
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_ADAPTER_BEST_OBJECTIVES,
     KEY_ADAPTER_BEST_SCORE,
     KEY_ADAPTER_BEST_X,
@@ -40,8 +42,21 @@ class DEConfig:
     objective_aggregation: str = "sum"  # sum / first
 
 
-class DifferentialEvolutionAdapter(AlgorithmAdapter):
+class DifferentialEvolutionAdapter(UnitBackedAdapter):
     """Process-model DE adapter with propose/update contract."""
+    # Trial replacement keeps its target index and pre-proposal comparison
+    # score. No stored displacement or path cost depends on the trial vector.
+    accepts_proposal_replacement = True
+    unit_builder_type = DifferentialPopulationBuilder
+    unit_schema = DifferentialPopulationBuilder.unit_type.schema
+    population = UnitField("population")
+    objectives = UnitField("objectives")
+    violations = UnitField("violations")
+    _population_candidate_tokens = UnitField("candidate_tokens")
+    _last_target_indices = UnitField("target_indices")
+    _last_target_scores = UnitField("target_scores")
+    admission_unit_fields = ("target_indices", "target_scores")
+
 
     context_requires = (KEY_GENERATION,)
     context_provides = (
@@ -67,7 +82,7 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         priority: int = 0,
         **config_kwargs,
     ) -> None:
-        super().__init__(name=name, priority=priority)
+        super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
         self.config = self.resolve_config(
             config=config,
             config_cls=DEConfig,
@@ -86,10 +101,7 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
 
     def setup(self, control: Any) -> None:
         self._rng = self.create_local_rng(control)
-        self.population = None
-        self.objectives = None
-        self.violations = None
-        self._population_candidate_tokens = ()
+        self.reset_unit()
         self._last_target_indices = []
         self._last_target_scores = np.zeros(0, dtype=float)
         self._runtime_projection = {KEY_STRATEGY_ID: str(self.cfg.strategy)}
@@ -108,8 +120,7 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
             target = np.asarray(self.population[idx], dtype=float)
             mutant = self._mutant_vector(idx)
             trial = self._binomial_crossover(target, mutant)
-            repaired = control.repair_candidate(trial, context)
-            out.append(np.asarray(repaired, dtype=float))
+            out.append(np.asarray(trial, dtype=float))
 
         self._last_target_indices = target_indices
         if target_scores.shape[0] == n:
@@ -133,6 +144,8 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         cand = np.asarray(candidates, dtype=float)
         obj = np.asarray(objectives, dtype=float)
         vio = np.asarray(violations, dtype=float).reshape(-1)
+        if obj.ndim == 1:
+            obj = obj.reshape(-1, 1)
         cand_scores = self._scores(obj, vio)
         candidate_tokens = self.candidate_tokens_for(control, candidates)
 
@@ -147,27 +160,28 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         if self.objectives is None or self.violations is None:
             n = int(self.population.shape[0])
             m = int(obj.shape[1]) if obj.ndim == 2 else 1
-            self.objectives = np.full((n, m), np.inf, dtype=float)
-            self.violations = np.full(n, np.inf, dtype=float)
+            self.algorithm_unit.attach_feedback(np.full((n, m), np.inf, dtype=float),
+                                                np.full(n, np.inf, dtype=float))
 
         if len(self._last_target_indices) != candidate_count:
             raise ValueError("DE feedback must align with pending target indices")
         if len(self._last_target_scores) != candidate_count:
             raise ValueError("DE feedback must align with pending target scores")
 
+        self.algorithm_unit.require_current_feedback()
+        accepted = []
         for j, target_idx in enumerate(self._last_target_indices):
-            if target_idx >= self.population.shape[0]:
+            if target_idx < 0 or target_idx >= self.population.shape[0]:
                 raise ValueError(f"DE target index {target_idx} is outside the population")
             target_score = float(self._last_target_scores[j])
             if float(cand_scores[j]) <= target_score:
-                self.population[target_idx] = cand[j]
-                self.objectives[target_idx] = obj[j]
-                self.violations[target_idx] = vio[j]
-                tokens = list(self._population_candidate_tokens)
-                if len(tokens) != int(self.population.shape[0]):
-                    tokens = [None] * int(self.population.shape[0])
-                tokens[target_idx] = candidate_tokens[j]
-                self._population_candidate_tokens = tuple(tokens)
+                accepted.append(j)
+        if accepted:
+            self.algorithm_unit.replace_evaluated_rows(
+                [self._last_target_indices[j] for j in accepted],
+                cand[accepted], obj[accepted], vio[accepted],
+                candidate_tokens=tuple(candidate_tokens[j] for j in accepted),
+            )
         self._sync_runtime_projection(context)
 
     def on_proposal_disposition(
@@ -205,11 +219,10 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
             and np.array_equal(self.population, pop, equal_nan=True)
             and len(self._population_candidate_tokens) == int(pop.shape[0])
         )
-        self.population = pop.copy()
-        self.objectives = obj.copy()
-        self.violations = vio.copy()
-        if not preserve_tokens:
-            self._population_candidate_tokens = (None,) * int(pop.shape[0])
+        if preserve_tokens:
+            self.algorithm_unit.attach_feedback(obj, vio)
+        else:
+            self.algorithm_unit.initialize_population(pop, obj, vio)
         self._sync_runtime_projection({})
         return True
 
@@ -249,7 +262,7 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         source = f"adapter.{self.__class__.__name__}"
         return {k: source for k in self._runtime_projection.keys()}
 
-    def get_state(self) -> Dict[str, Any]:
+    def _get_algorithm_state(self) -> Dict[str, Any]:
         return {
             "population": None if self.population is None else self.population.tolist(),
             "objectives": None if self.objectives is None else self.objectives.tolist(),
@@ -261,16 +274,20 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
-    def set_state(self, state: Dict[str, Any]) -> None:
+    def _set_algorithm_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
         pop = state.get("population")
         obj = state.get("objectives")
         vio = state.get("violations")
-        self.population = None if pop is None else np.asarray(pop, dtype=float)
-        self.objectives = None if obj is None else np.asarray(obj, dtype=float)
-        self.violations = None if vio is None else np.asarray(vio, dtype=float).reshape(-1)
-        self._population_candidate_tokens = tuple(state.get("candidate_tokens", ()) or ())
+        if state.get("algorithm_unit") is None:
+            self._last_target_indices = []
+            self._last_target_scores = np.zeros(0)
+            if pop is None:
+                self.algorithm_unit.clear_population()
+            else:
+                self.algorithm_unit.initialize_population(pop, obj, vio,
+                    candidate_tokens=tuple(state.get("candidate_tokens", ()) or ()))
         if self.population is not None and len(self._population_candidate_tokens) not in {
             0,
             int(self.population.shape[0]),
@@ -290,6 +307,10 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         rng_state = state.get("rng_state")
         if isinstance(rng_state, dict):
             self._rng.bit_generator.state = copy.deepcopy(rng_state)
+        if state.get("algorithm_unit") is None:
+            self._sync_runtime_projection({})
+
+    def _after_unit_restore(self):
         self._sync_runtime_projection({})
 
     def _ensure_population(self, control: Any, context: Dict[str, Any]) -> None:
@@ -322,33 +343,29 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         if pop is not None:
             pop_arr = np.asarray(pop, dtype=float)
             if pop_arr.ndim == 2 and pop_arr.shape[0] > 0:
-                self.population = pop_arr.copy()
                 batch_getter = getattr(control, "get_candidate_population_batch", None)
                 batch = batch_getter() if callable(batch_getter) else None
                 if (
                     batch is not None
-                    and batch.numeric_matrix.shape == self.population.shape
+                    and batch.numeric_matrix.shape == pop_arr.shape
                     and np.array_equal(
                         batch.numeric_matrix,
-                        self.population,
+                        pop_arr,
                         equal_nan=True,
                     )
                 ):
-                    self._population_candidate_tokens = tuple(batch.candidate_tokens)
+                    tokens = tuple(batch.candidate_tokens)
                 else:
-                    self._population_candidate_tokens = (None,) * int(pop_arr.shape[0])
-                if obj is not None and vio is not None:
-                    self.objectives = np.asarray(obj, dtype=float).copy()
-                    self.violations = np.asarray(vio, dtype=float).reshape(-1).copy()
+                    tokens = (None,) * int(pop_arr.shape[0])
+                self.algorithm_unit.initialize_population(pop_arr, obj, vio, candidate_tokens=tokens)
+                self.rebuild_unit("initialize", context=context)
                 self._sync_runtime_projection(context)
                 return
 
         init_n = max(2, int(self.cfg.population_size))
         created = [control.init_candidate(context) for _ in range(init_n)]
-        self._population_candidate_tokens = self.candidate_tokens_for(control, created)
-        self.population = np.asarray(created, dtype=float)
-        self.objectives = None
-        self.violations = None
+        self.algorithm_unit.initialize_population(created, candidate_tokens=self.candidate_tokens_for(control, created))
+        self.rebuild_unit("initialize", context=context)
         self._sync_runtime_projection(context)
 
     def _population_scores(self) -> np.ndarray:
@@ -356,6 +373,7 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
             if self.population is None:
                 return np.zeros(0, dtype=float)
             return np.full(self.population.shape[0], np.inf, dtype=float)
+        self.algorithm_unit.require_current_feedback()
         return self._scores(self.objectives, self.violations)
 
     def _mutant_vector(self, target_index: int) -> np.ndarray:
@@ -399,7 +417,7 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         _ = context
         projection: Dict[str, Any] = {KEY_STRATEGY_ID: str(self.cfg.strategy)}
         if self.population is not None and self.objectives is not None and self.violations is not None and self.population.shape[0] > 0:
-            scores = self._scores(self.objectives, self.violations)
+            scores = self._population_scores()
             best_idx = int(np.argmin(scores))
             projection[KEY_ADAPTER_BEST_SCORE] = float(scores[best_idx])
             projection[KEY_ADAPTER_BEST_X] = np.asarray(

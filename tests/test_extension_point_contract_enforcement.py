@@ -5,7 +5,7 @@ Verifies that:
 1. Every adapter exported from adapters/__all__ declares the four core
    context contract fields: context_requires, context_provides,
    context_mutates, context_cache.
-2. Every plugin class in plugins/*.py base-declares the four fields
+2. Every plugin class in plugins/**/*.py base-declares the four fields
    (either on the class or inherited from Plugin base).
 3. verify_component_contract() correctly detects missing fields.
 4. verify_solver_contracts() correctly walks a solver component tree.
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import inspect
 from pathlib import Path
 from typing import Any, List, Type
 
@@ -41,7 +42,7 @@ def _make(cls: Type[Any]) -> Any:
         "RoleAdapter", "RoleRouterAdapter",
         "AsyncEventDrivenAdapter",
     }
-    if cls.__name__ in _SKIP_INSTANTIATE:
+    if inspect.isabstract(cls) or cls.__name__ in _SKIP_INSTANTIATE:
         return None  # caller must handle None
 
     try:
@@ -111,20 +112,19 @@ def test_plugin_base_declares_core_contract_fields():
 
 
 def _iter_plugin_classes_from_files():
-    """AST-scan plugins/*.py (non-base, non-__init__) for *Plugin class definitions."""
+    """Discover the actual Plugin package tree, including nested capability layers."""
     root = Path(__file__).resolve().parents[1] / "plugins"
     classes = []
-    for py_file in sorted(root.glob("*.py")):
+    for py_file in sorted(root.rglob("*.py")):
         if py_file.name in ("__init__.py", "base.py"):
             continue
-        try:
-            tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
-        except SyntaxError:
-            continue
+        tree = ast.parse(py_file.read_text(encoding="utf-8-sig"), filename=str(py_file))
         for node in tree.body:
             if isinstance(node, ast.ClassDef) and node.name.endswith("Plugin"):
                 if not node.name.startswith("_"):
-                    classes.append((py_file.stem, node.name))
+                    module = ".".join(py_file.relative_to(root).with_suffix("").parts)
+                    classes.append((module, node.name))
+    assert classes, "Plugin discovery found no concrete classes; check the package layout"
     return classes
 
 
@@ -132,11 +132,8 @@ def _iter_plugin_classes_from_files():
                          ids=[f"{m}.{c}" for m, c in _iter_plugin_classes_from_files()])
 def test_plugin_inherits_core_contract_fields(module_stem, cls_name):
     """Concrete plugin classes must inherit (or override) all four core fields."""
-    try:
-        mod = importlib.import_module(f"nsgablack.plugins.{module_stem}")
-        cls = getattr(mod, cls_name)
-    except (ImportError, AttributeError):
-        pytest.skip(f"Cannot import nsgablack.plugins.{module_stem}.{cls_name}")
+    mod = importlib.import_module(f"nsgablack.plugins.{module_stem}")
+    cls = getattr(mod, cls_name)
 
     for field in _CORE_FIELDS:
         assert hasattr(cls, field), (

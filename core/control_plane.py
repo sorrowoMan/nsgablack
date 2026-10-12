@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Tuple
 
+from blackbase.participation import ParticipationContract, require_participation
+
 from blackbase.plugin import (
     ATTEMPT_START,
     GENERATION_END,
@@ -53,6 +55,7 @@ class ControlDecision:
 class BaseController(ABC):
     """Abstract controller for L3 runtime control decisions."""
 
+    participation = ParticipationContract(decides=("control",))
     domain: str = "generic"
     slots: Tuple[str, ...] = (GENERATION_END,)
     owns_domains: Tuple[str, ...] = ()
@@ -140,7 +143,7 @@ class ControlArbiter:
                     for k, v in payload.items():
                         try:
                             fv = float(v)
-                        except Exception:
+                        except (TypeError, ValueError, OverflowError):
                             continue
                         mins[k] = fv if k not in mins else min(mins[k], fv)
                 if mins:
@@ -169,6 +172,7 @@ class RuntimeController:
         self._arbiter = arbiter or ControlArbiter(strict=True)
 
     def register_controller(self, controller: BaseController) -> None:
+        require_participation(controller, "control", "decide")
         if any(c.name == controller.name for c in self._controllers):
             raise ValueError(f"Controller '{controller.name}' already registered")
         controller.slots = tuple(
@@ -200,7 +204,10 @@ class RuntimeController:
             if slot not in set(str(s) for s in c.slots):
                 continue
             try:
+                require_participation(c, "control", "decide")
                 d = c.propose(solver, slot, context)
+                if d is not None and str(d.domain) not in set(c.owns_domains):
+                    raise ValueError(f"Controller {c.name} wrote undeclared domain {d.domain}")
             except BaseException as exc:
                 errors.append((str(c.name), exc))
                 continue

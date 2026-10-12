@@ -7,10 +7,10 @@ from typing import Any, Dict, Sequence
 
 import numpy as np
 
-from nsgablack.adapters.algorithm_adapter import AlgorithmAdapter
+from nsgablack.adapters.candidate_proposer import CandidateProposerAdapter
 
 
-class ExampleAdapter(AlgorithmAdapter):
+class ExampleAdapter(CandidateProposerAdapter):
     """Minimal AlgorithmAdapter example for registry integration."""
 
     context_requires = ()
@@ -19,8 +19,8 @@ class ExampleAdapter(AlgorithmAdapter):
     context_cache = ()
     context_notes = ("Example adapter: generates random candidates.",)
 
-    def __init__(self, alpha: float = 0.8, beta: float = 0.1) -> None:
-        super().__init__(name="example_adapter")
+    def __init__(self, alpha: float = 0.8, beta: float = 0.1, *, unit_binding=None) -> None:
+        super().__init__(name="example_adapter", unit_binding=unit_binding)
         self.alpha = float(alpha)
         self.beta = float(beta)
 
@@ -32,7 +32,7 @@ class ExampleAdapter(AlgorithmAdapter):
         out = []
         for _ in range(size):
             out.append(rng.uniform(-1.0, 1.0, size=(dim,)))
-        return out
+        return self.build_candidate_units(out, context)
 
     def update(
         self,

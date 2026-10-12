@@ -1,0 +1,3 @@
+name = symbolic_beam
+kind = solver
+framework = nsgablack

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass, replace
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -428,20 +429,21 @@ def _uses_examples_path(text: str) -> bool:
 
 
 def _apply_catalog_profile(entries: Sequence[CatalogEntry], profile: str) -> List[CatalogEntry]:
-    normalized = _normalize_catalog_profile(profile)
-    if normalized != "framework-core":
-        return list(entries)
+    return [filtered for entry in entries
+            if (filtered := apply_catalog_profile_entry(entry, profile=profile)) is not None]
 
-    out: List[CatalogEntry] = []
-    for entry in entries:
-        if entry.kind in {"example", "doc"}:
-            continue
-        if _uses_examples_path(entry.import_path):
-            continue
-        if _uses_examples_path(entry.example_entry):
-            entry = replace(entry, example_entry="")
-        out.append(entry)
-    return out
+
+def apply_catalog_profile_entry(entry: CatalogEntry, *, profile: str) -> Optional[CatalogEntry]:
+    """The sole profile policy for source, MySQL and PostgreSQL entries.
+
+    SQL predicates are only a query optimization. Every hydrated entry passes
+    this policy, which preserves all unrelated fields, including future ones.
+    """
+    if _normalize_catalog_profile(profile) != "framework-core":
+        return entry
+    if entry.kind in {"example", "doc"} or _uses_examples_path(entry.import_path):
+        return None
+    return replace(entry, example_entry="") if _uses_examples_path(entry.example_entry) else entry
 
 
 def _load_entrypoint_entries() -> List[CatalogEntry]:
@@ -457,13 +459,14 @@ def _load_entrypoint_entries() -> List[CatalogEntry]:
     """
     try:
         from importlib.metadata import entry_points  # py>=3.10
-    except Exception:  # pragma: no cover
+    except ImportError:
         return []
 
     out: List[CatalogEntry] = []
     try:
         eps = entry_points(group="nsgablack.catalog")
-    except Exception:  # pragma: no cover
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_load_entrypoint_entries.fallback_103', exc=_fallback_error)
         return []
 
     for ep in eps:
@@ -475,7 +478,8 @@ def _load_entrypoint_entries() -> List[CatalogEntry]:
                 out.append(obj)
             elif isinstance(obj, (list, tuple)):
                 out.extend([x for x in obj if isinstance(x, CatalogEntry)])
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='_load_entrypoint_entries.fallback_104', exc=_fallback_error)
             continue
     return out
 

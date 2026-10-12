@@ -7,6 +7,7 @@ Use cases:
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
@@ -24,7 +25,7 @@ from ..algorithm_adapter import (
 )
 from ..runtime_projection import aggregate_adapter_runtime_projections
 from ..empty_outcome import child_empty_proposal_outcome
-from blackbase.context.context_keys import KEY_PHASE, KEY_STRATEGY, KEY_STRATEGY_ID
+from nsgablack.context_keys import KEY_PHASE, KEY_STRATEGY, KEY_STRATEGY_ID
 
 
 PhaseAdapter = Union[AlgorithmAdapter, Callable[[], AlgorithmAdapter], Callable[[int], AlgorithmAdapter]]
@@ -54,6 +55,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
 
     Each phase is a single child adapter (which can itself be a multi-strategy controller).
     """
+    unit_contract_mode = "delegated"
 
     context_requires = ("generation",)
     context_provides = (KEY_PHASE, KEY_STRATEGY, KEY_STRATEGY_ID)
@@ -89,6 +91,11 @@ class StrategyChainAdapter(AlgorithmAdapter):
         self._step_in_phase: int = 0
         self._population_owner_idx: int | None = None
         self._last_projection_writers: Dict[str, str] = {}
+        self._pending_phase_retirements: list[int] = []
+        self._phase_cleanup_control = None
+        # Process-local acknowledgements. setup recreates child resources, so
+        # these must not be replayed from a checkpoint as if resources stayed closed.
+        self._retired_in_process: set[int] = set()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -100,6 +107,9 @@ class StrategyChainAdapter(AlgorithmAdapter):
         self._step_in_phase = 0
         self._population_owner_idx = None
         self._last_projection_writers = {}
+        self._pending_phase_retirements = []
+        self._phase_cleanup_control = control
+        self._retired_in_process = set()
         # Every child that can receive checkpoint state must first establish
         # its clean baseline.  Restore is applied to the chain only after this
         # method returns, so lazily setting up a later restored phase would
@@ -108,11 +118,25 @@ class StrategyChainAdapter(AlgorithmAdapter):
             adapter.setup(control)
 
     def teardown(self, control: Any) -> None:
-        for adapter in self._adapters:
+        failures = []
+        for index, adapter in enumerate(self._adapters):
+            if index in self._retired_in_process:
+                continue
             try:
                 adapter.teardown(control)
-            except Exception:
-                continue
+            except BaseException as exc:
+                failures.append((str(adapter.name), exc))
+            else:
+                self._retired_in_process.add(index)
+                if index in self._pending_phase_retirements:
+                    self._pending_phase_retirements.remove(index)
+        if failures:
+            primary = failures[0][1]
+            evidence = tuple({"participant": name, "error_type": type(exc).__name__,
+                              "message": str(exc)} for name, exc in failures)
+            from blackbase.project import attach_failure_evidence
+            attach_failure_evidence(primary, "serial_adapter_teardown", evidence)
+            raise primary
 
     # ------------------------------------------------------------------
     # Propose/Update
@@ -156,22 +180,26 @@ class StrategyChainAdapter(AlgorithmAdapter):
         # Provide commonly-needed runtime fields for advance_when.
         try:
             ctx.setdefault("generation", int(getattr(control, "generation", 0)))
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='StrategyChainAdapter.update.fallback_25', exc=_fallback_error)
             pass
         try:
             if "best_objective" not in ctx:
                 ctx["best_objective"] = getattr(control, "best_objective", None)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='StrategyChainAdapter.update.fallback_26', exc=_fallback_error)
             pass
         try:
             if "best_x" not in ctx:
                 ctx["best_x"] = getattr(control, "best_x", None)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='StrategyChainAdapter.update.fallback_27', exc=_fallback_error)
             pass
         try:
             if "evaluation_count" not in ctx:
                 ctx["evaluation_count"] = getattr(control, "evaluation_count", None)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='StrategyChainAdapter.update.fallback_28', exc=_fallback_error)
             pass
         ctx[KEY_PHASE] = self._current_phase_name()
         ctx[KEY_STRATEGY] = adapter.name
@@ -183,6 +211,50 @@ class StrategyChainAdapter(AlgorithmAdapter):
         self._step_in_phase += 1
         if self._should_advance(ctx):
             self._advance_phase(control)
+
+    def on_proposal_repair(self, control, repair, context):
+        self._forward_proposal_repair(control, repair, context)
+
+    def proposal_repair_children(self, repair, context):
+        adapter = self._current_adapter()
+        if adapter is None:
+            raise RuntimeError("proposal repair requires an active serial phase")
+        ctx = dict(context)
+        ctx[KEY_PHASE] = self._current_phase_name()
+        ctx[KEY_STRATEGY] = adapter.name
+        ctx[KEY_STRATEGY_ID] = int(self._current_idx)
+        return ((adapter, repair, ctx),)
+
+    def plan_repair_rejection_advance(self, control, report, owner_path):
+        adapter = self._current_adapter()
+        if adapter is None:
+            return None
+        path = f"{owner_path}/{self._current_idx}:{adapter.name}"
+        if not any(row["owner_path"] == path or row["owner_path"].startswith(path + "/")
+                   for row in report.get("failures", ())):
+            return None
+        child_plan = adapter.plan_repair_rejection_advance(control, report, path)
+        if child_plan:
+            return child_plan
+        if self._current_idx + 1 >= len(self._adapters):
+            return None
+        expected = self._current_idx
+        def apply():
+            if self._current_idx != expected:
+                raise RuntimeError("serial phase changed after repair advance planning")
+            # Advancing a rejected attempt does not change the last population owner.
+            if self._population_owner_idx is None:
+                self._population_owner_idx = self._current_idx
+            self._advance_phase(control)
+        return (apply,)
+
+    def _proposal_contexts(self, proposed_count, context):
+        adapter = self._current_adapter()
+        if adapter is None:
+            raise RuntimeError("proposal contexts require an active serial phase")
+        ctx = dict(context)
+        ctx[KEY_PHASE], ctx[KEY_STRATEGY], ctx[KEY_STRATEGY_ID] = self._current_phase_name(), adapter.name, int(self._current_idx)
+        return adapter.get_proposal_contexts(proposed_count, ctx)
 
     def on_proposal_disposition(
         self,
@@ -210,6 +282,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
             "phase_steps": list(self._phase_steps),
             "phase_names": [p.name for p in self.phases],
             "population_owner_idx": self._population_owner_idx,
+            "pending_phase_retirements": list(self._pending_phase_retirements),
             "adapters": [],
         }
         for adapter in self._adapters:
@@ -245,6 +318,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
         if owner is not None and not 0 <= owner < len(self._adapters):
             raise ValueError("StrategyChainAdapter population owner is out of range")
         self._population_owner_idx = owner
+        self._restore_phase_retirements(state)
         adapter_states = tuple(state.get("adapters", ()) or ())
         if len(adapter_states) != len(self._adapters):
             raise ValueError("StrategyChainAdapter child state count mismatch")
@@ -267,6 +341,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
             "step_in_phase": int(self._step_in_phase),
             "phase_steps": list(self._phase_steps),
             "population_owner_idx": self._population_owner_idx,
+            "pending_phase_retirements": list(self._pending_phase_retirements),
             "projection_writers": dict(self._last_projection_writers),
         }
 
@@ -290,6 +365,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
         self._step_in_phase = int(state.get("step_in_phase", 0))
         self._phase_steps = phase_steps
         self._population_owner_idx = owner
+        self._restore_phase_retirements(state)
         self._last_projection_writers = {
             str(key): str(value)
             for key, value in dict(state.get("projection_writers", {}) or {}).items()
@@ -492,7 +568,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
                 if bool(cond(dict(ctx))):
                     return True
             except Exception:
-                pass
+                raise
         steps = int(self._phase_steps[idx]) if idx < len(self._phase_steps) else int(self.phases[idx].steps)
         if steps < 0:
             return False
@@ -510,9 +586,36 @@ class StrategyChainAdapter(AlgorithmAdapter):
         if next_idx == old_idx:
             self._step_in_phase = 0
             return
-        try:
-            self._adapters[old_idx].teardown(control)
-        except Exception:
-            pass
+        # Retirement is cleanup after the schedule decision commits. Rollback
+        # must never pretend it can reopen a torn-down Provider/session.
+        self._phase_cleanup_control = control
+        if old_idx not in self._pending_phase_retirements:
+            self._pending_phase_retirements.append(old_idx)
         self._current_idx = next_idx
         self._step_in_phase = 0
+
+    def _restore_phase_retirements(self, state):
+        pending = list(state.get("pending_phase_retirements", ()))
+        if (len(set(pending)) != len(pending)
+                or any(type(index) is not int or not 0 <= index < len(self._adapters) for index in pending)):
+            raise ValueError("invalid pending serial phase retirement indices")
+        self._pending_phase_retirements = pending
+
+    def commit_step_state(self, state):
+        failures = []
+        for index in tuple(self._pending_phase_retirements):
+            try:
+                self._adapters[index].teardown(self._phase_cleanup_control)
+            except BaseException as exc:
+                failures.append((index, exc))
+            else:
+                self._pending_phase_retirements.remove(index)
+                self._retired_in_process.add(index)
+        if failures:
+            from blackbase.project import attach_failure_evidence
+            error = RuntimeError("serial phase retirement cleanup failed; schedule remains applied")
+            attach_failure_evidence(error, "serial_phase_retirement", tuple(
+                {"phase_index": index, "error_type": type(exc).__name__, "message": str(exc)}
+                for index, exc in failures))
+            raise error from failures[0][1]
+        return None

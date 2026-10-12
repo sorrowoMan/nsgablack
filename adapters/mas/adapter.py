@@ -3,6 +3,7 @@ Model-and-Search (MAS) adapter: alternates model update and search steps.
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import copy
 from dataclasses import dataclass
@@ -10,8 +11,10 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
+from ..unit_backed import UnitBackedAdapter, UnitField
+from ...representation.structure_builders import ModelSearchUnitBuilder
 from ..algorithm_adapter import AlgorithmAdapter
-from blackbase.context.context_keys import KEY_BEST_X
+from nsgablack.context_keys import KEY_BEST_X
 from ...utils.surrogate.vector_surrogate import VectorSurrogate
 
 
@@ -27,12 +30,20 @@ class MASConfig:
     surrogate_retrain_every_call: bool = True
 
 
-class MASAdapter(AlgorithmAdapter):
+class MASAdapter(UnitBackedAdapter):
     """
     MAS adapter (model-and-search).
 
     This adapter maintains an optional internal surrogate model for exploitation.
     """
+    unit_builder_methods = ("create_model",)
+    accepts_proposal_replacement = True
+    unit_builder_type = ModelSearchUnitBuilder
+    unit_schema = ModelSearchUnitBuilder.unit_type.schema
+    _center = UnitField("center")
+    _X = UnitField("history_x")
+    _Y = UnitField("history_y")
+
     context_requires = ("generation",)
     context_provides = ()
     context_mutates = ()
@@ -48,7 +59,7 @@ class MASAdapter(AlgorithmAdapter):
         priority: int = 0,
         **config_kwargs,
     ) -> None:
-        super().__init__(name=name, priority=priority)
+        super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
         self.config = self.resolve_config(
             config=config,
             config_cls=MASConfig,
@@ -130,7 +141,7 @@ class MASAdapter(AlgorithmAdapter):
             try:
                 return np.asarray(pipeline.init({"problem": control.problem}), dtype=float)
             except Exception:
-                pass
+                raise
         low, high = self._extract_bounds(control)
         if low is None or high is None:
             dim = int(getattr(control, "dimension", 1) or 1)
@@ -155,7 +166,7 @@ class MASAdapter(AlgorithmAdapter):
             return x
         return np.minimum(np.maximum(x, low), high)
 
-    def get_state(self) -> Dict[str, Any]:
+    def _get_algorithm_state(self) -> Dict[str, Any]:
         return {
             "center": None if self._center is None else self._center.tolist(),
             "history_x": [np.asarray(row, dtype=float).tolist() for row in self._X],
@@ -165,7 +176,7 @@ class MASAdapter(AlgorithmAdapter):
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
-    def set_state(self, state: Dict[str, Any]) -> None:
+    def _set_algorithm_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
         center = state.get("center")
@@ -188,7 +199,7 @@ class MASAdapter(AlgorithmAdapter):
             fitted=bool(state.get("surrogate_fitted", False)),
         )
 
-    def snapshot_step_state(self) -> Mapping[str, Any]:
+    def _snapshot_algorithm_step_state(self) -> Mapping[str, Any]:
         return {
             "schema": "nsgablack.mas_step_transaction/v1",
             "center": None if self._center is None else np.array(self._center, copy=True),
@@ -207,7 +218,7 @@ class MASAdapter(AlgorithmAdapter):
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
-    def restore_step_state(self, state: Mapping[str, Any]) -> None:
+    def _restore_algorithm_step_state(self, state: Mapping[str, Any]) -> None:
         if str(state.get("schema", "")) != "nsgablack.mas_step_transaction/v1":
             raise ValueError("unsupported MASAdapter step transaction schema")
         center = state.get("center")
@@ -283,7 +294,8 @@ class MASAdapter(AlgorithmAdapter):
                 n_obj = int(obj.shape[1])
         if n_obj is None:
             n_obj = int(getattr(control, "num_objectives", 1) or 1)
-        self._surrogate = VectorSurrogate(num_objectives=int(n_obj), model_type=self.cfg.surrogate_model_type)
+        self._surrogate = self.unit_binding.builder.create_model(
+            num_objectives=int(n_obj), model_type=self.cfg.surrogate_model_type)
 
     def _update_surrogate(self, candidates: Sequence[np.ndarray], objectives: np.ndarray) -> None:
         if not bool(self.cfg.enable_surrogate):
@@ -314,6 +326,7 @@ class MASAdapter(AlgorithmAdapter):
             Y_arr = np.asarray(self._Y, dtype=float)
             try:
                 self._surrogate.fit(X_arr, Y_arr)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MASAdapter._update_surrogate.fallback_10', exc=_fallback_error)
                 return None
         return None

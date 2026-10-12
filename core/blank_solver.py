@@ -6,6 +6,7 @@ enforcing any specific optimization loop.
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import copy
 import hashlib
@@ -126,7 +127,7 @@ from .solver_helpers import (
     validate_evaluation_event_snapshot,
     validate_population_snapshot_v2,
 )
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_BEST_CANDIDATE_REF,
     KEY_BEST_OBJECTIVE,
     KEY_BEST_X,
@@ -177,6 +178,14 @@ class _IncumbentCommit:
     revision: int
 
 
+from .semantic_extension import SolverSemanticExtension, CommittedStepError
+from blackbase.runtime import OwnedField, FinalizationHooks, AuthorityRegistry
+from blackbase.representation import representation_capabilities
+from .state.population_authority import PopulationAuthority, IncumbentParticipant
+from .state.run import RunSession
+from .evidence_semantics import PopulationEvidenceSemantics
+
+
 class SolverBase:
     """
     A minimal solver base that keeps the framework contracts intact.
@@ -185,6 +194,43 @@ class SolverBase:
     - Optional bias_module and representation_pipeline.
     - No built-in optimization loop (step() is user/plugin defined).
     """
+
+    population = OwnedField("population_authority", "population")
+    objectives = OwnedField("population_authority", "objectives")
+    constraint_violations = OwnedField("population_authority", "violations")
+    _candidate_population_batch = OwnedField("population_authority", "candidate_batch")
+    _candidate_population_provenance = OwnedField("population_authority", "candidate_provenance")
+    _active_candidate_provenance = OwnedField("population_authority", "active_provenance")
+    _candidate_population_partitions = OwnedField("population_authority", "partitions")
+    population_authority_mode = OwnedField("population_authority", "mode")
+    _latest_snapshot_handle = OwnedField("population_authority", "snapshot_handle")
+    _snapshot_generation = OwnedField("population_authority", "snapshot_generation")
+    _active_candidate_population_ref = OwnedField("population_authority", "active_population_ref")
+    _snapshot_step_transaction = OwnedField("population_authority", "snapshot_transaction")
+
+    _active_run_id = OwnedField("run_session", "run_id")
+    _run_sequence = OwnedField("run_session", "sequence")
+    generation = OwnedField("run_session", "generation")
+    running = OwnedField("run_session", "running")
+    stop_requested = OwnedField("run_session", "stop_requested")
+    stop_reason = OwnedField("run_session", "stop_reason")
+    _runtime_setup_complete = OwnedField("run_session", "setup_complete")
+    _restore_collection_active = OwnedField("run_session", "collecting_restore")
+    _restore_apply_active = OwnedField("run_session", "applying_restore")
+    _restore_transaction_lock = OwnedField("run_session", "restore_lock")
+    _pending_restore_envelopes = OwnedField("run_session", "pending_restore")
+    _resume_loaded = OwnedField("run_session", "resume_loaded")
+    _resume_cursor = OwnedField("run_session", "resume_cursor")
+    _run_progress_steps = OwnedField("run_session", "steps")
+    _run_progress_attempts = OwnedField("run_session", "attempts")
+    _run_progress_consecutive_idle_attempts = OwnedField("run_session", "idle_attempts")
+    _run_progress_elapsed_seconds = OwnedField("run_session", "elapsed")
+    _run_progress_clock_started_at = OwnedField("run_session", "clock_started")
+    _run_progress_deadline_remaining_seconds = OwnedField("run_session", "deadline_remaining")
+    last_result = OwnedField("run_session", "result")
+    last_step_outcome = OwnedField("run_session", "last_step_outcome")
+    _post_teardown_finalization_active = OwnedField("run_session", "finalizing")
+    _evaluation_budget = OwnedField("run_session", "evaluation_budget")
 
     def __init__(
         self,
@@ -231,6 +277,15 @@ class SolverBase:
     ) -> None:
         # Project the shared config (if supplied) into local store settings.
         # rest of __init__ continues to read them by their original names.
+        self.run_session = RunSession()
+        self.population_authority = PopulationAuthority()
+        from .state.bias_state import BiasStateParticipant
+        self._state_participants = [self.population_authority, IncumbentParticipant(self), BiasStateParticipant(self)]
+        self.authorities = AuthorityRegistry()
+        self.authorities.register("population", self.population_authority)
+        self.authorities.register("incumbent", self._state_participants[1])
+        self.authorities.register("progress", self.run_session, rollback_exempt_reason=self.run_session.rollback_exempt_reason)
+        self.authorities.register("result", self.run_session, rollback_exempt_reason=self.run_session.rollback_exempt_reason)
         if storage_config is not None:
             _sc = storage_config.as_dict()
             context_store_backend = _sc.get("context_store_backend", context_store_backend)
@@ -290,6 +345,8 @@ class SolverBase:
         # If True, constraint violations will be ignored (set to 0) when bias is enabled.
         # Use only when constraints are fully handled by representation repair and/or bias penalties.
         self.ignore_constraint_violation_when_bias = bool(ignore_constraint_violation_when_bias)
+        self.semantic_extensions: list[SolverSemanticExtension] = []
+        self.finalization_hooks = FinalizationHooks()
 
         self._representation_internal: Optional[RepresentationInterface] = None
         self.representation_pipeline = representation_pipeline
@@ -465,10 +522,11 @@ class SolverBase:
         self.evaluation_evidence_journal: EvaluationEvidenceJournal = (
             self._build_evaluation_evidence_journal()
         )
+        self.evaluation_evidence_semantics = PopulationEvidenceSemantics(self.snapshot_store, self.authority_store)
         self.evaluation_evidence_coordinator = EvaluationEvidenceCoordinator(
             self.evaluation_evidence_journal,
             self.snapshot_store,
-            semantics=self,
+            semantics=self.evaluation_evidence_semantics,
         )
         self._latest_snapshot_handle = None
         self._latest_authority_identity: AuthorityIdentity | None = None
@@ -561,10 +619,11 @@ class SolverBase:
         self.snapshot_store = store
         self.authority_store = authority_store
         self.evaluation_evidence_journal = evaluation_evidence_journal
+        self.evaluation_evidence_semantics = PopulationEvidenceSemantics(self.snapshot_store, self.authority_store)
         self.evaluation_evidence_coordinator = EvaluationEvidenceCoordinator(
             self.evaluation_evidence_journal,
             self.snapshot_store,
-            semantics=self,
+            semantics=self.evaluation_evidence_semantics,
         )
         self._latest_authority_identity = None
 
@@ -685,7 +744,8 @@ class SolverBase:
                     set_value(key, None)
                 elif isinstance(store, dict):
                     store.pop(key, None)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='SolverBase._clear_run_context_refs.fallback_154', exc=_fallback_error)
                 continue
 
     def prepare_fresh_run(self) -> None:
@@ -764,6 +824,11 @@ class SolverBase:
             self.result_quality_degraded = False
         if hasattr(self, "scalarizer_audit_complete"):
             self.scalarizer_audit_complete = True
+        for extension in self.semantic_extensions:
+            extension.prepare_run(self)
+        reset_bias = getattr(self.bias_module, "reset_run_state", None)
+        if callable(reset_bias):
+            reset_bias()
 
     def get_resource_context(self) -> ResourceContext:
         return self.resource_context
@@ -2707,12 +2772,7 @@ class SolverBase:
                 name="warm_start.candidate",
             )
         pipeline = self.representation_pipeline
-        initializer = None
-        if pipeline is not None:
-            initializer = getattr(pipeline, "initializer", None)
-            if initializer is None:
-                initializer = getattr(pipeline, "_initializer", None)
-        if pipeline is not None and initializer is not None:
+        if representation_capabilities(pipeline).supports("init"):
             init_fn = getattr(pipeline, "init", None)
             if not callable(init_fn):
                 raise TypeError("representation pipeline must expose init(context)")
@@ -2750,7 +2810,7 @@ class SolverBase:
             raise ValueError("population count must be non-negative")
         return tuple(self.init_candidate(context) for _ in range(size))
 
-    def mutate_candidate(self, x: Any, context: Optional[Dict[str, Any]] = None) -> Any:
+    def mutate_candidate(self, x: Any, context: Optional[Dict[str, Any]] = None, *, unit=None, operator=None) -> Any:
         input_provenance = self._lookup_candidate_provenance(x)
         if input_provenance is None:
             input_provenance = self._new_candidate_provenance(
@@ -2765,14 +2825,14 @@ class SolverBase:
                 )
             self._register_candidate_provenance(x, input_provenance)
         pipeline = self.representation_pipeline
-        mutator = None
-        if pipeline is not None:
-            mutator = getattr(pipeline, "mutator", None)
-            if mutator is None:
-                mutator = getattr(pipeline, "_mutator", None)
-        if pipeline is not None and mutator is not None:
-            out = pipeline.mutate(x, context)
+        if representation_capabilities(pipeline).supports("mutate"):
+            kwargs = {} if operator is None else {"operator": operator}
+            if unit is not None:
+                kwargs["unit"] = unit
+            out = pipeline.mutate(x, context, **kwargs)
         else:
+            if unit is not None or operator is not None:
+                raise ValueError("Unit mutation inputs require a configured mutator")
             out = x
         normalized = normalize_candidate(
             out,
@@ -2797,12 +2857,8 @@ class SolverBase:
     def repair_candidate(self, x: Any, context: Optional[Dict[str, Any]] = None) -> Any:
         input_provenance = self._lookup_candidate_provenance(x)
         pipeline = self.representation_pipeline
-        if pipeline is not None and getattr(pipeline, "repair", None) is not None:
-            repair_one = getattr(pipeline, "repair_one", None)
-            if callable(repair_one):
-                out = repair_one(x, context)
-            else:
-                out = pipeline.repair(x, context)
+        if representation_capabilities(pipeline).supports("repair"):
+            out = pipeline.repair(x, context)
         else:
             out = x
         normalized = normalize_candidate(out, dimension=self.dimension, name="repair_candidate")
@@ -2833,31 +2889,22 @@ class SolverBase:
 
     def encode_candidate(self, x: Any, context: Optional[Dict[str, Any]] = None) -> Any:
         pipeline = self.representation_pipeline
-        if pipeline is not None and getattr(pipeline, "encoder", None) is not None:
+        if representation_capabilities(pipeline).supports("encode"):
             return pipeline.encode(x, context)
         return x
 
     def decode_candidate(self, x: Any, context: Optional[Dict[str, Any]] = None) -> Any:
         """Decode a candidate from encoded space back to decision space.
 
-        Capability check: looks for an explicit ``decode`` method on the
-        pipeline (or its ``encoder`` component), **not** merely the presence
-        of an ``encoder`` attribute.  This avoids silently returning the raw
-        encoded value when only encoding (not decoding) is implemented.
+        Only the pipeline's declared ``RepresentationCapabilities`` enable
+        decoding. A declared operation must have a callable implementation;
+        component attribute names never grant a capability.
         """
         pipeline = self.representation_pipeline
         if pipeline is None:
             return x
-        # Prefer a decode method directly on the pipeline.
-        decode_fn = getattr(pipeline, "decode", None)
-        if callable(decode_fn):
-            return decode_fn(x, context)
-        # Fall back: look for decoder capability on the encoder sub-component.
-        encoder_comp = getattr(pipeline, "encoder", None)
-        if encoder_comp is not None:
-            sub_decode = getattr(encoder_comp, "decode", None)
-            if callable(sub_decode):
-                return sub_decode(x, context)
+        if representation_capabilities(pipeline).supports("decode"):
+            return pipeline.decode(x, context)
         return x
 
     def initialize_population(
@@ -3426,14 +3473,7 @@ class SolverBase:
         *,
         snapshot_schema: str,
     ) -> str:
-        try:
-            envelope = evaluation_event_envelope_from_snapshot(
-                payload,
-                snapshot_schema=snapshot_schema,
-            )
-        except Exception:
-            return ""
-        return "" if envelope is None else envelope.event_id
+        return PopulationEvidenceSemantics._snapshot_event_id(payload, snapshot_schema=snapshot_schema)
 
     def read_evaluation_event_snapshot(
         self,
@@ -3455,150 +3495,28 @@ class SolverBase:
     def _snapshot_disposition(
         payload: Mapping[str, Any],
     ) -> EvaluationDispositionEnvelope | None:
-        raw = payload.get(LAST_EVALUATION_DISPOSITION_KEY)
-        if not isinstance(raw, Mapping):
-            return None
-        try:
-            return EvaluationDispositionEnvelope.from_dict(raw)
-        except Exception:
-            return None
+        return PopulationEvidenceSemantics._snapshot_disposition(payload)
 
     @staticmethod
     def _validate_event_authority_edge(
         envelope: EvaluationEventEnvelope,
         expected: AuthorityIdentity | None,
     ) -> AuthorityIdentity | None:
-        """Bind the Event's full predecessor edge to the Journal reservation."""
-
-        raw = envelope.identity.get("authority_before_edge")
-        if expected is None:
-            if raw is not None:
-                raise ValueError(
-                    "Evaluation Event carries an Authority edge absent from its journal"
-                )
-            return None
-        if not isinstance(raw, Mapping):
-            raise ValueError(
-                "Evaluation Event is missing its reserved Authority predecessor edge"
-            )
-        observed = AuthorityIdentity.from_dict(raw)
-        if observed != expected:
-            raise ValueError(
-                "Evaluation Event Authority edge disagrees with its journal reservation"
-            )
-        return observed
+        return PopulationEvidenceSemantics._validate_event_authority_edge(envelope, expected)
 
     def inspect_event(
         self,
         record: EvaluationEvidenceRecord,
         snapshots: SnapshotStore,
     ) -> EvaluationEvidenceInspection:
-        """Implement BlackBase's read-only Event semantics for the coordinator."""
-
-        if snapshots is not self.snapshot_store:
-            return EvaluationEvidenceInspection(
-                state="invalid",
-                reason="coordinator SnapshotStore does not match Solver state",
-            )
-        event_record = snapshots.read(record.event_snapshot_key)
-        if event_record is None:
-            return EvaluationEvidenceInspection(
-                state="deferred",
-                reason="event_snapshot_unreadable",
-            )
-        try:
-            envelope, predecessor = validate_evaluation_event_snapshot(
-                event_record.data,
-                snapshot_schema=event_record.schema,
-                expected_event_id=record.event_id,
-                expected_run_id=record.run_id,
-                expected_snapshot_key=record.event_snapshot_key,
-            )
-            event_ref = snapshots.identity(event_record)
-            snapshots.read_verified(event_ref)
-            raw_before = getattr(record, "authority_before_ref", None)
-            before_edge = (
-                None
-                if raw_before is None
-                else AuthorityIdentity.from_dict(raw_before)
-            )
-            self._validate_event_authority_edge(envelope, before_edge)
-            if before_edge is not None:
-                if predecessor != before_edge.snapshot:
-                    raise ValueError(
-                        "Event predecessor disagrees with reserved Authority edge"
-                    )
-                snapshots.read_verified(before_edge.snapshot)
-            elif predecessor is not None:
-                # v1/v2 journals did not carry an Authority edge.  Keep them
-                # readable, but do not invent an epoch during migration.
-                snapshots.read_verified(predecessor)
-        except KeyError:
-            return EvaluationEvidenceInspection(
-                state="deferred",
-                reason="event_predecessor_unreadable",
-            )
-        except Exception as exc:
-            return EvaluationEvidenceInspection(
-                state="invalid",
-                reason=f"event_snapshot_invalid: {type(exc).__name__}: {exc}",
-            )
-        return EvaluationEvidenceInspection(
-            state="verified",
-            reason="verified",
-            event_ref=event_ref,
-            authority_before_ref=before_edge,
-        )
+        return self.evaluation_evidence_semantics.inspect_event(record, snapshots)
 
     def inspect_decision(
         self,
         record: EvaluationEvidenceRecord,
         snapshots: SnapshotStore,
     ) -> EvaluationEvidenceInspection:
-        """Implement read-only disposition semantics for the coordinator."""
-
-        if snapshots is not self.snapshot_store:
-            return EvaluationEvidenceInspection(
-                state="invalid",
-                reason="coordinator SnapshotStore does not match Solver state",
-            )
-        inspection = self._inspect_evaluation_disposition_destination(record)
-        if bool(inspection.get("valid")):
-            return EvaluationEvidenceInspection(
-                state="verified",
-                reason="verified",
-                event_ref=inspection.get("event_ref"),
-                authority_before_ref=inspection.get("authority_before_ref"),
-                authority_after_ref=inspection.get("authority_after_ref"),
-                decision_carrier_ref=inspection.get("decision_carrier_ref"),
-                verification=inspection.get("verification"),
-            )
-        reason = str(inspection.get("reason", "invalid_decision_evidence"))
-        deferred_reasons = {
-            "event_snapshot_unreadable",
-            "event_predecessor_unreadable",
-            "destination_snapshot_unreadable",
-            "authority_edge_unreadable",
-        }
-        state = "deferred" if reason in deferred_reasons else "invalid"
-        return EvaluationEvidenceInspection(
-            state=state,
-            reason=reason,
-            diagnostics={
-                key: value
-                for key, value in inspection.items()
-                if key
-                not in {
-                    "valid",
-                    "reason",
-                    "verification",
-                    "event_ref",
-                    "authority_before_ref",
-                    "authority_after_ref",
-                    "decision_carrier_ref",
-                }
-            },
-        )
+        return self.evaluation_evidence_semantics.inspect_decision(record, snapshots)
 
     def _recover_pending_authority_commit(
         self,
@@ -3677,188 +3595,8 @@ class SolverBase:
     def _inspect_evaluation_disposition_destination(
         self,
         record: EvaluationEvidenceRecord,
-    ) -> dict[str, Any]:
-        """Read and compare the Event, intent, and terminal Snapshot edge."""
-
-        inspection: dict[str, Any] = {
-            "valid": False,
-            "reason": "missing_disposition_intent",
-            "destination_snapshot_key": "",
-        }
-        if record.disposition is None:
-            return inspection
-        try:
-            intent = EvaluationDispositionEnvelope.from_dict(record.disposition)
-        except Exception as exc:
-            inspection.update(
-                reason="invalid_disposition_intent",
-                error_type=type(exc).__name__,
-                message=str(exc),
-            )
-            return inspection
-        if intent.event_id != record.event_id:
-            inspection["reason"] = "disposition_event_id_mismatch"
-            return inspection
-        if not intent.event_snapshot_key:
-            inspection["reason"] = "event_snapshot_key_missing"
-            return inspection
-        if intent.event_snapshot_key != record.event_snapshot_key:
-            inspection["reason"] = "event_snapshot_key_mismatch"
-            return inspection
-        event_record = self.snapshot_store.read(intent.event_snapshot_key)
-        if event_record is None:
-            inspection["reason"] = "event_snapshot_unreadable"
-            return inspection
-        try:
-            event_envelope, authority_before = validate_evaluation_event_snapshot(
-                event_record.data,
-                snapshot_schema=event_record.schema,
-                expected_event_id=intent.event_id,
-                expected_run_id=record.run_id,
-                expected_snapshot_key=intent.event_snapshot_key,
-            )
-        except Exception as exc:
-            inspection.update(
-                reason="event_snapshot_invalid",
-                error_type=type(exc).__name__,
-                message=str(exc),
-            )
-            return inspection
-        if authority_before is not None:
-            try:
-                self.snapshot_store.read_verified(authority_before)
-            except Exception as exc:
-                inspection.update(
-                    reason="event_predecessor_unreadable",
-                    error_type=type(exc).__name__,
-                    message=str(exc),
-                )
-                return inspection
-        journal_before_raw = getattr(record, "authority_before_ref", None)
-        journal_before = (
-            None
-            if journal_before_raw is None
-            else AuthorityIdentity.from_dict(journal_before_raw)
-        )
-        try:
-            self._validate_event_authority_edge(event_envelope, journal_before)
-        except Exception as exc:
-            inspection.update(
-                reason="event_authority_edge_mismatch",
-                error_type=type(exc).__name__,
-                message=str(exc),
-            )
-            return inspection
-        if journal_before is not None and journal_before.snapshot != authority_before:
-            inspection["reason"] = "event_authority_predecessor_mismatch"
-            return inspection
-        if (
-            event_record.schema == EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1
-            and intent.status in {"rejected", "failed"}
-        ):
-            expected_before_key = (
-                "" if authority_before is None else authority_before.key
-            )
-            if intent.authority_snapshot_key != expected_before_key:
-                inspection["reason"] = "disposition_predecessor_mismatch"
-                return inspection
-        destination_key = (
-            intent.authority_snapshot_key
-            if intent.status == "committed"
-            else record.disposition_snapshot_key
-        )
-        inspection["destination_snapshot_key"] = destination_key
-        if not destination_key:
-            inspection["reason"] = "destination_snapshot_key_missing"
-            return inspection
-        destination = self.snapshot_store.read(destination_key)
-        if destination is None:
-            inspection["reason"] = "destination_snapshot_unreadable"
-            return inspection
-        observed = self._snapshot_disposition(destination.data)
-        if observed is None:
-            inspection["reason"] = "destination_disposition_missing"
-            return inspection
-        if observed.as_dict() != intent.as_dict():
-            inspection["reason"] = "destination_disposition_mismatch"
-            return inspection
-        event_identity = self.snapshot_store.identity(event_record)
-        destination_identity = self.snapshot_store.identity(destination)
-        authority_after: AuthorityIdentity | None = journal_before
-        if intent.status == "committed":
-            expected_mode = str(
-                intent.metadata.get("authority_mode", "") or ""
-            ).strip().lower()
-            if not expected_mode:
-                inspection["reason"] = "authority_mode_missing"
-                return inspection
-            try:
-                validate_population_snapshot_v2(
-                    destination.data,
-                    snapshot_schema=destination.schema,
-                    expected_authority_mode=expected_mode,
-                    require_semantic_identity=True,
-                )
-            except Exception as exc:
-                inspection.update(
-                    reason="authority_snapshot_semantically_invalid",
-                    error_type=type(exc).__name__,
-                    message=str(exc),
-                )
-                return inspection
-            authority_after = self.authority_store.current(
-                self._population_authority_key(record.run_id)
-            )
-            if authority_after is None:
-                inspection["reason"] = "authority_edge_unreadable"
-                return inspection
-            if authority_after.snapshot != destination_identity:
-                inspection["reason"] = "authority_edge_destination_mismatch"
-                return inspection
-            if authority_after.caused_by_event_identity != event_identity:
-                inspection["reason"] = "authority_edge_event_cause_mismatch"
-                return inspection
-            expected_epoch = 1 if journal_before is None else journal_before.epoch + 1
-            if authority_after.epoch != expected_epoch:
-                inspection["reason"] = "authority_edge_epoch_mismatch"
-                return inspection
-            if journal_before is not None and (
-                authority_after.authority_scope != journal_before.authority_scope
-                or authority_after.authority_key != journal_before.authority_key
-            ):
-                inspection["reason"] = "authority_edge_scope_mismatch"
-                return inspection
-        if not event_record.content_digest or not destination.content_digest:
-            inspection["reason"] = "snapshot_content_identity_missing"
-            return inspection
-        inspection.update(valid=True, reason="verified")
-        inspection.update(
-            event_ref=event_identity,
-            authority_before_ref=journal_before,
-            authority_after_ref=authority_after,
-            decision_carrier_ref=destination_identity,
-        )
-        inspection["verification"] = EvaluationDispositionVerificationReceipt(
-            event_id=intent.event_id,
-            event_snapshot_key=intent.event_snapshot_key,
-            event_snapshot_revision=event_record.revision,
-            event_snapshot_digest=event_record.content_digest,
-            event_snapshot_schema=event_record.schema,
-            destination_snapshot_key=destination_key,
-            destination_snapshot_revision=destination.revision,
-            destination_snapshot_digest=destination.content_digest,
-            destination_snapshot_schema=destination.schema,
-            disposition_digest=evaluation_disposition_digest(intent),
-            verifier="nsgablack.snapshot_store",
-            verified_at=time.time(),
-            metadata={
-                "snapshot_backend": str(
-                    getattr(self.snapshot_store, "backend", "unknown")
-                ),
-                "retention_owner": f"evaluation-evidence:{intent.event_id}",
-            },
-        )
-        return inspection
+    ) -> EvaluationEvidenceInspection:
+        return self.evaluation_evidence_semantics._inspect_evaluation_disposition_destination(record)
 
     def reconcile_evaluation_evidence(
         self,
@@ -3876,9 +3614,10 @@ class SolverBase:
                 continue
             try:
                 self._recover_pending_authority_commit(record)
-            except Exception:
+            except Exception as _fallback_error:
                 # The coordinator's read-only inspection below classifies the
                 # durable evidence and keeps a lost fence retryable/auditable.
+                _report_optional_failure(component=__name__, event='SolverBase.reconcile_evaluation_evidence.fallback_155', exc=_fallback_error)
                 pass
         report = self.evaluation_evidence_coordinator.reconcile(
             run_id=target_run_id
@@ -4836,7 +4575,7 @@ class SolverBase:
         violation: Optional[float] = None,
         individual: Optional[np.ndarray] = None,
     ) -> Dict[str, Any]:
-        return build_solver_context(
+        context = build_solver_context(
             self,
             individual_id=individual_id,
             constraints=constraints,
@@ -4845,6 +4584,12 @@ class SolverBase:
             report_soft_error_fn=report_soft_error,
             logger=logger,
         )
+        for extension in self.semantic_extensions:
+            projected = extension.project_context(self, context)
+            if not isinstance(projected, Mapping):
+                raise TypeError(f"{extension.name}.project_context must return a Mapping")
+            context = dict(projected)
+        return context
 
     def get_context(self) -> Dict[str, Any]:
         """Return a snapshot context for visualization/monitoring."""
@@ -4912,12 +4657,14 @@ class SolverBase:
             return
         try:
             setattr(error, "_nsgablack_error_dispatched", True)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='SolverBase._dispatch_error_once.fallback_153', exc=_fallback_error)
             pass
         if phase and not getattr(error, "_nsgablack_error_phase", None):
             try:
                 setattr(error, "_nsgablack_error_phase", str(phase))
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='SolverBase._dispatch_error_once.fallback_156', exc=_fallback_error)
                 pass
         try:
             error_context = dict(self.build_context() or {})
@@ -4965,7 +4712,8 @@ class SolverBase:
             )
             try:
                 setattr(error, "_nsgablack_on_error_failures", failures)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='SolverBase._dispatch_error_once.fallback_157', exc=_fallback_error)
                 pass
             add_note = getattr(error, "add_note", None)
             if callable(add_note):
@@ -5037,6 +4785,41 @@ class SolverBase:
 
         apply_runtime_control_slot(self, slot=str(slot))
 
+    def register_state_participant(self, participant) -> None:
+        from blackbase.runtime import validate_runtime_participant
+        validate_runtime_participant(participant)
+        if self.running:
+            raise RuntimeError("cannot change state participants during a run")
+        if any(item.name == participant.name for item in self._state_participants):
+            raise ValueError(f"duplicate state participant: {participant.name}")
+        self._state_participants.append(participant)
+
+    def register_semantic_extension(self, extension: SolverSemanticExtension) -> None:
+        if not isinstance(extension, SolverSemanticExtension):
+            raise TypeError("semantic extension must implement SolverSemanticExtension")
+        if self.running:
+            raise RuntimeError("cannot change semantic extensions during a run")
+        if any(item.name == extension.name for item in self.semantic_extensions):
+            raise ValueError(f"duplicate semantic extension: {extension.name}")
+        self.semantic_extensions.append(extension)
+
+    def prepare_step_extensions(self) -> None:
+        for extension in self.semantic_extensions:
+            extension.before_step(self)
+
+    def notify_step_committed(self, outcome: StepOutcome) -> StepOutcome:
+        if not outcome.committed:
+            return outcome
+        failures = []
+        for extension in self.semantic_extensions:
+            try:
+                extension.after_step_committed(self, outcome)
+            except BaseException as exc:
+                failures.append((extension.name, exc))
+        if failures:
+            raise CommittedStepError(outcome, failures) from failures[0][1]
+        return outcome
+
     def request_stop(self, reason: str | None = None) -> None:
         self.stop_requested = True
         if reason is not None:
@@ -5045,7 +4828,6 @@ class SolverBase:
     def should_execute_step(self, step_index: int) -> bool:
         """Pre-step predicate evaluated before generation hooks and counters."""
 
-        del step_index
         remaining = self._run_progress_deadline_remaining_seconds
         if remaining is not None:
             current = float(remaining)
@@ -5057,7 +4839,8 @@ class SolverBase:
             if current <= 0.0:
                 self.request_stop("logical_deadline")
                 return False
-        return True
+        return all(extension.should_execute_step(self, step_index)
+                   for extension in self.semantic_extensions)
 
     def queue_restore_envelope(
         self,
@@ -5065,42 +4848,13 @@ class SolverBase:
         *,
         source: str = "external",
     ) -> None:
-        """Queue one restore transaction for the post-setup lifecycle slot."""
-
-        if not callable(apply):
-            raise TypeError("restore envelope apply callback must be callable")
-        with self._restore_transaction_lock:
-            if (
-                bool(self.running) or bool(self._runtime_setup_complete)
-            ) and not bool(self._restore_collection_active):
-                raise RuntimeError(
-                    "restore envelopes may only be queued before runtime setup"
-                )
-            self._pending_restore_envelopes.append((str(source), apply))
+        return self.run_session.queue_restore_envelope(apply, source=source)
 
     def _apply_pending_restore_envelopes(self) -> None:
-        with self._restore_transaction_lock:
-            pending = list(self._pending_restore_envelopes)
-            self._pending_restore_envelopes = []
-            if len(pending) > 1:
-                raise RuntimeError(
-                    "multiple restore envelopes were queued for one Solver run: "
-                    + ", ".join(source for source, _apply in pending)
-                )
-            self._restore_apply_active = True
-            try:
-                for _source, apply in pending:
-                    apply()
-            finally:
-                self._restore_apply_active = False
-        if pending and not bool(getattr(self, "_resume_loaded", False)):
-            raise RuntimeError(
-                "restore envelope completed without establishing resume state"
-            )
+        return self.run_session._apply_pending_restore_envelopes()
 
     def _start_run_progress_clock(self) -> None:
-        if self._run_progress_clock_started_at is None:
-            self._run_progress_clock_started_at = time.monotonic()
+        return self.run_session._start_run_progress_clock()
 
     def _merge_run_progress_deadline_with_case_control(self) -> None:
         """Clamp logical run time to the active parent Case authorization."""
@@ -5124,108 +4878,42 @@ class SolverBase:
         )
 
     def _pause_run_progress_clock(self) -> None:
-        started = self._run_progress_clock_started_at
-        if started is None:
-            return
-        delta = max(0.0, float(time.monotonic() - started))
-        self._run_progress_elapsed_seconds += delta
-        if self._run_progress_deadline_remaining_seconds is not None:
-            self._run_progress_deadline_remaining_seconds = max(
-                0.0,
-                float(self._run_progress_deadline_remaining_seconds) - delta,
-            )
-        self._run_progress_clock_started_at = None
+        return self.run_session._pause_run_progress_clock()
 
     def _record_completed_run_step(self) -> None:
-        self._run_progress_steps = int(self._run_progress_steps) + 1
+        return self.run_session._record_completed_run_step()
 
     def _record_run_step_attempt(self, status: str) -> None:
-        self._run_progress_attempts = int(self._run_progress_attempts) + 1
-        if str(status) in {"idle", "rejected"}:
-            self._run_progress_consecutive_idle_attempts = (
-                int(self._run_progress_consecutive_idle_attempts) + 1
-            )
-        else:
-            self._run_progress_consecutive_idle_attempts = 0
+        return self.run_session._record_run_step_attempt(status)
 
     @property
     def run_progress_steps(self) -> int:
-        return int(self._run_progress_steps)
+        return self.run_session.run_progress_steps
 
     @property
     def run_progress_attempts(self) -> int:
-        return int(self._run_progress_attempts)
+        return self.run_session.run_progress_attempts
 
     @property
     def run_progress_consecutive_idle_attempts(self) -> int:
-        return int(self._run_progress_consecutive_idle_attempts)
+        return self.run_session.run_progress_consecutive_idle_attempts
 
     @property
     def run_progress_elapsed_seconds(self) -> float:
-        elapsed = float(self._run_progress_elapsed_seconds)
-        if self._run_progress_clock_started_at is not None:
-            elapsed += max(
-                0.0,
-                float(time.monotonic() - self._run_progress_clock_started_at),
-            )
-        return elapsed
+        return self.run_session.run_progress_elapsed_seconds
 
     def export_run_progress_state(self) -> dict[str, Any]:
-        remaining = self._run_progress_deadline_remaining_seconds
-        if (
-            remaining is not None
-            and self._run_progress_clock_started_at is not None
-        ):
-            remaining = max(
-                0.0,
-                float(remaining)
-                - float(time.monotonic() - self._run_progress_clock_started_at),
-            )
-        return RunProgressState(
-            steps_completed=self.run_progress_steps,
-            attempts_completed=self.run_progress_attempts,
-            consecutive_idle_attempts=self.run_progress_consecutive_idle_attempts,
-            elapsed_seconds=self.run_progress_elapsed_seconds,
-            deadline_remaining_seconds=remaining,
-            run_id=self._active_run_id,
-        ).as_dict()
+        return self.run_session.export_run_progress_state()
 
     def restore_run_progress_state(
         self,
         payload: Mapping[str, Any] | None,
     ) -> None:
-        if not isinstance(payload, Mapping):
-            self._run_progress_steps = 0
-            self._run_progress_attempts = 0
-            self._run_progress_consecutive_idle_attempts = 0
-            self._run_progress_elapsed_seconds = 0.0
-            self._run_progress_clock_started_at = None
-            self._run_progress_deadline_remaining_seconds = None
-            return
-        state = RunProgressState.from_dict(payload)
-        active_run_id = getattr(self, "_active_run_id", None)
-        if (
-            state.run_id is not None
-            and active_run_id is not None
-            and str(state.run_id) != str(active_run_id)
-        ):
-            raise ValueError(
-                "run progress state belongs to a different logical run: "
-                f"progress={state.run_id!r}, solver={active_run_id!r}"
-            )
-        self._run_progress_steps = state.steps_completed
-        self._run_progress_attempts = state.attempts_completed
-        self._run_progress_consecutive_idle_attempts = (
-            state.consecutive_idle_attempts
-        )
-        self._run_progress_elapsed_seconds = state.elapsed_seconds
-        self._run_progress_clock_started_at = None
-        self._run_progress_deadline_remaining_seconds = (
-            state.deadline_remaining_seconds
-        )
+        return self.run_session.restore_run_progress_state(payload)
 
     def setup(self) -> None:
-        return None
+        for extension in self.semantic_extensions:
+            extension.setup(self)
 
     def checkpoint_components(self) -> Mapping[str, Any]:
         """Return stable stateful components owned by this control plane.
@@ -5242,6 +4930,19 @@ class SolverBase:
         if representation is not None:
             components["representation"] = representation
         components["runtime_controller"] = self.runtime_controller
+        bias = self.bias_module
+        if callable(getattr(bias, "get_state", None)) and callable(getattr(bias, "set_state", None)):
+            components["bias"] = bias
+        for extension in self.semantic_extensions:
+            declared = extension.checkpoint_components(self)
+            if not isinstance(declared, Mapping):
+                raise TypeError(f"{extension.name}.checkpoint_components must return a Mapping")
+            for name, component in declared.items():
+                if not isinstance(name, str) or not name.strip():
+                    raise ValueError("checkpoint component name must be non-empty")
+                if name in components:
+                    raise ValueError(f"duplicate checkpoint component owner: {name}")
+                components[name] = component
         return components
 
     def step(self) -> StepOutcome:
@@ -5250,7 +4951,37 @@ class SolverBase:
         )
 
     def teardown(self) -> None:
-        return None
+        self._teardown_runtime(())
+
+    def _teardown_runtime(self, operations) -> None:
+        """Attempt every declared cleanup and preserve the first failure."""
+        from blackbase.project import attach_failure_evidence
+
+        pending = list(operations)
+        failures = []
+        for extension in self.semantic_extensions:
+            try:
+                declared = extension.cleanup_components(self)
+                if not isinstance(declared, Mapping):
+                    raise TypeError("cleanup_components must return a Mapping")
+                for name, operation in declared.items():
+                    if not isinstance(name, str) or not name.strip() or not callable(operation):
+                        raise TypeError("cleanup component requires a name and callable")
+                    pending.append((f"{extension.name}.{name}", operation))
+            except BaseException as exc:
+                failures.append((f"{extension.name}.cleanup_components", exc))
+        for name, operation in pending:
+            try:
+                operation()
+            except BaseException as exc:
+                failures.append((name, exc))
+        if failures:
+            primary = failures[0][1]
+            attach_failure_evidence(primary, "solver_teardown", [
+                {"phase": name, "error_type": type(exc).__name__, "message": str(exc)}
+                for name, exc in failures
+            ])
+            raise primary
 
     def run(
         self,
@@ -5258,6 +4989,8 @@ class SolverBase:
         *,
         max_step_attempts: Optional[int] = None,
     ) -> Dict[str, Any]:
+        from ..utils.runtime_contracts import validate_runtime_contracts
+        validate_runtime_contracts(self)
         self.validate_plugin_order()
         self.validate_control_plane()
         return run_solver_loop(

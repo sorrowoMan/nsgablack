@@ -363,7 +363,7 @@ class OptimizationMemoryOptimizer:
                             )
                             return
                         except Exception:
-                            pass
+                            raise
 
                     # Contract-only path: skip downcast writeback for non-compliant solvers.
                     return

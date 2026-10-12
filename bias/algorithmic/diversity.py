@@ -20,13 +20,15 @@ class DiversityBias(AlgorithmicBias):
     标准多样性偏置 - 基于最小距离的多样性维护
 
     通过计算个体与种群中其他个体的最小距离来维护多样性：
-    - 距离越大，多样性越好，给予正向偏置
-    - 距离越小，多样性越差，给予负向偏置或无偏置
+    - 距离越大，多样性越好，最小化选择目标上的负增量越大
+    - 距离越小，奖励越小；数值重复的候选距离为零
     - 支持多种距离度量方法
 
     适用场景：多模态优化、需要全局搜索的问题
     """
     context_requires = ("population_ref",)
+    cacheable = False
+    objective_independent = True
     requires_metrics = ()
     context_provides = ()
     context_mutates = ()
@@ -58,7 +60,7 @@ class DiversityBias(AlgorithmicBias):
             context: 优化上下文
 
         Returns:
-            多样性偏置值（距离越大值越大）
+            最小化选择目标的增量（距离越大，增量越负）
         """
         if len(context.population) == 0:
             return 0.0                                        # 无种群时返回0
@@ -74,7 +76,8 @@ class DiversityBias(AlgorithmicBias):
             # 记录多样性历史
             self.diversity_history.append(diversity_value)
 
-            return diversity_value
+            # Selection objectives use minimization: novelty is a reward.
+            return -diversity_value
         return 0.0
 
     def _calculate_distances(self, x: np.ndarray, population: List[np.ndarray]) -> List[float]:
@@ -90,16 +93,15 @@ class DiversityBias(AlgorithmicBias):
         """
         distances = []
         for other in population:
-            if not np.array_equal(x, other):                # 跳过自身
-                if self.metric == 'euclidean':
-                    dist = np.linalg.norm(x - other)      # 欧几里得距离
-                elif self.metric == 'manhattan':
-                    dist = np.sum(np.abs(x - other))       # 曼哈顿距离
-                elif self.metric == 'chebyshev':
-                    dist = np.max(np.abs(x - other))       # 切比雪夫距离
-                else:
-                    dist = np.linalg.norm(x - other)      # 默认欧几里得距离
-                distances.append(dist)
+            # Numeric equality is not identity. Legacy numeric contexts cannot
+            # exclude self; use PopulationView for token-aware membership.
+            if self.metric == 'manhattan':
+                dist = np.sum(np.abs(x - other))
+            elif self.metric == 'chebyshev':
+                dist = np.max(np.abs(x - other))
+            else:
+                dist = np.linalg.norm(x - other)
+            distances.append(dist)
         return distances
 
     def get_average_diversity(self) -> float:

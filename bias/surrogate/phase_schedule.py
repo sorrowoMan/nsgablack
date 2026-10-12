@@ -45,11 +45,11 @@ class PhaseScheduleBias(SurrogateControlBias):
                 if max_generations <= 0:
                     return 0.0
                 return generation / max_generations
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 return 0.0
         try:
             return float(getattr(context, "generation", 0.0))
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return 0.0
 
     def _normalize_phases(self, phases: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:

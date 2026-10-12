@@ -1,4 +1,4 @@
-"""ML fit policy that delegates calibration to a standard Solver Case."""
+"""ML evaluation provider delegating calibration to a standard Solver Case."""
 
 from __future__ import annotations
 

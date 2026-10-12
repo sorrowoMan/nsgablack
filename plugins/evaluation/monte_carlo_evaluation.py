@@ -1,4 +1,7 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
+from blackbase.participation import ParticipationContract
+from blackbase.types import Feedback
 
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
@@ -6,10 +9,10 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 
 from ..base import Plugin
+from ...core.evaluation_feedback import OptimizationFeedbackBatch
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
 from ...utils.extension_contracts import ContractError, normalize_candidate
-from blackbase.context.context_keys import (
-    KEY_METRICS,
+from nsgablack.context_keys import (
     KEY_METRICS_MC_MAX,
     KEY_METRICS_MC_MEAN,
     KEY_METRICS_MC_MIN,
@@ -22,11 +25,12 @@ from blackbase.context.context_keys import (
 class MonteCarloEvaluationConfig:
     mc_samples: int = 16
     reduce: str = "mean"  # "mean" or "cvar"
-    cvar_alpha: float = 0.2  # used when reduce="cvar" (lower tail for minimization)
+    cvar_alpha: float = 0.2  # worst (upper) loss tail for minimization
     random_seed: Optional[int] = 0
 
 
 class MonteCarloEvaluationProviderPlugin(Plugin):
+    participation = ParticipationContract(decides=("evaluation",))
     is_algorithmic = False
     context_requires = ()
     context_provides = (
@@ -36,11 +40,11 @@ class MonteCarloEvaluationProviderPlugin(Plugin):
         KEY_METRICS_MC_MIN,
         KEY_METRICS_MC_MAX,
     )
-    context_mutates = (KEY_METRICS,)
+    context_mutates = ()
     context_cache = ()
     context_notes = (
-        "Per-candidate Monte Carlo evaluation; writes MC statistics into context.metrics "
-        "and returns reduced objective values."
+        "Per-candidate Monte Carlo evaluation returns reduced objectives and statistics "
+        "in Feedback.metrics; the shared evaluation boundary projects metrics for Bias."
     )
     """Monte Carlo L4 provider factory.
 
@@ -81,7 +85,7 @@ class MonteCarloEvaluationProviderPlugin(Plugin):
             try:
                 unregister(provider)
             except Exception:
-                pass
+                raise
         super().detach(solver)
 
     def __getattr__(self, item: str):
@@ -94,6 +98,11 @@ class MonteCarloEvaluationProviderPlugin(Plugin):
         raise AttributeError(item)
 
     def evaluate_population_runtime(self, solver, population: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Numeric compatibility view of raw MC measurements (no Bias)."""
+        feedback = self.evaluate_feedback_population(solver, population)
+        return feedback.objectives, feedback.violations
+
+    def evaluate_feedback_population(self, solver, population: np.ndarray) -> OptimizationFeedbackBatch:
         pop = np.asarray(population)
         if pop.ndim == 1:
             pop = pop.reshape(1, -1)
@@ -106,6 +115,7 @@ class MonteCarloEvaluationProviderPlugin(Plugin):
 
         objectives = np.zeros((n, m), dtype=float)
         violations = np.zeros((n,), dtype=float)
+        feedback = []
 
         for i in range(n):
             x = normalize_candidate(pop[i], dimension=int(solver.dimension), name=f"population[{i}]")
@@ -131,7 +141,7 @@ class MonteCarloEvaluationProviderPlugin(Plugin):
                         try:
                             np.random.set_state(prev_state)
                         except Exception:
-                            pass
+                            raise
                 y = np.asarray(val, dtype=float).ravel()
                 if y.size != m:
                     raise ValueError(
@@ -142,19 +152,13 @@ class MonteCarloEvaluationProviderPlugin(Plugin):
             Y = np.stack(ys, axis=0)  # (S, M)
 
             reduced = self._reduce(Y)
-            # Expose MC statistics to downstream capability layers (e.g. Bias).
-            # Keep the solver base pure: stats are carried via context["metrics"].
-            ctx = solver.build_context(individual_id=i, constraints=cons, violation=float(violations[i]))
-            ctx_metrics = ctx.get(KEY_METRICS)
-            if not isinstance(ctx_metrics, dict):
-                ctx_metrics = {}
-                ctx[KEY_METRICS] = ctx_metrics
-            ctx_metrics.update(self._stats(Y))
-            if getattr(solver, "enable_bias", False) and getattr(solver, "bias_module", None) is not None:
-                reduced = solver._apply_bias(np.asarray(reduced, dtype=float), x, i, ctx)
+            # Statistics travel with their own candidate. The shared evaluation
+            # boundary alone applies Bias and preserves raw measurement evidence.
             objectives[i] = np.asarray(reduced, dtype=float)
+            feedback.append(Feedback(objectives=reduced, metrics=self._stats(Y),
+                                     info={"constraint_violation": float(violations[i])}))
 
-        return objectives, violations
+        return OptimizationFeedbackBatch(objectives, violations, tuple(feedback))
 
     def _stats(self, Y: np.ndarray) -> Dict[str, Any]:
         Y = np.asarray(Y, dtype=float)
@@ -168,7 +172,8 @@ class MonteCarloEvaluationProviderPlugin(Plugin):
         try:
             out["mc_min"] = np.min(Y, axis=0)
             out["mc_max"] = np.max(Y, axis=0)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='MonteCarloEvaluationProviderPlugin._stats.fallback_233', exc=_fallback_error)
             pass
         return out
 
@@ -179,12 +184,12 @@ class MonteCarloEvaluationProviderPlugin(Plugin):
         if mode == "cvar":
             alpha = float(self.cfg.cvar_alpha)
             alpha = min(max(alpha, 0.0), 1.0)
-            # minimization: CVaR on lower tail (best alpha fraction)
+            # Objectives are losses: risk measures the worst alpha fraction.
             k = max(1, int(np.ceil(alpha * Y.shape[0])))
             out = []
             for j in range(Y.shape[1]):
                 col = np.sort(Y[:, j])
-                out.append(float(np.mean(col[:k])))
+                out.append(float(np.mean(col[-k:])))
             return np.asarray(out, dtype=float)
         return np.mean(Y, axis=0)
 
@@ -204,8 +209,7 @@ class MonteCarloEvaluationProviderPlugin(Plugin):
             def evaluate_individual(self, solver, x, context, individual_id=None):
                 _ = context
                 pop = np.asarray(x, dtype=float).reshape(1, -1)
-                objs, vios = owner.evaluate_population_runtime(solver, pop)
-                return np.asarray(objs[0], dtype=float).reshape(-1), float(vios[0])
+                return owner.evaluate_feedback_population(solver, pop).items[0]
 
             def can_handle_population(self, solver, population, context):
                 _ = solver
@@ -214,8 +218,6 @@ class MonteCarloEvaluationProviderPlugin(Plugin):
 
             def evaluate_population(self, solver, population, context):
                 _ = context
-                return owner.evaluate_population_runtime(solver, np.asarray(population, dtype=float))
+                return owner.evaluate_feedback_population(solver, np.asarray(population, dtype=float))
 
         return _Provider()
-
-

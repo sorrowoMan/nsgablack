@@ -7,7 +7,11 @@ from typing import Dict, Iterable, List, Mapping, Optional, Set
 
 
 class ComponentOrderError(ValueError):
-    """Raised when component execution order cannot be resolved."""
+    """Stable error category independent of the human-readable message."""
+
+    def __init__(self, message: str, *, code: str = "invalid") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass
@@ -45,7 +49,7 @@ class ComponentDependencyScheduler:
     def register_component(self, name: str, *, priority: int = 0) -> None:
         key = str(name).strip()
         if not key:
-            raise ComponentOrderError("component name cannot be empty")
+            raise ComponentOrderError("component name cannot be empty", code="invalid")
         rec = self._records.get(key)
         if rec is None:
             self._records[key] = _ComponentRecord(
@@ -103,7 +107,7 @@ class ComponentDependencyScheduler:
     ) -> None:
         key = str(name).strip()
         if key not in self._records:
-            raise ComponentOrderError(f"component not registered: {key}")
+            raise ComponentOrderError(f"component not registered: {key}", code="unknown-ref")
         candidate = self.validate_constraints(
             key,
             depends_on=depends_on,
@@ -122,7 +126,7 @@ class ComponentDependencyScheduler:
     ) -> Dict[str, Set[str]]:
         key = str(name).strip()
         if key not in self._records:
-            raise ComponentOrderError(f"component not registered: {key}")
+            raise ComponentOrderError(f"component not registered: {key}", code="unknown-ref")
         current = self._rules.setdefault(
             key,
             {"depends_on": set(), "before": set(), "after": set()},
@@ -220,7 +224,8 @@ class ComponentDependencyScheduler:
             raise ComponentOrderError(
                 "component dependency cycle detected: "
                 + ", ".join(unresolved)
-                + detail
+                + detail,
+                code="cycle",
             )
         return order
 
@@ -237,34 +242,37 @@ class ComponentDependencyScheduler:
     ) -> None:
         recs = self._records if records is None else records
         if name not in recs:
-            raise ComponentOrderError(f"component not registered: {name}")
+            raise ComponentOrderError(f"component not registered: {name}", code="unknown-ref")
         dep = _norm_names(rule.get("depends_on"))
         aft = _norm_names(rule.get("after"))
         bef = _norm_names(rule.get("before"))
         if name in dep:
-            raise ComponentOrderError(f"component '{name}' cannot depend on itself")
+            raise ComponentOrderError(f"component '{name}' cannot depend on itself", code="self-ref")
         if name in aft:
-            raise ComponentOrderError(f"component '{name}' cannot be after itself")
+            raise ComponentOrderError(f"component '{name}' cannot be after itself", code="self-ref")
         if name in bef:
-            raise ComponentOrderError(f"component '{name}' cannot be before itself")
+            raise ComponentOrderError(f"component '{name}' cannot be before itself", code="self-ref")
 
         unknown = sorted([x for x in (dep | aft | bef) if x not in recs])
         if unknown:
             raise ComponentOrderError(
-                f"component '{name}' references unknown component(s): {', '.join(unknown)}"
+                f"component '{name}' references unknown component(s): {', '.join(unknown)}",
+                code="unknown-ref",
             )
 
         overlap_before_after = sorted(bef & aft)
         if overlap_before_after:
             raise ComponentOrderError(
                 f"component '{name}' has contradictory before/after for: "
-                + ", ".join(overlap_before_after)
+                + ", ".join(overlap_before_after),
+                code="mutual-conflict",
             )
         overlap_before_dep = sorted(bef & dep)
         if overlap_before_dep:
             raise ComponentOrderError(
                 f"component '{name}' has contradictory before/depends_on for: "
-                + ", ".join(overlap_before_dep)
+                + ", ".join(overlap_before_dep),
+                code="mutual-conflict",
             )
 
         p_self = int(recs[name].priority)
@@ -273,12 +281,14 @@ class ComponentDependencyScheduler:
             if p_self < p_pred:
                 raise ComponentOrderError(
                     f"priority conflict: '{name}'(priority={p_self}) declares after/depends_on '{pred}'"
-                    f"(priority={p_pred})"
+                    f"(priority={p_pred})",
+                    code="priority-conflict",
                 )
         for target in sorted(bef):
             p_target = int(recs[target].priority)
             if p_self > p_target:
                 raise ComponentOrderError(
                     f"priority conflict: '{name}'(priority={p_self}) declares before '{target}'"
-                    f"(priority={p_target})"
+                    f"(priority={p_target})",
+                    code="priority-conflict",
                 )

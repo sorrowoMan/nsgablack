@@ -92,7 +92,7 @@ class RiskBias(DomainBias):
         except Exception:
             try:
                 return np.asarray([float(val)], dtype=float)
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 return None
 
     @staticmethod

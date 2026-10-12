@@ -26,12 +26,12 @@ def _coerce_value(value: Any) -> float:
             if key in value:
                 try:
                     return float(value[key])
-                except Exception:
+                except (TypeError, ValueError, OverflowError):
                     return 0.0
         return 0.0
     try:
         return float(value)
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return 0.0
 
 
@@ -164,12 +164,12 @@ class DynamicPenaltyBias(DomainBias):
             metrics = getattr(context, "metrics", {}) or {}
             if "max_generations" in metrics:
                 return int(metrics["max_generations"])
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             pass
         try:
             pdata = getattr(context, "problem_data", {}) or {}
             if "max_generations" in pdata:
                 return int(pdata["max_generations"])
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             pass
         return None

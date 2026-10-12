@@ -134,7 +134,7 @@ def _node_to_chunk(
 ) -> Chunk | None:
     try:
         seg = ast.get_source_segment(source, node)
-    except Exception:
+    except (TypeError, ValueError, AttributeError):
         return None
     if not seg:
         return None

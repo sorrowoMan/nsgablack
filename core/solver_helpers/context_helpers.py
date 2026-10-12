@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Mapping, Optional
 
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_BEST_CANDIDATE_REF,
     KEY_BEST_OBJECTIVE,
     KEY_BEST_X,
@@ -40,6 +40,10 @@ _INCUMBENT_CONTEXT_STORE_OWNED_KEYS = frozenset(
         KEY_BEST_OBJECTIVE,
     )
 )
+
+# Row identity belongs to this invocation, never the previous evaluation. In
+# particular a stale individual_id can bind a new proposal to old semantics.
+_CALL_LOCAL_CANDIDATE_KEYS = frozenset((KEY_INDIVIDUAL_ID, KEY_INDIVIDUAL))
 
 
 def _store_snapshot(store: Any) -> Dict[str, Any]:
@@ -82,6 +86,8 @@ def build_solver_context(
     if callable(purge_large):
         purge_large()
     ctx = _store_snapshot(getattr(solver, "context_store", None))
+    for key in _CALL_LOCAL_CANDIDATE_KEYS:
+        ctx.pop(key, None)
     strip_large = getattr(solver, "_strip_large_context", None)
     if callable(strip_large):
         strip_large(ctx)
@@ -173,6 +179,7 @@ def build_solver_context(
             key: value
             for key, value in ctx.items()
             if key not in _INCUMBENT_CONTEXT_STORE_OWNED_KEYS
+            and key not in _CALL_LOCAL_CANDIDATE_KEYS
         }
         _set_store_values(getattr(solver, "context_store", None), writeback)
     if callable(purge_large):
@@ -204,7 +211,7 @@ def ensure_snapshot_readable(solver: Any, context: Optional[Dict[str, Any]] = No
         try:
             payload = reader(snapshot_key)
         except Exception:
-            continue
+            raise
         if not isinstance(payload, Mapping):
             continue
         for key_name in (

@@ -6,6 +6,7 @@ immediate consumption by UI / tooling layers.
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -80,17 +81,18 @@ def _to_jsonable(value: Any) -> Any:
     if hasattr(value, "tolist") and callable(getattr(value, "tolist", None)):
         try:
             return _to_jsonable(value.tolist())
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             pass
     if hasattr(value, "item") and callable(getattr(value, "item", None)):
         try:
             return _to_jsonable(value.item())
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             pass
     if hasattr(value, "__dict__"):
         try:
             return {str(k): _to_jsonable(v) for k, v in vars(value).items() if not str(k).startswith("_")}
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='_to_jsonable.fallback_275', exc=_fallback_error)
             pass
     return str(value)
 
@@ -107,7 +109,7 @@ def _json_loads(value: Any) -> Any:
         return None
     try:
         return json.loads(text)
-    except Exception:
+    except (ValueError, TypeError):
         return None
 
 
@@ -124,7 +126,7 @@ def _sequence_of_mappings(value: Any) -> list[dict[str, Any]]:
 def _float_or_none(value: Any) -> float | None:
     try:
         number = float(value)
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return None
     if not math.isfinite(number):
         return None
@@ -735,7 +737,8 @@ class RuntimeSurfaceTrackerPlugin(Plugin):
                     rid = _text(getattr(cfg, "run_id", None)) if cfg is not None else None
                     if rid:
                         return rid
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='RuntimeSurfaceTrackerPlugin._resolve_run_id.fallback_277', exc=_fallback_error)
                 pass
         return None
 
@@ -746,7 +749,8 @@ class RuntimeSurfaceTrackerPlugin(Plugin):
                 if isinstance(value, (str, Path)):
                     try:
                         return str(Path(str(value)).expanduser().resolve().parent)
-                    except Exception:
+                    except Exception as _fallback_error:
+                        _report_optional_failure(component=__name__, event='RuntimeSurfaceTrackerPlugin._resolve_output_dir.fallback_280', exc=_fallback_error)
                         continue
         plugin_manager = getattr(solver, "plugin_manager", None)
         if plugin_manager is not None and hasattr(plugin_manager, "list_plugins"):
@@ -756,7 +760,8 @@ class RuntimeSurfaceTrackerPlugin(Plugin):
                     out = _text(getattr(cfg, "output_dir", None)) if cfg is not None else None
                     if out:
                         return str(Path(out).expanduser().resolve())
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='RuntimeSurfaceTrackerPlugin._resolve_output_dir.fallback_278', exc=_fallback_error)
                 pass
         return None
 
@@ -807,6 +812,14 @@ class RuntimeSurfaceTrackerPlugin(Plugin):
                 continue
             representation_refs.append(ref)
             slot_payload[slot_name] = ref
+        named = getattr(pipeline, "mutation_operators", {})
+        if named:
+            slot_payload["mutation_operators"] = {}
+            for name, component in named.items():
+                ref = self._catalog_ref_for_object(component, fallback_prefix="representation")
+                if ref is not None:
+                    slot_payload["mutation_operators"][name] = ref
+                    representation_refs.append(ref)
         initializers = getattr(pipeline, "initializers", None)
         if isinstance(initializers, Sequence):
             pool_refs: list[str] = []
@@ -902,13 +915,13 @@ class RuntimeSurfaceTrackerPlugin(Plugin):
                 if value is None:
                     continue
                 return str(name), float(value)
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 continue
         try:
             best_objective = getattr(solver, "best_objective", None)
             if best_objective is not None:
                 return "best_objective", float(best_objective)
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             pass
         return None, None
 
@@ -969,6 +982,21 @@ class RuntimeSurfaceTrackerPlugin(Plugin):
 
         pipeline = getattr(solver, "representation_pipeline", None)
         representation_refs, pipeline_refs, representation_slots = self._representation_refs(pipeline)
+        describe_units = getattr(getattr(solver, "adapter", None), "get_unit_contracts", None)
+        unit_contracts = describe_units() if callable(describe_units) else {}
+        mutation_bindings = {path: contract["mutation_operator"]
+                             for path, contract in unit_contracts.items() if "mutation_operator" in contract}
+        repair_policy = getattr(solver, "joint_repair_policy", None)
+        repair_binding = {}
+        if repair_policy is not None:
+            component_type = type(pipeline.problem_repair)
+            repair_binding = {"joint_repair": {
+                "max_rounds": repair_policy.max_rounds,
+                "on_rejection": repair_policy.on_rejection,
+                "problem_repair": f"{component_type.__module__}.{component_type.__qualname__}",
+                "unit_repairs": {path: contract["unit_repair"]
+                                 for path, contract in unit_contracts.items() if "unit_repair" in contract},
+            }}
         bias_ref = self._catalog_ref_for_object(getattr(solver, "bias_module", None), fallback_prefix="bias")
         provider_refs, plugin_refs, plugin_ref_by_id = self._collect_plugin_refs(solver)
         bias_refs = _dedupe((bias_ref,))
@@ -1004,6 +1032,8 @@ class RuntimeSurfaceTrackerPlugin(Plugin):
                 "adapter": adapter_ref,
                 "representation_pipeline": list(pipeline_refs),
                 "representation_slots": representation_slots,
+                **({"mutation_bindings": mutation_bindings} if mutation_bindings else {}),
+                **repair_binding,
                 "bias_module": list(bias_refs),
                 "providers": list(provider_refs),
                 "plugins": list(plugin_refs),

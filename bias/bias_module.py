@@ -6,6 +6,7 @@ caching and convenience helpers.
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from collections import OrderedDict
 from typing import Any, Callable, Dict, List, Optional
@@ -19,7 +20,7 @@ import numpy as np
 
 from .core.base import AlgorithmicBias, DomainBias, OptimizationContext
 from .core.manager import UniversalBiasManager
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_CONSTRAINTS,
     KEY_CONSTRAINT_VIOLATION,
     KEY_GENERATION,
@@ -71,6 +72,7 @@ class BiasModule:
         self.cache_include_generation = bool(cache_include_generation)
         self._cache_context_store: Optional[ContextStore] = None
         self._snapshot_store: Optional[SnapshotStore] = None
+        self._snapshot_reader = None
         self._snapshot_cache_key: Optional[str] = None
         self._snapshot_cache_payload: Optional[Dict[str, Any]] = None
 
@@ -103,7 +105,7 @@ class BiasModule:
                 try:
                     sub = bias.get_context_contract() or {}
                 except Exception:
-                    continue
+                    raise
                 requires.update(sub.get("requires", ()) or ())
                 provides.update(sub.get("provides", ()) or ())
                 mutates.update(sub.get("mutates", ()) or ())
@@ -136,8 +138,14 @@ class BiasModule:
         if store is self._snapshot_store:
             return
         self._snapshot_store = store
+        self._snapshot_reader = None
         self._snapshot_cache_key = None
         self._snapshot_cache_payload = None
+
+    def bind_runtime(self, solver) -> None:
+        """Use the Solver's authoritative reader, never infer another owner."""
+        self.set_snapshot_store(solver.snapshot_store)
+        self._snapshot_reader = solver.read_snapshot
 
     def set_cache_backend(self, backend: str) -> None:
         self.cache_backend = str(backend or "memory").strip().lower()
@@ -272,14 +280,17 @@ class BiasModule:
                 x_bytes = None
 
         with self._lock:
-            for k in range(out.size):
-                out[k] = self._compute_bias_value(
-                    x=x,
-                    objective_value=float(out[k]),
-                    individual_id=ind_id,
-                    context=context,
-                    _x_bytes=x_bytes,
-                )
+            independent = all(getattr(b, "objective_independent", False)
+                              for _, b in self._components() if b.enabled)
+            if out.size and independent:
+                biased = self._compute_bias_value(x, float(out[0]), ind_id, context, _x_bytes=x_bytes)
+                out += biased - float(out[0])
+            else:
+                for k in range(out.size):
+                    out[k] = self._compute_bias_value(
+                        x=x, objective_value=float(out[k]), individual_id=ind_id,
+                        context=context, _x_bytes=x_bytes,
+                    )
 
             try:
                 best_obj = float(np.min(obj_arr))
@@ -328,7 +339,7 @@ class BiasModule:
         _x_bytes: Optional[bytes] = None,
     ) -> float:
         cache_key = None
-        if self.cache_enabled:
+        if self.cache_enabled and all(getattr(b, "cacheable", True) for _, b in self._components() if b.enabled):
             try:
                 cache_key = self._build_cache_key(
                     x=x,
@@ -368,7 +379,8 @@ class BiasModule:
         if self.cache_backend == "context_store" and self._cache_context_store is not None:
             try:
                 return self._cache_context_store.get(str(key), default=None)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='BiasModule._cache_get.fallback_37', exc=_fallback_error)
                 return None
         cached = self._bias_cache.get(key)
         if cached is not None:
@@ -382,7 +394,8 @@ class BiasModule:
             try:
                 ttl = self.cache_ttl_seconds
                 self._cache_context_store.set(str(key), float(value), ttl_seconds=ttl)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='BiasModule._cache_set.fallback_38', exc=_fallback_error)
                 return
             return
         if len(self._bias_cache) >= self.cache_max_items:
@@ -455,7 +468,8 @@ class BiasModule:
         if KEY_BIAS_CACHE_FINGERPRINT in context:
             try:
                 return str(context.get(KEY_BIAS_CACHE_FINGERPRINT) or "")
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='BiasModule._build_context_fingerprint.fallback_39', exc=_fallback_error)
                 return ""
         keys = tuple(self.cache_context_keys or ())
         if not keys:
@@ -500,8 +514,13 @@ class BiasModule:
         return repr(value)
 
     def _resolve_snapshot_payload(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        from .preferences import PreferenceContractError
+        required = any("population_ref" in getattr(b, "context_requires", ())
+                       for _, b in self._components() if b.enabled)
         store = self._snapshot_store
         if store is None:
+            if required:
+                raise PreferenceContractError("Population preference has no bound source; use UnitPreferenceBias")
             return {}
         key = None
         try:
@@ -509,17 +528,33 @@ class BiasModule:
         except Exception:
             key = None
         if not key:
+            if required:
+                raise PreferenceContractError("Population preference has no reference; bind its Unit explicitly")
             return {}
         key_text = str(key)
-        if key_text == self._snapshot_cache_key and self._snapshot_cache_payload is not None:
+        if not required and key_text == self._snapshot_cache_key and self._snapshot_cache_payload is not None:
             return dict(self._snapshot_cache_payload)
         try:
-            record = store.read(key_text)
-        except Exception:
-            record = None
-        if record is None:
+            if self._snapshot_reader is not None:
+                payload = self._snapshot_reader(key_text)
+            else:
+                record = store.read(key_text)
+                payload = None if record is None else dict(record.data)
+        except Exception as exc:
+            raise PreferenceContractError("Preference Snapshot read failed") from exc
+        if payload is None:
+            if required:
+                raise PreferenceContractError("Required preference Snapshot is unavailable")
             return {}
-        payload = dict(record.data)
+        payload = dict(payload)
+        if required:
+            from nsgablack.core.solver_helpers.snapshot_helpers import require_single_population_payload
+            try:
+                payload = require_single_population_payload(payload)
+                if KEY_POPULATION not in payload:
+                    raise ValueError("No population in the declared Snapshot")
+            except (TypeError, ValueError, RuntimeError) as exc:
+                raise PreferenceContractError("Population preference needs an explicit compatible Unit binding") from exc
         self._snapshot_cache_key = key_text
         self._snapshot_cache_payload = payload
         return payload
@@ -563,12 +598,13 @@ class BiasModule:
                     problem_data=problem_data,
                 )
             except Exception:
-                return None
+                raise
 
         try:
             ctx = copy.copy(self._context_cache)
             setattr(ctx, "generation", self._context_generation(context))
             setattr(ctx, "individual", x)
+            setattr(ctx, "candidate_token", context.get("candidate_token"))
             setattr(ctx, "population", snapshot_payload.get(KEY_POPULATION, []))
             metrics = {
                 "objective_value": objective_value,
@@ -588,7 +624,7 @@ class BiasModule:
                     problem_data.setdefault(KEY_CONSTRAINTS, context.get(KEY_CONSTRAINTS, []))
                 setattr(ctx, "problem_data", problem_data)
             except Exception:
-                pass
+                raise
             return ctx
         except Exception:
             logger.error("Failed to prepare optimization context", exc_info=True)
@@ -646,6 +682,91 @@ class BiasModule:
             biases.extend(self._manager.domain_manager.list_biases())
         return biases
 
+    def _components(self):
+        for category in ("algorithmic", "domain"):
+            manager = getattr(self._manager, category + "_manager")
+            for name, bias in manager.biases.items():
+                yield category + "/" + name, bias
+
+    def record_accepted(self, candidates) -> None:
+        """Stage preference memory after admission/update, before step commit."""
+        with self._lock:
+            for _, bias in self._components():
+                recorder = getattr(bias, "record_accepted", None)
+                if bias.enabled and callable(recorder):
+                    recorder(candidates)
+            self._bump_cache_version()
+
+    def reset_run_state(self):
+        with self._lock:
+            for _, bias in self._components():
+                reset = getattr(bias, "reset_run_state", None)
+                if callable(reset):
+                    reset()
+            self.history_best_x, self.history_best_f = None, float("inf")
+            self._bump_cache_version()
+
+    def get_state(self):
+        from nsgablack.units.wire import detach_codec_payload
+        with self._lock:
+            components = {}
+            for name, bias in self._components():
+                getter, setter = getattr(bias, "get_state", None), getattr(bias, "set_state", None)
+                if bool(getattr(bias, "stateful_preference", False)) and not (callable(getter) and callable(setter)):
+                    raise TypeError(f"Stateful preference {name} requires get_state/set_state")
+                components[name] = {"type": f"{type(bias).__module__}.{type(bias).__qualname__}",
+                                    "weight": float(bias.weight), "enabled": bool(bias.enabled),
+                                    "state": getter() if callable(getter) else None}
+            return detach_codec_payload({"schema": "nsgablack.bias_state/v1", "components": components})
+
+    def validate_contract(self):
+        for name, bias in self._components():
+            if getattr(bias, "stateful_preference", False):
+                if not callable(getattr(bias, "get_state", None)) or not callable(getattr(bias, "set_state", None)):
+                    raise TypeError(f"Stateful preference {name} requires an explicit state codec")
+                if getattr(bias, "cacheable", True):
+                    raise TypeError(f"Stateful preference {name} must explicitly disable scalar caching")
+            validator = getattr(bias, "validate_contract", None)
+            if callable(validator):
+                validator()
+
+    @property
+    def checkpoint_required(self):
+        return any(getattr(bias, "stateful_preference", False) for _, bias in self._components())
+
+    def set_state(self, state):
+        from nsgablack.units.wire import detach_codec_payload
+        state = detach_codec_payload(state)
+        with self._lock:
+            components = dict(self._components())
+            saved = state.get("components", {})
+            if state.get("schema") != "nsgablack.bias_state/v1" or set(saved) != set(components):
+                raise ValueError("Bias checkpoint assembly differs from configured components")
+            for name, bias in components.items():
+                item = saved[name]
+                if not np.isfinite(float(item["weight"])) or type(item["enabled"]) is not bool:
+                    raise ValueError(f"Invalid Bias checkpoint configuration: {name}")
+                if item["type"] != f"{type(bias).__module__}.{type(bias).__qualname__}":
+                    raise ValueError(f"Bias checkpoint type mismatch: {name}")
+                if item["state"] is not None and not callable(getattr(bias, "set_state", None)):
+                    raise TypeError(f"Bias checkpoint has state without a codec: {name}")
+            before = self.get_state()["components"]
+            try:
+                for name, bias in components.items():
+                    item = saved[name]
+                    if item["state"] is not None:
+                        bias.set_state(item["state"])
+                    bias.weight, bias.enabled = float(item["weight"]), item["enabled"]
+            except Exception:
+                for name, bias in components.items():
+                    original = before[name]
+                    if original["state"] is not None:
+                        bias.set_state(original["state"])
+                    bias.weight, bias.enabled = original["weight"], original["enabled"]
+                raise
+            finally:
+                self._bump_cache_version()
+
     def to_universal_manager(self) -> UniversalBiasManager:
         return self._manager
 
@@ -695,7 +816,7 @@ class BiasModule:
             if dom_mgr is not None and hasattr(dom_mgr, "biases"):
                 dom_mgr.biases.clear()
         except Exception:
-            pass
+            raise
         self.history_best_x = None
         self.history_best_f = float("inf")
         self._context_cache = None

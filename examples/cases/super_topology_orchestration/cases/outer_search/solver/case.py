@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Mapping
 
+from blackbase.resources import FilesystemArtifactPublicationLedger
+
 from ..adapter import describe_topology
+from ..reporting.audit import evaluate_invariants
 
 
 class OuterSearchCase:
@@ -49,9 +52,24 @@ class OuterSearchCase:
     def export_case_result(self, raw_output):
         result = self.solver.export_case_result(raw_output)
         nested_records = self.problem.invocation_records()
+        publications = {}
+        for name, binding in self.case_runtime.request.input_artifact_bindings.items():
+            receipt = binding.publication
+            ledger = FilesystemArtifactPublicationLedger(
+                self.case_runtime.artifact_publisher.authority,
+                project_run_id=receipt.project_run_id,
+                case_run_id=receipt.case_run_id,
+            )
+            publications[name] = {"receipt": receipt.as_dict(), "verified": ledger.verify(receipt)}
         topology_audit = {
-            "schema": "nsgablack.super_topology_audit/v1",
+            "schema": "nsgablack.super_topology_audit/v2",
             "outer_identity": self.case_runtime.identity.as_dict(),
+            "outer_cancellation": self.case_runtime.control.cancellation.as_dict(),
+            "outer_resource_lineage": {
+                "namespace": self.resource_context.namespace,
+                "lease_id": self.resource_context.lease.get("lease_id"),
+                "fencing_token": self.resource_context.lease.get("fencing_token"),
+            },
             "outer_resource_grant": dict(self.resource_context.grant),
             "outer_resource_binding_current": bool(
                 dict(getattr(self, "resource_binding_audit", {}) or {}).get(
@@ -62,19 +80,13 @@ class OuterSearchCase:
             "baseline_inputs": {
                 name: ref.as_dict() for name, ref in sorted(self.input_artifacts.items())
             },
+            "baseline_publications": publications,
+            "dag": dict(self.case_runtime.request.metadata.get("dag", {})),
             "adapter_topology": describe_topology(),
             "candidate_trainer_calls": len(nested_records),
             "nested_calls": nested_records,
-            "invariants": {
-                "project_parallel_stage": True,
-                "artifact_authority_inputs": True,
-                "solver_to_trainer": True,
-                "trainer_to_solver": True,
-                "resource_lineage": True,
-                "budget_settlement": True,
-                "cancellation_deadline_lineage": True,
-            },
         }
+        topology_audit["invariants"] = evaluate_invariants(topology_audit)
         report_ref = self.case_runtime.publish_artifact(
             "topology_report",
             topology_audit,

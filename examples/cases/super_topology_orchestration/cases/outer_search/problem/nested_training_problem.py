@@ -60,11 +60,25 @@ class NestedTrainingOptimizationProblem(BlackBoxProblem):
         objectives = np.asarray(trainer_result.best_objectives, dtype=float).reshape(-1)
         nested_audit = dict(trainer_result.report.get("nested_audit", {}) or {})
         publication = child.artifact_publications.get("training_summary")
+        resource = child.request.resource_context
+        grant = child.request.child_grant
+        lease = resource.get("lease", {})
+        summary = trainer_result.report.get("summary", {})
         record = {
             "candidate": point.tolist(),
             "objectives": objectives.tolist(),
             "trainer_identity": child.identity.as_dict(),
             "trainer_status": child.status,
+            "trainer_control_plane": trainer_result.report.get("control_plane"),
+            "trainer_committed_steps": summary.get("committed_steps"),
+            "trainer_evaluation_count": summary.get("evaluation_count"),
+            "trainer_resource_lineage": {
+                "namespace": resource.get("namespace"),
+                "lease_id": lease.get("lease_id"),
+                "parent_lease_id": None if grant is None else grant.parent_lease_id,
+                "fencing_token": lease.get("fencing_token"),
+                "grant_id": None if grant is None else grant.grant_id,
+            },
             "trainer_resource_grant": dict(
                 child.request.resource_context.get("grant", {}) or {}
             ),
@@ -73,6 +87,7 @@ class NestedTrainingOptimizationProblem(BlackBoxProblem):
             ),
             "trainer_budget_usage": dict(child.budget_usage),
             "trainer_deadline_at": float(child.control.deadline_at),
+            "trainer_cancellation": child.control.cancellation.as_dict(),
             "trainer_summary_ref": (
                 None
                 if "training_summary" not in child.artifact_refs

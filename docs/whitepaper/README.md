@@ -1,6 +1,8 @@
 # Black Framework Stack 白皮书
 
-本目录只保留正在维护的 V6 分卷草稿：
+当前默认入口是 [工程白皮书](engineering/README.md)。截至 2026-10-08，已落盘第一、二章；其余章节为写作计划，不能据目录标题声称已完成。
+
+实现契约以 [运行所有权与显式扩展契约](../architecture/RUNTIME_CONTRACTS_CN.md)、源码与契约测试为准。工程稿解释使用路径；V6 保留作为概念论证草稿，不能覆盖现行接口规则：
 
 - [V6 目录与论证路线](v6/CONTENTS.md)
 - [迁移与完成状态](v6/MIGRATION_STATUS.md)

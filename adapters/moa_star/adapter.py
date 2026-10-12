@@ -12,12 +12,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 import heapq
+import copy
 
 import numpy as np
 
 from blackbase.contracts import BatchDisposition
 
 from ..algorithm_adapter import AlgorithmAdapter
+from ...units import UnitBinding, UnitBuildRequest
+from ...units.structures import ParetoLabelUnit, PARETO_LABEL_SCHEMA
+from ...representation.unit_builders import ParetoLabelBuilder
+from ...representation.structure_builders import encode_unit_value, decode_unit_value
 from ...core.state import StepOutcome
 
 
@@ -66,22 +71,19 @@ class MOAStarConfig:
 
     # stop when a goal is found (multi-objective default: False)
     stop_on_goal: bool = False
+    repair_policy: str = "reject"  # reject | recompute
 
-
-class _Label:
-    __slots__ = ("state", "g", "h", "f", "parent_key", "valid")
-
-    def __init__(self, state: State, g: np.ndarray, h: np.ndarray, parent_key: Optional[Any]):
-        self.state = state
-        self.g = g
-        self.h = h
-        self.f = g + h
-        self.parent_key = parent_key
-        self.valid = True
+    def __post_init__(self):
+        if self.repair_policy not in {"reject", "recompute"}:
+            raise ValueError("MOA* repair_policy must be reject or recompute")
 
 
 class MOAStarAdapter(AlgorithmAdapter):
     """Pareto A* adapter with dominance pruning per state."""
+    unit_build_operations = ("fresh",)
+    unit_schema = PARETO_LABEL_SCHEMA
+    unit_contract_mode = "owned"
+    accepts_proposal_replacement = False
     context_requires = ("generation",)
     context_provides = ()
     context_mutates = ()
@@ -89,8 +91,8 @@ class MOAStarAdapter(AlgorithmAdapter):
     context_notes = (
         "Consumes context for neighbor expansion / heuristic / goal callbacks in multi-objective A*.",
     )
-    state_recovery_level = "L0"
-    state_recovery_notes = "Checkpoint restores summary only; label/open structures are not reconstructed."
+    state_recovery_level = "L1"
+    state_recovery_notes = "Restores Pareto labels, frontier, pending parent identities and goals through the Unit codec."
 
     def __init__(
         self,
@@ -107,6 +109,7 @@ class MOAStarAdapter(AlgorithmAdapter):
         **config_kwargs,
     ) -> None:
         super().__init__(name=name, priority=priority)
+        self.set_unit_binding(config_kwargs.pop("unit_binding", None) or UnitBinding(ParetoLabelBuilder()))
         self.config = self.resolve_config(
             config=config,
             config_cls=MOAStarConfig,
@@ -122,7 +125,7 @@ class MOAStarAdapter(AlgorithmAdapter):
         self.state_key = state_key or self._default_state_key
 
         self._open: List[Tuple[float, int, int]] = []
-        self._labels: Dict[int, _Label] = {}
+        self._labels: Dict[int, ParetoLabelUnit] = {}
         self._state_labels: Dict[Any, List[int]] = {}
         self._counter = 0
 
@@ -198,7 +201,9 @@ class MOAStarAdapter(AlgorithmAdapter):
                 base_g = label.g
                 if self.cfg.path_cost_mode == "edge":
                     base_g = base_g + self._edge_cost_vec(label.state, child_arr, context)
-                self._pending.append({"parent_key": key, "base_g": base_g})
+                self._pending.append({"parent_key": key, "base_g": np.array(base_g, copy=True),
+                                      "parent_id": label.unit_id, "parent_state": label.state,
+                                      "parent_g": label.g.copy(), "proposed_state": child_arr.copy()})
                 candidates.append(child_arr)
 
             if len(candidates) >= int(self.cfg.max_candidates_per_step):
@@ -225,6 +230,24 @@ class MOAStarAdapter(AlgorithmAdapter):
                 metadata={"adapter": self.name, "completion": "exhausted"},
             )
         return None
+
+    def on_proposal_repair(self, control, repair, context):
+        if repair.proposed_count != len(self._pending):
+            raise ValueError("MOA* repair does not align with pending paths")
+        for row in repair.changed_rows:
+            index = repair.proposal_indices[row]
+            meta = self._pending[index]
+            if not np.array_equal(repair.before.numeric_matrix[row], meta["proposed_state"], equal_nan=True):
+                raise ValueError("MOA* repair source differs from pending path")
+            if self.cfg.repair_policy == "reject":
+                raise ValueError("MOA* candidate changed after proposal; repair_policy='reject'")
+            candidate = repair.after.numeric_matrix[row]
+            updated = dict(meta)
+            if self.cfg.path_cost_mode == "edge":
+                updated["base_g"] = meta["parent_g"] + self._edge_cost_vec(meta["parent_state"], candidate, context)
+            # Heuristic and dominance are rebuilt from this candidate in update.
+            updated["proposed_state"] = candidate.copy()
+            self._pending[index] = updated
 
     def on_proposal_disposition(
         self,
@@ -268,6 +291,9 @@ class MOAStarAdapter(AlgorithmAdapter):
         for i, cand in enumerate(candidates):
             meta = self._pending[i]
             cand_arr = np.asarray(cand)
+            changed = not np.array_equal(cand_arr, meta["proposed_state"], equal_nan=True)
+            if changed and self.cfg.repair_policy == "reject":
+                raise ValueError("MOA* repair changed the proposed state; opt into repair_policy='recompute'")
 
             obj_vec = obj[i]
             penalty = float(self.cfg.violation_penalty) * float(vio[i])
@@ -277,13 +303,15 @@ class MOAStarAdapter(AlgorithmAdapter):
                 g_vec = np.asarray(obj_vec + pen_vec, dtype=float)
             else:
                 base_g = np.asarray(meta.get("base_g", np.zeros_like(obj_vec)), dtype=float)
+                if changed:
+                    base_g = meta["parent_g"] + self._edge_cost_vec(meta["parent_state"], cand_arr, context)
                 g_vec = base_g + (float(self.cfg.objective_weight) * obj_vec) + pen_vec
 
             h_vec = self._heuristic_vec(cand_arr, context)
-            self._try_add_label(cand_arr, g_vec, h_vec, meta.get("parent_key"))
+            self._try_add_label(cand_arr, g_vec, h_vec, meta.get("parent_key"), meta.get("parent_id"), context)
             self._update_pareto(cand_arr, g_vec)
 
-    def _try_add_label(self, state: State, g: np.ndarray, h: np.ndarray, parent_key: Optional[Any]) -> None:
+    def _try_add_label(self, state: State, g: np.ndarray, h: np.ndarray, parent_key: Optional[Any], parent_id=None, context=None) -> None:
         key = self.state_key(state)
         current = self._state_labels.get(key, [])
 
@@ -303,6 +331,14 @@ class MOAStarAdapter(AlgorithmAdapter):
         if dominated_by_existing:
             return
 
+        label_id = self._counter + 1
+        f = g + h
+        label = self.unit_binding.build(UnitBuildRequest(
+            f"{self.name}:label:{label_id}", state, parameters={
+                "g": g, "h": h, "f": f, "parent_key": parent_key, "parent_id": parent_id}), context)
+        if any(not np.array_equal(getattr(label, key), value) for key, value in (("g", g), ("h", h), ("f", f))):
+            raise ValueError("MOA* builder changed Adapter-owned costs")
+
         for lbl_id in to_remove:
             lbl = self._labels.get(lbl_id)
             if lbl is not None:
@@ -311,9 +347,7 @@ class MOAStarAdapter(AlgorithmAdapter):
             self._labels.pop(lbl_id, None)
         current = [i for i in current if i not in to_remove]
 
-        self._counter += 1
-        label_id = self._counter
-        label = _Label(state=state, g=g, h=h, parent_key=parent_key)
+        self._counter = label_id
         self._labels[label_id] = label
         current.append(label_id)
         self._state_labels[key] = current
@@ -353,7 +387,7 @@ class MOAStarAdapter(AlgorithmAdapter):
         try:
             return np.asarray(control.init_candidate(context))
         except Exception:
-            return None
+            raise
 
     def _edge_cost_vec(self, parent: State, child: State, context: Dict[str, Any]) -> np.ndarray:
         if self.edge_cost is None:
@@ -410,7 +444,7 @@ class MOAStarAdapter(AlgorithmAdapter):
         try:
             rounded = np.round(arr.astype(float), int(self.cfg.key_rounding))
             return tuple(rounded.tolist())
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return tuple(arr.ravel().tolist())
 
     def _push_open(
@@ -437,15 +471,32 @@ class MOAStarAdapter(AlgorithmAdapter):
 
     def get_state(self) -> Dict[str, Any]:
         return {
+            "schema": "nsgablack.moa_star_state/v2",
+            "unit_contract": self.get_unit_contract(),
             "found": bool(self.found),
-            "goal_states": len(self.goal_states),
-            "pareto_size": len(self.pareto_states),
-            "open_size": int(len(self._open)),
-            "labels": int(len(self._labels)),
+            "labels": [[key, self.unit_binding.dump(label)] for key, label in self._labels.items()],
+            "runtime": encode_unit_value({"open": self._open, "state_labels": self._state_labels,
+                "counter": self._counter, "pending": self._pending, "num_objectives": self.num_objectives,
+                "goal_states": self.goal_states, "pareto_states": self.pareto_states, "pareto_costs": self.pareto_costs}),
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
-        if "found" in state:
-            self.found = bool(state["found"])
+        if "unit_contract" not in state:  # Legacy summary-only checkpoint.
+            self.found = bool(state.get("found", False))
+            return
+        if state["unit_contract"] != self.get_unit_contract():
+            raise ValueError("MOA* checkpoint Unit binding mismatch")
+        labels = {int(key): self.unit_binding.restore(payload) for key, payload in state["labels"]}
+        data = decode_unit_value(state["runtime"])
+        self._labels = labels
+        self._open = data["open"]
+        self._state_labels = data["state_labels"]
+        self._counter = data["counter"]
+        self._pending = data["pending"]
+        self.num_objectives = data["num_objectives"]
+        self.goal_states = data["goal_states"]
+        self.pareto_states = data["pareto_states"]
+        self.pareto_costs = data["pareto_costs"]
+        self.found = bool(state["found"])

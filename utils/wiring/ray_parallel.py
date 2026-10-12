@@ -71,7 +71,7 @@ def attach_ray_parallel(
         if problem_factory is not None:
             setattr(solver, "parallel_problem_factory", problem_factory)
     except Exception:
-        pass
+        raise
 
     return solver
 

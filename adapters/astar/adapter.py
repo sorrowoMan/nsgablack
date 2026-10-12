@@ -12,13 +12,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 import heapq
+import copy
 
 import numpy as np
 
 from blackbase.contracts import BatchDisposition
 
 from ..algorithm_adapter import AlgorithmAdapter
+from ...representation.structure_builders import encode_unit_value, decode_unit_value
 from ...core.state import StepOutcome
+from ...units import UnitBinding, UnitBuildRequest, SearchNodeUnit, SEARCH_NODE_SCHEMA
+from ...representation.unit_builders import SearchNodeBuilder
 
 
 State = np.ndarray
@@ -60,20 +64,14 @@ class AStarConfig:
     # default rounding for state key (float vectors)
     key_rounding: int = 8
 
-
-class _Node:
-    __slots__ = ("state", "g", "h", "f", "parent_key")
-
-    def __init__(self, state: State, g: float, h: float, parent_key: Optional[Any]):
-        self.state = state
-        self.g = float(g)
-        self.h = float(h)
-        self.f = float(g) + float(h)
-        self.parent_key = parent_key
+    # A repaired child is no longer necessarily adjacent to its recorded parent.
+    # Recompute is opt-in for domains whose edge_cost accepts the repaired edge.
+    repair_policy: str = "reject"  # reject | recompute
 
 
 class AStarAdapter(AlgorithmAdapter):
     """Generic A* adapter driven by neighbor expansion and heuristic search."""
+    unit_build_operations = ("fresh", "spawn")
     context_requires = ("generation",)
     context_provides = ()
     context_mutates = ()
@@ -81,8 +79,11 @@ class AStarAdapter(AlgorithmAdapter):
     context_notes = (
         "Consumes context for neighbor expansion / heuristic / goal callbacks.",
     )
-    state_recovery_level = "L0"
-    state_recovery_notes = "Checkpoint restores summary only (best/found), not full open/closed frontier."
+    state_recovery_level = "L1"
+    state_recovery_notes = "Restores node Units, open/closed frontier and pending parent identities."
+    unit_schema = SEARCH_NODE_SCHEMA
+    unit_contract_mode = "owned"
+    accepts_proposal_replacement = False
 
     def __init__(
         self,
@@ -96,6 +97,7 @@ class AStarAdapter(AlgorithmAdapter):
         config: Optional[AStarConfig] = None,
         name: str = "astar",
         priority: int = 0,
+        unit_binding: Optional[UnitBinding] = None,
         **config_kwargs,
     ) -> None:
         super().__init__(name=name, priority=priority)
@@ -106,6 +108,9 @@ class AStarAdapter(AlgorithmAdapter):
             adapter_name="AStarAdapter",
         )
         self.cfg = self.config
+        if self.cfg.repair_policy not in {"reject", "recompute"}:
+            raise ValueError("A* repair_policy must be reject or recompute")
+        self.set_unit_binding(unit_binding or UnitBinding(SearchNodeBuilder()))
         self.neighbors = neighbors
         self.goal_test = goal_test
         self.heuristic = heuristic
@@ -113,7 +118,7 @@ class AStarAdapter(AlgorithmAdapter):
         self.start_state = start_state
         self.state_key = state_key or self._default_state_key
 
-        self._open: List[Tuple[float, int, _Node]] = []
+        self._open: List[Tuple[float, int, SearchNodeUnit]] = []
         self._closed: Dict[Any, float] = {}
         self._pending: List[Dict[str, Any]] = []
         self._counter = 0
@@ -124,6 +129,7 @@ class AStarAdapter(AlgorithmAdapter):
         self.best_state: Optional[State] = None
 
     def setup(self, control: Any) -> None:
+        self.validate_unit_bindings()
         self._open = []
         self._closed = {}
         self._pending = []
@@ -183,6 +189,10 @@ class AStarAdapter(AlgorithmAdapter):
                     {
                         "parent_key": key,
                         "base_g": float(base_g),
+                        "parent_g": float(node.g),
+                        "parent_state": node.state.copy(),
+                        "parent_id": node.unit_id,
+                        "proposed_state": child_arr.copy(),
                     }
                 )
                 candidates.append(child_arr)
@@ -211,6 +221,24 @@ class AStarAdapter(AlgorithmAdapter):
                 metadata={"adapter": self.name, "completion": "exhausted"},
             )
         return None
+
+    def on_proposal_repair(self, control, repair, context):
+        if repair.proposed_count != len(self._pending):
+            raise ValueError("A* repair does not align with pending paths")
+        for row in repair.changed_rows:
+            index = repair.proposal_indices[row]
+            meta = self._pending[index]
+            if not np.array_equal(repair.before.numeric_matrix[row], meta["proposed_state"], equal_nan=True):
+                raise ValueError("A* repair source differs from pending path")
+            if self.cfg.repair_policy == "reject":
+                raise ValueError("A* candidate changed after proposal; repair_policy='reject'")
+            candidate = repair.after.numeric_matrix[row]
+            updated = dict(meta)
+            if self.cfg.path_cost_mode == "edge":
+                updated["base_g"] = float(meta["parent_g"]) + self._edge_cost(meta["parent_state"], candidate, context)
+            # Heuristic and dominance are rebuilt from this candidate in update.
+            updated["proposed_state"] = candidate.copy()
+            self._pending[index] = updated
 
     def on_proposal_disposition(
         self,
@@ -253,6 +281,11 @@ class AStarAdapter(AlgorithmAdapter):
             cand_arr = np.asarray(cand)
             key = self.state_key(cand_arr)
 
+            changed = not np.array_equal(cand_arr, meta["proposed_state"], equal_nan=True)
+            if changed and self.cfg.repair_policy == "reject":
+                raise ValueError("A* candidate changed after proposal; repair_policy='reject' "
+                                 "protects the parent edge. Use recompute only for compatible edges.")
+
             if (key in self._closed) and (not self.cfg.allow_reopen):
                 continue
 
@@ -263,10 +296,13 @@ class AStarAdapter(AlgorithmAdapter):
                 g = float(obj_cost) + penalty
             else:
                 base_g = float(meta.get("base_g", 0.0))
+                if changed:
+                    base_g = float(meta["parent_g"]) + self._edge_cost(meta["parent_state"], cand_arr, context)
                 g = base_g + penalty + (float(self.cfg.objective_weight) * float(obj_cost))
 
             h = float(self._heuristic(cand_arr, context))
-            self._push_open(cand_arr, g=g, h=h, parent_key=meta.get("parent_key"))
+            self._push_open(cand_arr, g=g, h=h, parent_key=meta.get("parent_key"),
+                            parent_id=meta.get("parent_id"), context=context)
 
             # track best (by objective + penalty)
             score = float(obj_cost) + penalty
@@ -282,7 +318,7 @@ class AStarAdapter(AlgorithmAdapter):
         try:
             return np.asarray(control.init_candidate(context))
         except Exception:
-            return None
+            raise
 
     def _edge_cost(self, parent: State, child: State, context: Dict[str, Any]) -> float:
         if self.edge_cost is not None:
@@ -295,7 +331,7 @@ class AStarAdapter(AlgorithmAdapter):
         try:
             return float(self.heuristic(state, context))
         except Exception:
-            return 0.0
+            raise
 
     def _aggregate_objective(self, obj_row: np.ndarray) -> float:
         mode = str(self.cfg.objective_aggregation).lower().strip()
@@ -310,7 +346,7 @@ class AStarAdapter(AlgorithmAdapter):
         try:
             rounded = np.round(arr.astype(float), int(self.cfg.key_rounding))
             return tuple(rounded.tolist())
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return tuple(arr.ravel().tolist())
 
     def _push_open(
@@ -320,12 +356,21 @@ class AStarAdapter(AlgorithmAdapter):
         g: float,
         h: Optional[float] = None,
         parent_key: Optional[Any] = None,
+        parent_id: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None,
     ) -> None:
         if h is None:
             h = self._heuristic(state, context or {})
-        node = _Node(state=state, g=float(g), h=float(h), parent_key=parent_key)
-        self._counter += 1
+        next_id = self._counter + 1
+        node = self.unit_binding.build(UnitBuildRequest(
+            unit_id=f"{self.name}:node:{next_id}", candidate=state,
+            purpose="fresh" if parent_id is None else "spawn",
+            parameters={"g": float(g), "h": float(h), "f": float(g) + float(h),
+                        "parent_key": parent_key, "parent_id": parent_id},
+        ), context)
+        if (node.g, node.h, node.f) != (float(g), float(h), float(g) + float(h)):
+            raise ValueError("A* Unit builder must preserve Adapter-supplied costs and priority")
+        self._counter = next_id
         heapq.heappush(self._open, (node.f, self._counter, node))
         self._trim_open()
 
@@ -342,8 +387,9 @@ class AStarAdapter(AlgorithmAdapter):
         self._open = heapq.nsmallest(max_open, self._open)
         heapq.heapify(self._open)
 
-    def get_state(self) -> Dict[str, Any]:
+    def _summary_state(self) -> Dict[str, Any]:
         return {
+            "unit_contract": self.get_unit_contract(),
             "found": bool(self.found),
             "best_score": None if self.best_score is None else float(self.best_score),
             "best_state": None if self.best_state is None else np.asarray(self.best_state).tolist(),
@@ -351,9 +397,11 @@ class AStarAdapter(AlgorithmAdapter):
             "closed_size": int(len(self._closed)),
         }
 
-    def set_state(self, state: Dict[str, Any]) -> None:
+    def _restore_summary(self, state: Dict[str, Any]) -> None:
         if not state:
             return
+        if "unit_contract" in state and state["unit_contract"] != self.get_unit_contract():
+            raise ValueError("A* checkpoint Unit binding mismatch")
         if "found" in state:
             self.found = bool(state["found"])
         if "best_score" in state:
@@ -361,3 +409,35 @@ class AStarAdapter(AlgorithmAdapter):
         bs = state.get("best_state")
         if bs is not None:
             self.best_state = np.asarray(bs, dtype=float)
+
+    def snapshot_step_state(self) -> Dict[str, Any]:
+        # Capture detached node payloads; construction pipelines are never replayed.
+        return copy.deepcopy({
+            "summary": self._summary_state(),
+            "open": [(priority, order, self.unit_binding.dump(node))
+                     for priority, order, node in self._open],
+            "closed": self._closed, "pending": self._pending, "counter": self._counter,
+            "solution": self.solution,
+        })
+
+    def restore_step_state(self, state) -> None:
+        restored = copy.deepcopy(dict(state))
+        frontier = [(priority, order, self.unit_binding.restore(payload))
+                    for priority, order, payload in restored["open"]]
+        self._restore_summary(restored["summary"])
+        self.best_state = (None if restored["summary"]["best_state"] is None
+                           else np.asarray(restored["summary"]["best_state"]))
+        self._open = frontier
+        self._closed = restored["closed"]
+        self._pending = restored["pending"]
+        self._counter = restored["counter"]
+        self.solution = restored["solution"]
+
+    def get_state(self) -> Dict[str, Any]:
+        return {**self._summary_state(), "frontier_state": encode_unit_value(self.snapshot_step_state())}
+
+    def set_state(self, state: Dict[str, Any]) -> None:
+        if "frontier_state" in state:
+            self.restore_step_state(decode_unit_value(state["frontier_state"]))
+        else:
+            self._restore_summary(state)

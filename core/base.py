@@ -50,7 +50,7 @@ class BlackBoxProblem(ProblemBase):
                 self.evaluation_count += 1
             except Exception:
                 # 保底：不让计数器影响评估流程
-                pass
+                raise
             return orig(self, candidate, *args, **kwargs)
 
         _wrapped_evaluate.__nsgablack_evaluation_wrapped__ = True
@@ -106,7 +106,7 @@ class BlackBoxProblem(ProblemBase):
             cons_arr = np.asarray(cons, dtype=float).flatten()
             if cons_arr.size > 0 and np.any(cons_arr > 0):
                 return False
-        except Exception:
+        except (TypeError, ValueError, KeyError):
             return False
 
         return True

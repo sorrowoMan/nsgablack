@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional, Sequence
 import numpy as np
 
 from ..trust_region_base import TrustRegionBaseAdapter
-from blackbase.context.context_keys import KEY_MO_WEIGHTS
+from nsgablack.context_keys import KEY_MO_WEIGHTS
 
 
 @dataclass
@@ -50,13 +50,14 @@ class TrustRegionMODFOAdapter(TrustRegionBaseAdapter):
         priority: int = 0,
         **config_kwargs,
     ) -> None:
+        unit_binding = config_kwargs.pop("unit_binding", None)
         cfg = self.resolve_config(
             config=config,
             config_cls=TrustRegionMODFOConfig,
             config_kwargs=config_kwargs,
             adapter_name="TrustRegionMODFOAdapter",
         )
-        super().__init__(cfg, name=name, priority=priority, random_seed=cfg.random_seed)
+        super().__init__(cfg, name=name, priority=priority, random_seed=cfg.random_seed, unit_binding=unit_binding)
         self.config = self.cfg
         self._weights: Optional[np.ndarray] = None
 
@@ -75,7 +76,7 @@ class TrustRegionMODFOAdapter(TrustRegionBaseAdapter):
                 if w.size > 0:
                     self._weights = w / max(1e-12, float(np.sum(w)))
                     return self._weights
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 pass
 
         if self._weights is not None and self.cfg.weight_method == "fixed":

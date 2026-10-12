@@ -71,6 +71,9 @@ def build_solver(run_id: str | None = None, *, strategy: str | None = None, quic
     # attach_checkpoint(solver, cfg, "default")
     from nsgablack.project import apply_solver_component_overrides
     apply_solver_component_overrides(solver, component_overrides)
+    if solver.bias_module is None:
+        from bias.domain.example_bias import build_unit_preferences
+        solver.set_bias_module(build_unit_preferences(solver.adapter))
     solver.set_resource_context(resource_context)
     return solver
 

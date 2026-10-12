@@ -1,4 +1,5 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import copy
 import json
@@ -62,7 +63,8 @@ def _append_query_trace_event(
                 )
             )
             handle.write("\n")
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_append_query_trace_event.fallback_100', exc=_fallback_error)
         return
 
 

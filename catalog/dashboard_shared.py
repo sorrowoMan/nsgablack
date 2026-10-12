@@ -1,4 +1,5 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlencode
@@ -75,7 +76,8 @@ def read_query_params(
     except Exception:
         try:
             return _coerce_params(st.experimental_get_query_params())
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='read_query_params.fallback_99', exc=_fallback_error)
             return {}, {}
 
 
@@ -138,11 +140,13 @@ def write_query_params(
         for key, value in payload.items():
             params[str(key)] = str(value)
         return
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='write_query_params.fallback_95', exc=_fallback_error)
         pass
     try:
         st.experimental_set_query_params(**payload)
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='write_query_params.fallback_96', exc=_fallback_error)
         pass
 
 
@@ -150,11 +154,13 @@ def rerun(st: Any) -> None:
     try:
         st.rerun()
         return
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='rerun.fallback_97', exc=_fallback_error)
         pass
     try:
         st.experimental_rerun()
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='rerun.fallback_98', exc=_fallback_error)
         return
 
 

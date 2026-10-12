@@ -23,6 +23,16 @@ class ContractError(ValueError):
     """扩展点契约违反（输入/输出/shape/语义不符合）。"""
 
 
+def validate_adapter_unit_bindings(adapter: Any) -> None:
+    """Check opted-in Unit contracts, including materialized child Adapters."""
+    validate = getattr(adapter, "validate_unit_bindings", None)
+    if callable(validate):
+        try:
+            validate()
+        except (TypeError, ValueError) as exc:
+            raise ContractError(f"Adapter Unit binding: {exc}") from exc
+
+
 def _as_1d_array(x: Any, *, name: str) -> np.ndarray:
     # ``UnknownState`` is the shared cross-framework candidate protocol.  The
     # NSG control plane remains ndarray-native internally, but its public

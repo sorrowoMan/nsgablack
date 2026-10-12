@@ -27,7 +27,7 @@ def _ensure_importable() -> None:
     try:
         import nsgablack  # noqa: F401
         return
-    except Exception:
+    except ImportError:
         pass
     here = Path(__file__).resolve()
     repo_parent = str(here.parent.parent.parent)
@@ -109,21 +109,8 @@ class NestedOuterProblem(BlackBoxProblem):
         return float(inner_result.get("objective", 1e6))
 
 
-class RandomSearchAdapter(AlgorithmAdapter):
-    def __init__(self) -> None:
-        super().__init__(name="random_search")
-        self.rng = np.random.default_rng(7)
-
-    def propose(self, control, context):
-        _ = context
-        low, high = -2.0, 2.0
-        out = []
-        for _ in range(int(getattr(control, "pop_size", 8))):
-            out.append(np.array([float(self.rng.uniform(low, high))], dtype=float))
-        return out
-
-    def update(self, control, candidates, feedback, context):
-        _ = (control, candidates, feedback, context)
+# Compatibility import: the implementation lives in the standard Unit Case.
+from nsgablack.examples.cases.algorithm_units.cases.candidate_search.adapter.nested_three_layer_demo import RandomSearchAdapter
 
 
 def build_solver() -> ComposableSolver:

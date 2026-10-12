@@ -1,216 +1,67 @@
-# 11. 自定义 Plugin：15 钩子完整实战（nsgablack）
+# 11. 定义 Plugin：从观察开始
 
-本章是“能直接抄”的插件说明书，覆盖 15 个统一钩子与一个可运行样例。
+只实现需要的钩子即可。下面统计物理尝试和逻辑提交，统计保留在插件实例，通过 get_report() 读取，不向 context 写入历史，也不申请决策或否决权限。
 
-## 0. 插件定位
-
-Plugin 是能力层，不是算法层。
-
-Plugin 负责：
-
-- 观测
-- 审计
-- 持久化
-- 报告
-
-Plugin 不负责：
-
-- 改写 Adapter 的 propose/update 语义
-- 接管 Project 编排
-
----
-
-## 1. 15 个统一钩子
-
-按生命周期顺序：
-
-1. `on_solver_init(self, solver)`
-2. `on_population_init(self, population, objectives, violations)`
-3. `on_step_attempt_start(self, attempt, logical_step)`
-4. `on_generation_start(self, generation)`
-5. `on_evaluate_start(self, candidate, context=None)`
-6. `on_evaluate_end(self, candidate, feedback, context=None)`
-7. `on_step(self, solver, generation)`（仅 committed）
-8. `on_generation_committed(self, generation, outcome)`（仅 committed）
-9. `on_generation_end(self, generation)`
-10. `on_step_attempt_end(self, attempt, logical_step, outcome)`
-11. `on_solver_finish(self, result)`
-12. `on_solver_finalization_prepare(self, result)`
-13. `on_solver_finalized(self, result)`
-14. `on_error(self, error, context=None)`
-15. `on_context_build(self, context) -> context`
-
-`on_step_attempt_start/end` 表达物理尝试事务，即使结果是 idle、rejected、
-cancelled 或 error 也成对触发。`on_generation_start/end` 只包围已经确认
-committed 的逻辑代；持久化、checkpoint、archive 等完成副作用应实现
-`on_generation_committed`。
-
-`on_solver_finalization_prepare` 发生在 teardown 成功后、事务型结果正式提交前，
-严格插件可以在这里否决发布；`on_solver_finalized` 只接收已经提交并具有权威语义的结果。
-
----
-
-## 2. 创建 Plugin 文件
-
-```powershell
-python -m nsgablack project add-component --case my_solver --kind plugin --name trace_audit_plugin
-```
-
----
-
-## 3. 可运行完整样例（15 钩子全实现）
+保存到 Case 的 `plugins/trace_audit_plugin.py`：
 
 ```python
-from __future__ import annotations
-
-import time
-from typing import Any, Dict, Optional
-
 from nsgablack.plugins.base import Plugin
 
 
 class TraceAuditPlugin(Plugin):
     context_requires = ()
-    context_provides = ("plugin.trace.events",)
-    context_mutates = ("metrics.plugin_trace_count",)
+    context_provides = ()
+    context_mutates = ()
     context_cache = ()
-    context_notes = "记录关键生命周期事件，并输出轻量审计统计。"
+    context_notes = "Observes attempts and commits; no shared context writes."
 
-    def __init__(self, name: str = "trace_audit_plugin"):
-        super().__init__(name=name, priority=100)
-        self.events = []
-        self._t0 = None
+    def __init__(self, name="trace_audit_plugin"):
+        super().__init__(name=name)
+        self.attempts = 0
+        self.committed = 0
+        self.last_status = None
 
-    def _push(self, event: str, payload: Optional[Dict[str, Any]] = None):
-        self.events.append(
-            {
-                "ts": time.time(),
-                "event": event,
-                "payload": dict(payload or {}),
-            }
-        )
+    def on_step_attempt_end(self, attempt, logical_step, outcome):
+        self.attempts += 1
+        self.last_status = outcome.status
 
-    def on_solver_init(self, solver):
-        self._t0 = time.time()
-        self._push("on_solver_init", {"solver": type(solver).__name__})
-
-    def on_population_init(self, population, objectives, violations):
-        n = len(population) if population is not None else 0
-        self._push("on_population_init", {"population_size": int(n)})
-
-    def on_generation_start(self, generation: int):
-        self._push("on_generation_start", {"generation": int(generation)})
-
-    def on_step_attempt_start(self, attempt: int, logical_step: int):
-        self._push("on_step_attempt_start", {"attempt": attempt, "logical_step": logical_step})
-
-    def on_evaluate_start(self, candidate, context: Optional[Dict[str, Any]] = None):
-        self._push("on_evaluate_start", {"has_context": isinstance(context, dict)})
-
-    def on_evaluate_end(self, candidate, feedback, context: Optional[Dict[str, Any]] = None):
-        self._push("on_evaluate_end", {"feedback_type": type(feedback).__name__})
-
-    def on_step(self, solver, generation: int):
-        self._push("on_step", {"generation": int(generation)})
-
-    def on_generation_committed(self, generation: int, outcome):
-        self._push("on_generation_committed", {"generation": generation, "outcome": dict(outcome)})
-
-    def on_generation_end(self, generation: int):
-        self._push("on_generation_end", {"generation": int(generation)})
-
-    def on_step_attempt_end(self, attempt: int, logical_step: int, outcome):
-        self._push("on_step_attempt_end", {"attempt": attempt, "logical_step": logical_step, "outcome": dict(outcome)})
-
-    def on_solver_finish(self, result: Dict[str, Any]):
-        elapsed = 0.0 if self._t0 is None else time.time() - self._t0
-        self._push("on_solver_finish", {"elapsed_s": float(elapsed)})
-
-    def on_solver_finalization_prepare(self, result: Dict[str, Any]):
-        self._push("on_solver_finalization_prepare", {"ready": bool(result.get("trainer_result_ready", False))})
-
-    def on_solver_finalized(self, result: Dict[str, Any]):
-        self._push("on_solver_finalized", {"status": str(result.get("status", ""))})
-
-    def on_error(self, error: BaseException, context: Optional[Dict[str, Any]] = None):
-        self._push("on_error", {"error": f"{type(error).__name__}: {error}"})
-
-    def on_context_build(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        out = dict(context or {})
-        out.setdefault("plugin.trace.events", len(self.events))
-        metrics = dict(out.get("metrics", {}) or {})
-        metrics["plugin_trace_count"] = int(len(self.events))
-        out["metrics"] = metrics
-        return out
+    def on_generation_committed(self, generation, outcome):
+        self.committed += 1
 
     def get_report(self):
-        return {
-            "events_total": len(self.events),
-            "last_event": None if not self.events else self.events[-1]["event"],
-        }
+        return {"attempts": self.attempts, "committed": self.committed,
+                "last_status": self.last_status}
 ```
 
----
-
-## 4. 在 build_solver 中挂载
+在原有 build_solver 创建 solver 后、返回之前加入：
 
 ```python
 from .plugins.trace_audit_plugin import TraceAuditPlugin
-
-def build_solver(config=None, *, resource_context=None, component_overrides=None):
-    del config, resource_context, component_overrides
-    solver = make_solver_somehow()
-    solver.add_plugin(TraceAuditPlugin())
-    return solver
+solver.add_plugin(TraceAuditPlugin())
 ```
 
----
+生命周期：初始化 → 每次物理尝试 start/end → 只有提交时的 generation 钩子 → finishing → teardown → finalization prepare → 原子发布 → finalized。失败、拒绝和空尝试仍计入 attempts，不计入 committed。
 
-## 5. 三类插件实战模式
+严格发布校验是另一种角色，必须声明否决权限。下面示例阻止发布非成功结果：
 
-### 5.1 观测型
+```python
+from blackbase.participation import ParticipationContract
+from nsgablack.plugins.base import Plugin
 
-- trace
-- module report
-- profiler
 
-重点在低开销与结构化输出。
+class SuccessPublicationGuard(Plugin):
+    participation = ParticipationContract(vetoes=("finalization",))
 
-### 5.2 控制型
+    def __init__(self):
+        super().__init__(name="success_publication_guard")
 
-- early-stop/budget guard
-- timeout guard
-
-重点在严格失败策略与可审计原因。
-
-### 5.3 存储型
-
-- checkpoint
-- artifact exporter
-- experiment logger
-
-重点在 snapshot/artifact 边界清晰。
-
----
-
-## 6. 必须遵守的安全线
-
-1. 短路评估必须保证返回 shape 合法。  
-2. plugin 异常默认 soft-error，除非显式 strict。  
-3. 不把大对象直接写 context。  
-4. 不在 plugin 中私建全局资源池。  
-
----
-
-## 7. 快速自检命令
-
-```powershell
-python run_project.py --check --build-check
-python -m nsgablack project doctor --path . --build --strict --format problem
+    def on_solver_finalization_prepare(self, result):
+        if result.get("status") != "ok":
+            raise ValueError("Case result is not ready for successful publication")
 ```
 
-若是评估链相关 plugin，务必补测：
+prepare 在公开引用前执行，可以否决暂存产物；finalized 是发布后通知，不能撤销已提交结果。评估决定另须声明 `ParticipationContract(decides=("evaluation",))`。
 
-- 单点评估路径
-- 批量评估路径
-- plugin 短路路径
+自定义共享键写入 Project 或 Case 的 context_keys.json，并在组件 contract 声明读写；只共享轻量值或 Snapshot/Artifact 引用。完整 trace 使用框架 DecisionTrace/Snapshot。
+
+验证命令：`python run_project.py --check --build-check` 和 `python run_project.py`。本章观察插件代码块直接参加 tests/test_scaffold_real_usage.py 的运行测试。

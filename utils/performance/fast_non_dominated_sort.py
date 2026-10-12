@@ -2,6 +2,7 @@
 Fast Non-Dominated Sorting implementation with O(MN²) complexity
 Based on Deb et al. (2002) NSGA-II algorithm
 """
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import numpy as np
 from typing import List, Tuple
@@ -309,8 +310,9 @@ def fast_non_dominated_sort_optimized(objectives: np.ndarray, constraint_violati
                     for idx in front:
                         ranks[idx] = rank
                 return fronts, ranks
-        except Exception:
+        except Exception as _fallback_error:
             # Fallback to standard implementation
+            _report_optional_failure(component=__name__, event='fast_non_dominated_sort_optimized.fallback_314', exc=_fallback_error)
             pass
 
     # Use standard implementation

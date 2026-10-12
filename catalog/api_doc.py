@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import ast
@@ -46,7 +46,7 @@ def _coerce_params_json(payload: dict) -> str:
         return ""
     try:
         return json.dumps(params, ensure_ascii=False)
-    except Exception:
+    except (TypeError, ValueError, AttributeError):
         return ""
 
 
@@ -62,7 +62,7 @@ def import_api_doc_jsonl(*, profile: str, path: Path) -> int:
             continue
         try:
             payload = json.loads(line)
-        except Exception:
+        except (ValueError, TypeError):
             continue
         module = str(payload.get("module", "")).strip()
         class_name = str(payload.get("class_name", payload.get("class", "")) or "").strip()
@@ -133,14 +133,14 @@ def _safe_unparse(node: Optional[ast.AST]) -> str:
         return ""
     try:
         return ast.unparse(node).strip()
-    except Exception:
+    except (TypeError, ValueError, AttributeError):
         return ""
 
 
 def _load_ast(path: Path) -> Optional[ast.Module]:
     try:
         text = path.read_text(encoding="utf-8", errors="ignore")
-    except Exception:
+    except (OSError, UnicodeError):
         return None
     if text.startswith("\ufeff"):
         text = text.lstrip("\ufeff")
@@ -270,8 +270,12 @@ def _auto_boundaries(method_name: str) -> str:
         return "需返回合法 shape；异常时由上层 fallback 处理（自动推断）"
     if method_name in {"propose", "update"}:
         return "不负责目标评估，仅生成候选/吸收反馈（自动推断）"
+    if method_name == "on_solver_finalization_prepare":
+        return "严格发布校验；须声明 vetoes=('finalization',)，异常阻止暂存结果发布"
+    if method_name == "on_solver_finalized":
+        return "权威发布后的通知；通知失败不能撤销已经提交的结果"
     if method_name.startswith("on_"):
-        return "应保持轻量，不阻断主流程（自动推断）"
+        return "副作用与阻断权限以 ParticipationContract 和具体生命周期契约为准"
     if method_name.startswith("get_"):
         return "仅负责读取，不保证线程安全（自动推断）"
     if method_name.startswith("set_"):

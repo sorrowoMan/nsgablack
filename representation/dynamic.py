@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Optional, Sequence, Tuple, Any
 
 from .base import RepresentationComponentContract
-from blackbase.context.context_keys import KEY_GENERATION
+from nsgablack.context_keys import KEY_GENERATION
 
 
 @dataclass

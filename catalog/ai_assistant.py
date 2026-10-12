@@ -15,7 +15,8 @@ def _in_use(p):
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM); s.settimeout(0.3)
         r = s.connect_ex(("127.0.0.1", p)); s.close(); return r == 0
-    except: return False
+    except (OSError, UnicodeError):
+        return False
 
 def _start():
     global _started

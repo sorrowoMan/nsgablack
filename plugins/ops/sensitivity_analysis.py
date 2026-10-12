@@ -7,6 +7,7 @@ parameter variations and collect comparable metrics.
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional
@@ -17,7 +18,7 @@ import time
 import numpy as np
 
 from ..base import Plugin
-from blackbase.context.context_keys import KEY_BEST_OBJECTIVE
+from nsgablack.context_keys import KEY_BEST_OBJECTIVE
 from ...utils.engineering.file_io import atomic_write_json
 
 
@@ -131,7 +132,7 @@ class SensitivityAnalysisPlugin(Plugin):
                             try:
                                 setter(seed)
                             except Exception:
-                                pass
+                                raise
                 _set_attr_by_path(solver, param.path, value)
 
                 # Patch BenchmarkHarness run_id to avoid overwriting.
@@ -144,7 +145,8 @@ class SensitivityAnalysisPlugin(Plugin):
                                 bench.cfg.run_id = f"{run_id}_{label}_{value}".replace(" ", "_")
                                 if self.cfg.overwrite_benchmark:
                                     setattr(bench.cfg, "overwrite", True)
-                    except Exception:
+                    except Exception as _fallback_error:
+                        _report_optional_failure(component=__name__, event='SensitivityAnalysisPlugin.run_study.fallback_254', exc=_fallback_error)
                         pass
 
                 result = solver.run()

@@ -27,7 +27,7 @@ class IdentityRepair:
         return x
 
 
-def test_transactional_mutate_rolls_back_on_repair_error():
+def test_transactional_mutate_does_not_execute_repair():
     x = np.array([1.0, 2.0])
     pipeline = RepresentationPipeline(
         mutator=InPlaceAddMutator(10.0),
@@ -38,8 +38,8 @@ def test_transactional_mutate_rolls_back_on_repair_error():
 
     y = pipeline.mutate(x, context={"generation": 0})
 
-    # transactional=True 应保证返回原始输入，且原始输入不被原地改写
-    assert np.allclose(y, np.array([1.0, 2.0]))
+    # Mutation produces a draft; repair is a separately scheduled operation.
+    assert np.allclose(y, np.array([11.0, 12.0]))
     assert np.allclose(x, np.array([1.0, 2.0]))
 
 

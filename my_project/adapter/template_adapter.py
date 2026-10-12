@@ -7,10 +7,10 @@ from typing import Any, Dict, Sequence
 
 import numpy as np
 
-from nsgablack.adapters.algorithm_adapter import AlgorithmAdapter
+from nsgablack.adapters.candidate_proposer import CandidateProposerAdapter
 
 
-class AdapterTemplate(AlgorithmAdapter):
+class AdapterTemplate(CandidateProposerAdapter):
     """最小可运行适配器模板。"""
 
     context_requires = ()
@@ -19,11 +19,10 @@ class AdapterTemplate(AlgorithmAdapter):
     context_cache = ()
     context_notes = ("适配器模板：在 propose/update 生命周期中维护算法状态。",)
 
-    def __init__(self, max_candidates: int = 8) -> None:
-        super().__init__(name="adapter_template")
+    def __init__(self, max_candidates: int = 8, *, unit_binding=None) -> None:
+        super().__init__(name="adapter_template", unit_binding=unit_binding)
         # 每轮最多提出多少个候选解
         self.max_candidates = max(1, int(max_candidates))
-        self._last_population: np.ndarray | None = None
 
     def propose(self, solver: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         # 提案阶段：生成候选解列表
@@ -33,7 +32,7 @@ class AdapterTemplate(AlgorithmAdapter):
         out = []
         for _ in range(self.max_candidates):
             out.append(rng.uniform(-1.0, 1.0, size=(dim,)))
-        return out
+        return self.build_candidate_units(out, context)
 
     def update(
         self,
@@ -48,5 +47,4 @@ class AdapterTemplate(AlgorithmAdapter):
         _ = objectives
         _ = violations
         _ = context
-        if candidates is not None and len(candidates) > 0:
-            self._last_population = np.asarray(candidates, dtype=float)
+        # 最近提案保存在 proposal_units；它不是 L2 权威种群。

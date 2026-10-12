@@ -15,7 +15,7 @@ import numpy as np
 from ...core.base import BlackBoxProblem
 from ...bias import BiasModule
 from ..constraints.constraint_utils import evaluate_constraints_safe, evaluate_constraints_batch_safe
-from blackbase.context.context_keys import KEY_CONSTRAINTS, KEY_CONSTRAINT_VIOLATION, KEY_INDIVIDUAL_ID
+from nsgablack.context_keys import KEY_CONSTRAINTS, KEY_CONSTRAINT_VIOLATION, KEY_INDIVIDUAL_ID
 
 
 class BatchEvaluator:
@@ -273,7 +273,7 @@ class BatchEvaluator:
             if not constraints_list and KEY_CONSTRAINT_VIOLATION in context:
                 try:
                     vio_out[i] = float(context[KEY_CONSTRAINT_VIOLATION])
-                except Exception:
+                except (TypeError, ValueError, OverflowError):
                     pass
 
         return obj_out, vio_out
@@ -312,7 +312,7 @@ class BatchEvaluator:
                 if cons_arr.size == 0 and KEY_CONSTRAINT_VIOLATION in context:
                     try:
                         violation = float(context[KEY_CONSTRAINT_VIOLATION])
-                    except Exception:
+                    except (TypeError, ValueError, OverflowError):
                         pass
 
             objectives[i] = obj

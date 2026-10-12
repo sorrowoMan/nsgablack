@@ -1,4 +1,4 @@
-"""Closed-form fitting method; no optimizer loop is duplicated here."""
+"""Data-dependent fitting provider, called by the LearningProblem."""
 
 from __future__ import annotations
 

@@ -1,5 +1,17 @@
 # 架构概览
 
+[Adapter 决策与 Unit 成员维护](UNIT_MEMBER_OPERATIONS_CN.md) 用 age 示例说明继承扩展、成员来源映射、草稿校验与恢复。
+
+[ProblemRepair 与 UnitRepair 共同验收](JOINT_REPAIR_CN.md) 定义独立修复、临时 Unit、版本验证与失败决策。
+
+[算子 Unit 输入与 repair 顺序](UNIT_OPERATOR_INPUTS_CN.md) 说明如何声明变异依赖，以及预算、修复、结构校验的职责。
+
+Unit 保留候选本体并扩展算法特征、关系和状态，构建与取出候选不隐含编解码。当前特征维护、缓存与反馈阶段说明见 [Unit 特征维护](UNIT_FEATURES_CN.md)。
+
+理解当前框架优先沿 **Problem → Pipeline → Unit → Adapter → Bias → Plugin** 的职责关系阅读。Unit 是算法结构核心；旧“四层”只是扩展面的概括。[Unit 与偏好契约](UNIT_PREFERENCE_CONTRACT_CN.md) 说明不同评价范围、实例依赖与状态更新。
+
+最后按代码核对：2026-10-08。当前运行所有权、Unit、能力声明、参与度和偏好证据的规范入口为 [运行所有权与显式扩展契约](RUNTIME_CONTRACTS_CN.md)。以下四层是装配视角；Solver 内部运行状态由 RunSession、PopulationAuthority 等对象持有。
+
 这份文档回答一个问题：  
 **在统一框架栈中，substrate 和语义层分别负责什么。**
 
@@ -28,7 +40,7 @@ mlblack semantic extension:
 边界原则：
 - Solver 不承载具体搜索策略  
 - Adapter 不直接改写 solver 私有状态  
-- Representation 只处理“可行解管线”  
+- 问题管线处理候选，算法管线构建 Unit；Adapter 决定怎样操作这些结构
 - Plugin 只做工程能力增强，不替代策略逻辑
 
 ---

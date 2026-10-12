@@ -30,7 +30,7 @@ from ..empty_outcome import (
     aggregate_named_empty_outcomes,
     child_empty_proposal_outcome,
 )
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_CANDIDATE_ROLES,
     KEY_ROLE,
     KEY_ROLE_ADAPTER,
@@ -43,6 +43,7 @@ from blackbase.context.context_keys import (
 @dataclass
 class RoleAdapter(AlgorithmAdapter):
     """Wrap an adapter with role metadata and optional candidate limiting."""
+    unit_contract_mode = "delegated"
 
     role: str = "role"
     inner: Optional[AlgorithmAdapter] = None
@@ -153,6 +154,24 @@ class RoleAdapter(AlgorithmAdapter):
         ctx[KEY_ROLE] = self.role
         ctx[KEY_ROLE_ADAPTER] = self.name
         return child_empty_proposal_outcome(self.inner, control, ctx)
+
+    def on_proposal_repair(self, control, repair, context):
+        self._forward_proposal_repair(control, repair, context)
+
+    def proposal_repair_children(self, repair, context):
+        if self.inner is None:
+            raise RuntimeError(f"RoleAdapter '{self.name}' has no inner adapter")
+        ctx = dict(context)
+        ctx[KEY_ROLE] = self.role
+        ctx[KEY_ROLE_ADAPTER] = self.name
+        return ((self.inner, repair.through(self._inner_proposal_disposition), ctx),)
+
+    def _proposal_contexts(self, proposed_count, context):
+        ctx = dict(context)
+        ctx[KEY_ROLE], ctx[KEY_ROLE_ADAPTER] = self.role, self.name
+        base = self._inner_proposal_disposition
+        values = self.inner.get_proposal_contexts(base.proposed_count if base else proposed_count, ctx)
+        return tuple(values[i] for i in base.accepted_indices) if base else values
 
     def on_proposal_disposition(
         self,
@@ -485,6 +504,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
     - Records candidate -> role mapping for later analysis/plugins
     - Dispatches evaluation feedback back to each role adapter
     """
+    unit_contract_mode = "delegated"
 
     context_contract_encapsulates_children = True
 
@@ -557,6 +577,26 @@ class RoleRouterAdapter(AlgorithmAdapter):
                 )
             )
         return aggregate_named_empty_outcomes(rows, owner=self.name)
+
+    def on_proposal_repair(self, control, repair, context):
+        self._forward_proposal_repair(control, repair, context)
+
+    def proposal_repair_children(self, repair, context):
+        targets = []
+        for index, (role, start, end) in enumerate(self._last_ranges):
+            ctx = dict(context)
+            ctx[KEY_ROLE] = role.role
+            ctx[KEY_ROLE_INDEX] = index
+            targets.append((role, repair.for_range(start, end), ctx))
+        return tuple(targets)
+
+    def _proposal_contexts(self, proposed_count, context):
+        out = []
+        for index, (role, start, end) in enumerate(self._last_ranges):
+            ctx = dict(context)
+            ctx[KEY_ROLE], ctx[KEY_ROLE_INDEX] = role.role, index
+            out.extend(role.get_proposal_contexts(end - start, ctx))
+        return out
 
     def on_proposal_disposition(
         self,

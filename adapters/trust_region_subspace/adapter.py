@@ -35,11 +35,12 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
 
     Uses a random orthonormal subspace and samples within it.
     """
+    unit_build_operations = ("initialize", "basis")
     context_requires = ("generation",)
     context_provides = ()
     context_mutates = ()
     context_cache = ()
-    context_notes = ("Subspace basis is managed internally (random or population-derived).",)
+    context_notes = ("Adapter schedules basis refresh; algorithm pipeline constructs the random or population-derived basis.",)
 
     def __init__(
         self,
@@ -48,13 +49,14 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
         priority: int = 0,
         **config_kwargs,
     ) -> None:
+        unit_binding = config_kwargs.pop("unit_binding", None)
         cfg = self.resolve_config(
             config=config,
             config_cls=TrustRegionSubspaceConfig,
             config_kwargs=config_kwargs,
             adapter_name="TrustRegionSubspaceAdapter",
         )
-        super().__init__(cfg, name=name, priority=priority, random_seed=cfg.random_seed)
+        super().__init__(cfg, name=name, priority=priority, random_seed=cfg.random_seed, unit_binding=unit_binding)
         self.config = self.cfg
         self._basis: Optional[np.ndarray] = None
         self._steps = 0
@@ -68,6 +70,16 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
             self._basis = self._build_or_sample_basis(control)
         self._steps += 1
 
+    def _repair_within_region(self, candidate: np.ndarray) -> bool:
+        if self._basis is None:
+            return False
+        delta = np.asarray(candidate, dtype=float) - np.asarray(self._center, dtype=float)
+        coordinates = self._basis.T @ delta
+        tolerance = 1e-12 * max(1.0, abs(self._radius))
+        return bool(np.all(np.isfinite(delta))
+                    and np.max(np.abs(delta - self._basis @ coordinates), initial=0.0) <= tolerance
+                    and np.max(np.abs(coordinates), initial=0.0) <= self._radius + tolerance)
+
     def _sample_delta(self, control: Any, context: Dict[str, Any]) -> np.ndarray:
         _ = control, context
         assert self._basis is not None
@@ -77,9 +89,9 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
     def _sample_subspace(self, control: Any) -> np.ndarray:
         dim = int(getattr(control, "dimension", 1) or 1)
         k = min(max(1, int(self.cfg.subspace_dim)), dim)
-        mat = self._rng.normal(size=(dim, k))
-        q, _ = np.linalg.qr(mat)
-        return q[:, :k]
+        self.rebuild_unit("basis", method="random", rank=k,
+                          samples=self._rng.normal(size=(dim, k)))
+        return self.algorithm_unit.basis
 
     def _build_or_sample_basis(self, control: Any) -> np.ndarray:
         method = str(getattr(self.cfg, "basis_method", "random") or "random").strip().lower()
@@ -101,46 +113,16 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
         if method == "random":
             return self._sample_subspace(control)
 
-        if method == "svd":
-            Xc = X - np.mean(X, axis=0, keepdims=True)
-            try:
-                _, _, vt = np.linalg.svd(Xc, full_matrices=False)
-                return vt[:k].T
-            except Exception:
-                return self._sample_subspace(control)
-
-        if method == "sparse_pca":
-            try:
-                from sklearn.decomposition import SparsePCA
-
-                spca = SparsePCA(n_components=k, random_state=self.cfg.random_seed)
-                spca.fit(X)
-                basis = np.asarray(spca.components_, dtype=float).T
-                return basis
-            except Exception:
-                method = "pca"
-
-        if method == "cluster":
-            try:
-                from sklearn.cluster import KMeans
-
-                n_clusters = min(max(2, k), X.shape[0])
-                km = KMeans(n_clusters=n_clusters, random_state=self.cfg.random_seed, n_init=5)
-                labels = km.fit_predict(X)
-                _ = labels
-                centers = km.cluster_centers_
-                Xc = centers - np.mean(centers, axis=0, keepdims=True)
-                _, _, vt = np.linalg.svd(Xc, full_matrices=False)
-                return vt[:k].T
-            except Exception:
-                method = "pca"
-
-        # PCA basis (top-k right singular vectors)
-        Xc = X - np.mean(X, axis=0, keepdims=True)
         try:
-            _, _, vt = np.linalg.svd(Xc, full_matrices=False)
-            return vt[:k].T
-        except Exception:
+            self.rebuild_unit("basis", method=method, rank=k, samples=X, seed=self.cfg.random_seed)
+            return self.algorithm_unit.basis
+        except (ImportError, ValueError, np.linalg.LinAlgError):
+            if method in {"sparse_pca", "cluster"}:
+                try:
+                    self.rebuild_unit("basis", method="pca", rank=k, samples=X)
+                    return self.algorithm_unit.basis
+                except np.linalg.LinAlgError:
+                    pass
             return self._sample_subspace(control)
 
     def _score(

@@ -1,0 +1,38 @@
+[[entry]]
+key = "tool.problem_repair"
+title = "ProblemRepair"
+kind = "tool"
+import_path = "nsgablack.representation:ProblemRepair"
+tags = ["repair", "problem", "contract", "validation"]
+summary = "问题修复 Protocol：修复候选并只读验证最终语义版本，与 UnitRepair 共同验收。"
+use_when = ["需要在 UnitRepair 修改候选后重新确认问题约束时。"]
+minimal_wiring = ["# Implement repair(candidate, context) and validate(semantic_candidate, context) -> bool", "pipeline = RepresentationPipeline(repair=problem_repair)"]
+required_companions = ["JointRepairPolicy"]
+config_keys = ["repair", "validate"]
+example_entry = "python -m nsgablack catalog show tool.problem_repair"
+
+[[entry]]
+key = "tool.unit_repair"
+title = "UnitRepair"
+kind = "tool"
+import_path = "nsgablack.representation:UnitRepair"
+tags = ["repair", "unit", "contract", "validation"]
+summary = "Unit 修复 Protocol：修改 codec 草稿，验证最终候选与结构；部分接纳投影在 Adapter disposition 之后执行，保留已整理坐标。"
+use_when = ["有 algorithm_unit/UnitBinding 的叶 Adapter 需要独立结构修复组件时。"]
+minimal_wiring = ["# Implement repair(unit, evidence, context) -> CandidateBatch and validate(unit, evidence, context) -> bool", "# Partial admission: project_admission receives a draft already compacted by Adapter disposition", "adapter.set_unit_repair(unit_repair)"]
+required_companions = ["UnitBinding", "ProblemRepair", "JointRepairPolicy"]
+config_keys = ["repair", "validate", "project_admission"]
+example_entry = "python -m nsgablack catalog show tool.unit_repair"
+
+[[entry]]
+key = "tool.joint_repair_policy"
+title = "JointRepairPolicy"
+kind = "tool"
+import_path = "nsgablack.representation:JointRepairPolicy"
+tags = ["repair", "unit", "problem", "transaction"]
+summary = "显式启用 ProblemRepair/UnitRepair 共同验收；有限轮协调，零接纳恢复局部状态；拒绝后串行推进须整体规划、事务执行。"
+use_when = ["必须在送评前同时满足已声明的问题约束和 Unit 不变量时。"]
+minimal_wiring = ["from nsgablack.representation import JointRepairPolicy", "solver = ComposableSolver(problem, adapter=adapter, representation_pipeline=pipeline, joint_repair_policy=JointRepairPolicy(max_rounds=1))"]
+required_companions = ["ProblemRepair", "ComposableSolver or EvolutionSolver"]
+config_keys = ["max_rounds", "on_rejection"]
+example_entry = "python -m nsgablack catalog show tool.joint_repair_policy"

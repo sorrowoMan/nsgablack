@@ -11,6 +11,7 @@ Backends
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import copy
 import os
@@ -26,7 +27,7 @@ import numpy as np
 from ...bias import BiasModule
 from ...core.base import BlackBoxProblem
 from ..constraints.constraint_utils import evaluate_constraints_safe
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_BOUNDS,
     KEY_CONSTRAINT_VIOLATION,
     KEY_PROBLEM,
@@ -71,7 +72,8 @@ def _default_context_builder(
     ctx[KEY_PROBLEM] = problem
     try:
         ctx.setdefault(KEY_BOUNDS, getattr(problem, "bounds", None))
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_default_context_builder.fallback_305', exc=_fallback_error)
         pass
     return ctx
 
@@ -380,7 +382,7 @@ class ParallelEvaluator:
                 try:
                     setattr(bias_module, "cache_enabled", bool(restore_cache_enabled))
                 except Exception:
-                    pass
+                    raise
             if self._pool_ctx is not None:
                 self._pool_ctx.__exit__(None, None, None)
                 self._pool_ctx = None
@@ -513,7 +515,8 @@ class ParallelEvaluator:
                     if self.verbose:
                         print(f"[parallel] retry success idx={idx} attempt={attempt + 1}")
                     return obj, float(violation)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='ParallelEvaluator._retry_evaluation.fallback_308', exc=_fallback_error)
                 continue
 
         warnings.warn(f"[parallel] idx={idx} failed after {self.max_retries} retries")

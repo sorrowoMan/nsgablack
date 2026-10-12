@@ -1,4 +1,5 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import json
 import os
@@ -29,7 +30,10 @@ from ..contracts import (
     UsageContract,
 )
 from ..contract_relations import build_contract_neighbor_sections, enrich_entry_relation_fields
-from ..registry import CatalogEntry, _expand_token_groups, _normalize_catalog_profile
+from ..registry import (
+    CatalogEntry, _expand_token_groups, _normalize_catalog_profile,
+    apply_catalog_profile_entry as _apply_profile_to_entry,
+)
 
 
 _MYSQL_CHARSET = "utf8mb4"
@@ -71,17 +75,20 @@ _SEARCHABLE_FIELD_NAMES = (
 def _apply_connection_charset(conn) -> None:
     try:
         cur = conn.cursor()
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_apply_connection_charset.fallback_115', exc=_fallback_error)
         return
     try:
         cur.execute(f"SET NAMES {_MYSQL_CHARSET} COLLATE {_MYSQL_COLLATION}")
         cur.execute(f"SET collation_connection = '{_MYSQL_COLLATION}'")
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_apply_connection_charset.fallback_116', exc=_fallback_error)
         pass
     finally:
         try:
             cur.close()
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='_apply_connection_charset.fallback_118', exc=_fallback_error)
             pass
 
 
@@ -96,7 +103,7 @@ def _env_url_uses_mysql(url: str) -> bool:
         return False
     try:
         scheme = str(urlparse(raw).scheme or "").strip().lower()
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return False
     return scheme in {"mysql", "mysql+pymysql", "mysql+mysqlconnector"}
 
@@ -115,7 +122,7 @@ def _read_mysql_config_file() -> Dict[str, object]:
             continue
         try:
             data = _toml.loads(path.read_text(encoding="utf-8", errors="replace"))
-        except Exception:
+        except (OSError, UnicodeError, ValueError, SyntaxError):
             continue
         if isinstance(data, dict):
             return data
@@ -236,43 +243,6 @@ def _trim_field_value(value: object) -> str:
     if len(text) <= _FIELD_VALUE_LIMIT:
         return text
     return text[: _FIELD_VALUE_LIMIT]
-
-
-def _entry_uses_examples_path(text: object) -> bool:
-    raw = str(text or "").lower()
-    return "examples/" in raw or "examples\\" in raw
-
-
-def _apply_profile_to_entry(entry: CatalogEntry, *, profile: str) -> CatalogEntry | None:
-    profile_key = _normalize_catalog_profile(profile)
-    if profile_key != "framework-core":
-        return entry
-    if entry.kind in _FRAMEWORK_CORE_EXCLUDED_KINDS:
-        return None
-    if _entry_uses_examples_path(entry.import_path):
-        return None
-    if _entry_uses_examples_path(entry.example_entry):
-        entry = CatalogEntry(
-            key=entry.key,
-            title=entry.title,
-            kind=entry.kind,
-            import_path=entry.import_path,
-            tags=entry.tags,
-            summary=entry.summary,
-            companions=entry.companions,
-            context_requires=entry.context_requires,
-            context_provides=entry.context_provides,
-            context_mutates=entry.context_mutates,
-            context_cache=entry.context_cache,
-            context_notes=entry.context_notes,
-            use_when=entry.use_when,
-            minimal_wiring=entry.minimal_wiring,
-            required_companions=entry.required_companions,
-            config_keys=entry.config_keys,
-            example_entry="",
-            detail_ref=entry.detail_ref,
-        )
-    return entry
 
 
 def _profile_sql_filters(profile: str) -> tuple[str, List[object]]:
@@ -807,7 +777,8 @@ VALUES (%s, %s, %s, %s, %s)
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.sync_bundle.fallback_120', exc=_fallback_error)
                 pass
 
     def update_health(
@@ -827,7 +798,8 @@ VALUES (%s, %s, %s, %s, %s)
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.update_health.fallback_121', exc=_fallback_error)
                 pass
 
     def _upsert_components(
@@ -1128,10 +1100,10 @@ ON DUPLICATE KEY UPDATE
 """,
                 (
                     cid,
-                    int(bool(h.import_ok)),
+                    None if h.import_ok is None else int(h.import_ok),
                     int(bool(h.context_ok)),
                     int(bool(h.methods_ok)),
-                    int(bool(h.params_ok)),
+                    None if h.params_ok is None else int(h.params_ok),
                     json.dumps(list(h.issues), ensure_ascii=False),
                 ),
             )
@@ -1182,7 +1154,7 @@ ON DUPLICATE KEY UPDATE
                 parsed = json.loads(value)
                 if isinstance(parsed, list):
                     return tuple(str(item).strip() for item in parsed if str(item).strip())
-            except Exception:
+            except (ValueError, TypeError):
                 pass
             text = value.strip()
             return (text,) if text else ()
@@ -1467,7 +1439,8 @@ WHERE """
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.list_catalog_entries.fallback_123', exc=_fallback_error)
                 pass
 
     def search_catalog_entries(
@@ -1506,7 +1479,8 @@ WHERE """
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.search_catalog_entries.fallback_124', exc=_fallback_error)
                 pass
 
     def get_catalog_entry(self, key: str, *, profile: str = "default") -> Optional[CatalogEntry]:
@@ -1529,7 +1503,8 @@ WHERE """
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.get_catalog_entry.fallback_125', exc=_fallback_error)
                 pass
 
     def field_values(
@@ -1587,7 +1562,8 @@ WHERE """
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.field_values.fallback_126', exc=_fallback_error)
                 pass
 
     def facet_rows(
@@ -1749,7 +1725,8 @@ ON DUPLICATE KEY UPDATE
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.sync_api_index.fallback_127', exc=_fallback_error)
                 pass
 
     def load_api_index(self, *, profile: str) -> List[ApiIndexEntry]:
@@ -1800,7 +1777,8 @@ WHERE profile=%s
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.load_api_index.fallback_128', exc=_fallback_error)
                 pass
 
     def load_api_index_meta(self, *, profile: str) -> Optional[ApiIndexMeta]:
@@ -1839,7 +1817,8 @@ WHERE profile=%s
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.load_api_index_meta.fallback_129', exc=_fallback_error)
                 pass
 
     def search_api_index(
@@ -1925,7 +1904,8 @@ LIMIT %s
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.search_api_index.fallback_130', exc=_fallback_error)
                 pass
 
     def get_api_index_entry(
@@ -1983,7 +1963,8 @@ LIMIT 1
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.get_api_index_entry.fallback_131', exc=_fallback_error)
                 pass
 
     def upsert_api_docs(
@@ -2035,7 +2016,8 @@ ON DUPLICATE KEY UPDATE
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.upsert_api_docs.fallback_132', exc=_fallback_error)
                 pass
 
     def get_api_doc_entry(
@@ -2118,7 +2100,8 @@ LIMIT 1
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.get_api_doc_entry.fallback_133', exc=_fallback_error)
                 pass
 
     def load_api_doc_entries(self, *, profile: str) -> List[ApiDocEntry]:
@@ -2194,7 +2177,8 @@ WHERE profile=%s
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.load_api_doc_entries.fallback_134', exc=_fallback_error)
                 pass
 
     def list_api_doc_gaps(
@@ -2267,5 +2251,6 @@ LIMIT %s
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.list_api_doc_gaps.fallback_135', exc=_fallback_error)
                 pass

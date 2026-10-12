@@ -7,23 +7,19 @@ from pathlib import Path
 from typing import Callable, List
 
 from ..model import DoctorDiagnostic
+from blackbase.project.doctor_scope import source_files
 
 
 def _iter_py_files(root: Path) -> List[Path]:
     if not root.exists():
         return []
-    out: List[Path] = []
-    for p in root.rglob("*.py"):
-        if "__pycache__" in p.parts:
-            continue
-        out.append(p)
-    return out
+    return list(source_files(root))
 
 
 def _parse_file(path: Path) -> ast.AST | None:
     try:
         return ast.parse(path.read_text(encoding="utf-8-sig"))
-    except Exception:
+    except (OSError, UnicodeError, ValueError, SyntaxError):
         return None
 
 
@@ -51,6 +47,7 @@ def check_no_plugin_evaluation_short_circuit(
         if tree is None:
             continue
         hits: List[str] = []
+        locations: list[int] = []
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
                 continue
@@ -58,7 +55,8 @@ def check_no_plugin_evaluation_short_circuit(
                 continue
             methods = {n.name for n in node.body if isinstance(n, ast.FunctionDef)}
             if "evaluate_individual" in methods or "evaluate_population" in methods:
-                hits.append(f"{node.name}@L{int(getattr(node, 'lineno', 0) or 0)}")
+                hits.append(f"{node.name}@L{node.lineno}")
+                locations.append(node.lineno)
         if not hits:
             continue
         add(
@@ -71,6 +69,7 @@ def check_no_plugin_evaluation_short_circuit(
                 + (" ..." if len(hits) > 8 else "")
             ),
             file,
+            line=min(locations),
         )
 
 

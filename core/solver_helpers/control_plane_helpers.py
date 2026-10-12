@@ -1,6 +1,7 @@
 """Control-plane helper utilities for SolverBase."""
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import hashlib
 import json
@@ -13,7 +14,7 @@ from blackbase.context import (
     detach_context_value,
 )
 
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_ADAPTER_BEST_X,
     KEY_BEST_CANDIDATE_REF,
     KEY_BEST_OBJECTIVE,
@@ -400,7 +401,8 @@ def _record_runtime_projection_audit(
         )
         try:
             setattr(solver, "_runtime_projection_audit", fallback)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='_record_runtime_projection_audit.fallback_175', exc=_fallback_error)
             pass
         return fallback, exc
     try:
@@ -412,7 +414,8 @@ def _record_runtime_projection_audit(
         )
         try:
             setattr(solver, "_runtime_projection_audit", fallback)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='_record_runtime_projection_audit.fallback_176', exc=_fallback_error)
             pass
         return fallback, exc
     return detached, None
@@ -799,7 +802,8 @@ def collect_adapter_runtime_context_projection(
     if signature != previous_signature:
         try:
             setattr(solver, "_runtime_projection_audit_report_signature", signature)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='collect_adapter_runtime_context_projection.fallback_173', exc=_fallback_error)
             pass
         if report_exception is not None and callable(report_soft_error_fn):
             report_soft_error_fn(
@@ -856,7 +860,8 @@ def _store_set(store: Any, key: str, value: Any) -> None:
     if callable(set_fn):
         try:
             set_fn(key, value)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='_store_set.fallback_174', exc=_fallback_error)
             return
     elif isinstance(store, dict):
         store[key] = value
@@ -981,9 +986,9 @@ def set_pareto_snapshot_fields(
         return
     setattr(solver, "pareto_solutions", solutions)
     setattr(solver, "pareto_objectives", objectives)
-    store = getattr(solver, "context_store", None)
-    _store_set(store, KEY_PARETO_SOLUTIONS, solutions)
-    _store_set(store, KEY_PARETO_OBJECTIVES, objectives)
+    # A numeric view cannot retain an unrelated semantic identity Snapshot.
+    # Its publisher must supply the aligned formal Snapshot explicitly.
+    setattr(solver, "pareto_population_snapshot", None)
 
 
 __all__ = [

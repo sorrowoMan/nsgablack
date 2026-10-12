@@ -10,8 +10,10 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
+from ..unit_backed import UnitBackedAdapter, UnitField, UnitFeedbackField
+from ...representation.structure_builders import PollUnitBuilder
 from ..algorithm_adapter import AlgorithmAdapter
-from blackbase.context.context_keys import KEY_ADAPTER_BEST_SCORE, KEY_MUTATION_SIGMA
+from nsgablack.context_keys import KEY_ADAPTER_BEST_SCORE, KEY_MUTATION_SIGMA
 
 
 @dataclass
@@ -24,14 +26,21 @@ class PatternSearchConfig:
     objective_aggregation: str = "sum"
 
 
-class PatternSearchAdapter(AlgorithmAdapter):
+class PatternSearchAdapter(UnitBackedAdapter):
+    unit_build_operations = ("initialize", "poll")
+    accepts_proposal_replacement = True
+    unit_builder_type = PollUnitBuilder
+    unit_schema = PollUnitBuilder.unit_type.schema
+    current_x = UnitField("current")
+    current_score = UnitFeedbackField("current")
+
     context_requires = ()
     context_provides = (KEY_MUTATION_SIGMA, KEY_ADAPTER_BEST_SCORE)
     context_mutates = ()
     context_cache = ()
     context_notes = "Coordinate pattern search with adaptive step-size."
     state_recovery_level = "L1"
-    state_recovery_notes = "Restores incumbent point/score and step size; direction samples are regenerated."
+    state_recovery_notes = "Restores incumbent, step size and pipeline-built poll geometry."
 
     def __init__(
         self,
@@ -40,7 +49,7 @@ class PatternSearchAdapter(AlgorithmAdapter):
         priority: int = 0,
         **config_kwargs,
     ) -> None:
-        super().__init__(name=name, priority=priority)
+        super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
         self.config = self.resolve_config(
             config=config,
             config_cls=PatternSearchConfig,
@@ -67,16 +76,20 @@ class PatternSearchAdapter(AlgorithmAdapter):
         dim = int(self.current_x.shape[0])
         n_dirs = max(1, min(dim, int(self.cfg.max_directions)))
         dims = self._rng.choice(dim, size=n_dirs, replace=False)
+        self.rebuild_unit("poll", dimensions=dims, context=context)
         out = []
-        for d in dims:
-            plus = np.array(self.current_x, copy=True)
-            minus = np.array(self.current_x, copy=True)
-            plus[d] += float(self.step_size)
-            minus[d] -= float(self.step_size)
-            out.append(np.asarray(control.repair_candidate(plus, context), dtype=float))
-            out.append(np.asarray(control.repair_candidate(minus, context), dtype=float))
+        for direction in self.algorithm_unit.directions:
+            point = self.current_x + float(self.step_size) * direction
+            out.append(np.asarray(point, dtype=float))
+        self.algorithm_unit.displacements = np.asarray(out) - self.current_x
         self._runtime_projection = {KEY_MUTATION_SIGMA: float(self.step_size)}
         return out
+
+    def on_proposal_repair(self, control, repair, context):
+        if repair.proposed_count != len(self.algorithm_unit.probes):
+            raise ValueError("Pattern-search repair must align with pending probes")
+        for row, index in enumerate(repair.proposal_indices):
+            self.algorithm_unit.displacements[index] = repair.after.numeric_matrix[row] - self.current_x
 
     def update(
         self,
@@ -106,14 +119,14 @@ class PatternSearchAdapter(AlgorithmAdapter):
 
     def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
         _ = solver
-        return dict(self._runtime_projection)
+        return {**self._runtime_projection, KEY_ADAPTER_BEST_SCORE: self.current_score}
 
     def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
         _ = solver
         source = f"adapter.{self.__class__.__name__}"
         return {k: source for k in self._runtime_projection.keys()}
 
-    def get_state(self) -> Dict[str, Any]:
+    def _get_algorithm_state(self) -> Dict[str, Any]:
         return {
             "current_x": None if self.current_x is None else self.current_x.tolist(),
             "current_score": self.current_score,
@@ -121,7 +134,7 @@ class PatternSearchAdapter(AlgorithmAdapter):
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
-    def set_state(self, state: Dict[str, Any]) -> None:
+    def _set_algorithm_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
         x = state.get("current_x")

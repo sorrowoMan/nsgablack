@@ -1,4 +1,5 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import ast
 import importlib.util
@@ -21,7 +22,7 @@ from .contracts import (
 from .registry import CatalogEntry
 from .store import resolve_catalog_store
 from .usage import build_usage_profile
-from blackbase.context.context_keys import CANONICAL_CONTEXT_KEYS
+from nsgablack.context_keys import unknown_context_keys
 
 
 _ADAPTER_REQUIRED = ("propose", "update")
@@ -57,7 +58,7 @@ def _coerce_tuple(values: object) -> Tuple[str, ...]:
 def _safe_unparse(node: ast.AST) -> str:
     try:
         return ast.unparse(node).strip()
-    except Exception:
+    except (TypeError, ValueError, AttributeError):
         return ""
 
 
@@ -74,7 +75,8 @@ def _format_type(tp: object) -> str:
         if not args:
             return str(origin)
         return f"{origin}[{', '.join(str(a) for a in args)}]"
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_format_type.fallback_106', exc=_fallback_error)
         return str(tp)
 
 
@@ -149,7 +151,7 @@ def _example_case_module_source(module_path: str) -> Optional[Path]:
 
 
 def _load_module_ast(path: Path) -> ast.Module:
-    src = path.read_text(encoding="utf-8", errors="replace")
+    src = path.read_text(encoding="utf-8-sig")
     return ast.parse(src, filename=str(path))
 
 
@@ -254,7 +256,8 @@ def _extract_params_from_ast(entry: CatalogEntry) -> list[ParamContract]:
         return []
     try:
         tree = _load_module_ast(path)
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_extract_params_from_ast.fallback_107', exc=_fallback_error)
         return []
 
     dataclass_fields = _collect_dataclass_fields(tree)
@@ -308,7 +311,8 @@ def _extract_params_from_ast(entry: CatalogEntry) -> list[ParamContract]:
 def _extract_params_runtime(entry: CatalogEntry) -> list[ParamContract]:
     try:
         symbol = entry.load()
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_extract_params_runtime.fallback_108', exc=_fallback_error)
         return []
 
     if inspect.isclass(symbol):
@@ -417,7 +421,8 @@ def _extract_methods_ast(
         return []
     try:
         tree = _load_module_ast(path)
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_extract_methods_ast.fallback_109', exc=_fallback_error)
         return []
     class_node = _find_class_node(tree, symbol)
     if class_node is None:
@@ -458,7 +463,8 @@ def _extract_methods_runtime(
 ) -> List[MethodContract]:
     try:
         symbol = entry.load()
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_extract_methods_runtime.fallback_110', exc=_fallback_error)
         return []
     if not inspect.isclass(symbol):
         return []
@@ -490,7 +496,7 @@ def _extract_methods_runtime(
 
 
 def _validate_context_keys(values: Iterable[str]) -> Tuple[bool, List[str]]:
-    unknown = [k for k in values if k and k not in CANONICAL_CONTEXT_KEYS]
+    unknown = list(unknown_context_keys(values))
     return (len(unknown) == 0, unknown)
 
 
@@ -567,10 +573,11 @@ def _build_health(
     runtime: bool,
 ) -> HealthContract:
     issues: List[str] = []
-    import_ok = True
+    import_ok = None
     if runtime:
         try:
             entry.load()
+            import_ok = True
         except Exception as exc:
             import_ok = False
             issues.append(f"import_error: {exc}")
@@ -587,9 +594,15 @@ def _build_health(
             methods_ok = False
             issues.append(f"missing_methods: {', '.join(missing)}")
 
-    params_ok = True
-    if not params and entry.kind in {"adapter", "plugin", "representation"}:
-        params_ok = True
+    params_ok = None
+    if runtime and import_ok:
+        from .recipes import constructor_check
+        status, reasons = constructor_check(entry, build_usage_profile(entry).minimal_wiring)
+        if status == "signature-checked":
+            params_ok = True
+        elif status == "invalid":
+            params_ok = False
+            issues.extend("recipe_params: " + reason for reason in reasons)
 
     return HealthContract(
         component_key=entry.key,

@@ -1,5 +1,6 @@
 """Uncertainty-driven surrogate budget bias."""
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from typing import Any, Dict, Optional
 import numpy as np
@@ -75,7 +76,8 @@ class UncertaintyBudgetBias(SurrogateControlBias):
 
         try:
             uncertainty = surrogate_manager.get_uncertainty(sample)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='UncertaintyBudgetBias.apply.fallback_80', exc=_fallback_error)
             return {}
 
         unc_value = self._reduce_uncertainty(uncertainty)
@@ -128,14 +130,14 @@ class UncertaintyBudgetBias(SurrogateControlBias):
         if "r2" in model_quality:
             try:
                 return float(model_quality["r2"])
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 return None
         r2_values = []
         for key, value in model_quality.items():
             if str(key).startswith("r2"):
                 try:
                     r2_values.append(float(value))
-                except Exception:
+                except (TypeError, ValueError, OverflowError):
                     continue
         if r2_values:
             return float(np.mean(r2_values))

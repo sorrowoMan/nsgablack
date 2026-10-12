@@ -4,6 +4,11 @@
 
 如果只想快速搭项目，先看 `docs/standard_scaffold_tutorial/README.md`。如果你在判断一个功能到底应该写进 `Adapter`、`RepresentationPipeline`、`Problem`、`Bias` 还是 `Plugin`，先看本页。
 
+想从整体理解框架，可读中文长文[从状态演化到可重组求解系统](../concepts/FRAMEWORK_FROM_STATE_TO_SYSTEM_CN.md)：从求解的共同结构讲到 Unit、算法重组、模型训练与跨 Case 系统。
+
+算法操作结构的定制见[算法 Unit 中文说明](ALGORITHM_UNITS_CN.md)：算法管线构建 Unit，Adapter 操作 Unit；
+问题管线负责表示和可行性。说明包含全部主干 Adapter 的结构映射、绑定、恢复、兼容性限制与正式示例。
+
 ## 1. 当前架构组件索引
 
 | 组件 | 一句话定义 | 负责什么 | 不负责什么 | 详解入口 |

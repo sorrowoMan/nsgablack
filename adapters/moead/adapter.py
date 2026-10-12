@@ -18,8 +18,11 @@ import numpy as np
 
 from blackbase.contracts import BatchDisposition
 
+from ..unit_backed import UnitBackedAdapter, UnitField
+from ...representation.structure_builders import DecompositionUnitBuilder
+from ...representation.structure_builders import simplex_points
 from ..algorithm_adapter import AlgorithmAdapter
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_MOEAD_NEIGHBOR_MODE,
     KEY_MOEAD_SUBPROBLEM,
     KEY_MOEAD_WEIGHT,
@@ -57,8 +60,25 @@ class MOEADConfig:
     de_CR: float = 0.9
 
 
-class MOEADAdapter(AlgorithmAdapter):
+class MOEADAdapter(UnitBackedAdapter):
     """MOEA/D adapter for ComposableSolver."""
+    unit_build_operations = ("initialize", "decomposition")
+    # Repaired trial values keep their subproblem and neighborhood identities;
+    # update consumes fresh feedback, with no trial-derived path cost to retain.
+    accepts_proposal_replacement = True
+    unit_builder_type = DecompositionUnitBuilder
+    unit_schema = DecompositionUnitBuilder.unit_type.schema
+    pop_X = UnitField("population")
+    pop_F = UnitField("objectives")
+    pop_V = UnitField("violations")
+    _population_candidate_tokens = UnitField("candidate_tokens")
+    weights = UnitField("weights")
+    neighbors = UnitField("neighbors")
+    ideal = UnitField("ideal")
+    _pending_indices = UnitField("pending_indices")
+    _pending_modes = UnitField("pending_modes")
+    admission_unit_fields = ("pending_indices", "pending_modes")
+
     context_requires = ("generation",)
     context_provides = (
         KEY_MOEAD_SUBPROBLEM,
@@ -88,7 +108,7 @@ class MOEADAdapter(AlgorithmAdapter):
         priority: int = 0,
         **config_kwargs,
     ) -> None:
-        super().__init__(name=name, priority=priority)
+        super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
         self.config = self.resolve_config(
             config=config,
             config_cls=MOEADConfig,
@@ -119,7 +139,7 @@ class MOEADAdapter(AlgorithmAdapter):
     # Lifecycle
     # ------------------------------------------------------------------
     def setup(self, control: Any) -> None:
-        self._population_candidate_tokens = ()
+        self.reset_unit()
         missing = [
             name
             for name in ("init_candidate", "evaluate_population")
@@ -155,9 +175,9 @@ class MOEADAdapter(AlgorithmAdapter):
             self.weights = np.empty((0, self._m), dtype=float)
             self.neighbors = np.empty((0, 0), dtype=int)
             self.ideal = np.full((self._m,), np.inf, dtype=float)
-            self.pop_X = np.empty((0, int(getattr(control, "dimension", 0) or 0)), dtype=float)
-            self.pop_F = np.empty((0, self._m), dtype=float)
-            self.pop_V = np.empty((0,), dtype=float)
+            self.algorithm_unit.initialize_population(
+                np.empty((0, int(getattr(control, "dimension", 0) or 0)), dtype=float),
+                np.empty((0, self._m), dtype=float), np.empty((0,), dtype=float))
             self._population_candidate_tokens = ()
             self._pending_indices = []
             self._pending_modes = []
@@ -170,15 +190,14 @@ class MOEADAdapter(AlgorithmAdapter):
         self._n = int(self.weights.shape[0])
 
         t = max(1, min(int(self.cfg.neighborhood_size), self._n))
-        self.neighbors = self._compute_neighbors(self.weights, t)
-        self.ideal = np.full((self._m,), np.inf, dtype=float)
+        self.rebuild_unit("decomposition", weights=self.weights, neighbors=t)
 
         # initialize population
         pop = []
         for _ in range(self._n):
             pop.append(control.init_candidate({"generation": int(getattr(control, "generation", 0) or 0)}))
-        self._population_candidate_tokens = self.candidate_tokens_for(control, pop)
-        self.pop_X = np.stack(pop, axis=0)
+        self.algorithm_unit.initialize_population(np.stack(pop, axis=0),
+            candidate_tokens=self.candidate_tokens_for(control, pop))
         provenance_getter = getattr(control, "candidate_provenance_for", None)
         provenance_binder = getattr(control, "bind_candidate_provenance", None)
         if callable(provenance_getter) and callable(provenance_binder):
@@ -188,8 +207,7 @@ class MOEADAdapter(AlgorithmAdapter):
 
         # evaluate initial population using the solver's evaluation path (plugins may short-circuit)
         F, V = control.evaluate_population(self.pop_X)
-        self.pop_F = np.asarray(F, dtype=float)
-        self.pop_V = np.asarray(V, dtype=float).reshape(-1)
+        self.algorithm_unit.attach_feedback(np.asarray(F, dtype=float), np.asarray(V, dtype=float).reshape(-1))
         self._update_ideal(self.pop_F)
         self._pending_indices = []
         self._pending_modes = []
@@ -212,6 +230,7 @@ class MOEADAdapter(AlgorithmAdapter):
         assert self.pop_X is not None
         assert self.weights is not None
         assert self.neighbors is not None
+        self.algorithm_unit.require_current_feedback()
 
         batch = max(1, min(int(self.cfg.batch_size), self._n))
         indices = self._rng.choice(self._n, size=batch, replace=False) if batch < self._n else np.arange(self._n)
@@ -227,9 +246,18 @@ class MOEADAdapter(AlgorithmAdapter):
             ctx[KEY_MOEAD_WEIGHT] = np.asarray(self.weights[idx], dtype=float)
             ctx[KEY_MOEAD_NEIGHBOR_MODE] = mode
             cand = self._variation(control, idx, ctx)
-            cand = control.repair_candidate(cand, ctx)
             out.append(np.asarray(cand))
         self._refresh_runtime_projection()
+        return out
+
+    def _proposal_contexts(self, proposed_count, context):
+        out = []
+        for index, mode in zip(self._pending_indices, self._pending_modes):
+            ctx = dict(context)
+            ctx[KEY_MOEAD_SUBPROBLEM] = index
+            ctx[KEY_MOEAD_WEIGHT] = np.array(self.weights[index], copy=True)
+            ctx[KEY_MOEAD_NEIGHBOR_MODE] = mode
+            out.append(ctx)
         return out
 
     def on_proposal_disposition(
@@ -283,6 +311,7 @@ class MOEADAdapter(AlgorithmAdapter):
             raise ValueError("MOEA/D feedback must align with pending subproblem indices")
         if len(self._pending_modes) != candidate_count:
             raise ValueError("MOEA/D feedback must align with pending neighbor modes")
+        self.algorithm_unit.require_current_feedback()
 
         # update ideal point with feasible solutions only (common MOEA/D practice)
         self._update_ideal(cand_F, cand_V)
@@ -301,22 +330,21 @@ class MOEADAdapter(AlgorithmAdapter):
                 P = np.asarray(self.neighbors[int(i)], dtype=int)
 
             # random order + limited replacements
-            P = np.asarray(P, dtype=int)
+            P = np.array(P, dtype=int, copy=True)
             self._rng.shuffle(P)
-            replaced = 0
+            replacements = []
             for j in P:
-                if replaced >= int(self.cfg.nr):
+                if len(replacements) >= int(self.cfg.nr):
                     break
-                if self._is_better_for_subproblem(yf, yv, int(j)):
-                    self.pop_X[int(j)] = yx
-                    self.pop_F[int(j)] = yf
-                    self.pop_V[int(j)] = yv
-                    tokens = list(self._population_candidate_tokens)
-                    if len(tokens) != int(self.pop_X.shape[0]):
-                        tokens = [None] * int(self.pop_X.shape[0])
-                    tokens[int(j)] = candidate_tokens[k]
-                    self._population_candidate_tokens = tuple(tokens)
-                    replaced += 1
+                if int(j) not in replacements and self._is_better_for_subproblem(yf, yv, int(j)):
+                    replacements.append(int(j))
+            if replacements:
+                count = len(replacements)
+                self.algorithm_unit.replace_evaluated_rows(
+                    replacements, np.repeat(yx[None, :], count, axis=0),
+                    np.repeat(yf[None, :], count, axis=0), np.full(count, yv),
+                    candidate_tokens=(candidate_tokens[k],) * count,
+                )
 
         self._refresh_runtime_projection()
         self._sync_population_snapshot(control)
@@ -333,7 +361,7 @@ class MOEADAdapter(AlgorithmAdapter):
     # ------------------------------------------------------------------
     # Checkpoint / state recovery (L2 contract)
     # ------------------------------------------------------------------
-    def get_state(self) -> Dict[str, Any]:
+    def _get_algorithm_state(self) -> Dict[str, Any]:
         """Return serialisable scalar adapter state (scalar fields + ideal point).
 
         For the full population array use ``get_population_snapshot()`` in addition.
@@ -351,7 +379,7 @@ class MOEADAdapter(AlgorithmAdapter):
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
-    def set_state(self, state: Dict[str, Any]) -> None:
+    def _set_algorithm_state(self, state: Dict[str, Any]) -> None:
         """Restore scalar adapter state from a checkpoint.
 
         The solution arrays (pop_X/F/V) must be restored separately via
@@ -380,23 +408,23 @@ class MOEADAdapter(AlgorithmAdapter):
         if isinstance(rng_state, Mapping):
             self._rng.bit_generator.state = copy.deepcopy(dict(rng_state))
 
-    def snapshot_step_state(self) -> Mapping[str, Any]:
+    def _snapshot_algorithm_step_state(self) -> Mapping[str, Any]:
         return {
             "schema": "nsgablack.moead_step_transaction/v1",
-            "adapter_state": super().snapshot_step_state(),
+            "adapter_state": copy.deepcopy(self._get_algorithm_state()),
             "population": None if self.pop_X is None else np.array(self.pop_X, copy=True),
             "objectives": None if self.pop_F is None else np.array(self.pop_F, copy=True),
             "violations": None if self.pop_V is None else np.array(self.pop_V, copy=True),
             "runtime_projection": copy.deepcopy(self._last_context_projection),
         }
 
-    def restore_step_state(self, state: Mapping[str, Any]) -> None:
+    def _restore_algorithm_step_state(self, state: Mapping[str, Any]) -> None:
         if str(state.get("schema", "")) != "nsgablack.moead_step_transaction/v1":
             raise ValueError("unsupported MOEADAdapter step transaction schema")
         adapter_state = state.get("adapter_state")
         if not isinstance(adapter_state, Mapping):
             raise TypeError("MOEADAdapter transaction state is invalid")
-        self.set_state(dict(adapter_state))
+        self._set_algorithm_state(dict(adapter_state))
         population = state.get("population")
         objectives = state.get("objectives")
         violations = state.get("violations")
@@ -426,6 +454,9 @@ class MOEADAdapter(AlgorithmAdapter):
     # ------------------------------------------------------------------
     # Public helpers for plugins
     # ------------------------------------------------------------------
+    def _after_unit_restore(self):
+        self._refresh_runtime_projection()
+
     def get_population_snapshot(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if self.pop_X is None or self.pop_F is None or self.pop_V is None:
             return np.zeros((0, 0)), np.zeros((0, 0)), np.zeros((0,))
@@ -458,7 +489,7 @@ class MOEADAdapter(AlgorithmAdapter):
         """
         try:
             x_arr, f_arr, v_arr = self.validate_population_snapshot(population, objectives, violations)
-        except Exception:
+        except (TypeError, ValueError, KeyError):
             return False
 
         n = int(x_arr.shape[0]) if x_arr.ndim >= 2 else 0
@@ -481,11 +512,10 @@ class MOEADAdapter(AlgorithmAdapter):
         # PopulationPartition intentionally exposes immutable arrays.  MOEA/D
         # owns a mutable runtime population, so accepting a Snapshot must cross
         # that ownership boundary with defensive copies.
-        self.pop_X = np.array(x_arr, dtype=float, copy=True)
-        self.pop_F = np.array(f_arr, dtype=float, copy=True)
-        self.pop_V = np.array(v_arr, dtype=float, copy=True).reshape(-1)
-        if not preserve_tokens:
-            self._population_candidate_tokens = (None,) * int(x_arr.shape[0])
+        if preserve_tokens:
+            self.algorithm_unit.attach_feedback(f_arr, v_arr)
+        else:
+            self.algorithm_unit.initialize_population(x_arr, f_arr, v_arr)
 
         # Bootstrap dimension metadata from incoming data when uninitialised.
         if self._m == 0 and m > 0:
@@ -537,7 +567,7 @@ class MOEADAdapter(AlgorithmAdapter):
         try:
             writer(self.pop_X, self.pop_F, self.pop_V)
         except Exception:
-            return
+            raise
 
     def _recompute_ideal(self) -> None:
         if self.pop_F is None or self.pop_F.size == 0:
@@ -551,6 +581,10 @@ class MOEADAdapter(AlgorithmAdapter):
             self.ideal = np.min(np.asarray(self.pop_F, dtype=float)[feasible], axis=0)
         else:
             self.ideal = np.min(np.asarray(self.pop_F, dtype=float), axis=0)
+
+    @property
+    def uses_pipeline_mutation(self):
+        return str(self.cfg.variation).lower().strip() != "de"
 
     def _variation(self, control: Any, idx: int, ctx: Dict[str, Any]) -> np.ndarray:
         if self.pop_X is None or self.neighbors is None:
@@ -566,8 +600,8 @@ class MOEADAdapter(AlgorithmAdapter):
             return self._de_variation(idx, pool)
 
         # pipeline variation fallback: mutate the current solution
-        base = np.asarray(self.pop_X[idx])
-        return np.asarray(control.mutate_candidate(base, ctx))
+        base = np.array(self.pop_X[idx], copy=True)
+        return np.asarray(self.mutate_candidate(control, base, ctx))
 
     def _de_variation(self, idx: int, pool: np.ndarray) -> np.ndarray:
         # Differential Evolution style operator (continuous).
@@ -673,25 +707,7 @@ class MOEADAdapter(AlgorithmAdapter):
 
     @staticmethod
     def _simplex_lattice(m: int, H: int) -> np.ndarray:
-        # Generate all integer vectors (h1..hm) s.t. sum=H, then normalize by H.
-        out: List[List[float]] = []
-
-        def rec(prefix: List[int], remaining: int, dim: int) -> None:
-            if dim == m - 1:
-                out.append([*(prefix), remaining])
-                return
-            for v in range(remaining + 1):
-                rec([*(prefix), v], remaining - v, dim + 1)
-
-        rec([], H, 0)
-        W = np.asarray(out, dtype=float)
-        if H > 0:
-            W = W / float(H)
-        # avoid exact zeros causing numerical issues in tchebycheff
-        eps = 1e-12
-        W = np.clip(W, eps, None)
-        W = W / np.sum(W, axis=1, keepdims=True)
-        return W
+        return simplex_points(m, H, positive=True)
 
     @staticmethod
     def _compute_neighbors(W: np.ndarray, T: int) -> np.ndarray:

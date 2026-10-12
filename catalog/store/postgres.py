@@ -115,7 +115,7 @@ def _env_url_uses_postgres(url: str) -> bool:
         return False
     try:
         scheme = str(urlparse(raw).scheme or "").strip().lower()
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return False
     return scheme in {"postgres", "postgresql", "postgresql+psycopg", "postgresql+psycopg2"}
 
@@ -241,7 +241,7 @@ def _json_loads(text: object) -> object:
         return {}
     try:
         return json.loads(raw)
-    except Exception:
+    except (ValueError, TypeError):
         return {}
 
 
@@ -1258,10 +1258,10 @@ ON CONFLICT (component_id) DO UPDATE SET
 """,
                 (
                     cid,
-                    bool(h.import_ok),
+                    h.import_ok,
                     bool(h.context_ok),
                     bool(h.methods_ok),
-                    bool(h.params_ok),
+                    h.params_ok,
                     json.dumps(list(h.issues), ensure_ascii=False),
                 ),
             )
@@ -1390,7 +1390,7 @@ VALUES (%s, %s, %s, %s, %s)
                 parsed = json.loads(value)
                 if isinstance(parsed, list):
                     return tuple(str(item).strip() for item in parsed if str(item).strip())
-            except Exception:
+            except (ValueError, TypeError):
                 pass
             text = value.strip()
             return (text,) if text else ()

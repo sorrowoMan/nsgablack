@@ -8,12 +8,16 @@ from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple
 
 from ..model import DoctorDiagnostic
+from ..ast_support import mark_references
+from blackbase.project.doctor_scope import source_files
 
 # ---------------------------------------------------------------------------
 # Large-object keys that MUST NOT be stored directly in context
 # ---------------------------------------------------------------------------
 _LARGE_OBJECT_BARE_KEYS = {
     "population",
+    "violations",
+    "trace",
     "objectives",
     "constraint_violations",
     "history",
@@ -330,11 +334,11 @@ def _safe_first_dim(value: object) -> int | None:
         try:
             if len(shape) >= 1:
                 return int(shape[0])
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             pass
     try:
         return int(len(value))  # type: ignore[arg-type]
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -546,8 +550,8 @@ def check_snapshot_refs(
 
 def _extract_key_str(node: ast.expr) -> Optional[str]:
     """Extract a key string from a subscript slice node."""
-    if isinstance(node, ast.Constant) and isinstance(node.s, str):
-        return node.s
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
     if isinstance(node, ast.Name) and node.id.startswith("KEY_"):
         return node.id[4:].lower()
     return None
@@ -558,28 +562,34 @@ def _scan_py_file_for_large_context_writes(
 ) -> List[Tuple[int, str, str]]:
     """Return list of (lineno, key, snippet) for direct large-object context writes."""
     hits: List[Tuple[int, str, str]] = []
-    try:
-        src = path.read_text(encoding="utf-8", errors="replace")
-        lines = src.splitlines()
-        tree = ast.parse(src, filename=str(path))
-    except (OSError, SyntaxError):
-        return hits
+    src = path.read_text(encoding="utf-8-sig")
+    lines = src.splitlines()
+    tree = ast.parse(src, filename=str(path))
+
+    mark_references(tree)
+    def record(owner, key_node, node):
+        key = _extract_key_str(key_node)
+        if getattr(owner, "_doctor_context_ref", False) and key in _LARGE_OBJECT_BARE_KEYS:
+            hits.append((node.lineno, key, lines[node.lineno - 1].strip()))
 
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign):
-            continue
-        for target in node.targets:
-            if not isinstance(target, ast.Subscript):
-                continue
-            if not isinstance(target.value, ast.Name):
-                continue
-            if target.value.id not in _CONTEXT_VAR_NAMES:
-                continue
-            key = _extract_key_str(target.slice)
-            if key and key in _LARGE_OBJECT_BARE_KEYS:
-                ln = node.lineno
-                snippet = lines[ln - 1].strip() if 0 < ln <= len(lines) else ""
-                hits.append((ln, key, snippet))
+        targets = node.targets if isinstance(node, ast.Assign) else (
+            (node.target,) if isinstance(node, (ast.AnnAssign, ast.AugAssign)) else ())
+        for target in targets:
+            if isinstance(target, ast.Subscript):
+                record(target.value, target.slice, node)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            owner, method = node.func.value, node.func.attr
+            if method in {"setdefault", "__setitem__"} and node.args:
+                record(owner, node.args[0], node)
+            elif method == "update":
+                for arg in node.args:
+                    if isinstance(arg, ast.Dict):
+                        for key in arg.keys:
+                            record(owner, key, node)
+                for kw in node.keywords:
+                    if kw.arg:
+                        record(owner, ast.Constant(kw.arg), node)
     return hits
 
 
@@ -603,11 +613,18 @@ def check_large_objects_in_context(
     }
     level = "error" if strict else "warn"
     total = 0
+    failures = 0
 
-    for py_file in sorted(root.rglob("*.py")):
+    for py_file in source_files(root):
         if any(part in _skip for part in py_file.parts):
             continue
-        hits = _scan_py_file_for_large_context_writes(py_file)
+        try:
+            hits = _scan_py_file_for_large_context_writes(py_file)
+        except (OSError, SyntaxError, UnicodeError) as exc:
+            failures += 1
+            add(diags, level, "source-parse-failed", f"Cannot read/parse source: {exc}", py_file,
+                line=getattr(exc, "lineno", None), column=getattr(exc, "offset", None))
+            continue
         for lineno, key, snippet in hits:
             total += 1
             try:
@@ -626,9 +643,10 @@ def check_large_objects_in_context(
                     f"Snippet: {snippet!r}"
                 ),
                 py_file,
+                line=lineno,
             )
 
-    if total == 0:
+    if total == 0 and failures == 0:
         add(
             diags,
             "info",

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from blackbase.participation import ParticipationContract
 
 import copy
 import hashlib
@@ -17,7 +18,7 @@ from blackbase.context import AuthorityIdentity
 from ..base import Plugin
 from ...core.state.incumbent import DEFAULT_INCUMBENT_POLICY_ID, IncumbentState
 from ...core.state.run_progress import RunProgressState
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_CHECKPOINT_LAST_LOADED_PATH,
     KEY_CHECKPOINT_LATEST_PATH,
 )
@@ -42,6 +43,7 @@ class CheckpointResumeConfig:
 
 
 class CheckpointResumePlugin(Plugin):
+    participation = ParticipationContract(advises=("context",), vetoes=("finalization",))
     context_requires = ()
     context_provides = (KEY_CHECKPOINT_LATEST_PATH, KEY_CHECKPOINT_LAST_LOADED_PATH)
     context_mutates = (KEY_CHECKPOINT_LATEST_PATH,)
@@ -459,14 +461,14 @@ class CheckpointResumePlugin(Plugin):
         for path in files[keep_last:]:
             try:
                 path.unlink()
-            except Exception:
+            except OSError:
                 continue
 
     def _safe_copy(self, value: Any) -> Any:
         try:
             return copy.deepcopy(value)
         except Exception:
-            return value
+            raise
 
     def _get_hmac_key(self) -> Optional[bytes]:
         env_var = str(getattr(self.cfg, "hmac_env_var", "") or "").strip()
@@ -564,7 +566,7 @@ class CheckpointResumePlugin(Plugin):
             try:
                 candidate.relative_to(root)
                 return True
-            except Exception:
+            except ValueError:
                 continue
         return False
 
@@ -578,7 +580,7 @@ class CheckpointResumePlugin(Plugin):
         try:
             return self._safe_copy(getter())
         except Exception:
-            return None
+            raise
 
     def _collect_adapter_population_partitions(
         self,
@@ -608,7 +610,7 @@ class CheckpointResumePlugin(Plugin):
             try:
                 out[str(getattr(plugin, "name", plugin.__class__.__name__))] = self._safe_copy(getter())
             except Exception:
-                continue
+                raise
         return out
 
     def _collect_component_states(self, solver: Any) -> Dict[str, Any]:
@@ -1185,7 +1187,7 @@ class CheckpointResumePlugin(Plugin):
                     try:
                         restore_candidate_population(None)
                     except Exception:
-                        pass
+                        raise
                     if bool(self.cfg.strict):
                         raise
             restore_candidate_partitions = getattr(
@@ -1526,6 +1528,10 @@ class CheckpointResumePlugin(Plugin):
                 error,
             )
             raise error
+        missing_required = [name for name, component in current.items()
+                            if getattr(component, "checkpoint_required", False) and name not in component_states]
+        if missing_required:
+            raise ValueError("checkpoint is missing required component state: " + ", ".join(sorted(missing_required)))
         restored: set[str] = set()
         for raw_name, raw_payload in component_states.items():
             name = str(raw_name)
@@ -1539,7 +1545,7 @@ class CheckpointResumePlugin(Plugin):
             if not isinstance(raw_payload, Mapping):
                 error = ValueError(f"checkpoint component payload is invalid: {name}")
                 self._record_resume_issue(name, "invalid_payload", error)
-                if bool(self.cfg.strict):
+                if bool(self.cfg.strict) or bool(getattr(component, "checkpoint_required", False)):
                     raise error
                 continue
             expected_module = str(raw_payload.get("module", "") or "")
@@ -1555,7 +1561,7 @@ class CheckpointResumePlugin(Plugin):
                     f"current={actual_module}.{actual_class}"
                 )
                 self._record_resume_issue(name, "type_mismatch", error)
-                if bool(self.cfg.strict):
+                if bool(self.cfg.strict) or bool(getattr(component, "checkpoint_required", False)):
                     raise error
                 continue
             saved_identity = raw_payload.get("identity")
@@ -1566,7 +1572,7 @@ class CheckpointResumePlugin(Plugin):
                         f"checkpoint component identity contract is unavailable: {name}"
                     )
                     self._record_resume_issue(name, "identity_unavailable", error)
-                    if bool(self.cfg.strict):
+                    if bool(self.cfg.strict) or bool(getattr(component, "checkpoint_required", False)):
                         raise error
                     continue
                 actual_identity = identity_getter()
@@ -1581,14 +1587,14 @@ class CheckpointResumePlugin(Plugin):
                         f"checkpoint component configuration mismatch: {name}"
                     )
                     self._record_resume_issue(name, "configuration_mismatch", error)
-                    if bool(self.cfg.strict):
+                    if bool(self.cfg.strict) or bool(getattr(component, "checkpoint_required", False)):
                         raise error
                     continue
             setter = getattr(component, "set_state", None)
             if not callable(setter):
                 error = ValueError(f"checkpoint component cannot restore state: {name}")
                 self._record_resume_issue(name, "set_state_unavailable", error)
-                if bool(self.cfg.strict):
+                if bool(self.cfg.strict) or bool(getattr(component, "checkpoint_required", False)):
                     raise error
                 continue
             try:
@@ -1596,7 +1602,7 @@ class CheckpointResumePlugin(Plugin):
                 restored.add(name)
             except Exception as exc:
                 self._record_resume_issue(name, "set_state_failed", exc)
-                if bool(self.cfg.strict):
+                if bool(self.cfg.strict) or bool(getattr(component, "checkpoint_required", False)):
                     raise
         self._last_resume_audit["restored_components"] = sorted(restored)
         return restored

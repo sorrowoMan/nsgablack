@@ -12,8 +12,10 @@ import numpy as np
 
 from blackbase.contracts import BatchDisposition
 
+from ..unit_backed import UnitBackedAdapter, UnitField, UnitFeedbackField
+from ...representation.structure_builders import PollUnitBuilder
 from ..algorithm_adapter import AlgorithmAdapter
-from blackbase.context.context_keys import KEY_ADAPTER_BEST_SCORE, KEY_MUTATION_SIGMA
+from nsgablack.context_keys import KEY_ADAPTER_BEST_SCORE, KEY_MUTATION_SIGMA
 
 
 @dataclass
@@ -25,16 +27,30 @@ class GradientDescentConfig:
     lr_decay: float = 0.7
     min_lr: float = 1e-5
     objective_aggregation: str = "sum"
+    repair_policy: str = "coordinate"  # coordinate displacement | reject changes
+
+    def __post_init__(self):
+        if self.repair_policy not in {"coordinate", "reject"}:
+            raise ValueError("Finite-difference repair_policy must be coordinate or reject")
 
 
-class GradientDescentAdapter(AlgorithmAdapter):
+class GradientDescentAdapter(UnitBackedAdapter):
+    unit_build_operations = ("initialize", "poll")
+    unit_builder_type = PollUnitBuilder
+    unit_schema = PollUnitBuilder.unit_type.schema
+    current_x = UnitField("current")
+    # A directional-score proxy, invalidated when its associated center changes.
+    current_score = UnitFeedbackField("current")
+    _pending_probes = UnitField("probes")
+    admission_unit_fields = ("probes", "directions", "displacements")
+
     context_requires = ()
     context_provides = (KEY_MUTATION_SIGMA, KEY_ADAPTER_BEST_SCORE)
     context_mutates = ()
     context_cache = ()
     context_notes = "Finite-difference local search; emits current step size in context."
     state_recovery_level = "L1"
-    state_recovery_notes = "Restores current point/score and learning rate; finite-difference probe cache is recomputed."
+    state_recovery_notes = "Restores point, learning rate, probe identities and actual displacement structure."
 
     def __init__(
         self,
@@ -43,7 +59,7 @@ class GradientDescentAdapter(AlgorithmAdapter):
         priority: int = 0,
         **config_kwargs,
     ) -> None:
-        super().__init__(name=name, priority=priority)
+        super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
         self.config = self.resolve_config(
             config=config,
             config_cls=GradientDescentConfig,
@@ -72,22 +88,31 @@ class GradientDescentAdapter(AlgorithmAdapter):
         dim = int(self.current_x.shape[0])
         n_dirs = max(1, min(dim, int(self.cfg.max_directions)))
         dims = self._rng.choice(dim, size=n_dirs, replace=False)
+        self.rebuild_unit("poll", dimensions=dims, context=context)
         out = []
         eps = float(self.cfg.epsilon)
-        for d in dims:
-            plus = np.array(self.current_x, copy=True)
-            minus = np.array(self.current_x, copy=True)
-            plus[d] += eps
-            minus[d] -= eps
-            out.append(np.asarray(control.repair_candidate(plus, context), dtype=float))
-            out.append(np.asarray(control.repair_candidate(minus, context), dtype=float))
-        self._pending_probes = [
-            (int(dimension), sign)
-            for dimension in dims
-            for sign in (1, -1)
-        ]
+        for direction in self.algorithm_unit.directions:
+            point = self.current_x + eps * direction
+            out.append(np.asarray(point, dtype=float))
+        self.algorithm_unit.displacements = np.asarray(out) - self.current_x
         self._runtime_projection = {KEY_MUTATION_SIGMA: float(self.learning_rate)}
         return out
+
+    def _validate_probe_displacement(self, dimension, sign, displacement):
+        others = np.delete(displacement, dimension)
+        if not np.allclose(others, 0.0, atol=1e-12, rtol=0):
+            raise ValueError("Repair changed the finite-difference coordinate geometry")
+        if self.cfg.repair_policy == "reject" and not np.isclose(
+                displacement[dimension], sign * float(self.cfg.epsilon), atol=1e-12, rtol=1e-8):
+            raise ValueError("Repair changed the finite-difference step")
+
+    def on_proposal_repair(self, control, repair, context):
+        if repair.proposed_count != len(self._pending_probes):
+            raise ValueError("Gradient-descent repair must align with pending probes")
+        for row, index in enumerate(repair.proposal_indices):
+            displacement = repair.after.numeric_matrix[row] - self.current_x
+            self._validate_probe_displacement(*self._pending_probes[index], displacement)
+            self.algorithm_unit.displacements[index] = displacement
 
     def on_proposal_disposition(
         self,
@@ -106,6 +131,11 @@ class GradientDescentAdapter(AlgorithmAdapter):
             self._pending_probes[index]
             for index in disposition.accepted_indices
         ]
+        rows = list(disposition.accepted_indices)
+        if self.algorithm_unit.directions is not None:
+            self.algorithm_unit.directions = self.algorithm_unit.directions[rows]
+        if self.algorithm_unit.displacements is not None:
+            self.algorithm_unit.displacements = self.algorithm_unit.displacements[rows]
 
     def update(
         self,
@@ -131,8 +161,13 @@ class GradientDescentAdapter(AlgorithmAdapter):
         # Estimate a gradient only from dimensions whose +/- probes both survived
         # budget admission or another explicit upstream batch disposition.
         paired_scores: Dict[int, Dict[int, float]] = {}
-        for (dimension, sign), score in zip(self._pending_probes, scores):
+        paired_steps: Dict[int, Dict[int, float]] = {}
+        actual = np.asarray(candidates, dtype=float) - self.current_x
+        self.algorithm_unit.displacements = actual.copy()
+        for (dimension, sign), score, displacement in zip(self._pending_probes, scores, actual):
+            self._validate_probe_displacement(dimension, sign, displacement)
             paired_scores.setdefault(int(dimension), {})[int(sign)] = float(score)
+            paired_steps.setdefault(int(dimension), {})[int(sign)] = float(displacement[dimension])
         complete_pairs = {
             dimension: values
             for dimension, values in paired_scores.items()
@@ -142,9 +177,10 @@ class GradientDescentAdapter(AlgorithmAdapter):
             return
 
         grad = np.zeros_like(self.current_x, dtype=float)
-        eps = max(float(self.cfg.epsilon), 1e-12)
         for dimension, values in complete_pairs.items():
-            grad[dimension] = (values[1] - values[-1]) / (2.0 * eps)
+            width = paired_steps[dimension][1] - paired_steps[dimension][-1]
+            if abs(width) > 1e-12:
+                grad[dimension] = (values[1] - values[-1]) / width
 
         candidate = np.asarray(self.current_x - (self.learning_rate * grad), dtype=float)
         candidate = np.asarray(control.repair_candidate(candidate, context), dtype=float)
@@ -165,14 +201,14 @@ class GradientDescentAdapter(AlgorithmAdapter):
 
     def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
         _ = solver
-        return dict(self._runtime_projection)
+        return {**self._runtime_projection, KEY_ADAPTER_BEST_SCORE: self.current_score}
 
     def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
         _ = solver
         source = f"adapter.{self.__class__.__name__}"
         return {k: source for k in self._runtime_projection.keys()}
 
-    def get_state(self) -> Dict[str, Any]:
+    def _get_algorithm_state(self) -> Dict[str, Any]:
         return {
             "current_x": None if self.current_x is None else self.current_x.tolist(),
             "current_score": self.current_score,
@@ -181,7 +217,7 @@ class GradientDescentAdapter(AlgorithmAdapter):
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
-    def set_state(self, state: Dict[str, Any]) -> None:
+    def _set_algorithm_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
         x = state.get("current_x")

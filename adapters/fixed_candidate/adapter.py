@@ -7,6 +7,8 @@ from typing import Any, Mapping, Sequence
 from blackbase.contracts import ComponentContract
 
 from ..algorithm_adapter import AlgorithmAdapter
+from ...units import UnitBinding, UnitBuildRequest, CANDIDATE_SCHEMA
+from ...representation.unit_builders import CandidateUnitBuilder
 
 
 class FixedCandidateAdapter(AlgorithmAdapter):
@@ -17,6 +19,7 @@ class FixedCandidateAdapter(AlgorithmAdapter):
     lifecycle, so diagnostic and validation Cases do not need a private
     control loop.
     """
+    unit_build_operations = ("fresh",)
 
     method_ids = ("evaluation.fixed",)
     context_requires = ()
@@ -29,7 +32,7 @@ class FixedCandidateAdapter(AlgorithmAdapter):
         "Does not mutate, fit, sample, or select a backend.",
     )
     state_recovery_level = "L0"
-    state_recovery_notes = "No adapter-owned state; the Solver checkpoint is authoritative."
+    state_recovery_notes = "Restores current candidate Unit and construction identity; evaluation authority remains with Solver."
     contract = ComponentContract(
         name="fixed_candidate",
         supports_gradient=False,
@@ -42,11 +45,38 @@ class FixedCandidateAdapter(AlgorithmAdapter):
         },
     )
 
-    def __init__(self, name: str = "fixed_candidate", priority: int = 0) -> None:
+    unit_schema = CANDIDATE_SCHEMA
+    unit_contract_mode = "owned"
+
+    def __init__(self, name: str = "fixed_candidate", priority: int = 0, *, unit_binding=None) -> None:
         super().__init__(name=name, priority=priority)
+        self.set_unit_binding(unit_binding or UnitBinding(CandidateUnitBuilder()))
+        self.current_unit = None
+        self._unit_counter = 0
+
+    def setup(self, control):
+        self.current_unit = None
+        self._unit_counter = 0
 
     def propose(self, control: Any, context: Mapping[str, Any]) -> Sequence[Any]:
-        return (control.init_candidate(context),)
+        unit = self.unit_binding.build(UnitBuildRequest(
+            f"{self.name}:candidate:{self._unit_counter + 1}", control.init_candidate(context)), context)
+        self.current_unit = unit
+        self._unit_counter += 1
+        return (unit.to_candidate(),)
+
+    def get_state(self):
+        return {"counter": self._unit_counter, "unit_contract": self.get_unit_contract(),
+                "unit": None if self.current_unit is None else self.unit_binding.dump(self.current_unit)}
+
+    def set_state(self, state):
+        if not state:
+            return
+        if state.get("unit_contract") != self.get_unit_contract():
+            raise ValueError("Fixed candidate Unit binding mismatch")
+        unit = None if state["unit"] is None else self.unit_binding.restore(state["unit"])
+        self.current_unit = unit
+        self._unit_counter = int(state["counter"])
 
     def update(
         self,

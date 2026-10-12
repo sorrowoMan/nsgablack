@@ -7,6 +7,7 @@ AlgorithmicBias/DomainBias subtypes).
 
 偏置系统是NSGABlack优化库的核心创新，实现算法策略与领域知识的分离。
 """
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import numpy as np
 import time
@@ -60,7 +61,8 @@ class OptimizationContext:
         population: Optional[List[np.ndarray]] = None,
         metrics: Optional[Dict[str, float]] = None,
         history: Optional[List] = None,
-        problem_data: Optional[Dict[str, Any]] = None
+        problem_data: Optional[Dict[str, Any]] = None,
+        candidate_token: Optional[str] = None,
     ):
         self.generation = generation
         self.individual = individual
@@ -68,6 +70,7 @@ class OptimizationContext:
         self.metrics = metrics or {}
         self.history = history or []
         self.problem_data = problem_data or {}
+        self.candidate_token = candidate_token
 
         # 派生的上下文状态标志
         self.is_stuck = False
@@ -251,7 +254,8 @@ class BiasBase(_BiasBase, BiasInterface):
         for cb in list(self._param_change_callbacks):
             try:
                 cb(self)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='BiasBase._notify_param_change.fallback_45', exc=_fallback_error)
                 pass
 
     # --- Override: weight/enable with callbacks ---

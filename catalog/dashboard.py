@@ -1,4 +1,5 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import argparse
 import importlib.util
@@ -267,7 +268,8 @@ def _set_page_config(st: Any) -> None:
             layout="wide",
             initial_sidebar_state="collapsed",
         )
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_set_page_config.fallback_89', exc=_fallback_error)
         pass
 
 
@@ -872,7 +874,7 @@ def _normalize_column_mode(value: object) -> str:
 def _normalize_page_size(value: object) -> int:
     try:
         page_size = int(str(value or "").strip())
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return _shared.DEFAULT_PAGE_SIZE
     return page_size if page_size > 0 else _shared.DEFAULT_PAGE_SIZE
 
@@ -1283,7 +1285,7 @@ def _resolve_source_file(import_path: str, *, project_root: str | None = None) -
         if added_sys_path and root:
             try:
                 sys.path.remove(root)
-            except Exception:
+            except ValueError:
                 pass
 
     if spec is None or not spec.origin:
@@ -1307,7 +1309,8 @@ def _reveal_source_file(path: Path) -> bool:
         else:
             subprocess.Popen(["xdg-open", str(target.parent)])
         return True
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_reveal_source_file.fallback_91', exc=_fallback_error)
         return False
 
 
@@ -1323,7 +1326,8 @@ def _open_source_file(path: Path) -> bool:
         else:
             subprocess.Popen(["xdg-open", str(target)])
         return True
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_open_source_file.fallback_92', exc=_fallback_error)
         return False
 
 
@@ -1402,7 +1406,8 @@ def _scroll_to_anchor(st: Any, *, anchor_id: str) -> None:
             height=0,
             width=0,
         )
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_scroll_to_anchor.fallback_93', exc=_fallback_error)
         return
 
 

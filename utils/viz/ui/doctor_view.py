@@ -81,6 +81,11 @@ _HINT_RULES: Dict[str, tuple[str, str, str]] = {
         "Snapshot",
         "Move large payloads to SnapshotStore and keep only refs in context.",
     ),
+    "large-object-in-context": (
+        "Large object written to context",
+        "Snapshot",
+        "Move large payloads to SnapshotStore and keep only refs in context.",
+    ),
     "snapshot-ref-empty": (
         "Snapshot ref empty",
         "Snapshot",

@@ -958,9 +958,18 @@ def test_adapter_contract_card_uses_namespaced_best_semantics() -> None:
         / "ADAPTER_CONTRACT_CARDS.md"
     ).read_text(encoding="utf-8")
 
-    assert "DifferentialEvolutionAdapter | L2 | generation | strategy_id, adapter_best_x, adapter_best_objectives, adapter_best_score" in card
-    assert "NSGA2Adapter | L2 | - | adapter_best_x, adapter_best_objectives, adapter_best_score" in card
-    assert "NSGA3Adapter | L2 | - | adapter_best_x, adapter_best_objectives, adapter_best_score, mo_weights" in card
+    import re
+
+    for name, requires, provides in (
+        ("DifferentialEvolutionAdapter", {"generation"}, {"strategy_id", "adapter_best_x", "adapter_best_objectives", "adapter_best_score"}),
+        ("NSGA2Adapter", set(), {"adapter_best_x", "adapter_best_objectives", "adapter_best_score"}),
+        ("NSGA3Adapter", set(), {"adapter_best_x", "adapter_best_objectives", "adapter_best_score", "mo_weights"}),
+    ):
+        section = card.split(f"## {name}\n", 1)[1].split("\n## ", 1)[0]
+        assert "Recovery：`L2`" in section
+        for field, expected in (("context_requires", requires), ("context_provides", provides)):
+            line = next(line for line in section.splitlines() if f"`{field}`" in line)
+            assert set(re.findall(r"`([^`]+)`", line)) - {field} == expected
 
 
 def test_runtime_projection_docs_describe_composite_five_state_contract() -> None:

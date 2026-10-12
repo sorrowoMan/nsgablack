@@ -1,6 +1,9 @@
 """Evaluation helper utilities for SolverBase."""
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
+
+from .bias_helpers import project_bias_feedback
 
 from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
 
@@ -156,7 +159,8 @@ def _annotate_evaluation_error(
     if not getattr(exc, "_nsgablack_error_phase", None):
         try:
             setattr(exc, "_nsgablack_error_phase", str(phase))
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='_annotate_evaluation_error.fallback_179', exc=_fallback_error)
             pass
     details = dict(getattr(exc, "_nsgablack_error_context", {}) or {})
     for key in ("individual_id", "population_size", "evaluation_path"):
@@ -164,7 +168,8 @@ def _annotate_evaluation_error(
             details[key] = context[key]
     try:
         setattr(exc, "_nsgablack_error_context", details)
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_annotate_evaluation_error.fallback_177', exc=_fallback_error)
         pass
     try:
         attach_failure_evidence(
@@ -172,7 +177,8 @@ def _annotate_evaluation_error(
             "nsgablack_evaluation",
             {"phase": str(phase), **details},
         )
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_annotate_evaluation_error.fallback_178', exc=_fallback_error)
         pass
 
 
@@ -292,9 +298,9 @@ def _evaluate_individual(
             context="evaluate_individual.result",
         )
         if bool(getattr(solver, "enable_bias", False)):
-            objectives = solver._apply_bias(objectives, arr, individual_id, ctx)
-            if bool(getattr(solver, "ignore_constraint_violation_when_bias", False)):
-                violation = 0.0
+            feedback, objectives, violation = project_bias_feedback(
+                solver, feedback, violation, arr, individual_id, ctx
+            )
             objectives, violation = _validate_individual_result(
                 solver,
                 objectives,
@@ -502,20 +508,27 @@ def evaluate_population_with_plugins_and_bias(
         if not used_fallback:
             if bool(getattr(solver, "enable_bias", False)):
                 adjusted = []
+                adjusted_feedback = []
                 for idx, individual in enumerate(pop):
                     item_context = hook_contexts[idx] if batch_hook_scope else dict(
                         solver.build_context(individual_id=idx, individual=individual)
                     )
-                    biased = solver._apply_bias(objectives[idx], individual, idx, item_context)
+                    item_feedback, biased, selected_violation = project_bias_feedback(
+                        solver, feedback_batch.items[idx], violations[idx], individual, idx, item_context
+                    )
+                    adjusted_feedback.append(item_feedback)
                     row, vio = _validate_individual_result(
                         solver,
                         biased,
-                        0.0 if bool(getattr(solver, "ignore_constraint_violation_when_bias", False)) else violations[idx],
+                        selected_violation,
                         context=f"evaluate_population.bias[{idx}]",
                     )
                     adjusted.append(row)
                     violations[idx] = vio
                 objectives = np.vstack(adjusted) if adjusted else objectives
+                feedback_batch = OptimizationFeedbackBatch.from_feedback(
+                    adjusted_feedback, violations=violations, metadata=dict(feedback_batch.metadata)
+                )
 
         feedback_batch = feedback_batch.with_arrays(
             objectives,
@@ -634,24 +647,31 @@ def evaluate_external_population_with_contract(
         )
         if enable_bias and not bool(bias_already_applied):
             adjusted = []
+            adjusted_feedback = []
             for idx, individual in enumerate(pop):
-                biased = solver._apply_bias(
-                    objectives[idx],
-                    individual,
-                    idx,
-                    hook_contexts[idx],
+                item_feedback, biased, selected_violation = project_bias_feedback(
+                    solver, feedback_batch.items[idx], violations[idx], individual, idx, hook_contexts[idx]
                 )
                 row, vio = _validate_individual_result(
-                    solver,
-                    biased,
-                    0.0 if ignore_bias_violation else violations[idx],
-                    context=f"{context_name}.bias[{idx}]",
+                    solver, biased, selected_violation, context=f"{context_name}.bias[{idx}]",
                 )
                 adjusted.append(row)
+                adjusted_feedback.append(item_feedback)
                 violations[idx] = vio
             objectives = np.vstack(adjusted) if adjusted else objectives
+            feedback_batch = OptimizationFeedbackBatch.from_feedback(
+                adjusted_feedback, violations=violations, metadata=dict(feedback_batch.metadata)
+            )
         elif enable_bias and ignore_bias_violation:
+            from blackbase.preferences import preserve_feedback_evidence
+            adjusted_feedback = []
+            for index, item in enumerate(feedback_batch.items):
+                projected = copy_feedback_with_result(item, objectives=item.objectives, violation=0.0)
+                adjusted_feedback.append(preserve_feedback_evidence(
+                    item, projected, raw_violation=violations[index], projected_violation=0.0,
+                ))
             violations = np.zeros((pop_size,), dtype=float)
+            feedback_batch = OptimizationFeedbackBatch.from_feedback(adjusted_feedback, violations=violations)
 
         feedback_batch = feedback_batch.with_arrays(
             objectives,

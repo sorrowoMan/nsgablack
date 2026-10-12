@@ -61,7 +61,7 @@ class Plugin(PluginBase):
         2) adapter.get_population_snapshot()
         3) solver.{population, objectives, constraint_violations}
         """
-        from blackbase.context.context_keys import (
+        from nsgablack.context_keys import (
             KEY_CONSTRAINT_VIOLATIONS,
             KEY_OBJECTIVES,
             KEY_POPULATION,

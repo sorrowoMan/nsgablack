@@ -13,6 +13,8 @@ python examples/cases/production_scheduling/run_project.py
 
 ## 编排边界
 
+搜索 Adapter 的 propose 返回待修复提案，问题 repair 统一在控制面预算裁剪后执行；本地搜索使用独立候选副本，CandidateProposerAdapter 在 repair 后重建对应 Unit。
+
 - **run_project.py**：Project 级统一入口。
 - **project_config.py**：阶段、Case 顺序、L0 资源请求和组件覆盖。
 - **cases/**：可独立装配、检查并由 Project 调用的标准 Case。

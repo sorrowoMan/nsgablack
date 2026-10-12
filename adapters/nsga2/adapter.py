@@ -11,8 +11,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 from blackbase.call_binding import CallCandidate, invoke_bound_once
 
+from ..unit_backed import UnitBackedAdapter, UnitField
+from ...representation.structure_builders import PopulationUnitBuilder
+from ...units.population_features import SELECTION_RANKING
 from ..algorithm_adapter import AlgorithmAdapter
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_ADAPTER_BEST_OBJECTIVES,
     KEY_ADAPTER_BEST_SCORE,
     KEY_ADAPTER_BEST_X,
@@ -33,7 +36,17 @@ class NSGA2Config:
     objective_aggregation: str = "sum"
 
 
-class NSGA2Adapter(AlgorithmAdapter):
+class NSGA2Adapter(UnitBackedAdapter):
+    uses_pipeline_mutation = True
+    unit_features = (SELECTION_RANKING,)
+    accepts_proposal_replacement = True
+    unit_builder_type = PopulationUnitBuilder
+    unit_schema = PopulationUnitBuilder.unit_type.schema
+    population = UnitField("population")
+    objectives = UnitField("objectives")
+    violations = UnitField("violations")
+    _population_candidate_tokens = UnitField("candidate_tokens")
+
     context_requires = ()
     context_provides = (
         KEY_ADAPTER_BEST_X,
@@ -54,7 +67,7 @@ class NSGA2Adapter(AlgorithmAdapter):
         priority: int = 0,
         **config_kwargs,
     ) -> None:
-        super().__init__(name=name, priority=priority)
+        super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
         self.config = self.resolve_config(
             config=config,
             config_cls=NSGA2Config,
@@ -73,10 +86,7 @@ class NSGA2Adapter(AlgorithmAdapter):
 
     def setup(self, control: Any) -> None:
         self._rng = self.create_local_rng(control)
-        self.population = None
-        self.objectives = None
-        self.violations = None
-        self._population_candidate_tokens = ()
+        self.reset_unit()
         self._rank = np.zeros(0, dtype=int)
         self._crowding = np.zeros(0, dtype=float)
         self._runtime_projection = {}
@@ -91,11 +101,12 @@ class NSGA2Adapter(AlgorithmAdapter):
         for _ in range(max(1, int(self.cfg.offspring_size))):
             i = self._tournament_pick()
             j = self._tournament_pick()
-            p1 = np.asarray(self.population[i], dtype=float)
-            p2 = np.asarray(self.population[j], dtype=float)
+            # Operators receive drafts; in-place crossover/mutation must not
+            # change the current Unit before acceptance.
+            p1 = np.array(self.population[i], dtype=float, copy=True)
+            p2 = np.array(self.population[j], dtype=float, copy=True)
             child = self._crossover(control, p1, p2, context)
-            child = np.asarray(control.mutate_candidate(child, context), dtype=float)
-            child = np.asarray(control.repair_candidate(child, context), dtype=float)
+            child = np.asarray(self.mutate_candidate(control, child, context), dtype=float)
             out.append(child)
         return out
 
@@ -119,25 +130,13 @@ class NSGA2Adapter(AlgorithmAdapter):
         candidate_tokens = self.candidate_tokens_for(control, candidates)
 
         if self.population is None or self.objectives is None or self.violations is None:
-            self.population = cand.copy()
-            self.objectives = obj.copy()
-            self.violations = vio.copy()
-            self._population_candidate_tokens = candidate_tokens
+            self.algorithm_unit.initialize_population(cand, obj, vio, candidate_tokens=candidate_tokens)
         else:
-            merged_pop = np.vstack([self.population, cand])
+            self.algorithm_unit.require_current_feedback()
             merged_obj = np.vstack([self.objectives, obj])
             merged_vio = np.concatenate([self.violations, vio])
-            previous_tokens = self._population_candidate_tokens
-            if len(previous_tokens) != int(self.population.shape[0]):
-                previous_tokens = (None,) * int(self.population.shape[0])
-            merged_tokens = previous_tokens + candidate_tokens
             keep = self._environmental_select(merged_obj, merged_vio, int(self.cfg.population_size))
-            self.population = merged_pop[keep]
-            self.objectives = merged_obj[keep]
-            self.violations = merged_vio[keep]
-            self._population_candidate_tokens = tuple(
-                merged_tokens[int(index)] for index in np.asarray(keep, dtype=int)
-            )
+            self.algorithm_unit.apply_selection(keep, cand, obj, vio, candidate_tokens=candidate_tokens)
 
         self._refresh_ranking()
         self._sync_runtime_projection()
@@ -150,11 +149,12 @@ class NSGA2Adapter(AlgorithmAdapter):
             and np.array_equal(self.population, pop, equal_nan=True)
             and len(self._population_candidate_tokens) == int(pop.shape[0])
         )
-        self.population = pop.copy()
-        self.objectives = obj.copy()
-        self.violations = vio.copy()
-        if not preserve_tokens:
-            self._population_candidate_tokens = (None,) * int(pop.shape[0])
+        if preserve_tokens:
+            # The snapshot setter asserts an unchanged row projection. This is
+            # feedback refresh, not a new environmental selection.
+            self.algorithm_unit.attach_feedback(obj, vio)
+        else:
+            self.algorithm_unit.initialize_population(pop, obj, vio)
         self._refresh_ranking()
         self._sync_runtime_projection()
         return True
@@ -195,7 +195,7 @@ class NSGA2Adapter(AlgorithmAdapter):
         source = f"adapter.{self.__class__.__name__}"
         return {k: source for k in self._runtime_projection.keys()}
 
-    def get_state(self) -> Dict[str, Any]:
+    def _get_algorithm_state(self) -> Dict[str, Any]:
         return {
             "population": None if self.population is None else self.population.tolist(),
             "objectives": None if self.objectives is None else self.objectives.tolist(),
@@ -204,16 +204,24 @@ class NSGA2Adapter(AlgorithmAdapter):
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
-    def set_state(self, state: Dict[str, Any]) -> None:
+    def _set_algorithm_state(self, state: Dict[str, Any]) -> None:
         if not state:
+            return
+        if state.get("algorithm_unit") is not None:
+            # UnitBackedAdapter restores exact Unit fields, without replaying
+            # member hooks or temporarily misaligning custom row fields.
+            rng_state = state.get("rng_state")
+            if isinstance(rng_state, dict):
+                self._rng.bit_generator.state = copy.deepcopy(rng_state)
             return
         pop = state.get("population")
         obj = state.get("objectives")
         vio = state.get("violations")
-        self.population = None if pop is None else np.asarray(pop, dtype=float)
-        self.objectives = None if obj is None else np.asarray(obj, dtype=float)
-        self.violations = None if vio is None else np.asarray(vio, dtype=float).reshape(-1)
-        self._population_candidate_tokens = tuple(state.get("candidate_tokens", ()) or ())
+        if pop is None:
+            self.algorithm_unit.clear_population()
+        else:
+            self.algorithm_unit.initialize_population(pop, obj, vio,
+                candidate_tokens=tuple(state.get("candidate_tokens", ()) or ()))
         if self.population is not None and len(self._population_candidate_tokens) not in {
             0,
             int(self.population.shape[0]),
@@ -257,15 +265,18 @@ class NSGA2Adapter(AlgorithmAdapter):
         if pop is not None:
             pop_arr = np.asarray(pop, dtype=float)
             if pop_arr.ndim == 2 and pop_arr.shape[0] > 0:
-                self.population = pop_arr.copy()
-                if obj is not None and vio is not None:
-                    self.objectives = np.asarray(obj, dtype=float).copy()
-                    self.violations = np.asarray(vio, dtype=float).reshape(-1).copy()
+                self.algorithm_unit.initialize_population(pop_arr, obj, vio)
+                self.rebuild_unit("initialize", context=context)
                 return
 
         n = max(2, int(self.cfg.population_size))
         created = [np.asarray(control.init_candidate(context), dtype=float) for _ in range(n)]
-        self.population = np.asarray(created, dtype=float)
+        self.algorithm_unit.initialize_population(created, candidate_tokens=self.candidate_tokens_for(control, created))
+        self.rebuild_unit("initialize", context=context)
+
+    def _after_unit_restore(self):
+        self._refresh_ranking()
+        self._sync_runtime_projection()
 
     def _refresh_ranking(self) -> None:
         if self.population is None or self.population.shape[0] == 0:
@@ -278,13 +289,7 @@ class NSGA2Adapter(AlgorithmAdapter):
             self._crowding = np.zeros(n, dtype=float)
             return
 
-        fronts, rank = FastNonDominatedSort.sort(self.objectives, self.violations)
-        crowding = np.zeros(self.population.shape[0], dtype=float)
-        for front in fronts:
-            dist = FastNonDominatedSort.calculate_crowding_distance(self.objectives, list(front))
-            crowding += np.asarray(dist, dtype=float)
-        self._rank = np.asarray(rank, dtype=int)
-        self._crowding = crowding
+        self._rank, self._crowding = self.algorithm_unit.feature(SELECTION_RANKING)
 
     def _tournament_pick(self) -> int:
         assert self.population is not None

@@ -1,6 +1,7 @@
 """Sequence graph recorder and helpers."""
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import asyncio
 from contextvars import ContextVar
@@ -60,7 +61,8 @@ def record_sequence_event(
     if callable(sink):
         try:
             return sink(token=str(token), generation=generation, step=step)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='record_sequence_event.fallback_329', exc=_fallback_error)
             return None
     return None
 
@@ -328,7 +330,8 @@ class SequenceGraphRecorder:
         if ctx_token is not None:
             try:
                 self._trace_stack.reset(ctx_token)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='SequenceGraphRecorder.end_trace_span.fallback_330', exc=_fallback_error)
                 pass
         end_ns = int(time.perf_counter_ns())
         start_ns = int(handle.get("start_ns", end_ns) or end_ns)

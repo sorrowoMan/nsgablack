@@ -1,167 +1,88 @@
-# 09. 自定义 Adapter（nsgablack 详细实战）
+# 09. 定义自己的 Adapter
 
-本章目标：从空 Case 出发，写一个最小可运行的自定义 Adapter，并能通过 `--check` + doctor。
+若只是增加种群成员字段，优先继承 Unit，继续使用已有 Adapter 的搜索决策。标准模板 `pipeline/population_example.py` 提供 AgePopulationUnit/AgePopulationBuilder；在 build_solver 中显式绑定即可。完整代码和成员操作见 [Unit 成员维护](../architecture/UNIT_MEMBER_OPERATIONS_CN.md)。无需重写 NSGA-II 的选择、Solver 生命周期或事务。
 
-## 0. 先明确 Adapter 边界
+Adapter 决定提出哪些候选、如何使用反馈；算法管线负责构建 Unit。本例独立高斯采样，记录最小目标，用来说明接口，不承诺收敛性质。
 
-Adapter 负责“搜索策略语义”，核心只有两件事：
-
-1. `propose(...)` 生成候选
-2. `update(...)` 消费反馈并更新内部状态
-
-Adapter 不负责：
-
-- 全局编排（Project substrate 负责）
-- 全局资源发放（Project L0 负责）
-- 运行能力（Plugin 负责）
-
----
-
-## 1. 创建 case 与 adapter 文件
-
-```powershell
-python -m nsgablack project new demo_adapter_nsga
-cd demo_adapter_nsga
-python -m nsgablack project add-case my_solver --type solver --framework nsgablack
-python -m nsgablack project add-component --case my_solver --kind adapter --name my_adapter
-```
-
-生成文件：
-
-```text
-cases/my_solver/adapter/my_adapter.py
-```
-
----
-
-## 2. 写最小可运行 Adapter
-
-下面是可运行骨架（重点是接口形状和状态结构）：
+保存到 Case 的 `adapter/my_adapter.py`。`CandidateProposerAdapter` 继承正式 AlgorithmAdapter，提供候选 Unit、稳定 ID、事务快照和 RNG 恢复；子类显式保存自己的策略状态。
 
 ```python
-from __future__ import annotations
-
 import numpy as np
+from nsgablack.adapters import CandidateProposerAdapter
 
 
-class MyAdapter:
-    def __init__(self, population_size: int = 16, sigma: float = 0.1, seed: int = 42):
+class MyAdapter(CandidateProposerAdapter):
+    def __init__(self, population_size=8, sigma=0.5, seed=42):
+        super().__init__(name="my_adapter")
         self.population_size = int(population_size)
         self.sigma = float(sigma)
-        self.rng = np.random.default_rng(int(seed))
-        self._population = None
-        self._objectives = None
-        self._violations = None
+        self.rng = np.random.default_rng(seed)
+        self.best_score = None
 
     def propose(self, control, context):
-        # 首次：从 control.problem.dimension 构造初始群体
-        if self._population is None:
-            dim = int(getattr(control.problem, "dimension", 8))
-            self._population = self.rng.normal(0.0, 1.0, size=(self.population_size, dim))
-            return self._population
-
-        # 后续：围绕当前群体做高斯扰动
-        noise = self.rng.normal(0.0, self.sigma, size=self._population.shape)
-        return self._population + noise
+        rows = self.rng.normal(0, self.sigma,
+                              (self.population_size, control.problem.dimension))
+        return self.build_candidate_units(rows, context)
 
     def update(self, control, candidates, feedback, context):
-        objectives, violations = feedback
-        # 最小策略：保留本代候选并记录反馈
-        self._population = np.asarray(candidates, dtype=float)
-        self._objectives = np.asarray(objectives, dtype=float)
-        self._violations = np.asarray(violations, dtype=float).reshape(-1)
+        if len(candidates):
+            score = float(np.min(feedback.objectives[:, 0]))
+            self.best_score = score if self.best_score is None else min(self.best_score, score)
 
-    # --- 推荐实现：checkpoint 友好 ---
     def get_state(self):
-        return {
-            "population": None if self._population is None else self._population.tolist(),
-            "objectives": None if self._objectives is None else self._objectives.tolist(),
-            "violations": None if self._violations is None else self._violations.tolist(),
-            "sigma": self.sigma,
-        }
+        return {**super().get_state(), "best_score": self.best_score,
+                "population_size": self.population_size, "sigma": self.sigma}
 
     def set_state(self, state):
-        payload = dict(state or {})
-        self.sigma = float(payload.get("sigma", self.sigma))
-        pop = payload.get("population")
-        obj = payload.get("objectives")
-        vio = payload.get("violations")
-        self._population = None if pop is None else np.asarray(pop, dtype=float)
-        self._objectives = None if obj is None else np.asarray(obj, dtype=float)
-        self._violations = None if vio is None else np.asarray(vio, dtype=float).reshape(-1)
+        super().set_state(state)
+        self.best_score = state["best_score"]
+        self.population_size = int(state["population_size"])
+        self.sigma = float(state["sigma"])
 ```
 
----
-
-## 3. 在 `build_solver.py` 挂载 Adapter
-
-核心是：
+完整 `build_solver.py` 入口如下，保留 Project 的资源授权和组件覆盖：
 
 ```python
-solver = ...
-solver.set_adapter(MyAdapter(...))
-```
-
-示意（你自己的 `build_solver.py` 按本 Case 风格写）：
-
-```python
+from nsgablack.project.starter import build_starter_solver
+from nsgablack.project import apply_solver_component_overrides
+from .pipeline import build_pipeline
+from .problem import build_problem
 from .adapter.my_adapter import MyAdapter
 
+
 def build_solver(config=None, *, resource_context=None, component_overrides=None):
-    del config, resource_context, component_overrides
-    solver = make_solver_somehow()
-    solver.set_adapter(MyAdapter(population_size=24, sigma=0.05))
+    solver = build_starter_solver(
+        problem=build_problem(),
+        pipeline=build_pipeline(resource_context=resource_context,
+                                component_overrides=component_overrides),
+        resource_context=resource_context,
+    )
+    solver.set_adapter(MyAdapter())
+    apply_solver_component_overrides(solver, component_overrides)
     return solver
 ```
 
----
+在 Project 根执行 `python run_project.py --check --build-check`，再执行 `python run_project.py`。使用 `python -m nsgablack project doctor --path . --strict --build --format json` 检查声明和装配。
 
-## 4. 三种常见 Adapter 进阶形态
+有内部种群选择的 L2 策略须实现 population mode、CandidateBatch/token 对齐及完整恢复契约，不能照抄本例的 L1 声明。策略组合复用 Composite/Router/Chain；嵌套调用及并行资源分配属于 Project。
 
-### 4.1 单策略（最稳）
+## 在多策略组合中读取任务
 
-- 一个 propose
-- 一个 update
-- 适合基线与回归测试
+由 StrategyRouterAdapter 调用的子 Adapter，只需读取一份任务：
 
-### 4.2 多策略 router（阶段切换）
+```python
+from nsgablack.adapters import StrategyTask, StrategyOrigin
 
-结合 context key：
+# 在子 Adapter.propose/update/repair/disposition 的 context 中：
+task = StrategyTask.from_context(context)
+owner = task.owner_path     # 实例路径，同一种算法的多个实例也不同
+count = task.budget        # 原提案预算；接纳数由 BatchDisposition 给出
+region = task.region_id
+seeds = task.seeds         # 调用局部数据，不从全局观测回读
 
-```text
-phase=explore -> 大步长策略
-phase=exploit -> 小步长策略
+# 在结果或 Snapshot 的 CandidateBatch 中查询候选来源：
+route = StrategyOrigin.from_candidate(batch.semantic_states[index])
+leaf = route[-1]           # 最内层提案者；route 从外到内排列
 ```
 
-### 4.3 多策略并行（候选融合）
-
-- 多个策略分别 propose
-- 合并后统一 evaluate/update
-- 注意返回 shape 与追踪来源字段
-
----
-
-## 5. 验证步骤（必须跑）
-
-```powershell
-python run_project.py --check --build-check
-python -m nsgablack project doctor --path . --build --strict --format problem
-```
-
-建议额外做一次短跑（小迭代）确保 propose/update 真执行。
-
----
-
-## 6. 常见坑
-
-1. `propose` 返回 list of object / shape 不稳  
-   修复：统一返回 `np.ndarray` 或 solver 可消费的固定结构。
-
-2. `update` 不记录 population，下一代 propose 无法延续  
-   修复：保存 `_population`。
-
-3. 在 adapter 里直接写大对象进 context  
-   修复：大对象走 snapshot/ref；context 只留轻量字段。
-
-4. adapter 里偷偷做资源申请  
-   修复：只消费 `resource_context`，不申请全局资源。
+`role/strategy_id/phase/region_id` 等局部键仍由任务生成，便于已有组件消费；全局 `strategy_id` 不能表示所有候选来源。观测使用 `unit_tasks` 的轻量摘要和 `strategy_instances` 的各实例切片。来源和 token 随候选筛选及快照往返，不按数值相等反查。

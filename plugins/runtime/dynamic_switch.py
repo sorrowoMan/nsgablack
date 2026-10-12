@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, Optional
 
 from ...utils.dynamic import DynamicSwitchBase, DynamicSwitchConfig, SignalProviderBase
-from blackbase.context.context_keys import KEY_DYNAMIC, KEY_PHASE_ID
+from nsgablack.context_keys import KEY_DYNAMIC, KEY_PHASE_ID
 
 
 class DynamicSwitchPlugin(DynamicSwitchBase):

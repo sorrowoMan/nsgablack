@@ -16,7 +16,7 @@ from blackbase.evaluation import (
     InMemoryEvaluationEvidenceJournal,
 )
 from blackbase.resources import ArtifactAuthority, ArtifactBinding, ArtifactPublisher
-from nsgablack.adapters import AlgorithmAdapter
+from nsgablack.adapters import AlgorithmAdapter, CompositeAdapter
 from nsgablack.core import BlackBoxProblem, ComposableSolver
 from nsgablack.core.state.incumbent import CandidateProvenance
 from nsgablack.core.solver_helpers import (
@@ -45,6 +45,161 @@ class _Adapter(AlgorithmAdapter):
     def update(self, control, candidates, feedback, context):
         del control, candidates, feedback, context
         self.update_calls += 1
+
+
+class _IdentityPopulationAdapter(_Adapter):
+    state_recovery_level = "L2"
+    population_state_mode = "single"
+
+    def __init__(self, name):
+        super().__init__()
+        self.name = name
+        self.snapshot = None
+        self.tokens = ()
+
+    def propose(self, control, context):
+        return [UnknownState(values=np.asarray([0.5]), metadata={"source": self.name})]
+
+    def update(self, control, candidates, feedback, context):
+        super().update(control, candidates, feedback, context)
+        self.set_population_snapshot(candidates, *feedback)
+        self.tokens = self.candidate_tokens_for(control, candidates)
+
+    def get_population_snapshot(self):
+        return self.snapshot
+
+    def set_population_snapshot(self, population, objectives, violations):
+        self.snapshot = self.validate_population_snapshot(population, objectives, violations)
+        return True
+
+    def get_population_candidate_tokens(self):
+        return self.tokens
+
+    def set_population_candidate_tokens(self, tokens):
+        self.tokens = tuple(tokens)
+        return True
+
+
+def _assert_memory_matches_destination(solver):
+    owner = solver.population_authority
+    edge = solver.get_population_authority_identity()
+    destination = solver.snapshot_store.read(owner.snapshot_handle.key)
+    assert edge.snapshot == solver.snapshot_store.identity(destination)
+    assert owner.mode == destination.data["population_authority"]["authority_mode"]
+    payload = destination.data
+    if owner.mode == "partitioned":
+        assert owner.population is owner.objectives is owner.violations is None
+        assert not {"population", "objectives", "constraint_violations"} & payload.keys()
+        partitions = payload["population_partitions"]["partitions"]
+        assert len(partitions) == len(owner.partitions) == 2
+        for stored in partitions:
+            partition, batch, provenance = owner.partitions[stored["partition"]["partition_id"]]
+            assert partition.as_dict() == stored["partition"]
+            assert batch.as_dict() == stored["batch"]
+            assert [item.as_dict() for item in provenance] == stored["provenance"]
+    else:
+        np.testing.assert_array_equal(owner.population, payload["population"])
+        np.testing.assert_array_equal(owner.objectives, payload["objectives"])
+        np.testing.assert_array_equal(owner.violations, payload["constraint_violations"])
+        assert owner.candidate_batch.as_dict() == payload["candidate_batch"]
+        assert [item.as_dict() for item in owner.candidate_provenance] == payload["candidate_provenance"]
+    return edge
+
+
+@pytest.mark.parametrize("mode", ["step_batch", "single", "partitioned"])
+def test_committed_memory_equals_destination_and_survives_next_failed_step(mode, monkeypatch):
+    adapter = {
+        "step_batch": lambda: _Adapter(),
+        "single": lambda: _IdentityPopulationAdapter("single"),
+        "partitioned": lambda: CompositeAdapter((
+            _IdentityPopulationAdapter("left"), _IdentityPopulationAdapter("right"))),
+    }[mode]()
+    solver = ComposableSolver(_Problem(), adapter=adapter)
+    outcome = solver.step()
+    assert outcome.status == "committed"
+    assert solver.population_authority.mode == mode
+    before = _assert_memory_matches_destination(solver)
+    evidence = solver.evaluation_evidence_journal.get(outcome.metadata["evaluation_disposition"]["event_id"])
+    assert before.caused_by_event_identity.as_dict() == evidence.event_ref
+    assert before.snapshot.as_dict() == evidence.decision_carrier_ref
+
+    def fail_after_staging(*args, **kwargs):
+        raise RuntimeError("fail after staging")
+
+    monkeypatch.setattr(solver, "_update_best", fail_after_staging)
+    with pytest.raises(RuntimeError, match="fail after staging"):
+        solver.step()
+    assert _assert_memory_matches_destination(solver) == before
+
+
+def test_event_and_decision_errors_share_reason_and_keep_separate_diagnostics(monkeypatch):
+    from nsgablack.core import evidence_semantics
+
+    solver = ComposableSolver(_Problem(), adapter=_Adapter())
+    outcome = solver.step()
+    record = solver.evaluation_evidence_journal.get(outcome.metadata["evaluation_disposition"]["event_id"])
+
+    def invalid(*args, **kwargs):
+        raise TypeError("invalid event payload")
+
+    monkeypatch.setattr(evidence_semantics, "validate_evaluation_event_snapshot", invalid)
+    for inspect in (solver.evaluation_evidence_semantics.inspect_event,
+                    solver.evaluation_evidence_semantics.inspect_decision):
+        result = inspect(record, solver.snapshot_store)
+        assert result.state == "invalid"
+        assert result.reason == "event_snapshot_invalid"
+        assert result.diagnostics["error_type"] == "TypeError"
+        assert result.diagnostics["message"] == "invalid event payload"
+
+
+@pytest.mark.parametrize("missing", ["event", "predecessor", "destination", "authority"])
+def test_unreadable_evidence_keeps_explicit_deferred_classification(missing, monkeypatch):
+    solver = ComposableSolver(_Problem(), adapter=_Adapter())
+    solver.step()  # Give the second event a durable predecessor.
+    outcome = solver.step()
+    record = solver.evaluation_evidence_journal.get(outcome.metadata["evaluation_disposition"]["event_id"])
+    if missing in {"event", "destination"}:
+        read = solver.snapshot_store.read
+        key = record.event_snapshot_key if missing == "event" else record.verification["destination_snapshot_key"]
+        monkeypatch.setattr(solver.snapshot_store, "read", lambda candidate: None if candidate == key else read(candidate))
+    elif missing == "predecessor":
+        def unreadable(*args, **kwargs):
+            raise KeyError("predecessor temporarily unavailable")
+        monkeypatch.setattr(solver.snapshot_store, "read_verified", unreadable)
+    else:
+        monkeypatch.setattr(solver.evaluation_evidence_semantics.authority_store, "current", lambda key: None)
+    inspection = solver.evaluation_evidence_semantics.inspect_decision(record, solver.snapshot_store)
+    assert inspection.state == "deferred"
+    assert inspection.reason == {
+        "event": "event_snapshot_unreadable", "predecessor": "event_predecessor_unreadable",
+        "destination": "destination_snapshot_unreadable", "authority": "authority_edge_unreadable",
+    }[missing]
+
+
+def test_reinspection_timestamp_changes_without_mutating_evidence_identity(monkeypatch):
+    from types import SimpleNamespace
+    from nsgablack.core import evidence_semantics
+
+    solver = ComposableSolver(_Problem(), adapter=_Adapter())
+    outcome = solver.step()
+    record = solver.evaluation_evidence_journal.get(outcome.metadata["evaluation_disposition"]["event_id"])
+    before = solver.get_population_authority_identity()
+    inspections = []
+    for timestamp in (100.0, 200.0):
+        monkeypatch.setattr(evidence_semantics, "time", SimpleNamespace(time=lambda: timestamp))
+        inspections.append(solver.evaluation_evidence_semantics.inspect_decision(record, solver.snapshot_store))
+    first, second = inspections
+    assert first.state == second.state == "verified"
+    assert first.verification.verified_at == 100.0
+    assert second.verification.verified_at == 200.0
+    first_receipt, second_receipt = first.verification.as_dict(), second.verification.as_dict()
+    first_receipt.pop("verified_at")
+    second_receipt.pop("verified_at")
+    assert first_receipt == second_receipt
+    assert first.event_ref == second.event_ref
+    assert first.decision_carrier_ref == second.decision_carrier_ref == before.snapshot
+    assert solver.get_population_authority_identity() == before
+    assert solver.evaluation_evidence_journal.get(record.event_id) == record
 
 
 def _event(event_id: str, run_id: str, snapshot_key: str) -> EvaluationEventEnvelope:

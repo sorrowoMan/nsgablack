@@ -6,6 +6,12 @@ The format is based on Keep a Changelog, and this project aims to follow SemVer.
 
 ## [Unreleased]
 
+### Fixed
+- `super_topology_orchestration` 的两个 Trainer 接入正式 `LearningSolver` 生命周期，
+  拟合逻辑归入 Problem/Provider；训练评估参与共享预算结算，模型与 summary 原子发布。
+- 拓扑审计升级为 `v2`：根据 Artifact 收据、父子身份、资源、预算和取消链实际计算
+  invariant；空调用或证据缺失不再被计为成功。
+
 ## [0.4.0] - 2026-09-21
 
 ### Breaking

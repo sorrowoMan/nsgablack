@@ -1,4 +1,4 @@
-﻿"""
+"""
 Legacy end-to-end demo:
 
 One problem -> pipeline -> (optional) bias -> solver -> choose strategy via suites
@@ -25,7 +25,7 @@ def _ensure_importable() -> None:
     try:
         import nsgablack  # noqa: F401
         return
-    except Exception:
+    except ImportError:
         pass
     here = Path(__file__).resolve()
     # Repo layout: this repository root is the Python package directory itself.

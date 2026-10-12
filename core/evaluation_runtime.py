@@ -1,4 +1,4 @@
-﻿"""L4 evaluation runtime primitives (single mediation entry)."""
+"""L4 evaluation runtime primitives (single mediation entry)."""
 
 from __future__ import annotations
 
@@ -109,7 +109,7 @@ class EvaluationMediator:
     def _provider_priority(provider: EvaluationProvider) -> int:
         try:
             return int(getattr(provider, "priority", 0) or 0)
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return 0
 
     def _select_provider(self, candidates: list[EvaluationProvider]) -> EvaluationProvider:
@@ -177,7 +177,7 @@ class EvaluationMediator:
                 if bool(can_fn(solver, x, ctx)):
                     candidates.append(p)
             except Exception:
-                continue
+                raise
 
         if not candidates:
             return run_fallback()
@@ -236,7 +236,7 @@ class EvaluationMediator:
                 if bool(p.can_handle_population(solver, population, ctx)):
                     candidates.append(p)
             except Exception:
-                continue
+                raise
 
         if not candidates:
             return run_fallback()

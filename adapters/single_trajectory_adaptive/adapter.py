@@ -14,8 +14,10 @@ from typing import Any, Deque, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
+from ..unit_backed import UnitBackedAdapter, UnitField
+from ...representation.structure_builders import TrajectoryUnitBuilder
 from ..algorithm_adapter import AlgorithmAdapter
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_MUTATION_SIGMA,
     KEY_SINGLE_TRAJ_SIGMA,
     KEY_SINGLE_TRAJ_STATE,
@@ -44,7 +46,7 @@ class SingleTrajectoryAdaptiveConfig:
     violation_penalty: float = 1e6
 
 
-class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
+class SingleTrajectoryAdaptiveAdapter(UnitBackedAdapter):
     """
     Adaptive single-trajectory local/global search.
 
@@ -52,6 +54,13 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
     - propose(): sample neighbors around current_x
     - update(): accept best/improving candidate, adapt sigma, optional restart
     """
+    uses_pipeline_mutation = True
+    accepts_proposal_replacement = True
+    unit_builder_type = TrajectoryUnitBuilder
+    unit_schema = TrajectoryUnitBuilder.unit_type.schema
+    current_x = UnitField("current")
+    best_x = UnitField("best")
+
 
     context_requires = ("generation",)
     context_provides = (KEY_SINGLE_TRAJ_STATE, KEY_SINGLE_TRAJ_SIGMA)
@@ -70,7 +79,7 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
         priority: int = 0,
         **config_kwargs,
     ) -> None:
-        super().__init__(name=name, priority=priority)
+        super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
         self.config = self.resolve_config(
             config=config,
             config_cls=SingleTrajectoryAdaptiveConfig,
@@ -125,10 +134,12 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
         out = []
         k = int(max(1, int(self.cfg.batch_size)))
         for _ in range(k):
-            cand = control.mutate_candidate(self.current_x, ctx)
-            cand = control.repair_candidate(cand, ctx)
+            cand = self.mutate_candidate(control, self.current_x, ctx)
             out.append(np.asarray(cand, dtype=float))
         return out
+
+    def _proposal_contexts(self, proposed_count, context):
+        return tuple(self._build_context(context) for _ in range(proposed_count))
 
     def update(
         self,
@@ -185,7 +196,7 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
             self.current_score = None
             self.no_improve_steps = 0
 
-    def get_state(self) -> Dict[str, Any]:
+    def _get_algorithm_state(self) -> Dict[str, Any]:
         return {
             "current_x": None if self.current_x is None else self.current_x.tolist(),
             "current_score": self.current_score,
@@ -198,7 +209,7 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
-    def set_state(self, state: Dict[str, Any]) -> None:
+    def _set_algorithm_state(self, state: Dict[str, Any]) -> None:
         cx = state.get("current_x")
         bx = state.get("best_x")
         self.current_x = None if cx is None else np.asarray(cx, dtype=float)

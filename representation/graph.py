@@ -10,7 +10,7 @@ from typing import Optional
 import numpy as np
 
 from .base import RepresentationComponentContract
-from blackbase.context.context_keys import KEY_NUM_NODES
+from nsgablack.context_keys import KEY_NUM_NODES
 
 
 @dataclass

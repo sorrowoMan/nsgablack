@@ -19,10 +19,12 @@ _SOURCE_ROOT = Path(__file__).resolve().parent.parent
 if (_SOURCE_ROOT / "pyproject.toml").is_file() and str(_SOURCE_ROOT) not in __path__:
     __path__.append(str(_SOURCE_ROOT))
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 __author__ = "SorrowoMan"
 __email__ = "sorrowo@foxmail.com"
+
+from . import context_keys as context_keys
 
 from .catalog import (
     CatalogEntry,

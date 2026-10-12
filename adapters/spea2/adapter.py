@@ -34,15 +34,16 @@ class SPEA2Adapter(NSGA2Adapter):
         priority: int = 0,
         **config_kwargs,
     ) -> None:
+        unit_binding = config_kwargs.pop("unit_binding", None)
         resolved = self.resolve_config(
             config=config,
             config_cls=SPEA2Config,
             config_kwargs=config_kwargs,
             adapter_name="SPEA2Adapter",
         )
-        super().__init__(config=resolved, name=name, priority=priority)
+        super().__init__(config=resolved, name=name, priority=priority, unit_binding=unit_binding)
         self.config = self.cfg
-        self.cfg: SPEA2Config = config or SPEA2Config()
+        self.cfg: SPEA2Config = resolved
 
     def _environmental_select(self, objectives: np.ndarray, violations: np.ndarray, n_keep: int) -> np.ndarray:
         obj = np.asarray(objectives, dtype=float)

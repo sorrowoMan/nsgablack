@@ -459,7 +459,7 @@ def _pareto_front(
         semantic_matrix = np.stack(
             [candidate.as_array().reshape(-1) for candidate in formal.candidates],
             axis=0,
-        ) if formal.candidates else np.empty((0, 0), dtype=float)
+        ) if formal.candidates else np.empty_like(solution_matrix[:0])
         if (
             semantic_matrix.shape != solution_matrix.shape
             or not np.array_equal(semantic_matrix, solution_matrix, equal_nan=True)

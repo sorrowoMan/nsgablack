@@ -49,25 +49,24 @@ ResourceOffer(
 
 ## 4. 资源计算规则
 
-并行 stage 的资源需求求和，串行 stage 不叠加。
+对每种可加资源（例如线程、内存）分别计算峰值：同时活跃的需求求和；串行阶段取峰值，不能把不同资源维度相加。设备 token、服务许可等离散资源还须满足各自的授权约束。
 
 如果外层 case 在评估阶段触发内层 case：
 
 ```text
-total = outer_parallel_workers + outer_parallel_workers * inner_requirement
+peak[d] = outer_active_requirement[d] + sum(active_child[i].requirement[d])
+homogeneous_bound[d] = outer_active_requirement[d] + N * max(child_requirement[d])
 ```
 
-这是上界估算；实际实现应由 Project L0 根据 `ResourceContext` 和 lease store 发放 grant。
+其中 N 是同时活跃的子调用上限。只有外层每 worker 同时占用一个线程、共 N 个 worker 且所有子调用线程需求相同时，线程维度才简化为 `N + N * inner_threads`。父任务等待期间是否仍占用资源必须明确，不能默认释放。异构子任务按实际需求求和；未知动态需求须声明上界或接受运行时 admission 检查。
+
+上述公式用于容量估算。实际授权由 BlackBase Project L0 的 `ResourceGrantPool` 在父 `ResourceContext` 范围内逐请求检查、发放和释放，Case 不得自行扩大 grant。
 
 ## 5. 内层 case 识别
 
-推荐方式：
+外层通过 Project 注入的 `CaseRuntimeContext.invoke()` 调用已注册的内层标准 Case，传递请求、输入和 Artifact/Snapshot 引用。调用路径统一取得子请求并申请父授权内的 grant；直接调用内层 builder 不能替代这一编排入口。
 
-1. 外层 `Problem.evaluate()` 显式调用 `cases.<inner>.build_solver`
-2. `problem.inner_runtime_evaluator`
-3. `problem.build_inner_solver(...)` 兼容入口
-
-建议内层 case 在 project stage 或 case config 中声明 `resource_request`，以便精确计算。
+内层 Case 在 project stage 或 case config 中声明 `resource_request`。`build_solver(..., resource_context=...)` 消费已授予的上下文，不拥有全局资源分配权。
 
 ## 6. 默认行为
 

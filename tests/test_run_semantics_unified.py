@@ -323,42 +323,22 @@ def test_stop_requested_behavior():
 
 
 def test_exception_handling_soft_mode():
-    """Test exception handling in soft mode (plugin_strict=False).
-    
-    KNOWN ISSUE: EvolutionSolver lacks top-level exception handling.
-    """
-    
-    # SolverBase with soft error handling
+    """Soft Plugin handling must never swallow a Problem execution failure."""
+
     class TestSolver(SolverBase):
-        def __init__(self, *args, **kwargs):
-            kwargs['plugin_strict'] = False
-            super().__init__(*args, **kwargs)
-            self.steps_executed = 0
-        
         def step(self):
-            self.steps_executed += 1
-    
-    solver = TestSolver(problem=FaultyProblem())
-    try:
-        result = solver.run(max_steps=3)
-        # Should complete despite faulty problem (soft error mode)
-        assert solver.steps_executed == 3
-    except Exception:
-        pytest.skip("SolverBase exception handling implementation pending")
-    
-    # EvolutionSolver currently raises exceptions
-    evo_solver = EvolutionSolver(
-        problem=FaultyProblem(),
-        pop_size=4,
-        max_generations=2,
-        plugin_strict=False,
-    )
-    
-    # KNOWN ISSUE: This will raise RuntimeError
-    with pytest.raises(RuntimeError, match="Simulated failure"):
-        evo_solver.run(return_dict=True)
-    
-    # TODO: After fix, should handle gracefully in soft mode
+            self.evaluate_individual(np.zeros(self.dimension))
+            return StepOutcome(status="committed")
+
+    for solver in (
+        TestSolver(problem=FaultyProblem(), plugin_strict=False),
+        EvolutionSolver(problem=FaultyProblem(), pop_size=4, max_generations=2, plugin_strict=False),
+    ):
+        with pytest.raises(RuntimeError, match="Simulated failure"):
+            solver.run(max_steps=3)
+        assert solver.running is False
+        assert solver.run_progress_steps < 3
+        assert solver.last_result is None
 
 
 def test_return_type_consistency():

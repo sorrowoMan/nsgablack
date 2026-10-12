@@ -1,4 +1,5 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -45,7 +46,8 @@ class BoundaryGuardPlugin(Plugin):
             return None
         try:
             ctx = solver.get_context()
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='BoundaryGuardPlugin.on_generation_committed.fallback_281', exc=_fallback_error)
             return None
 
         warnings = []

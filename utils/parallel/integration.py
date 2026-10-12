@@ -119,7 +119,7 @@ def with_parallel_evaluation(
                         try:
                             setattr(self.parallel_evaluator, attr, cfg[key])
                         except Exception:
-                            pass
+                            raise
                 return self.parallel_evaluator
 
             self.parallel_evaluator = ParallelEvaluator(

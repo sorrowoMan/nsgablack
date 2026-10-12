@@ -16,6 +16,8 @@ class CatalogAuditReport:
     method_failures: int
     param_failures: int
     issues: List[str]
+    import_unchecked: int = 0
+    params_unchecked: int = 0
 
 
 def audit_catalog(*, profile: str, runtime: bool = False) -> CatalogAuditReport:
@@ -36,9 +38,11 @@ def _build_report(health: List[HealthContract]) -> CatalogAuditReport:
         issues.extend(h.issues)
     return CatalogAuditReport(
         total=len(health),
-        import_failures=sum(1 for h in health if not h.import_ok),
+        import_failures=sum(1 for h in health if h.import_ok is False),
         context_failures=sum(1 for h in health if not h.context_ok),
         method_failures=sum(1 for h in health if not h.methods_ok),
-        param_failures=sum(1 for h in health if not h.params_ok),
+        param_failures=sum(1 for h in health if h.params_ok is False),
         issues=issues,
+        import_unchecked=sum(h.import_ok is None for h in health),
+        params_unchecked=sum(h.params_ok is None for h in health),
     )

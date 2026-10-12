@@ -8,10 +8,12 @@ from typing import Any, Dict, Mapping, Optional, Sequence
 
 import numpy as np
 from blackbase.contracts import ComponentContract
-from blackbase.context.context_keys import KEY_ADAPTER_BEST_SCORE, KEY_MUTATION_SIGMA
+from nsgablack.context_keys import KEY_ADAPTER_BEST_SCORE, KEY_MUTATION_SIGMA
 from blackbase.context import detach_context_value
 from blackbase.types import UnknownState
 
+from ..unit_backed import UnitBackedAdapter, UnitField, UnitFeedbackField
+from ...representation.structure_builders import TrajectoryUnitBuilder
 from ..algorithm_adapter import AlgorithmAdapter
 from ...core.evaluation_feedback import OptimizationFeedbackBatch
 
@@ -41,8 +43,17 @@ class GaussianSearchConfig:
         object.__setattr__(self, "objective_aggregation", aggregation)
 
 
-class GaussianSearchAdapter(AlgorithmAdapter):
+class GaussianSearchAdapter(UnitBackedAdapter):
     """Search numeric candidate state without owning model or data semantics."""
+    accepts_proposal_replacement = True
+    unit_builder_type = TrajectoryUnitBuilder
+    unit_schema = TrajectoryUnitBuilder.unit_type.schema
+    best_x = UnitField("best")
+    best_score = UnitFeedbackField("best", "candidate_metadata")
+    best_violation = UnitFeedbackField("best", "candidate_metadata")
+    _candidate_kind = UnitField("candidate_kind")
+    _candidate_metadata = UnitField("candidate_metadata")
+
 
     context_requires = ()
     context_optional = ()
@@ -75,7 +86,7 @@ class GaussianSearchAdapter(AlgorithmAdapter):
         priority: int = 0,
         **config_kwargs: Any,
     ) -> None:
-        super().__init__(name=name, priority=priority)
+        super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
         self.config = self.resolve_config(
             config=config,
             config_cls=GaussianSearchConfig,
@@ -259,6 +270,7 @@ class GaussianSearchAdapter(AlgorithmAdapter):
 
     def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
         _ = solver
+        self._refresh_runtime_projection()
         return dict(self._runtime_projection)
 
     def get_runtime_context_projection_sources(self, solver: Any) -> Dict[str, str]:
@@ -272,7 +284,7 @@ class GaussianSearchAdapter(AlgorithmAdapter):
             KEY_ADAPTER_BEST_SCORE: self.best_score,
         }
 
-    def get_state(self) -> Mapping[str, Any]:
+    def _get_algorithm_state(self) -> Mapping[str, Any]:
         return {
             "best_x": None if self.best_x is None else self.best_x.tolist(),
             "best_score": self.best_score,
@@ -287,7 +299,7 @@ class GaussianSearchAdapter(AlgorithmAdapter):
             "method_id": "search.random_gaussian",
         }
 
-    def set_state(self, state: Mapping[str, Any]) -> None:
+    def _set_algorithm_state(self, state: Mapping[str, Any]) -> None:
         method_id = str(state.get("method_id", "search.random_gaussian") or "")
         if method_id != "search.random_gaussian":
             raise ValueError("GaussianSearchAdapter checkpoint method does not match")
@@ -295,10 +307,6 @@ class GaussianSearchAdapter(AlgorithmAdapter):
         self.best_x = (
             None if best_x is None else np.asarray(best_x, dtype=float).reshape(-1)
         )
-        score = state.get("best_score")
-        self.best_score = None if score is None else float(score)
-        violation = state.get("best_violation")
-        self.best_violation = None if violation is None else float(violation)
         self.step_index = int(state.get("step_index", 0) or 0)
         if self.step_index < 0:
             raise ValueError("GaussianSearchAdapter step_index must be non-negative")
@@ -310,6 +318,10 @@ class GaussianSearchAdapter(AlgorithmAdapter):
             dict(state.get("candidate_metadata", {}) or {}),
             path="gaussian_search.candidate_metadata",
         )
+        score = state.get("best_score")
+        self.best_score = None if score is None else float(score)
+        violation = state.get("best_violation")
+        self.best_violation = None if violation is None else float(violation)
         self._rng = np.random.default_rng(int(self.cfg.random_seed))
         rng_state = state.get("rng_state")
         if isinstance(rng_state, Mapping):

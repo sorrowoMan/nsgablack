@@ -7,13 +7,15 @@ init/decode/repair/mutate through the blackbase kernel slot mechanism.
 
 import contextlib
 import threading
+from types import MappingProxyType
 from typing import Iterable, Mapping, Optional, MutableMapping, Sequence, Any
 
 import numpy as np
 
 from blackbase.abc import RepresentationBase
+from blackbase.representation import RepresentationCapabilities
 from blackbase.call_binding import CallCandidate, invoke_bound_once
-from blackbase.context.context_keys import KEY_METRICS, KEY_PROBLEM
+from nsgablack.context_keys import KEY_METRICS, KEY_PROBLEM
 from blackbase.kernel import (
     PipelineSlotSpec,
     PipelineSpec,
@@ -29,11 +31,13 @@ from blackbase.kernel import (
 
 class RepresentationPipeline(RepresentationBase):
     """
-    Representation pipeline that dispatches through the blackbase kernel.
+    Representation pipeline with ordinary blackbase slots and explicit Unit inputs.
 
     Inherits RepresentationBase and implements init/decode/repair/mutate
     by delegating to kernel slots. Each slot is backed by an operator
     registered at construction time.
+    Unit-aware leaf mutators receive a separate, validated keyword input; the
+    generic slot protocol does not implicitly transport algorithm structures.
     """
 
     name = "representation_pipeline"
@@ -55,6 +59,7 @@ class RepresentationPipeline(RepresentationBase):
         repair=None,
         encoder=None,
         decoder=None,
+        mutation_operators=None,
         **kwargs,
     ):
         self._initializer = initializer
@@ -62,6 +67,14 @@ class RepresentationPipeline(RepresentationBase):
         self._repair = repair
         self._encoder = encoder
         self._decoder = decoder
+        if mutation_operators is not None and not isinstance(mutation_operators, Mapping):
+            raise TypeError("mutation_operators must be a mapping of names to operators")
+        named = dict(mutation_operators or {})
+        if any(not isinstance(name, str) or not name.strip() for name in named):
+            raise ValueError("mutation operator names must be nonempty strings")
+        if any(value is None for value in named.values()):
+            raise ValueError("named mutation operators cannot be None")
+        self._mutation_operators = MappingProxyType(named)
         self.initializers = list(kwargs.pop("initializers", ()) or ())
         self.max_init_attempts = max(1, int(kwargs.pop("max_init_attempts", 5)))
         self.validate_constraints = bool(kwargs.pop("validate_constraints", False))
@@ -77,30 +90,19 @@ class RepresentationPipeline(RepresentationBase):
         self._random_seed: Optional[int] = None
         self._extra = kwargs
 
-        slots = []
-        if initializer is not None:
-            slots.append({"slot": "initializer", "operators": ["_init"]})
-        if mutator is not None:
-            slots.append({"slot": "mutate", "operators": ["_mut"]})
-        if repair is not None:
-            slots.append({"slot": "repair", "operators": ["_rep"]})
-        if encoder is not None:
-            slots.append({"slot": "encode", "operators": ["_enc"]})
-        if decoder is not None:
-            slots.append({"slot": "decode", "operators": ["_dec"]})
-
-        spec = {"key": "representation", "slots": slots} if slots else None
-        registry = {
-            "_init": initializer,
-            "_mut": mutator,
-            "_rep": repair,
-            "_enc": encoder,
-            "_dec": decoder,
-        }
-        registry = {k: v for k, v in registry.items() if v is not None}
-
-        self._kernel = build_pipeline_kernel(spec, operator_registry=registry) if registry else None
+        self._rebuild_kernel()
         self.set_random_seed(random_seed)
+
+    @property
+    def representation_capabilities(self) -> RepresentationCapabilities:
+        operations = {"repair", "repair_batch"}
+        if self._mutation_operators:
+            operations.add("mutate")
+        for operation, component in (("init", self._initializer), ("mutate", self._mutator),
+                                     ("encode", self._encoder), ("decode", self._decoder)):
+            if component is not None:
+                operations.add(operation)
+        return RepresentationCapabilities(frozenset(operations))
 
     @property
     def initializer(self):
@@ -109,6 +111,25 @@ class RepresentationPipeline(RepresentationBase):
     @property
     def mutator(self):
         return self._mutator
+
+    @property
+    def problem_repair(self):
+        """The single configured problem repair component, including validation."""
+        return self._repair
+
+    @property
+    def mutation_operators(self):
+        """Named search operators, shared without duplicating problem stages."""
+        return self._mutation_operators
+
+    def get_mutator(self, name=None):
+        if name is None:
+            return self._mutator
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("mutation operator name must be a nonempty string")
+        if name not in self._mutation_operators:
+            raise ValueError(f"unknown mutation operator: {name!r}")
+        return self._mutation_operators[name]
 
     @property
     def encoder(self):
@@ -132,6 +153,7 @@ class RepresentationPipeline(RepresentationBase):
             self._decoder,
             self.crossover,
             *(item[0] for item in self.initializers),
+            *(self._mutation_operators[name] for name in sorted(self._mutation_operators)),
         ]
         unique = []
         seen: set[int] = set()
@@ -169,6 +191,8 @@ class RepresentationPipeline(RepresentationBase):
             ("repair", self._repair),
             ("encoder", self._encoder),
             ("decoder", self._decoder),
+            *((f"mutation_operators.{name}", component)
+              for name, component in self._mutation_operators.items()),
         ):
             contract = get_component_contract(component)
             if contract is None:
@@ -232,6 +256,12 @@ class RepresentationPipeline(RepresentationBase):
         }
         registry = {k: v for k, v in registry.items() if v is not None}
         self._kernel = build_pipeline_kernel(spec, operator_registry=registry) if registry else None
+        self._mutation_kernels = {
+            name: build_pipeline_kernel(
+                {"key": f"mutation:{name}", "slots": [{"slot": "mutate", "operators": ["_mut"]}]},
+                operator_registry={"_mut": component},
+            ) for name, component in self._mutation_operators.items()
+        }
 
     def _maybe_lock(self):
         return self._lock if self.threadsafe else contextlib.nullcontext()
@@ -311,29 +341,33 @@ class RepresentationPipeline(RepresentationBase):
         """Repair candidate via kernel repair slot."""
         if self._repair is None:
             return state
-        original = state
         state_in = self._prepare_input(state)
         context_in = self._prepare_context(context)
         with self._maybe_lock():
-            try:
-                return self._kernel.run_slot("repair", state_in, context_in)
-            except Exception:
-                if self.transactional:
-                    return original
-                raise
+            return self._kernel.run_slot("repair", state_in, context_in)
 
-    def mutate(self, state, context=None):
-        """Mutate then repair a candidate, preserving transactional semantics."""
-        if self._mutator is None:
+    def mutate(self, state, context=None, *, unit=None, operator=None):
+        """Produce a proposal; repair is a separate, explicitly scheduled stage."""
+        mutator = self.get_mutator(operator)
+        if mutator is None:
             raise ValueError("mutator is required for mutate()")
+        from ..units.operator_inputs import mutation_unit_spec
+        spec = mutation_unit_spec(mutator)
+        if spec is not None:
+            spec.validate_input(unit)
+        elif unit is not None:
+            raise ValueError("Mutator did not declare Unit inputs")
         original = state
         state_in = self._prepare_input(state)
         context_in = self._prepare_context(context)
         with self._maybe_lock():
+            if spec is not None:
+                # Explicit keyword input stays outside shared context. Contract
+                # and callback errors propagate; never retry without Unit data.
+                return mutator.mutate(state_in, context_in, unit=unit)
             try:
-                mutated = self._kernel.run_slot("mutate", state_in, context_in)
-                if self._repair is not None:
-                    mutated = self._kernel.run_slot("repair", mutated, context_in)
+                kernel = self._kernel if operator is None else self._mutation_kernels[operator]
+                mutated = kernel.run_slot("mutate", state_in, context_in)
                 return mutated
             except Exception:
                 if self.transactional:
@@ -380,11 +414,24 @@ class RepresentationPipeline(RepresentationBase):
             )
         return [self.repair(state, context_items[idx]) for idx, state in enumerate(states)]
 
-    def mutate_batch(self, states, contexts: Optional[Iterable[Optional[dict]]] = None, *, context=None):
-        if self._mutator is None:
+    def mutate_batch(self, states, contexts: Optional[Iterable[Optional[dict]]] = None, *, context=None, units=None, operator=None):
+        mutator = self.get_mutator(operator)
+        if mutator is None:
             raise ValueError("mutator is required for mutate_batch()")
         context_items = self._normalize_batch_contexts(states, contexts, context)
-        batch = getattr(self._mutator, "mutate_batch", None)
+        from ..units.operator_inputs import mutation_unit_spec
+        spec = mutation_unit_spec(mutator)
+        if spec is not None:
+            values = tuple(units) if units is not None else ()
+            if len(values) != len(states):
+                raise ValueError("Unit inputs must align with mutation rows")
+            for value in values:
+                spec.validate_input(value)
+            return [self.mutate(state, context_items[i], unit=values[i], operator=operator)
+                    for i, state in enumerate(states)]
+        if units is not None:
+            raise ValueError("Mutator did not declare Unit inputs")
+        batch = getattr(mutator, "mutate_batch", None)
         if callable(batch):
             mutated = invoke_bound_once(
                 batch,
@@ -400,8 +447,8 @@ class RepresentationPipeline(RepresentationBase):
                     ),
                 ),
             )
-            return self.repair_batch(mutated, contexts=context_items)
-        return [self.mutate(state, context_items[idx]) for idx, state in enumerate(states)]
+            return mutated
+        return [self.mutate(state, context_items[idx], operator=operator) for idx, state in enumerate(states)]
 
     @staticmethod
     def _normalize_batch_contexts(states, contexts, context):
@@ -421,7 +468,7 @@ class RepresentationPipeline(RepresentationBase):
             values = np.asarray(evaluator(candidate), dtype=float).reshape(-1)
             return float(np.sum(np.maximum(values, 0.0))) <= 1e-10
         except Exception:
-            return False
+            raise
 
     def describe(self) -> dict:
         """Describe the representation pipeline configuration."""
@@ -430,6 +477,7 @@ class RepresentationPipeline(RepresentationBase):
             "class": self.__class__.__name__,
             "initializer": type(self._initializer).__name__ if self._initializer else None,
             "mutator": type(self._mutator).__name__ if self._mutator else None,
+            "mutation_operators": {name: type(value).__name__ for name, value in self._mutation_operators.items()},
             "repair": type(self._repair).__name__ if self._repair else None,
             "encoder": type(self._encoder).__name__ if self._encoder else None,
             "decoder": type(self._decoder).__name__ if self._decoder else None,

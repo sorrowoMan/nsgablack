@@ -1,4 +1,5 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -279,7 +280,8 @@ class ProductionInnerEvaluationModel:
                     "total_output": float(output),
                 },
             )
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='ProductionInnerEvaluationModel._emit_decision.fallback_195', exc=_fallback_error)
             return
 
     def _build_hybrid_feature(self, supply: np.ndarray) -> np.ndarray:
@@ -346,7 +348,8 @@ class ProductionInnerEvaluationModel:
             rf.fit(x, y)
             self._rf_model = rf
             self._rf_last_train_count = n
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='ProductionInnerEvaluationModel._maybe_train_rf.fallback_196', exc=_fallback_error)
             return
 
     def _estimate_rf_uncertainty(self, feature: np.ndarray) -> Optional[float]:
@@ -361,7 +364,8 @@ class ProductionInnerEvaluationModel:
         for est in estimators:
             try:
                 preds.append(float(est.predict(x)[0]))
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='ProductionInnerEvaluationModel._estimate_rf_uncertainty.fallback_197', exc=_fallback_error)
                 continue
         if len(preds) < 2:
             return None

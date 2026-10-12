@@ -2,7 +2,9 @@
 
 `nsgablack` 是统一框架栈中的优化与搜索语义层。它面向的不是“调用一个算法”，而是把候选表示、目标与约束、搜索策略、运行能力和结果证据装配成可组合、可恢复、可审计的求解系统。
 
-当前版本：`0.4.0`，依赖 `blackbase>=0.3.25,<0.4.0`。
+当前开发版本：`0.4.1`，依赖 `blackbase>=0.3.26,<0.4.0`。
+
+本轮把 population 与运行状态分别归入 PopulationAuthority / RunSession，统一步骤事务并声明表示、插件参与和最终发布接口；偏好投影保留原始评估证据。自定义组件需要按 [迁移说明](docs/project/RUNTIME_CONTRACT_MIGRATION_CN.md) 更新，具体行为与验证范围见 [运行契约](docs/architecture/RUNTIME_CONTRACTS_CN.md)。
 
 0.4.0 将算法型 population 写入收口到 Adapter/Evaluation transaction；旧 Elite Plugin
 保留到 1.0.0 的弃用装配桥。升级步骤见
@@ -66,6 +68,11 @@ Representation 产生语义候选与数值视图
 - `Adapter`：搜索策略，只负责 `propose/update`。
 - `RepresentationPipeline`：候选的 init / mutate / repair / encode / decode。
 - `Plugin`：checkpoint、trace、报告、评估短路和运行治理等能力。
+
+算法操作结构通过 **Unit** 显式声明：算法管线负责构建，Adapter 负责操作；问题管线继续负责候选表示与可行性处理。
+节点、种群、邻域、参考方向、探针和参数槽位可以独立定制，并通过绑定的 codec 恢复。
+装配同时校验结构、构建操作和必要工厂方法；builder 可显式声明兼容的基础结构契约，供多个 Adapter 复用。
+装配方式、各 Adapter 的结构及兼容性变化见[算法 Unit 中文说明](docs/guides/ALGORITHM_UNITS_CN.md)。
 
 `CandidateBatch` 同时保存 `semantic_states`、`numeric_matrix` 与 candidate token/provenance。数值算法消费矩阵；Representation、Problem、结果绑定和恢复消费语义状态。框架不再通过“数值相等”反推候选身份。
 

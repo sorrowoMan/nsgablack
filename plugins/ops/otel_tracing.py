@@ -1,6 +1,7 @@
 """OpenTelemetry tracing plugin for solver/adapter/plugin runtime events."""
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -161,7 +162,8 @@ class OpenTelemetryTracingPlugin(Plugin):
                     for k, v in (attrs or {}).items():
                         if v is not None:
                             span.set_attribute(str(k), v)
-                except Exception:
+                except Exception as _fallback_error:
+                    _report_optional_failure(component=__name__, event='OpenTelemetryTracingPlugin._span_context._SpanCtx.__enter__.fallback_253', exc=_fallback_error)
                     pass
                 return span
 
@@ -198,6 +200,7 @@ class OpenTelemetryTracingPlugin(Plugin):
         for target, method_name, original in reversed(self._restore):
             try:
                 setattr(target, method_name, original)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='OpenTelemetryTracingPlugin._restore_wrapped_methods.fallback_252', exc=_fallback_error)
                 continue
         self._restore = []

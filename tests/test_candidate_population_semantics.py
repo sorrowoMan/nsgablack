@@ -400,8 +400,9 @@ def test_numeric_population_writer_invalidates_mismatched_semantic_population() 
 
 
 def test_mutate_creates_child_token_and_repair_preserves_it() -> None:
+    from blackbase.representation import RepresentationCapabilities
     class _SemanticPipeline:
-        mutator = object()
+        representation_capabilities = RepresentationCapabilities(frozenset({"mutate", "repair"}))
 
         def mutate(self, candidate, context):
             del context
@@ -448,7 +449,10 @@ def test_mutate_creates_child_token_and_repair_preserves_it() -> None:
 
 
 def test_unknown_state_repair_creates_lineage_without_registered_input() -> None:
+    from blackbase.representation import RepresentationCapabilities
     class _RepairOnlyPipeline:
+        representation_capabilities = RepresentationCapabilities(frozenset({"repair"}))
+
         def repair(self, candidate, context):
             del candidate, context
             return UnknownState([0.0, 0.0], metadata={"repaired": "semantic"})

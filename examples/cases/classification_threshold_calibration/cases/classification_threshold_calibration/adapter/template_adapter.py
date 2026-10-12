@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 # Adapter template: copy and customize propose/update.
 
 from __future__ import annotations
@@ -7,10 +7,10 @@ from typing import Any, Dict, Sequence
 
 import numpy as np
 
-from nsgablack.adapters.algorithm_adapter import AlgorithmAdapter
+from nsgablack.adapters.candidate_proposer import CandidateProposerAdapter
 
 
-class AdapterTemplate(AlgorithmAdapter):
+class AdapterTemplate(CandidateProposerAdapter):
     # Minimal runnable adapter template.
 
     context_requires = ()
@@ -19,10 +19,9 @@ class AdapterTemplate(AlgorithmAdapter):
     context_cache = ()
     context_notes = ("Adapter template: manage algorithm state in propose/update.",)
 
-    def __init__(self, max_candidates: int = 8) -> None:
-        super().__init__(name="adapter_template")
+    def __init__(self, max_candidates: int = 8, *, unit_binding=None) -> None:
+        super().__init__(name="adapter_template", unit_binding=unit_binding)
         self.max_candidates = max(1, int(max_candidates))
-        self._last_population: np.ndarray | None = None
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         _ = context
@@ -31,10 +30,9 @@ class AdapterTemplate(AlgorithmAdapter):
         out = []
         for _ in range(self.max_candidates):
             out.append(rng.uniform(-1.0, 1.0, size=(dim,)))
-        return out
+        return self.build_candidate_units(out, context)
 
     def update(self, control: Any, candidates: Sequence[np.ndarray], feedback, context: Dict[str, Any]) -> None:
         objectives, violations = feedback
         _ = (control, objectives, violations, context)
-        if candidates is not None and len(candidates) > 0:
-            self._last_population = np.asarray(candidates, dtype=float)
+        # 最近提案保存在 proposal_units；它不是 L2 权威种群。

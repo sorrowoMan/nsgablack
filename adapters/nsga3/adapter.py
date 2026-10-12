@@ -9,8 +9,11 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+from ..unit_backed import UnitField
+from ...representation.structure_builders import ReferencePopulationBuilder
+
 from ..nsga2 import NSGA2Adapter, NSGA2Config
-from blackbase.context.context_keys import KEY_MO_WEIGHTS
+from nsgablack.context_keys import KEY_MO_WEIGHTS
 
 
 @dataclass
@@ -19,6 +22,11 @@ class NSGA3Config(NSGA2Config):
 
 
 class NSGA3Adapter(NSGA2Adapter):
+    unit_build_operations = ("initialize", "reference_directions")
+    unit_builder_type = ReferencePopulationBuilder
+    unit_schema = ReferencePopulationBuilder.unit_type.schema
+    reference_points = UnitField("reference_points")
+
     context_requires = ()
     context_provides = NSGA2Adapter.context_provides + (KEY_MO_WEIGHTS,)
     context_mutates = ()
@@ -28,7 +36,7 @@ class NSGA3Adapter(NSGA2Adapter):
     state_recovery_notes = (
         "Inherits NSGA-II population snapshot roundtrip "
         "(get_state/set_state + get_population_snapshot/set_population_snapshot). "
-        "Reference points are re-generated from problem geometry on restore."
+        "Reference directions are restored through the configured Unit codec."
     )
 
     def __init__(
@@ -38,15 +46,16 @@ class NSGA3Adapter(NSGA2Adapter):
         priority: int = 0,
         **config_kwargs,
     ) -> None:
+        unit_binding = config_kwargs.pop("unit_binding", None)
         resolved = self.resolve_config(
             config=config,
             config_cls=NSGA3Config,
             config_kwargs=config_kwargs,
             adapter_name="NSGA3Adapter",
         )
-        super().__init__(config=resolved, name=name, priority=priority)
+        super().__init__(config=resolved, name=name, priority=priority, unit_binding=unit_binding)
         self.config = self.cfg
-        self.cfg: NSGA3Config = config or NSGA3Config()
+        self.cfg: NSGA3Config = resolved
         self.reference_points: np.ndarray = np.zeros((0, 0), dtype=float)
 
     def setup(self, control: Any) -> None:
@@ -113,18 +122,8 @@ class NSGA3Adapter(NSGA2Adapter):
         return front_indices[np.asarray(selected_local, dtype=int)]
 
     def _generate_reference_points(self, n_obj: int, divisions: int) -> np.ndarray:
-        pts: List[np.ndarray] = []
-
-        def _recurse(prefix: List[int], left: int, depth: int) -> None:
-            if depth == n_obj - 1:
-                vec = prefix + [left]
-                pts.append(np.asarray(vec, dtype=float) / float(divisions))
-                return
-            for i in range(left + 1):
-                _recurse(prefix + [i], left - i, depth + 1)
-
-        _recurse([], divisions, 0)
-        return np.asarray(pts, dtype=float) if pts else np.zeros((0, n_obj), dtype=float)
+        self.rebuild_unit("reference_directions", objectives=n_obj, divisions=divisions)
+        return self.algorithm_unit.reference_points
 
     def _pairwise_dist(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
         aa = np.sum(a * a, axis=1, keepdims=True)

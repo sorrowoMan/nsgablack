@@ -198,11 +198,12 @@ def test_multi_strategy_phase_and_region_tasks_are_dispatched(sample_problem):
     ctx = control.get_context()
     unit_tasks = ctx.get("unit_tasks")
     assert isinstance(unit_tasks, dict)
-    # verify some task contains phase/region/seeds keys
+    # Runtime tasks are summaries; seed arrays belong only to local calls.
     any_task = None
     for _k, task in unit_tasks.items():
         any_task = task
         break
     assert any_task is not None
-    assert "phase" in any_task and "region_id" in any_task and "seeds" in any_task
+    assert "phase" in any_task and "region_id" in any_task and "seed_count" in any_task
+    assert "seeds" not in any_task and "region_bounds" not in any_task
 

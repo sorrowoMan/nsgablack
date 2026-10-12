@@ -1,4 +1,5 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
@@ -6,7 +7,7 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
-from blackbase.context.context_keys import KEY_METRICS
+from nsgablack.context_keys import KEY_METRICS
 from .provider_plugin_base import EvaluationProviderPluginBase
 
 
@@ -62,7 +63,8 @@ class GpuEvaluationTemplateProviderPlugin(EvaluationProviderPluginBase):
                     import cupy  # type: ignore  # noqa: F401
 
                     return "cupy"
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='GpuEvaluationTemplateProviderPlugin._select_backend.fallback_231', exc=_fallback_error)
                 continue
         return None
 
@@ -134,7 +136,8 @@ class GpuEvaluationTemplateProviderPlugin(EvaluationProviderPluginBase):
                 metrics["gpu_calls"] = float(self.stats["calls"])
                 metrics["gpu_fallbacks"] = float(self.stats["fallbacks"])
                 setter(ctx)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='GpuEvaluationTemplateProviderPlugin.evaluate_population_runtime.fallback_232', exc=_fallback_error)
                 pass
 
         return np.asarray(obj, dtype=float), np.asarray(violations, dtype=float)

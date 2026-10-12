@@ -37,6 +37,6 @@ class EvaluationProviderPluginBase(Plugin):
             try:
                 unregister(provider)
             except Exception:
-                pass
+                raise
         super().detach()
 

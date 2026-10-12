@@ -1,77 +1,33 @@
-"""A standard ML Trainer Case returning the shared TrainerResult protocol."""
+"""Baseline training uses the shared LearningSolver lifecycle and authority."""
 
-from __future__ import annotations
+from mlblack.integrations import LearningSolver
 
-from typing import Any, Mapping
-
-import numpy as np
-
-from blackbase.resources import ResourceContext
-from mlblack.core import TrainerResult
+from ..plugins.artifacts import BaselineArtifacts
 
 
-class BaselineTrainerCase:
-    def __init__(
-        self,
-        problem,
-        pipeline,
-        adapter,
-        *,
-        resource_context=None,
-        component_overrides: Mapping[str, Any] | None = None,
-    ) -> None:
-        self.problem = problem
-        self.pipeline = pipeline
-        self.representation_pipeline = pipeline
-        self.adapter = adapter
-        self.resource_context = ResourceContext.from_mapping(resource_context)
+class BaselineTrainerCase(LearningSolver):
+    def __init__(self, problem, pipeline, adapter, *, resource_context=None,
+                 component_overrides=None):
+        super().__init__(
+            problem=problem, representation=pipeline, adapter=adapter,
+            run_name="baseline_trainer", resource_context=resource_context,
+            artifact_provider=BaselineArtifacts(),
+        )
+        self.max_steps = 1
         self.component_override_audit = dict(component_overrides or {})
-        self.case_runtime = None
 
-    def set_resource_context(self, context):
-        self.resource_context = ResourceContext.from_mapping(context)
-        return self
-
-    def get_resource_context(self):
-        return self.resource_context
-
-    def set_case_runtime(self, runtime):
-        self.case_runtime = runtime
-        return self
-
-    def fit(self) -> TrainerResult:
-        design, target = self.pipeline.prepare(self.problem)
-        weights, _ = self.adapter.fit(design, target)
-        model = {"intercept": float(weights[0]), "slope": float(weights[1])}
-        state = self.pipeline.encode(model)
-        feedback = self.problem.evaluate(model)
-        loss = float(feedback.loss)
-        summary = {
+    def build_summary(self):
+        model = self.best_model or {}
+        return {
             "case": "baseline_trainer",
-            "method": self.adapter.name,
-            "weights": weights.tolist(),
-            "loss": loss,
+            "method": self.semantic_problem.provider.name,
+            "weights": [model.get("intercept"), model.get("slope")],
+            "loss": None if self.best_feedback is None else self.best_feedback.loss,
             "resource_context": self.resource_context.as_dict(),
+            "control_plane": self.control_plane,
+            "committed_steps": int(self.generation),
+            "evaluation_count": int(self.evaluation_count),
         }
-        ref = self.case_runtime.publish_artifact(
-            "summary",
-            summary,
-            kind="ml-baseline",
-            metadata={"semantic_owner": "mlblack"},
-        )
-        return TrainerResult(
-            best_model=model,
-            best_state=state,
-            best_objectives=np.asarray([loss], dtype=float),
-            best_feedback=feedback,
-            history=({"step": 1, "loss": loss},),
-            report={"summary": summary},
-            metadata={
-                "framework": "mlblack",
-                "fit_semantics": "closed_form",
-                "problem_type": type(self.problem).__name__,
-                "representation_type": type(self.pipeline).__name__,
-                "data_view_type": type(self.problem.data).__name__,
-            },
-            artifact_refs={"summary": ref},
-        )
+
+    def build_report(self, raw_result=None):
+        return {**super().build_report(raw_result), "summary": self.build_summary()}
