@@ -1,5 +1,7 @@
 # 架构概览
 
+[Unit 契约职责与组合验收](UNIT_CONTRACT_MAP_CN.md) 列出现有 18 个职责组的用途、消费者、坐标和状态生命周期，并记录修复、接纳、成员维护、Provider 清理与恢复的组合验证范围。
+
 [Adapter 决策与 Unit 成员维护](UNIT_MEMBER_OPERATIONS_CN.md) 用 age 示例说明继承扩展、成员来源映射、草稿校验与恢复。
 
 [ProblemRepair 与 UnitRepair 共同验收](JOINT_REPAIR_CN.md) 定义独立修复、临时 Unit、版本验证与失败决策。

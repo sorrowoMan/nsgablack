@@ -1,6 +1,6 @@
 ﻿# AGENTS.md
 
-最后按代码核对：2026-10-09。实现契约见 `docs/architecture/RUNTIME_CONTRACTS_CN.md`；源码与文档冲突必须明确报告。
+最后按代码核对：2026-10-12。实现契约见 `docs/architecture/RUNTIME_CONTRACTS_CN.md`；源码与文档冲突必须明确报告。
 
 ## 术语与必须保护的语义
 
@@ -532,6 +532,9 @@ pytest tests\test_solver.py tests\test_parallel_integration.py tests\test_snapsh
 
 # Unit/repair/Bias/接纳边界改动
 pytest tests\test_proposal_repair.py tests\test_bias_acceptance_boundary.py tests\test_evaluation_acceptance.py tests\test_adapter_step_transactions.py -q
+
+# Unit 成员、联合修复、部分接纳、Provider 清理与恢复组合
+pytest tests\test_unit_member_composition.py tests\test_population_member_operations.py tests\test_checkpoint_resume_plugin.py -q
 
 # 仓库体检（严格，包含所发现 Case；显式开启主干 Catalog 审计）
 python -m nsgablack project doctor --path . --strict --catalog-audit --profile framework-core --format json

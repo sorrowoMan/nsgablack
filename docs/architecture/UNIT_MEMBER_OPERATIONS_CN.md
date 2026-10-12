@@ -89,6 +89,12 @@ Snapshot setter 对已声明为当前行投影的未变矩阵仅刷新反馈，�
 
 ## 验证入口
 
+组合职责与坐标清单见 [Unit 契约职责与组合验收](UNIT_CONTRACT_MAP_CN.md)。成员维护沿用 Adapter 的步骤事务，不单独登记 Unit 或成员钩子为参与者。正常零接纳恢复成员及修复效果，并由 disposition 清空本次 pending；异常回滚才恢复整个步骤前的 Adapter 状态。
+
+部分接纳后，`PopulationChange.incoming_member_indices` 是本次成员操作输入的局部索引，不能直接索引原 ProposalRepair 或 BatchDisposition。环境选择与 repair 草稿是不同操作；不得为了修复而借用一次环境选择、无意增长 age 等历史字段。
+
 `tests/test_population_member_operations.py` 覆盖实际 NSGA-II/III/SPEA2 选择、五种种群 Adapter 的完整运行和恢复、相同数值不同身份、重复槽位来源、空选择、钩子失败、嵌套回滚和 Snapshot 刷新。
+
+`tests/test_unit_member_composition.py` 在真实控制路径验证共同修复、非连续部分接纳、成员字段和权威发布，并覆盖更新后失败、零接纳、正式 checkpoint 恢复、同类型多实例与 Provider slot 提交/释放。具体范围和测试替身限制见上面的职责清单。
 
 Doctor 的现有 `adapter-unit-binding-invalid` 检查同时检查 member_fields 和钩子签名，不执行钩子，不能证明字段维护的算法正确性。运行证据见 `artifacts/audit/unit-member-operations-20261012/`。

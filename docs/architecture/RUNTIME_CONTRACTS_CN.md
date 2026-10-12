@@ -18,6 +18,8 @@ AuthorityRegistry 拒绝同一事实登记两个不同所有者；每个事实�
 
 RuntimeParticipant 的 snapshot/restore、独立 children、commit cleanup 协议属于 BlackBase。RuntimeTransaction 按身份去重，拒绝环；回滚失败也尝试其他参与者，提交后的清理失败形成报告。Adapter 添加优化报告与搜索语义；L1 轨迹、L2 population 分类留在优化层，不要求 ML 参数更新冒充种群。
 
+Unit 成员字段由所属 Adapter 的 Unit codec 捕获和恢复，成员维护不是额外的 RuntimeParticipant。正常零接纳与异常回滚的范围不同：前者恢复修复前成员与结构效果，再由 disposition 消费本次 pending；后者恢复步骤前的完整参与者状态。原提案索引与成员操作局部索引不得混用；职责与行为证据见 [Unit 契约清单](UNIT_CONTRACT_MAP_CN.md)。
+
 snapshot_step_state 必须只读地返回 Mapping[str, Any]。事务和 Doctor 共用捕获校验，子参与者同样检查；无效返回产生 runtime-participant-snapshot-invalid。Doctor 不调用 restore/commit，不做清理。Mapping 只是外层结构约束，不证明嵌套对象可安全复制；组件仍负责状态脱离，禁止携带锁、executor、Provider session 等活对象。
 
 ComposableSolver 与 EvolutionSolver 共用步骤事务。PopulationAuthority、incumbent 参与者、EvolutionState 分别管理状态。新增字段应归到正确所有者；可变复合内容须有明确复制/codec 契约，不能复制锁、executor 或第三方活对象图。
@@ -37,6 +39,8 @@ SolverSemanticExtension.before_step 属于提交前尝试；after_step_committed
 FinalizationHooks 显式绑定结果准备与发布。事务型 prepare/freeze/abort 必须一起声明；freeze 只冻结暂存结果，CaseExecutor 在全部清理与验证完成后原子 seal。可选方法名称本身不再隐式注册发布行为。
 
 SolverSemanticExtension 同时声明 prepare_run、setup、project_context、checkpoint_components、should_execute_step 和 cleanup_components。共享控制器按 reset → semantic setup → Adapter setup → queued restore 执行；停止扩展不能绕过共享 deadline。checkpoint 组件名称冲突直接失败，不能抢占已有状态所有者。cleanup_components 返回独立命名回调：即使 Adapter 清理或另一扩展的清理发现失败，其余回调仍会被尝试；首个异常保留，全部失败通过 BlackBase failure evidence 的 solver_teardown 字段跨 Case 传输。清理必须容忍 setup 只完成一部分。
+
+MOEA/D setup 检查共享 RunSession 的待恢复信封；存在时只准备运行面，跳过新种群的初始化、求值和权威发布，等待共享恢复槽安装实际 Unit 与 Authority。它不维护私有 loaded 标记。无待恢复信封的 fresh setup 保留正式初始化行为。
 
 LearningSolver 已移除 build_context/setup/prepare_fresh_run/teardown/checkpoint_components/should_execute_step/init_population 的覆盖，ML 组件通过上述端口参与。init_candidate/evaluate_individual/run/export_case_result 仍提供领域输入或返回值门面，不能引入第二次评估或第二套循环。ML 的 get_state/set_state 保留领域信封，恢复顺序由 RunSession 控制。LearningSolver 仍是语义门面子类；新增控制行为必须使用已声明端口。
 
