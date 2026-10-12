@@ -73,6 +73,12 @@ incoming_member_indices：     None  0     None
 
 来源由 Adapter 的明确索引与结构操作产生，不按候选数值或 token 相等推断。token 仍是 CandidateBatch 的身份协议；来源索引表达成员操作，二者不互相替代。该值不是 ProposalRepair 或 BatchDisposition，也不进入 ContextStore/checkpoint。
 
+`PopulationChange` 还携带本次 incoming 的脱离只读输入：`incoming_population`、`incoming_objectives`、`incoming_violations`、`incoming_tokens`、`incoming_metadata` 与 `incoming_provenance`。索引仍属于本次成员操作；钩子可用 `incoming_member_indices` 读取新成员的候选值、语义标签和 parent_token，保留旧成员则读取原 Unit 字段。准备态反馈可为 None；未知 provenance 用 None、未知语义 metadata 用空映射，不编造来源。
+
+三个安装/选择/替换方法可显式传 `candidate_metadata` 和 `candidate_provenance`；NSGA-II/III/SPEA2、DE、MOEA/D 从正式控制面记录转交，不解释自定义字段的维护规则。DE 的改善筛选与 MOEA/D 的多槽复制会同步选择/复制这些输入。数组、嵌套映射都经闭合数据 codec 脱离并不可写，输入对齐或身份冲突在钩子前拒绝。返回的扩展字段继续由原 Unit codec 持久化和回滚，不新增事务参与者。
+
+例如记录出生值与父代：新成员用 `change.incoming_population[new_index]` 和 `change.incoming_provenance[new_index]`；后者非 None 时读取 `parent_token`。领域标签直接读取 `change.incoming_metadata[new_index]`。只读输入不保证 metadata 的业务真实性；来源声明与数据真实性仍由产生者负责。
+
 `member_fields` 声明自定义的行对齐数据字段。`on_members_changed(change)` 只读原 Unit，返回额外 dataclass 字段的值更新；每个声明的 member field 都必须返回。基类字段与 Unit ID 不能由这个回调改写。Unit 使用封闭数据 codec 脱离返回值，合并到草稿后调用完整 `validate()`；成员字段须与新行数一致，领域可进一步扩展 validator。全部通过才发布字段并清理派生缓存。
 
 钩子不得直接写 self、执行求值、访问 Provider/session、决定保留成员或引入全局授权。声明检查不是 Python 副作用沙箱。原 Unit 的任意直接写入、自定义 validator 的副作用和未声明字段之间的数学依赖仍由组件作者负责。无效输入、合法只读钩子抛错、非法字段、错误形状或活对象返回均不会发布局部更新。

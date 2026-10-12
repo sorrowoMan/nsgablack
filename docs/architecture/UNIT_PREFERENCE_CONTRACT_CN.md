@@ -1,6 +1,6 @@
 # 以 Unit 为中心理解搜索与偏好
 
-实现核对：2026-10-09。公开入口为 `nsgablack.units`、`nsgablack.bias` 和 `UnitBackedAdapter.preference_view()`。
+实现核对：2026-10-12。公开入口为 `nsgablack.units`、`nsgablack.bias` 和 `UnitBackedAdapter.preference_view()`。
 
 ## 1. Unit 是候选的算法特征扩展与一致性维护单元
 
@@ -51,6 +51,8 @@
 
 `PopulationView` 额外给出不可写的数值矩阵和对齐的成员 token。准备态群体可能尚未获得 token；此时以 `None` 显式表示未知，`membership_identity_complete=False`。未知身份成员仍参与距离计算，不伪造正式候选身份。
 
+行是当前 view/revision 内的成员槽位，token 是候选身份，二者不是同一个概念。MOEA/D 可将同一候选放入多个子问题槽位，因此允许重复 token，不为槽位伪造新候选身份。整体多样性按占据的行计算，重复候选的距离仍为零；候选查询携带已知 token 时，排除该候选占据的全部槽位。需要按子问题或唯一候选集合度量时，应另选明确的偏好策略，不隐式去重。
+
 只有查询 token 与成员的已知 token 相同才排除自身。数值相等、维度相同或 Unit 类型相同均不能代替身份。
 
 `UnitBackedAdapter.preference_view(owner_path=...)` 提供便捷入口；具有 population 字段的已声明结构生成 PopulationView，其他结构生成 UnitView。自定义 Adapter 可自行提供正式视图入口。视图是一次读取，不能长期缓存后假装仍为当前结构。
@@ -73,11 +75,24 @@ bias_module.add(UnitPreferenceBias.from_adapter(
 solver.set_bias_module(bias_module)
 ```
 
-此绑定每次读取指定 Adapter 的 Unit；不会从一个全局 population 猜测目标。`from_adapter` 保存绑定身份，checkpoint 恢复时拒绝改绑到其他实例。多实例装配应明确选择子 Adapter，例如路径 `("portfolio", "explorer")`；它不是资源/L0 路径，也不自动完成候选的多角色路由。
+此绑定每次读取指定 Adapter 的 Unit；不会从一个全局 population 猜测目标。`owner_path` 标识参考 Unit；可选 `apply_to_paths` 单独声明哪些提案实例消费此偏好。两者可以不同，均不是资源/L0 路径。checkpoint 保存参考身份和候选作用范围，恢复时拒绝改绑或改范围。
 
 可运行的完整装配已放入 `examples/cases/bias_gallery/`。通过 `python examples/cases/bias_gallery/run_project.py --check` 检查 Project，再使用同一入口运行；Case 内还装配了具有提交记忆的 Tabu 偏好。
 
-**多策略限制：** 全局 Bias 仍会应用到该 Solver 的每个被评估候选。如果只希望某角色消费某偏好，应在该角色 Adapter 的决策点显式消费，或提供明确的本地 view provider；框架不会按候选数值自动选择角色。任意自定义 provider 的外部状态仍由其所有者负责，不能声明成全框架已自动解决的隐式路由。
+**多策略装配：** 未填写 `apply_to_paths`（默认空元组）时，保持 Solver 全局作用。限定角色/子实例时传入完整的 StrategyOrigin 实例路径，例如：
+
+```python
+bias_module.add(UnitPreferenceBias.from_adapter(
+    PopulationDiversityPreference(), reference_adapter,
+    owner_path=("reference",),
+    apply_to_paths=(("unit:explorer:0",),),
+    name="explorer_diversity", weight=0.1,
+))
+```
+
+路径按段前缀匹配：该实例及其嵌套后代适用，相邻实例不适用。正式候选来源由 `StrategyOrigin.from_candidate` 验证，不读取全局 role/strategy_id 观测，不按数值相等猜来源。没有来源的独立 evaluate 或 setup 初始化不属于已限定的提案范围，返回零偏好；来源存在但格式/祖先关系错误时传播异常。范围外不读取参考 Unit。调用中的 `OptimizationContext.candidate_state` 每次从对应的语义记录取得，不沿用上一候选，也不写入 ContextStore。
+
+此限定只消费已经存在的 StrategyOrigin，不为缺少该来源的 Composite/串行提案猜造角色路径。同名偏好在 BiasModule 中会覆盖；为多个范围装配独立 Bias 时须给不同 name。自定义 view provider 的外部可变状态仍由其所有者负责。旧 UnitPreferenceBias 状态若缺少作用范围字段，按绑定契约不匹配拒绝，不静默推断恢复范围。
 
 整体结构或结构操作的偏好由 Adapter 直接消费：
 

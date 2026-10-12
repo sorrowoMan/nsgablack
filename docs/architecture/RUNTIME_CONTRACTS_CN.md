@@ -20,6 +20,8 @@ RuntimeParticipant 的 snapshot/restore、独立 children、commit cleanup 协�
 
 Unit 成员字段由所属 Adapter 的 Unit codec 捕获和恢复，成员维护不是额外的 RuntimeParticipant。正常零接纳与异常回滚的范围不同：前者恢复修复前成员与结构效果，再由 disposition 消费本次 pending；后者恢复步骤前的完整参与者状态。原提案索引与成员操作局部索引不得混用；职责与行为证据见 [Unit 契约清单](UNIT_CONTRACT_MAP_CN.md)。
 
+SA 的 current 尚无关联评分时，只提出一个初始/基准候选；该候选通过正常 repair、预算、求值和接纳后整组安装 current/score。初始化提交计入逻辑步骤和求值预算，但不降温；下一次才变异并按 Metropolis 比较。拒绝或失败不生成基准评分，checkpoint 恢复已有评分不重复求值。不能将第一个邻居的评分关联到未评估的初始点。
+
 snapshot_step_state 必须只读地返回 Mapping[str, Any]。事务和 Doctor 共用捕获校验，子参与者同样检查；无效返回产生 runtime-participant-snapshot-invalid。Doctor 不调用 restore/commit，不做清理。Mapping 只是外层结构约束，不证明嵌套对象可安全复制；组件仍负责状态脱离，禁止携带锁、executor、Provider session 等活对象。
 
 ComposableSolver 与 EvolutionSolver 共用步骤事务。PopulationAuthority、incumbent 参与者、EvolutionState 分别管理状态。新增字段应归到正确所有者；可变复合内容须有明确复制/codec 契约，不能复制锁、executor 或第三方活对象图。
@@ -75,6 +77,8 @@ on_rejection 默认停止，重试与推进串行阶段须显式选择。advance
 Pipeline 可注册 mutation_operators；叶 Adapter 通过 set_mutation_operator(name) 选择，省略名称使用默认 mutator。多个异质 Adapter 共享问题修复/编解码而按需选择搜索算子；选择不修改共享默认项。名称及 Unit 依赖须显式匹配，不能失败后换用默认算子。共享注册表不克隆有状态算子，恢复时要求一致装配；本契约不保证任意算子的状态隔离、线程安全或恢复等价。
 
 Unit 也是偏好依赖与比较范围的中心。`PreferenceQuery` 区分候选、候选相对 Unit、整个 Unit 和 Unit 变化；`UnitView/PopulationView` 通过实例路径、结构身份与内容 revision 绑定只读依赖。`UnitPreferenceBias` 接入选择投影，整体结构的选择仍由 Adapter 决定。详见 [Unit 与偏好契约](UNIT_PREFERENCE_CONTRACT_CN.md)。Tabu 评分只读；已提交接纳提案的记忆通过 BiasModule 进入既有步骤事务和 checkpoint，不能按评分调用次数更新。
+
+PopulationView 的行表示槽位，允许多个槽位携带同一 candidate token。UnitPreferenceBias 的 `owner_path` 绑定参考 Unit，`apply_to_paths` 绑定消费候选的 StrategyOrigin 路径；默认全局，限定范围时来源缺失不适用、来源损坏报错。矩阵行的 provenance 只按与当前活动批次的精确内存视图关系恢复，不按数值或独立调用的 individual_id 反查旧身份。
 
 ## repair 与 Unit 对账
 

@@ -17,6 +17,8 @@ class AgePopulationUnit(PopulationUnit):
         *PopulationUnit.schema.required_fields, "age"), candidate_projection=False)
 
     def on_members_changed(self, change):
+        # 如需新成员标签/父代，按 incoming_member_indices 读取
+        # change.incoming_metadata / incoming_provenance；不从 context 猜来源。
         increment = int(change.operation == "selection")
         return {"age": np.asarray([
             0 if i is None else self.age[i] + increment

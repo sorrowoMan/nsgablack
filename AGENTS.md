@@ -6,7 +6,7 @@
 
 - `Problem` 定义评估含义；问题管线处理候选；算法管线构建 `Unit`；Adapter 操作 Unit 作搜索决策。
 - `Unit` 保留候选本体或候选集合，扩展算法特征、关系与必要状态；构建 Unit 不等于候选编码，取出候选不等于解码。`UnitBinding` 绑定 builder、持久状态 codec 和可选构建 runner；Unit 不拥有 Solver 生命周期或全局授权。
-- 种群 Adapter 决定成员选择或槽位替换，PopulationUnit 统一维护 X/F/V/token 与扩展成员字段。新增行字段声明 member_fields，通过只读 on_members_changed(PopulationChange) 返回更新；禁止让 Adapter 猜未知字段的维护语义。详见 `docs/architecture/UNIT_MEMBER_OPERATIONS_CN.md`。
+- 种群 Adapter 决定成员选择或槽位替换，PopulationUnit 统一维护 X/F/V/token 与扩展成员字段。新增行字段声明 member_fields，通过只读 on_members_changed(PopulationChange) 返回更新；change 携带对齐的只读 incoming 候选/反馈/token/metadata/provenance。禁止让 Adapter 猜未知字段的维护语义。详见 `docs/architecture/UNIT_MEMBER_OPERATIONS_CN.md`。
 - `CandidateBatch` 保留语义值、数值矩阵和 token；数值相等不能替代身份。`ProposalRepair` 表达评估前同一提案被修改；`BatchDisposition` 表达预算/接纳筛选。二者不可互相替代。
 - `UnknownState` 是可传输候选；`StateRef` 是 Provider 管理的活状态引用，可寻址范围由 Provider 声明；`DataRef` 是 Artifact 引用，权威交付还须发布收据；Snapshot key 须结合 store scope、版本/摘要和 AuthorityIdentity 验证。
 - `PopulationAuthority` 拥有内存种群投影与发布游标；`AuthorityStore` 拥有持久围栏边。Solver 的旧字段是同一对象的视图，不得建立第二份可写副本。
@@ -390,7 +390,7 @@ ProblemRepair 修问题约束；UnitRepair 修算法结构，也可改候选。J
 - 轨迹/区域候选关联分数通过 Unit.candidate_feedback 保存值、依赖和内容版本；候选改变后旧分数不再参与比较。历史度量不能冒充当前候选反馈。trajectory/poll/parameters/local_region 的 Unit schema 为 v2，旧 v1 不自动恢复或重新求值；详见 UNIT_FEATURES_CN.md。
 - 候选改动后须先完成问题管线处理，再消费相关特征；NSGA-II 与 MOEA/D 的 pipeline 变异给搜索算子传独立父代副本。PopulationUnit 分别追踪 objectives/violations 的候选版本，只更新一个字段不能使另一个旧字段生效，部分更新状态须保留到 codec。完整求值使用 attach_feedback；成员替换使用 replace_evaluated_rows 同步候选、反馈和 token。DE/MOEA/D 已接入；选择与比较入口拒绝过期反馈。这不是对任意 Python 写入或反馈真实性的证明。
 - UnitView/PopulationView 是带 owner_path、unit_id、schema、revision 的脱离只读依赖；同类型多实例按路径绑定。准备态成员可无 token，只按已知相同 token 排除自身，不能按数值相等猜身份。
-- UnitPreferenceBias 把候选相对 Unit 的偏好投影为选择增量；整体/变化偏好由 Adapter 显式消费。Unit、Bias 均不能自行获得全局调度或搜索决定权。
+- PopulationView 允许同一候选 token 占据多个槽位，不能为区分槽位编造候选身份。UnitPreferenceBias 的 owner_path 指定参考 Unit，apply_to_paths 可按正式 StrategyOrigin 路径限定候选范围；默认全局，限定时无来源不适用、损坏来源传播。整体/变化偏好由 Adapter 显式消费。Unit、Bias 均不能自行获得全局调度或搜索决定权。
 - TabuSearchBias 评分只读，记忆定义为已提交步骤中接纳的提案；BiasModule 在 Adapter.update 后暂存更新，并参与步骤回滚和 checkpoint。单独 evaluate 不更新该记忆。其他历史语义必须显式声明。
 - stateful_preference 组件必须提供显式状态 codec 并禁用旧标量缓存；Unit 偏好依赖错误必须传播。不要假定新契约已经迁移所有旧 Bias 的隐式状态。
 
@@ -535,6 +535,9 @@ pytest tests\test_proposal_repair.py tests\test_bias_acceptance_boundary.py test
 
 # Unit 成员、联合修复、部分接纳、Provider 清理与恢复组合
 pytest tests\test_unit_member_composition.py tests\test_population_member_operations.py tests\test_checkpoint_resume_plugin.py -q
+
+# Unit 成员只读输入、Bias 候选范围、MOEA/D 重复槽位与 SA 基准
+pytest tests\test_unit_scope_and_member_inputs.py tests\test_unit_preferences.py tests\test_sa_adapter.py -q
 
 # 仓库体检（严格，包含所发现 Case；显式开启主干 Catalog 审计）
 python -m nsgablack project doctor --path . --strict --catalog-audit --profile framework-core --format json
