@@ -153,6 +153,11 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
         if self.current_x is None:
             self.current_x = np.asarray(control.init_candidate(context))
 
+        # Establish the initial/current baseline through the ordinary proposal,
+        # repair, budget and admission path. No hidden evaluation in propose.
+        if self.current_score is None:
+            return [np.array(self.current_x, copy=True)]
+
         ctx = self._build_sa_context(context)
 
         out = []
@@ -177,12 +182,16 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
         if objectives is None or len(objectives) == 0:
             return
 
-        # initialize score from first evaluation if needed
-        if self.current_x is None:
-            self.current_x = np.asarray(candidates[0])
+        # The baseline proposal may have been repaired. Install the evaluated
+        # candidate and its own score together; this is not an annealing move.
         if self.current_score is None:
+            if len(candidates) != 1:
+                raise ValueError("SA baseline feedback requires exactly one candidate")
+            self.current_x = np.array(candidates[0], copy=True)
             v0 = float(violations[0]) if violations is not None else 0.0
             self.current_score = self._score(objectives[0], v0)
+            self._refresh_runtime_projection(accepted=False)
+            return
 
         # process batch sequentially; accept the first accepted move
         accepted_any = False
@@ -209,10 +218,13 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
         # cool down once per step (not per candidate)
         self.temperature = max(float(self.cfg.min_temperature), float(self.temperature) * float(self.cfg.cooling_rate))
 
+        self._refresh_runtime_projection(accepted=accepted_any)
+
+    def _refresh_runtime_projection(self, *, accepted: bool) -> None:
         # Keep runtime state in adapter projection (non-invasive to solver object).
         projection: Dict[str, Any] = {
             KEY_TEMPERATURE: float(self.temperature),
-            "sa_accepted": bool(accepted_any),
+            "sa_accepted": bool(accepted),
         }
         if self.current_x is not None:
             projection["sa_current_x"] = np.asarray(self.current_x, dtype=float)
