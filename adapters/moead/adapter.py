@@ -164,6 +164,16 @@ class MOEADAdapter(UnitBackedAdapter):
         if self._m < 2:
             raise ValueError("MOEADAdapter requires a multi-objective problem (num_objectives >= 2)")
 
+        # The shared run session applies queued checkpoints after setup. Fresh
+        # population initialization here would evaluate candidates and publish
+        # a competing Authority edge before that restore can run.
+        session = getattr(control, "run_session", None)
+        if session is not None and session.pending_restore:
+            self._pending_indices = []
+            self._pending_modes = []
+            self._refresh_runtime_projection()
+            return
+
         requested_population_size = max(2, int(self.cfg.population_size))
         allowance = getattr(control, "evaluation_batch_allowance", None)
         if callable(allowance):
