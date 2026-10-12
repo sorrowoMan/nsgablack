@@ -207,7 +207,7 @@ class MOEADAdapter(UnitBackedAdapter):
         for _ in range(self._n):
             pop.append(control.init_candidate({"generation": int(getattr(control, "generation", 0) or 0)}))
         self.algorithm_unit.initialize_population(np.stack(pop, axis=0),
-            candidate_tokens=self.candidate_tokens_for(control, pop))
+            candidate_tokens=self.candidate_tokens_for(control, pop), **self.member_inputs_for(control, pop))
         provenance_getter = getattr(control, "candidate_provenance_for", None)
         provenance_binder = getattr(control, "bind_candidate_provenance", None)
         if callable(provenance_getter) and callable(provenance_binder):
@@ -310,6 +310,7 @@ class MOEADAdapter(UnitBackedAdapter):
         cand_F = np.asarray(objectives, dtype=float)
         cand_V = np.asarray(violations, dtype=float).reshape(-1)
         candidate_tokens = self.candidate_tokens_for(control, candidates)
+        member_inputs = self.member_inputs_for(control, candidates)
         if cand_X.ndim == 1:
             cand_X = cand_X.reshape(1, -1)
         if cand_F.ndim == 1:
@@ -354,6 +355,7 @@ class MOEADAdapter(UnitBackedAdapter):
                     replacements, np.repeat(yx[None, :], count, axis=0),
                     np.repeat(yf[None, :], count, axis=0), np.full(count, yv),
                     candidate_tokens=(candidate_tokens[k],) * count,
+                    **{name: (rows[k],) * count for name, rows in member_inputs.items()},
                 )
 
         self._refresh_runtime_projection()

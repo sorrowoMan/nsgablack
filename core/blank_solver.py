@@ -2300,6 +2300,20 @@ class SolverBase:
             if isinstance(candidate, UnknownState)
             else np.asarray(candidate)
         )
+        # A row view has a fresh Python object ID, but an exact memory relation
+        # to the active batch. Resolve only that relation, never equal numbers
+        # or a standalone evaluation's ordinal (which may name an older row).
+        reference = self._active_candidate_population_ref
+        active = None if reference is None else reference()
+        if (active is not None and active.ndim == 2 and current.ndim == 1
+                and current.shape == active.shape[1:] and current.dtype == active.dtype
+                and current.strides == active.strides[1:] and active.strides[0] != 0
+                and len(self._active_candidate_provenance) == len(active)
+                and np.shares_memory(current, active)):
+            offset = current.ctypes.data - active.ctypes.data
+            row, remainder = divmod(offset, active.strides[0])
+            if remainder == 0 and 0 <= row < len(active):
+                return self._active_candidate_provenance[row]
         visited: set[int] = set()
         while isinstance(current, np.ndarray) and id(current) not in visited:
             object_id = id(current)

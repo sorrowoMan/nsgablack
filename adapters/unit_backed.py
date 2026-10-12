@@ -110,6 +110,30 @@ class UnitBackedAdapter(AlgorithmAdapter):
         view_type = PopulationView if "population" in self.unit_binding.schema.required_fields else UnitView
         return view_type.capture(self.algorithm_unit, self.unit_binding, owner_path=owner_path)
 
+    @staticmethod
+    def member_inputs_for(control, candidates):
+        """Project existing semantic/provenance records for structural maintenance.
+
+        No identities are allocated and no search policy is applied here. The
+        PopulationChange capture detaches these invocation-local data records.
+        """
+        from blackbase.types import UnknownState
+        resolver = getattr(control, "candidate_provenance_for", None)
+        semantic = getattr(control, "semantic_candidate_state", None)
+        metadata, provenance = [], []
+        for index, candidate in enumerate(candidates):
+            record = resolver(candidate) if callable(resolver) else None
+            indexed = record is None and callable(resolver)
+            if indexed:
+                record = resolver(candidate, candidate_index=index)
+            export = getattr(record, "as_dict", None)
+            provenance.append(export() if callable(export) else None)
+            state = candidate if isinstance(candidate, UnknownState) else None
+            if state is None and callable(semantic) and record is not None:
+                state = semantic(candidate, **({"candidate_index": index} if indexed else {}))
+            metadata.append(dict(state.metadata) if isinstance(state, UnknownState) else {})
+        return dict(candidate_metadata=tuple(metadata), candidate_provenance=tuple(provenance))
+
     def rebuild_unit(self, operation: str, *, context=None, **parameters):
         self.algorithm_unit = self.unit_binding.build(StructureBuildRequest(
             self.algorithm_unit.unit_id, {"values": self._unit_values(), **parameters}, operation), context)

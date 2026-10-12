@@ -73,6 +73,7 @@ class BiasModule:
         self._cache_context_store: Optional[ContextStore] = None
         self._snapshot_store: Optional[SnapshotStore] = None
         self._snapshot_reader = None
+        self._candidate_state_reader = None
         self._snapshot_cache_key: Optional[str] = None
         self._snapshot_cache_payload: Optional[Dict[str, Any]] = None
 
@@ -146,6 +147,7 @@ class BiasModule:
         """Use the Solver's authoritative reader, never infer another owner."""
         self.set_snapshot_store(solver.snapshot_store)
         self._snapshot_reader = solver.read_snapshot
+        self._candidate_state_reader = getattr(solver, "semantic_candidate_state", None)
 
     def set_cache_backend(self, backend: str) -> None:
         self.cache_backend = str(backend or "memory").strip().lower()
@@ -572,6 +574,18 @@ class BiasModule:
 
         snapshot_payload = self._resolve_snapshot_payload(context)
 
+        # Resolve origins from this candidate's formal semantic record, never
+        # from cached context aliases or an observer's global role projection.
+        from blackbase.types import UnknownState
+        candidate_state = x if isinstance(x, UnknownState) else None
+        if any(getattr(b, "uses_candidate_semantics", False) for _, b in self._components() if b.enabled):
+            if callable(self._candidate_state_reader):
+                try:
+                    candidate_state = self._candidate_state_reader(x)
+                except Exception as exc:
+                    from .preferences import PreferenceContractError
+                    raise PreferenceContractError("Cannot resolve the preference candidate's semantic record") from exc
+
         if self._context_cache is None:
             try:
                 problem_data = context.get(KEY_PROBLEM_DATA, {})
@@ -605,6 +619,7 @@ class BiasModule:
             setattr(ctx, "generation", self._context_generation(context))
             setattr(ctx, "individual", x)
             setattr(ctx, "candidate_token", context.get("candidate_token"))
+            setattr(ctx, "candidate_state", candidate_state)
             setattr(ctx, "population", snapshot_payload.get(KEY_POPULATION, []))
             metrics = {
                 "objective_value": objective_value,

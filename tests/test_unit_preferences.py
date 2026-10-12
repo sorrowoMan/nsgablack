@@ -67,6 +67,42 @@ def test_duplicate_values_keep_identity_and_exclude_only_named_member():
     assert pref.evaluate(PreferenceQuery("unit", unit=view([0, 0]))).value == 0
 
 
+def test_duplicate_candidate_tokens_keep_distinct_slots_without_fabricated_identity():
+    population = view([0, 0, 10], tokens=("shared", "shared", "far"))
+    assert population.candidate_tokens == ("shared", "shared", "far")
+    pref = PopulationDiversityPreference()
+    assert pref.evaluate(PreferenceQuery("candidate_in_unit", candidate=[0],
+        candidate_token="shared", unit=population)).value == 10
+    assert pref.evaluate(PreferenceQuery("candidate_in_unit", candidate=[0],
+        candidate_token="new", unit=population)).value == 0
+    # Whole-population diversity measures occupied slots, including copies.
+    assert pref.evaluate(PreferenceQuery("unit", unit=population)).value == pytest.approx(10 / 3)
+
+
+def test_moead_duplicate_replacement_can_be_read_and_scored_by_bound_bias():
+    from nsgablack.adapters import MOEADAdapter
+    from nsgablack.core.state.incumbent import CandidateProvenance
+    adapter = MOEADAdapter(population_size=3, nr=2)
+    module = BiasModule()
+    module.add(UnitPreferenceBias.from_adapter(PopulationDiversityPreference(), adapter,
+                                               owner_path=("search",), weight=1))
+    solver = ComposableSolver(Problem(), adapter=adapter, bias_module=module)
+    adapter._n, adapter._m = 3, 2
+    adapter.weights = np.array([[1., 0.], [0., 1.], [.5, .5]])
+    adapter.neighbors = np.tile(np.arange(3), (3, 1))
+    adapter.ideal = np.array([10., 20.])
+    adapter.algorithm_unit.initialize_population([[3.], [4.], [5.]],
+        [[10., 20.]] * 3, [0.] * 3, candidate_tokens=("a", "b", "c"))
+    adapter._pending_indices, adapter._pending_modes = [0], ["global"]
+    candidate = np.array([0.])
+    solver.bind_candidate_provenance([candidate], [CandidateProvenance("shared")])
+    adapter.update(solver, [candidate], (np.array([[0., 0.]]), np.zeros(1)), {})
+    assert adapter.get_population_candidate_tokens().count("shared") == 2
+    assert adapter.preference_view(owner_path=("search",)).candidate_tokens.count("shared") == 2
+    values, _ = solver.evaluate_individual(np.array([1.]))
+    np.testing.assert_allclose(values, [9., 19.])
+
+
 def test_provisional_members_are_compared_without_fabricated_identity():
     unit = PopulationUnit("draft", np.array([[0.], [10.]]))
     draft = PopulationView.capture(unit, UnitBinding(PopulationUnitBuilder()), owner_path=("search",))

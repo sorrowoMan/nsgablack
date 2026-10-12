@@ -126,18 +126,34 @@ class UnitPreferenceBias(AlgorithmicBias):
     """
 
     cacheable = False
+    uses_candidate_semantics = True
     objective_independent = True
     state_recovery_level = "L0"
     state_recovery_notes = "Validates preference assembly identity; Unit state is restored by its Adapter."
     context_notes = "Reads an explicitly bound detached Unit view; emits selection guidance."
 
-    def __init__(self, preference, view_provider: Callable, *, name="unit_preference", weight=0.1):
+    def __init__(self, preference, view_provider: Callable, *, name="unit_preference", weight=0.1,
+                 apply_to_paths=()):
         super().__init__(name, weight, adaptive=False)
         if PreferenceScope.CANDIDATE_IN_UNIT not in preference.supported_scopes or not callable(view_provider):
             raise PreferenceContractError("UnitPreferenceBias requires a candidate-in-Unit policy and view provider")
         self.preference = preference
         self.view_provider = view_provider
         self._binding_identity = None
+        self.apply_to_paths = self._validate_paths(apply_to_paths)
+
+    @staticmethod
+    def _validate_paths(paths):
+        from ..adapters.strategy_task import _path
+        if isinstance(paths, (str, bytes)):
+            raise PreferenceContractError("apply_to_paths requires a sequence of instance paths")
+        try:
+            values = tuple(_path(path) for path in paths)
+        except (TypeError, ValueError) as exc:
+            raise PreferenceContractError("Invalid Unit preference candidate scope") from exc
+        if len(set(values)) != len(values):
+            raise PreferenceContractError("Unit preference candidate scopes must be unique")
+        return values
 
     @classmethod
     def from_adapter(cls, preference, adapter, *, owner_path, **kwargs):
@@ -153,10 +169,12 @@ class UnitPreferenceBias(AlgorithmicBias):
     def validate_contract(self):
         if not callable(self.view_provider) or PreferenceScope.CANDIDATE_IN_UNIT not in self.preference.supported_scopes:
             raise PreferenceContractError("Invalid candidate-in-Unit preference binding")
+        self._validate_paths(self.apply_to_paths)
 
     def get_state(self):
         return {"binding": self._binding_identity,
-                "policy_type": f"{type(self.preference).__module__}.{type(self.preference).__qualname__}"}
+                "policy_type": f"{type(self.preference).__module__}.{type(self.preference).__qualname__}",
+                "apply_to_paths": [list(path) for path in self.apply_to_paths]}
 
     def set_state(self, state):
         if state != self.get_state():
@@ -164,13 +182,21 @@ class UnitPreferenceBias(AlgorithmicBias):
 
     def compute(self, x, context):
         try:
+            state = getattr(context, "candidate_state", None)
+            candidate = state if isinstance(state, UnknownState) else x
+            if self.apply_to_paths:
+                from ..adapters.strategy_task import StrategyOrigin
+                origins = StrategyOrigin.from_candidate(candidate) if isinstance(candidate, UnknownState) else ()
+                if not any(origin.owner_path[:len(path)] == path
+                           for origin in origins for path in self.apply_to_paths):
+                    return 0.0
             view = self.view_provider(context)
             if self._binding_identity is not None:
                 observed = {"owner_path": list(view.owner_path), "unit_id": view.unit_id,
                             "schema": view.schema.as_dict()}
                 if observed != self._binding_identity:
                     raise PreferenceContractError("Unit preference dependency changed its bound identity")
-            query = PreferenceQuery(PreferenceScope.CANDIDATE_IN_UNIT, candidate=x,
+            query = PreferenceQuery(PreferenceScope.CANDIDATE_IN_UNIT, candidate=candidate,
                                     candidate_token=getattr(context, "candidate_token", None),
                                     unit=view)
             score = self.preference.evaluate(query)

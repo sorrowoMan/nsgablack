@@ -148,6 +148,7 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
             obj = obj.reshape(-1, 1)
         cand_scores = self._scores(obj, vio)
         candidate_tokens = self.candidate_tokens_for(control, candidates)
+        member_inputs = self.member_inputs_for(control, candidates)
 
         if self.population is None or self.population.shape[0] == 0:
             raise RuntimeError("DE.update requires population state created by propose()")
@@ -181,6 +182,7 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
                 [self._last_target_indices[j] for j in accepted],
                 cand[accepted], obj[accepted], vio[accepted],
                 candidate_tokens=tuple(candidate_tokens[j] for j in accepted),
+                **{name: tuple(rows[j] for j in accepted) for name, rows in member_inputs.items()},
             )
         self._sync_runtime_projection(context)
 
@@ -364,7 +366,8 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
 
         init_n = max(2, int(self.cfg.population_size))
         created = [control.init_candidate(context) for _ in range(init_n)]
-        self.algorithm_unit.initialize_population(created, candidate_tokens=self.candidate_tokens_for(control, created))
+        self.algorithm_unit.initialize_population(created, candidate_tokens=self.candidate_tokens_for(control, created),
+                                                  **self.member_inputs_for(control, created))
         self.rebuild_unit("initialize", context=context)
         self._sync_runtime_projection(context)
 

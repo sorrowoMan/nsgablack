@@ -128,15 +128,16 @@ class NSGA2Adapter(UnitBackedAdapter):
         if obj.ndim == 1:
             obj = obj.reshape(-1, 1)
         candidate_tokens = self.candidate_tokens_for(control, candidates)
+        member_inputs = self.member_inputs_for(control, candidates)
 
         if self.population is None or self.objectives is None or self.violations is None:
-            self.algorithm_unit.initialize_population(cand, obj, vio, candidate_tokens=candidate_tokens)
+            self.algorithm_unit.initialize_population(cand, obj, vio, candidate_tokens=candidate_tokens, **member_inputs)
         else:
             self.algorithm_unit.require_current_feedback()
             merged_obj = np.vstack([self.objectives, obj])
             merged_vio = np.concatenate([self.violations, vio])
             keep = self._environmental_select(merged_obj, merged_vio, int(self.cfg.population_size))
-            self.algorithm_unit.apply_selection(keep, cand, obj, vio, candidate_tokens=candidate_tokens)
+            self.algorithm_unit.apply_selection(keep, cand, obj, vio, candidate_tokens=candidate_tokens, **member_inputs)
 
         self._refresh_ranking()
         self._sync_runtime_projection()
@@ -270,8 +271,9 @@ class NSGA2Adapter(UnitBackedAdapter):
                 return
 
         n = max(2, int(self.cfg.population_size))
-        created = [np.asarray(control.init_candidate(context), dtype=float) for _ in range(n)]
-        self.algorithm_unit.initialize_population(created, candidate_tokens=self.candidate_tokens_for(control, created))
+        created = [control.init_candidate(context) for _ in range(n)]
+        self.algorithm_unit.initialize_population(created, candidate_tokens=self.candidate_tokens_for(control, created),
+                                                  **self.member_inputs_for(control, created))
         self.rebuild_unit("initialize", context=context)
 
     def _after_unit_restore(self):

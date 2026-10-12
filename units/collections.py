@@ -179,18 +179,22 @@ class PopulationUnit(FeatureUnit):
         self.clear_features()
         return change
 
-    def initialize_population(self, population, objectives=None, violations=None, *, candidate_tokens=()):
+    def initialize_population(self, population, objectives=None, violations=None, *, candidate_tokens=(),
+                              candidate_metadata=(), candidate_provenance=()):
         """Install a new population; every row is explicitly a new member."""
         x, f, v, tokens = self._population_input(population, objectives, violations, candidate_tokens)
         old_count = 0 if self.population is None else len(self.population)
-        change = PopulationChange("initialize", old_count, len(x), (None,) * len(x), tuple(range(len(x))))
+        change = PopulationChange("initialize", old_count, len(x), (None,) * len(x), tuple(range(len(x))),
+            incoming_population=x, incoming_objectives=f, incoming_violations=v,
+            incoming_tokens=tokens, incoming_metadata=candidate_metadata, incoming_provenance=candidate_provenance)
         return self._publish_members(x, f, v, tokens, change)
 
     def clear_population(self):
         old_count = 0 if self.population is None else len(self.population)
         return self._publish_members(None, None, None, (), PopulationChange("clear", old_count, 0, (), ()))
 
-    def apply_selection(self, indices, population, objectives, violations, *, candidate_tokens):
+    def apply_selection(self, indices, population, objectives, violations, *, candidate_tokens,
+                        candidate_metadata=(), candidate_provenance=()):
         """Apply Adapter-selected indices over [previous population, incoming].
 
         No ranking or survival policy lives here. Feedback and tokens follow
@@ -207,7 +211,9 @@ class PopulationUnit(FeatureUnit):
         keep = indices.astype(int)
         old = tuple(int(i) if i < old_count else None for i in keep)
         new = tuple(int(i - old_count) if i >= old_count else None for i in keep)
-        change = PopulationChange("selection", old_count, len(x), old, new)
+        change = PopulationChange("selection", old_count, len(x), old, new,
+            incoming_population=x, incoming_objectives=f, incoming_violations=v,
+            incoming_tokens=tokens, incoming_metadata=candidate_metadata, incoming_provenance=candidate_provenance)
         all_tokens = tuple(self.candidate_tokens or (None,) * old_count) + tokens
         return self._publish_members(np.concatenate((self.population, x))[keep],
             np.concatenate((self.objectives, f))[keep], np.concatenate((self.violations, v))[keep],
@@ -274,7 +280,8 @@ class PopulationUnit(FeatureUnit):
         self.feedback_field_revisions = dict(objectives=revision, violations=revision)
         self._sync_feedback_revision()
 
-    def replace_evaluated_rows(self, indices, population, objectives, violations, *, candidate_tokens):
+    def replace_evaluated_rows(self, indices, population, objectives, violations, *, candidate_tokens,
+                               candidate_metadata=(), candidate_provenance=()):
         """Replace candidate/feedback/identity together after Adapter selection.
 
         All validation and array writes use drafts before publishing fields.
@@ -303,7 +310,9 @@ class PopulationUnit(FeatureUnit):
         incoming = [None] * len(new_x)
         for row, index in enumerate(indices):
             old[index], incoming[index] = None, row
-        change = PopulationChange("replacement", len(new_x), count, tuple(old), tuple(incoming))
+        change = PopulationChange("replacement", len(new_x), count, tuple(old), tuple(incoming),
+            incoming_population=x, incoming_objectives=f, incoming_violations=v,
+            incoming_tokens=tokens, incoming_metadata=candidate_metadata, incoming_provenance=candidate_provenance)
         return self._publish_members(new_x, new_f, new_v, tuple(new_tokens), change)
 
     def pairwise_distances(self, *, cache=True):

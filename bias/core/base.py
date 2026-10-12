@@ -63,6 +63,7 @@ class OptimizationContext:
         history: Optional[List] = None,
         problem_data: Optional[Dict[str, Any]] = None,
         candidate_token: Optional[str] = None,
+        candidate_state: Any = None,
     ):
         self.generation = generation
         self.individual = individual
@@ -71,6 +72,8 @@ class OptimizationContext:
         self.history = history or []
         self.problem_data = problem_data or {}
         self.candidate_token = candidate_token
+        # Invocation-local semantic input, not a shared context/store entry.
+        self.candidate_state = candidate_state
 
         # 派生的上下文状态标志
         self.is_stuck = False

@@ -60,7 +60,12 @@ class UnitView(FeatureUnit):
 
 @dataclass(frozen=True)
 class PopulationView(UnitView):
-    """Population capability with aligned membership identity, owned by an Adapter."""
+    """Detached slots with aligned candidate identities, owned by an Adapter.
+
+    Several slots may hold the same candidate (for example MOEA/D subproblems).
+    Row positions belong to this view/revision; tokens identify candidates, not
+    slots. Never mint a new candidate identity just to distinguish occupancy.
+    """
 
     population: Any
     candidate_tokens: tuple[str | None, ...]
@@ -76,8 +81,8 @@ class PopulationView(UnitView):
             raise ValueError("Population preference view requires a finite matrix")
         tokens = tuple(self.candidate_tokens) or (None,) * len(values)
         known = tuple(t for t in tokens if t is not None)
-        if len(tokens) != len(values) or len(set(known)) != len(known):
-            raise ValueError("Population preference view requires unique aligned tokens")
+        if len(tokens) != len(values):
+            raise ValueError("Population preference view requires aligned tokens")
         if any(not isinstance(t, str) or not t for t in known):
             raise ValueError("Population preference view requires nonempty candidate tokens")
         # Immutable bytes backing prevents callers from re-enabling array writes.
