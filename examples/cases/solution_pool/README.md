@@ -2,7 +2,7 @@
 
 标准 Project → Case → Scaffold 示例。Project 负责 L0，Case 使用正式 ComposableSolver/PoolSearchAdapter，不自行运行第二套循环。
 
-Project 现在按顺序运行两个独立 Case：本文下面介绍 `pool_search`；新增 [pool_refinement](cases/pool_refinement/README.md) 演示 20 起点、两类四实例 VNS 子池精修及 NSGA-II 返回竞争，默认 25 步。两者独立创建运行池，不共享另一 Case 的 Unit。
+Project 按顺序运行三个独立 Case：本文介绍 `pool_search`；[pool_refinement](cases/pool_refinement/README.md) 演示 20 起点、两类四实例 VNS 子池精修及 NSGA-II 返回竞争；[moead_refinement](cases/moead_refinement/README.md) 演示自动方向投影子池、按 MOEA/D 实例选择 20 个方向、VNS 精修及返回竞争。各 Case 独立创建运行池，不共享另一 Case 的 Unit。
 
 组件：PlateauProblem；UniformInitializer/GaussianMutation/ClipRepair；SA producer；NSGA-II 和 NSGA-III 两个独立种群；Solver 自带 SolutionPool。未装额外 Bias、Plugin 或 Evaluation Provider。
 

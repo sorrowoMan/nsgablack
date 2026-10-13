@@ -55,6 +55,7 @@ class VNSAdapter(AlgorithmAdapter):
     """VNS adapter for ComposableSolver."""
     pool_input_modes = ("initialize",)
     supports_pool_restart = True
+    supports_objective_projection = True
 
     def default_pool_input_count(self):
         return 1
@@ -116,6 +117,8 @@ class VNSAdapter(AlgorithmAdapter):
         self.k = 0
         self.current_x: Optional[np.ndarray] = None
         self.current_score: Optional[float] = None
+        self._current_violation = None
+        self._projection_frame = None
         self._warned_missing_operator = False
         self._last_context_projection: Dict[str, Any] = {}
 
@@ -160,6 +163,8 @@ class VNSAdapter(AlgorithmAdapter):
         return candidate
 
     def _initialize_current(self, control, context):
+        self._current_violation = None
+        self._projection_frame = None
         candidate = control.init_candidate(context)
         self._current_provenance = self._provenance(control, candidate)
         resolver = getattr(control, "semantic_candidate_state", None)
@@ -281,20 +286,43 @@ class VNSAdapter(AlgorithmAdapter):
         if self._pending_units and len(candidates) != len(self._pending_units):
             raise ValueError("VNS feedback does not match pending Units")
 
-        scores = self._scores(objectives, violations)
-        best_idx = int(np.argmin(scores))
+        metadata = getattr(feedback, "metadata", {})
+        projection = metadata.get("subpool_projection")
+        if projection is not None:
+            from nsgablack.core.state.pool_views import ObjectiveProjection
+            # A projection task uses MOEA/D's feasibility-first order, not a
+            # finite penalty that a sufficiently large objective can outweigh.
+            projection = ObjectiveProjection.from_dict(dict(projection)).as_dict()
+            scores = np.asarray(objectives, dtype=float)[:, 0]
+            violations = np.asarray(violations, dtype=float)
+            best_idx = min(range(len(scores)), key=lambda i:
+                (violations[i] > 0, violations[i] if violations[i] > 0 else scores[i]))
+        else:
+            scores = self._scores(objectives, violations)
+            best_idx = int(np.argmin(scores))
+        if self.current_score is not None and projection != getattr(self, "_projection_frame", None):
+            raise ValueError("VNS objective projection changed without restarting its task")
         best_score = float(scores[best_idx])
 
         if self.current_score is None:
             self.current_score = best_score
+            self._current_violation = float(violations[best_idx])
+            self._projection_frame = projection
             self._accept_candidate(control, candidates, best_idx, context)
             self._pending_units = []
             self.k = 0
             return
 
         improved = (best_score + float(self.cfg.accept_tolerance)) < float(self.current_score)
+        if projection is not None:
+            new_v, old_v = float(violations[best_idx]), self._current_violation
+            if old_v is None:
+                raise ValueError("VNS projected baseline is missing its constraint violation")
+            if new_v > 0 or old_v > 0:
+                improved = (new_v <= 0 < old_v) or (new_v > 0 and old_v > 0 and new_v < old_v)
         if improved:
             self.current_score = best_score
+            self._current_violation = float(violations[best_idx])
             self._accept_candidate(control, candidates, best_idx, context)
             self._pending_units = []
             self.k = 0
@@ -356,6 +384,8 @@ class VNSAdapter(AlgorithmAdapter):
         self._current_provenance = None
         self._pending_units = []
         self.current_score = None
+        self._current_violation = None
+        self._projection_frame = None
         self.k = 0
         self._last_context_projection = {KEY_VNS_K: 0, KEY_MUTATION_SIGMA: float(self._current_sigma())}
 
@@ -397,6 +427,8 @@ class VNSAdapter(AlgorithmAdapter):
             "current_score": None if self.current_score is None else float(self.current_score),
             "current_pool_token": self._current_pool_token,
             "current_provenance": None if self._current_provenance is None else self._current_provenance.as_dict(),
+            "current_violation": getattr(self, "_current_violation", None),
+            "projection_frame": getattr(self, "_projection_frame", None),
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
@@ -412,6 +444,13 @@ class VNSAdapter(AlgorithmAdapter):
         if len(neighborhood.scales) != int(self.cfg.k_max) + 1 or not 0 <= k < len(neighborhood.scales):
             raise ValueError("VNS checkpoint neighborhood structure does not match configuration")
         score = state.get("current_score", self.current_score)
+        frame = state.get("projection_frame")
+        violation = state.get("current_violation")
+        if frame is not None:
+            from nsgablack.core.state.pool_views import ObjectiveProjection
+            frame = ObjectiveProjection.from_dict(frame).as_dict()
+            if score is not None and (violation is None or not np.isfinite(violation)):
+                raise ValueError("VNS projected checkpoint is missing its constraint baseline")
         provenance = state.get("current_provenance")
         provenance = None if provenance is None else CandidateProvenance.from_dict(provenance)
         token = state.get("current_pool_token")
@@ -437,6 +476,8 @@ class VNSAdapter(AlgorithmAdapter):
         self._pending_units = pending
         self.k = k
         self.current_score = score
+        self._current_violation = violation
+        self._projection_frame = frame
         self._current_pool_token = token
         self._current_provenance = provenance
         self._last_context_projection = {

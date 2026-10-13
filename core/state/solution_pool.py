@@ -15,7 +15,9 @@ from uuid import uuid4
 import numpy as np
 from blackbase.context import SnapshotIdentity
 from blackbase.types import CandidateBatch
+from blackbase.wire import freeze_wire_mapping, thaw_wire_mapping
 from .pool_retention import PoolRetentionPolicy
+from .pool_views import ObjectiveProjection
 
 
 POOL_SCHEMA = "nsgablack.solution_pool/v1"
@@ -131,6 +133,7 @@ class SolutionPool:
         self._retention_step = 0
         self._last_used: dict[str, dict[int, int]] = {}
         self._owners: dict[str, tuple[SolutionRef, ...]] = {}
+        self._subpool_metadata: dict[str, dict] = {}
         self._publications: list[dict] = []
         self._garbage: dict[str, SnapshotIdentity] = {}
         self._prepared_index = None
@@ -154,6 +157,7 @@ class SolutionPool:
         self._in_attempt = False
         self._retention_step = 0
         self._last_used, self._owners, self._garbage = {}, {}, {}
+        self._subpool_metadata = {}
         self._publications = []
         self._prepared_index = None
         self._retention_staged = False
@@ -288,7 +292,7 @@ class SolutionPool:
             raise ValueError("subpool name must be nonempty")
         return "subpool/" + name
 
-    def create_subpool(self, name, refs=()):
+    def create_subpool(self, name, refs=(), *, metadata=None):
         """Create a named reference view, with no candidate copies or new store.
 
         Membership uses the pool's existing transactional retention registry.
@@ -300,8 +304,55 @@ class SolutionPool:
         values = tuple(refs)
         for ref in values:
             self._record(ref)
+        data = self._validate_subpool_metadata(metadata or {})
         self.retain(owner, values)
+        self._subpool_metadata[name] = data
         return name
+
+    @staticmethod
+    def _validate_subpool_metadata(value):
+        data = thaw_wire_mapping(freeze_wire_mapping(value, path="subpool.metadata"))
+        if data.get("kind") == "objective_projection":
+            required = {"kind", "created_by", "slot", "projection", "published"}
+            if set(data) != required or type(data["published"]) is not bool:
+                raise ValueError("invalid projection subpool metadata")
+            path = data["created_by"]
+            if not isinstance(path, list) or not path or any(not isinstance(p, str) or not p for p in path):
+                raise ValueError("projection subpool requires a stable creator path")
+            if type(data["slot"]) is not int or data["slot"] < 0:
+                raise ValueError("projection subpool requires a nonnegative slot")
+            ObjectiveProjection.from_dict(data["projection"])
+        return data
+
+    def subpool_metadata(self, name):
+        if not self.has_subpool(name):
+            raise KeyError(name)
+        return copy.deepcopy(self._subpool_metadata.get(name, {}))
+
+    def publish_projection_subpool(self, name, refs, *, created_by, slot, projection):
+        """Stage a creator's current direction view in the existing pool transaction."""
+        if not isinstance(projection, ObjectiveProjection):
+            raise TypeError("expected ObjectiveProjection")
+        data = self._validate_subpool_metadata(dict(kind="objective_projection",
+            created_by=list(created_by), slot=slot, projection=projection.as_dict(),
+            published=not self._in_attempt))
+        old = self._subpool_metadata.get(name)
+        if self.has_subpool(name) and (old is None or old.get("created_by") != data["created_by"]
+                                      or old.get("slot") != slot):
+            raise ValueError("projection subpool name belongs to a different creator or slot")
+        refs = tuple(refs)
+        for ref in refs:
+            record = self._record(ref, allow_pending=True)
+            if not record.published and record.stage != "accepted":
+                raise ValueError("projection subpools cannot retain unaccepted drafts")
+        self.retain(self._subpool_owner(name), refs)
+        self._subpool_metadata[name] = data
+
+    def projection_subpools(self, created_by):
+        """Enumerate committed views owned by this exact Adapter instance path."""
+        return tuple(name for name, data in self._subpool_metadata.items()
+            if data.get("kind") == "objective_projection" and data["published"]
+            and tuple(data["created_by"]) == tuple(created_by))
 
     def has_subpool(self, name):
         return self._subpool_owner(name) in self._owners
@@ -323,6 +374,7 @@ class SolutionPool:
 
     def drop_subpool(self, name):
         self.release(self._subpool_owner(name))
+        self._subpool_metadata.pop(name, None)
 
     def accepted_refs_since(self, tokens, stamp):
         """Resolve this attempt's accepted rows by identity, never by values."""
@@ -425,6 +477,8 @@ class SolutionPool:
     def release(self, owner: str):
         self._assert_unprepared()
         self._owners.pop(owner, None)
+        if owner.startswith("subpool/"):
+            self._subpool_metadata.pop(owner[len("subpool/"):], None)
 
     def replace_roots(self, prefix: str, roots: Mapping[str, Sequence[SolutionRef]]):
         """Atomically replace one named family's roots without guessing object graphs."""
@@ -436,6 +490,8 @@ class SolutionPool:
             for ref in refs:
                 self._record(ref, allow_pending=True)
         self._owners = {**{k: v for k, v in self._owners.items() if not k.startswith(prefix)}, **values}
+        self._subpool_metadata = {name: data for name, data in self._subpool_metadata.items()
+                                  if self._subpool_owner(name) in self._owners}
 
     def refs_for_tokens(self, tokens):
         """Conservative roots for Units that retain tokens without exact refs.
@@ -618,6 +674,9 @@ class SolutionPool:
         records = [replace(r, published=True) if r.stage == "accepted" else r
                    for r in self._records.values() if r.published or r.stage == "accepted"]
         state = self._index_state(records)
+        for data in state["subpool_metadata"].values():
+            if data.get("kind") == "objective_projection":
+                data["published"] = True
         SolutionPool(self.snapshots)._restore_index(state)
         handle = self.snapshots.write(state, key=f"solution-pool/{self.pool_id}/manifest/{uuid4().hex}",
                                       schema=MANIFEST_SCHEMA, write_once=True)
@@ -660,6 +719,7 @@ class SolutionPool:
     def _index_state(self, records=None):
         return dict(schema=POOL_SCHEMA, pool_id=self.pool_id, run_id=self.run_id,
                     sequence=self._sequence,
+                    subpool_metadata=copy.deepcopy(self._subpool_metadata),
                     records=[r.as_dict() for r in (self._records.values() if records is None else records)],
                     inputs={k: dict(refs=[r.as_dict() for r in refs], cursor=c)
                             for k, (refs, c) in self._inputs.items()},
@@ -712,6 +772,10 @@ class SolutionPool:
                   for k, refs in retention.get("owners", {}).items()}
         if any(not isinstance(k, str) or not k.strip() for k in owners):
             raise ValueError("invalid pool retention owner")
+        subpool_metadata = {name: self._validate_subpool_metadata(value)
+                            for name, value in state.get("subpool_metadata", {}).items()}
+        if any(self._subpool_owner(name) not in owners for name in subpool_metadata):
+            raise ValueError("subpool metadata has no corresponding membership")
         publications = []
         for value in retention.get("publications", ()):
             root = SnapshotIdentity.from_dict(value["manifest"])
@@ -725,7 +789,7 @@ class SolutionPool:
         if any(v.schema not in {BATCH_SCHEMA, MANIFEST_SCHEMA} or v.store_scope != self.snapshots.store_scope for v in garbage):
             raise ValueError("pool garbage scope/schema mismatch")
         old = (self.pool_id, self.run_id, self._sequence, self._records, self._inputs,
-               self.retention_policy, self._retention_step, self._last_used, self._owners, self._publications, self._garbage)
+               self.retention_policy, self._retention_step, self._last_used, self._owners, self._publications, self._garbage, self._subpool_metadata)
         try:
             self.pool_id, self.run_id = state["pool_id"], state["run_id"]
             self._sequence = state["sequence"]
@@ -734,6 +798,7 @@ class SolutionPool:
             self.retention_policy, self._retention_step = policy, clock
             self._last_used, self._owners, self._publications = last_used, owners, publications
             self._garbage = {v.key: v for v in garbage}
+            self._subpool_metadata = subpool_metadata
             for refs, _ in inputs.values():
                 for ref in refs:
                     self._record(ref)
@@ -742,7 +807,7 @@ class SolutionPool:
                     self._record(ref, allow_pending=True)
         except BaseException:
             (self.pool_id, self.run_id, self._sequence, self._records, self._inputs,
-             self.retention_policy, self._retention_step, self._last_used, self._owners, self._publications, self._garbage) = old
+             self.retention_policy, self._retention_step, self._last_used, self._owners, self._publications, self._garbage, self._subpool_metadata) = old
             raise
 
     def snapshot_step_state(self):
@@ -785,6 +850,8 @@ class SolutionPool:
         old_owners = baseline["index"]["retention"]["owners"]
         views = {k: refs for k, refs in self._owners.items()
                  if k.startswith("subpool/") and k not in old_owners}
+        view_metadata = {name: copy.deepcopy(data) for name, data in self._subpool_metadata.items()
+                         if self._subpool_owner(name) in views}
         self.restore_step_state(baseline)
         for key, refs in created.items():
             for ref in refs:
@@ -794,6 +861,7 @@ class SolutionPool:
             for ref in refs:
                 self._record(ref)
             self.retain(owner, refs)
+        self._subpool_metadata.update(view_metadata)
 
     def commit_step_state(self, state):
         return self.collect_garbage() if self.retention_policy is not None and not self._in_attempt else None

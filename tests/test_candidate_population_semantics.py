@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import numpy as np
 import pytest
 
@@ -133,7 +134,7 @@ def test_candidate_population_selection_follows_tokens_not_equal_numeric_rows() 
     )
 
 
-def test_candidate_population_derives_slot_alias_for_reused_source_token() -> None:
+def test_candidate_population_preserves_identity_in_repeated_slots() -> None:
     solver = ComposableSolver(problem=_TwoDimensionalProblem())
     solver.prepare_fresh_run()
     source_batch, provenance = _source(solver)
@@ -147,15 +148,13 @@ def test_candidate_population_derives_slot_alias_for_reused_source_token() -> No
     committed_provenance = solver.get_candidate_population_provenance()
 
     assert committed.candidate_tokens[0] == source_token
-    assert committed.candidate_tokens[1] != source_token
-    assert len(set(committed.candidate_tokens)) == 2
-    assert committed_provenance[1].parent_token == source_token
-    assert committed_provenance[1].transform_stage == "population_slot_alias"
+    assert committed.candidate_tokens[1] == source_token
+    assert committed_provenance[1] == provenance[0]
     assert committed_provenance[1].metadata == provenance[0].metadata
     assert committed.semantic_states[1].metadata == {"architecture": "a"}
 
 
-def test_partitioned_population_derives_global_slot_alias_for_shared_token() -> None:
+def test_partitioned_population_preserves_shared_candidate_identity() -> None:
     solver = ComposableSolver(
         problem=_TwoDimensionalProblem(),
         adapter=_PartitionAliasAdapter(),
@@ -196,9 +195,8 @@ def test_partitioned_population_derives_global_slot_alias_for_shared_token() -> 
     second_token = second["batch"]["candidate_tokens"][0]
 
     assert first_token == source_token
-    assert second_token != source_token
-    assert second["provenance"][0]["parent_token"] == source_token
-    assert second["provenance"][0]["transform_stage"] == "population_slot_alias"
+    assert second_token == source_token
+    assert second["provenance"][0] == provenance[0].as_dict()
     assert second["provenance"][0]["metadata"] == provenance[0].as_dict()["metadata"]
     assert second["batch"]["semantic_states"][0]["metadata"] == {
         "architecture": "a"
@@ -221,9 +219,15 @@ def test_partitioned_population_derives_global_slot_alias_for_shared_token() -> 
         )
         == "partitioned"
     )
+    # Sharing a token is permitted only for the same semantic candidate.
+    corrupted = copy.deepcopy(authority_payload)
+    second = corrupted["population_partitions"]["partitions"][1]
+    second["batch"]["semantic_states"][0]["metadata"] = {"architecture": "other"}
+    with pytest.raises(ValueError, match="different population states"):
+        validate_population_snapshot_v2(corrupted, snapshot_schema=solver.snapshot_schema)
 
 
-def test_partition_slot_alias_is_stable_across_committed_steps() -> None:
+def test_shared_partition_identity_is_stable_across_committed_steps() -> None:
     adapter = _PartitionAliasAdapter()
     solver = ComposableSolver(
         problem=_TwoDimensionalProblem(),
@@ -246,7 +250,7 @@ def test_partition_slot_alias_is_stable_across_committed_steps() -> None:
         for item in second["partitions"]
     )
 
-    assert len(set(first_tokens)) == 2
+    assert len(set(first_tokens)) == 1
     assert second_tokens == first_tokens
     assert tuple(
         partition.candidate_tokens[0]

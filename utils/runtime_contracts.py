@@ -80,7 +80,7 @@ def inspect_runtime_contracts(solver):
                 from ..adapters.pool_tasks import PoolTaskAdapter
                 if isinstance(participant, PoolTaskAdapter):
                     try:
-                        participant.validate_pool_task()
+                        participant.validate_pool_task(solver.adapter)
                     except (TypeError, ValueError) as exc:
                         issues.append(("solution-pool-task-contract-invalid", f"{participant.name}: {exc}"))
                 modes = participant.pool_input_modes

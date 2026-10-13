@@ -135,6 +135,12 @@ def test_real_adapter_passes_provenance_to_unknown_member_fields_and_codec_rolls
     record = CandidateProvenance("new", parent_token="old-a")
     control.bind_candidate_provenance([candidate], [record])
     records = control.prepare_candidate_provenance([candidate])
+    from blackbase.types import CandidateBatch
+    control.store_solutions(CandidateBatch.from_candidates([candidate], candidate_tokens=("new",)),
+                            stage="accepted", provenance=records)
+    control.store_solutions(CandidateBatch.from_candidates([[5.], [6.]],
+                            candidate_tokens=("old-a", "old-b")), stage="accepted",
+                            provenance=(CandidateProvenance("old-a"), CandidateProvenance("old-b")))
     numeric = candidate.as_array()
     control.bind_candidate_provenance([numeric], records)
     saved = json.loads(json.dumps(adapter.get_state()))

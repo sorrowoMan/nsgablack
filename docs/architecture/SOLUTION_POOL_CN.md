@@ -297,11 +297,52 @@ initialize/compete 输入消费完成后，后续调度继续原算法的 propos
 
 ### 10.4 支持范围与可运行入口
 
-SA/VNS 支持逐起点 refine；NSGA-II/III 支持 initialize/compete。其他算法必须先声明并实现对应池输入能力。MOEA/D 还需要显式绑定子问题比较与目标槽位，本轮没有自动接入，也不把局部搜索的标量和当作任意多目标比较的替代。
+SA/VNS 支持普通逐起点 refine；NSGA-II/III 支持 initialize/compete；MOEA/D 支持返回 compete，并自动发布方向投影子池，由 VNS 消费（见下一节）。其他算法必须先声明并实现对应池输入及投影能力；声明本身不能代替实现。
 
 同一个 Case 内的这种精修使用已有 Router、PoolTaskSpec 和子 Adapter，不要求额外写一套子 Case。跨 Case 生命周期、并行和 L0 授权仍使用 BlackBase 的标准入口。
 
 正式例子：`examples/cases/solution_pool/cases/pool_refinement/`。它先建立 20 成员种群，再以两类四实例 VNS 分别精修 20 个起点，返回 NSGA-II 竞争并恢复普通搜索。装配策略在 `adapter/refinement.py`，Problem/Pipeline/运行入口仍按标准脚手架组织。
+
+### 10.5 MOEA/D 自动方向投影与来源选择
+
+MOEA/D 初始化完成后，每个实际方向自动创建一个子池。100 个方向就是 100 个子池，与外部 VNS 实例数无关。每个子池引用当前槽位候选，并保存 `created_by`、`slot`、`projection`：
+
+- `created_by`：当前 Solver 中 Adapter 的稳定所有权路径。装配时传入具体实例；同类型、同名的两个实例仍有不同路径。它标识谁创建这个视图，与候选最早由 GA 还是 VNS 生成无关。
+- `slot`：创建者的方向索引。不同槽位可以引用同一候选，仍然是不同任务，不按 token 或数值跨方向去重。
+- `projection`：分解方法、权重、参考点。当前支持与内置 MOEA/D 一致的 weighted_sum 和 tchebycheff；后者使用创建者当时的 ideal point。
+
+用户只需选择方向并绑定现有池任务，以下是装配片段：
+
+```python
+from nsgablack.adapters import MOEADAdapter, PoolTaskSpec, RoleSpec, subpools
+
+adapter1 = MOEADAdapter(name="adapter1", population_size=100)
+selection = subpools.all(adapter1)          # 该实例创建的全部已发布方向
+selection = subpools.random(20, adapter1)   # 或无放回选择其中 20 个方向
+
+producer = RoleSpec("moead", adapter1,
+    pool_task=PoolTaskSpec("refined", mode="compete", phases=("return",)))
+local = RoleSpec("local", vns_factory, n_units=4,
+    pool_task=PoolTaskSpec(selection, steps=3, output="refined"))
+```
+
+把这两个角色装进同一个 Router；`vns_factory(index)` 返回一个独立 VNSAdapter。阶段触发由原有 phase_policy/phase_roles 决定。选择器传入未装配的实例、非投影生产者或不支持投影的消费者，装配检查会报错，不会按名字寻找替代者。嵌套组合仍按实际实例路径查找。
+
+`random(20, adapter1)` 的 20 是整个角色请求选中的方向数。默认 partition 将这 20 个任务分给四个 VNS，每个处理五个方向；不会四个实例各抽 20 个。`count` 另外表示每个选中方向取几个起点，默认 1。shared 表示每个实例显式重复所有选中任务；independent 在这种选择中拒绝，避免与角色级抽样混淆。方向不足默认报错，可使用已有 on_insufficient=wait/available；不会有放回补足。没有已发布方向时同样遵循不足策略。
+
+一次请求在开始时冻结所选方向、候选版本和投影参数。起点通过正常 Problem 求值建立基准；随后所有邻域候选仍经过正常 repair、Problem/Provider、Bias 和准入，再由任务投影反馈交给 VNS。VNS 以同一标量坐标比较起点与邻域，不能中途因 MOEA/D ideal point 改变而混用两套分数。新请求才获取新的方向视图；同阶段重复触发需改变 request_key。
+
+投影处理的是接收链当前的 selection objectives，使它与 MOEA/D 的分解比较一致；约束选择值保持原样，采用 MOEA/D 的可行性优先规则。硬准入仍在此前消费 raw constraints。无 Bias 时投影也显式保留 raw_evaluation；有 Bias 时沿用原始证据。母池与 Evaluation Event 始终保存原目标向量，不把方向标量冒充 Problem 的结果。
+
+精修输出仍是候选引用集合。返回时 MOEA/D 正常重评、更新 ideal，并按当前权重和 `nr` 替换上限竞争槽位，可能改善多个方向；创建来源不承诺只替换原槽位。框架不把“精修 x 得到 y”解释成 x 的分数等于 y，也不把精修承诺成一定改善。当前输出沿用池任务语义，收集已接纳提案；最终成员由接收者选择。
+
+绕过 Solver 手工调用 MOEA/D.update 的调用者，同样须先建立候选对应的已发布或已接纳池记录；未知 token 不能用于发布方向。旧控制面曾为重复槽位派生 population_slot_alias，这不再是合法的新身份来源；包含这类别名但缺少对应池记录的历史 checkpoint 需要显式迁移，不能在恢复时按数值猜原身份。旧版要求全局唯一 token 的快照消费者也需同步升级。
+
+方向成员和元数据与池 manifest 一起 staging/提交；更新中的方向不会进入已发布选择列表，失败恢复旧视图。已选任务持有自己的冻结副本与输入引用，不受后续方向替换或回收影响。任务队列、投影、RNG、VNS 基准与所有权路径共同 checkpoint；恢复不重抽、不重跑评估。普通子池保持原来的无投影视图行为。
+
+100 个子池是 100 份轻量引用及比较参数，不是 100 份候选数组，也不意味着同时创建 100 个 VNS 或取得 100 份资源。VNS 数量由 n_units 决定，Case/Project 资源规则保持原职责。
+
+完整标准 Case：`examples/cases/solution_pool/cases/moead_refinement/`，演示 MOEA/D 与 GA 搜索、四个 VNS 消费 MOEA/D 的 20 个方向、返回竞争。`view_count=None` 切换为全部方向。
 
 ## 11. 验收依据
 
@@ -310,6 +351,7 @@ SA/VNS 支持逐起点 refine；NSGA-II/III 支持 initialize/compete。其他�
 - `test_solution_pool_retention.py`：多消费者保护、闲置时钟、部分行压缩、输入消费、历史固定、可传输 checkpoint、删除失败重试、步骤回滚、未决围栏与不支持组件拒绝。
 - `test_subpool_tasks.py`：20 起点与两类 VNS、子池提交可见性、任务回滚/零接纳重试、返回种群竞争及正式 checkpoint。
 - `test_pool_task_allocation.py`：母池默认输入、300→30×100、分区/共享、缺失与空子池、不足策略、单解起点与随机分配恢复。
+- `test_projection_subpools.py`：100 方向与实例来源、all/random、两种标量投影、同候选多方向、原始证据、零/部分接纳、冻结比较、回滚与正式 checkpoint、返回 MOEA/D 竞争。
 - 既有 repair、SA、语义候选、评估接纳、步骤事务与 checkpoint 测试确认旧边界仍成立。
 
 实际运行命令与结果统一记录在本轮验收文档；存在测试源码不能单独解释成验证通过。

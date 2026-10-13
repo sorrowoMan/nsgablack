@@ -95,6 +95,12 @@ def test_moead_duplicate_replacement_can_be_read_and_scored_by_bound_bias():
         [[10., 20.]] * 3, [0.] * 3, candidate_tokens=("a", "b", "c"))
     adapter._pending_indices, adapter._pending_modes = [0], ["global"]
     candidate = np.array([0.])
+    # Direct update tests must supply the same published/accepted pool sources
+    # that the normal control-plane evaluation path establishes.
+    from blackbase.types import CandidateBatch
+    for token, value in zip(("a", "b", "c", "shared"), (3., 4., 5., 0.)):
+        solver.store_solutions(CandidateBatch.from_candidates([[value]], candidate_tokens=(token,)),
+                              stage="accepted", provenance=(CandidateProvenance(token),))
     solver.bind_candidate_provenance([candidate], [CandidateProvenance("shared")])
     adapter.update(solver, [candidate], (np.array([[0., 0.]]), np.zeros(1)), {})
     assert adapter.get_population_candidate_tokens().count("shared") == 2

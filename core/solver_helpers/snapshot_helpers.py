@@ -210,7 +210,7 @@ def _validate_candidate_identity(
     provenance_payload: Any,
     numeric_population: np.ndarray,
     expected_tokens: tuple[str | None, ...] | None,
-    seen_tokens: set[str],
+    seen_tokens: dict[str, Any],
 ) -> None:
     if not isinstance(batch_payload, Mapping):
         raise ValueError("authoritative population snapshot requires CandidateBatch")
@@ -232,15 +232,14 @@ def _validate_candidate_identity(
     if any(token is None for token in tokens):
         raise ValueError("authoritative candidate tokens must not be missing")
     normalized = tuple(str(token) for token in tokens)
-    if len(set(normalized)) != len(normalized):
-        raise ValueError("authoritative candidate tokens must be unique")
-    duplicate = seen_tokens.intersection(normalized)
-    if duplicate:
-        raise ValueError(
-            "candidate tokens are duplicated across population partitions: "
-            f"{sorted(duplicate)!r}"
-        )
-    seen_tokens.update(normalized)
+    for token, state in zip(normalized, batch.semantic_states):
+        previous = seen_tokens.get(token)
+        if previous is not None and (
+            not np.array_equal(previous.as_array(), state.as_array(), equal_nan=True)
+            or previous.as_dict()["metadata"] != state.as_dict()["metadata"]
+        ):
+            raise ValueError("one candidate token identifies different population states")
+        seen_tokens[token] = state
     if not isinstance(provenance_payload, (list, tuple)):
         raise ValueError("authoritative population snapshot requires provenance")
     from ..state.incumbent import CandidateProvenance
@@ -290,7 +289,7 @@ def validate_population_snapshot_v2(
             f"Snapshot: expected={expected!r}, observed={mode!r}"
         )
 
-    seen_tokens: set[str] = set()
+    seen_tokens: dict[str, Any] = {}
     if mode == "partitioned":
         partition_envelope = data.get(POPULATION_PARTITIONS_KEY)
         if not isinstance(partition_envelope, Mapping):

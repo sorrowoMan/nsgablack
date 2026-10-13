@@ -2440,7 +2440,6 @@ class SolverBase:
         sources: Iterable[
             tuple[CandidateBatch | None, Iterable[CandidateProvenance]]
         ] = (),
-        occupied_candidate_tokens: set[str] | None = None,
     ) -> tuple[CandidateBatch, tuple[CandidateProvenance, ...]]:
         """Build one token-aligned semantic population without committing it.
 
@@ -2503,14 +2502,28 @@ class SolverBase:
         if len(raw_tokens) != int(matrix.shape[0]):
             raise ValueError("candidate population tokens must align with population rows")
 
+        # Setup-initialized members may be absent from the latest evaluation
+        # and previous population window. Resolve explicit identities from the
+        # pool; never manufacture replacement identities for those members.
+        missing = tuple(dict.fromkeys(token for token in raw_tokens
+                                      if token is not None and token not in source_by_token))
+        if missing:
+            latest = {ref.candidate_token: ref for ref in self.solution_pool.refs_for_tokens(missing)}
+            refs = tuple(latest[token] for token in missing)
+            values = self.solution_pool.read_provenance(refs, allow_pending=True)
+            if any(value is None for value in values):
+                raise ValueError("population candidate pool source is missing provenance")
+            pooled = self.solution_pool.read(refs, allow_pending=True)
+            for token, state, value in zip(missing, pooled.semantic_states, values):
+                record = CandidateProvenance.from_dict(value)
+                if record.candidate_token != token:
+                    raise ValueError("population pool provenance disagrees with token")
+                source_by_token[token] = state, record
+                has_semantic_metadata = has_semantic_metadata or bool(state.metadata)
+
         states: list[UnknownState] = []
         records: list[CandidateProvenance] = []
         normalized_tokens: list[str] = []
-        materialized_tokens = (
-            occupied_candidate_tokens
-            if occupied_candidate_tokens is not None
-            else set()
-        )
         for index, (row, raw_token) in enumerate(zip(matrix, raw_tokens)):
             token = None if raw_token is None else str(raw_token).strip() or None
             source = None if token is None else source_by_token.get(token)
@@ -2537,18 +2550,8 @@ class SolverBase:
                         f"{record.candidate_token}"
                     )
                 state = UnknownState(values=row, metadata=dict(source_state.metadata))
-                source_token = record.candidate_token
-                if source_token in materialized_tokens:
-                    record = self._new_candidate_provenance(
-                        source_kind=record.source_kind,
-                        source_run_id=record.source_run_id,
-                        warm_start_id=record.warm_start_id,
-                        proposal_id=record.proposal_id,
-                        parent_token=source_token,
-                        transform_stage="population_slot_alias",
-                        metadata=record.metadata,
-                    )
-            materialized_tokens.add(record.candidate_token)
+                # Slot membership is not a new candidate proposal. Multiple
+                # slots or partitions can retain the same semantic identity.
             states.append(state)
             records.append(record)
             normalized_tokens.append(record.candidate_token)

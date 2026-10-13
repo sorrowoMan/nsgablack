@@ -1307,7 +1307,6 @@ class ComposableSolver(SolverBase):
             str,
             tuple[PopulationPartition, CandidateBatch, tuple[Any, ...]],
         ] = {}
-        occupied_candidate_tokens: set[str] = set()
         for partition in tuple(partitions or ()):
             if partition.partition_id in committed:
                 raise ValueError(
@@ -1318,7 +1317,6 @@ class ComposableSolver(SolverBase):
                 partition.population,
                 partition.candidate_tokens,
                 sources=tuple(sources),
-                occupied_candidate_tokens=occupied_candidate_tokens,
             )
             normalized_partition = PopulationPartition(
                 partition_id=partition.partition_id,

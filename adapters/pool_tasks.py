@@ -10,8 +10,10 @@ import numpy as np
 
 from .role_adapters import RoleAdapter
 from .strategy_task import StrategyTask
+from .subpools import SubpoolSelection, adapter_path
 from nsgablack.context_keys import KEY_PHASE, KEY_SEEDS, KEY_TASK, KEY_SOLUTION_INPUT_REF, KEY_SOLUTION_INPUT_MODE
 from nsgablack.core.state.solution_pool import SolutionRef, SolutionStamp
+from nsgablack.core.state.pool_views import ObjectiveProjection
 
 
 def _callable_id(value):
@@ -33,8 +35,12 @@ class PoolTaskSpec:
     presents the selected batch to a population's ordinary admission/selection.
     ``request_key`` defaults to phase; use a stable explicit key for repeated
     triggers in the same phase. A request never silently replaces active work.
+
+    A SubpoolSelection selects directions once for the whole role; count then
+    means seeds per selected view (default one). Partition distributes these
+    jobs; shared repeats them explicitly. Each job freezes its projection.
     """
-    select: Callable | str | None = None
+    select: Callable | str | SubpoolSelection | None = None
     mode: str = "refine"
     steps: int = 5
     output: str | None = None
@@ -46,7 +52,7 @@ class PoolTaskSpec:
     shuffle: bool = True
 
     def __post_init__(self):
-        if self.select is not None and not (callable(self.select) or isinstance(self.select, str) and self.select.strip()):
+        if self.select is not None and not (isinstance(self.select, SubpoolSelection) or callable(self.select) or isinstance(self.select, str) and self.select.strip()):
             raise TypeError("pool task select must be None, a selector or subpool name")
         if self.mode not in {"refine", "initialize", "compete"}:
             raise ValueError("unknown pool task input mode")
@@ -58,7 +64,7 @@ class PoolTaskSpec:
             raise TypeError("pool task request_key must be callable")
         if not isinstance(self.phases, tuple) or any(not isinstance(p, str) or not p for p in self.phases):
             raise TypeError("pool task phases must be a tuple of nonempty names")
-        if self.select is not None:
+        if self.select is not None and not isinstance(self.select, SubpoolSelection):
             _callable_id(self.select)
         if self.request_key is not None:
             _callable_id(self.request_key)
@@ -72,7 +78,9 @@ class PoolTaskSpec:
             raise TypeError("pool task shuffle must be a boolean")
 
     def identity(self):
-        return dict(select=None if self.select is None else _callable_id(self.select), mode=self.mode, steps=self.steps,
+        selection = (self.select.identity() if isinstance(self.select, SubpoolSelection)
+                     else None if self.select is None else _callable_id(self.select))
+        return dict(select=selection, mode=self.mode, steps=self.steps,
                     output=self.output, phases=self.phases,
                     count=self.count, distribution=self.distribution,
                     on_insufficient=self.on_insufficient, shuffle=self.shuffle,
@@ -94,13 +102,14 @@ class PoolTaskAdapter(RoleAdapter):
         self.namespace = namespace
         self._local = {}
         self._rng = None
+        self._creator_path = None
         if type(workers) is not int or workers < 1 or type(worker) is not int or not 0 <= worker < workers:
             raise ValueError("pool task worker must be an index within positive workers")
         if not isinstance(namespace, str) or not namespace:
             raise ValueError("pool task namespace must be nonempty")
         self.validate_pool_task()
 
-    def validate_pool_task(self):
+    def validate_pool_task(self, root=None):
         if not isinstance(self.spec, PoolTaskSpec):
             raise TypeError("role pool_task must be PoolTaskSpec")
         mode = "initialize" if self.spec.mode == "refine" else self.spec.mode
@@ -109,6 +118,15 @@ class PoolTaskAdapter(RoleAdapter):
         if self.spec.mode == "refine" and not self.inner.supports_pool_restart:
             raise ValueError(f"{self.inner.name} does not support explicit search restart")
         count = self.input_count
+        if isinstance(self.spec.select, SubpoolSelection):
+            if self.distribution == "independent":
+                raise ValueError("projection subpool tasks use partition or shared distribution")
+            if self.spec.mode != "refine" or not getattr(self.inner, "supports_objective_projection", False):
+                raise ValueError("projection subpool tasks require a refiner supporting objective projections")
+            if not getattr(self.spec.select.creator, "publishes_projection_subpools", False):
+                raise ValueError("selected Adapter does not publish projection subpools")
+            if root is not None:
+                adapter_path(root, self.spec.select.creator)
         if count != "all" and (type(count) is not int or count < 1):
             raise ValueError(f"{self.inner.name} must declare default_pool_input_count or use explicit count")
 
@@ -125,6 +143,9 @@ class PoolTaskAdapter(RoleAdapter):
         return self.spec.distribution or ("independent" if self.spec.mode == "initialize" else "partition")
 
     def setup(self, control):
+        self.validate_pool_task(control.adapter)
+        self._creator_path = (adapter_path(control.adapter, self.spec.select.creator)
+                              if isinstance(self.spec.select, SubpoolSelection) else None)
         super().setup(control)
         control.solution_pool.checkpoint_required = True
         # Tasks are serialized inside the root Adapter component. Silently
@@ -162,6 +183,15 @@ class PoolTaskAdapter(RoleAdapter):
         base = self._name(f"task:{self.role}/{digest}", context)
         # One allocation shared by all role instances, retained across retries.
         # The empty marker records selection completion without retaining values.
+        if not pool.has_subpool(base) and isinstance(self.spec.select, SubpoolSelection):
+            allocations = self._allocate_projection_views(pool)
+            if allocations is None:
+                self._local = {}
+                return
+            pool.create_subpool(base)
+            for i, jobs in enumerate(allocations):
+                pool.create_subpool(f"{base}/{i}",
+                    [SolutionRef.from_dict(job["ref"]) for job in jobs], metadata={"jobs": jobs})
         if not pool.has_subpool(base):
             if self.spec.select is None:
                 refs = pool.select(stage=None)
@@ -189,6 +219,8 @@ class PoolTaskAdapter(RoleAdapter):
         self._local = dict(request=request, status="running" if refs else "done",
                            view=view, next=0, count=len(refs), steps=0,
                            input=None, results=[], output=None)
+        if isinstance(self.spec.select, SubpoolSelection):
+            self._local["jobs"] = pool.subpool_metadata(view)["jobs"]
         if self.spec.output is not None:
             output = self._name(self.spec.output, context)
             if not pool.has_subpool(output):
@@ -216,6 +248,35 @@ class PoolTaskAdapter(RoleAdapter):
             selected = sample(limit)
             return (selected,) * self.workers
         return tuple(sample(limit) for _ in range(self.workers))
+
+    def _allocate_projection_views(self, pool):
+        names = pool.projection_subpools(self._creator_path)
+        count = self.spec.select.count
+        wanted = len(names) if count is None else count
+        if not names or len(names) < wanted:
+            if self.spec.on_insufficient == "error":
+                raise ValueError(f"creator has {len(names)} projection subpools; requested {wanted or 'all'}")
+            if self.spec.on_insufficient == "wait" or not names:
+                return None
+        if count is not None or self.spec.shuffle:
+            names = tuple(names[i] for i in self._rng.permutation(len(names))[:wanted])
+        jobs = []
+        for name in names:
+            metadata = pool.subpool_metadata(name)
+            refs = pool.subpool_refs(name)
+            n = len(refs) if self.input_count == "all" else self.input_count
+            if len(refs) < n:
+                if self.spec.on_insufficient == "error":
+                    raise ValueError(f"projection subpool {name} needs {n} candidates; available={len(refs)}")
+                if self.spec.on_insufficient == "wait":
+                    return None
+            order = self._rng.permutation(len(refs)) if self.spec.shuffle else range(len(refs))
+            jobs.extend(dict(source_view=name, created_by=metadata["created_by"], slot=metadata["slot"],
+                projection=metadata["projection"], ref=refs[i].as_dict()) for i in list(order)[:n])
+        # View selection is once per request, never once per worker or per step.
+        if self.distribution == "partition":
+            return tuple(jobs[i::self.workers] for i in range(self.workers))
+        return tuple(copy.deepcopy(jobs) for _ in range(self.workers))
 
     def _context(self, context):
         if self._local.get("passthrough"):
@@ -280,7 +341,11 @@ class PoolTaskAdapter(RoleAdapter):
             self.inner.restart_search(control, self._context(context))
 
     def update(self, control, candidates, feedback, context):
-        super().update(control, candidates, feedback, self._context(context))
+        projected = feedback
+        if not self._local.get("passthrough") and "jobs" in self._local:
+            job = self._local["jobs"][self._local["next"]]
+            projected = ObjectiveProjection.from_dict(job["projection"]).apply(feedback)
+        super().update(control, candidates, projected, self._context(context))
         if self._local.get("passthrough") or not len(candidates):
             return
         pool = control.solution_pool
@@ -309,9 +374,12 @@ class PoolTaskAdapter(RoleAdapter):
                 "pool_task_spec": self._identity()}
 
     def _identity(self):
-        return {**self.spec.identity(), "worker": self.worker, "workers": self.workers,
+        identity = {**self.spec.identity(), "worker": self.worker, "workers": self.workers,
                 "namespace": self.namespace, "effective_count": self.input_count,
                 "effective_distribution": self.distribution}
+        if isinstance(self.spec.select, SubpoolSelection):
+            identity["creator_path"] = self._creator_path
+        return identity
 
     def set_state(self, state):
         if state.get("pool_task_spec") != self._identity():
@@ -332,8 +400,7 @@ class PoolTaskAdapter(RoleAdapter):
             rng.bit_generator.state = copy.deepcopy(state)
             self._rng = rng
 
-    @staticmethod
-    def _validate_local(state):
+    def _validate_local(self, state):
         if not isinstance(state, dict):
             raise TypeError("pool task state must be a mapping")
         if "request" not in state:
@@ -358,6 +425,23 @@ class PoolTaskAdapter(RoleAdapter):
             raise TypeError("pool task results must be a list of references")
         for ref in state["results"]:
             SolutionRef.from_dict(ref)
+        if isinstance(self.spec.select, SubpoolSelection) and "jobs" not in state:
+            raise ValueError("projection task checkpoint is missing its jobs")
+        if "jobs" in state:
+            if not isinstance(state["jobs"], list) or len(state["jobs"]) != state["count"]:
+                raise ValueError("projection jobs must align with task progress")
+            for job in state["jobs"]:
+                if set(job) != {"source_view", "created_by", "slot", "projection", "ref"}:
+                    raise ValueError("invalid projection task job")
+                ObjectiveProjection.from_dict(job["projection"])
+                SolutionRef.from_dict(job["ref"])
+                if (not isinstance(job["source_view"], str) or not job["source_view"]
+                        or not isinstance(job["created_by"], list) or not job["created_by"]
+                        or any(not isinstance(p, str) or not p for p in job["created_by"])
+                        or type(job["slot"]) is not int or job["slot"] < 0):
+                    raise ValueError("projection task requires source view, creator and slot")
+                if tuple(job["created_by"]) != self._creator_path:
+                    raise ValueError("projection task creator differs from its selector")
 
     def snapshot_step_state(self):
         return {**super().snapshot_step_state(), "pool_task": copy.deepcopy(self._local),

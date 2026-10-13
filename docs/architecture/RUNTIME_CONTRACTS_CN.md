@@ -50,7 +50,11 @@ verification receipt 可由 Journal 持久化用于审计，但 verified_at 是�
 
 PoolTaskSpec 省略 select 时读取母池 main 的已发布候选，命名子池不存在必须报错。count/distribution/on_insufficient/shuffle 声明数量、分配与不足规则；默认初始化独立无放回抽样，跨实例允许共享来源；默认精修每实例一个起点，整批队列须显式 count="all"。独立分配 RNG 与首次分配结果可回滚、可恢复。initialize 完成后继续算法自身搜索，不每轮取解，不默认随阶段重置。数量默认由算法声明，未知组件需显式 count。
 
-VNS 首次从池输入后先评估起点，基准未通过准入时重试同一来源，不随机替换起点。每次局部更新仍经过既有修复/预算/接纳；每个任务的 steps 包含基准更新，不等于裸求值次数。结果集合包含所有被接纳提案；返回种群重新求值与选择，不能把新候选的分数归给来源候选。SA/VNS 与 NSGA-II/III 的声明能力已接入此路径，MOEA/D 的子问题权重/目标槽位不自动推断。
+VNS 首次从池输入后先评估起点，基准未通过准入时重试同一来源，不随机替换起点。每次局部更新仍经过既有修复/预算/接纳；每个任务的 steps 包含基准更新，不等于裸求值次数。结果集合包含所有被接纳提案；返回种群重新求值与选择，不能把新候选的分数归给来源候选。SA/VNS 与 NSGA-II/III 的声明能力已接入此路径，MOEA/D 支持返回竞争。
+
+MOEA/D 显式发布每方向投影子池，created_by 是 Adapter 实例所有权路径，包含槽位及 ObjectiveProjection。subpools.all/random 只按指定实例选择已发布方向；PoolTaskAdapter 在请求开始时冻结引用与权重/参考点，VNS 的起点和邻域共用该比较坐标。selection 标量在 Adapter 消费边界生成，raw 目标/约束和硬准入不变；返回 MOEA/D 时按其当前分解重新竞争。方向元数据随池 manifest 提交，队列/投影/RNG 随任务恢复，不重抽签或重评。详见 SOLUTION_POOL_CN.md §10.5。
+
+一个候选可以被多个方向槽位或多个种群分区持有。控制面和 Population Snapshot 保留相同 token，不派生 population_slot_alias；槽位身份由 Unit/partition 与行位置表达。快照对重复 token 校验数值及语义 metadata 一致。初始化成员不在最近评估窗口时，按显式 token 从池读取来源并校验内容，不能重新生成身份。
 
 SolverSemanticExtension.before_step 属于提交前尝试；after_step_committed 属于提交后投影。后者失败通过 CommittedStepError 保留真实 StepOutcome；循环先记录提交计数和通知，再结束失败运行。ML 投影使用该接口，LearningSolver 不再覆盖 step。
 

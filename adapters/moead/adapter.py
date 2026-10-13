@@ -22,10 +22,13 @@ from ..unit_backed import UnitBackedAdapter, UnitField
 from ...representation.structure_builders import DecompositionUnitBuilder
 from ...representation.structure_builders import simplex_points
 from ..algorithm_adapter import AlgorithmAdapter
+from ..subpools import adapter_path
+from ...core.state.pool_views import ObjectiveProjection
 from nsgablack.context_keys import (
     KEY_MOEAD_NEIGHBOR_MODE,
     KEY_MOEAD_SUBPROBLEM,
     KEY_MOEAD_WEIGHT,
+    KEY_SOLUTION_INPUT_REF,
 )
 
 
@@ -62,6 +65,8 @@ class MOEADConfig:
 
 class MOEADAdapter(UnitBackedAdapter):
     """MOEA/D adapter for ComposableSolver."""
+    pool_input_modes = ("compete",)
+    publishes_projection_subpools = True
     unit_build_operations = ("initialize", "decomposition")
     # Repaired trial values keep their subproblem and neighborhood identities;
     # update consumes fresh feedback, with no trial-derived path cost to retain.
@@ -241,6 +246,15 @@ class MOEADAdapter(UnitBackedAdapter):
         assert self.weights is not None
         assert self.neighbors is not None
         self.algorithm_unit.require_current_feedback()
+
+        input_ref = context.get(KEY_SOLUTION_INPUT_REF)
+        if input_ref is not None and control.solution_pool.input_remaining(input_ref):
+            candidates = control.init_population(control.solution_pool.input_remaining(input_ref), context)
+            # External refinements compete against the current decomposition,
+            # using each destination's own weight and the ordinary nr limit.
+            self._pending_indices = [0] * len(candidates)
+            self._pending_modes = ["global"] * len(candidates)
+            return candidates
 
         batch = max(1, min(int(self.cfg.batch_size), self._n))
         indices = self._rng.choice(self._n, size=batch, replace=False) if batch < self._n else np.arange(self._n)
@@ -571,6 +585,7 @@ class MOEADAdapter(UnitBackedAdapter):
         self._last_context_projection = projection
 
     def _sync_population_snapshot(self, control: Any) -> None:
+        self._publish_direction_views(control)
         writer = getattr(control, "write_population_snapshot", None)
         if not callable(writer):
             return
@@ -580,6 +595,23 @@ class MOEADAdapter(UnitBackedAdapter):
             writer(self.pop_X, self.pop_F, self.pop_V)
         except Exception:
             raise
+
+    def _publish_direction_views(self, control):
+        pool = getattr(control, "solution_pool", None)
+        if pool is None or self.weights is None or self.pop_X is None or not len(self.pop_X):
+            return
+        self.algorithm_unit.require_current_feedback()
+        creator = adapter_path(control.adapter, self)
+        latest = {ref.candidate_token: ref for ref in pool.refs_for_tokens(self._population_candidate_tokens)}
+        method = str(self.cfg.decomposition).lower().strip()
+        for i, (weight, token) in enumerate(zip(self.weights, self._population_candidate_tokens)):
+            projection = ObjectiveProjection(method, tuple(weight),
+                tuple(self.ideal) if method == "tchebycheff" else ())
+            pool.publish_projection_subpool("/".join((*creator, f"direction:{i}")),
+                (latest[token],), created_by=creator, slot=i, projection=projection)
+
+    def get_solution_pool_roots(self, control):
+        return control.solution_pool.refs_for_tokens(self._population_candidate_tokens)
 
     def _recompute_ideal(self) -> None:
         if self.pop_F is None or self.pop_F.size == 0:

@@ -233,15 +233,15 @@ title = "MOEADAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:MOEADAdapter"
 tags = ["adapter", "core", "decomposition", "moead", "multiobjective", "strategy"]
-summary = "MOEA/D分解内核：权重向量与邻域替换。 / Adapter: MOEA/D decomposition core with weight vectors and neighborhood replacement."
+summary = "MOEA/D 分解搜索：权重与邻域替换，自动发布带实例来源的方向投影子池，支持精修返回竞争。"
 use_when = ["多目标问题希望用分解子问题并行推进时", "需要稳定的邻域协同更新而非全局排序时"]
 minimal_wiring = ["from nsgablack.adapters import MOEADAdapter", "solver.set_adapter(MOEADAdapter())"]
 required_companions = ["plugin.pareto_archive"]
 config_keys = [
-  "n_subproblems",
-  "neighbor_size",
+  "population_size",
+  "neighborhood_size",
   "decomposition",
-  "seed",
+  "random_seed",
 ]
 companions = ["plugin.pareto_archive"]
 example_entry = ""
