@@ -168,6 +168,9 @@ def test_vns_adopts_mapped_unit_and_checkpoint_preserves_semantics():
     adapter = VNSAdapter(VNSConfig(batch_size=3))
     adapter.setup(control)
     adapter.current_x = UnknownState([2.0], {"layout": "linear"})
+    baseline = adapter.propose(control, {})
+    assert len(baseline) == 1
+    adapter.update(control, baseline, (np.array([[4.]]), np.zeros(1)), {})
     candidates = adapter.propose(control, {})
     expected = adapter._pending_units[2]
     adapter.on_proposal_disposition(control, BatchDisposition(proposed_count=3, accepted_indices=(0, 2)), {})

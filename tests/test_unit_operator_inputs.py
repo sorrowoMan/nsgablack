@@ -243,7 +243,9 @@ def test_vns_reconciles_pending_unit_identity_before_evaluation():
         unit = adapter._pending_units[0]
         assert unit.unit_id == old_id
         assert unit.to_candidate().metadata["meaning"] == "kept"
-        np.testing.assert_array_equal(unit.to_candidate().values, [5.])
+        # The unevaluated seed is the first proposal; mutation starts after its
+        # baseline has been admitted. Repair shifts that seed from 0 to 4.
+        np.testing.assert_array_equal(unit.to_candidate().values, [4.])
         reconciled.append(unit.unit_id)
         assert not problem.seen
     adapter.on_proposal_repair = check

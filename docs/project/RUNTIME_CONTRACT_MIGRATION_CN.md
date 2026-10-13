@@ -1,5 +1,9 @@
 # 显式运行契约迁移
 
+2026-10-13 子池任务取解默认更新：PoolTaskSpec 可省略 select 使用母池；初始化默认按 Adapter 声明数量独立抽样；精修默认每实例一个起点。原来把完整 selector 结果都作为精修队列的装配须加 count="all"；需要原有顺序分摊时同时设 distribution="partition", shuffle=False。输入子池缺失改为报错，空池/数量不足用 on_insufficient 显式处理。PoolTaskAdapter checkpoint 新增取解配置身份及独立 RNG 状态；旧任务 checkpoint 会因配置身份不匹配拒绝，不能补一个假 RNG 状态宣称精确恢复。可用旧版本完成已有运行，再用新装配开始新任务。
+
+VNS 当前点新增完整 provenance 持久状态；旧 checkpoint 若已有 current_pool_token 却缺少对应来源记录，现在拒绝恢复，不能根据数值相等补造父身份。池任务同时要求根 Adapter 成功恢复，checkpoint 插件的非 strict 模式也不能跳过此错误。SA 将同类来源记录保存在既有 Unit codec 的 candidate_metadata 中。
+
 本次工作区开发版本为 BlackBase 0.3.26、NSGABlack 0.4.1、MLBlack 0.4.24，未在本任务发布到包仓库。请配套更新三仓；旧版 BlackBase 不提供新增协议。Snapshot/RunProgress wire schema 保持原版本；偏好记录通过 Feedback.info 传输。自定义组件的能力发现和发布注册方式有不兼容变化，升级前须完成下列迁移。
 
 1. 自定义管线声明 `representation_capabilities = RepresentationCapabilities(frozenset({...}))`，只列实际支持的操作。内置 RepresentationPipeline 从装配槽位声明能力，ML bridge 无须 initializer/decoder 自指属性。

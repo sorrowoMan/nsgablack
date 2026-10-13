@@ -25,6 +25,7 @@ import warnings
 from nsgablack.context_keys import KEY_MUTATION_SIGMA, KEY_VNS_K
 from blackbase.types import UnknownState
 from blackbase.contracts import BatchDisposition
+from ...core.state.incumbent import CandidateProvenance
 
 
 @dataclass
@@ -54,6 +55,10 @@ class VNSAdapter(AlgorithmAdapter):
     """VNS adapter for ComposableSolver."""
     pool_input_modes = ("initialize",)
     supports_pool_restart = True
+
+    def default_pool_input_count(self):
+        return 1
+
     uses_pipeline_mutation = True
     context_requires = ("generation",)
     context_provides = (KEY_VNS_K, KEY_MUTATION_SIGMA)
@@ -106,6 +111,7 @@ class VNSAdapter(AlgorithmAdapter):
         self._unit_counter = 0
         self._current_unit = None
         self._current_pool_token = None
+        self._current_provenance = None
         self._pending_units = []
         self.k = 0
         self.current_x: Optional[np.ndarray] = None
@@ -123,6 +129,8 @@ class VNSAdapter(AlgorithmAdapter):
 
     @current_x.setter
     def current_x(self, candidate):
+        self._current_provenance = None
+        self._current_pool_token = None
         if candidate is None:
             self._current_unit = None
             return
@@ -139,6 +147,26 @@ class VNSAdapter(AlgorithmAdapter):
         ), build_context)
         self._unit_counter = next_id
         return unit
+
+    @staticmethod
+    def _provenance(control, candidate, **kwargs):
+        lookup = getattr(control, "candidate_provenance_for", None)
+        return lookup(candidate, **kwargs) if callable(lookup) else None
+
+    @staticmethod
+    def _bind_projection(control, candidate, provenance):
+        if provenance is not None:
+            control.bind_candidate_provenance([candidate], [provenance], activate=False)
+        return candidate
+
+    def _initialize_current(self, control, context):
+        candidate = control.init_candidate(context)
+        self._current_provenance = self._provenance(control, candidate)
+        resolver = getattr(control, "semantic_candidate_state", None)
+        if callable(resolver) and not isinstance(candidate, UnknownState):
+            candidate = resolver(candidate)
+        self._current_unit = self._build_candidate_unit(candidate, context)
+        self._current_pool_token = None
 
     def setup(self, control: Any) -> None:
         self.validate_unit_bindings()
@@ -186,13 +214,13 @@ class VNSAdapter(AlgorithmAdapter):
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self.current_x is None:
-            self._current_unit = self._build_candidate_unit(control.init_candidate(context), context)
+            self._initialize_current(control, context)
 
         # Evaluate the seed itself before comparing neighbors. A pool restart
         # cannot silently assign the first neighbor's score to the input seed.
         if self.current_score is None:
             self._pending_units = [self._current_unit]
-            return [self._current_unit.to_candidate()]
+            return [self._bind_projection(control, self._current_unit.to_candidate(), self._current_provenance)]
 
         sigma = float(self._current_sigma())
         ctx = dict(context)
@@ -209,12 +237,14 @@ class VNSAdapter(AlgorithmAdapter):
             # Existing numeric mutators consume arrays. Preserve the semantic
             # envelope after numeric mutation. The control plane repairs later.
             template = self._current_unit.to_candidate()
-            cand = self.mutate_candidate(control, self.current_x, ctx)
+            parent = self._bind_projection(control, self.current_x, self._current_provenance)
+            cand = self.mutate_candidate(control, parent, ctx)
+            provenance = self._provenance(control, cand)
             if isinstance(template, UnknownState) and not isinstance(cand, UnknownState):
                 cand = template.with_values(cand)
             unit = self._build_candidate_unit(cand, ctx)
             self._pending_units.append(unit)
-            out.append(unit.to_candidate())
+            out.append(self._bind_projection(control, unit.to_candidate(), provenance))
         return out
 
     def get_operator_unit(self):
@@ -280,7 +310,7 @@ class VNSAdapter(AlgorithmAdapter):
         if self.k > int(self.cfg.k_max):
             if bool(self.cfg.restart_on_stagnation):
                 self.k = 0
-                self._current_unit = self._build_candidate_unit(control.init_candidate(context), context)
+                self._initialize_current(control, context)
                 self.current_score = None
                 self._current_pool_token = None
             else:
@@ -295,10 +325,14 @@ class VNSAdapter(AlgorithmAdapter):
 
     def _accept_candidate(self, control, candidates, index, context):
         self._current_pool_token = self.candidate_tokens_for(control, candidates)[index]
+        self._current_provenance = self._provenance(control, candidates[index])
+        indexed = self._current_provenance is None
+        if indexed:
+            self._current_provenance = self._provenance(control, candidates[index], candidate_index=index)
         resolver = getattr(control, "semantic_candidate_state", None)
         candidate = candidates[index]
         if callable(resolver) and not isinstance(candidate, UnknownState):
-            candidate = resolver(candidate, candidate_index=index)
+            candidate = resolver(candidate, **({"candidate_index": index} if indexed else {}))
         previous = self._pending_units[index] if index < len(self._pending_units) else None
         if previous is not None:
             projected = previous.to_candidate()
@@ -319,6 +353,7 @@ class VNSAdapter(AlgorithmAdapter):
         """Start a new local task without replaying setup or resetting IDs."""
         self._current_unit = None
         self._current_pool_token = None
+        self._current_provenance = None
         self._pending_units = []
         self.current_score = None
         self.k = 0
@@ -361,6 +396,7 @@ class VNSAdapter(AlgorithmAdapter):
             "current_x": None if self.current_x is None else candidate_array(self.current_x).tolist(),
             "current_score": None if self.current_score is None else float(self.current_score),
             "current_pool_token": self._current_pool_token,
+            "current_provenance": None if self._current_provenance is None else self._current_provenance.as_dict(),
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
@@ -376,6 +412,11 @@ class VNSAdapter(AlgorithmAdapter):
         if len(neighborhood.scales) != int(self.cfg.k_max) + 1 or not 0 <= k < len(neighborhood.scales):
             raise ValueError("VNS checkpoint neighborhood structure does not match configuration")
         score = state.get("current_score", self.current_score)
+        provenance = state.get("current_provenance")
+        provenance = None if provenance is None else CandidateProvenance.from_dict(provenance)
+        token = state.get("current_pool_token")
+        if token is not None and (provenance is None or provenance.candidate_token != token):
+            raise ValueError("VNS checkpoint current provenance does not match its pool token")
         pending = [self.unit_binding.restore(unit) for unit in state.get("pending_units", ())]
         if "current_unit" in state:
             current = (None if state["current_unit"] is None
@@ -396,7 +437,8 @@ class VNSAdapter(AlgorithmAdapter):
         self._pending_units = pending
         self.k = k
         self.current_score = score
-        self._current_pool_token = state.get("current_pool_token")
+        self._current_pool_token = token
+        self._current_provenance = provenance
         self._last_context_projection = {
             KEY_VNS_K: int(self.k), KEY_MUTATION_SIGMA: float(self._current_sigma()),
         }

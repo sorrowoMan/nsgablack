@@ -19,7 +19,7 @@ import_path = "nsgablack.adapters:PoolTaskAdapter"
 tags = ["adapter", "core", "solution-pool", "subpool", "composition"]
 summary = "为现有多角色调度绑定候选子池、逐起点精修进度与返回引用；子算法沿用正式步骤事务。"
 use_when = ["需要从种群结果中选取多个起点，分配给独立局部搜索实例，再返回种群竞争时。"]
-minimal_wiring = ["from nsgablack.adapters import PoolTaskSpec, RoleSpec", "role = RoleSpec('local', vns_factory, n_units=2, pool_task=PoolTaskSpec(select_refs, steps=5, output='refined'))"]
+minimal_wiring = ["from nsgablack.adapters import PoolTaskSpec, RoleSpec", "role = RoleSpec('local', vns_factory, n_units=2, pool_task=PoolTaskSpec(select_refs, count='all', steps=5, output='refined'))"]
 required_companions = ["tool.pool_task_spec", "tool.solution_pool"]
 config_keys = ["inner", "spec", "role", "worker", "workers", "namespace"]
 example_entry = "python examples/cases/solution_pool/cases/pool_refinement/run_solver.py --check"
@@ -30,11 +30,11 @@ title = "PoolTaskSpec"
 kind = "tool"
 import_path = "nsgablack.adapters:PoolTaskSpec"
 tags = ["core", "solution-pool", "subpool", "role", "refinement"]
-summary = "声明取解函数或子池名、输入模式、每起点更新数、输出子池及请求/阶段；不新建运行循环。"
+summary = "默认母池取解；可指定子池、每实例数量、独立抽样/分区/共享及不足策略，沿用现有角色调度。"
 use_when = ["通过 RoleSpec/StrategySpec 在既有 Router 中装配池任务时。"]
-minimal_wiring = ["from nsgablack.adapters import PoolTaskSpec", "task = PoolTaskSpec('refined', mode='compete', phases=('return',))"]
+minimal_wiring = ["from nsgablack.adapters import PoolTaskSpec", "task = PoolTaskSpec(mode='initialize')", "local = PoolTaskSpec('elite', count='all', steps=5)"]
 required_companions = ["adapter.pool_task", "tool.solution_pool"]
-config_keys = ["select", "mode", "steps", "output", "request_key", "phases"]
+config_keys = ["select", "mode", "steps", "output", "request_key", "phases", "count", "distribution", "on_insufficient", "shuffle"]
 example_entry = "docs/architecture/SOLUTION_POOL_CN.md"
 
 [[entry]]

@@ -231,13 +231,13 @@ def make_vns(unit_id):
 
 local_role = RoleSpec(
     "local", make_vns, n_units=2,
-    pool_task=PoolTaskSpec(choose_seeds, steps=5, output="refined"),
+    pool_task=PoolTaskSpec(choose_seeds, count="all", steps=5, output="refined"),
 )
 ```
 
-Router 自动用 PoolTaskAdapter 包装子实例。每个角色的一次 request 只选择一次，随后按位置分给各实例；每个实例依次处理自己的起点队列。两个角色可以选择同一批 refs，用不同 VNS 参数建立不同 Unit。实例数量表示逻辑搜索状态的数量，不自动等于线程数。
+Router 自动用 PoolTaskAdapter 包装子实例。每个角色的一次 request 只选择和分配一次；每个实例依次处理自己的起点队列。两个角色可以选择同一批 refs，用不同 VNS 参数建立不同 Unit。实例数量表示逻辑搜索状态的数量，不自动等于线程数。
 
-`select` 可以是 `select(control, context) -> Sequence[SolutionRef]` 的具名函数，也可以是已有子池名。具名函数的 module/qualname 进入 checkpoint 配置身份；函数行为或外部配置的等价性仍由装配者保证，不支持用匿名 callable 对象冒充稳定身份。
+`select` 省略时读取母池 main 区域的全部已发布引用，包括未求值的初始化种子；不读取本次尝试的私有草稿。它也可以是 `select(control, context) -> Sequence[SolutionRef]` 的具名函数，或 Router 作用域内的子池名。子池须在实际取解时已存在，不要求早于其上游生产阶段；不存在立即报错。输出子池仍由任务按声明创建。具名函数的 module/qualname 进入 checkpoint 配置身份；函数行为或外部配置的等价性仍由装配者保证，不支持用匿名 callable 对象冒充稳定身份。
 
 三种模式：
 
@@ -245,9 +245,34 @@ Router 自动用 PoolTaskAdapter 包装子实例。每个角色的一次 request
 - `initialize`：选出的引用按既有输入游标交给算法初始化；数量与其 Unit 容量独立。
 - `compete`：送入现有种群的正常成员竞争，不直接覆盖成员。
 
+取多少由 `count` 控制，正整数表示每实例数量，`"all"` 表示完整来源集合。省略时 initialize 使用 Adapter 的 `default_pool_input_count()` 声明，NSGA-II/III 返回自身 population_size，SA/VNS 返回 1；refine 默认一个起点，compete 默认全部。初始化取解数量仍可独立覆盖，比如容量 100 的算法可以 count=120，经环境选择保留 100 个。第三方 Adapter 不声明默认量时须显式 count，不能靠扫描 cfg 字段或类名猜测。
+
+分配由 `distribution` 控制：
+
+- `independent`：每实例分别无放回抽样，允许不同实例使用同一来源；initialize 默认采用此规则。
+- `partition`：整组选出最多 count × 实例数条不同引用，再均分；count="all" 时分摊整个集合。refine/compete 默认采用此规则。
+- `shared`：选出同一组引用，交给每个实例。适合不同 VNS 配置从同一起点比较。
+
+`shuffle=True` 默认随机取解和分配；`shuffle=False` 保留母池/子池/selector 的返回顺序，需要先精修排名靠前的起点时可用。去重仅针对完全相同的 SolutionRef；同值但不同 token，或同 token 的不同版本，不按数值合并。每个算法仍按原提案身份规则产生新提案，不能为槽位编造来源身份。分配 RNG 为包装实例私有，随步骤回滚和 checkpoint 保存。
+
+例如，30 个 GA 群体各需 100 个来源，只需默认初始化装配：
+
+```python
+RoleSpec("ga", ga_factory, n_units=30,
+         pool_task=PoolTaskSpec(mode="initialize"))
+```
+
+若 ga_factory 返回 population_size=100 的 NSGA-II，母池只有 300 个不同候选也能分配：每群内部取得 100 个不同来源，群间允许重叠。3000 个成员位置不要求 3000 个不同源候选。各群拥有独立 Unit，淘汰与变异不修改别群或池中的旧版本。若要求群间互不重叠，设置 distribution="partition"，此时需要 3000 条不同来源引用。
+
+VNS 的默认 PoolTaskSpec() 则为每个实例分配一个起点；显式 count="all" 可将 20 个起点排成队列，交给 4 个实例各处理 5 个，仍然是各自一个当前点。设置 distribution="shared", count=1，可让 4 个实例从同一个来源出发。优质起点排序仍由明确的 selector/比较规则决定，默认取解不暗含“全局最优”或“局部最优已证明”。
+
+候选不足时 `on_insufficient="error"` 默认报出所需数量和实际数量；`"wait"` 在现有调度/尝试预算内等待，不消费分配 RNG；`"available"` 使用现有不同来源，空池则等待。后者需接收算法能处理较小初始批次，NSGA-II/III 已支持。缺失命名子池无论哪种策略都报错。框架不重复引用凑数，也不暗中调用 initializer 补解；补解由已有初始化或生产阶段决定。同一角色各实例的默认取解数量必须一致；不同容量需显式统一 count 或拆成不同角色。
+
 `steps` 只用于 refine，是每个起点的接纳更新数，包含起点基准求值；`steps=2` 即基准加一批邻域。零接纳不推进任务，失败回滚进度，已经发生的评估成本仍计入全局预算。它不是时间上限、总求值次数，也不会绕开 Solver deadline/预算。VNS 的基准通过正常 repair/评估/Bias/准入之后，才允许用它与后续邻域比较。
 
 `output` 收集任务期间送评且被准入的候选，包括起点和没有胜过当前点的试探解。需要精英集合时，由后续选择函数明确筛选，不能把整个结果子池叫作“全部精修最优解”。结果保留自身 token、来源引用与真实原始反馈，不改变源 x 的分数来冒充 y 的结果。
+
+SA/VNS 的当前点持久保存来源记录；Unit 投影和变异草稿复制通过控制面重新绑定该记录，复制本身不生成新身份。真正变异才派生新 token，parent_token 指向当前点，solution_source_ref 保留原始池来源。多实例反馈先按候选的实际绑定取记录，不能把子批次第 0 行当作根批次第 0 行。池任务要求根 Adapter 与池组件均成功恢复；配置不匹配或子状态恢复失败必须传播，即使 checkpoint 插件没有开启全局 strict。
 
 ### 10.3 阶段与返回竞争
 
@@ -263,6 +288,8 @@ ga_role = RoleSpec(
 phase_policy 的局部输入新增 `pool_tasks`，按 `role:unit_id` 提供 request/status/next/count/steps/output 小摘要。它不把候选数组存入共享 context。可以在所有精修实例 done 后进入 return，在种群输入消费完后回到 search。停滞触发仍由既有策略根据指标决定，并不证明局部最优。
 
 默认请求 key 为阶段名，同一 key 完成后不重复启动。需要周期性精修时，`request_key(control, context)` 返回每次触发的新稳定字符串，例如策略维护的触发序号；任务未完成时不被新 key 替换。回调在恢复后应对同一请求产生相同 key，不使用墙钟生成每次不同的 key。
+
+initialize/compete 输入消费完成后，后续调度继续原算法的 propose/update，不每步重抽成员。initialize 未声明 request_key 时只初始化一次，阶段切换也不重新取解；需要再次输入时显式声明新的 request_key。refine 队列完成后等待后续请求或调度到其他角色。
 
 子池名自动位于 Router 路径/名称作用域下，例如 `refinement/refined`；嵌套 Router 加入父 StrategyTask 路径。输入选择、当前结果、尚未消费来源均受保留策略保护。角色原有数值 seeds 对 pool_task 关闭，正式引用是唯一任务输入来源；没有 pool_task 的历史角色仍保留原有调用方式。
 
@@ -282,6 +309,7 @@ SA/VNS 支持逐起点 refine；NSGA-II/III 支持 initialize/compete。其他�
 - `test_pool_search_adapter.py`：200→两个 100 成员种群→停滞唤醒→返回竞争；不同取解配额/种群容量与超额准备；满种群后的部分接纳重试；第二个子更新失败的整组回滚；正式 checkpoint 恢复。
 - `test_solution_pool_retention.py`：多消费者保护、闲置时钟、部分行压缩、输入消费、历史固定、可传输 checkpoint、删除失败重试、步骤回滚、未决围栏与不支持组件拒绝。
 - `test_subpool_tasks.py`：20 起点与两类 VNS、子池提交可见性、任务回滚/零接纳重试、返回种群竞争及正式 checkpoint。
+- `test_pool_task_allocation.py`：母池默认输入、300→30×100、分区/共享、缺失与空子池、不足策略、单解起点与随机分配恢复。
 - 既有 repair、SA、语义候选、评估接纳、步骤事务与 checkpoint 测试确认旧边界仍成立。
 
 实际运行命令与结果统一记录在本轮验收文档；存在测试源码不能单独解释成验证通过。

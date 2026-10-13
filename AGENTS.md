@@ -411,8 +411,10 @@ ProblemRepair 修问题约束；UnitRepair 修算法结构，也可改候选。J
 
 - `store_solutions / read_solutions / propose_solutions`：登记版本、按引用读取、显式生成带源身份的新提案；`solution_pool.select(at=stamp, region=..., stage=...)` 锁定候选来源时点。context 仅传 pool manifest/time/input ID/mode。
 - `pool_input_modes` / `supports_pool_restart` / `restart_search`：Adapter 显式声明池初始化、竞争、搜索重启。不得因实现 Unit 就推断已支持任意交接；PoolSearchAdapter 的接收方须支持 initialize/compete，producer 的重启不重放生命周期。
-- `PoolTaskSpec(select, mode, steps, output, request_key, phases)`：select 为具名函数或 Router 作用域内子池名；refine 逐起点重启独立搜索，initialize/compete 按接收方能力分批输入。steps 含起点基准评估，计算已接纳的更新；全局预算仍归 Solver。SA/VNS 支持 refine，NSGA-II/III 支持 initialize/compete；MOEA/D 子问题比较尚未接入。不得自动推断支持。
+- `PoolTaskSpec(select=None, ...)` 默认读取母池 main 区域的已发布引用（包括初始化种子）。命名输入子池必须在实际取解时存在；不存在报错，不按空池等待。count 为每实例数量或 "all"；initialize 默认数量由 Adapter.default_pool_input_count 声明，NSGA-II/III 默认自身容量；refine 默认每实例一个起点，整批精修须显式 count="all"；compete 默认全部。
+- PoolTaskSpec 的 distribution 默认 initialize=independent、refine/compete=partition，可显式选 shared。每实例内部按精确 SolutionRef 无放回，群间可共享；不按数值去重，不自动生成补足。shuffle 默认 True；on_insufficient 默认 error，可选 wait/available。随机分配在请求开始时确定，队列和独立 RNG 随事务/checkpoint 保存。initialize 完成后继续原算法，默认不因阶段变化重新初始化；再次取解需显式新 request_key。SA/VNS 支持 refine，NSGA-II/III 支持 initialize/compete；MOEA/D 子问题比较尚未接入。
 - VNS 先通过正常 repair/评估/接纳建立起点基准，再比较邻域。子池输出收集被接纳的提案，不保证每一项都是局部改进；接收方重评并自己选择。请求 key 在同次任务中稳定，重复触发使用新 key；phase_policy 的局部 pool_tasks 摘要用于阶段决策，不是共享 context 大对象。
+- SA/VNS 的 Unit 投影与变异草稿复制保留 provenance；变异才派生新 token。多实例反馈优先按实际候选绑定读取，不能把局部行号直接当全局行号。PoolTaskAdapter 启用时根 Adapter 与池均为必须恢复的 checkpoint 组件；禁止跳过坏子状态后继续使用已恢复的池游标。
 - 解池历史数量、编排初始取解配额、各算法 Unit 容量和后代批次大小分别配置。不得要求 `build_solver(config={"population_size": ...})` 统一它们；`PoolSearchSpec.initial_count` 不是池容量，也不须等于接收算法的 `population_size`。
 - `set_solution_pool_retention(PoolRetentionPolicy(...))` 在首次发布前显式启用闲置回收；Adapter 必须声明 `get_solution_pool_roots`，未知组件不得猜测。显式 retain/未消费输入保护值；年龄与引用回滚，物理删除在提交后，失败可重试。压缩不能改存活引用的原始 row/token。旧 manifest 仅在保留窗口或显式 pin 下保证值可读；可传输 checkpoint 自带值，未决 Authority 的 prepared 值闭包须固定到恢复确认。详见解池契约第 9 节。
 - Checkpoint envelope.v2 对实际保存的 payload_bytes 验签后解析；不对语义值重复 pickle 来近似签名，不用重复 payload 建立两个事实源。

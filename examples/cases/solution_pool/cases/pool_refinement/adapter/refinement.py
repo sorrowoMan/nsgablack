@@ -40,7 +40,7 @@ def coarse_vns(unit_id):
 
 
 def build_refinement_adapter():
-    task = PoolTaskSpec(select_twenty, steps=2, output="refined")
+    task = PoolTaskSpec(select_twenty, steps=2, output="refined", count="all")
     return StrategyRouterAdapter(name="refinement", roles=[
         RoleSpec("ga", NSGA2Adapter(population_size=20, offspring_size=20),
                  pool_task=PoolTaskSpec("refined", mode="compete", phases=("return",))),

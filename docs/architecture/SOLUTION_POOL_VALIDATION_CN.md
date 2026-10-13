@@ -140,3 +140,31 @@ Catalog 的 adapter.pool_task/tool.pool_task_spec 在 default 与 framework-core
 独立提交点：nsgablack 运行机制与契约为 `fd49cc47`；BlackBase 组件展示为 `611d385`；示例、Catalog 与本验收记录随后单独提交。没有推送远端。
 
 输出集合包含准入的起点及试探解，不承诺每条都是局部改进。输出子池不再使用后需显式 drop，才解除该集合的回收保护。SA/VNS 已验证此任务入口，NSGA-II/III 声明 initialize/compete；MOEA/D 子问题比较与目标槽位绑定尚未接入，不宣称任意 Adapter 已自动支持。跨 Case 并行和 L0 仍属 BlackBase，本轮没有改 MLBlack。
+
+## 默认取解、群间共享与单解身份（2026-10-13）
+
+本轮把用户讨论的默认行为落实到已有 PoolTaskSpec：省略来源读母池；命名输入子池必须存在；初始化按算法声明数量取解，群间默认独立抽样、允许共享来源，另可选 partition/shared；refine 默认每实例一个起点，整批排队显式 count="all"。不足处理为 error/wait/available，不暗中调用 initializer。初始化完成后继续正常搜索，不随阶段变化重新取解。分配结果及私有 RNG 随既有步骤事务和 checkpoint 保存。
+
+新增测试实际发现并修复两个来源问题：SA/VNS 从 Unit 重新投影候选及变异草稿复制会丢 provenance；VNS 接受子批次反馈时使用局部序号读取全局记录，会把后一个实例绑定到前一个实例。现在保存当前点来源，通过实际候选绑定解析局部反馈；复制不产生身份，变异产生新 token 并保留 parent_token 与 solution_source_ref。恢复后的变异也验证来源及语义 metadata，不按数值相等推断身份。池任务将根 Adapter 与池都列为必需恢复组件，非 strict 插件也不能跳过失配任务。
+
+本轮 **255 项不同测试通过**，不与上一轮 213 项累计：
+
+- 主回归 252 项通过、1 项规模用例单独执行，138.40 秒、5 条测试警告。
+- 300 个同值不同 token 来源，初始化 30 个独立的 100 成员种群，并执行下一次普通搜索：1 项通过，226.47 秒。确认群内来源不重复、群间允许重叠、3000 个成员位置拥有独立 Unit；这是功能测试，不是吞吐或加速基准。
+- 最后补充小 dispatch 预算分三步消费同一初始化分配，以及下一请求缺少输入时等待而不继续旧任务。修正后一并复验 20 项非规模取解测试通过，3.69 秒；其中 18 项与主回归重叠，两项新增。没有重新抽样、重复消费已接纳来源或借旧 done 状态绕过等待。
+
+```powershell
+python -m pytest tests/test_pool_task_allocation.py tests/test_subpool_tasks.py tests/test_pool_search_adapter.py tests/test_solution_pool.py tests/test_solution_pool_retention.py tests/test_sa_adapter.py tests/test_vns_adapter.py tests/test_vns_adapter_warnings.py tests/test_algorithm_units.py tests/test_unit_operator_inputs.py tests/test_strategy_task_contract.py tests/test_proposal_repair.py tests/test_adapter_step_transactions.py tests/test_checkpoint_resume_plugin.py tests/test_runtime_contract_refinement.py tests/test_project_scaffold_registration_guide.py -k 'not 300_candidates' -q --disable-warnings --maxfail=2 --junitxml=artifacts/audit/solution_pool_20261013/allocation_tests.xml
+python -m pytest tests/test_pool_task_allocation.py -k '300_candidates' -q --disable-warnings
+python -m pytest tests/test_pool_task_allocation.py -k 'not 300_candidates' -q --disable-warnings --maxfail=1 --junitxml=artifacts/audit/solution_pool_20261013/allocation_final_tests.xml
+```
+
+21 项取解测试覆盖三种分配、缺失/空子池、等待后补入、数量不足、阶段切换、失败后原分配重试、嵌套同名任务的 RNG 隔离、下一请求 checkpoint 分配一致，以及 SA/VNS 在 initialize/refine 两种模式下恢复后继续变异的完整父身份链。旧 VNS 测试同步为先接纳起点基准，再测试邻域部分接纳；修复测试相应验证未经变异的初始候选。
+
+重新执行严格根目录 Doctor（含 framework-core Catalog）：0 error / 0 warning / 173 info，457 completed、88 skipped，跳过项仍为 61 个未执行 build 的 Case、26 个没有本地 Catalog 的 Case、1 个框架 registry。实际 solution_pool Project 的 --strict --build：0 error / 0 warning / 14 info，24 completed、2 skipped，分别为无本地 TOML 的 Case registry 与本命令未重复开启的全局 Catalog。两种 Catalog profile 均核对 PoolTaskSpec 的 10 个配置字段与 dataclass 完全一致；adapter 可见性及 example 只在 default 出现均通过。
+
+正式 pool_refinement --check 显示 assembly ok，真实组件树包括 Router、NSGA-II、四个 VNS 和各 PoolTaskAdapter。Project 运行 status=ok、exit_code=0：pool_search 7 步/47 次求值，pool_refinement 25 步/280 次求值，均 succeeded。记录：`examples/cases/solution_pool/.blackbase/runs/20261013T073002Z-ddd1b7733d/manifest.json`。L0 仍为每 Case threads=1/workers=1，没有用逻辑实例数冒充并行速度。
+
+原始输出保存在 `artifacts/audit/solution_pool_20261013/` 的 allocation_tests.xml/txt、allocation_root_doctor.json、allocation_case_doctor.json、allocation_case_check.txt、allocation_project_run.txt，生成产物不提交。中文契约、AGENTS、迁移说明、Catalog、API 索引、脚手架提示与正式示例同步；本轮只修改 nsgablack，没有修改 BlackBase/MLBlack 或推送远端。
+
+这是上述默认与已接入算法的闭环。MOEA/D 子问题比较/目标槽位仍需另行接入；没有执行全仓测试、长期存储压力或优化效果基准。旧 PoolTaskAdapter checkpoint 配置身份与新版本不兼容；VNS 已有 pool token 却缺失完整来源记录的旧状态不能补造，见迁移说明。

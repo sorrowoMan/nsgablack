@@ -10,6 +10,8 @@
 
 `adapter/refinement.py` 只定义选择、阶段和装配策略；`PoolTaskAdapter` 承担通用交接、任务进度和恢复。VNS 通过共享管线中的 `ContextGaussianMutation` 消费自己的邻域尺度。`steps` 含基准求值，不是裸评估次数，也不是 Solver 的总代数。
 
+本例显式 `count="all"`，分摊全部 20 个起点。省略 count 的 VNS 任务默认每实例一个起点；省略 select 默认从母池取解。initialize 模式按算法声明数量独立抽样，群间可共享来源；命名输入子池须存在，候选不足默认报错。完整默认与分配规则见解池契约第 10 节。
+
 ```powershell
 python examples/cases/solution_pool/cases/pool_refinement/run_solver.py --check
 python examples/cases/solution_pool/cases/pool_refinement/run_solver.py

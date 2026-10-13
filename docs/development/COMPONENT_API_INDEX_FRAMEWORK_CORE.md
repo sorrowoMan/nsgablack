@@ -1,5 +1,7 @@
 # Unit 接口增量索引
 
+2026-10-13 取解默认：tool.pool_task_spec 增加可省略 select、count/distribution/on_insufficient/shuffle；initialize 默认每群独立抽样，refine 默认每实例一个起点，整批需 count="all"。adapter.nsga2/nsga3 通过 default_pool_input_count 声明初始化默认量；池容量仍独立。上述主干项在 default 同样可发现。
+
 2026-10-13 子池角色任务：`adapter.pool_task` → PoolTaskAdapter，`tool.pool_task_spec` → PoolTaskSpec，均由 nsgablack.adapters 导出，在 default 同样可发现。RoleSpec/StrategySpec 可声明 pool_task；SolutionPool 增加 create_subpool/subpool_refs/add_to_subpool/drop_subpool/read_raw_feedback。正式规则见 [解池契约第 10 节](../architecture/SOLUTION_POOL_CN.md)。example.pool_refinement 仅在 default 可发现。
 
 2026-10-13 解池（`framework-core`）：`adapter.pool_search` → PoolSearchAdapter；`tool.solution_pool / tool.solution_ref / tool.solution_stamp / tool.pool_retention_policy` → nsgablack.core。五项在 default 同样可发现。Solver 自带池并登记 candidates owner；时间、输入游标、保留年龄和 manifest 参与既有事务，闲置回收显式启用，见 [解池契约](../architecture/SOLUTION_POOL_CN.md)。doc/example 仅在 default 出现，不属于主干统计。

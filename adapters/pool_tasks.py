@@ -6,6 +6,8 @@ import hashlib
 from dataclasses import dataclass
 from typing import Callable
 
+import numpy as np
+
 from .role_adapters import RoleAdapter
 from .strategy_task import StrategyTask
 from nsgablack.context_keys import KEY_PHASE, KEY_SEEDS, KEY_TASK, KEY_SOLUTION_INPUT_REF, KEY_SOLUTION_INPUT_MODE
@@ -25,22 +27,27 @@ def _callable_id(value):
 class PoolTaskSpec:
     """Select a subpool once per request and run bounded searches on its refs.
 
-    ``select(control, context)`` returns references, or ``select`` names an
-    existing subpool. Refine runs one seed per independent trajectory; compete
+    Omitted ``select`` reads published mother-pool candidates. A named subpool
+    must exist; a callback returns explicit source refs. ``count`` is per worker,
+    or 'all' for the whole selection. Refine runs one seed per trajectory; compete
     presents the selected batch to a population's ordinary admission/selection.
     ``request_key`` defaults to phase; use a stable explicit key for repeated
     triggers in the same phase. A request never silently replaces active work.
     """
-    select: Callable | str
+    select: Callable | str | None = None
     mode: str = "refine"
     steps: int = 5
     output: str | None = None
     request_key: Callable | None = None
     phases: tuple[str, ...] = ()
+    count: int | str | None = None
+    distribution: str | None = None
+    on_insufficient: str = "error"
+    shuffle: bool = True
 
     def __post_init__(self):
-        if not (callable(self.select) or isinstance(self.select, str) and self.select.strip()):
-            raise TypeError("pool task select must be a selector or subpool name")
+        if self.select is not None and not (callable(self.select) or isinstance(self.select, str) and self.select.strip()):
+            raise TypeError("pool task select must be None, a selector or subpool name")
         if self.mode not in {"refine", "initialize", "compete"}:
             raise ValueError("unknown pool task input mode")
         if type(self.steps) is not int or self.steps < 1:
@@ -51,13 +58,24 @@ class PoolTaskSpec:
             raise TypeError("pool task request_key must be callable")
         if not isinstance(self.phases, tuple) or any(not isinstance(p, str) or not p for p in self.phases):
             raise TypeError("pool task phases must be a tuple of nonempty names")
-        _callable_id(self.select)
+        if self.select is not None:
+            _callable_id(self.select)
         if self.request_key is not None:
             _callable_id(self.request_key)
+        if self.count is not None and not (self.count == "all" or type(self.count) is int and self.count > 0):
+            raise ValueError("pool task count must be a positive integer, 'all', or None")
+        if self.distribution not in {None, "partition", "independent", "shared"}:
+            raise ValueError("unknown pool task distribution")
+        if self.on_insufficient not in {"error", "wait", "available"}:
+            raise ValueError("unknown pool task shortage policy")
+        if type(self.shuffle) is not bool:
+            raise TypeError("pool task shuffle must be a boolean")
 
     def identity(self):
-        return dict(select=_callable_id(self.select), mode=self.mode, steps=self.steps,
+        return dict(select=None if self.select is None else _callable_id(self.select), mode=self.mode, steps=self.steps,
                     output=self.output, phases=self.phases,
+                    count=self.count, distribution=self.distribution,
+                    on_insufficient=self.on_insufficient, shuffle=self.shuffle,
                     request_key=None if self.request_key is None else _callable_id(self.request_key))
 
 
@@ -75,6 +93,7 @@ class PoolTaskAdapter(RoleAdapter):
         self.spec, self.worker, self.workers = spec, worker, workers
         self.namespace = namespace
         self._local = {}
+        self._rng = None
         if type(workers) is not int or workers < 1 or type(worker) is not int or not 0 <= worker < workers:
             raise ValueError("pool task worker must be an index within positive workers")
         if not isinstance(namespace, str) or not namespace:
@@ -89,11 +108,33 @@ class PoolTaskAdapter(RoleAdapter):
             raise ValueError(f"{self.inner.name} does not support pool {mode}")
         if self.spec.mode == "refine" and not self.inner.supports_pool_restart:
             raise ValueError(f"{self.inner.name} does not support explicit search restart")
+        count = self.input_count
+        if count != "all" and (type(count) is not int or count < 1):
+            raise ValueError(f"{self.inner.name} must declare default_pool_input_count or use explicit count")
+
+    @property
+    def input_count(self):
+        if self.spec.count is not None:
+            return self.spec.count
+        if self.spec.mode == "initialize":
+            return self.inner.default_pool_input_count()
+        return 1 if self.spec.mode == "refine" else "all"
+
+    @property
+    def distribution(self):
+        return self.spec.distribution or ("independent" if self.spec.mode == "initialize" else "partition")
 
     def setup(self, control):
         super().setup(control)
         control.solution_pool.checkpoint_required = True
+        # Tasks are serialized inside the root Adapter component. Silently
+        # skipping an invalid child would mismatch the restored pool cursors.
+        control.adapter.checkpoint_required = True
         self._local = {}
+        # fork_rng may cache streams by name. Keep an owned generator even when
+        # nested routers use identical role names; checkpoint restores no aliases.
+        stream = self.create_local_rng(control)
+        self._rng = np.random.default_rng(int(stream.integers(0, 2**63 - 1)))
 
     @property
     def task_status(self):
@@ -115,21 +156,34 @@ class PoolTaskAdapter(RoleAdapter):
             raise ValueError("pool task request key must be a nonempty string")
         if self._local.get("status") == "running" or self._local.get("request") == request:
             return
+        if self.spec.mode == "initialize" and self.spec.request_key is None and self._local.get("status") == "done":
+            return
         digest = hashlib.sha256(request.encode()).hexdigest()[:24]
         base = self._name(f"task:{self.role}/{digest}", context)
-        # One selection shared by all role instances, partitioned by position.
+        # One allocation shared by all role instances, retained across retries.
         # The empty marker records selection completion without retaining values.
         if not pool.has_subpool(base):
-            if isinstance(self.spec.select, str):
+            if self.spec.select is None:
+                refs = pool.select(stage=None)
+            elif isinstance(self.spec.select, str):
                 source = self._name(self.spec.select, context)
-                refs = pool.subpool_refs(source) if pool.has_subpool(source) else ()
+                if not pool.has_subpool(source):
+                    raise ValueError(f"pool task input subpool does not exist: {source}")
+                refs = pool.subpool_refs(source)
             else:
                 refs = tuple(self.spec.select(control, context))
-            if not refs:
+            # Exact versions are the sampling objects; equal numbers never
+            # collapse distinct identities. A worker uses each reference once.
+            refs = tuple(dict.fromkeys(refs))
+            allocations = self._allocate(refs)
+            if allocations is None:
+                # A new request waiting for input must not inherit the previous
+                # request's done status and fall through to ordinary search.
+                self._local = {}
                 return
             pool.create_subpool(base)
-            for i in range(self.workers):
-                pool.create_subpool(f"{base}/{i}", refs[i::self.workers])
+            for i, selected in enumerate(allocations):
+                pool.create_subpool(f"{base}/{i}", selected)
         view = f"{base}/{self.worker}"
         refs = pool.subpool_refs(view)
         self._local = dict(request=request, status="running" if refs else "done",
@@ -142,6 +196,26 @@ class PoolTaskAdapter(RoleAdapter):
             self._local["output"] = output
         if not refs:
             pool.drop_subpool(view)
+
+    def _allocate(self, refs):
+        count, mode = self.input_count, self.distribution
+        needed = 1 if count == "all" else count * (self.workers if mode == "partition" else 1)
+        if len(refs) < needed:
+            if self.spec.on_insufficient == "error":
+                raise ValueError(f"pool task {self.role} needs {needed} distinct references; available={len(refs)}")
+            if self.spec.on_insufficient == "wait" or not refs:
+                return None
+        def sample(limit):
+            indices = self._rng.permutation(len(refs)) if self.spec.shuffle else range(len(refs))
+            return tuple(refs[i] for i in list(indices)[:limit])
+        if mode == "partition":
+            selected = sample(len(refs) if count == "all" else count * self.workers)
+            return tuple(selected[i::self.workers] for i in range(self.workers))
+        limit = len(refs) if count == "all" else count
+        if mode == "shared":
+            selected = sample(limit)
+            return (selected,) * self.workers
+        return tuple(sample(limit) for _ in range(self.workers))
 
     def _context(self, context):
         if self._local.get("passthrough"):
@@ -164,6 +238,9 @@ class PoolTaskAdapter(RoleAdapter):
         self._local["passthrough"] = False
         self._start_request(control, context)
         if self._local.get("status") != "running":
+            if self._local.get("status") == "done" and self.spec.mode in {"initialize", "compete"}:
+                self._local["passthrough"] = True
+                return super().propose(control, context)
             return []
         pool = control.solution_pool
         if self._local["input"] is None:
@@ -228,10 +305,13 @@ class PoolTaskAdapter(RoleAdapter):
 
     def get_state(self):
         return {**super().get_state(), "pool_task": copy.deepcopy(self._local),
+                "pool_task_rng": self._rng_state(),
                 "pool_task_spec": self._identity()}
 
     def _identity(self):
-        return {**self.spec.identity(), "worker": self.worker, "workers": self.workers, "namespace": self.namespace}
+        return {**self.spec.identity(), "worker": self.worker, "workers": self.workers,
+                "namespace": self.namespace, "effective_count": self.input_count,
+                "effective_distribution": self.distribution}
 
     def set_state(self, state):
         if state.get("pool_task_spec") != self._identity():
@@ -239,6 +319,18 @@ class PoolTaskAdapter(RoleAdapter):
         self._validate_local(state["pool_task"])
         super().set_state(state)
         self._local = copy.deepcopy(state["pool_task"])
+        self._restore_rng(state["pool_task_rng"])
+
+    def _rng_state(self):
+        return None if self._rng is None else copy.deepcopy(self._rng.bit_generator.state)
+
+    def _restore_rng(self, state):
+        if state is None:
+            self._rng = None
+        else:
+            rng = np.random.default_rng()
+            rng.bit_generator.state = copy.deepcopy(state)
+            self._rng = rng
 
     @staticmethod
     def _validate_local(state):
@@ -268,12 +360,14 @@ class PoolTaskAdapter(RoleAdapter):
             SolutionRef.from_dict(ref)
 
     def snapshot_step_state(self):
-        return {**super().snapshot_step_state(), "pool_task": copy.deepcopy(self._local)}
+        return {**super().snapshot_step_state(), "pool_task": copy.deepcopy(self._local),
+                "pool_task_rng": self._rng_state()}
 
     def restore_step_state(self, state):
         self._validate_local(state["pool_task"])
         super().restore_step_state(state)
         self._local = copy.deepcopy(state["pool_task"])
+        self._restore_rng(state["pool_task_rng"])
 
 
 __all__ = ["PoolTaskSpec", "PoolTaskAdapter"]

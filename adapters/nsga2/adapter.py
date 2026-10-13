@@ -92,6 +92,9 @@ class NSGA2Adapter(UnitBackedAdapter):
         self._crowding = np.zeros(0, dtype=float)
         self._runtime_projection = {}
 
+    def default_pool_input_count(self):
+        return int(self.cfg.population_size)
+
     def get_solution_pool_roots(self, control):
         if self.population is not None and len(self._population_candidate_tokens) != len(self.population):
             raise ValueError("live NSGA population requires aligned candidate tokens for pool retention")

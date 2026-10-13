@@ -355,12 +355,18 @@ class StrategyRouterAdapter(AlgorithmAdapter):
     @staticmethod
     def _validate_instances(units: List[StrategyInstanceSpec]) -> List[StrategyInstanceSpec]:
         seen = set()
+        task_counts = {}
         for unit in units:
             if unit.adapter is None:
                 raise TypeError("strategy factory returned no Adapter")
             if id(unit.adapter) in seen:
                 raise ValueError("strategy instances must own independent Adapter objects")
             seen.add(id(unit.adapter))
+            if isinstance(unit.adapter, PoolTaskAdapter):
+                count = unit.adapter.input_count
+                if unit.role in task_counts and task_counts[unit.role] != count:
+                    raise ValueError("pool task role instances need equal intake counts; use explicit count or separate roles")
+                task_counts[unit.role] = count
         return units
 
     def _instantiate_role_adapter(

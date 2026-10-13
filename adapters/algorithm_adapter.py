@@ -208,6 +208,13 @@ class AlgorithmAdapter(AdapterBase):
     pool_input_modes = ()
     supports_pool_restart = False
 
+    def default_pool_input_count(self):
+        """Declared initialization intake; None requires an explicit task count.
+
+        This is an algorithm default, not a capacity constraint on SolutionPool.
+        """
+        return None
+
     def restart_search(self, control, context):
         """Explicit semantic restart; no implicit lifecycle/setup replay."""
         raise RuntimeError(f"{self.name} has not declared pool restart support")
@@ -335,6 +342,10 @@ class AlgorithmAdapter(AdapterBase):
         from ..representation.structure_builders import encode_unit_value, decode_unit_value
         spec = mutation_unit_spec(self.get_mutation_operator(control))
         draft = decode_unit_value(encode_unit_value(candidate))
+        lookup = getattr(control, "candidate_provenance_for", None)
+        provenance = lookup(candidate) if callable(lookup) else None
+        if provenance is not None:
+            control.bind_candidate_provenance([draft], [provenance], activate=False)
         kwargs = {} if self.mutation_operator is None else {"operator": self.mutation_operator}
         if spec is not None:
             kwargs["unit"] = spec.capture(self.get_operator_unit())

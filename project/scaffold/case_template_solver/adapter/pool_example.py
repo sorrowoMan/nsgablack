@@ -6,11 +6,14 @@
 活 Unit 和待处理输入会保留；窗口外的旧发布须显式 pin 或保存可传输 checkpoint。
 
 已有多角色装配需要子池精修时，可给 RoleSpec 增加：
-    pool_task=PoolTaskSpec(select_refs, steps=5, output="refined")
+    pool_task=PoolTaskSpec(select_refs, count="all", steps=5, output="refined")
 其中 select_refs(control, context) 返回 SolutionRef 序列，是具名函数。
 返回种群角色使用 PoolTaskSpec("refined", mode="compete", phases=("return",))。
 阶段切换仍由 MultiStrategyConfig.phase_policy/phase_roles 决定。
 完整可运行示例见 examples/cases/solution_pool/cases/pool_refinement。
+省略 select 默认读母池；种群用 PoolTaskSpec(mode="initialize") 即按声明大小独立抽样。
+指定子池必须存在。VNS 默认一个起点；count="all" 用于整批精修。
+distribution 可选 independent/partition/shared；on_insufficient 可选 error/wait/available。
 """
 from nsgablack.adapters import (
     NSGA2Adapter, NSGA3Adapter, PoolSearchAdapter, PoolSearchSpec,

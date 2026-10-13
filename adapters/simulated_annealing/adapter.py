@@ -23,10 +23,12 @@ import math
 import warnings
 
 import numpy as np
+from blackbase.types import UnknownState
 
 from ..unit_backed import UnitBackedAdapter, UnitField, UnitFeedbackField
 from ...representation.structure_builders import TrajectoryUnitBuilder
 from ..algorithm_adapter import AlgorithmAdapter
+from ...core.state.incumbent import CandidateProvenance
 from nsgablack.context_keys import KEY_MUTATION_SIGMA, KEY_TEMPERATURE
 
 
@@ -57,6 +59,9 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
     pool_input_modes = ("initialize",)
     supports_pool_restart = True
 
+    def default_pool_input_count(self):
+        return 1
+
     def restart_search(self, control, context):
         """Reheat and choose a new pool seed; retain the local RNG stream."""
         self.reset_unit()
@@ -74,8 +79,27 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
 
     def _retain_current_token(self, control, candidate):
         tokens = self.candidate_tokens_for(control, (candidate,))
+        self._remember_provenance(control, candidate)
         self.algorithm_unit.candidate_metadata = {
             **self.algorithm_unit.candidate_metadata, "pool_candidate_token": tokens[0]}
+
+    def _remember_provenance(self, control, candidate):
+        inputs = self.member_inputs_for(control, (candidate,))
+        self.algorithm_unit.candidate_metadata = {
+            "semantic_metadata": inputs["candidate_metadata"][0],
+            "candidate_provenance": inputs["candidate_provenance"][0],
+        }
+
+    def _project_current(self, control, *, semantic=False):
+        metadata = self.algorithm_unit.candidate_metadata
+        candidate = np.array(self.current_x, copy=True)
+        if semantic:
+            candidate = UnknownState(candidate, metadata.get("semantic_metadata", {}))
+        record = metadata.get("candidate_provenance")
+        if record is not None:
+            control.bind_candidate_provenance([candidate], [CandidateProvenance.from_dict(record)], activate=False)
+        return candidate
+
     uses_pipeline_mutation = True
     accepts_proposal_replacement = True
     unit_builder_type = TrajectoryUnitBuilder
@@ -131,6 +155,7 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
         self.temperature = float(self.cfg.initial_temperature)
         self.current_x = None
         self.current_score = None
+        self.algorithm_unit.candidate_metadata = {}
         self._rng = self.create_local_rng(control, seed=self.cfg.random_seed)
         self._warn_if_pipeline_has_no_mutator(control)
         self._last_runtime_projection = {}
@@ -173,19 +198,21 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self.current_x is None:
-            self.current_x = np.asarray(control.init_candidate(context))
+            seed = control.init_candidate(context)
+            self.current_x = np.asarray(seed)
+            self._remember_provenance(control, seed)
 
         # Establish the initial/current baseline through the ordinary proposal,
         # repair, budget and admission path. No hidden evaluation in propose.
         if self.current_score is None:
-            return [np.array(self.current_x, copy=True)]
+            return [self._project_current(control, semantic=True)]
 
         ctx = self._build_sa_context(context)
 
         out = []
         for _ in range(max(1, int(self.cfg.batch_size))):
-            cand = self.mutate_candidate(control, self.current_x, ctx)
-            out.append(np.asarray(cand))
+            cand = self.mutate_candidate(control, self._project_current(control), ctx)
+            out.append(cand)
         return out
 
     def _proposal_contexts(self, proposed_count, context):

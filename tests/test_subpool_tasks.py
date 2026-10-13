@@ -54,7 +54,7 @@ def build(*, retention=False):
         adapter.set_mutation_operator(operator)
         return adapter
     ga = NSGA2Adapter(name="ga", population_size=20, offspring_size=20)
-    plan = PoolTaskSpec(top_twenty, steps=2, output="refined")
+    plan = PoolTaskSpec(top_twenty, steps=2, output="refined", count="all")
     router = StrategyRouterAdapter(roles=[
         RoleSpec("ga", ga, pool_task=PoolTaskSpec("refined", mode="compete", phases=("return",))),
         RoleSpec("fine", lambda uid: vns(f"fine_{uid}", "fine"), n_units=2, pool_task=plan),
