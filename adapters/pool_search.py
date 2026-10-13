@@ -105,6 +105,16 @@ class PoolSearchAdapter(CompositeAdapter):
                      if any(origin.owner_path[:len(self._owner_path)] == self._owner_path
                             for origin in StrategyOrigin.from_candidate(state)))
 
+    def get_solution_pool_roots(self, control):
+        # Preparation and return have future consumers, even while no child
+        # Unit has selected those candidates yet.
+        if self.phase == "preparing" or (self.phase == "search" and not self.input_ids):
+            return self._source_refs(control)
+        if self.phase in {"recovery", "return"} and self.recovery_start is not None:
+            return tuple(r for r in self._source_refs(control)
+                         if control.solution_pool.stamp_for(r).sequence > self.recovery_start["sequence"])
+        return ()
+
     def _prepare_inputs(self, control):
         if self.input_ids:
             return

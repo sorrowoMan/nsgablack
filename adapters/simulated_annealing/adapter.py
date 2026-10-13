@@ -65,6 +65,17 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
         self.current_x = None
         self.current_score = None
         self._last_runtime_projection = {}
+
+    def get_solution_pool_roots(self, control):
+        if self.current_x is None:
+            return ()
+        token = self.algorithm_unit.candidate_metadata.get("pool_candidate_token")
+        return control.solution_pool.refs_for_tokens((token,))
+
+    def _retain_current_token(self, control, candidate):
+        tokens = self.candidate_tokens_for(control, (candidate,))
+        self.algorithm_unit.candidate_metadata = {
+            **self.algorithm_unit.candidate_metadata, "pool_candidate_token": tokens[0]}
     uses_pipeline_mutation = True
     accepts_proposal_replacement = True
     unit_builder_type = TrajectoryUnitBuilder
@@ -199,6 +210,7 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
             if len(candidates) != 1:
                 raise ValueError("SA baseline feedback requires exactly one candidate")
             self.current_x = np.array(candidates[0], copy=True)
+            self._retain_current_token(control, candidates[0])
             v0 = float(violations[0]) if violations is not None else 0.0
             self.current_score = self._score(objectives[0], v0)
             self._refresh_runtime_projection(accepted=False)
@@ -222,6 +234,7 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
 
             if accept:
                 self.current_x = np.asarray(cand)
+                self._retain_current_token(control, cand)
                 self.current_score = float(cand_score)
                 accepted_any = True
                 break

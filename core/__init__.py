@@ -54,6 +54,7 @@ from .state.incumbent import CandidateProvenance, IncumbentState, ScalarizationE
 from .state.run_progress import RunProgressState
 from .state.step_outcome import STEP_OUTCOME_STATUSES, StepOutcome
 from .state.solution_pool import SolutionPool, SolutionRef, SolutionStamp
+from .state.pool_retention import PoolRetentionPolicy
 from blackbase.types import SolveQuality, SolverResult
 from ..adapters import AlgorithmAdapter, CompositeAdapter, RoleAdapter, RoleRouterAdapter
 from .interfaces import (
@@ -72,7 +73,7 @@ from .interfaces import (
 )
 
 __all__ = [
-    "SolutionPool", "SolutionRef", "SolutionStamp",
+    "SolutionPool", "SolutionRef", "SolutionStamp", "PoolRetentionPolicy",
     "BlackBoxProblem",
     "EvolutionSolver",
     "SolverBase",

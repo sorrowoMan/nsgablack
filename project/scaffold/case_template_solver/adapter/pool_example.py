@@ -1,4 +1,10 @@
-"""可选的池驱动搜索装配；在 build_solver 中显式选择，不自动启用。"""
+"""可选的池驱动搜索装配；在 build_solver 中显式选择，不自动启用。
+
+需要回收闲置解时，在首次发布前配置：
+    from nsgablack.core import PoolRetentionPolicy
+    solver.set_solution_pool_retention(PoolRetentionPolicy(idle_steps=20))
+活 Unit 和待处理输入会保留；窗口外的旧发布须显式 pin 或保存可传输 checkpoint。
+"""
 from nsgablack.adapters import (
     NSGA2Adapter, NSGA3Adapter, PoolSearchAdapter, PoolSearchSpec,
     SimulatedAnnealingAdapter,

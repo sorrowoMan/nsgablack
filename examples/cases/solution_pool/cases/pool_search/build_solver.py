@@ -4,6 +4,7 @@ from .pipeline import build_pipeline
 from .problem import build_problem
 from .adapter.pool_example import build_pool_adapter
 from nsgablack.project.starter import build_starter_solver
+from nsgablack.core import PoolRetentionPolicy
 
 
 def build_solver(config=None, *, resource_context=None, component_overrides=None):
@@ -16,8 +17,13 @@ def build_solver(config=None, *, resource_context=None, component_overrides=None
     options = dict(config or {})
     overrides = {"adapter": build_pool_adapter(stagnation_steps=1, recovery_steps=2),
         **dict(component_overrides or {})}
-    return build_starter_solver(
+    solver = build_starter_solver(
         problem=build_problem(), pipeline=pipeline,
         max_steps=int(options.get("max_steps", 7)),
         resource_context=resource_context, component_overrides=overrides,
     )
+    solver.set_solution_pool_retention(PoolRetentionPolicy(
+        idle_steps=options.get("pool_idle_steps", 2),
+        retained_publications=options.get("pool_retained_publications", 2),
+    ))
+    return solver

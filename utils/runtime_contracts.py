@@ -49,6 +49,16 @@ def inspect_runtime_contracts(solver):
         issues.append(("solution-pool-store-invalid", "SolutionPool must use the Solver SnapshotStore"))
     if not any(item is pool for item in solver._state_participants):
         issues.append(("solution-pool-participant-missing", "SolutionPool must participate in step rollback"))
+    if isinstance(pool, SolutionPool) and pool.retention_policy is not None:
+        from ..core.state.pool_retention import PoolRetentionPolicy
+        try:
+            if not isinstance(pool.retention_policy, PoolRetentionPolicy):
+                raise TypeError("retention requires PoolRetentionPolicy")
+            for refs in solver.solution_pool_retention_roots().values():
+                for ref in refs:
+                    pool._record(ref, allow_pending=True)
+        except (TypeError, ValueError, AttributeError) as exc:
+            issues.append(("solution-pool-retention-contract-invalid", str(exc)))
     participants = list(solver._state_participants)
     if getattr(solver, "adapter", None) is not None:
         participants.append(solver.adapter)

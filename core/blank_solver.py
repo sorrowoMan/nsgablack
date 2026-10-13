@@ -2806,6 +2806,39 @@ class SolverBase:
             feedback=feedback, provenance=records,
         )
 
+    def set_solution_pool_retention(self, policy):
+        """Configure candidate retention before the first publication."""
+        if policy is not None:
+            self.solution_pool_retention_roots()
+        self.solution_pool.set_retention_policy(policy)
+
+    def solution_pool_retention_roots(self):
+        """Read declared local/child roots without mutating pool lifetime state."""
+        roots = {}
+        seen = set()
+        def visit(adapter, path):
+            if id(adapter) in seen:
+                raise ValueError("pool retention requires distinct, acyclic Adapter owners")
+            seen.add(id(adapter))
+            refs = adapter.get_solution_pool_roots(self)
+            if refs is None:
+                raise ValueError(f"{adapter.name} must declare get_solution_pool_roots before pool retention")
+            roots["adapter/" + "/".join(path)] = tuple(refs)
+            for i, child in enumerate(adapter.step_transaction_children()):
+                visit(child, (*path, f"{i}:{child.name}"))
+        adapter = getattr(self, "adapter", None)
+        if adapter is not None:
+            visit(adapter, (adapter.name,))
+        return roots
+
+    def prepare_solution_pool_retention(self):
+        """Sync explicit Unit roots after update, then stage one retention step."""
+        if self.solution_pool.retention_policy is None:
+            return
+        roots = self.solution_pool_retention_roots()
+        self.solution_pool.replace_roots("adapter/", roots)
+        self.solution_pool.stage_retention_step()
+
     def read_solutions(self, refs, *, allow_pending=False):
         """Resolve references and bind both candidate views to their stable tokens."""
         refs = tuple(refs)

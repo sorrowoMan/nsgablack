@@ -73,3 +73,31 @@ python -m pytest tests/test_solution_pool.py tests/test_pool_search_adapter.py t
 独立 `run_solver.py --check` 显示 assembly ok。重新运行正式 Project，exit=0、status=ok，7 个逻辑步骤、47 次求值；默认取解 6/2 个，NSGA-II/III 容量 4/3，整个准备/搜索/恢复/返回周期成功。记录：`examples/cases/solution_pool/.blackbase/runs/20261013T043409Z-2443867d61/manifest.json`。
 
 本次原始输出：`artifacts/audit/solution_pool_20261013/intake_capacity_tests.xml`、`intake_capacity_root_doctor.json`、`intake_capacity_case_doctor.json`、`intake_capacity_project_run.txt`。支持范围仍是已接入的 NSGA-II/III 与 SA，不能推断任意算法都能从不足数量的种子启动。
+
+## 后续完善：闲置解回收与恢复闭包（2026-10-13）
+
+用户确认长期淘汰且无人使用的解应适当删去，减少存储占用。本次新增 PoolRetentionPolicy：按已提交步数计时，显式消费者和 Adapter 活引用、未消费输入保护候选；部分批次压缩保留原始 row/token，过期行的值与身份索引一起退出。物理删除由共享 SnapshotStore 在提交后执行，失败保留重试队列。默认关闭，正式示例明确开启 2 步闲置与 2 次发布窗口。
+
+历史发布只在保留窗口或显式 pin 下保证其完整值闭包可读；可传输 checkpoint 自带当前候选值。未决 Authority 提交临时固定 prepared manifest 和值，故障回滚后的 GC 不能提前删除恢复所需候选。暂存失败必须发生在登记持久提交意图前，本次修正了这一顺序。
+
+主回归 **187 项通过，70.95 秒，无测试失败**：
+
+```powershell
+python -m pytest tests/test_solution_pool_retention.py tests/test_solution_pool.py tests/test_pool_search_adapter.py tests/test_runtime_contract_refinement.py tests/test_sa_adapter.py tests/test_checkpoint_resume_plugin.py tests/test_adapter_step_transactions.py tests/test_evaluation_evidence_recovery.py tests/test_composite_population_authority.py tests/test_project_scaffold_registration_guide.py -q --disable-warnings --maxfail=2 --junitxml=artifacts/audit/solution_pool_20261013/retention_tests.xml
+```
+
+之后补充一项快照脱离测试，并将压缩索引中的过期 token 一并移除；最后针对受影响的池、跨存储 checkpoint 与签名执行 **58 项复验通过，13.38 秒**。两批测试有重叠，不能相加为 245 项不同测试；合计覆盖 188 项不同用例，未重跑首轮全部 288 项。
+
+```powershell
+python -m pytest tests/test_solution_pool_retention.py tests/test_solution_pool.py tests/test_checkpoint_resume_plugin.py -q --disable-warnings --maxfail=2 --junitxml=artifacts/audit/solution_pool_20261013/retention_final_tests.xml
+```
+
+新增的 19 项保留策略测试覆盖两个消费者共同持有、读操作不续期、memory/file 批次压缩与真实删除、消费前缀不继续保留、发布失败回滚与孤儿清理、历史固定闭包、同名 owner 的多发布独立 lease、删除失败重试、跨存储 checkpoint、未知 Adapter 拒绝、PoolSearch 开启回收后运行/恢复、Authority 确认丢失时的池值保护和只读快照脱离。
+
+扩展状态同时暴露旧 HMAC 的确定性问题：对加载后的语义对象再次 pickle，会因对象 memoization/别名变化得到不同字节。Checkpoint envelope.v2 改为保存一次序列化的 payload_bytes，对实际字节签名、验签后解析；不保留重复 payload。内部 v10 状态 schema 不变。既有 HMAC roundtrip 与新增字节篡改拒绝测试均通过；旧 v1 验签不通过仍拒绝。
+
+最后重新执行本文两条严格 Doctor：根目录 0 error / 0 warning / 171 info，451 completed、86 skipped；新 Project 的 --build 为 0 error / 0 warning / 9 info，18 completed、1 skipped。根目录仍未逐个执行全部 Case 的 --build。Catalog 双 profile 核验七个键：五个主干键在两个 profile 均存在，doc/example 仅在 default；新增 tool.pool_retention_policy 的两个参数与正式 Case 三个配置项保持一致。
+
+独立 Case --check 为 assembly ok。最终正式 Project exit=0、status=ok、Case succeeded，7 个逻辑步骤、47 次求值；L0 仍使用 threads=1/workers=1。记录：`examples/cases/solution_pool/.blackbase/runs/20261013T055520Z-7738e03c0b/manifest.json`。原始输出保存在同一 audit 目录下的 retention_root_doctor.json、retention_case_doctor.json、retention_project_run.txt 与 JUnit 文件，生成产物不提交 Git。
+
+本轮验证没有进行长期规模性能、Redis 后端、MLBlack 内部运行或任意自定义 Adapter 历史引用追踪。它保证声明的池引用与恢复窗口下的回收行为；其他组件的证据/Artifact、算法私有历史和进程 RSS 不在池回收承诺中。源码与文档已同步更新 AGENTS、中文运行契约、Catalog、API 索引、标准脚手架工厂和正式示例。

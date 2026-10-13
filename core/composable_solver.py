@@ -406,15 +406,21 @@ class ComposableSolver(SolverBase):
             self.solution_pool.begin_attempt()
             self.prepare_step_extensions()
             outcome = body()
+            if outcome.committed:
+                # Fallible pool staging must precede the durable disposition
+                # intent; otherwise a failed compaction leaves a commit intent
+                # whose destination can never be reconstructed.
+                self.prepare_solution_pool_retention()
+                self.solution_pool.prepare_publication()
+                self.solution_pool.protect_prepared_publication()
+                pending = self._snapshot_step_transaction.get("pending")
+                if pending is not None:
+                    pending["data"]["solution_pool_ref"] = self.solution_pool.publication_ref()
             outcome = self._finalize_evaluation_disposition(
                 outcome,
                 previous_authority_key=previous_authority_key,
             )
             if outcome.committed:
-                self.solution_pool.prepare_publication()
-                pending = self._snapshot_step_transaction.get("pending")
-                if pending is not None:
-                    pending["data"]["solution_pool_ref"] = self.solution_pool.publication_ref()
                 self.commit_snapshot_step_transaction()
                 self.solution_pool.commit_publication()
                 outcome = self._settle_evaluation_disposition_best_effort(outcome)
@@ -427,9 +433,16 @@ class ComposableSolver(SolverBase):
                 previous_event_id=previous_event_id,
                 previous_authority_key=previous_authority_key,
             )
+            def release_uncommitted_pool_lease():
+                if self.solution_pool.retention_policy is None:
+                    return
+                decision = self.evaluation_evidence_journal.get(str(self._last_evaluation_event_id or ""))
+                if decision is None or decision.phase != "decision_ready":
+                    self.solution_pool.release_prepared_publication()
             _rollback_step_failure(
                 exc,
                 (
+                    ("solution_pool.publication_lease", release_uncommitted_pool_lease),
                     ("adapter", adapter_transaction.rollback),
                     ("solver.state", state_transaction.rollback),
                 ),

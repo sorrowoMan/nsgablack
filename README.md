@@ -4,7 +4,7 @@
 
 当前开发版本：`0.4.1`，依赖 `blackbase>=0.3.26,<0.4.0`。
 
-运行内候选现在由具名、带逻辑时间的 SolutionPool 存放，算法使用候选构建自己的 Unit。正式 PoolSearchAdapter 支持“单解算法准备候选 → 两个独立种群搜索 → 停滞唤醒单解算法 → 返回竞争”；装配、身份与恢复规则见 [解池中文契约](docs/architecture/SOLUTION_POOL_CN.md)，可运行入口见 [标准示例](examples/cases/solution_pool/README.md)。
+运行内候选现在由具名、带逻辑时间的 SolutionPool 存放，算法使用候选构建自己的 Unit。正式 PoolSearchAdapter 支持“单解算法准备候选 → 两个独立种群搜索 → 停滞唤醒单解算法 → 返回竞争”；可显式启用 PoolRetentionPolicy 回收长期无人使用的解，同时保护活 Unit、待处理输入和指定历史发布。装配、身份与恢复窗口见 [解池中文契约](docs/architecture/SOLUTION_POOL_CN.md)，可运行入口见 [标准示例](examples/cases/solution_pool/README.md)。
 
 本轮把 population 与运行状态分别归入 PopulationAuthority / RunSession，统一步骤事务并声明表示、插件参与和最终发布接口；偏好投影保留原始评估证据。自定义组件需要按 [迁移说明](docs/project/RUNTIME_CONTRACT_MIGRATION_CN.md) 更新，具体行为与验证范围见 [运行契约](docs/architecture/RUNTIME_CONTRACTS_CN.md)。
 

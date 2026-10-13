@@ -92,6 +92,11 @@ class NSGA2Adapter(UnitBackedAdapter):
         self._crowding = np.zeros(0, dtype=float)
         self._runtime_projection = {}
 
+    def get_solution_pool_roots(self, control):
+        if self.population is not None and len(self._population_candidate_tokens) != len(self.population):
+            raise ValueError("live NSGA population requires aligned candidate tokens for pool retention")
+        return control.solution_pool.refs_for_tokens(self._population_candidate_tokens)
+
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         from nsgablack.context_keys import KEY_SOLUTION_INPUT_REF
         input_ref = context.get(KEY_SOLUTION_INPUT_REF)

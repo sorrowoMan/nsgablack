@@ -48,9 +48,9 @@ manifest 准备后禁止新增记录或移动输入游标，防止内存索引�
 
 零接纳不新增公开解。部分接纳只发布被接纳的行。`stage="accepted"` 表示步骤中的准入通过，**不表示每个接收算法最终将它保留为种群成员，也不自动证明问题可行**；是否必须可行取决于正式 AcceptancePolicy。可行门始终读 raw_violations。
 
-提交结束时，池索引丢弃本尝试的私有中间记录；最终候选、修复和处置证据仍由既有 Event/Authority Snapshot 留存。池不把每次算子草稿无限加入可查询历史。已经写出的私有 Snapshot 的物理回收遵循共享存储策略，本轮不增加另一套删除器。
+提交结束时，池索引丢弃本尝试的私有中间记录；最终候选、修复和处置证据仍由既有 Event/Authority Snapshot 留存。启用第 9 节的保留策略后，已知私有草稿与失败尝试产生的池 Snapshot 进入可重试清理队列，实际删除仍使用共享 SnapshotStore 的正式接口。
 
-步骤外显式写入的初始化记录可按 `stage="initial"` 查询。默认 `select()` 查询 accepted，以免后续算法误把未经评估的初始化值当成可交接结果。池不是自动 Pareto 档案，默认不去重、不选最优、不自动裁剪历史。
+步骤外显式写入的初始化记录可按 `stage="initial"` 查询。默认 `select()` 查询 accepted，以免后续算法误把未经评估的初始化值当成可交接结果。池不是自动 Pareto 档案，默认不去重、不选最优；历史回收须显式启用保留策略。
 
 ## 5. 评估与偏好不从上一个算法照搬
 
@@ -124,14 +124,82 @@ checkpoint 中的候选值按显式 CandidateBatch codec 搬运到目标 Snapsho
 
 正式恢复先应用池组件并在目标存储创建 manifest，再恢复发布算法 Authority Snapshot，然后应用其余组件；同一池只恢复一次。读取必需池状态失败时，即便 checkpoint 配置非 strict 也不得遗漏它。
 
-共享 context 只增加四个正式轻量键：`solution_pool_ref / solution_pool_time / solution_input_ref / solution_input_mode`。Doctor 检查池存储是否与 Solver 相同、是否登记步骤参与者、候选事实 owner 是否一致，以及 Adapter 的输入/重启声明；不通过执行搜索证明算法正确性。
+共享 context 只增加四个正式轻量键：`solution_pool_ref / solution_pool_time / solution_input_ref / solution_input_mode`。Doctor 检查池存储是否与 Solver 相同、是否登记步骤参与者、候选事实 owner 是否一致，以及 Adapter 的输入/重启声明。启用保留策略时还检查显式活引用声明，缺失报告 `solution-pool-retention-contract-invalid`；不执行搜索或扫描任意对象图证明算法正确性。
 
 支持范围：公共候选控制面池化；NSGA-II/III 声明初始化和竞争输入，SA 声明单解初始化与显式重启。其他 Adapter 自行声明并实现所需模式后才能进入这个特定组合，不能因有 Unit 就推断已支持。种群算法的“两边推进”是同一 Solver 步骤中的组合调度，不承诺 CPU 同时运行；实际并行与多 Case L0 仍由 BlackBase 管理。
 
-## 9. 验收依据
+## 9. 长期无人使用的解如何释放空间
+
+### 9.1 用户只需显式选择保留策略
+
+在标准 `build_solver.py` 完成装配后、首次池发布前配置：
+
+```python
+from nsgablack.core import PoolRetentionPolicy
+
+solver.set_solution_pool_retention(PoolRetentionPolicy(
+    idle_steps=20,              # 连续多少个提交步骤没有消费者持有
+    retained_publications=2,   # 自动保留最近多少次完整池发布
+))
+```
+
+框架默认不启用回收，保持已有历史读取行为。两个参数必须是正整数。它们不限制池容量、不限制初始化解数，也不替算法选择成员。初始生成多少解、以后何时随机注入、串行哪些解继续流转、并行分支如何汇合，仍由初始化与编排策略决定。可以通过已有初始化帮助函数和局部调用 context 表达后续注入，不需要给池增加统一大小。
+
+正式示例显式设置 `idle_steps=2 / retained_publications=2`，便于小规模演示回收；实际项目按历史使用需求选择窗口。存储后端必须提供 SnapshotStore 的正式 read_verified/pin/unpin/delete 行为，失败不得伪装为已经释放空间。
+
+### 9.2 算法淘汰成员与池回收是两件事
+
+Adapter 在 `get_solution_pool_roots(control)` 中返回自己仍会使用的全部 SolutionRef；子 Adapter 由 `step_transaction_children()` 显式遍历。控制面按实例路径同步这些引用。相同类型、多实例、同一 token 的重复成员都不会据数值相等合并；仅持 token 的 Unit 可使用 `pool.refs_for_tokens(tokens)` 保守保留该 token 的所有已接纳版本。
+
+NSGA-II/III 声明当前成员 token，SA 在自身 Unit metadata/codec 保存当前解 token，PoolSearchAdapter 声明待分配或待返回的来源候选。未消费输入引用自动受保护。未知 Adapter 的默认返回 None，启用策略立即失败；明确没有本地引用才返回空序列。继承组件新增历史、精英或待提交候选时，也必须扩展本地声明，框架不会猜未知字段。
+
+其他消费者使用自己的名字显式持有和释放：
+
+```python
+pool.retain("orchestration:future_stage", refs)
+# 更新需要的引用时，再次 retain 会替换该消费者的引用集合。
+pool.release("orchestration:future_stage")
+```
+
+`adapter/` 是控制面专用命名空间。若 A、B 同时引用 x，A 淘汰 x 仅解除 A 的关系，B 的持有仍保留 x。释放全部持有后，x 进入闲置宽限期；新消费者在到期前重新持有即可延续寿命。保存在任意 Python 变量中的 refs 不自动成为强引用；未来确实需要重读必须 retain。来源 provenance 是身份审计信息，不默认要求旧候选值永久可读。
+
+### 9.3 闲置时间按提交步数计算
+
+每个提交步骤在 Adapter.update 后、登记持久提交意图前，同步活引用并暂存一次保留更新。仍被消费者持有的行刷新最后使用步数；连续闲置达到 idle_steps 的行退出当前查询索引。只读日志、select/read 不刷新寿命。失败、拒绝、取消不推进闲置时钟；行、消费者引用、输入游标与时钟一起回滚，已经消耗的评估和预算照旧保留。
+
+未消费输入保护其候选；已消费前缀从输入保留集合移除，exhausted selection ID 仍可查询。这样不会因为一个旧 selection ID 存在而永远保留其全部历史值。
+
+同一批次中仅部分候选闲置时，池写入新的压缩 Snapshot，只保存存活候选和对齐的 metadata、provenance、原始反馈。存活引用的 record_id、原始 row 与 token 均不变；原始 row=50 可以对应压缩值矩阵的第 0 行，调用者不需要重新编号。过期行读取明确失败，不返回另一行或偷偷生成新解。
+
+### 9.4 历史恢复窗口与长期固定引用
+
+退出当前索引与删除物理 Snapshot 分开进行。最近 retained_publications 次发布保留 manifest 及其候选值闭包。若某历史发布需要保留更久，显式固定整组引用：
+
+```python
+saved = pool.pin_publication("analysis_checkpoint")
+# pool.restore_publication(saved) 可重读固定版本。
+pool.unpin_publication("analysis_checkpoint", saved)
+```
+
+不同发布即使使用相同 owner，也拥有独立 lease，解除一个不会解除另一个共享候选的保护。pin/unpin 在步骤外使用，且必须与池身份相符。它们是本地后端 lease，不随跨存储 checkpoint 搬运；pin 的 I/O 失败须传播，使用相同 owner/identity 重试。
+
+**启用回收后，窗口之外且未固定的旧池 manifest 可失效。** 旧 Authority Snapshot 即使还存在，也不保证其指向的池历史永久可读。需要长期保留该恢复根，应固定池发布，或使用携带完整候选值的正式可传输 checkpoint。checkpoint 包含它所捕获的全部当前池值，即使源存储随后清理，仍能恢复到目标存储；checkpoint 捕获时已经退出当前索引的候选不会被补回。
+
+未决持久提交使用内部临时 lease 保护已准备 manifest 和候选值闭包。围栏确认丢失或 destination 暂时不可读时，回滚后的清理不能删掉恢复所需值；只按持久证据恢复并确认进入已提交索引后，才释放该 lease。保留更新或 manifest 准备失败发生在登记提交意图之前，可以正常回滚并清理孤儿快照。
+
+### 9.5 实际删除在提交之后
+
+RuntimeParticipant 的 commit cleanup 使用共享 SnapshotStore.delete 删除已失去所有保护的池快照；不删除其他组件的 Evaluation Event、Authority Snapshot 或 Artifact。删除前验证 scope/schema/摘要和 pool_id，仍 pinned 的快照继续等待。
+
+清理异常留下队列，在后续提交或显式 `pool.collect_garbage()` 时重试；函数报告 deleted/deferred/errors，步骤结果中的 runtime_commit_report 保存清理证据。清理失败不能把已经提交的算法步骤改判为未提交。读取抛错时保守保留；read 返回 None 按正式后端契约表示不存在。失败步骤的已知新快照也进入队列，但回滚过程不执行物理删除。
+
+这是明确引用与窗口下的存储回收，不是任意 Python 引用追踪或内存泄漏证明；底层存储释放不保证进程 RSS 立刻下降。算法私有历史、Context/Snapshot 的其他数据和外部 Provider 活状态仍由其所属组件负责。当前行为测试覆盖 memory/file 后端；Redis 等后端及长期规模性能另需验收。
+
+## 10. 验收依据
 
 - `test_solution_pool.py`：时间截止、身份与版本、私有可见性、失败高水位、游标回滚、可传输恢复和摘要篡改拒绝。
 - `test_pool_search_adapter.py`：200→两个 100 成员种群→停滞唤醒→返回竞争；不同取解配额/种群容量与超额准备；满种群后的部分接纳重试；第二个子更新失败的整组回滚；正式 checkpoint 恢复。
+- `test_solution_pool_retention.py`：多消费者保护、闲置时钟、部分行压缩、输入消费、历史固定、可传输 checkpoint、删除失败重试、步骤回滚、未决围栏与不支持组件拒绝。
 - 既有 repair、SA、语义候选、评估接纳、步骤事务与 checkpoint 测试确认旧边界仍成立。
 
 实际运行命令与结果统一记录在本轮验收文档；存在测试源码不能单独解释成验证通过。

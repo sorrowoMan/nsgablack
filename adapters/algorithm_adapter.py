@@ -506,6 +506,14 @@ class AlgorithmAdapter(AdapterBase):
 
         return ()
 
+    def get_solution_pool_roots(self, control):
+        """Declare all local live pool refs; None means retention is unsupported.
+
+        Children declare their roots separately. External pending tasks can
+        retain explicit refs through SolutionPool.retain(owner, refs).
+        """
+        return None
+
     def snapshot_step_state(self) -> Mapping[str, Any]:
         """Return rollback state without copying the live Python object graph.
 
@@ -1047,6 +1055,9 @@ class CompositeAdapter(AlgorithmAdapter):
 
     def step_transaction_children(self) -> Sequence[AlgorithmAdapter]:
         return tuple(self.adapters)
+
+    def get_solution_pool_roots(self, control):
+        return () if type(self) is CompositeAdapter else None
 
     def snapshot_step_state(self) -> Mapping[str, Any]:
         child_index = {id(adapter): index for index, adapter in enumerate(self.adapters)}

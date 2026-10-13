@@ -411,6 +411,8 @@ ProblemRepair 修问题约束；UnitRepair 修算法结构，也可改候选。J
 - `store_solutions / read_solutions / propose_solutions`：登记版本、按引用读取、显式生成带源身份的新提案；`solution_pool.select(at=stamp, region=..., stage=...)` 锁定候选来源时点。context 仅传 pool manifest/time/input ID/mode。
 - `pool_input_modes` / `supports_pool_restart` / `restart_search`：Adapter 显式声明池初始化、竞争、搜索重启。不得因实现 Unit 就推断已支持任意交接；PoolSearchAdapter 的接收方须支持 initialize/compete，producer 的重启不重放生命周期。
 - 解池历史数量、编排初始取解配额、各算法 Unit 容量和后代批次大小分别配置。不得要求 `build_solver(config={"population_size": ...})` 统一它们；`PoolSearchSpec.initial_count` 不是池容量，也不须等于接收算法的 `population_size`。
+- `set_solution_pool_retention(PoolRetentionPolicy(...))` 在首次发布前显式启用闲置回收；Adapter 必须声明 `get_solution_pool_roots`，未知组件不得猜测。显式 retain/未消费输入保护值；年龄与引用回滚，物理删除在提交后，失败可重试。压缩不能改存活引用的原始 row/token。旧 manifest 仅在保留窗口或显式 pin 下保证值可读；可传输 checkpoint 自带值，未决 Authority 的 prepared 值闭包须固定到恢复确认。详见解池契约第 9 节。
+- Checkpoint envelope.v2 对实际保存的 payload_bytes 验签后解析；不对语义值重复 pickle 来近似签名，不用重复 payload 建立两个事实源。
 
 - `register_state_participant(...)`：接入共享 RuntimeParticipant 事务，不遍历任意对象图。
 - `register_semantic_extension(...)`：提交前扩展和提交后投影；后者失败不得伪装成未提交。
@@ -551,6 +553,9 @@ pytest tests\test_unit_scope_and_member_inputs.py tests\test_unit_preferences.py
 
 # 解池时间、候选身份、200→100×2、部分接纳与正式 checkpoint
 pytest tests\test_solution_pool.py tests\test_pool_search_adapter.py -q
+
+# 解池闲置、共享持有、批次压缩、历史闭包与提交失败恢复
+pytest tests\test_solution_pool_retention.py tests\test_evaluation_evidence_recovery.py tests\test_checkpoint_resume_plugin.py -q
 
 # 仓库体检（严格，包含所发现 Case；显式开启主干 Catalog 审计）
 python -m nsgablack project doctor --path . --strict --catalog-audit --profile framework-core --format json

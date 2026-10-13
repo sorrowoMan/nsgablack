@@ -16,6 +16,10 @@ SolutionPool 在 Solver 构造时先创建，登记 candidates 事实并参与�
 
 提交先暂存池 manifest，将引用写入同一目标 Authority Snapshot，权威围栏成功后才公布池索引；恢复只读已验证的 destination manifest。失败/零接纳不让另一阶段读到草稿；部分接纳结算原输入索引，未接纳初始化种子保留。池不自动借用其他算法的选择反馈或重放评估。详细接口、算法支持范围与存储回收限制见 [解池契约](SOLUTION_POOL_CN.md)。
 
+PoolRetentionPolicy 显式启用无人使用候选的回收，默认关闭；闲置按提交步数计时。Adapter 的本地活引用声明、显式消费者 retain 与未消费输入共同保护候选，淘汰一方成员不能解除另一方持有。部分批次压缩保留原始 row/token，年龄与引用参与回滚；物理删除只在提交之后，失败留队列。最近发布窗口和显式 pin 保留值闭包，窗口外未固定的旧池 manifest 可失效；可传输 checkpoint 自带候选值。未决 Authority 提交临时固定 prepared manifest 及其值，恢复按持久证据确认后释放；池暂存操作须先于持久 disposition intent。
+
+新 checkpoint 外层信封为 nsgablack.checkpoint.envelope.v2：候选和组件状态序列化一次，HMAC 对实际保存的 payload_bytes 签名并先验签、再解析该 payload。禁止用“再次 pickle 语义值”的字节近似原始签名，也不保存另一份可写 payload 副本；内部 checkpoint.v10 语义 schema 不变。旧 v1 保留既有严格验签读取，签名不通过不得绕过。
+
 PopulationAuthority 保存内存 population/objectives/violations、CandidateBatch、token、分区及 Snapshot 发布游标；原 Solver 字段通过 OwnedField 访问同一对象。AuthorityStore 继续负责持久 identity、epoch 与围栏；内存投影不能自行宣布持久提交。
 
 RunSession 保存运行身份、进度、时间、deadline、恢复队列/锁和结果引用。它显式声明 rollback_exempt_reason：失败尝试、耗时与已消耗预算必须保留，逻辑步数仅在提交后推进，结果通过独立 finalization 事务发布。它不参与步骤回滚；误注册时在采集状态前拒绝，避免复制 RLock 等过程内对象。RunProgressState 只序列化可恢复值，锁、回调和单调时钟起点不进入 checkpoint。跨框架恢复调用 submit_restore。

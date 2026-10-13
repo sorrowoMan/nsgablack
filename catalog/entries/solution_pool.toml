@@ -17,7 +17,7 @@ title = "SolutionPool"
 kind = "tool"
 import_path = "nsgablack.core:SolutionPool"
 tags = ["core", "solution-pool", "snapshot", "identity", "transaction"]
-summary = "运行内具名候选区域；不可原位改写版本、逻辑时间、可见性与输入游标由共享 SnapshotStore 承载。"
+summary = "运行内具名候选区域；不可原位改写版本、逻辑时间与输入游标，可选显式引用保护和闲置回收。"
 use_when = ["需要显式存取、共享或按运行时点选择候选，且不传递其他算法的完整 Unit 时。"]
 minimal_wiring = ["pool = solver.solution_pool", "refs = pool.select(at=pool.timestamp, stage='accepted')", "batch = solver.read_solutions(refs)"]
 required_companions = ["SnapshotStore", "CandidateBatch"]
@@ -51,12 +51,25 @@ config_keys = ["run_id", "sequence", "generation", "attempt"]
 example_entry = "python -m nsgablack catalog show tool.solution_stamp"
 
 [[entry]]
+key = "tool.pool_retention_policy"
+title = "PoolRetentionPolicy"
+kind = "tool"
+import_path = "nsgablack.core:PoolRetentionPolicy"
+tags = ["core", "solution-pool", "retention", "snapshot", "recovery"]
+summary = "按已提交步数回收无人持有候选，保留指定发布窗口与显式固定的值闭包；不限制池容量。"
+use_when = ["长期运行需要释放闲置候选存储，且 Adapter 已显式声明全部活引用时。"]
+minimal_wiring = ["from nsgablack.core import PoolRetentionPolicy", "solver.set_solution_pool_retention(PoolRetentionPolicy(idle_steps=20, retained_publications=2))"]
+required_companions = ["tool.solution_pool"]
+config_keys = ["idle_steps", "retained_publications"]
+example_entry = "python -m nsgablack catalog show tool.pool_retention_policy"
+
+[[entry]]
 key = "doc.architecture.solution_pool"
 title = "解池运行契约"
 kind = "doc"
 import_path = "nsgablack.docs_registry:doc_architecture_solution_pool"
 tags = ["doc", "solution-pool", "unit", "composition", "recovery"]
-summary = "池先启动、版本与提案身份、独立取解配额/Unit 容量以及接纳/发布/checkpoint 的正式契约。"
+summary = "池先启动、版本与提案身份、独立配额/容量、闲置回收和历史恢复窗口的正式契约。"
 use_when = ["理解候选存放与算法结构分工，或装配池驱动多算法组合时。"]
 minimal_wiring = ["Open docs/architecture/SOLUTION_POOL_CN.md"]
 config_keys = ["region", "stage", "source", "at"]
@@ -71,5 +84,5 @@ tags = ["example", "solution-pool", "sa", "nsga2", "nsga3", "scaffold"]
 summary = "标准 Project/Case：准备池候选、双种群搜索、停滞重启 SA 与返回竞争，L0 由 Project 授权。"
 use_when = ["需要可运行的池驱动组合起点时。"]
 minimal_wiring = ["python examples/cases/solution_pool/cases/pool_search/run_solver.py --check", "python examples/cases/solution_pool/run_project.py"]
-config_keys = ["max_steps"]
+config_keys = ["max_steps", "pool_idle_steps", "pool_retained_publications"]
 example_entry = "python examples/cases/solution_pool/run_project.py"
