@@ -1,0 +1,3 @@
+name = pool_search
+kind = solver
+framework = nsgablack

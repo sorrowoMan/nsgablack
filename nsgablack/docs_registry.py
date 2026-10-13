@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 doc_authoritative_examples = "docs/project/AUTHORITATIVE_EXAMPLES.md"
+doc_architecture_solution_pool = "docs/architecture/SOLUTION_POOL_CN.md"
 doc_component_examples_index = "docs/indexes/COMPONENT_EXAMPLES_INDEX.md"
 doc_index_manual = "docs/indexes/INDEX_MANUAL.md"
 doc_user_guide_getting_started = "docs/user_guide/getting_started.rst"
@@ -82,4 +83,5 @@ DOC_POINTERS = {
     "doc.guides.decoupling_capabilities": doc_guides_decoupling_capabilities,
     "doc.guides.production_walkthrough": doc_guides_production_walkthrough,
     "doc.cases.production_scheduling": doc_cases_production_scheduling,
+    "doc.architecture.solution_pool": doc_architecture_solution_pool,
 }

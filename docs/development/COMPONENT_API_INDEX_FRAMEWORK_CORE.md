@@ -1,5 +1,7 @@
 # Unit 接口增量索引
 
+2026-10-13 解池（`framework-core`）：`adapter.pool_search` → PoolSearchAdapter；`tool.solution_pool / tool.solution_ref / tool.solution_stamp` → nsgablack.core。四项在 default 同样可发现。Solver 自带池并登记 candidates owner；按运行时点选择不可原位改写版本，输入游标和 manifest 参与既有事务，见 [解池契约](../architecture/SOLUTION_POOL_CN.md)。doc/example 仅在 default 出现，不属于主干统计。
+
 2026-10-12 成员维护（`framework-core`）：`tool.population_change` → `nsgablack.units:PopulationChange`。PopulationUnit 的 initialize_population/apply_selection/replace_evaluated_rows/clear_population 共享成员维护钩子，member_fields 声明行字段；Adapter 保留选择与接受策略。本项也在 default 可发现；见 [Unit 成员维护](../architecture/UNIT_MEMBER_OPERATIONS_CN.md)。
 
 2026-10-09 接纳边界修复（`framework-core`）：UnitRepair.project_admission 在 Adapter disposition 之后执行，draft 已整理为接纳坐标；JointRepairPolicy 的 advance 使用整组规划与决策事务。`repr.unit_trajectory`、`repr.unit_poll`、`repr.unit_parameters`、`repr.unit_region` 对应 Unit schema v2，新增候选反馈依赖版本，旧 v1 不自动恢复。上述主干项在 default 同样可发现；见 [共同修复契约](../architecture/JOINT_REPAIR_CN.md) 与 [Unit 特征维护](../architecture/UNIT_FEATURES_CN.md)。

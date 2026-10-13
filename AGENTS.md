@@ -1,10 +1,11 @@
 ﻿# AGENTS.md
 
-最后按代码核对：2026-10-12。实现契约见 `docs/architecture/RUNTIME_CONTRACTS_CN.md`；源码与文档冲突必须明确报告。
+最后按代码核对：2026-10-13。实现契约见 `docs/architecture/RUNTIME_CONTRACTS_CN.md`；源码与文档冲突必须明确报告。
 
 ## 术语与必须保护的语义
 
 - `Problem` 定义评估含义；问题管线处理候选；算法管线构建 `Unit`；Adapter 操作 Unit 作搜索决策。
+- `SolutionPool` 先于 Adapter 创建，通过共享 SnapshotStore 保存具名区域中的不可原位改写候选版本；SolutionStamp 使用运行身份与逻辑时钟，SolutionRef 同时标识 token 和版本。读取保留身份，新算法提案显式派生身份并保留父 token/源引用，repair 保留提案 token。Unit 保留算法工作投影和关系，不共享一份可写排名。详见 `docs/architecture/SOLUTION_POOL_CN.md`。
 - `Unit` 保留候选本体或候选集合，扩展算法特征、关系与必要状态；构建 Unit 不等于候选编码，取出候选不等于解码。`UnitBinding` 绑定 builder、持久状态 codec 和可选构建 runner；Unit 不拥有 Solver 生命周期或全局授权。
 - 种群 Adapter 决定成员选择或槽位替换，PopulationUnit 统一维护 X/F/V/token 与扩展成员字段。新增行字段声明 member_fields，通过只读 on_members_changed(PopulationChange) 返回更新；change 携带对齐的只读 incoming 候选/反馈/token/metadata/provenance。禁止让 Adapter 猜未知字段的维护语义。详见 `docs/architecture/UNIT_MEMBER_OPERATIONS_CN.md`。
 - `CandidateBatch` 保留语义值、数值矩阵和 token；数值相等不能替代身份。`ProposalRepair` 表达评估前同一提案被修改；`BatchDisposition` 表达预算/接纳筛选。二者不可互相替代。
@@ -212,6 +213,7 @@ Collaboration rules:
 - `representation/`：表示组件与 pipeline
 - `bias/`：偏置系统（algorithmic/domain/surrogate + facade/manager）
 - `core/state/`：优化状态、PopulationAuthority、RunSession、incumbent 与共享协议入口；通用存储实现在 `blackbase.context`。
+- `core/state/solution_pool.py`：运行内候选区域、逻辑时间、输入游标与 manifest；`adapters/pool_search.py`：优化准备/停滞恢复/返回竞争策略，不重造 Project 并行执行或 L0 授权。
 - `blackbase.resources`：共享 L0、Artifact、lease、transport；`blackbase.runtime`：参与者、事务、权威登记与结果发布契约。
 - `core/evidence_semantics.py`：优化证据只读检查；通用状态机由 BlackBase EvaluationEvidenceCoordinator 拥有。
 - `core/semantic_extension.py`：显式步骤扩展；提交后投影失败必须保留提交结果与计数。
@@ -226,12 +228,16 @@ Collaboration rules:
 
 标准步骤尝试：
 
+初始化、变异、修复和控制面候选绑定接入 Solver 自带 SolutionPool。池按引用交换候选，Adapter 按自己的 Unit 建立结构；不把其他 Adapter 的 Unit 当候选解码。
+
 1. Adapter 操作 Unit，通过 `propose(...)` 投影候选；控制面建立 CandidateBatch/token/provenance。
 2. 预算限制评估行数。问题管线 repair 后，控制面生成 `ProposalRepair`，调用 `adapter.on_proposal_repair(...)`，成功后才能开始评估。
 3. Problem 或声明的 Evaluation Provider 求值；Bias 生成选择视图，同时保留 raw feedback。
 4. 持久化 Evaluation Event；接纳策略输出 BatchDisposition，与预算截断组合为一次最终处置，通知 Adapter 对齐待更新结构。
 5. `adapter.update(...)` 只接收被接纳的候选和对应反馈；按权威模式暂存 population/partitions。
 6. 只有 committed 才发布新 Authority Snapshot、推进逻辑步数并通知提交钩子；失败路径恢复事务参与者，已发生的评估和预算消耗保留。
+
+池 accepted 记录与同一 Authority Snapshot 的 manifest 引用一起提交；失败/零接纳不发布新解。部分接纳按原提案索引结算池输入游标，未接纳的初始化种子保留。池内 raw feedback 不自动替代接收算法的重新评估与 Bias 投影。私有草稿在尝试结束后退出池索引，物理 Snapshot 回收由共享存储负责。
 
 关键点：
 
@@ -402,6 +408,9 @@ ProblemRepair 修问题约束；UnitRepair 修算法结构，也可改候选。J
 
 ### 6.5 Solver/Control Plane 关键 API 速查
 
+- `store_solutions / read_solutions / propose_solutions`：登记版本、按引用读取、显式生成带源身份的新提案；`solution_pool.select(at=stamp, region=..., stage=...)` 锁定候选来源时点。context 仅传 pool manifest/time/input ID/mode。
+- `pool_input_modes` / `supports_pool_restart` / `restart_search`：Adapter 显式声明池初始化、竞争、搜索重启。不得因实现 Unit 就推断已支持任意交接；PoolSearchAdapter 的接收方须支持 initialize/compete，producer 的重启不重放生命周期。
+
 - `register_state_participant(...)`：接入共享 RuntimeParticipant 事务，不遍历任意对象图。
 - `register_semantic_extension(...)`：提交前扩展和提交后投影；后者失败不得伪装成未提交。
 - `finalization_hooks = FinalizationHooks(...)`：注册结果准备、暂存、冻结、中止；事务型三钩子必须完整。
@@ -539,6 +548,9 @@ pytest tests\test_unit_member_composition.py tests\test_population_member_operat
 # Unit 成员只读输入、Bias 候选范围、MOEA/D 重复槽位与 SA 基准
 pytest tests\test_unit_scope_and_member_inputs.py tests\test_unit_preferences.py tests\test_sa_adapter.py -q
 
+# 解池时间、候选身份、200→100×2、部分接纳与正式 checkpoint
+pytest tests\test_solution_pool.py tests\test_pool_search_adapter.py -q
+
 # 仓库体检（严格，包含所发现 Case；显式开启主干 Catalog 审计）
 python -m nsgablack project doctor --path . --strict --catalog-audit --profile framework-core --format json
 
@@ -591,6 +603,7 @@ Doctor 的 `--format problem` 仅改变呈现，不筛选级别；未知位置�
 
 - [ ] 是否保持 Problem / Pipeline / Unit / Adapter / Bias / Plugin 职责与共享底座边界
 - [ ] 若改候选管线，是否验证 repair 通知、原提案索引/metadata、Unit 重建或拒绝、复合路由及失败回滚
+- [ ] 若改解池/交接，是否验证时点截止、私有可见性、源 token/版本、部分接纳游标、manifest 与 Authority 同步发布，以及正式 checkpoint 恢复
 - [ ] 若改 Bias/接纳，是否验证选择软化不能绕过 raw 可行性门，以及证据 Snapshot 与准入结果一致
 - [ ] 是否避免大对象直写 context（改为 snapshot + ref）
 - [ ] 若改评估链，是否验证单点/批量/插件短路三路径

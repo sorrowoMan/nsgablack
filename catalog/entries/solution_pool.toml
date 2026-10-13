@@ -1,0 +1,75 @@
+[[entry]]
+key = "adapter.pool_search"
+title = "PoolSearchAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:PoolSearchAdapter"
+tags = ["adapter", "core", "solution-pool", "composition", "stagnation"]
+summary = "池驱动优化组合：单解准备候选、独立种群搜索、停滞唤醒与返回竞争；使用既有 Solver 事务。"
+use_when = ["需要按候选来源时点组合单解与种群算法，同时保持各 Unit 私有状态时。"]
+minimal_wiring = ["from nsgablack.adapters import PoolSearchAdapter, PoolSearchSpec", "adapter = PoolSearchAdapter(producer, [PoolSearchSpec(population_a, 100), PoolSearchSpec(population_b, 100)])"]
+required_companions = ["tool.solution_pool", "adapter.sa", "adapter.nsga2"]
+config_keys = ["producer", "searches", "stagnation_steps", "recovery_steps", "restart_recovery", "metric", "recovery_selector"]
+example_entry = "python examples/cases/solution_pool/run_project.py"
+
+[[entry]]
+key = "tool.solution_pool"
+title = "SolutionPool"
+kind = "tool"
+import_path = "nsgablack.core:SolutionPool"
+tags = ["core", "solution-pool", "snapshot", "identity", "transaction"]
+summary = "运行内具名候选区域；不可原位改写版本、逻辑时间、可见性与输入游标由共享 SnapshotStore 承载。"
+use_when = ["需要显式存取、共享或按运行时点选择候选，且不传递其他算法的完整 Unit 时。"]
+minimal_wiring = ["pool = solver.solution_pool", "refs = pool.select(at=pool.timestamp, stage='accepted')", "batch = solver.read_solutions(refs)"]
+required_companions = ["SnapshotStore", "CandidateBatch"]
+config_keys = ["region", "stage", "source", "at", "limit"]
+example_entry = "python -m nsgablack catalog show tool.solution_pool"
+
+[[entry]]
+key = "tool.solution_ref"
+title = "SolutionRef"
+kind = "tool"
+import_path = "nsgablack.core:SolutionRef"
+tags = ["solution-pool", "candidate", "identity", "version"]
+summary = "同时定位候选身份和池记录版本的值引用；不以数值相等反查身份。"
+use_when = ["在多个算法间传递明确的候选来源版本时。"]
+minimal_wiring = ["refs = solver.store_solutions(candidate_batch)", "batch = solver.read_solutions(refs)"]
+required_companions = ["tool.solution_pool"]
+config_keys = ["pool_id", "record_id", "row", "candidate_token"]
+example_entry = "python -m nsgablack catalog show tool.solution_ref"
+
+[[entry]]
+key = "tool.solution_stamp"
+title = "SolutionStamp"
+kind = "tool"
+import_path = "nsgablack.core:SolutionStamp"
+tags = ["solution-pool", "logical-time", "run", "recovery"]
+summary = "运行身份与池逻辑序号定义可见截止点；失败后保留时钟高水位，墙钟不参与排序。"
+use_when = ["锁定串行、恢复或融合的候选来源时点时。"]
+minimal_wiring = ["stamp = solver.solution_pool.timestamp", "refs = solver.solution_pool.select(at=stamp)"]
+required_companions = ["tool.solution_pool"]
+config_keys = ["run_id", "sequence", "generation", "attempt"]
+example_entry = "python -m nsgablack catalog show tool.solution_stamp"
+
+[[entry]]
+key = "doc.architecture.solution_pool"
+title = "解池运行契约"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_architecture_solution_pool"
+tags = ["doc", "solution-pool", "unit", "composition", "recovery"]
+summary = "池先启动、版本与提案身份、200→100×2 以及接纳/发布/checkpoint 的正式契约。"
+use_when = ["理解候选存放与算法结构分工，或装配池驱动多算法组合时。"]
+minimal_wiring = ["Open docs/architecture/SOLUTION_POOL_CN.md"]
+config_keys = ["region", "stage", "source", "at"]
+example_entry = "docs/architecture/SOLUTION_POOL_CN.md"
+
+[[entry]]
+key = "example.solution_pool"
+title = "Pool Search Prepare / Recover / Return"
+kind = "example"
+import_path = "examples.cases.solution_pool.cases.pool_search.build_solver:build_solver"
+tags = ["example", "solution-pool", "sa", "nsga2", "nsga3", "scaffold"]
+summary = "标准 Project/Case：准备池候选、双种群搜索、停滞重启 SA 与返回竞争，L0 由 Project 授权。"
+use_when = ["需要可运行的池驱动组合起点时。"]
+minimal_wiring = ["python examples/cases/solution_pool/cases/pool_search/run_solver.py --check", "python examples/cases/solution_pool/run_project.py"]
+config_keys = ["population_size", "max_steps"]
+example_entry = "python examples/cases/solution_pool/run_project.py"

@@ -1,0 +1,17 @@
+[[entry]]
+key = "project.adapter.pool_search"
+title = "PoolSearchAdapter"
+kind = "adapter"
+import_path = "adapter.pool_example:PoolSearchAdapter"
+tags = ["project", "solution-pool", "composition"]
+summary = "SA 准备候选、NSGA-II/III 独立搜索、停滞恢复与返回竞争。"
+context_requires = ["solution_pool_time"]
+context_provides = ["phase", "task", "solution_input_ref", "solution_input_mode"]
+context_mutates = []
+context_cache = []
+context_notes = ["子调用使用 StrategyTask 与时间固定的池输入，不共享可写 Unit。"]
+use_when = ["需要可恢复的准备/搜索/恢复/返回阶段时。"]
+minimal_wiring = ["from .adapter.pool_example import build_pool_adapter", "adapter = build_pool_adapter(4, stagnation_steps=1, recovery_steps=2)"]
+required_companions = []
+config_keys = ["population_size", "stagnation_steps", "recovery_steps"]
+example_entry = "python examples/cases/solution_pool/cases/pool_search/run_solver.py --check"

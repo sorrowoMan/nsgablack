@@ -1,5 +1,7 @@
 # Unit 接口增量索引
 
+2026-10-13 解池（`default`）：新增主干 `adapter.pool_search` 和 `tool.solution_pool / tool.solution_ref / tool.solution_stamp`；新增 `doc.architecture.solution_pool` 与 `example.solution_pool`。前四项在 framework-core 同样可发现；后两项仅在 default。见 [解池契约](../architecture/SOLUTION_POOL_CN.md) 与 [标准 Project](../../examples/cases/solution_pool/README.md)。
+
 2026-10-12 成员维护（`default`）：`tool.population_change` → `nsgablack.units:PopulationChange`。PopulationUnit 的 initialize_population/apply_selection/replace_evaluated_rows/clear_population 共享成员维护钩子，member_fields 声明行字段；Adapter 保留选择与接受策略。本项也在 framework-core 可发现；见 [Unit 成员维护](../architecture/UNIT_MEMBER_OPERATIONS_CN.md)。
 
 2026-10-09 接纳边界修复（`default`）：UnitRepair.project_admission 在 Adapter disposition 之后执行，draft 已整理为接纳坐标；JointRepairPolicy 的 advance 使用整组规划与决策事务。`repr.unit_trajectory`、`repr.unit_poll`、`repr.unit_parameters`、`repr.unit_region` 对应 Unit schema v2，新增候选反馈依赖版本，旧 v1 不自动恢复。这些主干项也在 framework-core 可发现；见 [共同修复契约](../architecture/JOINT_REPAIR_CN.md) 与 [Unit 特征维护](../architecture/UNIT_FEATURES_CN.md)。

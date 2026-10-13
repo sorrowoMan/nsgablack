@@ -606,9 +606,15 @@ def _check_class_state_recovery_declaration(
     add: Callable[[List[DoctorDiagnostic], str, str, str, Path | None], None],
     state_recovery_levels: Set[str],
     enforce_population_authority: bool = True,
+    contract_node: ast.ClassDef | None = None,
 ) -> None:
-    has_get_state = _class_defines_method(class_node, "get_state")
-    has_set_state = _class_defines_method(class_node, "set_state")
+    # A local override starts this check; inherited methods and declarations
+    # are then resolved with the same static C3 rules as context contracts.
+    if not (_class_defines_method(class_node, "get_state") or _class_defines_method(class_node, "set_state")):
+        return
+    effective = class_node if contract_node is None else contract_node
+    has_get_state = _class_defines_method(effective, "get_state")
+    has_set_state = _class_defines_method(effective, "set_state")
     if not (has_get_state or has_set_state):
         return
 
@@ -624,7 +630,7 @@ def _check_class_state_recovery_declaration(
             path,
         )
 
-    values = _iter_class_attr_values(class_node, "state_recovery_level")
+    values = _iter_class_attr_values(effective, "state_recovery_level")
     if not values:
         add(
             diags,
@@ -668,7 +674,7 @@ def _check_class_state_recovery_declaration(
         if level != "L2" or not has_get_state or not enforce_population_authority:
             continue
         population_modes = _iter_class_attr_values(
-            class_node,
+            effective,
             "population_state_mode",
         )
         if not population_modes:
@@ -708,7 +714,7 @@ def _check_class_state_recovery_declaration(
         missing = sorted(
             method
             for method in required
-            if not _class_defines_method(class_node, method)
+            if not _class_defines_method(effective, method)
         )
         if missing:
             add(
@@ -790,8 +796,12 @@ def check_contract_source(
             for class_node in class_nodes:
                 if not _is_component_class(class_node):
                     continue
-                inherited = resolver.declarations(py_file, class_node, _CONTRACT_KEYS)
-                declared_names = {name for name in inherited}
+                recovery_keys = {"state_recovery_level", "population_state_mode", "get_state", "set_state",
+                                 "get_population_partitions", "set_population_partitions",
+                                 "get_population_snapshot", "set_population_snapshot",
+                                 "get_population_candidate_tokens", "set_population_candidate_tokens"}
+                inherited = resolver.declarations(py_file, class_node, _CONTRACT_KEYS | recovery_keys)
+                declared_names = {name for name in inherited if name in _CONTRACT_KEYS or name == "get_context_contract"}
                 effective = ast.ClassDef(name=class_node.name, bases=class_node.bases,
                     keywords=class_node.keywords, body=list(inherited.values()), decorator_list=[])
                 _check_class_metrics_fallback_literal(class_node, py_file, diags, strict=bool(strict), add=add)
@@ -807,6 +817,7 @@ def check_contract_source(
                     add=add,
                     state_recovery_levels=state_recovery_levels,
                     enforce_population_authority=folder_name in {"adapter", "adapters"},
+                    contract_node=effective,
                 )
                 if not declared_names:
                     add(

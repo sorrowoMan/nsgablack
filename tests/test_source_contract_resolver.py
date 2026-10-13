@@ -57,3 +57,36 @@ def test_inconsistent_c3_does_not_invent_contract(tmp_path):
         "class X:\n    context_requires = ('phase',)\nclass Y: pass\n"
         "class A(X, Y): pass\nclass B(Y, X): pass\nclass Child(A, B): pass\n", encoding="utf-8")
     assert resolve(path, "Child") == {}
+
+
+def test_doctor_l2_accepts_inherited_partition_restore_and_rejects_shadowing(tmp_path):
+    from nsgablack.project import run_project_doctor
+    folder = tmp_path / "adapters"
+    folder.mkdir()
+    path = folder / "inherited.py"
+    source = (
+        "class ParentAdapter:\n"
+        "    state_recovery_level = 'L2'\n"
+        "    population_state_mode = 'partitioned'\n"
+        "    context_requires = context_provides = context_mutates = context_cache = ()\n"
+        "    context_notes = 'source-only inheritance test'\n"
+        "    def get_state(self): return {}\n"
+        "    def set_state(self, state): pass\n"
+        "    def get_population_partitions(self): return ()\n"
+        "    def set_population_partitions(self, values): return True\n"
+        "class ChildAdapter(ParentAdapter):\n"
+        "    def get_state(self): return super().get_state()\n"
+    )
+    path.write_text(source, encoding="utf-8")
+    report = run_project_doctor(tmp_path, strict=True)
+    assert not any(d.code.startswith("l2-population-authority") or d.code == "state-roundtrip-asymmetric"
+                   for d in report.diagnostics)
+    path.write_text(source + "    set_population_partitions = None\n", encoding="utf-8")
+    report = run_project_doctor(tmp_path, strict=True)
+    assert any(d.code == "l2-population-authority-incomplete" for d in report.diagnostics)
+    without_context = source.replace(
+        "    context_requires = context_provides = context_mutates = context_cache = ()\n", ""
+    ).replace("    context_notes = 'source-only inheritance test'\n", "")
+    path.write_text(without_context, encoding="utf-8")
+    report = run_project_doctor(tmp_path, strict=True)
+    assert any(d.code == "class-contract-missing" for d in report.diagnostics)

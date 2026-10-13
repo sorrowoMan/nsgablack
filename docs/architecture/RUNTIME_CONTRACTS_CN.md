@@ -1,6 +1,6 @@
 # 运行所有权与显式扩展契约
 
-最后按代码核对：2026-10-09。本文描述当前实现，验证范围见 [验收记录](../development/RUNTIME_REFINEMENT_VALIDATION_CN.md)。
+最后按代码核对：2026-10-13。本文描述当前实现；解池本轮验证见 [解池验收](SOLUTION_POOL_VALIDATION_CN.md)，其余边界验证见 [验收记录](../development/RUNTIME_REFINEMENT_VALIDATION_CN.md)。
 
 ## 保留的主线
 
@@ -9,6 +9,10 @@ Problem 定义问题；问题管线处理候选；算法管线构建 Unit；Adap
 必须保护候选值与身份分离、活状态与持久数据引用分离、部分接纳显式成值、Unit 按绑定 codec 恢复。Unit 可以提供结构操作，不能拥有第二套求解生命周期。关于“唯一”“最原创”等研究主张需要比较研究，不能由实现核对推导。
 
 ## 权威与事务
+
+SolutionPool 在 Solver 构造时先创建，登记 candidates 事实并参与共享步骤事务；大值仍由 BlackBase SnapshotStore 保存。池保存不可原位改写的候选版本、运行时点和输入游标；Unit 保存本算法关系与工作投影。新算法提案使用显式派生 token 并保留源 SolutionRef；读取不换身份，repair 同一提案保持 token。不是为每个成员槽位编造身份。
+
+提交先暂存池 manifest，将引用写入同一目标 Authority Snapshot，权威围栏成功后才公布池索引；恢复只读已验证的 destination manifest。失败/零接纳不让另一阶段读到草稿；部分接纳结算原输入索引，未接纳初始化种子保留。池不自动借用其他算法的选择反馈或重放评估。详细接口、算法支持范围与存储回收限制见 [解池契约](SOLUTION_POOL_CN.md)。
 
 PopulationAuthority 保存内存 population/objectives/violations、CandidateBatch、token、分区及 Snapshot 发布游标；原 Solver 字段通过 OwnedField 访问同一对象。AuthorityStore 继续负责持久 identity、epoch 与围栏；内存投影不能自行宣布持久提交。
 

@@ -136,7 +136,8 @@ class SourceContractResolver:
         merged = {}
         for _, owner in reversed(lineage):
             for item in owner.body:
-                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == "get_context_contract":
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
+                        item.name == "get_context_contract" or item.name in keys):
                     merged[item.name] = item
                 elif isinstance(item, (ast.Assign, ast.AnnAssign)):
                     targets = item.targets if isinstance(item, ast.Assign) else (item.target,)
