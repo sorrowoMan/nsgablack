@@ -1,5 +1,7 @@
 # Unit 接口增量索引
 
+2026-10-13 子池角色任务：新增 `adapter.pool_task` / `tool.pool_task_spec`（framework-core 同样可发现），以及 `example.pool_refinement`（仅 default）。RoleSpec/StrategySpec 的 pool_task 使用既有 Router；SolutionPool 提供引用子池与原始反馈查询。见 [解池契约第 10 节](../architecture/SOLUTION_POOL_CN.md) 与 [GA/VNS Case](../../examples/cases/solution_pool/cases/pool_refinement/README.md)。
+
 2026-10-13 解池（`default`）：新增主干 `adapter.pool_search` 和 `tool.solution_pool / tool.solution_ref / tool.solution_stamp / tool.pool_retention_policy`；新增 `doc.architecture.solution_pool` 与 `example.solution_pool`。前五项在 framework-core 同样可发现；后两项仅在 default。PoolRetentionPolicy 显式回收闲置行，保护活引用与历史发布闭包。见 [解池契约](../architecture/SOLUTION_POOL_CN.md) 与 [标准 Project](../../examples/cases/solution_pool/README.md)。
 
 2026-10-12 成员维护（`default`）：`tool.population_change` → `nsgablack.units:PopulationChange`。PopulationUnit 的 initialize_population/apply_selection/replace_evaluated_rows/clear_population 共享成员维护钩子，member_fields 声明行字段；Adapter 保留选择与接受策略。本项也在 framework-core 可发现；见 [Unit 成员维护](../architecture/UNIT_MEMBER_OPERATIONS_CN.md)。

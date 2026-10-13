@@ -32,11 +32,14 @@ L0: Dict[str, Any] = {
 STAGES: List[Dict[str, Any]] = [
     {
         "name": "stage_1",
-        "cases": ["pool_search"],
+        "cases": ["pool_search", "pool_refinement"],
         "policy": "serial",
         # Optional per-case override. The project L0 allocator is still the
         # only place that grants a ResourceContext.
-        "resource_requests": {"pool_search": {"threads": 1, "gpus": 0, "backend": "local"}},
+        "resource_requests": {
+            "pool_search": {"threads": 1, "gpus": 0, "backend": "local"},
+            "pool_refinement": {"threads": 1, "gpus": 0, "backend": "local"},
+        },
     },
 ]
 

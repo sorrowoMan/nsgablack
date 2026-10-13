@@ -4,6 +4,13 @@
     from nsgablack.core import PoolRetentionPolicy
     solver.set_solution_pool_retention(PoolRetentionPolicy(idle_steps=20))
 活 Unit 和待处理输入会保留；窗口外的旧发布须显式 pin 或保存可传输 checkpoint。
+
+已有多角色装配需要子池精修时，可给 RoleSpec 增加：
+    pool_task=PoolTaskSpec(select_refs, steps=5, output="refined")
+其中 select_refs(control, context) 返回 SolutionRef 序列，是具名函数。
+返回种群角色使用 PoolTaskSpec("refined", mode="compete", phases=("return",))。
+阶段切换仍由 MultiStrategyConfig.phase_policy/phase_roles 决定。
+完整可运行示例见 examples/cases/solution_pool/cases/pool_refinement。
 """
 from nsgablack.adapters import (
     NSGA2Adapter, NSGA3Adapter, PoolSearchAdapter, PoolSearchSpec,

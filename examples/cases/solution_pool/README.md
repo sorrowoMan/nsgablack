@@ -2,6 +2,8 @@
 
 标准 Project → Case → Scaffold 示例。Project 负责 L0，Case 使用正式 ComposableSolver/PoolSearchAdapter，不自行运行第二套循环。
 
+Project 现在按顺序运行两个独立 Case：本文下面介绍 `pool_search`；新增 [pool_refinement](cases/pool_refinement/README.md) 演示 20 起点、两类四实例 VNS 子池精修及 NSGA-II 返回竞争，默认 25 步。两者独立创建运行池，不共享另一 Case 的 Unit。
+
 组件：PlateauProblem；UniformInitializer/GaussianMutation/ClipRepair；SA producer；NSGA-II 和 NSGA-III 两个独立种群；Solver 自带 SolutionPool。未装额外 Bias、Plugin 或 Evaluation Provider。
 
 默认 SA 准备 8 个接纳候选：NSGA-II 取 6 个、选择保留 4 个；NSGA-III 取 2 个，后续搜索扩充到自身容量 3。在平坦目标区间触发停滞，SA 重启并搜索两个提交步骤，返回候选分别参与种群选择。7 个逻辑步骤覆盖一个完整周期。平坦问题用于稳定演示编排，不能据此声称算法获得性能优势或跳出了局部最优。
