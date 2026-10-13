@@ -2,7 +2,7 @@
 
 日期：2026-10-13。仓库：nsgablack；共享 Snapshot/事务继续使用 BlackBase，本轮不修改共享底座或 MLBlack。
 
-结果：**288 项不同的相关测试通过；仓库严格 Doctor 和新 Case 装配 Doctor 均为 0 error / 0 warning；正式 Project 运行成功。** 这是指定边界的实现与行为验收，不是算法优越性或任意组件组合的证明。
+首轮结果：**288 项不同的相关测试通过；仓库严格 Doctor 和新 Case 装配 Doctor 均为 0 error / 0 warning；正式 Project 运行成功。** 以下首轮记录对应最初示例版本；用户指出取解配额与容量的耦合后，追加修改与实际复验见文末。两轮都是指定边界的实现与行为验收，不是算法优越性或任意组件组合的证明。
 
 主要源码：SolutionPool；Solver 候选帮助函数与共享步骤事务；PoolSearchAdapter；NSGA-II/III 池输入；SA 显式搜索重启；候选 provenance 与 manifest；Doctor 运行契约检查；Catalog 双 profile；标准 Case 与中文契约。
 
@@ -46,7 +46,7 @@ python examples/cases/solution_pool/run_project.py
 
 独立 Case 显示 `assembly ok`、adapter=pool_search、无额外 Plugin/Provider。Project 运行 exit=0、status=ok，Case succeeded，逻辑步骤/generation=7、求值次数=48，按正式 L0 使用 threads=1、workers=1、无 GPU，resource_binding.current=true。
 
-运行记录：`examples/cases/solution_pool/.blackbase/runs/20261013T033810Z-3046aeb4cd/manifest.json`。小规模示例准备 8 个候选、两边各 4 个；完整 200/100/100 规模来自行为测试，不把小示例冒充该规模的运行结果。
+运行记录：`examples/cases/solution_pool/.blackbase/runs/20261013T033810Z-3046aeb4cd/manifest.json`。首轮版本的小规模示例准备 8 个候选、两边各 4 个；完整 200/100/100 规模来自行为测试，不把小示例冒充该规模的运行结果。当前示例已改成独立配额与容量，见后续复验。
 
 ## 本轮边界
 
@@ -55,3 +55,21 @@ python examples/cases/solution_pool/run_project.py
 池保存公开候选历史，但不自动选优、去重、复用评估或裁剪公开历史。私有草稿退出索引，物理 Snapshot 清理仍由共享存储负责；长期运行的历史/manifest 存储规模和更多后端尚未作性能验收。
 
 标准示例验证阶段和事务；停滞指标不证明局部最优，启动 SA 也不保证获得性能提升。跨 Case 传输、CPU 并行与 L0 继续由 BlackBase 承担，MLBlack 内部运行不在本轮测试范围。
+
+## 后续纠正：取解配额与 Unit 容量独立（2026-10-13）
+
+用户指出 `build_solver(config={"population_size": 100})` 不应限制解池与所有算法。实际核对发现 PoolSearchSpec 曾要求 initial_count 等于 Adapter 的 population_size；NSGA-II/III 初始化又按空槽位裁剪输入，导致超额配额在种群已满后报错。这两处强耦合均已去掉。
+
+池历史、初始取解配额、各算法成员容量和后代批次大小分别配置。NSGA-II/III 首次超额输入通过自己的环境选择选留成员，Unit 只发布一次对齐的成员更新；不足容量时按普通后代搜索扩充。通过准入却落选的候选仍是池历史的一部分，不作为未消费输入重试。脚手架、正式 Case、Catalog、AGENTS 与中文契约已同步。
+
+纠正后的相关回归 **140 项通过，58.04 秒，5 条测试警告**；此前先执行的 31 项属于其中的子集，不重复计数。这不是重新执行首轮全部 288 项。覆盖不同容量与超额/不足配额、producer 超额准备、满种群后的部分接纳重试、异构 checkpoint、扩展成员字段/token/provenance 对齐与单次维护，以及既有 repair、回滚和复合权威。
+
+```powershell
+python -m pytest tests/test_solution_pool.py tests/test_pool_search_adapter.py tests/test_unit_scope_and_member_inputs.py tests/test_population_member_operations.py tests/test_unit_member_composition.py tests/test_proposal_repair.py tests/test_composite_population_authority.py -q --disable-warnings --maxfail=2 --junitxml=artifacts/audit/solution_pool_20261013/intake_capacity_tests.xml
+```
+
+重新执行本文的两条严格 Doctor 命令：根目录 0 error / 0 warning / 171 info，451 completed、86 skipped；新 Project 的 --build 为 0 error / 0 warning / 9 info，case-registry 与 case-build completed。根目录仍未对全部 Case 执行 --build。Catalog 双 profile 的六个键和示例 config_keys 已核验；示例不再列出全局 population_size。
+
+独立 `run_solver.py --check` 显示 assembly ok。重新运行正式 Project，exit=0、status=ok，7 个逻辑步骤、47 次求值；默认取解 6/2 个，NSGA-II/III 容量 4/3，整个准备/搜索/恢复/返回周期成功。记录：`examples/cases/solution_pool/.blackbase/runs/20261013T043409Z-2443867d61/manifest.json`。
+
+本次原始输出：`artifacts/audit/solution_pool_20261013/intake_capacity_tests.xml`、`intake_capacity_root_doctor.json`、`intake_capacity_case_doctor.json`、`intake_capacity_project_run.txt`。支持范围仍是已接入的 NSGA-II/III 与 SA，不能推断任意算法都能从不足数量的种子启动。

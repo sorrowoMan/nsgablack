@@ -93,17 +93,14 @@ class NSGA2Adapter(UnitBackedAdapter):
         self._runtime_projection = {}
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
-        from nsgablack.context_keys import KEY_SOLUTION_INPUT_REF, KEY_SOLUTION_INPUT_MODE
+        from nsgablack.context_keys import KEY_SOLUTION_INPUT_REF
         input_ref = context.get(KEY_SOLUTION_INPUT_REF)
         if input_ref is not None and control.solution_pool.input_remaining(input_ref):
             # Pool bootstrap receives ordinary repair/evaluation/admission. It
             # must not borrow the last sibling's population or bias projection.
-            remaining = control.solution_pool.input_remaining(input_ref)
-            count = (remaining if context.get(KEY_SOLUTION_INPUT_MODE) == "compete" else
-                     min(remaining, int(self.cfg.population_size) - (0 if self.population is None else len(self.population))))
-            if count <= 0:
-                raise ValueError("pool initialization allocation exceeds population capacity")
-            return control.init_population(count, context)
+            # Intake is a proposal count, not a free-slot count. Even a full
+            # Unit can evaluate remaining seeds and select among them.
+            return control.init_population(control.solution_pool.input_remaining(input_ref), context)
         self._ensure_population(control, context)
         if self.population is None or self.population.shape[0] == 0:
             return []
@@ -143,7 +140,14 @@ class NSGA2Adapter(UnitBackedAdapter):
         member_inputs = self.member_inputs_for(control, candidates)
 
         if self.population is None or self.objectives is None or self.violations is None:
-            self.algorithm_unit.initialize_population(cand, obj, vio, candidate_tokens=candidate_tokens, **member_inputs)
+            keep = (self._environmental_select(obj, vio, int(self.cfg.population_size))
+                    if len(cand) > int(self.cfg.population_size) else np.arange(len(cand)))
+            # Select once before installing members, keeping every semantic
+            # input on the same rows. Custom member hooks see one publication.
+            selected_inputs = {key: tuple(rows[i] for i in keep)
+                               for key, rows in member_inputs.items()}
+            self.algorithm_unit.initialize_population(cand[keep], obj[keep], vio[keep],
+                candidate_tokens=tuple(candidate_tokens[i] for i in keep), **selected_inputs)
         else:
             self.algorithm_unit.require_current_feedback()
             merged_obj = np.vstack([self.objectives, obj])

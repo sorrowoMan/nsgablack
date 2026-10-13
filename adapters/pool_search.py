@@ -15,6 +15,8 @@ from nsgablack.context_keys import (
 
 @dataclass(frozen=True)
 class PoolSearchSpec:
+    """Initial pool intake quota, independent of the Adapter's member capacity."""
+
     adapter: AlgorithmAdapter
     initial_count: int
 
@@ -25,15 +27,13 @@ class PoolSearchSpec:
             raise ValueError("pool search initial count must be positive")
         if not {"initialize", "compete"}.issubset(self.adapter.pool_input_modes):
             raise ValueError(f"{self.adapter.name} must declare initialize and compete pool inputs")
-        capacity = getattr(getattr(self.adapter, "cfg", None), "population_size", self.initial_count)
-        if capacity != self.initial_count:
-            raise ValueError("pool initial allocation must match the receiving population capacity")
 
 
 class PoolSearchAdapter(CompositeAdapter):
     """Prepare solutions, run private populations, trigger a recovery trajectory.
 
-    Initial allocations are disjoint by record position. Recovery seeds default
+    Initial allocations are disjoint by record position and do not limit the
+    pool or prescribe child Unit sizes. Recovery seeds default
     to the latest published candidate; a selection callable can replace this.
     Stagnation defaults to min(sum(raw objectives) + 1e6*raw violation), or uses
     a supplied metric. Returning candidates undergo normal reevaluation and

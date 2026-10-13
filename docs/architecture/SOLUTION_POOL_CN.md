@@ -60,7 +60,15 @@ PoolSearchAdapter 的初始化和返回竞争都走正常 Problem/Provider、rep
 
 Unit 偏好继续通过 UnitView/UnitInputSpec 明确绑定实例路径和数据依赖；池里的解不会携带一份可写排名供所有算法共同修改。
 
-## 6. 用户装配：准备 200 个解，两个种群各取 100 个
+## 6. 用户装配：取解配额和算法容量独立
+
+三种数量分别属于不同职责：
+
+- 解池保存运行中的候选历史，没有统一的 `population_size` 上限。
+- `PoolSearchSpec.initial_count` 是这个编排计划为某个算法选择的初始取解数量，不是 Unit 容量。
+- NSGA-II/III 的 `population_size` 是各自算法保留成员的容量；其他算法不必拥有这个参数。
+
+`build_solver()` 不要求传入 `config={"population_size": 100}`。各 Adapter 在装配时配置自身参数，编排独立指定取解配额；两个 Unit 可以容量不同。200→100×2 只是此前讨论的一种计划，也可以准备 200 个候选，A 取 120 个并选留 100 个，B 取 80 个并保留 80 个：
 
 在标准 Case 的 `adapter/` 工厂中装配：
 
@@ -73,8 +81,8 @@ from nsgablack.adapters import (
 adapter = PoolSearchAdapter(
     producer=SimulatedAnnealingAdapter(name="seed_sa", batch_size=199),
     searches=[
-        PoolSearchSpec(NSGA2Adapter(name="population_a", population_size=100), 100),
-        PoolSearchSpec(NSGA3Adapter(name="population_b", population_size=100), 100),
+        PoolSearchSpec(NSGA2Adapter(name="population_a", population_size=100), initial_count=120),
+        PoolSearchSpec(NSGA3Adapter(name="population_b", population_size=80), initial_count=80),
     ],
     stagnation_steps=20,
     recovery_steps=5,
@@ -83,20 +91,22 @@ adapter = PoolSearchAdapter(
 
 `build_solver.py` 把这个 Adapter 与问题和 Pipeline 装到 ComposableSolver 中即可；池由 Solver 先创建，用户无需装第二套存储。脚手架提供可选 `adapter/pool_example.py` 工厂，默认起步算法不会被自动替换。
 
-具体流程：
+上述示例流程：
 
 1. `preparing`：只启动 producer 搜索；已接纳提案进入池，累计数量达到 200 后切换阶段。SA 先评估 1 个基准点，下一次可提出 199 个邻居；“200 个”是已接纳提案数，不是 200 个不同数值，也不承诺固定两步完成。
-2. `search`：锁定 ready_stamp，按池记录顺序分配前 100 和后 100 个引用。分配不重叠；两个种群分别送评并建立自己的 Unit。之后 producer 保持等待、温度不下降，两种群各自搜索。
+2. `search`：锁定 ready_stamp，按池记录顺序分配前 120 和后 80 个引用。分配不重叠；两个算法分别送评，A 按自己的环境选择保留 100 个成员，B 保留 80 个。之后 producer 保持等待、温度不下降，两种群各自搜索。
 3. `recovery`：观测到停滞后显式重启 producer，从池中选择一个种子、重置搜索温度，保留本地 RNG 流；不重放 setup/Plugin 生命周期。仅 producer 搜索指定的已提交步骤数。
 4. `return`：锁定本次恢复后发布的候选，分别提交给两个种群参与正常环境选择；不直接覆盖整个种群。随后回到 search。
 
 默认停滞指标是 `min(sum(raw_objectives) + 1e6 * raw_violation)`；这是一项明确的标量策略，**不是局部最优证明**。多目标、目标量纲不同或追求多样性时，用具名 `metric(feedback)` 显式替换。默认恢复种子是该组合最近发布的一个候选；需要精英、多样性或区域选择时提供 `recovery_selector(pool, stamp)`，当前单解恢复要求恰好一个引用。
 
-`recovery_steps` 包括重启后的基准评估提交。初始分配数量须匹配接收种群容量；未接纳或预算未覆盖的初始化种子保留在输入选择中，下次继续补齐。若条件长期无法满足，依旧需要 max_step_attempts/deadline 保护。
+`recovery_steps` 包括重启后的基准评估提交。未接纳或预算未覆盖的初始化种子保留在输入选择中，下次继续送评；即使种群已满，剩余输入仍可参与成员选择。初始取解超过容量时，NSGA-II/III 在首次安装成员前选择一次，并保持反馈、token、metadata、provenance 对齐；取解少于容量时先建立较小种群，之后由普通后代搜索逐步扩充，不偷偷补充池输入。其他算法按自身结构与输入契约处理，不能据此推断都能从较少种子启动。若准入条件长期无法满足，依旧需要 max_step_attempts/deadline 保护。
+
+这个 PoolSearchAdapter 的准备触发阈值是各 `initial_count` 之和，它是一项具体编排策略，不是池的存储上限。producer 的批次可以超过阈值，多出来的公开候选仍留在池中。后来搜索和恢复还会继续向池发布候选；后代批次大小也由各算法自己决定。
 
 同一组合中可变 Adapter 实例和 name 均不可重复。嵌套调用按正式 StrategyTask 路径识别本组合的池候选；父级不能用全局 context 重新绑定子提案。
 
-正式示例：`examples/cases/solution_pool/cases/pool_search/`。默认采用较小种群以便快速查看阶段；完整 200/100/100 流程由行为测试覆盖。
+正式示例：`examples/cases/solution_pool/cases/pool_search/`。默认准备 8 个候选，A 取 6 个并保留 4 个，B 取 2 个并在后续搜索中扩充到 3 个。脚手架工厂支持显式传入 `producer` 和 `searches`，不使用一个全局大小控制全部算法；完整 200/100/100 流程仍由行为测试覆盖。
 
 ## 7. 输入游标与接纳
 
@@ -104,7 +114,7 @@ adapter = PoolSearchAdapter(
 
 PoolSearchAdapter 在提出候选前后记录消费数量，最终 BatchDisposition 按原提案索引结算输入。未接纳的种子保留在该选择的剩余区；一个子提案批次不混合“池输入”和“新生成候选”，避免无法确定游标对账含义。消费失败不随机补种子。
 
-输入被允许进入搜索与候选是否成为最终成员是两件事：compete 模式按正式准入消费输入，由 Adapter 自己决定最终成员。池不修改该决策。
+输入被允许进入搜索与候选是否成为最终成员是两件事：initialize/compete 模式都按正式准入消费输入，由 Adapter 自己决定最终成员。已经通过准入但在环境选择中落选的候选不作为未消费种子重试，仍保留在池的已接纳历史中。池不修改成员决策。
 
 ## 8. 恢复、存储和可检查范围
 
@@ -121,7 +131,7 @@ checkpoint 中的候选值按显式 CandidateBatch codec 搬运到目标 Snapsho
 ## 9. 验收依据
 
 - `test_solution_pool.py`：时间截止、身份与版本、私有可见性、失败高水位、游标回滚、可传输恢复和摘要篡改拒绝。
-- `test_pool_search_adapter.py`：200→两个 100 成员种群→停滞唤醒→返回竞争；第二个子更新失败的整组回滚；正式 checkpoint 恢复；输入部分接纳。
+- `test_pool_search_adapter.py`：200→两个 100 成员种群→停滞唤醒→返回竞争；不同取解配额/种群容量与超额准备；满种群后的部分接纳重试；第二个子更新失败的整组回滚；正式 checkpoint 恢复。
 - 既有 repair、SA、语义候选、评估接纳、步骤事务与 checkpoint 测试确认旧边界仍成立。
 
 实际运行命令与结果统一记录在本轮验收文档；存在测试源码不能单独解释成验证通过。

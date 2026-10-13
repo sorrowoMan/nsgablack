@@ -410,6 +410,7 @@ ProblemRepair 修问题约束；UnitRepair 修算法结构，也可改候选。J
 
 - `store_solutions / read_solutions / propose_solutions`：登记版本、按引用读取、显式生成带源身份的新提案；`solution_pool.select(at=stamp, region=..., stage=...)` 锁定候选来源时点。context 仅传 pool manifest/time/input ID/mode。
 - `pool_input_modes` / `supports_pool_restart` / `restart_search`：Adapter 显式声明池初始化、竞争、搜索重启。不得因实现 Unit 就推断已支持任意交接；PoolSearchAdapter 的接收方须支持 initialize/compete，producer 的重启不重放生命周期。
+- 解池历史数量、编排初始取解配额、各算法 Unit 容量和后代批次大小分别配置。不得要求 `build_solver(config={"population_size": ...})` 统一它们；`PoolSearchSpec.initial_count` 不是池容量，也不须等于接收算法的 `population_size`。
 
 - `register_state_participant(...)`：接入共享 RuntimeParticipant 事务，不遍历任意对象图。
 - `register_semantic_extension(...)`：提交前扩展和提交后投影；后者失败不得伪装成未提交。

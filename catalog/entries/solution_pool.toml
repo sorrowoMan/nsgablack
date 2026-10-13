@@ -6,7 +6,7 @@ import_path = "nsgablack.adapters:PoolSearchAdapter"
 tags = ["adapter", "core", "solution-pool", "composition", "stagnation"]
 summary = "池驱动优化组合：单解准备候选、独立种群搜索、停滞唤醒与返回竞争；使用既有 Solver 事务。"
 use_when = ["需要按候选来源时点组合单解与种群算法，同时保持各 Unit 私有状态时。"]
-minimal_wiring = ["from nsgablack.adapters import PoolSearchAdapter, PoolSearchSpec", "adapter = PoolSearchAdapter(producer, [PoolSearchSpec(population_a, 100), PoolSearchSpec(population_b, 100)])"]
+minimal_wiring = ["from nsgablack.adapters import PoolSearchAdapter, PoolSearchSpec", "adapter = PoolSearchAdapter(producer, [PoolSearchSpec(population_a, initial_count=120), PoolSearchSpec(population_b, initial_count=80)])"]
 required_companions = ["tool.solution_pool", "adapter.sa", "adapter.nsga2"]
 config_keys = ["producer", "searches", "stagnation_steps", "recovery_steps", "restart_recovery", "metric", "recovery_selector"]
 example_entry = "python examples/cases/solution_pool/run_project.py"
@@ -56,7 +56,7 @@ title = "解池运行契约"
 kind = "doc"
 import_path = "nsgablack.docs_registry:doc_architecture_solution_pool"
 tags = ["doc", "solution-pool", "unit", "composition", "recovery"]
-summary = "池先启动、版本与提案身份、200→100×2 以及接纳/发布/checkpoint 的正式契约。"
+summary = "池先启动、版本与提案身份、独立取解配额/Unit 容量以及接纳/发布/checkpoint 的正式契约。"
 use_when = ["理解候选存放与算法结构分工，或装配池驱动多算法组合时。"]
 minimal_wiring = ["Open docs/architecture/SOLUTION_POOL_CN.md"]
 config_keys = ["region", "stage", "source", "at"]
@@ -71,5 +71,5 @@ tags = ["example", "solution-pool", "sa", "nsga2", "nsga3", "scaffold"]
 summary = "标准 Project/Case：准备池候选、双种群搜索、停滞重启 SA 与返回竞争，L0 由 Project 授权。"
 use_when = ["需要可运行的池驱动组合起点时。"]
 minimal_wiring = ["python examples/cases/solution_pool/cases/pool_search/run_solver.py --check", "python examples/cases/solution_pool/run_project.py"]
-config_keys = ["population_size", "max_steps"]
+config_keys = ["max_steps"]
 example_entry = "python examples/cases/solution_pool/run_project.py"

@@ -14,8 +14,7 @@ def build_solver(config=None, *, resource_context=None, component_overrides=None
         component_overrides=component_overrides,
     )
     options = dict(config or {})
-    overrides = {"adapter": build_pool_adapter(
-        int(options.get("population_size", 4)), stagnation_steps=1, recovery_steps=2),
+    overrides = {"adapter": build_pool_adapter(stagnation_steps=1, recovery_steps=2),
         **dict(component_overrides or {})}
     return build_starter_solver(
         problem=build_problem(), pipeline=pipeline,

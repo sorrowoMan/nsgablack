@@ -23,11 +23,13 @@ class Operator:
         return candidate + 1.
 
 
-def make_solver(count=100, batch_size=199, *, nested=False):
+def make_solver(count=100, batch_size=199, *, nested=False, initial_counts=None, population_sizes=None):
+    initial_counts = (count, count) if initial_counts is None else initial_counts
+    population_sizes = (count, count) if population_sizes is None else population_sizes
     producer = SimulatedAnnealingAdapter(name="seed_sa", batch_size=batch_size, random_seed=2)
-    left = NSGA2Adapter(name="left", population_size=count, offspring_size=2)
-    right = NSGA3Adapter(name="right", population_size=count, offspring_size=2)
-    adapter = PoolSearchAdapter(producer, [PoolSearchSpec(left,count), PoolSearchSpec(right,count)],
+    left = NSGA2Adapter(name="left", population_size=population_sizes[0], offspring_size=2)
+    right = NSGA3Adapter(name="right", population_size=population_sizes[1], offspring_size=2)
+    adapter = PoolSearchAdapter(producer, [PoolSearchSpec(left,initial_counts[0]), PoolSearchSpec(right,initial_counts[1])],
                                 stagnation_steps=1, recovery_steps=2)
     if nested:
         from nsgablack.adapters import CompositeAdapter
@@ -66,6 +68,71 @@ def test_prepare_200_split_into_two_100_populations_then_wake_and_return():
     published = solver.snapshot_store.read_verified(solver.get_population_authority_identity().snapshot)
     assert published.data["solution_pool_ref"] == solver.solution_pool.publication_ref()
     assert solver.solution_pool.record_count < 50  # Private operator drafts leave the pool index.
+
+
+@pytest.mark.parametrize("intakes,capacities", [((6, 2), (3, 5)), ((2, 7), (5, 3))])
+def test_pool_size_intake_and_private_population_capacity_are_independent(intakes, capacities):
+    required = sum(intakes)
+    solver, producer, left, right = make_solver(batch_size=required+2,
+        initial_counts=intakes, population_sizes=capacities)
+    solver.step()
+    solver.step()
+    # Preparation may overshoot the plan; excess solutions remain in the pool.
+    assert solver.adapter.prepared_count == required+3
+    assert len(solver.solution_pool.select()) == required+3
+    assert solver.step().committed
+    assert (len(left.population), len(right.population)) == tuple(map(min, intakes, capacities))
+    assert all(solver.solution_pool.input_remaining(key) == 0
+               for key in solver.adapter.input_ids.values())
+    temperature = producer.temperature
+    assert solver.step().committed
+    assert (len(left.population), len(right.population)) == tuple(
+        min(capacity, min(intake, capacity)+2) for intake, capacity in zip(intakes, capacities))
+    assert producer.temperature == temperature
+    assert solver.adapter.phase == "recovery"
+    for _ in range(3):
+        assert solver.step().committed  # Recovery baseline, neighbors, return.
+    assert solver.adapter.phase == "search"
+    assert (len(left.population), len(right.population)) == capacities
+    assert len(solver.solution_pool.select()) > sum(capacities)
+
+
+def test_oversupplied_initial_intake_retries_after_unit_capacity_is_already_full():
+    from blackbase.contracts import BatchDisposition
+    solver, _, left, right = make_solver(batch_size=7, initial_counts=(5, 3), population_sizes=(2, 4))
+    solver.step()
+    solver.step()
+    class Partial:
+        policy_id = "partial-oversupplied-intake"
+        def select(self, candidates, feedback, context):
+            return BatchDisposition(len(candidates.semantic_states), (0, 1, 5))
+    solver.set_evaluation_acceptance_policy(Partial())
+    assert solver.step().committed
+    assert (len(left.population), len(right.population)) == (2, 1)
+    assert tuple(solver.solution_pool.input_remaining(solver.adapter.input_ids[name])
+                 for name in ("left", "right")) == (3, 2)
+    solver.set_evaluation_acceptance_policy(None)
+    assert solver.step().committed
+    assert (len(left.population), len(right.population)) == (2, 3)
+    assert all(solver.solution_pool.input_remaining(key) == 0
+               for key in solver.adapter.input_ids.values())
+
+
+def test_checkpoint_restores_heterogeneous_intakes_without_imposing_pool_capacity():
+    from nsgablack.plugins import CheckpointResumePlugin
+    options = dict(batch_size=5, initial_counts=(4, 1), population_sizes=(2, 3))
+    source, _, left, right = make_solver(**options)
+    for _ in range(3):
+        source.step()
+    target, _, restored_left, restored_right = make_solver(**options)
+    writer, reader = CheckpointResumePlugin(), CheckpointResumePlugin()
+    writer.attach(source)
+    reader.attach(target)
+    reader._restore_payload(solver=target, payload=writer._build_payload(solver=source, reason="heterogeneous-intakes"))
+    assert (len(restored_left.population), len(restored_right.population)) == (2, 1)
+    assert len(target.solution_pool.select()) > 5
+    assert target.step().committed
+    assert (len(restored_left.population), len(restored_right.population)) == (2, 3)
 
 
 def test_failure_rolls_back_pool_population_and_seed_cursors():

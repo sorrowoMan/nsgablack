@@ -5,6 +5,6 @@
 - 规范装配入口：`build_solver.py`
 - 独立运行入口：`run_solver.py`
 
-使用 PlateauProblem、共享问题 Pipeline 和 PoolSearchAdapter；组合 SA producer 与两个独立 NSGA-II/III Unit。默认准备 8 个候选，两边各取 4 个；停滞后重启 SA，返回候选参与两边环境选择。7 步展示一个周期，详细运行说明见 [Project README](../../README.md)。
+使用 PlateauProblem、共享问题 Pipeline 和 PoolSearchAdapter；组合 SA producer 与两个独立 NSGA-II/III Unit。默认准备 8 个候选，两边分别取 6 个和 2 个，算法容量分别为 4 和 3；停滞后重启 SA，返回候选参与两边环境选择。7 步展示一个周期，详细运行说明见 [Project README](../../README.md)。
 
-Project L0 授权 threads=1、无 GPU；Case 仅消费传入 ResourceContext。无额外 Bias/Plugin/Provider。`build_solver(config={"population_size": 100})` 可扩大分配，component_overrides 仍走正式组件替换入口。
+Project L0 授权 threads=1、无 GPU；Case 仅消费传入 ResourceContext。无额外 Bias/Plugin/Provider。`build_solver()` 不要求统一大小，`config` 可设置 `max_steps`；算法参数和取解配额在 `adapter/pool_example.py` 分别声明，component_overrides 仍走正式组件替换入口。

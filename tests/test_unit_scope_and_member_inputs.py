@@ -156,6 +156,34 @@ class ConstantProblem(BlackBoxProblem):
         return [10., 20.]
 
 
+def test_initial_environmental_selection_keeps_unknown_member_inputs_aligned(monkeypatch):
+    adapter = NSGA2Adapter(population_size=2, unit_binding=UnitBinding(AnnotatedBuilder()))
+    control = ComposableSolver(ConstantProblem(), adapter=adapter)
+    states = [UnknownState([value], {"label": label})
+              for value, label in zip((5., 1., 4., 2.), ("a", "b", "c", "d"))]
+    records = [CandidateProvenance(label, parent_token="parent-"+label)
+               for label in ("a", "b", "c", "d")]
+    control.bind_candidate_provenance(states, records)
+    records = control.prepare_candidate_provenance(states)
+    candidates = [state.as_array() for state in states]
+    control.bind_candidate_provenance(candidates, records)
+    changes = []
+    ordinary = adapter.algorithm_unit.on_members_changed
+    def capture(change):
+        changes.append(change)
+        return ordinary(change)
+    monkeypatch.setattr(adapter.algorithm_unit, "on_members_changed", capture)
+    adapter.update(control, candidates, (np.asarray(candidates), np.zeros(4)), {})
+    assert len(changes) == 1
+    assert adapter.get_population_candidate_tokens() == ("b", "d")
+    assert adapter.algorithm_unit.labels == ["b", "d"]
+    assert adapter.algorithm_unit.parents == ["parent-b", "parent-d"]
+    assert adapter.algorithm_unit.births == [1., 2.]
+    np.testing.assert_array_equal(adapter.population, [[1.], [2.]])
+    np.testing.assert_array_equal(adapter.objectives, [[1.], [2.]])
+    adapter.algorithm_unit.require_current_feedback()
+
+
 def reference():
     adapter = NSGA2Adapter()
     adapter.algorithm_unit.initialize_population([[0.], [10.]], [[10., 20.]] * 2, [0., 0.],

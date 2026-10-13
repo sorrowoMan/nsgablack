@@ -12,6 +12,8 @@ Problem 定义问题；问题管线处理候选；算法管线构建 Unit；Adap
 
 SolutionPool 在 Solver 构造时先创建，登记 candidates 事实并参与共享步骤事务；大值仍由 BlackBase SnapshotStore 保存。池保存不可原位改写的候选版本、运行时点和输入游标；Unit 保存本算法关系与工作投影。新算法提案使用显式派生 token 并保留源 SolutionRef；读取不换身份，repair 同一提案保持 token。不是为每个成员槽位编造身份。
 
+池历史数量、编排取解配额和各算法的成员容量独立；不要求 build_solver 统一传入 population_size。PoolSearchSpec.initial_count 只控制该组合的初始取解，准备阈值不是池上限。NSGA-II/III 的超额初始输入先经过自身环境选择，再一次安装对齐成员；种群已满也不阻止剩余种子送评。较少种子形成较小种群，后续由算法自己的后代搜索扩充。
+
 提交先暂存池 manifest，将引用写入同一目标 Authority Snapshot，权威围栏成功后才公布池索引；恢复只读已验证的 destination manifest。失败/零接纳不让另一阶段读到草稿；部分接纳结算原输入索引，未接纳初始化种子保留。池不自动借用其他算法的选择反馈或重放评估。详细接口、算法支持范围与存储回收限制见 [解池契约](SOLUTION_POOL_CN.md)。
 
 PopulationAuthority 保存内存 population/objectives/violations、CandidateBatch、token、分区及 Snapshot 发布游标；原 Solver 字段通过 OwnedField 访问同一对象。AuthorityStore 继续负责持久 identity、epoch 与围栏；内存投影不能自行宣布持久提交。
