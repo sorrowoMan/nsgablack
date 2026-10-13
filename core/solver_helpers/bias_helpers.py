@@ -27,7 +27,8 @@ def project_bias_feedback(solver, feedback, violation, candidate, individual_id,
         # must not inherit the previous batch's token at that position.
         provenance = provenance_getter(candidate)
         if provenance is not None:
-            context["candidate_token"] = provenance.candidate_token
+            from nsgablack.context_keys import KEY_CANDIDATE_TOKEN
+            context[KEY_CANDIDATE_TOKEN] = provenance.candidate_token
     bind_runtime = getattr(module, "bind_runtime", None)
     if callable(bind_runtime):
         bind_runtime(solver)

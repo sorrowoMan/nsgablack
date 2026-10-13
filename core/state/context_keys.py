@@ -1,5 +1,10 @@
 """Optimization context vocabulary."""
 from nsgablack.context_keys import (
+    KEY_CANDIDATE_TOKEN,
+    KEY_SOLUTION_POOL_REF,
+    KEY_SOLUTION_POOL_TIME,
+    KEY_SOLUTION_INPUT_REF,
+    KEY_SOLUTION_INPUT_MODE,
     KEY_METRICS_EVAL_MODEL_CALLS,
     KEY_METRICS_EVAL_MODEL_FAILURES,
     KEY_GENERATION,

@@ -37,6 +37,7 @@ class NSGA2Config:
 
 
 class NSGA2Adapter(UnitBackedAdapter):
+    pool_input_modes = ("initialize", "compete")
     uses_pipeline_mutation = True
     unit_features = (SELECTION_RANKING,)
     accepts_proposal_replacement = True
@@ -92,6 +93,17 @@ class NSGA2Adapter(UnitBackedAdapter):
         self._runtime_projection = {}
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+        from nsgablack.context_keys import KEY_SOLUTION_INPUT_REF, KEY_SOLUTION_INPUT_MODE
+        input_ref = context.get(KEY_SOLUTION_INPUT_REF)
+        if input_ref is not None and control.solution_pool.input_remaining(input_ref):
+            # Pool bootstrap receives ordinary repair/evaluation/admission. It
+            # must not borrow the last sibling's population or bias projection.
+            remaining = control.solution_pool.input_remaining(input_ref)
+            count = (remaining if context.get(KEY_SOLUTION_INPUT_MODE) == "compete" else
+                     min(remaining, int(self.cfg.population_size) - (0 if self.population is None else len(self.population))))
+            if count <= 0:
+                raise ValueError("pool initialization allocation exceeds population capacity")
+            return control.init_population(count, context)
         self._ensure_population(control, context)
         if self.population is None or self.population.shape[0] == 0:
             return []

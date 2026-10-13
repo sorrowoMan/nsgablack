@@ -21,6 +21,7 @@ import numpy as np
 from .core.base import AlgorithmicBias, DomainBias, OptimizationContext
 from .core.manager import UniversalBiasManager
 from nsgablack.context_keys import (
+    KEY_CANDIDATE_TOKEN,
     KEY_CONSTRAINTS,
     KEY_CONSTRAINT_VIOLATION,
     KEY_GENERATION,
@@ -618,7 +619,7 @@ class BiasModule:
             ctx = copy.copy(self._context_cache)
             setattr(ctx, "generation", self._context_generation(context))
             setattr(ctx, "individual", x)
-            setattr(ctx, "candidate_token", context.get("candidate_token"))
+            setattr(ctx, "candidate_token", context.get(KEY_CANDIDATE_TOKEN))
             setattr(ctx, "candidate_state", candidate_state)
             setattr(ctx, "population", snapshot_payload.get(KEY_POPULATION, []))
             metrics = {

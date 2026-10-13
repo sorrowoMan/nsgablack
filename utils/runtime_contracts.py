@@ -36,12 +36,19 @@ def inspect_runtime_contracts(solver):
             except (TypeError, ValueError) as exc:
                 issues.append(("authority-rollback-contract-invalid", f"{registration.fact}: {exc}"))
         for fact, expected in (("population", solver.population_authority),
+                               ("candidates", solver.solution_pool),
                                ("progress", solver.run_session), ("result", solver.run_session)):
             try:
                 if solver.authorities.owner(fact) is not expected:
                     issues.append(("authority-owner-conflict", f"{fact} has a different owner"))
             except KeyError:
                 issues.append(("authority-owner-missing", f"{fact} has no registered owner"))
+    from ..core.state.solution_pool import SolutionPool
+    pool = solver.solution_pool
+    if not isinstance(pool, SolutionPool) or pool.snapshots is not solver.snapshot_store:
+        issues.append(("solution-pool-store-invalid", "SolutionPool must use the Solver SnapshotStore"))
+    if not any(item is pool for item in solver._state_participants):
+        issues.append(("solution-pool-participant-missing", "SolutionPool must participate in step rollback"))
     participants = list(solver._state_participants)
     if getattr(solver, "adapter", None) is not None:
         participants.append(solver.adapter)
@@ -60,6 +67,11 @@ def inspect_runtime_contracts(solver):
         issues.extend(inspect_joint_repair_contracts(solver, resolved))
         for participant in resolved:
             if isinstance(participant, AlgorithmAdapter):
+                modes = participant.pool_input_modes
+                if not isinstance(modes, tuple) or any(mode not in {"initialize", "compete"} for mode in modes):
+                    issues.append(("solution-pool-input-contract-invalid", f"{participant.name}: unknown input modes"))
+                if participant.supports_pool_restart and type(participant).restart_search is AlgorithmAdapter.restart_search:
+                    issues.append(("solution-pool-input-contract-invalid", f"{participant.name}: restart is declared but not implemented"))
                 try:
                     if participant.mutation_operator is not None and not participant.uses_pipeline_mutation:
                         raise ValueError("Adapter does not consume pipeline mutation")

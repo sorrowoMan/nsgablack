@@ -54,6 +54,17 @@ class SAConfig:
 
 class SimulatedAnnealingAdapter(UnitBackedAdapter):
     """Simulated annealing adapter for ComposableSolver."""
+    pool_input_modes = ("initialize",)
+    supports_pool_restart = True
+
+    def restart_search(self, control, context):
+        """Reheat and choose a new pool seed; retain the local RNG stream."""
+        self.reset_unit()
+        self.t0 = float(self.cfg.initial_temperature)
+        self.temperature = self.t0
+        self.current_x = None
+        self.current_score = None
+        self._last_runtime_projection = {}
     uses_pipeline_mutation = True
     accepts_proposal_replacement = True
     unit_builder_type = TrajectoryUnitBuilder

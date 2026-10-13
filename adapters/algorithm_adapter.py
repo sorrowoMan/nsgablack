@@ -205,6 +205,13 @@ class AlgorithmAdapter(AdapterBase):
     may inspect ``feedback.items`` for gradients, losses, metrics, or signals.
     """
 
+    pool_input_modes = ()
+    supports_pool_restart = False
+
+    def restart_search(self, control, context):
+        """Explicit semantic restart; no implicit lifecycle/setup replay."""
+        raise RuntimeError(f"{self.name} has not declared pool restart support")
+
     # Extended context contract (nsgablack-specific)
     artifact_requires = ()
     artifact_provides = ()

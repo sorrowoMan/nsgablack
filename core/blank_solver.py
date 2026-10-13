@@ -518,6 +518,10 @@ class SolverBase:
         )
         self.snapshot_schema = str(snapshot_schema or "nsgablack.population_snapshot/v2")
         self.snapshot_store: SnapshotStore = self._build_snapshot_store()
+        from .state.solution_pool import SolutionPool
+        self.solution_pool = SolutionPool(self.snapshot_store)
+        self._state_participants.append(self.solution_pool)
+        self.authorities.register("candidates", self.solution_pool)
         self.authority_store: AuthorityStore = self._build_authority_store()
         self.evaluation_evidence_journal: EvaluationEvidenceJournal = (
             self._build_evaluation_evidence_journal()
@@ -617,6 +621,7 @@ class SolverBase:
         ):
             raise TypeError("store must implement the SnapshotStore protocol")
         self.snapshot_store = store
+        self.solution_pool.snapshots = store
         self.authority_store = authority_store
         self.evaluation_evidence_journal = evaluation_evidence_journal
         self.evaluation_evidence_semantics = PopulationEvidenceSemantics(self.snapshot_store, self.authority_store)
@@ -643,6 +648,7 @@ class SolverBase:
             "incumbent_candidate_ref": self._incumbent_candidate_ref,
             "evaluation_event_snapshot_key": self._last_evaluation_event_snapshot_key,
             "evaluation_evidence_record": self._last_evaluation_evidence_record,
+            "solution_pool": True if self.solution_pool.record_count else None,
         }
         active_state = tuple(
             name for name, value in stateful_fields.items() if value is not None
@@ -757,6 +763,7 @@ class SolverBase:
         self._active_run_id = (
             f"{run_scope}:solver-run:{self._run_sequence}:{run_nonce}"
         )
+        self.solution_pool.reset(self._active_run_id)
         self._runtime_projection_audit = {}
         self._runtime_projection_audit_report_signature = None
         self._teardown_error = None
@@ -2401,8 +2408,11 @@ class SolverBase:
     ) -> tuple[list[np.ndarray], list[CandidateProvenance]]:
         """Bind both CandidateBatch views to the same stable candidate tokens."""
 
-        rows = list(batch.numeric_rows())
         records = list(provenance)
+        refs = self.store_solutions(batch, stage="proposal", provenance=records)
+        if refs:
+            batch = self.solution_pool.read(refs, allow_pending=True)
+        rows = list(batch.numeric_rows())
         if len(rows) != len(records):
             raise ValueError("candidate batch provenance must align with candidate rows")
         semantic_records = [
@@ -2777,14 +2787,97 @@ class SolverBase:
     # ------------------------------------------------------------------
     # Representation helpers (optional)
     # ------------------------------------------------------------------
+    def store_solutions(self, batch, *, stage="initial", region="main", source=None, feedback=None, provenance=None):
+        """Register candidate values before use; Units retain search relationships."""
+        records = []
+        provided = None if provenance is None else tuple(provenance)
+        if provided is not None and len(provided) != len(batch.semantic_states):
+            raise ValueError("pool provenance must align with candidate rows")
+        for i, (state, token) in enumerate(zip(batch.semantic_states, batch.candidate_tokens)):
+            record = self.candidate_provenance_for(state) if provided is None else provided[i]
+            if record is None:
+                record = CandidateProvenance(token, source_kind="pool_input", source_run_id=self._active_run_id)
+            records.append(self._with_candidate_semantics(record, state).as_dict())
+        return self.solution_pool.put(
+            batch, stage=stage, region=region,
+            source=source or getattr(getattr(self, "adapter", None), "name", "control"),
+            generation=int(self.generation),
+            attempt=int(self.export_run_progress_state().get("attempts_completed", 0)),
+            feedback=feedback, provenance=records,
+        )
+
+    def read_solutions(self, refs, *, allow_pending=False):
+        """Resolve references and bind both candidate views to their stable tokens."""
+        refs = tuple(refs)
+        batch = self.solution_pool.read(refs, allow_pending=allow_pending)
+        saved = self.solution_pool.read_provenance(refs, allow_pending=allow_pending)
+        provenance = [self._with_candidate_semantics(
+            CandidateProvenance.from_dict(value) if value is not None else
+            CandidateProvenance(token, source_kind="pool_input"), state)
+            for value, token, state in zip(saved, batch.candidate_tokens, batch.semantic_states)]
+        self.bind_candidate_provenance(batch.numeric_rows(), provenance, activate=False)
+        for state, record in zip(batch.semantic_states, provenance):
+            self._register_candidate_provenance(state, record)
+        return batch
+
+    def propose_solutions(self, refs):
+        """Create explicit proposals from pool inputs, retaining source identities.
+
+        Reading preserves identity. A new algorithm invocation creates a derived
+        proposal so its origin and repair can change without rewriting the seed.
+        """
+        refs = tuple(refs)
+        source = self.read_solutions(refs)
+        records = []
+        for ref, state in zip(refs, source.semantic_states):
+            previous = self.candidate_provenance_for(state)
+            record = self._new_candidate_provenance(
+                source_kind="pool_handoff", source_run_id=previous.source_run_id,
+                parent_token=ref.candidate_token, transform_stage="pool_handoff",
+                metadata={**dict(previous.metadata), "solution_source_ref": ref.as_dict()},
+            )
+            record = self._with_candidate_semantics(record, state)
+            self._register_candidate_provenance(state, record)
+            records.append(record)
+        batch = CandidateBatch(source.semantic_states, source.numeric_matrix,
+                               tuple(r.candidate_token for r in records))
+        for state, record in zip(batch.semantic_states, records):
+            self._register_candidate_provenance(state, record)
+        self.bind_candidate_provenance(batch.numeric_rows(), records, activate=False)
+        return batch
+
+    def _register_solution_value(self, value, provenance, *, stage):
+        semantic = value
+        if not isinstance(value, UnknownState):
+            semantic = self.semantic_candidate_state(value)
+        batch = CandidateBatch.from_candidates((semantic,), candidate_tokens=(provenance.candidate_token,))
+        ref, = self.store_solutions(batch, stage=stage, provenance=(provenance,))
+        pooled = self.solution_pool.read((ref,), allow_pending=True)
+        row = pooled.numeric_matrix[0]
+        self._register_candidate_provenance(row, provenance)
+        self._register_candidate_provenance(pooled.semantic_states[0], provenance)
+        return pooled.semantic_states[0] if isinstance(value, UnknownState) else row
+
     def init_candidate(self, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+        from nsgablack.context_keys import KEY_SOLUTION_INPUT_REF
+        input_ref = (context or {}).get(KEY_SOLUTION_INPUT_REF)
+        if input_ref is not None:
+            ref = self.solution_pool.take_input(input_ref)
+            batch = self.propose_solutions((ref,))
+            row = batch.numeric_matrix[0]
+            record = self.candidate_provenance_for(batch.semantic_states[0])
+            self._register_candidate_provenance(row, record)
+            return row
         warm_start = self._take_warm_start_candidate()
         if warm_start is not None:
-            return normalize_candidate(
+            normalized = normalize_candidate(
                 warm_start,
                 dimension=self.dimension,
                 name="warm_start.candidate",
             )
+            record = self.candidate_provenance_for(warm_start)
+            self._register_candidate_provenance(normalized, record)
+            return self._register_solution_value(normalized, record, stage="initial")
         pipeline = self.representation_pipeline
         if representation_capabilities(pipeline).supports("init"):
             init_fn = getattr(pipeline, "init", None)
@@ -2796,16 +2889,14 @@ class SolverBase:
         else:
             cand = self._random_candidate()
         normalized = normalize_candidate(cand, dimension=self.dimension, name="init_candidate")
+        provenance = self._lookup_candidate_provenance(cand)
+        if provenance is None:
+            provenance = self._new_candidate_provenance(
+                source_kind="initialization", source_run_id=self._active_run_id)
         if isinstance(cand, UnknownState):
-            provenance = self._lookup_candidate_provenance(cand)
-            if provenance is None:
-                provenance = self._new_candidate_provenance(
-                    source_kind="initialization",
-                    source_run_id=self._active_run_id,
-                )
             provenance = self._with_candidate_semantics(provenance, cand)
-            self._register_candidate_provenance(normalized, provenance)
-        return normalized
+        self._register_candidate_provenance(normalized, provenance)
+        return self._register_solution_value(normalized, provenance, stage="initial")
 
     def init_population(
         self,
@@ -2822,6 +2913,15 @@ class SolverBase:
         size = int(count)
         if size < 0:
             raise ValueError("population count must be non-negative")
+        from nsgablack.context_keys import KEY_SOLUTION_INPUT_REF
+        input_ref = (context or {}).get(KEY_SOLUTION_INPUT_REF)
+        if input_ref is not None and size:
+            refs = self.solution_pool.take_inputs(input_ref, size)
+            batch = self.propose_solutions(refs)
+            rows = batch.numeric_rows()
+            records = [self.candidate_provenance_for(state) for state in batch.semantic_states]
+            self.bind_candidate_provenance(rows, records, activate=False)
+            return tuple(rows)
         return tuple(self.init_candidate(context) for _ in range(size))
 
     def mutate_candidate(self, x: Any, context: Optional[Dict[str, Any]] = None, *, unit=None, operator=None) -> Any:
@@ -2838,6 +2938,10 @@ class SolverBase:
                     x,
                 )
             self._register_candidate_provenance(x, input_provenance)
+        x = self._register_solution_value(x, input_provenance, stage="mutation_parent")
+        from ..representation.structure_builders import encode_unit_value, decode_unit_value
+        x = decode_unit_value(encode_unit_value(x))
+        self._register_candidate_provenance(x, input_provenance)
         pipeline = self.representation_pipeline
         if representation_capabilities(pipeline).supports("mutate"):
             kwargs = {} if operator is None else {"operator": operator}
@@ -2866,10 +2970,16 @@ class SolverBase:
             provenance = self._with_candidate_semantics(provenance, out)
             self._register_candidate_provenance(out, provenance)
         self._register_candidate_provenance(normalized, provenance)
-        return out if isinstance(out, UnknownState) else normalized
+        return self._register_solution_value(out if isinstance(out, UnknownState) else normalized,
+                                             provenance, stage="mutation")
 
     def repair_candidate(self, x: Any, context: Optional[Dict[str, Any]] = None) -> Any:
         input_provenance = self._lookup_candidate_provenance(x)
+        if input_provenance is not None:
+            x = self._register_solution_value(x, input_provenance, stage="repair_input")
+            from ..representation.structure_builders import encode_unit_value, decode_unit_value
+            x = decode_unit_value(encode_unit_value(x))
+            self._register_candidate_provenance(x, input_provenance)
         pipeline = self.representation_pipeline
         if representation_capabilities(pipeline).supports("repair"):
             out = pipeline.repair(x, context)
@@ -2899,7 +3009,8 @@ class SolverBase:
                 provenance = self._with_candidate_semantics(provenance, out)
                 self._register_candidate_provenance(out, provenance)
             self._register_candidate_provenance(normalized, provenance)
-        return out if isinstance(out, UnknownState) else normalized
+        value = out if isinstance(out, UnknownState) else normalized
+        return value if provenance is None else self._register_solution_value(value, provenance, stage="repair")
 
     def encode_candidate(self, x: Any, context: Optional[Dict[str, Any]] = None) -> Any:
         pipeline = self.representation_pipeline
@@ -3590,6 +3701,8 @@ class SolverBase:
             and current.caused_by_event_identity == event_ref
             and current.epoch == (1 if before is None else before.epoch + 1)
         ):
+            if destination.data.get("solution_pool_ref") is not None:
+                self.solution_pool.restore_publication(destination.data["solution_pool_ref"])
             return current
         if current != before:
             raise RuntimeError(
@@ -3604,6 +3717,8 @@ class SolverBase:
         self._latest_authority_identity = committed
         self._latest_snapshot_handle = destination
         self._last_evaluation_authority_after_edge = committed.as_dict()
+        if destination.data.get("solution_pool_ref") is not None:
+            self.solution_pool.restore_publication(destination.data["solution_pool_ref"])
         return committed
 
     def _inspect_evaluation_disposition_destination(
@@ -4013,6 +4128,8 @@ class SolverBase:
             "schema": POPULATION_SNAPSHOT_SCHEMA_V2,
             "authority_mode": authority_mode,
         }
+        if self.solution_pool.publication_ref() is not None:
+            payload["solution_pool_ref"] = self.solution_pool.publication_ref()
         if self._last_evaluation_disposition is not None:
             payload[LAST_EVALUATION_DISPOSITION_KEY] = copy.deepcopy(
                 self._last_evaluation_disposition
@@ -4603,6 +4720,9 @@ class SolverBase:
             if not isinstance(projected, Mapping):
                 raise TypeError(f"{extension.name}.project_context must return a Mapping")
             context = dict(projected)
+        from nsgablack.context_keys import KEY_SOLUTION_POOL_REF, KEY_SOLUTION_POOL_TIME
+        context[KEY_SOLUTION_POOL_REF] = self.solution_pool.publication_ref()
+        context[KEY_SOLUTION_POOL_TIME] = self.solution_pool.timestamp.as_dict()
         return context
 
     def get_context(self) -> Dict[str, Any]:
@@ -4937,6 +5057,7 @@ class SolverBase:
         """
 
         components: dict[str, Any] = {}
+        components["solution_pool"] = self.solution_pool
         adapter = getattr(self, "adapter", None)
         if adapter is not None:
             components["adapter"] = adapter

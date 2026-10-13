@@ -60,7 +60,9 @@ class NSGA3Adapter(NSGA2Adapter):
 
     def setup(self, control: Any) -> None:
         super().setup(control)
-        n_obj = int(getattr(getattr(control, "problem", None), "num_objectives", 2))
+        problem = getattr(control, "problem", None)
+        counter = getattr(problem, "get_num_objectives", None)
+        n_obj = int(counter() if callable(counter) else getattr(problem, "num_objectives", 2))
         self.reference_points = self._generate_reference_points(n_obj, max(1, int(self.cfg.divisions)))
 
     def _environmental_select(self, objectives: np.ndarray, violations: np.ndarray, n_keep: int) -> np.ndarray:

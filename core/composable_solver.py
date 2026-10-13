@@ -398,10 +398,12 @@ class ComposableSolver(SolverBase):
         if self.adapter is None:
             return body()
         state_transaction = RuntimeTransaction(self._state_participants)
+        pool_baseline = self.solution_pool.snapshot_step_state()
         previous_event_id = self._last_evaluation_event_id
         adapter_transaction = self.adapter.begin_step_transaction()
         self.begin_snapshot_step_transaction()
         try:
+            self.solution_pool.begin_attempt()
             self.prepare_step_extensions()
             outcome = body()
             outcome = self._finalize_evaluation_disposition(
@@ -409,10 +411,16 @@ class ComposableSolver(SolverBase):
                 previous_authority_key=previous_authority_key,
             )
             if outcome.committed:
+                self.solution_pool.prepare_publication()
+                pending = self._snapshot_step_transaction.get("pending")
+                if pending is not None:
+                    pending["data"]["solution_pool_ref"] = self.solution_pool.publication_ref()
                 self.commit_snapshot_step_transaction()
+                self.solution_pool.commit_publication()
                 outcome = self._settle_evaluation_disposition_best_effort(outcome)
             else:
                 self.rollback_snapshot_step_transaction()
+                self.solution_pool.reject_attempt(pool_baseline)
         except BaseException as exc:
             self._record_failed_evaluation_disposition(
                 exc,
@@ -1115,6 +1123,8 @@ class ComposableSolver(SolverBase):
 
         update_context = self.build_context()
         update_context[KEY_STEP] = self.generation
+        self.store_solutions(accepted_update_batch, stage="accepted", feedback=accepted_feedback_batch,
+                             provenance=accepted_provenance)
         self.adapter.update(
             self,
             self.population,

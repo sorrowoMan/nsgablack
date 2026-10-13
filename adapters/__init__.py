@@ -16,6 +16,7 @@ from .algorithm_adapter import (
 )
 from .candidate_proposer import CandidateProposerAdapter
 from .proposal_repair import ProposalRepair
+from .pool_search import PoolSearchAdapter, PoolSearchSpec
 from .unit_backed import UnitBackedAdapter, UnitField
 from .role_adapters import RoleAdapter, RoleRouterAdapter
 from .vns import VNSAdapter, VNSConfig
@@ -52,6 +53,7 @@ from .nsga3 import NSGA3Adapter, NSGA3Config
 from .spea2 import SPEA2Adapter, SPEA2Config
 
 __all__ = [
+    "PoolSearchAdapter", "PoolSearchSpec",
     "ProposalRepair",
     "CandidateProposerAdapter", "UnitBackedAdapter", "UnitField", "StrategyInstanceSpec",
     "AlgorithmAdapter",

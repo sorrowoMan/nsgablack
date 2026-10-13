@@ -629,7 +629,7 @@ class CheckpointResumePlugin(Plugin):
             try:
                 state = self._safe_copy(state_getter())
             except Exception:
-                if bool(self.cfg.strict):
+                if bool(self.cfg.strict) or bool(getattr(component, "checkpoint_required", False)):
                     raise
                 continue
             identity_getter = getattr(component, "checkpoint_identity", None)
@@ -1497,7 +1497,10 @@ class CheckpointResumePlugin(Plugin):
         self,
         solver: Any,
         component_states: Any,
+        *, only: tuple[str, ...] | None = None, skip: set[str] | None = None,
     ) -> set[str]:
+        if component_states is None:
+            component_states = {}
         if not isinstance(component_states, Mapping):
             if component_states:
                 error = ValueError("checkpoint stateful_components payload is invalid")
@@ -1529,12 +1532,15 @@ class CheckpointResumePlugin(Plugin):
             )
             raise error
         missing_required = [name for name, component in current.items()
-                            if getattr(component, "checkpoint_required", False) and name not in component_states]
+                            if getattr(component, "checkpoint_required", False) and name not in component_states
+                            and (only is None or name in only)]
         if missing_required:
             raise ValueError("checkpoint is missing required component state: " + ", ".join(sorted(missing_required)))
         restored: set[str] = set()
         for raw_name, raw_payload in component_states.items():
             name = str(raw_name)
+            if (only is not None and name not in only) or (skip is not None and name in skip):
+                continue
             component = current.get(name)
             if component is None:
                 error = ValueError(f"checkpoint component is unavailable: {name}")
@@ -1924,11 +1930,19 @@ class CheckpointResumePlugin(Plugin):
         self._validate_incumbent_selection(solver, state)
 
         resume_cursor = self._resume_cursor_from_payload(payload)
+        # Pool values and their new-store manifest must exist before the
+        # restored Authority Snapshot is published. Reuse normal type/identity
+        # validation, and restore this owner exactly once.
+        pool_components = self._apply_component_states(
+            solver, payload.get("stateful_components", {}), only=("solution_pool",),
+        )
         self._apply_solver_state(solver, state, resume_cursor)
-        restored_components = self._apply_component_states(
+        restored_components = pool_components | self._apply_component_states(
             solver,
             payload.get("stateful_components", {}),
+            skip=pool_components,
         )
+        self._last_resume_audit["restored_components"] = sorted(restored_components)
         if "adapter" not in restored_components:
             self._apply_adapter_state(solver, payload.get("adapter_state"))
         self._apply_adapter_population_partitions(
