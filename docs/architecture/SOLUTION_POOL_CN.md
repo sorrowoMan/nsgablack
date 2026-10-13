@@ -334,7 +334,7 @@ local = RoleSpec("local", vns_factory, n_units=4,
 
 投影处理的是接收链当前的 selection objectives，使它与 MOEA/D 的分解比较一致；约束选择值保持原样，采用 MOEA/D 的可行性优先规则。硬准入仍在此前消费 raw constraints。无 Bias 时投影也显式保留 raw_evaluation；有 Bias 时沿用原始证据。母池与 Evaluation Event 始终保存原目标向量，不把方向标量冒充 Problem 的结果。
 
-精修输出仍是候选引用集合。返回时 MOEA/D 正常重评、更新 ideal，并按当前权重和 `nr` 替换上限竞争槽位，可能改善多个方向；创建来源不承诺只替换原槽位。框架不把“精修 x 得到 y”解释成 x 的分数等于 y，也不把精修承诺成一定改善。当前输出沿用池任务语义，收集已接纳提案；最终成员由接收者选择。
+精修输出仍是候选引用集合。返回时 MOEA/D 正常重评、更新 ideal，并按当前权重和 `nr` 替换上限竞争槽位，可能改善多个方向；创建来源不承诺只替换原槽位。框架不把“精修 x 得到 y”解释成 x 的分数等于 y，也不把精修承诺成一定改善。具名 output 聚合子池收集已接纳提案；投影任务另外发布每个起点的最终选择视图，供下一层精修，见 §10.6。
 
 绕过 Solver 手工调用 MOEA/D.update 的调用者，同样须先建立候选对应的已发布或已接纳池记录；未知 token 不能用于发布方向。旧控制面曾为重复槽位派生 population_slot_alias，这不再是合法的新身份来源；包含这类别名但缺少对应池记录的历史 checkpoint 需要显式迁移，不能在恢复时按数值猜原身份。旧版要求全局唯一 token 的快照消费者也需同步升级。
 
@@ -343,6 +343,60 @@ local = RoleSpec("local", vns_factory, n_units=4,
 100 个子池是 100 份轻量引用及比较参数，不是 100 份候选数组，也不意味着同时创建 100 个 VNS 或取得 100 份资源。VNS 数量由 n_units 决定，Case/Project 资源规则保持原职责。
 
 完整标准 Case：`examples/cases/solution_pool/cases/moead_refinement/`，演示 MOEA/D 与 GA 搜索、四个 VNS 消费 MOEA/D 的 20 个方向、返回竞争。`view_count=None` 切换为全部方向。
+
+### 10.6 递归派生视图：MOEA/D → VNS → VNS
+
+投影任务声明了 output 后，每个起点完成时会发布一个派生视图，下一层仍用相同选择器。以下角色装入同一个 Router，并依次调度 coarse、fine、return 阶段：
+
+```python
+coarse = VNSAdapter(name="coarse", base_sigma=0.2, restart_on_stagnation=False)
+fine = VNSAdapter(name="fine", base_sigma=0.02, restart_on_stagnation=False)
+
+coarse_role = RoleSpec("coarse", coarse,
+    pool_task=PoolTaskSpec(subpools.random(20, adapter1), steps=3, output="coarse"))
+fine_role = RoleSpec("fine", fine,
+    pool_task=PoolTaskSpec(subpools.all(coarse), steps=3, output="fine"))
+# 还可以让下一层选择 subpools.random(5, fine)。
+# 最后由 MOEA/D 的 PoolTaskSpec("fine", mode="compete", ...) 接收结果。
+```
+
+每层沿用现有步骤、预算、repair、准入和事务。`all(coarse)` 只选择该具体实例在请求开始时已经发布的视图，不自动等待将来生成的视图。阶段策略须等待上一层所有任务完成；周期性重启须给出新的 request_key。尚未释放的往次结果也属于 all/random 的可选范围，并不隐含“仅最新请求”；只需要本轮结果时，调度者应在下一次生产前释放不再消费的旧结果视图。工厂创建的多个 VNS 是不同创建者，不能把工厂函数或类型名当作其中一个实例。
+
+两种输出各有明确含义：
+
+- `"coarse"` 聚合子池保留所有接纳过的提案，供种群竞争或显式筛选。
+- `subpools.all(coarse)` 选择 coarse 创建的派生视图。每个视图只装入 `get_pool_refinement_results(control)` 明确交付的最终结果；VNS 返回当前 incumbent 当时选中的精确候选引用，不按 token 追读未来版本。因此下一层从上一层选中的解继续，不从聚合集合的第一条旧基线重新开始。这不表示数学上的局部最优已被证明。
+
+投影消费者若要发布派生结果，须实现这个结果接口，不能拿保留用的 get_solution_pool_roots 当作选择策略。裸 VNS 支持投影计算，但没有声明投影池任务及 output 时不成为视图生产者。Doctor/装配检查拒绝缺失声明、未挂载创建者和循环生产依赖；运行时验证实际结果引用。
+
+视图身份与来源：
+
+- 每个投影视图有稳定 view_id，成员或投影变化时增加 revision。删除后重用相同名字得到新身份。
+- parent 保存请求选中时的 `{pool_id, name, view_id, revision, ancestors}`。ancestors 是从根到父级之前的身份列表，不存候选值或整个 Unit。
+- 派生视图的 created_by 是本层 VNS 实例，parent 指向选中的上层视图，两者不可混用。父级更新或释放之后，冻结来源仍成立。
+- 子搜索产生的新候选不必属于父视图旧成员。父子关系表达来源，不是永久集合包含关系。
+
+可以按结构检查一个方向的子树：
+
+```python
+source = pool.subpool_descriptor(direction_name)
+direct_children = pool.children_subpools(source)
+all_descendants = pool.children_subpools(source, recursive=True)
+```
+
+名字参数查询当前存活视图；冻结 descriptor 可在父视图释放后查询历史来源的后代。同名新视图不会接管旧子树。children_subpools 是查询接口，不启动任务。正式父子关系由身份元数据决定，不能用名字中的斜杠或字符串前缀推断。
+
+每层任务直接继承一个有效 ObjectiveProjection，对本层新求值的 selection feedback 应用一次。母池仍保存原始多目标反馈；不是先把父池标量再乘一次权重。已带 subpool_projection 的反馈再次投影会报错，包括一维目标时也不会静默重复计算。显式 publish_projection_subpool 可以为新视图提供另一套有效投影，仍须面向正常反馈维度；它不是任意函数复合语言。
+
+可见性与恢复沿用池事务：派生结果只在接纳更新完成后暂存，提交前不能枚举或按名字读成员，即使它引用的候选以前已发布。异常回滚整组视图/成员/进度；零接纳保留输入选择但不产生成功结果；部分接纳只推进对应工作实例。任务恢复源 descriptor、候选引用、投影、进度与 RNG，不追读父视图当前参数、不重新抽签或补跑求值。旧投影 checkpoint 缺少视图身份或任务源 descriptor 时须显式迁移，不能根据当前名字猜造历史身份。
+
+父子关系只提供值式来源，不隐含保留权。drop_subpool 释放自己的成员，子视图仍保留自身引用。聚合 output 与派生视图是不同保留根，不再使用时都须明确释放。删除父级不会递归删除候选。subpool/ 是专用成员命名空间，通用 retain/replace_roots 不得绕过 create/add/publish/drop 改写它。校验拒绝跨池、循环、重复身份及与存活身份矛盾的来源；已删除历史的任意伪造不能仅靠轻量元数据证明，持久完整性仍依赖 Snapshot/签名 checkpoint。
+
+控制面在接纳记录写入池后，把对应 accepted_solution_ref 放入每项 Feedback.info，再交给 Adapter。它与该反馈共同经过子集/路由/投影，不放在会丢失行对齐的批次级 metadata。VNS 在选择当前点时同时保存这个引用，步骤/checkpoint 和保留声明一起维护它；另一个算法后来产生同 token 新版本，不会改变这份交付。独立直接调用 VNS.update 的旧用法可以没有池引用，但不能据此发布一个猜出的精修结果视图。
+
+存储增量主要是引用、投影参数、任务进度和祖先身份。创建视图不会新增候选 Snapshot，搜索产生的新候选和评估仍占真实空间。当前每个派生视图保存展平的祖先列表，开销随总成员引用数、视图数和深度增长；一条不断加深且全部保留的链，祖先条目累计可达深度的平方量级。应及时释放已消费的结果集合，结合 PoolRetentionPolicy 回收无人持有的候选。各算法自己的 Unit 工作副本、评估记录和 checkpoint 存储仍须另计。
+
+可运行装配在 examples/cases/solution_pool/cases/moead_refinement/，启用 `nested_refinement=True`。
 
 ## 11. 验收依据
 
@@ -353,5 +407,7 @@ local = RoleSpec("local", vns_factory, n_units=4,
 - `test_pool_task_allocation.py`：母池默认输入、300→30×100、分区/共享、缺失与空子池、不足策略、单解起点与随机分配恢复。
 - `test_projection_subpools.py`：100 方向与实例来源、all/random、两种标量投影、同候选多方向、原始证据、零/部分接纳、冻结比较、回滚与正式 checkpoint、返回 MOEA/D 竞争。
 - 既有 repair、SA、语义候选、评估接纳、步骤事务与 checkpoint 测试确认旧边界仍成立。
+- `test_nested_pool_views.py`：父子身份、来源冻结、同名重建、子树查询、共享引用、发布/回滚和恢复校验。
+- `test_nested_refinement.py` / `test_nested_refinement_contracts.py`：多层 VNS 的最终候选交接、一次投影、原始反馈、异常/零/部分接纳与处理中途恢复。
 
 实际运行命令与结果统一记录在本轮验收文档；存在测试源码不能单独解释成验证通过。

@@ -8,6 +8,7 @@
 - `SolutionPool` 先于 Adapter 创建，通过共享 SnapshotStore 保存具名区域中的不可原位改写候选版本；SolutionStamp 使用运行身份与逻辑时钟，SolutionRef 同时标识 token 和版本。读取保留身份，新算法提案显式派生身份并保留父 token/源引用，repair 保留提案 token。Unit 保留算法工作投影和关系，不共享一份可写排名。详见 `docs/architecture/SOLUTION_POOL_CN.md`。
 - 子池是 SolutionPool 内的具名引用集合，复用池索引事务/checkpoint/保留声明，不另复制候选值。RoleSpec/StrategySpec 的 `pool_task=PoolTaskSpec(...)` 通过现有 Router 分发；任务进度和子 Adapter 独立参与步骤事务。输出只在提交后可读，退出子池只解除成员关系。
 - MOEA/D 按方向自动发布投影子池，created_by 是稳定的 Adapter 实例所有权路径，不是候选生产者或类型名。`subpools.all(adapter)` / `subpools.random(n, adapter)` 在请求开始时选择该实例的方向，任务冻结候选引用、权重和参考点；VNS 起点与新邻域都用同一投影。raw feedback 不改写，返回候选按 MOEA/D 当前比较规则竞争；禁止将标量写回母池原始目标。
+- 投影池任务可递归发布派生视图，下一层用 `subpools.all(vns_instance)` 选择。视图保留稳定 view_id/revision 和冻结 parent/ancestors，不复制候选；get_pool_refinement_results 明确交付最终选择，聚合 output 仍保存接纳提案。继承投影只对本层新反馈应用一次。父级删除不级联删除后代；视图提交前不可枚举或读取。阶段屏障仍由 Router 指定，不由 all/random 隐含等待。
 - `Unit` 保留候选本体或候选集合，扩展算法特征、关系与必要状态；构建 Unit 不等于候选编码，取出候选不等于解码。`UnitBinding` 绑定 builder、持久状态 codec 和可选构建 runner；Unit 不拥有 Solver 生命周期或全局授权。
 - 种群 Adapter 决定成员选择或槽位替换，PopulationUnit 统一维护 X/F/V/token 与扩展成员字段。新增行字段声明 member_fields，通过只读 on_members_changed(PopulationChange) 返回更新；change 携带对齐的只读 incoming 候选/反馈/token/metadata/provenance。禁止让 Adapter 猜未知字段的维护语义。详见 `docs/architecture/UNIT_MEMBER_OPERATIONS_CN.md`。
 - `CandidateBatch` 保留语义值、数值矩阵和 token；数值相等不能替代身份。`ProposalRepair` 表达评估前同一提案被修改；`BatchDisposition` 表达预算/接纳筛选。二者不可互相替代。
@@ -416,6 +417,7 @@ ProblemRepair 修问题约束；UnitRepair 修算法结构，也可改候选。J
 - PoolTaskSpec 的 distribution 默认 initialize=independent、refine/compete=partition，可显式选 shared。每实例内部按精确 SolutionRef 无放回，群间可共享；不按数值去重，不自动生成补足。shuffle 默认 True；on_insufficient 默认 error，可选 wait/available。随机分配在请求开始时确定，队列和独立 RNG 随事务/checkpoint 保存。initialize 完成后继续原算法，默认不因阶段变化重新初始化；再次取解需显式新 request_key。SA/VNS 支持普通 refine，NSGA-II/III 支持 initialize/compete，MOEA/D 支持返回 compete。
 - 投影任务目前由 VNS 消费，沿用 PoolTaskSpec；选择器数量是整个角色的方向数，count 是每方向起点数（默认 1）。partition 将任务分给工作实例，shared 显式重复，independent 不适用于方向选择。相同 SolutionRef 出现在不同方向不能去重；投影配置、进度、抽样 RNG 和来源路径须共同恢复，坏配置不得静默退回默认评分。
 - VNS 先通过正常 repair/评估/接纳建立起点基准，再比较邻域。子池输出收集被接纳的提案，不保证每一项都是局部改进；接收方重评并自己选择。请求 key 在同次任务中稳定，重复触发使用新 key；phase_policy 的局部 pool_tasks 摘要用于阶段决策，不是共享 context 大对象。
+- 投影任务的派生结果视图与聚合 output 分开：VNS 的 get_pool_refinement_results 返回最终 incumbent 当时选中的精确版本，不能按 token 追读未来版本或以保留根推断选择策略。控制面将接纳池引用写入每项 Feedback.info.accepted_solution_ref，随反馈路由。subpool_descriptor/children_subpools 按冻结身份查询直接子级或后代；名字前缀不定义父子关系。旧投影 checkpoint 缺失身份/源 descriptor 时拒绝猜测恢复。完整嵌套契约见 SOLUTION_POOL_CN.md §10.6。
 - SA/VNS 的 Unit 投影与变异草稿复制保留 provenance；变异才派生新 token。多实例反馈优先按实际候选绑定读取，不能把局部行号直接当全局行号。PoolTaskAdapter 启用时根 Adapter 与池均为必须恢复的 checkpoint 组件；禁止跳过坏子状态后继续使用已恢复的池游标。
 - 解池历史数量、编排初始取解配额、各算法 Unit 容量和后代批次大小分别配置。不得要求 `build_solver(config={"population_size": ...})` 统一它们；`PoolSearchSpec.initial_count` 不是池容量，也不须等于接收算法的 `population_size`。
 - `set_solution_pool_retention(PoolRetentionPolicy(...))` 在首次发布前显式启用闲置回收；Adapter 必须声明 `get_solution_pool_roots`，未知组件不得猜测。显式 retain/未消费输入保护值；年龄与引用回滚，物理删除在提交后，失败可重试。压缩不能改存活引用的原始 row/token。旧 manifest 仅在保留窗口或显式 pin 下保证值可读；可传输 checkpoint 自带值，未决 Authority 的 prepared 值闭包须固定到恢复确认。详见解池契约第 9 节。

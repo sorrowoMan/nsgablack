@@ -305,15 +305,55 @@ class SolutionPool:
         for ref in values:
             self._record(ref)
         data = self._validate_subpool_metadata(metadata or {})
-        self.retain(owner, values)
+        if data.get("kind") == "objective_projection":
+            raise ValueError("projection views must use publish_projection_subpool")
+        self._validate_view_graph({**self._subpool_metadata, name: data}, self.pool_id)
+        self._retain(owner, values)
         self._subpool_metadata[name] = data
         return name
 
     @staticmethod
-    def _validate_subpool_metadata(value):
+    def _validate_view_identity(value):
+        if (not isinstance(value, dict) or set(value) != {"pool_id", "name", "view_id", "revision"}
+                or any(not isinstance(value[k], str) or not value[k].strip()
+                       for k in ("pool_id", "name", "view_id"))
+                or type(value["revision"]) is not int or value["revision"] < 1):
+            raise ValueError("invalid subpool view identity")
+
+    @classmethod
+    def _validate_view_descriptor(cls, value):
+        if not isinstance(value, dict) or "ancestors" not in value:
+            raise ValueError("invalid subpool view descriptor")
+        identity = {k: v for k, v in value.items() if k != "ancestors"}
+        cls._validate_view_identity(identity)
+        ancestors = value["ancestors"]
+        if not isinstance(ancestors, list):
+            raise ValueError("subpool ancestors must be a frozen identity list")
+        seen = {identity["view_id"]}
+        for ancestor in ancestors:
+            cls._validate_view_identity(ancestor)
+            if ancestor["pool_id"] != identity["pool_id"]:
+                raise ValueError("subpool ancestry belongs to another pool")
+            if ancestor["view_id"] in seen:
+                raise ValueError("subpool ancestry contains a cycle")
+            seen.add(ancestor["view_id"])
+        return value
+
+    @classmethod
+    def validate_subpool_descriptor(cls, value, *, pool_id=None):
+        """Validate and detach frozen lineage independently of live pool state."""
+        data = thaw_wire_mapping(freeze_wire_mapping(value, path="subpool.descriptor"))
+        cls._validate_view_descriptor(data)
+        if pool_id is not None and data["pool_id"] != pool_id:
+            raise ValueError("subpool descriptor belongs to another pool")
+        return data
+
+    @classmethod
+    def _validate_subpool_metadata(cls, value):
         data = thaw_wire_mapping(freeze_wire_mapping(value, path="subpool.metadata"))
         if data.get("kind") == "objective_projection":
-            required = {"kind", "created_by", "slot", "projection", "published"}
+            required = {"kind", "created_by", "slot", "projection", "published",
+                        "view_id", "revision", "parent"}
             if set(data) != required or type(data["published"]) is not bool:
                 raise ValueError("invalid projection subpool metadata")
             path = data["created_by"]
@@ -321,32 +361,124 @@ class SolutionPool:
                 raise ValueError("projection subpool requires a stable creator path")
             if type(data["slot"]) is not int or data["slot"] < 0:
                 raise ValueError("projection subpool requires a nonnegative slot")
+            cls._validate_view_identity(dict(pool_id="pending", name="pending",
+                view_id=data["view_id"], revision=data["revision"]))
+            if data["parent"] is not None:
+                cls._validate_view_descriptor(data["parent"])
             ObjectiveProjection.from_dict(data["projection"])
         return data
+
+    @staticmethod
+    def _view_ancestors(data):
+        parent = data["parent"]
+        if parent is None:
+            return []
+        return [*parent["ancestors"], {k: v for k, v in parent.items() if k != "ancestors"}]
+
+    @classmethod
+    def _validate_view_graph(cls, metadata, pool_id):
+        """Validate live identities and frozen lineage without retaining history.
+
+        Historical descriptors are value provenance, not live dependencies.
+        Unknown retired identities remain legal; matching live identities must
+        agree with their frozen immutable ancestry and cannot cite a future revision.
+        """
+        views = {}
+        for name, data in metadata.items():
+            if data.get("kind") != "objective_projection":
+                continue
+            if data["view_id"] in views:
+                raise ValueError("duplicate subpool view identity")
+            views[data["view_id"]] = (name, data)
+        for name, data in views.values():
+            ancestors = cls._view_ancestors(data)
+            descriptor = dict(pool_id=pool_id, name=name, view_id=data["view_id"],
+                              revision=data["revision"], ancestors=ancestors)
+            cls._validate_view_descriptor(descriptor)
+            for position, ancestor in enumerate(ancestors):
+                if ancestor["pool_id"] != pool_id:
+                    raise ValueError("subpool parent belongs to another pool")
+                live = views.get(ancestor["view_id"])
+                if live is None:
+                    continue
+                live_name, live_data = live
+                if (live_name != ancestor["name"] or ancestor["revision"] > live_data["revision"]
+                        or cls._view_ancestors(live_data) != ancestors[:position]):
+                    raise ValueError("subpool parent disagrees with its live view identity")
 
     def subpool_metadata(self, name):
         if not self.has_subpool(name):
             raise KeyError(name)
         return copy.deepcopy(self._subpool_metadata.get(name, {}))
 
-    def publish_projection_subpool(self, name, refs, *, created_by, slot, projection):
-        """Stage a creator's current direction view in the existing pool transaction."""
+    def subpool_descriptor(self, name):
+        """Freeze a committed view identity and its ancestry, without candidate data."""
+        data = self.subpool_metadata(name)
+        if data.get("kind") != "objective_projection" or not data["published"]:
+            raise ValueError("subpool descriptor requires a committed projection view")
+        return dict(pool_id=self.pool_id, name=name, view_id=data["view_id"],
+                    revision=data["revision"], ancestors=self._view_ancestors(data))
+
+    def publish_projection_subpool(self, name, refs, *, created_by, slot, projection, parent=None):
+        """Stage a view with an effective projection and optional frozen parent.
+
+        Parent describes derivation, not a subset constraint or ownership of its
+        candidate values. It may outlive, and be older than, the source view.
+        The supplied projection always evaluates the normal feedback directly;
+        ancestry never composes scalarizations implicitly.
+        """
+        self._assert_unprepared()
         if not isinstance(projection, ObjectiveProjection):
             raise TypeError("expected ObjectiveProjection")
+        owner = self._subpool_owner(name)
+        old = self._subpool_metadata.get(name)
         data = self._validate_subpool_metadata(dict(kind="objective_projection",
             created_by=list(created_by), slot=slot, projection=projection.as_dict(),
-            published=not self._in_attempt))
-        old = self._subpool_metadata.get(name)
+            published=not self._in_attempt, parent=parent,
+            view_id=old.get("view_id", uuid4().hex) if old else uuid4().hex,
+            revision=old.get("revision", 1) if old else 1))
         if self.has_subpool(name) and (old is None or old.get("created_by") != data["created_by"]
-                                      or old.get("slot") != slot):
+                                      or old.get("slot") != slot
+                                      or old.get("kind") != "objective_projection"):
             raise ValueError("projection subpool name belongs to a different creator or slot")
+        if old is not None and old.get("parent") != data["parent"]:
+            raise ValueError("projection subpool parent is immutable; publish a new view")
         refs = tuple(refs)
         for ref in refs:
             record = self._record(ref, allow_pending=True)
             if not record.published and record.stage != "accepted":
                 raise ValueError("projection subpools cannot retain unaccepted drafts")
-        self.retain(self._subpool_owner(name), refs)
+        if old is not None:
+            changed = self._owners[owner] != refs or old["projection"] != data["projection"]
+            data["revision"] += int(changed)
+            if not changed:
+                data["published"] = old["published"]
+        self._validate_view_graph({**self._subpool_metadata, name: data}, self.pool_id)
+        self._retain(owner, refs)
         self._subpool_metadata[name] = data
+
+    def children_subpools(self, parent, *, recursive=False):
+        """Enumerate published children by identity, never by a reused name prefix.
+
+        A name resolves the current live view. A frozen descriptor also works
+        after that view has been dropped; descendants retain no candidate roots
+        on behalf of their ancestors.
+        """
+        if type(recursive) is not bool:
+            raise TypeError("recursive must be boolean")
+        descriptor = self.subpool_descriptor(parent) if isinstance(parent, str) else copy.deepcopy(parent)
+        self._validate_view_descriptor(descriptor)
+        if descriptor["pool_id"] != self.pool_id:
+            raise ValueError("subpool parent belongs to another pool")
+        selected = descriptor["view_id"]
+        result = []
+        for name, data in self._subpool_metadata.items():
+            if data.get("kind") != "objective_projection" or not data["published"]:
+                continue
+            ancestors = self._view_ancestors(data)
+            if any(a["view_id"] == selected for a in (ancestors if recursive else ancestors[-1:])):
+                result.append(name)
+        return tuple(result)
 
     def projection_subpools(self, created_by):
         """Enumerate committed views owned by this exact Adapter instance path."""
@@ -360,6 +492,9 @@ class SolutionPool:
     def subpool_refs(self, name):
         """Read committed members; pending outputs become visible on commit."""
         values = self._owners[self._subpool_owner(name)]
+        data = self._subpool_metadata.get(name, {})
+        if data.get("kind") == "objective_projection" and not data["published"]:
+            return ()
         return tuple(ref for ref in values if self._record(ref, allow_pending=True).published)
 
     def add_to_subpool(self, name, refs):
@@ -370,7 +505,14 @@ class SolutionPool:
             record = self._record(ref, allow_pending=True)
             if not record.published and record.stage != "accepted":
                 raise ValueError("subpool outputs must be published or accepted candidates")
-        self.retain(owner, tuple(dict.fromkeys((*previous, *values))))
+        combined = tuple(dict.fromkeys((*previous, *values)))
+        data = self._subpool_metadata.get(name, {})
+        if data.get("kind") == "objective_projection":
+            self.publish_projection_subpool(name, combined, created_by=data["created_by"],
+                slot=data["slot"], projection=ObjectiveProjection.from_dict(data["projection"]),
+                parent=data["parent"])
+        else:
+            self._retain(owner, combined)
 
     def drop_subpool(self, name):
         self.release(self._subpool_owner(name))
@@ -464,6 +606,11 @@ class SolutionPool:
 
     def retain(self, owner: str, refs):
         """Replace one consumer's explicit roots; duplicate memberships are valid."""
+        if isinstance(owner, str) and owner.startswith("subpool/"):
+            raise ValueError("subpool/ retention roots belong to dedicated subpool APIs")
+        self._retain(owner, refs)
+
+    def _retain(self, owner: str, refs):
         self._assert_unprepared()
         if not isinstance(owner, str) or not owner.strip():
             raise ValueError("pool retention owner must be nonempty")
@@ -484,8 +631,11 @@ class SolutionPool:
         """Atomically replace one named family's roots without guessing object graphs."""
         self._assert_unprepared()
         values = {k: tuple(v) for k, v in roots.items()}
-        if not prefix or any(not isinstance(k, str) or not k.startswith(prefix) for k in values):
+        if (not isinstance(prefix, str) or not prefix
+                or any(not isinstance(k, str) or not k.startswith(prefix) for k in values)):
             raise ValueError("retention roots must belong to their declared family")
+        if "subpool/".startswith(prefix) or prefix.startswith("subpool/"):
+            raise ValueError("subpool/ retention roots belong to dedicated subpool APIs")
         for refs in values.values():
             for ref in refs:
                 self._record(ref, allow_pending=True)
@@ -776,6 +926,7 @@ class SolutionPool:
                             for name, value in state.get("subpool_metadata", {}).items()}
         if any(self._subpool_owner(name) not in owners for name in subpool_metadata):
             raise ValueError("subpool metadata has no corresponding membership")
+        self._validate_view_graph(subpool_metadata, state["pool_id"])
         publications = []
         for value in retention.get("publications", ()):
             root = SnapshotIdentity.from_dict(value["manifest"])
@@ -849,7 +1000,8 @@ class SolutionPool:
         created = {k: refs for k, (refs, _) in self._inputs.items() if k not in prior_keys}
         old_owners = baseline["index"]["retention"]["owners"]
         views = {k: refs for k, refs in self._owners.items()
-                 if k.startswith("subpool/") and k not in old_owners}
+                 if k.startswith("subpool/") and k not in old_owners
+                 and self._subpool_metadata.get(k[len("subpool/"):], {}).get("kind") != "objective_projection"}
         view_metadata = {name: copy.deepcopy(data) for name, data in self._subpool_metadata.items()
                          if self._subpool_owner(name) in views}
         self.restore_step_state(baseline)
@@ -860,7 +1012,7 @@ class SolutionPool:
         for owner, refs in views.items():
             for ref in refs:
                 self._record(ref)
-            self.retain(owner, refs)
+            self._retain(owner, refs)
         self._subpool_metadata.update(view_metadata)
 
     def commit_step_state(self, state):

@@ -54,6 +54,8 @@ VNS 首次从池输入后先评估起点，基准未通过准入时重试同一�
 
 MOEA/D 显式发布每方向投影子池，created_by 是 Adapter 实例所有权路径，包含槽位及 ObjectiveProjection。subpools.all/random 只按指定实例选择已发布方向；PoolTaskAdapter 在请求开始时冻结引用与权重/参考点，VNS 的起点和邻域共用该比较坐标。selection 标量在 Adapter 消费边界生成，raw 目标/约束和硬准入不变；返回 MOEA/D 时按其当前分解重新竞争。方向元数据随池 manifest 提交，队列/投影/RNG 随任务恢复，不重抽签或重评。详见 SOLUTION_POOL_CN.md §10.5。
 
+投影池任务声明 output 后，每个完成起点通过 get_pool_refinement_results 显式交付最终选择，另发布本层创建的派生视图；聚合 output 仍保存接纳提案。下一层可用 subpools.all(vns_instance) 继续精修。控制面将精确接纳引用写入每项 Feedback.info.accepted_solution_ref，随子集/路由保留；VNS 选择时保存该版本，不按 token 追读之后的新版本。每个视图有稳定 view_id/revision，parent 保存冻结来源身份与祖先列表；继承有效投影后对新反馈应用一次，不递归标量化。任务依赖环和未绑定投影输出的生产者在装配时拒绝，阶段完成屏障仍由 Router 决定。视图本身提交前不可读；父级更新/删除不改子级语义，释放父级只解除其引用，不级联删除后代候选。缺失新身份的旧投影 checkpoint 需显式迁移。详见 SOLUTION_POOL_CN.md §10.6。
+
 一个候选可以被多个方向槽位或多个种群分区持有。控制面和 Population Snapshot 保留相同 token，不派生 population_slot_alias；槽位身份由 Unit/partition 与行位置表达。快照对重复 token 校验数值及语义 metadata 一致。初始化成员不在最近评估窗口时，按显式 token 从池读取来源并校验内容，不能重新生成身份。
 
 SolverSemanticExtension.before_step 属于提交前尝试；after_step_committed 属于提交后投影。后者失败通过 CommittedStepError 保留真实 StepOutcome；循环先记录提交计数和通知，再结束失败运行。ML 投影使用该接口，LearningSolver 不再覆盖 step。

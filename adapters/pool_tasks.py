@@ -12,7 +12,7 @@ from .role_adapters import RoleAdapter
 from .strategy_task import StrategyTask
 from .subpools import SubpoolSelection, adapter_path
 from nsgablack.context_keys import KEY_PHASE, KEY_SEEDS, KEY_TASK, KEY_SOLUTION_INPUT_REF, KEY_SOLUTION_INPUT_MODE
-from nsgablack.core.state.solution_pool import SolutionRef, SolutionStamp
+from nsgablack.core.state.solution_pool import SolutionPool, SolutionRef, SolutionStamp
 from nsgablack.core.state.pool_views import ObjectiveProjection
 
 
@@ -123,12 +123,43 @@ class PoolTaskAdapter(RoleAdapter):
                 raise ValueError("projection subpool tasks use partition or shared distribution")
             if self.spec.mode != "refine" or not getattr(self.inner, "supports_objective_projection", False):
                 raise ValueError("projection subpool tasks require a refiner supporting objective projections")
-            if not getattr(self.spec.select.creator, "publishes_projection_subpools", False):
+            if self.spec.output is not None and not callable(getattr(self.inner, "get_pool_refinement_results", None)):
+                raise ValueError("projected output requires explicit get_pool_refinement_results")
+            creator = self.spec.select.creator
+            if not (getattr(creator, "publishes_projection_subpools", False)
+                    or getattr(creator, "supports_objective_projection", False)):
                 raise ValueError("selected Adapter does not publish projection subpools")
             if root is not None:
-                adapter_path(root, self.spec.select.creator)
+                adapter_path(root, creator)
+                self._validate_projection_publisher(root, creator, set())
         if count != "all" and (type(count) is not int or count < 1):
             raise ValueError(f"{self.inner.name} must declare default_pool_input_count or use explicit count")
+
+    @staticmethod
+    def _validate_projection_publisher(root, creator, visiting):
+        """A refiner publishes views only through an explicitly assembled task.
+
+        Supporting scalar feedback alone is not a publication contract. Follow
+        declared producer dependencies to reject circular tasks at assembly.
+        """
+        adapter_path(root, creator)
+        if id(creator) in visiting:
+            raise ValueError("projection subpool task dependencies contain a cycle")
+        if getattr(creator, "publishes_projection_subpools", False):
+            return
+        visiting = {*visiting, id(creator)}
+        pending = [root]
+        while pending:
+            adapter = pending.pop()
+            if isinstance(adapter, PoolTaskAdapter) and adapter.inner is creator:
+                if (adapter.spec.mode != "refine" or adapter.spec.output is None
+                        or not isinstance(adapter.spec.select, SubpoolSelection)):
+                    raise ValueError("selected refiner needs a projection pool task with output")
+                PoolTaskAdapter._validate_projection_publisher(
+                    root, adapter.spec.select.creator, visiting)
+                return
+            pending.extend(adapter.step_transaction_children())
+        raise ValueError("selected refiner has no projection pool task with output")
 
     @property
     def input_count(self):
@@ -271,7 +302,9 @@ class PoolTaskAdapter(RoleAdapter):
                 if self.spec.on_insufficient == "wait":
                     return None
             order = self._rng.permutation(len(refs)) if self.spec.shuffle else range(len(refs))
-            jobs.extend(dict(source_view=name, created_by=metadata["created_by"], slot=metadata["slot"],
+            descriptor = pool.subpool_descriptor(name)
+            jobs.extend(dict(source_view=name, source_descriptor=copy.deepcopy(descriptor),
+                created_by=metadata["created_by"], slot=metadata["slot"],
                 projection=metadata["projection"], ref=refs[i].as_dict()) for i in list(order)[:n])
         # View selection is once per request, never once per worker or per step.
         if self.distribution == "partition":
@@ -304,6 +337,15 @@ class PoolTaskAdapter(RoleAdapter):
                 return super().propose(control, context)
             return []
         pool = control.solution_pool
+        if "jobs" in self._local:
+            # Queue membership and its frozen task interpretation must remain
+            # aligned after restore; a valid projection on the wrong seed is
+            # still a semantic error. Do not reread the changing source view.
+            jobs = self._local["jobs"]
+            refs = pool.subpool_refs(self._local["view"])
+            if (refs != tuple(SolutionRef.from_dict(job["ref"]) for job in jobs)
+                    or pool.subpool_metadata(self._local["view"]).get("jobs") != jobs):
+                raise ValueError("projection task jobs differ from their frozen input queue")
         if self._local["input"] is None:
             refs = pool.subpool_refs(self._local["view"])
             selected = refs[self._local["next"]:self._local["next"]+1] if self.spec.mode == "refine" else refs
@@ -359,11 +401,32 @@ class PoolTaskAdapter(RoleAdapter):
             return
         if self._local["output"] is not None:
             pool.add_to_subpool(self._local["output"], self.get_solution_pool_roots(control))
+            if "jobs" in self._local:
+                self._publish_refinement_view(control)
         self._local["next"] += 1 if self.spec.mode == "refine" else self._local["count"]
         self._local["input"], self._local["results"] = None, []
         if self._local["next"] >= self._local["count"]:
             self._local["status"] = "done"
             pool.drop_subpool(self._local["view"])
+
+    def _publish_refinement_view(self, control):
+        """Publish selected results, distinct from the aggregate trial output.
+
+        The Adapter declares its result. Retention roots protect state and are
+        deliberately not interpreted as a selection policy here.
+        """
+        pool = control.solution_pool
+        job = self._local["jobs"][self._local["next"]]
+        refs = tuple(self.inner.get_pool_refinement_results(control))
+        if not refs:
+            raise ValueError("completed projected refinement has no selected result")
+        request_id = hashlib.sha256(self._local["request"].encode()).hexdigest()[:24]
+        name = (f"{self._local['output']}/result:{self.role}/{request_id}/"
+                f"{self.worker}/{self._local['next']}")
+        pool.publish_projection_subpool(name, refs,
+            created_by=adapter_path(control.adapter, self.inner), slot=job["slot"],
+            projection=ObjectiveProjection.from_dict(job["projection"]),
+            parent=job["source_descriptor"])
 
     def get_solution_pool_roots(self, control):
         return tuple(SolutionRef.from_dict(ref) for ref in self._local.get("results", ()))
@@ -431,10 +494,14 @@ class PoolTaskAdapter(RoleAdapter):
             if not isinstance(state["jobs"], list) or len(state["jobs"]) != state["count"]:
                 raise ValueError("projection jobs must align with task progress")
             for job in state["jobs"]:
-                if set(job) != {"source_view", "created_by", "slot", "projection", "ref"}:
+                if set(job) != {"source_view", "source_descriptor", "created_by", "slot", "projection", "ref"}:
                     raise ValueError("invalid projection task job")
                 ObjectiveProjection.from_dict(job["projection"])
-                SolutionRef.from_dict(job["ref"])
+                ref = SolutionRef.from_dict(job["ref"])
+                descriptor = SolutionPool.validate_subpool_descriptor(
+                    job["source_descriptor"], pool_id=ref.pool_id)
+                if descriptor["name"] != job["source_view"]:
+                    raise ValueError("projection job source differs from its frozen descriptor")
                 if (not isinstance(job["source_view"], str) or not job["source_view"]
                         or not isinstance(job["created_by"], list) or not job["created_by"]
                         or any(not isinstance(p, str) or not p for p in job["created_by"])

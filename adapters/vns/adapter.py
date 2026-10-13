@@ -26,6 +26,7 @@ from nsgablack.context_keys import KEY_MUTATION_SIGMA, KEY_VNS_K
 from blackbase.types import UnknownState
 from blackbase.contracts import BatchDisposition
 from ...core.state.incumbent import CandidateProvenance
+from ...core.state.solution_pool import SolutionRef
 
 
 @dataclass
@@ -112,6 +113,7 @@ class VNSAdapter(AlgorithmAdapter):
         self._unit_counter = 0
         self._current_unit = None
         self._current_pool_token = None
+        self._current_pool_ref = None
         self._current_provenance = None
         self._pending_units = []
         self.k = 0
@@ -134,6 +136,7 @@ class VNSAdapter(AlgorithmAdapter):
     def current_x(self, candidate):
         self._current_provenance = None
         self._current_pool_token = None
+        self._current_pool_ref = None
         if candidate is None:
             self._current_unit = None
             return
@@ -165,6 +168,7 @@ class VNSAdapter(AlgorithmAdapter):
     def _initialize_current(self, control, context):
         self._current_violation = None
         self._projection_frame = None
+        self._current_pool_ref = None
         candidate = control.init_candidate(context)
         self._current_provenance = self._provenance(control, candidate)
         resolver = getattr(control, "semantic_candidate_state", None)
@@ -309,6 +313,7 @@ class VNSAdapter(AlgorithmAdapter):
             self._current_violation = float(violations[best_idx])
             self._projection_frame = projection
             self._accept_candidate(control, candidates, best_idx, context)
+            self._capture_accepted_ref(control, feedback, best_idx)
             self._pending_units = []
             self.k = 0
             return
@@ -324,6 +329,7 @@ class VNSAdapter(AlgorithmAdapter):
             self.current_score = best_score
             self._current_violation = float(violations[best_idx])
             self._accept_candidate(control, candidates, best_idx, context)
+            self._capture_accepted_ref(control, feedback, best_idx)
             self._pending_units = []
             self.k = 0
             self._last_context_projection = {
@@ -377,10 +383,41 @@ class VNSAdapter(AlgorithmAdapter):
     def get_current_candidates(self):
         return None if self._current_unit is None else (self._current_unit.to_candidate(),)
 
+    def _capture_accepted_ref(self, control, feedback, index):
+        """Bind the exact accepted row delivered alongside its evaluation.
+
+        A token identifies a candidate lineage, not its selected version. Other
+        tasks may subsequently publish a different version of the same token.
+        Legacy direct update callers can omit this delivery, but cannot then
+        export a result view that promises a specific evaluated candidate.
+        """
+        items = getattr(feedback, "items", ())
+        value = items[index].info.get("accepted_solution_ref") if items else None
+        ref = None if value is None else SolutionRef.from_dict(dict(value))
+        if ref is not None:
+            self._validate_selected_ref(control, ref)
+        self._current_pool_ref = ref
+
+    def _validate_selected_ref(self, control, ref):
+        if ref.candidate_token != self._current_pool_token:
+            raise ValueError("VNS selected solution reference does not match its token")
+        # Reading verifies the pool scope, immutable record and row identity;
+        # update runs before semantic commit, so accepted pending rows are legal.
+        selected = control.solution_pool.read((ref,), allow_pending=True).semantic_states[0]
+        current = None if self._current_unit is None else self._current_unit.to_candidate()
+        if current is None:
+            raise ValueError("VNS selected solution reference has no current Unit")
+        same_values = np.array_equal(candidate_array(selected), candidate_array(current), equal_nan=True)
+        selected_meta = selected.as_dict()["metadata"] if isinstance(selected, UnknownState) else {}
+        current_meta = current.as_dict()["metadata"] if isinstance(current, UnknownState) else {}
+        if not same_values or selected_meta != current_meta:
+            raise ValueError("VNS selected solution reference differs from its current candidate")
+
     def restart_search(self, control, context):
         """Start a new local task without replaying setup or resetting IDs."""
         self._current_unit = None
         self._current_pool_token = None
+        self._current_pool_ref = None
         self._current_provenance = None
         self._pending_units = []
         self.current_score = None
@@ -392,7 +429,18 @@ class VNSAdapter(AlgorithmAdapter):
     def get_solution_pool_roots(self, control):
         if self.current_score is None:
             return ()
+        if self._current_pool_ref is not None:
+            return (self._current_pool_ref,)
         return control.solution_pool.refs_for_tokens((self._current_pool_token,))
+
+    def get_pool_refinement_results(self, control):
+        """Deliver the final incumbent version, not the set of evaluated trials."""
+        if self.current_score is None:
+            return ()
+        if self._current_pool_ref is None:
+            raise ValueError("VNS refinement result requires an exact accepted solution reference")
+        self._validate_selected_ref(control, self._current_pool_ref)
+        return (self._current_pool_ref,)
 
     def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
         _ = solver
@@ -426,6 +474,7 @@ class VNSAdapter(AlgorithmAdapter):
             "current_x": None if self.current_x is None else candidate_array(self.current_x).tolist(),
             "current_score": None if self.current_score is None else float(self.current_score),
             "current_pool_token": self._current_pool_token,
+            "current_pool_ref": None if self._current_pool_ref is None else self._current_pool_ref.as_dict(),
             "current_provenance": None if self._current_provenance is None else self._current_provenance.as_dict(),
             "current_violation": getattr(self, "_current_violation", None),
             "projection_frame": getattr(self, "_projection_frame", None),
@@ -456,6 +505,12 @@ class VNSAdapter(AlgorithmAdapter):
         token = state.get("current_pool_token")
         if token is not None and (provenance is None or provenance.candidate_token != token):
             raise ValueError("VNS checkpoint current provenance does not match its pool token")
+        ref = state.get("current_pool_ref")
+        ref = None if ref is None else SolutionRef.from_dict(dict(ref))
+        if ref is not None and (ref.candidate_token != token or score is None):
+            raise ValueError("VNS checkpoint selected solution reference does not match its baseline")
+        if frame is not None and score is not None and ref is None:
+            raise ValueError("VNS projected checkpoint requires explicit migration to an exact accepted solution reference")
         pending = [self.unit_binding.restore(unit) for unit in state.get("pending_units", ())]
         if "current_unit" in state:
             current = (None if state["current_unit"] is None
@@ -479,6 +534,7 @@ class VNSAdapter(AlgorithmAdapter):
         self._current_violation = violation
         self._projection_frame = frame
         self._current_pool_token = token
+        self._current_pool_ref = ref
         self._current_provenance = provenance
         self._last_context_projection = {
             KEY_VNS_K: int(self.k), KEY_MUTATION_SIGMA: float(self._current_sigma()),

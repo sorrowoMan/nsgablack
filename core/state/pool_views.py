@@ -41,6 +41,8 @@ class ObjectiveProjection:
 
     def apply(self, feedback):
         feedback = OptimizationFeedbackBatch.coerce(feedback)
+        if "subpool_projection" in feedback.metadata:
+            raise ValueError("subpool projection must be applied once to fresh evaluation feedback")
         values = feedback.objectives
         if values.shape[1] != len(self.weights):
             raise ValueError("subpool projection objective dimension mismatch")

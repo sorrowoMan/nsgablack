@@ -22,6 +22,13 @@ MOEA/D 自动生成带实例来源的方向投影子池，可直接给 VNS 角�
 all(moead) 选择全部方向；把同一个 moead 实例装入 Router 的另一个角色。
 默认 count=1 是每方向一个起点，partition 分配方向给 VNS 实例，不重复抽签。
 完整装配与双目标问题见 examples/cases/solution_pool/cases/moead_refinement。
+
+继续精修时保留明确的 VNS 实例 coarse，并将它装入上述 local 角色：
+    fine_task = PoolTaskSpec(subpools.all(coarse), steps=3, output="fine")
+下一层角色消费 coarse 的最终选择视图，继承原方向投影；不会再次对标量求标量。
+Router 须先等待 coarse 任务完成，再调度 fine。all() 不隐含完成屏障。
+视图只增引用及来源元数据；不用的聚合 output 与派生视图都需显式释放。
+标准例子可用 nested_refinement=True 启用 MOEA/D→粗搜 VNS→细搜 VNS→返回。
 """
 from nsgablack.adapters import (
     NSGA2Adapter, NSGA3Adapter, PoolSearchAdapter, PoolSearchSpec,

@@ -8,6 +8,7 @@ from __future__ import annotations
 from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
+from dataclasses import replace
 
 from blackbase.resources import ResourceContext
 from blackbase.runtime import RuntimeTransaction
@@ -1136,8 +1137,16 @@ class ComposableSolver(SolverBase):
 
         update_context = self.build_context()
         update_context[KEY_STEP] = self.generation
-        self.store_solutions(accepted_update_batch, stage="accepted", feedback=accepted_feedback_batch,
-                             provenance=accepted_provenance)
+        accepted_refs = self.store_solutions(
+            accepted_update_batch, stage="accepted", feedback=accepted_feedback_batch,
+            provenance=accepted_provenance)
+        # Per-item references follow subset/reorder routing together with the
+        # feedback. Token-only lookups cannot identify a selected pool version.
+        accepted_feedback_batch = OptimizationFeedbackBatch.from_feedback(
+            [replace(item, info={**dict(item.info), "accepted_solution_ref": ref.as_dict()})
+             for item, ref in zip(accepted_feedback_batch.items, accepted_refs, strict=True)],
+            violations=accepted_feedback_batch.violations,
+            metadata=accepted_feedback_batch.metadata)
         self.adapter.update(
             self,
             self.population,

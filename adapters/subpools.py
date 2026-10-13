@@ -1,4 +1,9 @@
-"""Select public projection subpools by their creating Adapter instance."""
+"""Select committed views by their creating Adapter instance.
+
+Native publishers (MOEA/D) and refiners with an explicit projected PoolTask
+output use the same selector. Selection freezes the currently published set;
+phase scheduling, not this selector, waits for all upstream work to finish.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
