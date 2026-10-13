@@ -726,6 +726,22 @@ def test_checkpoint_resume_hmac_roundtrip(sample_problem, tmp_path: Path):
         os.environ.pop("NSGABLACK_CHECKPOINT_HMAC_KEY", None)
 
 
+def test_checkpoint_signature_verifies_stored_bytes_and_rejects_tampering(monkeypatch):
+    from nsgablack.plugins import CheckpointResumePlugin
+    monkeypatch.setenv("NSGABLACK_CHECKPOINT_HMAC_KEY", "byte-signature-test")
+    plugin = CheckpointResumePlugin()
+    # Equal one-character keys can change pickle memoization after loading.
+    payload = {"ages": [{str(i): i for i in range(3)} for _ in range(2)]}
+    envelope = pickle.loads(pickle.dumps(plugin._wrap_payload(payload)))
+    assert "payload" not in envelope
+    assert plugin._unwrap_and_verify_payload(envelope) == payload
+    tampered = {**envelope, "payload_bytes": envelope["payload_bytes"] + b"changed"}
+    with pytest.raises(ValueError, match="HMAC verification failed"):
+        plugin._unwrap_and_verify_payload(tampered)
+    with pytest.raises(ValueError, match="unsupported type"):
+        plugin._unwrap_and_verify_payload({**envelope, "_checkpoint_envelope": "unknown"})
+
+
 def test_checkpoint_resume_blocks_unsigned_when_hmac_key_present(sample_problem, tmp_path: Path):
     from nsgablack.core.evolution_solver import EvolutionSolver
     from nsgablack.plugins import CheckpointResumeConfig, CheckpointResumePlugin

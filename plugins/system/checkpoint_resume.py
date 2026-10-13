@@ -70,7 +70,7 @@ class CheckpointResumePlugin(Plugin):
     SCHEMA_V9 = "nsgablack.checkpoint.v9"
     SCHEMA_V10 = "nsgablack.checkpoint.v10"
     SCHEMA = SCHEMA_V10
-    ENVELOPE_VERSION = "nsgablack.checkpoint.envelope.v1"
+    ENVELOPE_VERSION = "nsgablack.checkpoint.envelope.v2"
     RESUME_ISSUE_SAMPLE_LIMIT = 32
 
     def __init__(
@@ -497,29 +497,32 @@ class CheckpointResumePlugin(Plugin):
         return hmac.new(key, payload_bytes, hashlib.sha256).hexdigest()
 
     def _wrap_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        # Sign exactly the stored bytes. Re-pickling a loaded value can change
+        # memoization/aliasing even when its semantic content is unchanged.
+        payload_bytes = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
         key = self._get_hmac_key()
-        mac: Optional[str] = None
-        if key is not None:
-            try:
-                mac = self._compute_payload_mac(payload, key)
-            except Exception:
-                if bool(self.cfg.strict):
-                    raise
-                mac = None
+        mac = None if key is None else hmac.new(key, payload_bytes, hashlib.sha256).hexdigest()
         return {
             "_checkpoint_envelope": self.ENVELOPE_VERSION,
-            "payload": payload,
+            "payload_bytes": payload_bytes,
             "hmac_sha256": mac,
             "hmac_env_var": str(getattr(self.cfg, "hmac_env_var", "NSGABLACK_CHECKPOINT_HMAC_KEY")),
         }
 
     def _unwrap_and_verify_payload(self, loaded: Any) -> Dict[str, Any]:
-        if isinstance(loaded, dict) and "_checkpoint_envelope" in loaded and "payload" in loaded:
+        payload_bytes = None
+        if isinstance(loaded, dict) and loaded.get("_checkpoint_envelope") == self.ENVELOPE_VERSION:
+            payload_bytes = loaded.get("payload_bytes")
+            if not isinstance(payload_bytes, bytes):
+                raise ValueError("invalid checkpoint envelope: payload bytes missing or invalid")
+            payload = None
+            provided_mac = loaded.get("hmac_sha256")
+        elif isinstance(loaded, dict) and loaded.get("_checkpoint_envelope") == "nsgablack.checkpoint.envelope.v1":
             payload = loaded.get("payload")
             if not isinstance(payload, dict):
                 raise ValueError("invalid checkpoint envelope: payload missing or invalid")
             provided_mac = loaded.get("hmac_sha256")
-        elif isinstance(loaded, dict):
+        elif isinstance(loaded, dict) and "_checkpoint_envelope" not in loaded:
             # Backward compatibility: old checkpoints had raw payload only.
             payload = loaded
             provided_mac = None
@@ -542,13 +545,18 @@ class CheckpointResumePlugin(Plugin):
                         "checkpoint contains HMAC signature but no key is configured in environment"
                     )
             else:
-                expected = self._compute_payload_mac(payload, key)
+                expected = (hmac.new(key, payload_bytes, hashlib.sha256).hexdigest()
+                            if payload_bytes is not None else self._compute_payload_mac(payload, key))
                 if not hmac.compare_digest(str(provided_mac), expected):
                     raise ValueError("checkpoint HMAC verification failed")
         elif key is not None and not bool(getattr(self.cfg, "unsafe_allow_unsigned", False)):
             raise ValueError(
                 "unsigned checkpoint is blocked; set unsafe_allow_unsigned=True to bypass verification"
             )
+        if payload_bytes is not None:
+            payload = pickle.loads(payload_bytes)
+            if not isinstance(payload, dict):
+                raise ValueError("invalid checkpoint envelope: decoded payload must be a mapping")
         return payload
 
     def _trusted_root_paths(self) -> tuple[Path, ...]:
