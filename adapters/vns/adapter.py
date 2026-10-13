@@ -52,6 +52,8 @@ class VNSConfig:
 
 class VNSAdapter(AlgorithmAdapter):
     """VNS adapter for ComposableSolver."""
+    pool_input_modes = ("initialize",)
+    supports_pool_restart = True
     uses_pipeline_mutation = True
     context_requires = ("generation",)
     context_provides = (KEY_VNS_K, KEY_MUTATION_SIGMA)
@@ -103,6 +105,7 @@ class VNSAdapter(AlgorithmAdapter):
             raise ValueError("VNS neighborhood Unit must expose k_max + 1 neighborhoods")
         self._unit_counter = 0
         self._current_unit = None
+        self._current_pool_token = None
         self._pending_units = []
         self.k = 0
         self.current_x: Optional[np.ndarray] = None
@@ -144,6 +147,7 @@ class VNSAdapter(AlgorithmAdapter):
         self.k = 0
         self.current_x = None
         self.current_score = None
+        self._current_pool_token = None
         self._warn_if_pipeline_does_not_consume_context(control)
         self._last_context_projection = {
             KEY_VNS_K: int(self.k),
@@ -183,6 +187,12 @@ class VNSAdapter(AlgorithmAdapter):
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self.current_x is None:
             self._current_unit = self._build_candidate_unit(control.init_candidate(context), context)
+
+        # Evaluate the seed itself before comparing neighbors. A pool restart
+        # cannot silently assign the first neighbor's score to the input seed.
+        if self.current_score is None:
+            self._pending_units = [self._current_unit]
+            return [self._current_unit.to_candidate()]
 
         sigma = float(self._current_sigma())
         ctx = dict(context)
@@ -272,6 +282,7 @@ class VNSAdapter(AlgorithmAdapter):
                 self.k = 0
                 self._current_unit = self._build_candidate_unit(control.init_candidate(context), context)
                 self.current_score = None
+                self._current_pool_token = None
             else:
                 self.k = int(self.cfg.k_max)
         self._last_context_projection = {
@@ -283,6 +294,7 @@ class VNSAdapter(AlgorithmAdapter):
         return float(self.neighborhood_unit.scales[int(self.k)])
 
     def _accept_candidate(self, control, candidates, index, context):
+        self._current_pool_token = self.candidate_tokens_for(control, candidates)[index]
         resolver = getattr(control, "semantic_candidate_state", None)
         candidate = candidates[index]
         if callable(resolver) and not isinstance(candidate, UnknownState):
@@ -302,6 +314,20 @@ class VNSAdapter(AlgorithmAdapter):
 
     def get_current_candidates(self):
         return None if self._current_unit is None else (self._current_unit.to_candidate(),)
+
+    def restart_search(self, control, context):
+        """Start a new local task without replaying setup or resetting IDs."""
+        self._current_unit = None
+        self._current_pool_token = None
+        self._pending_units = []
+        self.current_score = None
+        self.k = 0
+        self._last_context_projection = {KEY_VNS_K: 0, KEY_MUTATION_SIGMA: float(self._current_sigma())}
+
+    def get_solution_pool_roots(self, control):
+        if self.current_score is None:
+            return ()
+        return control.solution_pool.refs_for_tokens((self._current_pool_token,))
 
     def get_runtime_context_projection(self, solver: Any) -> Dict[str, Any]:
         _ = solver
@@ -334,6 +360,7 @@ class VNSAdapter(AlgorithmAdapter):
             "k": int(self.k),
             "current_x": None if self.current_x is None else candidate_array(self.current_x).tolist(),
             "current_score": None if self.current_score is None else float(self.current_score),
+            "current_pool_token": self._current_pool_token,
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
@@ -369,6 +396,7 @@ class VNSAdapter(AlgorithmAdapter):
         self._pending_units = pending
         self.k = k
         self.current_score = score
+        self._current_pool_token = state.get("current_pool_token")
         self._last_context_projection = {
             KEY_VNS_K: int(self.k), KEY_MUTATION_SIGMA: float(self._current_sigma()),
         }

@@ -195,11 +195,93 @@ RuntimeParticipant 的 commit cleanup 使用共享 SnapshotStore.delete 删除�
 
 这是明确引用与窗口下的存储回收，不是任意 Python 引用追踪或内存泄漏证明；底层存储释放不保证进程 RSS 立刻下降。算法私有历史、Context/Snapshot 的其他数据和外部 Provider 活状态仍由其所属组件负责。当前行为测试覆盖 memory/file 后端；Redis 等后端及长期规模性能另需验收。
 
-## 10. 验收依据
+## 10. 子池与现有多角色调度
+
+### 10.1 子池是引用集合
+
+子池给已有候选划出一个具名区域，不创建另一份候选数组或另一套存储。一个精确 SolutionRef 可同时属于多个子池，各算法通过该引用建立自己的 Unit。子池成员关系复用池的 retention owner，因此随既有索引、步骤事务和可传输 checkpoint 保存；不增加新的权威对象。
+
+```python
+pool = solver.solution_pool
+refs = pool.select(at=pool.timestamp, stage="accepted", limit=20)
+pool.create_subpool("local_inputs", refs)
+same_refs = pool.select(subpool="local_inputs")
+pool.add_to_subpool("local_inputs", more_refs)
+pool.drop_subpool("local_inputs")
+```
+
+`select(subpool=...)` 可继续按 at/stage/source/limit 过滤，保留成员顺序；它直接读取逻辑集合，不再以物理 region 限定。`drop_subpool` 只释放该集合的引用，其他 Unit、子池、历史发布仍然可以持有同一候选。输出子池需由使用方在不再需要时显式释放，否则它仍是回收保护根。
+
+`create_subpool` 只接收已发布来源；`add_to_subpool` 允许将本步骤已通过准入的输出暂存进集合，`subpool_refs` 在同一 Authority 提交前看不到这些输出。失败步骤恢复集合和任务进度；普通零接纳保留新建的来源选择，供下次尝试继续。缺失子池或失效引用不会自动退化成随机初始化。
+
+### 10.2 给角色声明一个取解任务
+
+已有 StrategyRouterAdapter 负责阶段、激活角色、候选预算和反馈路由。新增的任务绑定只描述该角色如何从池取解、何时完成、向哪交付：
+
+```python
+from nsgablack.adapters import PoolTaskSpec, RoleSpec, VNSAdapter
+
+def choose_seeds(control, context):
+    # 这里可以按已提交结果、区域或自己的指标选择。
+    return control.solution_pool.select(stage="accepted", limit=20)
+
+def make_vns(unit_id):
+    return VNSAdapter(name=f"vns_{unit_id}", batch_size=4,
+                      restart_on_stagnation=False)
+
+local_role = RoleSpec(
+    "local", make_vns, n_units=2,
+    pool_task=PoolTaskSpec(choose_seeds, steps=5, output="refined"),
+)
+```
+
+Router 自动用 PoolTaskAdapter 包装子实例。每个角色的一次 request 只选择一次，随后按位置分给各实例；每个实例依次处理自己的起点队列。两个角色可以选择同一批 refs，用不同 VNS 参数建立不同 Unit。实例数量表示逻辑搜索状态的数量，不自动等于线程数。
+
+`select` 可以是 `select(control, context) -> Sequence[SolutionRef]` 的具名函数，也可以是已有子池名。具名函数的 module/qualname 进入 checkpoint 配置身份；函数行为或外部配置的等价性仍由装配者保证，不支持用匿名 callable 对象冒充稳定身份。
+
+三种模式：
+
+- `refine`：每个起点显式重启接收算法的搜索状态，先消费该来源，再执行普通 propose/update。要求 initialize 能力与 supports_pool_restart。
+- `initialize`：选出的引用按既有输入游标交给算法初始化；数量与其 Unit 容量独立。
+- `compete`：送入现有种群的正常成员竞争，不直接覆盖成员。
+
+`steps` 只用于 refine，是每个起点的接纳更新数，包含起点基准求值；`steps=2` 即基准加一批邻域。零接纳不推进任务，失败回滚进度，已经发生的评估成本仍计入全局预算。它不是时间上限、总求值次数，也不会绕开 Solver deadline/预算。VNS 的基准通过正常 repair/评估/Bias/准入之后，才允许用它与后续邻域比较。
+
+`output` 收集任务期间送评且被准入的候选，包括起点和没有胜过当前点的试探解。需要精英集合时，由后续选择函数明确筛选，不能把整个结果子池叫作“全部精修最优解”。结果保留自身 token、来源引用与真实原始反馈，不改变源 x 的分数来冒充 y 的结果。
+
+### 10.3 阶段与返回竞争
+
+```python
+ga_role = RoleSpec(
+    "ga", ga_adapter,
+    pool_task=PoolTaskSpec("refined", mode="compete", phases=("return",)),
+)
+```
+
+`phase_roles` 决定何时调度角色，`phase_policy` 决定当前阶段。任务的 phases 为空时对该角色所有已调度阶段生效；指定阶段之外，未开始/已完成任务的角色正常执行原算法，未完成任务暂停，避免把它当作不相关搜索继续改写。
+
+phase_policy 的局部输入新增 `pool_tasks`，按 `role:unit_id` 提供 request/status/next/count/steps/output 小摘要。它不把候选数组存入共享 context。可以在所有精修实例 done 后进入 return，在种群输入消费完后回到 search。停滞触发仍由既有策略根据指标决定，并不证明局部最优。
+
+默认请求 key 为阶段名，同一 key 完成后不重复启动。需要周期性精修时，`request_key(control, context)` 返回每次触发的新稳定字符串，例如策略维护的触发序号；任务未完成时不被新 key 替换。回调在恢复后应对同一请求产生相同 key，不使用墙钟生成每次不同的 key。
+
+子池名自动位于 Router 路径/名称作用域下，例如 `refinement/refined`；嵌套 Router 加入父 StrategyTask 路径。输入选择、当前结果、尚未消费来源均受保留策略保护。角色原有数值 seeds 对 pool_task 关闭，正式引用是唯一任务输入来源；没有 pool_task 的历史角色仍保留原有调用方式。
+
+返回候选依旧经过接收方正常求值与 Bias 投影；源算法的选择分数不自动复用。原始反馈查询 `pool.read_raw_feedback(refs)` 可供选择函数使用，但本身不代表已满足接收方的评估等价条件。
+
+### 10.4 支持范围与可运行入口
+
+SA/VNS 支持逐起点 refine；NSGA-II/III 支持 initialize/compete。其他算法必须先声明并实现对应池输入能力。MOEA/D 还需要显式绑定子问题比较与目标槽位，本轮没有自动接入，也不把局部搜索的标量和当作任意多目标比较的替代。
+
+同一个 Case 内的这种精修使用已有 Router、PoolTaskSpec 和子 Adapter，不要求额外写一套子 Case。跨 Case 生命周期、并行和 L0 授权仍使用 BlackBase 的标准入口。
+
+正式例子：`examples/cases/solution_pool/cases/pool_refinement/`。它先建立 20 成员种群，再以两类四实例 VNS 分别精修 20 个起点，返回 NSGA-II 竞争并恢复普通搜索。装配策略在 `adapter/refinement.py`，Problem/Pipeline/运行入口仍按标准脚手架组织。
+
+## 11. 验收依据
 
 - `test_solution_pool.py`：时间截止、身份与版本、私有可见性、失败高水位、游标回滚、可传输恢复和摘要篡改拒绝。
 - `test_pool_search_adapter.py`：200→两个 100 成员种群→停滞唤醒→返回竞争；不同取解配额/种群容量与超额准备；满种群后的部分接纳重试；第二个子更新失败的整组回滚；正式 checkpoint 恢复。
 - `test_solution_pool_retention.py`：多消费者保护、闲置时钟、部分行压缩、输入消费、历史固定、可传输 checkpoint、删除失败重试、步骤回滚、未决围栏与不支持组件拒绝。
+- `test_subpool_tasks.py`：20 起点与两类 VNS、子池提交可见性、任务回滚/零接纳重试、返回种群竞争及正式 checkpoint。
 - 既有 repair、SA、语义候选、评估接纳、步骤事务与 checkpoint 测试确认旧边界仍成立。
 
 实际运行命令与结果统一记录在本轮验收文档；存在测试源码不能单独解释成验证通过。

@@ -46,6 +46,10 @@ verification receipt 可由 Journal 持久化用于审计，但 verified_at 是�
 
 ## 显式扩展与失败
 
+多角色池任务使用 `RoleSpec/StrategySpec.pool_task`，由现有 Router 与 PoolTaskAdapter 绑定输入、逐起点重启和输出，不创建第二个运行循环。子池是池内具名 SolutionRef 集合，复用 retention owners、池索引事务和 checkpoint；引用按 token+版本保留，候选内容不复制。任务进度与子算法分别回滚；正常零接纳保留输入选择以重试，异常整组恢复。输出引用暂存到同一池 publication，提交前不能通过子池读取。
+
+VNS 首次从池输入后先评估起点，基准未通过准入时重试同一来源，不随机替换起点。每次局部更新仍经过既有修复/预算/接纳；每个任务的 steps 包含基准更新，不等于裸求值次数。结果集合包含所有被接纳提案；返回种群重新求值与选择，不能把新候选的分数归给来源候选。SA/VNS 与 NSGA-II/III 的声明能力已接入此路径，MOEA/D 的子问题权重/目标槽位不自动推断。
+
 SolverSemanticExtension.before_step 属于提交前尝试；after_step_committed 属于提交后投影。后者失败通过 CommittedStepError 保留真实 StepOutcome；循环先记录提交计数和通知，再结束失败运行。ML 投影使用该接口，LearningSolver 不再覆盖 step。
 
 FinalizationHooks 显式绑定结果准备与发布。事务型 prepare/freeze/abort 必须一起声明；freeze 只冻结暂存结果，CaseExecutor 在全部清理与验证完成后原子 seal。可选方法名称本身不再隐式注册发布行为。

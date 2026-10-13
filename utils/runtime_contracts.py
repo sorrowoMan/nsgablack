@@ -77,6 +77,12 @@ def inspect_runtime_contracts(solver):
         issues.extend(inspect_joint_repair_contracts(solver, resolved))
         for participant in resolved:
             if isinstance(participant, AlgorithmAdapter):
+                from ..adapters.pool_tasks import PoolTaskAdapter
+                if isinstance(participant, PoolTaskAdapter):
+                    try:
+                        participant.validate_pool_task()
+                    except (TypeError, ValueError) as exc:
+                        issues.append(("solution-pool-task-contract-invalid", f"{participant.name}: {exc}"))
                 modes = participant.pool_input_modes
                 if not isinstance(modes, tuple) or any(mode not in {"initialize", "compete"} for mode in modes):
                     issues.append(("solution-pool-input-contract-invalid", f"{participant.name}: unknown input modes"))

@@ -38,6 +38,7 @@ from ..algorithm_adapter import (
 )
 from ..runtime_projection import aggregate_adapter_runtime_projections
 from ..strategy_task import StrategyTask, attach_strategy_origin, TASK_CONTEXT_KEYS
+from ..pool_tasks import PoolTaskSpec, PoolTaskAdapter
 from ..empty_outcome import (
     aggregate_named_empty_outcomes,
     child_empty_proposal_outcome,
@@ -71,6 +72,7 @@ class StrategySpec:
     name: str
     weight: float = 1.0
     enabled: bool = True
+    pool_task: PoolTaskSpec | None = None
 
 
 @dataclass
@@ -88,6 +90,7 @@ class RoleSpec:
     n_units: int = 1
     weight: float = 1.0
     enabled: bool = True
+    pool_task: PoolTaskSpec | None = None
 
 
 @dataclass
@@ -334,7 +337,8 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         if self.strategies:
             out: List[StrategyInstanceSpec] = []
             for idx, spec in enumerate(self.strategies):
-                out.append(StrategyInstanceSpec(role=str(spec.name), unit_id=int(idx), adapter=spec.adapter, enabled=spec.enabled))
+                adapter = spec.adapter if spec.pool_task is None else PoolTaskAdapter(spec.adapter, spec.pool_task, role=spec.name, namespace=self.name)
+                out.append(StrategyInstanceSpec(role=str(spec.name), unit_id=int(idx), adapter=adapter, enabled=spec.enabled))
             return self._validate_instances(out)
 
         # RoleSpec mode
@@ -343,6 +347,8 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             n = int(max(1, int(role.n_units)))
             for uid in range(n):
                 adapter = self._instantiate_role_adapter(role.adapter, uid)
+                if role.pool_task is not None:
+                    adapter = PoolTaskAdapter(adapter, role.pool_task, role=role.name, worker=uid, workers=n, namespace=self.name)
                 out.append(StrategyInstanceSpec(role=str(role.name), unit_id=int(uid), adapter=adapter, enabled=role.enabled))
         return self._validate_instances(out)
 
@@ -652,6 +658,8 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             "shared": self.shared_state,
             "solver": control,
             "context": context,
+            "pool_tasks": {f"{unit.role}:{unit.unit_id}": unit.adapter.task_status
+                           for unit in self.units if isinstance(unit.adapter, PoolTaskAdapter)},
         }
 
     def _apply_phase_policy(
@@ -941,7 +949,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 region_bounds = self._regions[int(region_id)].get("bounds")
 
             seeds = []
-            if self._current_phase_name != "explore":
+            if self._current_phase_name != "explore" and not isinstance(unit.adapter, PoolTaskAdapter):
                 seeds = self._select_seeds(control, int(self.cfg.seeds_per_task))
 
             task = StrategyTask(
@@ -1180,6 +1188,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         if global_best_score is None or best_score < float(global_best_score):
             global_best_score = float(best_score)
             global_best_x = np.asarray(candidates[best_idx])
+            self.shared_state["best_candidate_token"] = self.candidate_tokens_for(control, candidates)[best_idx]
 
         # split feedback to each unit
         by_key = {(u.role, int(u.unit_id)): u for u in self.units}
@@ -1459,6 +1468,11 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         if not self.units:
             self.units = self._build_units()
         return tuple(unit.adapter for unit in self.units)
+
+    def get_solution_pool_roots(self, control):
+        if self.shared_state.get("best_x") is None:
+            return ()
+        return control.solution_pool.refs_for_tokens((self.shared_state.get("best_candidate_token"),))
 
     def snapshot_step_state(self) -> Mapping[str, Any]:
         if not self.units:

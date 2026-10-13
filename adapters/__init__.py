@@ -17,6 +17,7 @@ from .algorithm_adapter import (
 from .candidate_proposer import CandidateProposerAdapter
 from .proposal_repair import ProposalRepair
 from .pool_search import PoolSearchAdapter, PoolSearchSpec
+from .pool_tasks import PoolTaskAdapter, PoolTaskSpec
 from .unit_backed import UnitBackedAdapter, UnitField
 from .role_adapters import RoleAdapter, RoleRouterAdapter
 from .vns import VNSAdapter, VNSConfig
@@ -54,6 +55,7 @@ from .spea2 import SPEA2Adapter, SPEA2Config
 
 __all__ = [
     "PoolSearchAdapter", "PoolSearchSpec",
+    "PoolTaskAdapter", "PoolTaskSpec",
     "ProposalRepair",
     "CandidateProposerAdapter", "UnitBackedAdapter", "UnitField", "StrategyInstanceSpec",
     "AlgorithmAdapter",

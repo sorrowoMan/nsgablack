@@ -259,11 +259,18 @@ class SolutionPool:
         return tuple(result)
 
     def select(self, *, at: SolutionStamp | None = None, region="main", stage="accepted",
-               source: str | None = None, limit: int | None = None):
+               source: str | None = None, limit: int | None = None, subpool: str | None = None):
         if at is not None and (at.run_id != self.run_id or at.sequence > self._sequence):
             raise ValueError("pool selection timestamp is outside this run")
         if limit is not None and (type(limit) is not int or limit < 0):
             raise ValueError("pool selection limit must be nonnegative")
+        if subpool is not None:
+            values = self.subpool_refs(subpool)
+            refs = tuple(ref for ref in values
+                         if (at is None or self._record(ref).stamp.sequence <= at.sequence)
+                         and (stage is None or self._record(ref).stage == stage)
+                         and (source is None or self._record(ref).source == source))
+            return refs if limit is None else refs[:limit]
         refs = []
         for record in self._records.values():
             if (not record.published or record.region != region
@@ -274,6 +281,76 @@ class SolutionPool:
             refs.extend(SolutionRef(self.pool_id, record.record_id, i, t)
                         for i, t in zip(record.available_rows, record.tokens))
         return tuple(refs if limit is None else refs[:limit])
+
+    @staticmethod
+    def _subpool_owner(name):
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("subpool name must be nonempty")
+        return "subpool/" + name
+
+    def create_subpool(self, name, refs=()):
+        """Create a named reference view, with no candidate copies or new store.
+
+        Membership uses the pool's existing transactional retention registry.
+        Closing a view releases its roots, never another consumer's membership.
+        """
+        owner = self._subpool_owner(name)
+        if owner in self._owners:
+            raise ValueError(f"subpool already exists: {name}")
+        values = tuple(refs)
+        for ref in values:
+            self._record(ref)
+        self.retain(owner, values)
+        return name
+
+    def has_subpool(self, name):
+        return self._subpool_owner(name) in self._owners
+
+    def subpool_refs(self, name):
+        """Read committed members; pending outputs become visible on commit."""
+        values = self._owners[self._subpool_owner(name)]
+        return tuple(ref for ref in values if self._record(ref, allow_pending=True).published)
+
+    def add_to_subpool(self, name, refs):
+        owner = self._subpool_owner(name)
+        previous = self._owners[owner]
+        values = tuple(refs)
+        for ref in values:
+            record = self._record(ref, allow_pending=True)
+            if not record.published and record.stage != "accepted":
+                raise ValueError("subpool outputs must be published or accepted candidates")
+        self.retain(owner, tuple(dict.fromkeys((*previous, *values))))
+
+    def drop_subpool(self, name):
+        self.release(self._subpool_owner(name))
+
+    def accepted_refs_since(self, tokens, stamp):
+        """Resolve this attempt's accepted rows by identity, never by values."""
+        if stamp.run_id != self.run_id or stamp.sequence > self._sequence:
+            raise ValueError("accepted candidate lookup uses another pool clock")
+        wanted = set(tokens)
+        refs = tuple(SolutionRef(self.pool_id, r.record_id, row, token)
+                     for r in self._records.values()
+                     if r.stage == "accepted" and r.stamp.sequence > stamp.sequence
+                     for row, token in zip(r.available_rows, r.tokens) if token in wanted)
+        if wanted - {r.candidate_token for r in refs}:
+            raise ValueError("task feedback has no accepted pool candidate")
+        return refs
+
+    def read_raw_feedback(self, refs):
+        """Read original evaluation for an explicit, committed selection."""
+        objectives, violations, loaded = [], [], {}
+        for ref in tuple(refs):
+            record = self._record(ref)
+            if record.record_id not in loaded:
+                loaded[record.record_id] = self._payload(record)[0]["raw_feedback"]
+            raw = loaded[record.record_id]
+            if raw is None:
+                raise ValueError("selected candidate has no raw evaluation")
+            i = record.available_rows.index(ref.row)
+            objectives.append(raw["objectives"][i])
+            violations.append(raw["violations"][i])
+        return np.asarray(objectives, dtype=float), np.asarray(violations, dtype=float)
 
     def bind_input(self, refs):
         self._assert_unprepared()
@@ -705,11 +782,18 @@ class SolutionPool:
         """
         prior_keys = set(baseline["index"]["inputs"])
         created = {k: refs for k, (refs, _) in self._inputs.items() if k not in prior_keys}
+        old_owners = baseline["index"]["retention"]["owners"]
+        views = {k: refs for k, refs in self._owners.items()
+                 if k.startswith("subpool/") and k not in old_owners}
         self.restore_step_state(baseline)
         for key, refs in created.items():
             for ref in refs:
                 self._record(ref)
             self._inputs[key] = refs, 0
+        for owner, refs in views.items():
+            for ref in refs:
+                self._record(ref)
+            self.retain(owner, refs)
 
     def commit_step_state(self, state):
         return self.collect_garbage() if self.retention_policy is not None and not self._in_attempt else None

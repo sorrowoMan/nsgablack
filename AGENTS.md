@@ -6,6 +6,7 @@
 
 - `Problem` 定义评估含义；问题管线处理候选；算法管线构建 `Unit`；Adapter 操作 Unit 作搜索决策。
 - `SolutionPool` 先于 Adapter 创建，通过共享 SnapshotStore 保存具名区域中的不可原位改写候选版本；SolutionStamp 使用运行身份与逻辑时钟，SolutionRef 同时标识 token 和版本。读取保留身份，新算法提案显式派生身份并保留父 token/源引用，repair 保留提案 token。Unit 保留算法工作投影和关系，不共享一份可写排名。详见 `docs/architecture/SOLUTION_POOL_CN.md`。
+- 子池是 SolutionPool 内的具名引用集合，复用池索引事务/checkpoint/保留声明，不另复制候选值。RoleSpec/StrategySpec 的 `pool_task=PoolTaskSpec(...)` 通过现有 Router 分发；任务进度和子 Adapter 独立参与步骤事务。输出只在提交后可读，退出子池只解除成员关系。
 - `Unit` 保留候选本体或候选集合，扩展算法特征、关系与必要状态；构建 Unit 不等于候选编码，取出候选不等于解码。`UnitBinding` 绑定 builder、持久状态 codec 和可选构建 runner；Unit 不拥有 Solver 生命周期或全局授权。
 - 种群 Adapter 决定成员选择或槽位替换，PopulationUnit 统一维护 X/F/V/token 与扩展成员字段。新增行字段声明 member_fields，通过只读 on_members_changed(PopulationChange) 返回更新；change 携带对齐的只读 incoming 候选/反馈/token/metadata/provenance。禁止让 Adapter 猜未知字段的维护语义。详见 `docs/architecture/UNIT_MEMBER_OPERATIONS_CN.md`。
 - `CandidateBatch` 保留语义值、数值矩阵和 token；数值相等不能替代身份。`ProposalRepair` 表达评估前同一提案被修改；`BatchDisposition` 表达预算/接纳筛选。二者不可互相替代。
@@ -410,6 +411,8 @@ ProblemRepair 修问题约束；UnitRepair 修算法结构，也可改候选。J
 
 - `store_solutions / read_solutions / propose_solutions`：登记版本、按引用读取、显式生成带源身份的新提案；`solution_pool.select(at=stamp, region=..., stage=...)` 锁定候选来源时点。context 仅传 pool manifest/time/input ID/mode。
 - `pool_input_modes` / `supports_pool_restart` / `restart_search`：Adapter 显式声明池初始化、竞争、搜索重启。不得因实现 Unit 就推断已支持任意交接；PoolSearchAdapter 的接收方须支持 initialize/compete，producer 的重启不重放生命周期。
+- `PoolTaskSpec(select, mode, steps, output, request_key, phases)`：select 为具名函数或 Router 作用域内子池名；refine 逐起点重启独立搜索，initialize/compete 按接收方能力分批输入。steps 含起点基准评估，计算已接纳的更新；全局预算仍归 Solver。SA/VNS 支持 refine，NSGA-II/III 支持 initialize/compete；MOEA/D 子问题比较尚未接入。不得自动推断支持。
+- VNS 先通过正常 repair/评估/接纳建立起点基准，再比较邻域。子池输出收集被接纳的提案，不保证每一项都是局部改进；接收方重评并自己选择。请求 key 在同次任务中稳定，重复触发使用新 key；phase_policy 的局部 pool_tasks 摘要用于阶段决策，不是共享 context 大对象。
 - 解池历史数量、编排初始取解配额、各算法 Unit 容量和后代批次大小分别配置。不得要求 `build_solver(config={"population_size": ...})` 统一它们；`PoolSearchSpec.initial_count` 不是池容量，也不须等于接收算法的 `population_size`。
 - `set_solution_pool_retention(PoolRetentionPolicy(...))` 在首次发布前显式启用闲置回收；Adapter 必须声明 `get_solution_pool_roots`，未知组件不得猜测。显式 retain/未消费输入保护值；年龄与引用回滚，物理删除在提交后，失败可重试。压缩不能改存活引用的原始 row/token。旧 manifest 仅在保留窗口或显式 pin 下保证值可读；可传输 checkpoint 自带值，未决 Authority 的 prepared 值闭包须固定到恢复确认。详见解池契约第 9 节。
 - Checkpoint envelope.v2 对实际保存的 payload_bytes 验签后解析；不对语义值重复 pickle 来近似签名，不用重复 payload 建立两个事实源。
