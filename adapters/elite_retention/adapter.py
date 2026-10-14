@@ -8,11 +8,14 @@ from typing import Any, Dict, Mapping, Sequence
 
 import numpy as np
 from blackbase.contracts import BatchDisposition
+from blackbase.types import UnknownState
 
 from ..unit_backed import UnitBackedAdapter, UnitField
 from ...representation.structure_builders import ArchiveUnitBuilder
 from ..algorithm_adapter import AlgorithmAdapter, PopulationPartition
 from ..empty_outcome import child_empty_proposal_outcome
+from ...core.state.solution_pool import SolutionRef
+from ...context_keys import KEY_SOLUTION_INPUT_REF
 
 
 @dataclass(frozen=True)
@@ -96,11 +99,34 @@ class EliteRetentionAdapter(UnitBackedAdapter):
     def teardown(self, control: Any) -> None:
         self.inner.teardown(control)
 
+    @property
+    def get_pool_refinement_results(self):
+        # Refinement selection belongs to the inner algorithm, not this archive's
+        # independent retention score.
+        return getattr(self.inner, "get_pool_refinement_results", None)
+
+    def pool_result_owner(self):
+        return self.inner.pool_result_owner()
+
+    def get_solution_pool_roots(self, control):
+        refs = []
+        for item in self._archive:
+            value = item.get("solution_ref")
+            if value is None:
+                # Legacy direct updates remain usable, but cannot authorize GC
+                # by guessing an exact version from equal candidate values.
+                return None
+            refs.append(SolutionRef.from_dict(dict(value)))
+        return tuple(refs)
+
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[Any]:
         self._validate_injection()
+        input_ref = context.get(KEY_SOLUTION_INPUT_REF)
+        intake = input_ref is not None and control.solution_pool.input_remaining(input_ref) > 0
         proposed = self.coerce_candidates(self.inner.propose(control, context))
         if (
             not proposed
+            or intake
             or self.config.retention_ratio <= 0
             or not self._archive
             or self._rng.random() >= float(self.config.retention_probability)
@@ -112,7 +138,18 @@ class EliteRetentionAdapter(UnitBackedAdapter):
         )
         selected = self._rng.choice(len(self._archive), size=count, replace=True)
         for offset, archive_index in enumerate(np.asarray(selected).reshape(-1)):
-            base = copy.deepcopy(self._archive[int(archive_index)]["candidate"])
+            entry = self._archive[int(archive_index)]
+            value = entry.get("solution_ref")
+            if value is None:
+                base = copy.deepcopy(entry["candidate"])
+            else:
+                # Read through the control surface so the new proposal retains
+                # its archived parent's token/version in provenance.
+                batch = control.read_solutions((SolutionRef.from_dict(dict(value)),))
+                state = batch.semantic_states[0]
+                base = state if isinstance(entry["candidate"], UnknownState) else batch.numeric_matrix[0]
+                provenance = control.candidate_provenance_for(state)
+                control.bind_candidate_provenance((base,), (provenance,), activate=False)
             mutate = getattr(control, "mutate_candidate", None)
             if callable(mutate):
                 derived = self.inner.mutate_candidate(control, base, context)
@@ -162,12 +199,16 @@ class EliteRetentionAdapter(UnitBackedAdapter):
             objective = np.asarray(obj[index], dtype=float).reshape(-1).copy()
             violation = float(vio[index])
             score = float(np.sum(objective))
+            items = getattr(feedback, "items", ())
+            value = items[index].info.get("accepted_solution_ref") if items else None
+            ref = None if value is None else SolutionRef.from_dict(dict(value))
             self._archive.append(
                 {
                     "candidate": copy.deepcopy(candidate),
                     "objectives": objective,
                     "violation": violation,
                     "score": score,
+                    "solution_ref": None if ref is None else ref.as_dict(),
                 }
             )
         self._archive.sort(

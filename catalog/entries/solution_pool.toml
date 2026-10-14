@@ -30,7 +30,7 @@ title = "PoolTaskSpec"
 kind = "tool"
 import_path = "nsgablack.adapters:PoolTaskSpec"
 tags = ["core", "solution-pool", "subpool", "role", "refinement"]
-summary = "默认母池取解；按 Adapter 来源选投影子池，可递归发布带冻结父级的精修结果视图，沿用角色调度与恢复。"
+summary = "明确母池或具名视图输入；按算法实例选择普通／投影结果视图，递归发布冻结来源与精确选择，沿用角色调度和恢复。"
 use_when = ["通过 RoleSpec/StrategySpec 在既有 Router 中装配池任务时。"]
 minimal_wiring = ["from nsgablack.adapters import PoolTaskSpec", "task = PoolTaskSpec(mode='initialize')", "local = PoolTaskSpec('elite', count='all', steps=5)"]
 required_companions = ["adapter.pool_task", "tool.solution_pool"]
@@ -60,19 +60,19 @@ summary = "运行内具名候选区域与引用子池；不可原位改写版本
 use_when = ["需要显式存取、共享或按运行时点选择候选，且不传递其他算法的完整 Unit 时。"]
 minimal_wiring = ["pool = solver.solution_pool", "refs = pool.select(at=pool.timestamp, stage='accepted')", "batch = solver.read_solutions(refs)"]
 required_companions = ["SnapshotStore", "CandidateBatch"]
-config_keys = ["region", "stage", "source", "at", "limit", "subpool", "create_subpool", "add_to_subpool", "drop_subpool", "read_raw_feedback", "subpool_metadata", "projection_subpools", "subpool_descriptor", "children_subpools", "publish_projection_subpool"]
+config_keys = ["region", "stage", "source", "at", "limit", "subpool", "create_subpool", "add_to_subpool", "drop_subpool", "read_raw_feedback", "subpool_metadata", "projection_subpools", "subpools_created_by", "subpool_descriptor", "children_subpools", "publish_projection_subpool", "publish_subpool_view"]
 example_entry = "python -m nsgablack catalog show tool.solution_pool"
 
 [[entry]]
 key = "tool.subpools"
-title = "Projection Subpool Selectors"
+title = "Adapter Result View Selectors"
 kind = "tool"
 import_path = "nsgablack.adapters:subpools"
 tags = ["core", "solution-pool", "subpool", "moead", "projection", "refinement"]
-summary = "按创建者 Adapter 实例选择全部或随机 N 个投影子池，包括上层 VNS 的派生结果；请求级无放回抽样并冻结比较参数。"
-use_when = ["VNS 需要精修 MOEA/D 方向，或继续精修上层 VNS 的最终选择时。"]
+summary = "按真实算法实例选择全部或随机 N 个普通／投影结果视图；冻结候选版本、父级与可选比较参数。"
+use_when = ["局部算法消费 NSGA／DE 种群、MOEA/D 方向，或继续消费上一层明确交付的结果时。"]
 minimal_wiring = ["from nsgablack.adapters import PoolTaskSpec, subpools", "task = PoolTaskSpec(subpools.random(20, adapter1), steps=3, output='refined')", "next_task = PoolTaskSpec(subpools.all(coarse_vns), steps=3, output='fine')"]
-required_companions = ["adapter.moead", "adapter.pool_task", "tool.pool_task_spec"]
+required_companions = ["adapter.pool_task", "tool.pool_task_spec"]
 config_keys = ["all", "random", "creator", "count"]
 example_entry = "examples/cases/solution_pool/cases/moead_refinement/README.md"
 
@@ -98,7 +98,7 @@ summary = "标准 Case：100 方向按来源选择 20 个精修后返回 MOEA/D�
 use_when = ["需要直接装配按方向精修而非为每对算法写转换逻辑时。"]
 minimal_wiring = ["python examples/cases/solution_pool/cases/moead_refinement/run_solver.py --check", "python examples/cases/solution_pool/cases/moead_refinement/run_solver.py"]
 required_companions = ["tool.subpools", "adapter.moead", "adapter.vns", "tool.pool_task_spec"]
-config_keys = ["directions", "view_count", "workers", "local_steps", "fine_steps", "nested_refinement", "max_steps", "seed"]
+config_keys = ["directions", "view_count", "workers", "local_steps", "local_algorithm", "fine_steps", "nested_refinement", "max_steps", "seed"]
 example_entry = "examples/cases/solution_pool/cases/moead_refinement/README.md"
 
 [[entry]]

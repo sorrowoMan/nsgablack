@@ -30,6 +30,7 @@ from ..algorithm_adapter import (
     subset_adapter_feedback,
 )
 from ..runtime_projection import aggregate_adapter_runtime_projections
+from ...core.state.solution_pool import SolutionRef
 from ..empty_outcome import (
     aggregate_named_empty_outcomes,
     child_empty_proposal_outcome,
@@ -446,11 +447,15 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
                 "violation": float(vio),
             }
             completion_events.append(record)
+            items = getattr(feedback, "items", ())
+            value = items[idx].info.get("accepted_solution_ref") if items else None
+            ref = None if value is None else SolutionRef.from_dict(dict(value))
             self._push_archive(
                 {
                     **record,
                     "objective": np.asarray(objectives[idx], dtype=float),
                     "x": np.asarray(candidates[idx], dtype=float),
+                    "solution_ref": None if ref is None else ref.as_dict(),
                 }
             )
             if strategy_name in self._stats:
@@ -500,6 +505,17 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         if not self._uses_event_cases():
             self._topup_queue()
         self._publish_state(control)
+
+    def get_solution_pool_roots(self, control):
+        refs = []
+        for item in self.archive:
+            value = item.get("solution_ref")
+            if value is None:
+                # Direct/legacy feedback did not identify a pool version. Do
+                # not silently declare those live archive entries unreferenced.
+                return None
+            refs.append(SolutionRef.from_dict(dict(value)))
+        return tuple(refs)
 
     def _score(self, objectives_row: np.ndarray, violation: float) -> float:
         if self.cfg.objective_aggregation == "first":

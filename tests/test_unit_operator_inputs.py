@@ -87,6 +87,7 @@ def test_nonidempotent_repair_runs_once_for_each_budget_approved_proposal(allowa
 ])
 def test_builtin_propose_returns_drafts_without_executing_repair(factory):
     control = SimpleNamespace(init_candidate=lambda ctx: np.zeros(1),
+                              init_population=lambda count, ctx: tuple(np.zeros(1) for _ in range(count)),
                               mutate_candidate=lambda x, ctx: np.asarray(x) + 1,
                               repair_candidate=lambda *args: pytest.fail("proposal repaired early"))
     assert len(factory().propose(control, {})) > 0

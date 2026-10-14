@@ -88,6 +88,16 @@ def inspect_runtime_contracts(solver):
                     issues.append(("solution-pool-input-contract-invalid", f"{participant.name}: unknown input modes"))
                 if participant.supports_pool_restart and type(participant).restart_search is AlgorithmAdapter.restart_search:
                     issues.append(("solution-pool-input-contract-invalid", f"{participant.name}: restart is declared but not implemented"))
+                for flag in ("supports_pool_restart", "supports_objective_projection",
+                             "publishes_projection_subpools", "publishes_subpools"):
+                    if type(getattr(participant, flag)) is not bool:
+                        issues.append(("solution-pool-input-contract-invalid", f"{participant.name}: {flag} must be boolean"))
+                results = participant.get_pool_refinement_results
+                if results is not None and not callable(results):
+                    issues.append(("solution-pool-result-contract-invalid", f"{participant.name}: result delivery must be callable or None"))
+                if participant.supports_objective_projection and (
+                        "initialize" not in modes or not participant.supports_pool_restart):
+                    issues.append(("solution-pool-input-contract-invalid", f"{participant.name}: projected refinement requires initialize and restart"))
                 try:
                     if participant.mutation_operator is not None and not participant.uses_pipeline_mutation:
                         raise ValueError("Adapter does not consume pipeline mutation")

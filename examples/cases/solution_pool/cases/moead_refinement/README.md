@@ -17,7 +17,9 @@ selection = subpools.random(20, moead)  # 替换为 subpools.all(moead) 选择�
 task = PoolTaskSpec(selection, steps=3, output="refined")
 ```
 
-`build_solver(config={"view_count": None})` 使用全部方向；directions、workers、local_steps、max_steps、seed 可配置。默认 25 个提交步覆盖随机 20 方向的完整流程；选择全部方向需相应增加步数预算。steps 包含起点基准评估后的更新，每步可能评估多个邻域候选。
+`build_solver(config={"view_count": None})` 使用全部方向；directions、workers、local_steps、max_steps、seed 可配置。默认提交预算按初始化、所选方向数、工作实例、精修步数和返回批次估算。steps 包含起点基准评估后的更新，每步可能评估多个邻域候选。
+
+`local_algorithm` 可选 `vns`、`sa`、`pattern`，使用相同来源选择、输出和返回装配。SA 可以探索较差当前点，但派生视图交付任务内最好已评估解。MOEA/D setup 不生成或评估候选；阶段先等待 pool_views_ready，再初始化 GA 和启动精修，不以固定第一步假定方向已经存在。
 
 每个任务固定起点版本、方向权重与参考点，起点和邻域均通过原 Problem 求双目标，再投影供 VNS 比较。母池保存原始双目标；返回候选由 MOEA/D 按当前方向与替换上限决定成员。输出包含已接纳提案，不保证全部都是局部改进。本例验证装配机制，不宣称融合优于单算法。
 
@@ -40,7 +42,7 @@ solver = build_solver({
 solver.run()
 ```
 
-它依次执行 MOEA/D 与 GA 探索、VNS 粗搜、VNS 细搜、MOEA/D 返回竞争，然后继续搜索。
+它依次完成 MOEA/D 正式初始化、GA 初始化、VNS 粗搜、VNS 细搜、MOEA/D 返回竞争，然后继续搜索。
 粗搜与细搜各使用一个 VNS 实例，分别采用 `base_sigma=0.2` 和 `0.05`；`workers` 只用于上面的单层装配。
 未给 `max_steps` 时，两层模式按所选方向数和两层步数分配运行预算，包含各方向的起点基准评估、
 细搜聚合输出返回竞争所需批次，以及两个继续搜索步骤。

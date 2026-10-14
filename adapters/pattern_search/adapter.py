@@ -12,7 +12,9 @@ import numpy as np
 
 from ..unit_backed import UnitBackedAdapter, UnitField, UnitFeedbackField
 from ...representation.structure_builders import PollUnitBuilder
+from ...units.contracts import candidate_array
 from ..algorithm_adapter import AlgorithmAdapter
+from ..pool_results import PoolRefinementState
 from nsgablack.context_keys import KEY_ADAPTER_BEST_SCORE, KEY_MUTATION_SIGMA
 
 
@@ -27,6 +29,9 @@ class PatternSearchConfig:
 
 
 class PatternSearchAdapter(UnitBackedAdapter):
+    pool_input_modes = ("initialize",)
+    supports_pool_restart = True
+    supports_objective_projection = True
     unit_build_operations = ("initialize", "poll")
     accepts_proposal_replacement = True
     unit_builder_type = PollUnitBuilder
@@ -62,17 +67,35 @@ class PatternSearchAdapter(UnitBackedAdapter):
         self.step_size: float = float(self.cfg.step_size)
         self._runtime_projection: Dict[str, Any] = {}
         self._rng = np.random.default_rng()
+        self._pool_results = PoolRefinementState()
+
+    def default_pool_input_count(self):
+        return 1
+
+    def restart_search(self, control, context):
+        self.reset_unit()
+        self.current_x = self.current_score = None
+        self.step_size = float(self.cfg.step_size)
+        self._pool_results = PoolRefinementState()
+        self._runtime_projection = {KEY_MUTATION_SIGMA: self.step_size}
+
+    def get_solution_pool_roots(self, control):
+        return self._pool_results.roots(control)
+
+    def get_pool_refinement_results(self, control):
+        return self._pool_results.results(control)
 
     def setup(self, control: Any) -> None:
         self._rng = self.create_local_rng(control)
-        self.current_x = None
-        self.current_score = None
-        self.step_size = float(self.cfg.step_size)
-        self._runtime_projection = {KEY_MUTATION_SIGMA: float(self.step_size)}
+        self.restart_search(control, {})
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self.current_x is None:
-            self.current_x = np.asarray(control.init_candidate(context), dtype=float)
+            seed = control.init_candidate(context)
+            self.current_x = np.asarray(seed, dtype=float)
+            self._pool_results.remember_seed(control, seed)
+        if self.current_score is None:
+            return [self._pool_results.project_current(control, self.current_x, semantic=True)]
         dim = int(self.current_x.shape[0])
         n_dirs = max(1, min(dim, int(self.cfg.max_directions)))
         dims = self._rng.choice(dim, size=n_dirs, replace=False)
@@ -80,12 +103,16 @@ class PatternSearchAdapter(UnitBackedAdapter):
         out = []
         for direction in self.algorithm_unit.directions:
             point = self.current_x + float(self.step_size) * direction
-            out.append(np.asarray(point, dtype=float))
-        self.algorithm_unit.displacements = np.asarray(out) - self.current_x
+            out.append(self._pool_results.derive_candidate(control, point, stage="poll"))
+        self.algorithm_unit.displacements = np.asarray([candidate_array(value) for value in out]) - self.current_x
         self._runtime_projection = {KEY_MUTATION_SIGMA: float(self.step_size)}
         return out
 
     def on_proposal_repair(self, control, repair, context):
+        if self.current_score is None:
+            if repair.proposed_count != 1:
+                raise ValueError("Pattern-search baseline requires one candidate")
+            return
         if repair.proposed_count != len(self.algorithm_unit.probes):
             raise ValueError("Pattern-search repair must align with pending probes")
         for row, index in enumerate(repair.proposal_indices):
@@ -99,17 +126,22 @@ class PatternSearchAdapter(UnitBackedAdapter):
         context: Dict[str, Any],
     ) -> None:
         objectives, violations = feedback
-        _ = control
-        _ = context
         if candidates is None or len(candidates) == 0:
             return
-        scores = self._scores(objectives, violations)
-        best_idx = int(np.argmin(scores))
+        scores, violations = self._pool_results.scores(feedback, self._scores)
+        best_idx = min(range(len(candidates)), key=lambda i: self._pool_results.key(scores[i], violations[i]))
         best_score = float(scores[best_idx])
-        if self.current_score is None or best_score < self.current_score:
+        baseline = self.current_score is None
+        if baseline and len(candidates) != 1:
+            raise ValueError("Pattern-search baseline feedback requires one candidate")
+        self._pool_results.observe_best(control, candidates, feedback, best_idx, best_score, violations[best_idx])
+        if baseline or self._pool_results.improves_current(best_score, violations[best_idx], self.current_score):
             self.current_x = np.asarray(candidates[best_idx], dtype=float)
             self.current_score = best_score
-            self.step_size = max(float(self.cfg.min_step), self.step_size * float(self.cfg.expansion))
+            self._pool_results.current = self._pool_results.capture(
+                control, candidates, feedback, best_idx, best_score, violations[best_idx])
+            if not baseline:
+                self.step_size = max(float(self.cfg.min_step), self.step_size * float(self.cfg.expansion))
         else:
             self.step_size = max(float(self.cfg.min_step), self.step_size * float(self.cfg.contraction))
         self._runtime_projection = {
@@ -132,6 +164,7 @@ class PatternSearchAdapter(UnitBackedAdapter):
             "current_score": self.current_score,
             "step_size": float(self.step_size),
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
+            "pool_refinement": self._pool_results.as_dict(),
         }
 
     def _set_algorithm_state(self, state: Dict[str, Any]) -> None:
@@ -141,6 +174,7 @@ class PatternSearchAdapter(UnitBackedAdapter):
         self.current_x = None if x is None else np.asarray(x, dtype=float)
         score = state.get("current_score")
         self.current_score = None if score is None else float(score)
+        self._pool_results = PoolRefinementState.from_dict(state.get("pool_refinement"))
         self.step_size = float(state.get("step_size", self.cfg.step_size))
         rng_state = state.get("rng_state")
         if isinstance(rng_state, dict):

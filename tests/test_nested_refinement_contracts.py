@@ -52,6 +52,8 @@ def make_solver(*, setup=True, fine_steps=2):
     producer = MOEADAdapter(name="directions", population_size=4, batch_size=2,
                            neighborhood_size=2, decomposition="weighted_sum")
     coarse = VNSAdapter(name="coarse", batch_size=1, restart_on_stagnation=False)
+    def ready_phase(context):
+        return refinement_phase(context) if producer.pool_views_ready else "bootstrap"
     router = StrategyRouterAdapter(name="nested", roles=[
         RoleSpec("producer", producer,
                  pool_task=PoolTaskSpec("fine_results", mode="compete", phases=("return",))),
@@ -62,14 +64,15 @@ def make_solver(*, setup=True, fine_steps=2):
             pool_task=PoolTaskSpec(subpools.all(coarse), steps=fine_steps,
                                   output="fine_results", shuffle=False)),
     ], config=MultiStrategyConfig(total_batch_size=8, adapt_weights=False,
-        phase_policy=refinement_phase, phase_roles={
-            "coarse": ["coarse"], "fine": ["fine"], "return": ["producer"]}))
+        phase_policy=ready_phase, phase_roles={
+            "bootstrap": ["producer"], "coarse": ["coarse"], "fine": ["fine"], "return": ["producer"]}))
     solver = ComposableSolver(RouteProblem(), adapter=router,
         representation_pipeline=RepresentationPipeline(
             initializer=RouteOperators(), mutator=RouteOperators()))
     solver.set_random_seed(19)
     if setup:
         solver.setup()
+        assert solver.step().committed
     return solver, router, coarse
 
 

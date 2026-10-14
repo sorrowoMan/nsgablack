@@ -15,15 +15,12 @@ from ..unit_backed import UnitBackedAdapter, UnitField
 from ...representation.structure_builders import PopulationUnitBuilder
 from ...units.population_features import SELECTION_RANKING
 from ..algorithm_adapter import AlgorithmAdapter
+from ..population_pool_refs import (feedback_pool_bindings, align_pool_bindings, validate_pool_bindings,
+                                   publish_population_view, validate_numeric_population_replacement)
 from nsgablack.context_keys import (
     KEY_ADAPTER_BEST_OBJECTIVES,
     KEY_ADAPTER_BEST_SCORE,
     KEY_ADAPTER_BEST_X,
-    KEY_CONSTRAINT_VIOLATIONS,
-    KEY_OBJECTIVES,
-    KEY_POPULATION,
-    KEY_POPULATION_REF,
-    KEY_SNAPSHOT_KEY,
 )
 from ...utils.performance.fast_non_dominated_sort import FastNonDominatedSort
 
@@ -38,6 +35,7 @@ class NSGA2Config:
 
 class NSGA2Adapter(UnitBackedAdapter):
     pool_input_modes = ("initialize", "compete")
+    publishes_subpools = True
     uses_pipeline_mutation = True
     unit_features = (SELECTION_RANKING,)
     accepts_proposal_replacement = True
@@ -80,6 +78,7 @@ class NSGA2Adapter(UnitBackedAdapter):
         self.objectives: Optional[np.ndarray] = None
         self.violations: Optional[np.ndarray] = None
         self._population_candidate_tokens: tuple[str | None, ...] = ()
+        self._population_pool_bindings = ()
         self._rank: np.ndarray = np.zeros(0, dtype=int)
         self._crowding: np.ndarray = np.zeros(0, dtype=float)
         self._runtime_projection: Dict[str, Any] = {}
@@ -88,6 +87,7 @@ class NSGA2Adapter(UnitBackedAdapter):
     def setup(self, control: Any) -> None:
         self._rng = self.create_local_rng(control)
         self.reset_unit()
+        self._population_pool_bindings = ()
         self._rank = np.zeros(0, dtype=int)
         self._crowding = np.zeros(0, dtype=float)
         self._runtime_projection = {}
@@ -96,9 +96,8 @@ class NSGA2Adapter(UnitBackedAdapter):
         return int(self.cfg.population_size)
 
     def get_solution_pool_roots(self, control):
-        if self.population is not None and len(self._population_candidate_tokens) != len(self.population):
-            raise ValueError("live NSGA population requires aligned candidate tokens for pool retention")
-        return control.solution_pool.refs_for_tokens(self._population_candidate_tokens)
+        return validate_pool_bindings(self._population_pool_bindings, self.population,
+            self._population_candidate_tokens, control=control, require=True)
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         from nsgablack.context_keys import KEY_SOLUTION_INPUT_REF
@@ -146,25 +145,32 @@ class NSGA2Adapter(UnitBackedAdapter):
             obj = obj.reshape(-1, 1)
         candidate_tokens = self.candidate_tokens_for(control, candidates)
         member_inputs = self.member_inputs_for(control, candidates)
+        incoming_bindings = feedback_pool_bindings(control, candidates, feedback, candidate_tokens,
+            candidate_metadata=member_inputs["candidate_metadata"])
 
-        if self.population is None or self.objectives is None or self.violations is None:
+        if self.population is None or len(self.population) == 0 or self.objectives is None or self.violations is None:
             keep = (self._environmental_select(obj, vio, int(self.cfg.population_size))
                     if len(cand) > int(self.cfg.population_size) else np.arange(len(cand)))
             # Select once before installing members, keeping every semantic
             # input on the same rows. Custom member hooks see one publication.
             selected_inputs = {key: tuple(rows[i] for i in keep)
                                for key, rows in member_inputs.items()}
-            self.algorithm_unit.initialize_population(cand[keep], obj[keep], vio[keep],
+            change = self.algorithm_unit.initialize_population(cand[keep], obj[keep], vio[keep],
                 candidate_tokens=tuple(candidate_tokens[i] for i in keep), **selected_inputs)
+            incoming_bindings = tuple(incoming_bindings[i] for i in keep)
         else:
             self.algorithm_unit.require_current_feedback()
             merged_obj = np.vstack([self.objectives, obj])
             merged_vio = np.concatenate([self.violations, vio])
             keep = self._environmental_select(merged_obj, merged_vio, int(self.cfg.population_size))
-            self.algorithm_unit.apply_selection(keep, cand, obj, vio, candidate_tokens=candidate_tokens, **member_inputs)
+            change = self.algorithm_unit.apply_selection(keep, cand, obj, vio, candidate_tokens=candidate_tokens, **member_inputs)
+
+        self._population_pool_bindings = align_pool_bindings(
+            self._population_pool_bindings, incoming_bindings, change)
 
         self._refresh_ranking()
         self._sync_runtime_projection()
+        publish_population_view(self, control)
 
     def set_population_snapshot(self, population: np.ndarray, objectives: np.ndarray, violations: np.ndarray) -> bool:
         pop, obj, vio = self.validate_population_snapshot(population, objectives, violations)
@@ -174,12 +180,14 @@ class NSGA2Adapter(UnitBackedAdapter):
             and np.array_equal(self.population, pop, equal_nan=True)
             and len(self._population_candidate_tokens) == int(pop.shape[0])
         )
+        validate_numeric_population_replacement(self._population_pool_bindings, preserve_tokens=preserve_tokens)
         if preserve_tokens:
             # The snapshot setter asserts an unchanged row projection. This is
             # feedback refresh, not a new environmental selection.
             self.algorithm_unit.attach_feedback(obj, vio)
         else:
             self.algorithm_unit.initialize_population(pop, obj, vio)
+            self._population_pool_bindings = (None,) * len(pop)
         self._refresh_ranking()
         self._sync_runtime_projection()
         return True
@@ -226,12 +234,14 @@ class NSGA2Adapter(UnitBackedAdapter):
             "objectives": None if self.objectives is None else self.objectives.tolist(),
             "violations": None if self.violations is None else self.violations.tolist(),
             "candidate_tokens": list(self._population_candidate_tokens),
+            "population_pool_bindings": copy.deepcopy(list(self._population_pool_bindings)),
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
 
     def _set_algorithm_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
+        self._population_pool_bindings = tuple(copy.deepcopy(state.get("population_pool_bindings", ())))
         if state.get("algorithm_unit") is not None:
             # UnitBackedAdapter restores exact Unit fields, without replaying
             # member hooks or temporarily misaligning custom row fields.
@@ -264,36 +274,8 @@ class NSGA2Adapter(UnitBackedAdapter):
         if self.population is not None and self.population.shape[0] > 0:
             return
 
-        pop = None
-        obj = None
-        vio = None
-        reader = getattr(control, "read_snapshot", None)
-        if callable(reader):
-            try:
-                key = context.get(KEY_POPULATION_REF) or context.get(KEY_SNAPSHOT_KEY)
-            except Exception:
-                key = None
-            try:
-                payload = reader(key) if key else reader()
-            except Exception:
-                payload = None
-            data = payload.data if hasattr(payload, "data") else payload
-            if isinstance(data, dict):
-                pop = data.get(KEY_POPULATION)
-                obj = data.get(KEY_OBJECTIVES)
-                vio = data.get(KEY_CONSTRAINT_VIOLATIONS)
-
-        if pop is None:
-            pop = getattr(control, "population", None)
-            obj = getattr(control, "objectives", None)
-            vio = getattr(control, "constraint_violations", None)
-        if pop is not None:
-            pop_arr = np.asarray(pop, dtype=float)
-            if pop_arr.ndim == 2 and pop_arr.shape[0] > 0:
-                self.algorithm_unit.initialize_population(pop_arr, obj, vio)
-                self.rebuild_unit("initialize", context=context)
-                return
-
+        # Cross-Adapter intake is explicit through the pool task above. A
+        # shared snapshot or control.population can belong to another owner.
         n = max(2, int(self.cfg.population_size))
         created = [control.init_candidate(context) for _ in range(n)]
         self.algorithm_unit.initialize_population(created, candidate_tokens=self.candidate_tokens_for(control, created),
@@ -301,6 +283,7 @@ class NSGA2Adapter(UnitBackedAdapter):
         self.rebuild_unit("initialize", context=context)
 
     def _after_unit_restore(self):
+        validate_pool_bindings(self._population_pool_bindings, self.population, self._population_candidate_tokens)
         self._refresh_ranking()
         self._sync_runtime_projection()
 

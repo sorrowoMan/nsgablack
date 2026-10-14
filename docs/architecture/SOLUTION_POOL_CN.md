@@ -1,8 +1,10 @@
 # 解池、运行时间与算法结构
 
-最后按代码核对：2026-10-13。实现：`core/state/solution_pool.py`、`adapters/pool_search.py`。本文是当前运行契约；更广的编排讨论见 [增量 Unit 编排讨论](ORCHESTRATION_WITH_INCREMENTAL_UNITS_DISCUSSION_CN.md)。
+最后按代码核对：2026-10-14。实现：`core/state/solution_pool.py`、`adapters/pool_tasks.py`。本文是当前运行契约；全 Adapter 覆盖与接入要求见 [池与 Adapter 接入契约](SOLUTION_POOL_ADAPTER_READINESS_CN.md)。更广的编排讨论见 [增量 Unit 编排讨论](ORCHESTRATION_WITH_INCREMENTAL_UNITS_DISCUSSION_CN.md)。
 
 ## 1. 解先有存放位置，再由算法使用
+
+母池先于 Adapter 的运行初始化与候选操作建立，Adapter 配置对象可以先构造。MOEA/D 的 setup 不再创建或求值候选，首次派发后才通过正式提案流程建立起始种群；下游须等待 pool_views_ready，不依赖固定第一步或 setup 已有方向。
 
 解池是一次运行中存放候选的具名区域。它记录候选语义、数值视图、身份、来源和运行时间。Adapter 从中取得候选，用自己的 Unit 组织成员、当前点、路径、邻域、区域等关系，再提出新候选。Unit 构建不等于编码；池读取不等于解码。
 
@@ -399,6 +401,14 @@ all_descendants = pool.children_subpools(source, recursive=True)
 可运行装配在 examples/cases/solution_pool/cases/moead_refinement/，启用 `nested_refinement=True`。
 
 ## 11. 验收依据
+
+当前池与 manifest schema 为 v2。普通 candidate_collection、明确结果 candidate_view 与 objective_projection 都有稳定身份、版本、来源和发布状态；父子仍表达派生，不要求集合包含。旧缺失视图身份的检查点要求显式迁移。
+
+按名称选择投影视图与按创建者选择执行相同能力检查和投影；不能用字符串绕开比较语义。普通具名集合保持每实例配额，按创建者选择以每视图配额分发。VNS、SA、PatternSearch、SingleTrajectoryAdaptive 使用相同 PoolTask 装配；普通精修也发布最终选择视图，下一层可以 subpools.all(refiner)。all/random 不选择聚合 output，不隐含阶段屏障。
+
+Role 的 pool_result_owner 指向真实结果算法。SA/Single 的 current 可以为探索变差，get_pool_refinement_results 交付 task-best；原始求值与硬准入不改变。NSGA 系列和 MOEA/D 的成员引用与 PopulationChange 一起更新，不能用回收工具 refs_for_tokens 推断最新版本。
+
+NSGA-II／III、SPEA2 和 DE 每实例自动发布一个普通 population 视图，保存全部已选择成员的精确引用；MOEA/D 每方向发布一个投影视图。`PoolTaskSpec(subpools.all(ga), count="all", steps=3, output="refined")` 逐成员精修，默认 count 仍取每视图一个起点。视图更新复用 view_id 并推进 revision，不复制候选记录。仅在全部成员都有精确版本时发布；普通视图可包含部分初始化后已提交的成员，不能替代种群完成屏障。旧 Evolution 数值同步缺少完整身份交付时不发布可交接视图，也不能开启严格成员回收。
 
 - `test_solution_pool.py`：时间截止、身份与版本、私有可见性、失败高水位、游标回滚、可传输恢复和摘要篡改拒绝。
 - `test_pool_search_adapter.py`：200→两个 100 成员种群→停滞唤醒→返回竞争；不同取解配额/种群容量与超额准备；满种群后的部分接纳重试；第二个子更新失败的整组回滚；正式 checkpoint 恢复。

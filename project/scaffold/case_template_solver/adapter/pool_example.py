@@ -13,6 +13,8 @@
 完整可运行示例见 examples/cases/solution_pool/cases/pool_refinement。
 省略 select 默认读母池；种群用 PoolTaskSpec(mode="initialize") 即按声明大小独立抽样。
 指定子池必须存在。VNS 默认一个起点；count="all" 用于整批精修。
+SA、PatternSearch、SingleTrajectoryAdaptive 同样支持 refine；output要求明确结果接口。
+普通精修的最终结果视图也能通过 subpools.all(refiner) 交给下一层。
 distribution 可选 independent/partition/shared；on_insufficient 可选 error/wait/available。
 
 MOEA/D 自动生成带实例来源的方向投影子池，可直接给 VNS 角色装配：
@@ -20,6 +22,8 @@ MOEA/D 自动生成带实例来源的方向投影子池，可直接给 VNS 角�
     moead = MOEADAdapter(name="adapter1", population_size=100)
     local_task = PoolTaskSpec(subpools.random(20, moead), steps=3, output="refined")
 all(moead) 选择全部方向；把同一个 moead 实例装入 Router 的另一个角色。
+setup只准备结构；阶段策略须等 moead.pool_views_ready 再启动精修。
+按名字选择投影视图也使用该视图的比较规则，不能退回默认目标求和。
 默认 count=1 是每方向一个起点，partition 分配方向给 VNS 实例，不重复抽签。
 完整装配与双目标问题见 examples/cases/solution_pool/cases/moead_refinement。
 

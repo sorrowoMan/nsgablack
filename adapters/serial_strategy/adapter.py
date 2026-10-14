@@ -67,6 +67,10 @@ class StrategyChainAdapter(AlgorithmAdapter):
     state_recovery_notes = "Restores current phase index, per-phase step counter, and child adapter states."
     population_state_mode = "delegate"
 
+    def get_solution_pool_roots(self, control):
+        # The chain stores schedule/cleanup state; candidate owners are children.
+        return ()
+
     def __init__(
         self,
         phases: Optional[Sequence[SerialPhaseSpec]] = None,

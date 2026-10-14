@@ -53,14 +53,19 @@ def build(*, n=6, take=None, workers=2, steps=2, second=False, ga=False, setup=T
         search_roles.append("other")
     if ga:
         roles.append(RoleSpec("ga", NSGA2Adapter(name="ga", population_size=4, offspring_size=2),
-                              pool_task=PoolTaskSpec(mode="initialize")))
+                              pool_task=PoolTaskSpec(mode="initialize", on_insufficient="wait")))
         search_roles.append("ga")
     roles.append(RoleSpec("local", lambda i: VNSAdapter(name=f"vns_{i}", batch_size=1,
         restart_on_stagnation=False), n_units=workers,
         pool_task=PoolTaskSpec(selector, steps=steps, output="refined", shuffle=False)))
+    def ready_phases(ctx):
+        producers = [role.adapter for role in roles if isinstance(role.adapter, MOEADAdapter)]
+        if not all(item.pool_views_ready for item in producers):
+            return "explore"
+        return phases(ctx)
     router = StrategyRouterAdapter(name="mixed", roles=roles,
         config=MultiStrategyConfig(total_batch_size=max(workers, 12), adapt_weights=False,
-            phase_policy=phases, phase_roles={"explore": search_roles,
+            phase_policy=ready_phases, phase_roles={"explore": search_roles,
             "refine": ["local"], "return": ["producer"]}))
     solver = ComposableSolver(Delivery(), adapter=router,
         representation_pipeline=RepresentationPipeline(initializer=Routes(), mutator=Routes()))
@@ -90,6 +95,9 @@ def test_moead_automatically_exports_100_views_and_selection_is_by_instance():
     solver, producer, router = build(n=100, second=True, ga=True)
     pool = solver.solution_pool
     path = adapter_path(router, producer)
+    assert pool.projection_subpools(path) == ()
+    while not producer.pool_views_ready:
+        assert solver.step().committed
     names = pool.projection_subpools(path)
     assert len(names) == 100
     assert len({pool.subpool_metadata(name)["slot"] for name in names}) == 100
@@ -104,7 +112,8 @@ def test_moead_automatically_exports_100_views_and_selection_is_by_instance():
 
 def test_random_20_selects_views_once_across_workers_and_keeps_source_scope():
     solver, producer, router = build(n=100, take=20, workers=4, second=True, ga=True)
-    assert solver.step().committed
+    while not producer.pool_views_ready:
+        assert solver.step().committed
     assert solver.step().committed
     workers = refiners(router)
     jobs = [job for worker in workers for job in worker._local["jobs"]]
@@ -251,6 +260,7 @@ def test_zero_and_partial_admission_keep_projection_job_and_input_cursor():
 
 def test_projection_publication_is_atomic_with_pool_manifest():
     solver, producer, router = build()
+    assert solver.step().committed
     pool = solver.solution_pool
     creator = adapter_path(router, producer)
     name = pool.projection_subpools(creator)[0]
@@ -316,8 +326,9 @@ def test_nested_creator_uses_full_instance_path():
     solver.setup()
     path = adapter_path(outer, producer)
     assert path[0] == "outer" and "0:mixed" in path
-    assert len(solver.solution_pool.projection_subpools(path)) == 6
+    assert solver.solution_pool.projection_subpools(path) == ()
     assert solver.step().committed
+    assert len(solver.solution_pool.projection_subpools(path)) == 6
     assert solver.step().committed
     assert all(job["created_by"] == list(path) for w in refiners(router) for job in w._local["jobs"])
 

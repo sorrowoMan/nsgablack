@@ -168,3 +168,29 @@ python -m pytest tests/test_pool_task_allocation.py -k 'not 300_candidates' -q -
 原始输出保存在 `artifacts/audit/solution_pool_20261013/` 的 allocation_tests.xml/txt、allocation_root_doctor.json、allocation_case_doctor.json、allocation_case_check.txt、allocation_project_run.txt，生成产物不提交。中文契约、AGENTS、迁移说明、Catalog、API 索引、脚手架提示与正式示例同步；本轮只修改 nsgablack，没有修改 BlackBase/MLBlack 或推送远端。
 
 这是上述默认与已接入算法的闭环。MOEA/D 子问题比较/目标槽位仍需另行接入；没有执行全仓测试、长期存储压力或优化效果基准。旧 PoolTaskAdapter checkpoint 配置身份与新版本不兼容；VNS 已有 pool token 却缺失完整来源记录的旧状态不能补造，见迁移说明。
+
+## 统一视图与 Adapter 交接验收（2026-10-14）
+
+本节是当前补充，前面的 2026-10-13 测量保留为历史记录。覆盖母池／子池职责、命名输入与按创建者选择的一致性、算法延迟初始化、明确结果交付，以及包装、保留和恢复。详细支持矩阵见 [解池、视图与 Adapter 接入契约](SOLUTION_POOL_ADAPTER_READINESS_CN.md)。
+
+池与 manifest 升级为 v2。所有具名集合均具有 view_id、revision、created_by、冻结 parent 和发布状态；普通 candidate_collection、选中结果 candidate_view 和 objective_projection 分别表达集合、交付与比较坐标。创建视图只复用 SolutionRef，不新增候选记录。旧缺少视图身份／输入解释的 checkpoint 必须显式迁移，恢复不补造来源或重跑评估。
+
+MOEA/D.setup 不再提前初始化／评估种群；正常提案接纳完成 bootstrap 后才发布方向。NSGA-II／III、SPEA2 和 DE 不再隐式借别人的种群；精确引用随 PopulationChange 对齐，并验证 token、数值和 metadata。四者每实例发布一个普通 population 视图，MOEA/D 每方向发布一个投影视图；按创建者选择与按名称读取遵守同一语义。普通视图与完整种群屏障不是同一个事实。
+
+SA、PatternSearch、SingleTrajectoryAdaptive 与 VNS 共用 PoolTask 装配，先评估起点再比较后继；SA／Single 返回任务中最好已评估解，另保护探索用的 current。Role 透传能力并解析到具体结果所有者；异步／Elite 档案保护准确版本。普通结果也能继续派生普通视图，投影结果继承本次冻结解释。output 的接纳提案集合仍与最终选择不同。
+
+核心回归 **438 项通过，629.90 秒，68 条测试警告**，包括池／视图、嵌套、取解规模、保留、成员与 Unit、repair、事务、正式 checkpoint、角色包装、算法基础和恢复契约。公共入口回归另有 **45 项通过，222.90 秒**，覆盖 candidate_population_semantics、solver、parallel_integration、evaluation_acceptance 和 bias_acceptance_boundary。之后完成普通种群视图与过期视图边界收紧，最终受影响集 **120 项通过，26.32 秒，32 条测试警告**，原始 JUnit 为 `artifacts/audit/pool-view-readiness-20261014/affected_tests.xml`。这些执行范围有重叠，不能相加作为不同测试总数；未在最后收紧后重复执行十分钟的规模集。
+
+上述四条真实任务检查每实例视图、逐成员 count="all"、版本推进、提交前不可见、准确 parent、原始双目标保留与没有复制候选记录。独立复核另发现旧数值 setter／手工无收据反馈可能让视图过期，因此正式精确成员不能由无身份数值接口直接换掉；成员引用不完整时撤回该实例旧视图，失败事务恢复它。数值接口仍可在未建立精确身份前使用，或对同一成员刷新反馈。旧 Evolution 跨成员数值替换需先补完整身份交付，不能据此承诺任意池交接。
+
+正式 moead_refinement Case 使用 directions=4、view_count=4、workers=2、local_steps=2，分别运行 VNS、SA、PatternSearch，status 均为 ok，逻辑提交数为 9／9／10，moead、ga、local 任务均 done。嵌套 VNS→VNS 配置 coarse／fine 各 2 步，21 次逻辑提交，四角色任务均 done。这是功能验证，不能解释为并行性能或优化质量证明；没有执行全仓测试、长期存储压力或数学算法正确性证明。
+
+最终严格 Doctor 原始结果保存在 `artifacts/audit/pool-view-readiness-20261014/root_doctor.json` 与 `project_doctor.json`：根目录 0 error／0 warning／175 info，463 completed、90 skipped；跳过 62 个未开启 build 的 Case、27 个无本地 Catalog 的 Case 和 1 个由全局 Catalog 审计的框架 registry。solution_pool Project 的 --build 为 0 error／0 warning／19 info，30 completed、3 skipped：两个无本地 Catalog 的 Case registry，以及本命令未重复开启的全局 Catalog。全局 Catalog 已在根目录单独审计。
+
+```powershell
+python -m nsgablack project doctor --path . --strict --catalog-audit --profile framework-core --format json
+python -m nsgablack project doctor --path examples/cases/solution_pool --strict --build --format json
+python -m pytest tests/test_population_pool_bindings.py tests/test_pool_view_contracts.py tests/test_pool_wrapper_contracts.py tests/test_local_pool_refiners.py -q --junitxml=artifacts/audit/pool-view-readiness-20261014/affected_tests.xml
+```
+
+Catalog 的 tool.solution_pool／tool.subpools 已核对 default 与 framework-core；原有非 callable 选择器对象的 recipe 签名检查仍显示 unverified，不用 Catalog 可发现性代替行为测试。模板、标准 Case、AGENTS 与中文运行契约已同步；本轮未修改 BlackBase／MLBlack、没有数据库同步或远端推送。生成审计产物不提交 Git。

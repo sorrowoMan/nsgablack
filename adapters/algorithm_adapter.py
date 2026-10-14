@@ -207,6 +207,11 @@ class AlgorithmAdapter(AdapterBase):
 
     pool_input_modes = ()
     supports_pool_restart = False
+    supports_objective_projection = False
+    publishes_projection_subpools = False
+    publishes_subpools = False
+    # A result is an explicit selection, independent of retention roots.
+    get_pool_refinement_results = None
 
     def default_pool_input_count(self):
         """Declared initialization intake; None requires an explicit task count.
@@ -214,6 +219,10 @@ class AlgorithmAdapter(AdapterBase):
         This is an algorithm default, not a capacity constraint on SolutionPool.
         """
         return None
+
+    def pool_result_owner(self):
+        """Concrete algorithm instance publishing selected result views."""
+        return self
 
     def restart_search(self, control, context):
         """Explicit semantic restart; no implicit lifecycle/setup replay."""

@@ -23,12 +23,11 @@ import math
 import warnings
 
 import numpy as np
-from blackbase.types import UnknownState
 
 from ..unit_backed import UnitBackedAdapter, UnitField, UnitFeedbackField
 from ...representation.structure_builders import TrajectoryUnitBuilder
 from ..algorithm_adapter import AlgorithmAdapter
-from ...core.state.incumbent import CandidateProvenance
+from ..pool_results import PoolRefinementState
 from nsgablack.context_keys import KEY_MUTATION_SIGMA, KEY_TEMPERATURE
 
 
@@ -58,6 +57,7 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
     """Simulated annealing adapter for ComposableSolver."""
     pool_input_modes = ("initialize",)
     supports_pool_restart = True
+    supports_objective_projection = True
 
     def default_pool_input_count(self):
         return 1
@@ -69,36 +69,18 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
         self.temperature = self.t0
         self.current_x = None
         self.current_score = None
+        self._pool_results = PoolRefinementState()
         self._last_runtime_projection = {}
 
     def get_solution_pool_roots(self, control):
-        if self.current_x is None:
-            return ()
-        token = self.algorithm_unit.candidate_metadata.get("pool_candidate_token")
-        return control.solution_pool.refs_for_tokens((token,))
+        return self._pool_results.roots(control)
 
-    def _retain_current_token(self, control, candidate):
-        tokens = self.candidate_tokens_for(control, (candidate,))
-        self._remember_provenance(control, candidate)
-        self.algorithm_unit.candidate_metadata = {
-            **self.algorithm_unit.candidate_metadata, "pool_candidate_token": tokens[0]}
-
-    def _remember_provenance(self, control, candidate):
-        inputs = self.member_inputs_for(control, (candidate,))
-        self.algorithm_unit.candidate_metadata = {
-            "semantic_metadata": inputs["candidate_metadata"][0],
-            "candidate_provenance": inputs["candidate_provenance"][0],
-        }
+    def get_pool_refinement_results(self, control):
+        """Return the task's best evaluated point, even after an uphill move."""
+        return self._pool_results.results(control)
 
     def _project_current(self, control, *, semantic=False):
-        metadata = self.algorithm_unit.candidate_metadata
-        candidate = np.array(self.current_x, copy=True)
-        if semantic:
-            candidate = UnknownState(candidate, metadata.get("semantic_metadata", {}))
-        record = metadata.get("candidate_provenance")
-        if record is not None:
-            control.bind_candidate_provenance([candidate], [CandidateProvenance.from_dict(record)], activate=False)
-        return candidate
+        return self._pool_results.project_current(control, self.current_x, semantic=semantic)
 
     uses_pipeline_mutation = True
     accepts_proposal_replacement = True
@@ -143,6 +125,7 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
         self._warned_missing_operator = False
         self._last_runtime_projection: Dict[str, Any] = {}
         self._rng = self._build_rng()
+        self._pool_results = PoolRefinementState()
 
     def _build_rng(self) -> np.random.Generator:
         if self.cfg.random_seed is not None:
@@ -156,6 +139,7 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
         self.current_x = None
         self.current_score = None
         self.algorithm_unit.candidate_metadata = {}
+        self._pool_results = PoolRefinementState()
         self._rng = self.create_local_rng(control, seed=self.cfg.random_seed)
         self._warn_if_pipeline_has_no_mutator(control)
         self._last_runtime_projection = {}
@@ -200,7 +184,7 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
         if self.current_x is None:
             seed = control.init_candidate(context)
             self.current_x = np.asarray(seed)
-            self._remember_provenance(control, seed)
+            self._pool_results.remember_seed(control, seed)
 
         # Establish the initial/current baseline through the ordinary proposal,
         # repair, budget and admission path. No hidden evaluation in propose.
@@ -230,6 +214,11 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
             return
         if objectives is None or len(objectives) == 0:
             return
+        scores, violations = self._pool_results.scores(feedback, lambda f, v:
+            [self._score(row, float(v[i])) for i, row in enumerate(f)])
+        best_index = min(range(len(candidates)), key=lambda i: self._pool_results.key(scores[i], violations[i]))
+        self._pool_results.observe_best(control, candidates, feedback, best_index,
+                                        scores[best_index], violations[best_index])
 
         # The baseline proposal may have been repaired. Install the evaluated
         # candidate and its own score together; this is not an annealing move.
@@ -237,9 +226,10 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
             if len(candidates) != 1:
                 raise ValueError("SA baseline feedback requires exactly one candidate")
             self.current_x = np.array(candidates[0], copy=True)
-            self._retain_current_token(control, candidates[0])
             v0 = float(violations[0]) if violations is not None else 0.0
-            self.current_score = self._score(objectives[0], v0)
+            self.current_score = float(scores[0])
+            self._pool_results.current = self._pool_results.capture(
+                control, candidates, feedback, 0, self.current_score, v0)
             self._refresh_runtime_projection(accepted=False)
             return
 
@@ -247,22 +237,24 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
         accepted_any = False
         for idx, cand in enumerate(candidates):
             vio = float(violations[idx]) if violations is not None else 0.0
-            cand_score = self._score(objectives[idx], vio)
+            cand_score = float(scores[idx])
 
             delta = float(cand_score) - float(self.current_score)
             accept = False
-            if delta <= 0:
+            if self._pool_results.improves_current(cand_score, vio, self.current_score) or (
+                    delta == 0 and self._pool_results.permits_exploration(vio)):
                 accept = True
-            else:
+            elif self._pool_results.permits_exploration(vio):
                 T = max(float(self.temperature), float(self.cfg.min_temperature))
                 if T > 0:
-                    p = math.exp(-delta / T)
+                    p = math.exp(-max(0.0, delta) / T)
                     accept = (self._rng.random() < p)
 
             if accept:
                 self.current_x = np.asarray(cand)
-                self._retain_current_token(control, cand)
                 self.current_score = float(cand_score)
+                self._pool_results.current = self._pool_results.capture(
+                    control, candidates, feedback, idx, cand_score, vio)
                 accepted_any = True
                 break
 
@@ -290,6 +282,7 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
             "current_x": None if self.current_x is None else np.asarray(self.current_x, dtype=float).tolist(),
             "current_score": None if self.current_score is None else float(self.current_score),
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
+            "pool_refinement": self._pool_results.as_dict(),
         }
 
     def _set_algorithm_state(self, state: Dict[str, Any]) -> None:
@@ -302,6 +295,7 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
         cx = state.get("current_x")
         self.current_x = None if cx is None else np.asarray(cx, dtype=float)
         self.current_score = state.get("current_score")
+        self._pool_results = PoolRefinementState.from_dict(state.get("pool_refinement"))
         rng_state = state.get("rng_state")
         if isinstance(rng_state, dict):
             self._rng.bit_generator.state = copy.deepcopy(rng_state)

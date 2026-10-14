@@ -37,6 +37,7 @@ from nsgablack.context_keys import (
     KEY_ROLE_INDEX,
     KEY_ROLE_REPORTS,
     KEY_STEP,
+    KEY_SOLUTION_INPUT_REF,
 )
 
 
@@ -89,6 +90,41 @@ class RoleAdapter(AlgorithmAdapter):
         self._last_projection_writers: Dict[str, str] = {}
         self._inner_proposal_disposition: BatchDisposition | None = None
 
+    @property
+    def pool_input_modes(self):
+        return () if self.inner is None else self.inner.pool_input_modes
+
+    @property
+    def supports_pool_restart(self):
+        return self.inner is not None and self.inner.supports_pool_restart
+
+    @property
+    def supports_objective_projection(self):
+        return bool(self.inner is not None and getattr(self.inner, "supports_objective_projection", False))
+
+    @property
+    def get_pool_refinement_results(self):
+        return None if self.inner is None else getattr(self.inner, "get_pool_refinement_results", None)
+
+    def pool_result_owner(self):
+        return self if self.inner is None else self.inner.pool_result_owner()
+
+    def default_pool_input_count(self):
+        return None if self.inner is None else self.inner.default_pool_input_count()
+
+    def restart_search(self, control, context):
+        if not self.supports_pool_restart:
+            return super().restart_search(control, context)
+        self._inner_proposal_disposition = None
+        ctx = dict(context)
+        ctx[KEY_ROLE], ctx[KEY_ROLE_ADAPTER] = self.role, self.name
+        return self.inner.restart_search(control, ctx)
+
+    def get_solution_pool_roots(self, control):
+        # Reports contain observation values, never owned candidate references.
+        # The transaction tree visits the inner owner separately.
+        return ()
+
     def _warn_once(self, key: str, message: str) -> None:
         if key in self._warned:
             return
@@ -127,9 +163,13 @@ class RoleAdapter(AlgorithmAdapter):
         ctx = dict(context)
         ctx[KEY_ROLE] = self.role
         ctx[KEY_ROLE_ADAPTER] = self.name
+        input_ref = ctx.get(KEY_SOLUTION_INPUT_REF)
+        intake = input_ref is not None and control.solution_pool.input_remaining(input_ref) > 0
         proposed = self.coerce_candidates(self.inner.propose(control, ctx))
         proposed_count = len(proposed)
-        if self.max_candidates is not None:
+        # Intake must reach the canonical budget/disposition path intact. A
+        # local cap cannot consume 100 pool refs and present only 30 of them.
+        if self.max_candidates is not None and not intake:
             proposed = proposed[: int(self.max_candidates)]
         self._inner_proposal_disposition = BatchDisposition.prefix(
             proposed_count=proposed_count,
@@ -533,6 +573,9 @@ class RoleRouterAdapter(AlgorithmAdapter):
     state_recovery_level = "L2"
     state_recovery_notes = "Restores stable role population partitions, tokens, and role adapter states."
     population_state_mode = "partitioned"
+
+    def get_solution_pool_roots(self, control):
+        return ()  # Each role owns and declares its own candidates.
 
     def setup(self, control: Any) -> None:
         self._runtime_projection = {}

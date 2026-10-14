@@ -1,6 +1,6 @@
 # 运行所有权与显式扩展契约
 
-最后按代码核对：2026-10-13。本文描述当前实现；解池本轮验证见 [解池验收](SOLUTION_POOL_VALIDATION_CN.md)，其余边界验证见 [验收记录](../development/RUNTIME_REFINEMENT_VALIDATION_CN.md)。
+最后按代码核对：2026-10-14。本文描述当前实现；解池本轮验证见 [解池验收](SOLUTION_POOL_VALIDATION_CN.md)，其余边界验证见 [验收记录](../development/RUNTIME_REFINEMENT_VALIDATION_CN.md)。
 
 ## 保留的主线
 
@@ -145,3 +145,11 @@ Catalog 的 recipe-status 区分 guidance/template/signature-checked/unverified�
 Catalog source/MySQL/PostgreSQL 共用 registry.apply_catalog_profile_entry。SQL 条件只是查询优化；过滤保留 artifact、phase、contract、metadata 等完整字段。default 与 framework-core 必须同时验证。
 
 异常处理区分三类：策略、初始化、RNG 和权威状态采集失败直接传播；已知输入/格式/IO 失败只捕获预期类型；可选后端、界面和观测降级使用 report_soft_error 形成限频记录。checkpoint 无法脱离活对象或无法取得组件状态时，不得返回原对象或遗漏组件。Doctor 支持局部返回的失败信封，以及源码可解析的继承契约（C3 顺序、命名导入、静态重导出）；动态基类或动态 __all__ 不推断为已满足契约。静态通过不等于所有业务异常已被证明可观测。
+
+## 解池统一接入补充（2026-10-14）
+
+SolutionPool 在算法运行初始化前建立；配置实例的构造顺序不代表候选执行顺序。MOEA/D 首次派发才建立和评估起始种群，完整 bootstrap 后发布方向。输入绑定、起点基准、搜索反馈和结果交付必须使用同一任务解释。
+
+池与 manifest schema 为 v2；全部子池具有身份和版本，普通集合、选中结果与投影是不同视图类型。名称和创建者选择同一投影视图不得改变语义。refine 的 output 聚合接纳提案，get_pool_refinement_results 明确返回准确选中版本；普通结果也能继续按创建者选择。透明包装通过 pool_result_owner 解析真实实例。
+
+SA、PatternSearch、SingleTrajectoryAdaptive 与 VNS 已支持普通／投影精修；SA/Single 交付任务最好已评估解。NSGA 家族与 DE 发布普通 population 视图，MOEA/D 发布方向投影视图；成员保留准确引用，不追读同 token 的未来版本。未迁移的路径、梯度和信赖域算法仍明确拒绝相应任务；共享梯度、活 Provider 状态或结构约束不能由池成员关系代替。详细覆盖见 [池与 Adapter 接入契约](SOLUTION_POOL_ADAPTER_READINESS_CN.md)。

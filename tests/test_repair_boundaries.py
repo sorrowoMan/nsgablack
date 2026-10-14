@@ -188,14 +188,16 @@ def test_population_pending_coordinates_are_projected_after_partial_disposition(
             assert list(getattr(draft, field)) == expected
             seen.append(disposition.accepted_indices)
             return draft
-    owner.set_unit_repair(Repair())
     solver = ComposableSolver(BiSphere(), adapter=owner,
-        representation_pipeline=RepresentationPipeline(repair=ProblemBounds(low=-10., high=10.)),
-        joint_repair_policy=JointRepairPolicy())
+        representation_pipeline=RepresentationPipeline(repair=ProblemBounds(low=-10., high=10.)))
     owner.setup(solver)
-    # DE initializes lazily; materialize through its formal proposal entry.
-    if algorithm == "de":
-        owner.propose(solver, solver.build_context())
+    # This test concerns post-bootstrap target coordinates. Establish the
+    # initial population through the normal evaluation/admission transaction.
+    assert solver.step().committed
+    if algorithm == "moead":
+        assert owner.pool_views_ready
+    owner.set_unit_repair(Repair())
+    solver.joint_repair_policy = JointRepairPolicy()
     before = solver.evaluation_count
     solver.evaluation_acceptance_policy = Select((1, 3))
     assert solver.step().committed

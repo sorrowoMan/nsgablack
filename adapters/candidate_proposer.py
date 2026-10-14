@@ -6,10 +6,16 @@ from blackbase.contracts import BatchDisposition
 from .algorithm_adapter import AlgorithmAdapter
 from ..units import UnitBinding, UnitBuildRequest, CANDIDATE_SCHEMA
 from ..representation.unit_builders import CandidateUnitBuilder
+from ..core.state.solution_pool import SolutionRef
 
 
 class CandidateProposerAdapter(AlgorithmAdapter):
-    """Base only: a Case still implements its own proposal and update strategy."""
+    """Base only: a Case still implements its proposal/update and retention.
+
+    Subclasses with live candidates must declare get_solution_pool_roots.
+    pool_refs_from_feedback extracts exact accepted versions for that explicit
+    state; the base cannot infer which candidates a subclass keeps or discards.
+    """
     unit_schema = CANDIDATE_SCHEMA
     unit_build_operations = ("fresh",)
     unit_contract_mode = "owned"
@@ -34,6 +40,20 @@ class CandidateProposerAdapter(AlgorithmAdapter):
         self._unit_counter += len(built)
         self.proposal_units = built
         return [unit.to_candidate() for unit in built]
+
+    @staticmethod
+    def pool_refs_from_feedback(feedback):
+        """Extract canonical accepted references; never infer identity by value."""
+        items = getattr(feedback, "items", None)
+        if items is None:
+            raise ValueError("candidate pool retention requires rich accepted feedback")
+        refs = []
+        for item in items:
+            value = item.info.get("accepted_solution_ref")
+            if value is None:
+                raise ValueError("candidate pool retention requires exact accepted solution references")
+            refs.append(SolutionRef.from_dict(dict(value)))
+        return tuple(refs)
 
     def on_proposal_repair(self, control, repair, context):
         if repair.proposed_count != len(self.proposal_units):

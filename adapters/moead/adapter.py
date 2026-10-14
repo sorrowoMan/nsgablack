@@ -22,6 +22,7 @@ from ..unit_backed import UnitBackedAdapter, UnitField
 from ...representation.structure_builders import DecompositionUnitBuilder
 from ...representation.structure_builders import simplex_points
 from ..algorithm_adapter import AlgorithmAdapter
+from ..population_pool_refs import feedback_pool_bindings, align_pool_bindings, validate_pool_bindings
 from ..subpools import adapter_path
 from ...core.state.pool_views import ObjectiveProjection
 from nsgablack.context_keys import (
@@ -65,7 +66,7 @@ class MOEADConfig:
 
 class MOEADAdapter(UnitBackedAdapter):
     """MOEA/D adapter for ComposableSolver."""
-    pool_input_modes = ("compete",)
+    pool_input_modes = ("initialize", "compete")
     publishes_projection_subpools = True
     unit_build_operations = ("initialize", "decomposition")
     # Repaired trial values keep their subproblem and neighborhood identities;
@@ -134,6 +135,9 @@ class MOEADAdapter(UnitBackedAdapter):
         self.pop_F: Optional[np.ndarray] = None  # (N, M)
         self.pop_V: Optional[np.ndarray] = None  # (N,)
         self._population_candidate_tokens: tuple[str | None, ...] = ()
+        self._population_pool_bindings = ()
+        self._initialization_target = None
+        self._initialization_proposed_count = None
 
         self._pending_indices: List[int] = []
         self._pending_modes: List[str] = []
@@ -145,9 +149,12 @@ class MOEADAdapter(UnitBackedAdapter):
     # ------------------------------------------------------------------
     def setup(self, control: Any) -> None:
         self.reset_unit()
+        self._population_pool_bindings = ()
+        self._initialization_target = None
+        self._initialization_proposed_count = None
         missing = [
             name
-            for name in ("init_candidate", "evaluate_population")
+            for name in ("init_population",)
             if not callable(getattr(control, name, None))
         ]
         if missing:
@@ -169,65 +176,13 @@ class MOEADAdapter(UnitBackedAdapter):
         if self._m < 2:
             raise ValueError("MOEADAdapter requires a multi-objective problem (num_objectives >= 2)")
 
-        # The shared run session applies queued checkpoints after setup. Fresh
-        # population initialization here would evaluate candidates and publish
-        # a competing Authority edge before that restore can run.
-        session = getattr(control, "run_session", None)
-        if session is not None and session.pending_restore:
-            self._pending_indices = []
-            self._pending_modes = []
-            self._refresh_runtime_projection()
-            return
-
-        requested_population_size = max(2, int(self.cfg.population_size))
-        allowance = getattr(control, "evaluation_batch_allowance", None)
-        if callable(allowance):
-            self._n = int(allowance(requested_population_size))
-        else:
-            self._n = requested_population_size
-        if self._n < 2:
-            self._n = 0
-            self.weights = np.empty((0, self._m), dtype=float)
-            self.neighbors = np.empty((0, 0), dtype=int)
-            self.ideal = np.full((self._m,), np.inf, dtype=float)
-            self.algorithm_unit.initialize_population(
-                np.empty((0, int(getattr(control, "dimension", 0) or 0)), dtype=float),
-                np.empty((0, self._m), dtype=float), np.empty((0,), dtype=float))
-            self._population_candidate_tokens = ()
-            self._pending_indices = []
-            self._pending_modes = []
-            request_stop = getattr(control, "request_stop", None)
-            if callable(request_stop):
-                request_stop()
-            self._refresh_runtime_projection()
-            return
-        self.weights = self._generate_weights(self._n, self._m)
-        self._n = int(self.weights.shape[0])
-
-        t = max(1, min(int(self.cfg.neighborhood_size), self._n))
-        self.rebuild_unit("decomposition", weights=self.weights, neighbors=t)
-
-        # initialize population
-        pop = []
-        for _ in range(self._n):
-            pop.append(control.init_candidate({"generation": int(getattr(control, "generation", 0) or 0)}))
-        self.algorithm_unit.initialize_population(np.stack(pop, axis=0),
-            candidate_tokens=self.candidate_tokens_for(control, pop), **self.member_inputs_for(control, pop))
-        provenance_getter = getattr(control, "candidate_provenance_for", None)
-        provenance_binder = getattr(control, "bind_candidate_provenance", None)
-        if callable(provenance_getter) and callable(provenance_binder):
-            records = tuple(provenance_getter(candidate) for candidate in pop)
-            if all(record is not None for record in records):
-                provenance_binder(self.pop_X, records, activate=True)
-
-        # evaluate initial population using the solver's evaluation path (plugins may short-circuit)
-        F, V = control.evaluate_population(self.pop_X)
-        self.algorithm_unit.attach_feedback(np.asarray(F, dtype=float), np.asarray(V, dtype=float).reshape(-1))
-        self._update_ideal(self.pop_F)
+        # Candidate intake belongs to the first dispatched task. Setup cannot
+        # know its pool selection, repair context, budget or admission policy.
+        self._n = max(2, int(self.cfg.population_size))
         self._pending_indices = []
         self._pending_modes = []
+        self._last_context_projection = {}
         self._refresh_runtime_projection()
-        self._sync_population_snapshot(control)
 
         # Optional: warn if user did not attach any archive/recording plugin.
         self._warn_if_no_archive_plugin(control)
@@ -235,19 +190,44 @@ class MOEADAdapter(UnitBackedAdapter):
     def teardown(self, control: Any) -> None:
         return None
 
+    def default_pool_input_count(self):
+        return max(2, int(self.cfg.population_size))
+
+    @property
+    def pool_views_ready(self):
+        """Whether this owner has completed its accepted bootstrap population."""
+        return (self.weights is not None and self.pop_X is not None and len(self.pop_X) == self._n
+                and len(self._population_pool_bindings) == self._n
+                and bool(self._population_pool_bindings) and all(self._population_pool_bindings))
+
     # ------------------------------------------------------------------
     # Adapter API
     # ------------------------------------------------------------------
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
-        if self.pop_X is None or self.pop_F is None or self.pop_V is None:
+        if self._m == 0:
             self.setup(control)
+
+        input_ref = context.get(KEY_SOLUTION_INPUT_REF)
+        if self.weights is None:
+            remaining = None if input_ref is None else control.solution_pool.input_remaining(input_ref)
+            if self._initialization_target is None:
+                self._initialization_target = self._n if remaining is None else min(self._n, remaining)
+                if self._initialization_target < 2:
+                    raise ValueError("MOEA/D initialization requires at least two selected pool candidates")
+            have = 0 if self.pop_X is None else len(self.pop_X)
+            needed = self._initialization_target - have
+            if remaining is not None and remaining < needed:
+                raise ValueError("MOEA/D initialization input ended before its declared intake completed")
+            candidates = control.init_population(needed, context)
+            self._initialization_proposed_count = len(candidates)
+            self._pending_indices, self._pending_modes = [], []
+            return candidates
 
         assert self.pop_X is not None
         assert self.weights is not None
         assert self.neighbors is not None
         self.algorithm_unit.require_current_feedback()
 
-        input_ref = context.get(KEY_SOLUTION_INPUT_REF)
         if input_ref is not None and control.solution_pool.input_remaining(input_ref):
             candidates = control.init_population(control.solution_pool.input_remaining(input_ref), context)
             # External refinements compete against the current decomposition,
@@ -275,6 +255,8 @@ class MOEADAdapter(UnitBackedAdapter):
         return out
 
     def _proposal_contexts(self, proposed_count, context):
+        if self._initialization_proposed_count is not None:
+            return [dict(context) for _ in range(proposed_count)]
         out = []
         for index, mode in zip(self._pending_indices, self._pending_modes):
             ctx = dict(context)
@@ -291,6 +273,11 @@ class MOEADAdapter(UnitBackedAdapter):
         context: Dict[str, Any],
     ) -> None:
         del control, context
+        if self._initialization_proposed_count is not None:
+            if disposition.proposed_count != self._initialization_proposed_count:
+                raise ValueError("MOEA/D initialization disposition does not align with proposals")
+            self._initialization_proposed_count = len(disposition.accepted_indices)
+            return
         pending_count = len(self._pending_indices)
         if disposition.proposed_count != pending_count:
             raise ValueError(
@@ -315,6 +302,9 @@ class MOEADAdapter(UnitBackedAdapter):
         context: Dict[str, Any],
     ) -> None:
         objectives, violations = feedback
+        if self._initialization_proposed_count is not None:
+            self._update_initialization(control, candidates, feedback, context)
+            return
         if self.pop_X is None or self.pop_F is None or self.pop_V is None:
             raise RuntimeError("MOEA/D.update requires population state created by propose()")
         if self.weights is None or self.neighbors is None or self.ideal is None:
@@ -325,6 +315,8 @@ class MOEADAdapter(UnitBackedAdapter):
         cand_V = np.asarray(violations, dtype=float).reshape(-1)
         candidate_tokens = self.candidate_tokens_for(control, candidates)
         member_inputs = self.member_inputs_for(control, candidates)
+        incoming_bindings = feedback_pool_bindings(control, candidates, feedback, candidate_tokens,
+            candidate_metadata=member_inputs["candidate_metadata"])
         if cand_X.ndim == 1:
             cand_X = cand_X.reshape(1, -1)
         if cand_F.ndim == 1:
@@ -365,13 +357,44 @@ class MOEADAdapter(UnitBackedAdapter):
                     replacements.append(int(j))
             if replacements:
                 count = len(replacements)
-                self.algorithm_unit.replace_evaluated_rows(
+                change = self.algorithm_unit.replace_evaluated_rows(
                     replacements, np.repeat(yx[None, :], count, axis=0),
                     np.repeat(yf[None, :], count, axis=0), np.full(count, yv),
                     candidate_tokens=(candidate_tokens[k],) * count,
                     **{name: (rows[k],) * count for name, rows in member_inputs.items()},
                 )
+                self._population_pool_bindings = align_pool_bindings(
+                    self._population_pool_bindings, (incoming_bindings[k],) * count, change)
 
+        self._refresh_runtime_projection()
+        self._sync_population_snapshot(control)
+
+    def _update_initialization(self, control, candidates, feedback, context):
+        if len(candidates) != self._initialization_proposed_count:
+            raise ValueError("MOEA/D initialization feedback does not align with admitted candidates")
+        if not len(candidates):
+            return
+        objectives, violations = feedback
+        x, f, v = np.asarray(candidates, dtype=float), np.asarray(objectives, dtype=float), np.asarray(violations, dtype=float)
+        if f.ndim == 1:
+            f = f.reshape(-1, 1)
+        tokens = self.candidate_tokens_for(control, candidates)
+        member_inputs = self.member_inputs_for(control, candidates)
+        incoming = feedback_pool_bindings(control, candidates, feedback, tokens,
+            candidate_metadata=member_inputs["candidate_metadata"])
+        if self.pop_X is None or len(self.pop_X) == 0:
+            change = self.algorithm_unit.initialize_population(x, f, v, candidate_tokens=tokens, **member_inputs)
+        else:
+            change = self.algorithm_unit.apply_selection(np.arange(len(self.pop_X) + len(x)),
+                x, f, v, candidate_tokens=tokens, **member_inputs)
+        self._population_pool_bindings = align_pool_bindings(self._population_pool_bindings, incoming, change)
+        self._initialization_proposed_count = None
+        if len(self.pop_X) == self._initialization_target:
+            self._n = len(self.pop_X)
+            weights = self._generate_weights(self._n, self._m)
+            self.rebuild_unit("decomposition", weights=weights,
+                              neighbors=max(1, min(int(self.cfg.neighborhood_size), self._n)))
+            self._recompute_ideal()
         self._refresh_runtime_projection()
         self._sync_population_snapshot(control)
 
@@ -400,6 +423,9 @@ class MOEADAdapter(UnitBackedAdapter):
             "weights": None if self.weights is None else self.weights.tolist(),
             "neighbors": None if self.neighbors is None else self.neighbors.tolist(),
             "candidate_tokens": list(self._population_candidate_tokens),
+            "population_pool_bindings": copy.deepcopy(list(self._population_pool_bindings)),
+            "initialization_target": self._initialization_target,
+            "initialization_proposed_count": self._initialization_proposed_count,
             "pending_indices": list(self._pending_indices),
             "pending_modes": list(self._pending_modes),
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
@@ -413,6 +439,15 @@ class MOEADAdapter(UnitBackedAdapter):
         """
         if not state:
             return
+        self._population_pool_bindings = tuple(copy.deepcopy(state.get("population_pool_bindings", ())))
+        self._initialization_target = state.get("initialization_target")
+        self._initialization_proposed_count = state.get("initialization_proposed_count")
+        if (self._initialization_target is not None
+                and (type(self._initialization_target) is not int or self._initialization_target < 2)):
+            raise ValueError("MOEA/D checkpoint initialization target must be at least two")
+        if (self._initialization_proposed_count is not None
+                and (type(self._initialization_proposed_count) is not int or self._initialization_proposed_count < 0)):
+            raise ValueError("MOEA/D checkpoint initialization proposal count must be nonnegative")
         self._m = int(state.get("_m") or self._m)
         self._n = int(state.get("_n") or self._n)
         ideal = state.get("ideal")
@@ -481,6 +516,10 @@ class MOEADAdapter(UnitBackedAdapter):
     # Public helpers for plugins
     # ------------------------------------------------------------------
     def _after_unit_restore(self):
+        validate_pool_bindings(self._population_pool_bindings, self.pop_X, self._population_candidate_tokens)
+        if (self._initialization_target is not None and self.pop_X is not None
+                and len(self.pop_X) > self._initialization_target):
+            raise ValueError("MOEA/D checkpoint population exceeds its initialization target")
         self._refresh_runtime_projection()
 
     def get_population_snapshot(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -522,7 +561,9 @@ class MOEADAdapter(UnitBackedAdapter):
         m = int(f_arr.shape[1]) if f_arr.ndim >= 2 else 0
 
         # If adapter is already initialised, enforce strict shape agreement.
-        if self._n > 0 and n not in (0, self._n):
+        if self.weights is not None and self._n > 0 and n not in (0, self._n):
+            return False
+        if self.weights is None and self._initialization_target is not None and n > self._initialization_target:
             return False
         if f_arr.shape[0] != n or v_arr.shape[0] != n:
             return False
@@ -542,6 +583,7 @@ class MOEADAdapter(UnitBackedAdapter):
             self.algorithm_unit.attach_feedback(f_arr, v_arr)
         else:
             self.algorithm_unit.initialize_population(x_arr, f_arr, v_arr)
+            self._population_pool_bindings = (None,) * len(x_arr)
 
         # Bootstrap dimension metadata from incoming data when uninitialised.
         if self._m == 0 and m > 0:
@@ -585,7 +627,10 @@ class MOEADAdapter(UnitBackedAdapter):
         self._last_context_projection = projection
 
     def _sync_population_snapshot(self, control: Any) -> None:
-        self._publish_direction_views(control)
+        # Numeric/manual updates may lack version receipts. They remain usable
+        # locally, but cannot publish a pool task by guessing a token's version.
+        if any(self._population_pool_bindings):
+            self._publish_direction_views(control)
         writer = getattr(control, "write_population_snapshot", None)
         if not callable(writer):
             return
@@ -602,16 +647,17 @@ class MOEADAdapter(UnitBackedAdapter):
             return
         self.algorithm_unit.require_current_feedback()
         creator = adapter_path(control.adapter, self)
-        latest = {ref.candidate_token: ref for ref in pool.refs_for_tokens(self._population_candidate_tokens)}
+        refs = self.get_solution_pool_roots(control)
         method = str(self.cfg.decomposition).lower().strip()
-        for i, (weight, token) in enumerate(zip(self.weights, self._population_candidate_tokens)):
+        for i, (weight, ref) in enumerate(zip(self.weights, refs, strict=True)):
             projection = ObjectiveProjection(method, tuple(weight),
                 tuple(self.ideal) if method == "tchebycheff" else ())
             pool.publish_projection_subpool("/".join((*creator, f"direction:{i}")),
-                (latest[token],), created_by=creator, slot=i, projection=projection)
+                (ref,), created_by=creator, slot=i, projection=projection)
 
     def get_solution_pool_roots(self, control):
-        return control.solution_pool.refs_for_tokens(self._population_candidate_tokens)
+        return validate_pool_bindings(self._population_pool_bindings, self.pop_X,
+            self._population_candidate_tokens, control=control, require=True)
 
     def _recompute_ideal(self) -> None:
         if self.pop_F is None or self.pop_F.size == 0:

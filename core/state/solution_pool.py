@@ -20,9 +20,9 @@ from .pool_retention import PoolRetentionPolicy
 from .pool_views import ObjectiveProjection
 
 
-POOL_SCHEMA = "nsgablack.solution_pool/v1"
+POOL_SCHEMA = "nsgablack.solution_pool/v2"
 BATCH_SCHEMA = "nsgablack.solution_pool_batch/v1"
-MANIFEST_SCHEMA = "nsgablack.solution_pool_manifest/v1"
+MANIFEST_SCHEMA = "nsgablack.solution_pool_manifest/v2"
 
 
 @dataclass(frozen=True)
@@ -304,9 +304,15 @@ class SolutionPool:
         values = tuple(refs)
         for ref in values:
             self._record(ref)
-        data = self._validate_subpool_metadata(metadata or {})
-        if data.get("kind") == "objective_projection":
+        supplied = dict(metadata or {})
+        if supplied.get("kind") in {"objective_projection", "candidate_view"}:
             raise ValueError("projection views must use publish_projection_subpool")
+        reserved = {"kind", "view_id", "revision", "created_by", "parent", "published"}
+        if reserved.intersection(supplied):
+            raise ValueError("subpool identity metadata is reserved")
+        data = self._validate_subpool_metadata(dict(supplied,
+            kind="candidate_collection", view_id=uuid4().hex, revision=1,
+            created_by=None, parent=None, published=not self._in_attempt))
         self._validate_view_graph({**self._subpool_metadata, name: data}, self.pool_id)
         self._retain(owner, values)
         self._subpool_metadata[name] = data
@@ -351,7 +357,23 @@ class SolutionPool:
     @classmethod
     def _validate_subpool_metadata(cls, value):
         data = thaw_wire_mapping(freeze_wire_mapping(value, path="subpool.metadata"))
-        if data.get("kind") == "objective_projection":
+        kind = data.get("kind")
+        if kind not in {"candidate_collection", "candidate_view", "objective_projection"}:
+            raise ValueError("subpool metadata requires a supported view kind; migrate legacy views")
+        common = {"kind", "created_by", "published", "view_id", "revision", "parent"}
+        if not common.issubset(data) or type(data["published"]) is not bool:
+            raise ValueError("invalid subpool identity metadata")
+        cls._validate_view_identity(dict(pool_id="pending", name="pending",
+            view_id=data["view_id"], revision=data["revision"]))
+        path = data["created_by"]
+        if path is not None and (not isinstance(path, list) or not path
+                or any(not isinstance(p, str) or not p for p in path)):
+            raise ValueError("subpool requires a stable creator path")
+        if kind != "candidate_collection" and path is None:
+            raise ValueError("published result views require a creator")
+        if data["parent"] is not None:
+            cls._validate_view_descriptor(data["parent"])
+        if kind == "objective_projection":
             required = {"kind", "created_by", "slot", "projection", "published",
                         "view_id", "revision", "parent"}
             if set(data) != required or type(data["published"]) is not bool:
@@ -361,11 +383,9 @@ class SolutionPool:
                 raise ValueError("projection subpool requires a stable creator path")
             if type(data["slot"]) is not int or data["slot"] < 0:
                 raise ValueError("projection subpool requires a nonnegative slot")
-            cls._validate_view_identity(dict(pool_id="pending", name="pending",
-                view_id=data["view_id"], revision=data["revision"]))
-            if data["parent"] is not None:
-                cls._validate_view_descriptor(data["parent"])
             ObjectiveProjection.from_dict(data["projection"])
+        elif kind == "candidate_view" and set(data) != common:
+            raise ValueError("invalid candidate view metadata")
         return data
 
     @staticmethod
@@ -385,8 +405,6 @@ class SolutionPool:
         """
         views = {}
         for name, data in metadata.items():
-            if data.get("kind") != "objective_projection":
-                continue
             if data["view_id"] in views:
                 raise ValueError("duplicate subpool view identity")
             views[data["view_id"]] = (name, data)
@@ -414,8 +432,8 @@ class SolutionPool:
     def subpool_descriptor(self, name):
         """Freeze a committed view identity and its ancestry, without candidate data."""
         data = self.subpool_metadata(name)
-        if data.get("kind") != "objective_projection" or not data["published"]:
-            raise ValueError("subpool descriptor requires a committed projection view")
+        if not data["published"]:
+            raise ValueError("subpool descriptor requires a committed view")
         return dict(pool_id=self.pool_id, name=name, view_id=data["view_id"],
                     revision=data["revision"], ancestors=self._view_ancestors(data))
 
@@ -457,6 +475,34 @@ class SolutionPool:
         self._retain(owner, refs)
         self._subpool_metadata[name] = data
 
+    def publish_subpool_view(self, name, refs, *, created_by, parent=None):
+        """Publish a selected result view without changing its feedback meaning."""
+        self._assert_unprepared()
+        owner = self._subpool_owner(name)
+        old = self._subpool_metadata.get(name)
+        data = self._validate_subpool_metadata(dict(kind="candidate_view",
+            created_by=list(created_by), published=not self._in_attempt, parent=parent,
+            view_id=old["view_id"] if old else uuid4().hex,
+            revision=old["revision"] if old else 1))
+        if self.has_subpool(name) and (old is None or old["kind"] != "candidate_view"
+                                      or old["created_by"] != data["created_by"]):
+            raise ValueError("candidate view name belongs to a different creator")
+        if old is not None and old["parent"] != data["parent"]:
+            raise ValueError("subpool parent is immutable; publish a new view")
+        refs = tuple(refs)
+        for ref in refs:
+            record = self._record(ref, allow_pending=True)
+            if not record.published and record.stage != "accepted":
+                raise ValueError("result views cannot retain unaccepted drafts")
+        if old is not None:
+            changed = self._owners[owner] != refs
+            data["revision"] += int(changed)
+            if not changed:
+                data["published"] = old["published"]
+        self._validate_view_graph({**self._subpool_metadata, name: data}, self.pool_id)
+        self._retain(owner, refs)
+        self._subpool_metadata[name] = data
+
     def children_subpools(self, parent, *, recursive=False):
         """Enumerate published children by identity, never by a reused name prefix.
 
@@ -473,7 +519,7 @@ class SolutionPool:
         selected = descriptor["view_id"]
         result = []
         for name, data in self._subpool_metadata.items():
-            if data.get("kind") != "objective_projection" or not data["published"]:
+            if not data["published"]:
                 continue
             ancestors = self._view_ancestors(data)
             if any(a["view_id"] == selected for a in (ancestors if recursive else ancestors[-1:])):
@@ -486,14 +532,20 @@ class SolutionPool:
             if data.get("kind") == "objective_projection" and data["published"]
             and tuple(data["created_by"]) == tuple(created_by))
 
+    def subpools_created_by(self, created_by):
+        """Select committed task/result views owned by an exact instance path."""
+        return tuple(name for name, data in self._subpool_metadata.items()
+                     if data["published"] and data["created_by"] is not None
+                     and tuple(data["created_by"]) == tuple(created_by))
+
     def has_subpool(self, name):
         return self._subpool_owner(name) in self._owners
 
-    def subpool_refs(self, name):
+    def subpool_refs(self, name, *, allow_pending=False):
         """Read committed members; pending outputs become visible on commit."""
         values = self._owners[self._subpool_owner(name)]
         data = self._subpool_metadata.get(name, {})
-        if data.get("kind") == "objective_projection" and not data["published"]:
+        if not data.get("published", False) and not allow_pending:
             return ()
         return tuple(ref for ref in values if self._record(ref, allow_pending=True).published)
 
@@ -511,8 +563,14 @@ class SolutionPool:
             self.publish_projection_subpool(name, combined, created_by=data["created_by"],
                 slot=data["slot"], projection=ObjectiveProjection.from_dict(data["projection"]),
                 parent=data["parent"])
+        elif data.get("kind") == "candidate_view":
+            self.publish_subpool_view(name, combined, created_by=data["created_by"], parent=data["parent"])
         else:
+            changed = combined != previous
             self._retain(owner, combined)
+            data["revision"] += int(changed)
+            if changed and self._in_attempt:
+                data["published"] = False
 
     def drop_subpool(self, name):
         self.release(self._subpool_owner(name))
@@ -825,8 +883,7 @@ class SolutionPool:
                    for r in self._records.values() if r.published or r.stage == "accepted"]
         state = self._index_state(records)
         for data in state["subpool_metadata"].values():
-            if data.get("kind") == "objective_projection":
-                data["published"] = True
+            data["published"] = True
         SolutionPool(self.snapshots)._restore_index(state)
         handle = self.snapshots.write(state, key=f"solution-pool/{self.pool_id}/manifest/{uuid4().hex}",
                                       schema=MANIFEST_SCHEMA, write_once=True)
@@ -926,6 +983,8 @@ class SolutionPool:
                             for name, value in state.get("subpool_metadata", {}).items()}
         if any(self._subpool_owner(name) not in owners for name in subpool_metadata):
             raise ValueError("subpool metadata has no corresponding membership")
+        if set(subpool_metadata) != {name[len("subpool/"):] for name in owners if name.startswith("subpool/")}:
+            raise ValueError("subpool membership is missing its view identity")
         self._validate_view_graph(subpool_metadata, state["pool_id"])
         publications = []
         for value in retention.get("publications", ()):
@@ -1001,7 +1060,7 @@ class SolutionPool:
         old_owners = baseline["index"]["retention"]["owners"]
         views = {k: refs for k, refs in self._owners.items()
                  if k.startswith("subpool/") and k not in old_owners
-                 and self._subpool_metadata.get(k[len("subpool/"):], {}).get("kind") != "objective_projection"}
+                 and self._subpool_metadata.get(k[len("subpool/"):], {}).get("kind") == "candidate_collection"}
         view_metadata = {name: copy.deepcopy(data) for name, data in self._subpool_metadata.items()
                          if self._subpool_owner(name) in views}
         self.restore_step_state(baseline)
@@ -1013,6 +1072,9 @@ class SolutionPool:
             for ref in refs:
                 self._record(ref)
             self._retain(owner, refs)
+            # Rejected attempts may keep their input allocation, containing
+            # only already-published candidates, as an immediately usable queue.
+            view_metadata[owner[len("subpool/"):]]["published"] = True
         self._subpool_metadata.update(view_metadata)
 
     def commit_step_state(self, state):
