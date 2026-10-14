@@ -33,6 +33,7 @@ from blackbase.types import UnknownState
 from ..unit_backed import UnitBackedAdapter, UnitField
 from ...representation.structure_builders import ParameterUnitBuilder
 from ..algorithm_adapter import AlgorithmAdapter
+from ..pool_results import PoolRefinementState
 from ...core.evaluation_feedback import OptimizationFeedbackBatch
 
 
@@ -91,6 +92,10 @@ class GradientOptimizerConfig:
 
 class GradientOptimizerAdapter(UnitBackedAdapter):
     """SGD/Adam/AdamW over gradients supplied by an evaluation provider."""
+    pool_input_modes = ("initialize",)
+    supports_pool_restart = True
+    # Transforming objectives alone does not transform inline/opaque gradients.
+    supports_objective_projection = False
     unit_build_operations = ("initialize", "optimizer_slots")
     unit_builder_type = ParameterUnitBuilder
     unit_schema = ParameterUnitBuilder.unit_type.schema
@@ -168,6 +173,8 @@ class GradientOptimizerAdapter(UnitBackedAdapter):
         self._step_transaction_state_ref: StateRef | None = None
         self._step_transaction_resource_context: ResourceContext | None = None
         self._provider_cleanup_refs: Dict[str, StateRef] = {}
+        self._pool_results = PoolRefinementState()
+        self._next_is_proposal = False
 
     def setup(self, control: Any) -> None:
         _ = control
@@ -190,18 +197,28 @@ class GradientOptimizerAdapter(UnitBackedAdapter):
         self._step_transaction_resource_context = None
         self._provider_cleanup_refs = {}
         self._proposal_pending = False
+        self._pool_results = PoolRefinementState()
+        self._next_is_proposal = False
         self._refresh_runtime_projection()
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[Any]:
+        from nsgablack.context_keys import KEY_SOLUTION_INPUT_REF
+        self._validate_pool_candidate(control)
         if self._proposal_pending:
             raise RuntimeError("gradient optimizer has an unresolved proposal")
-        if self.current_x is None:
+        if self.current_x is None or (self._pool_results.current is None and context.get(KEY_SOLUTION_INPUT_REF) is not None):
             initial = control.init_candidate(context)
             self._capture_candidate_template(initial)
             self.current_x = self._candidate_array(initial)
+            self._pool_results.remember_seed(control, initial)
         candidate = self.current_x.copy()
         self._proposal_pending = True
-        return (self._wrap_candidate(candidate),)
+        if self._next_is_proposal:
+            proposed = self._pool_results.derive_candidate(control, candidate, stage="gradient_optimizer",
+                metadata=self._candidate_metadata if self._candidate_kind == "unknown_state" else None)
+        else:
+            proposed = self._pool_results.project_current(control, candidate, semantic=True)
+        return (proposed,)
 
     def on_proposal_repair(self, control, repair, context):
         """Align the parameter Unit before evaluating a projected proposal.
@@ -315,6 +332,8 @@ class GradientOptimizerAdapter(UnitBackedAdapter):
         context: Dict[str, Any],
     ) -> None:
         rich_feedback = OptimizationFeedbackBatch.coerce(feedback)
+        if rich_feedback.metadata.get("subpool_projection") is not None:
+            raise ValueError("GradientOptimizer requires a gradient-aware projection; objective-only views are unsupported")
         objectives, violations = rich_feedback
         if len(candidates) != 1:
             raise ValueError("GradientOptimizerAdapter requires exactly one evaluated candidate")
@@ -368,7 +387,13 @@ class GradientOptimizerAdapter(UnitBackedAdapter):
         self.current_score = float(score)
         if self.best_score is None or float(score) < self.best_score:
             self.best_score = float(score)
+        self._pool_results.scores(rich_feedback,
+            lambda obj, vio: np.asarray([self._score(row) + 1e6 * v for row, v in zip(obj, vio)]))
+        selection_score = float(score) + 1e6 * float(violation_values[0])
+        self._pool_results.current = self._pool_results.capture(control, candidates, rich_feedback, 0, selection_score, violation_values[0])
+        self._pool_results.observe_best(control, candidates, rich_feedback, 0, selection_score, violation_values[0])
         self._proposal_pending = False
+        self._next_is_proposal = False
         if bool(self.cfg.skip_infeasible) and float(violation_values[0]) > 0.0:
             self.current_x = candidate.copy()
             self._refresh_runtime_projection()
@@ -406,12 +431,16 @@ class GradientOptimizerAdapter(UnitBackedAdapter):
                 context,
             )
             self.step_index += 1
+            self.current_score = None
+            self._next_is_proposal = True
             self._refresh_runtime_projection()
             return
         assert gradient is not None
         next_x = candidate - self._optimizer_delta(candidate, gradient)
         self.current_x = self._repair_values(control, next_x, context)
         self.step_index += 1
+        self.current_score = None
+        self._next_is_proposal = True
         self._refresh_runtime_projection()
 
     def _should_use_provider_transition(self, feedback: Any) -> bool:
@@ -521,6 +550,43 @@ class GradientOptimizerAdapter(UnitBackedAdapter):
             return None
         return (self._wrap_candidate(self.current_x.copy()),)
 
+    def default_pool_input_count(self):
+        return 1
+
+    def restart_search(self, control, context=None):
+        if self._step_transaction_slot_refs or self._step_transaction_state_ref is not None:
+            raise RuntimeError("Cannot restart gradient optimizer with uncommitted Provider effects")
+        # Old slot refs stay alive in the participant's captured baseline until
+        # commit cleanup, so rollback can restore the previous task exactly.
+        self._provider_state_ref = None
+        self._provider_slot_refs = {}
+        self._provider_transition_needs_slot_seed = False
+        self._first_moment = self._second_moment = None
+        self.current_x = self.current_score = self.best_score = self.last_gradient_norm = None
+        self._candidate_kind, self._candidate_metadata = "array", {}
+        self.step_index = 0
+        self._proposal_pending = self._next_is_proposal = False
+        self._pool_results = PoolRefinementState()
+        self._refresh_runtime_projection()
+
+    def get_solution_pool_roots(self, control):
+        if self.best_score is not None and self._pool_results.best is None:
+            raise ValueError("Gradient optimizer history requires exact evaluated pool evidence")
+        self._validate_pool_candidate(control)
+        return self._pool_results.roots(control)
+
+    def get_pool_refinement_results(self, control):
+        # current_x may be the unassessed successor, never a scored result.
+        self._validate_pool_candidate(control)
+        return self._pool_results.results(control)
+
+    def _validate_pool_candidate(self, control):
+        selected = self._pool_results.current
+        if selected is not None and selected.ref is not None and not self._next_is_proposal:
+            if self.current_x is None:
+                raise ValueError("Gradient optimizer evaluated selection requires its parameters")
+            PoolRefinementState.validate(control, selected, candidate=self.current_x)
+
     def set_current_candidates(
         self,
         population: Any,
@@ -542,6 +608,8 @@ class GradientOptimizerAdapter(UnitBackedAdapter):
             # would roll the gradient step back to the stale proposal.
             return False
         else:
+            if self._pool_results.best is not None and self._pool_results.best.ref is not None:
+                raise ValueError("Pool-bound gradient replacement requires explicit pool input")
             if isinstance(population, UnknownState):
                 values = (population,)
             elif isinstance(population, np.ndarray) and population.ndim <= 1:
@@ -555,6 +623,11 @@ class GradientOptimizerAdapter(UnitBackedAdapter):
         self._capture_candidate_template(candidate)
         self.current_x = self._candidate_array(candidate)
         self._proposal_pending = False
+        self.current_score = self.best_score = None
+        self._next_is_proposal = False
+        self._pool_results = PoolRefinementState()
+        self._pool_results.seed_metadata = dict(self._candidate_metadata)
+        self._pool_results.seed_semantic = self._candidate_kind == "unknown_state"
         self._refresh_runtime_projection()
         return True
 
@@ -577,6 +650,8 @@ class GradientOptimizerAdapter(UnitBackedAdapter):
                 dict(candidate.metadata or {}),
                 path="gradient_optimizer.candidate_metadata",
             )
+        else:
+            self._candidate_kind, self._candidate_metadata = "array", {}
 
     def _wrap_candidate(self, values: np.ndarray) -> Any:
         array = np.asarray(values, dtype=float).reshape(-1)
@@ -706,6 +781,8 @@ class GradientOptimizerAdapter(UnitBackedAdapter):
             "current_x": None if self.current_x is None else self.current_x.tolist(),
             "current_score": self.current_score,
             "best_score": self.best_score,
+            "pool_results": self._pool_results.as_dict(),
+            "next_is_proposal": self._next_is_proposal,
             "last_gradient_norm": self.last_gradient_norm,
             "step_index": int(self.step_index),
             "first_moment": (
@@ -759,6 +836,8 @@ class GradientOptimizerAdapter(UnitBackedAdapter):
             "current_x": None if self.current_x is None else self.current_x.copy(),
             "current_score": self.current_score,
             "best_score": self.best_score,
+            "pool_results": self._pool_results.as_dict(),
+            "next_is_proposal": self._next_is_proposal,
             "last_gradient_norm": self.last_gradient_norm,
             "step_index": int(self.step_index),
             "first_moment": (
@@ -788,6 +867,10 @@ class GradientOptimizerAdapter(UnitBackedAdapter):
             "nsgablack.gradient_optimizer_step_transaction/v1"
         ):
             raise ValueError("unsupported GradientOptimizerAdapter transaction schema")
+        self._pool_results = PoolRefinementState.from_dict(state.get("pool_results"))
+        self._next_is_proposal = state.get("next_is_proposal", False)
+        if type(self._next_is_proposal) is not bool:
+            raise ValueError("Gradient successor status must be boolean")
 
         release_error: BaseException | None = None
         transitioned_slots = dict(self._step_transaction_slot_refs)
@@ -803,6 +886,8 @@ class GradientOptimizerAdapter(UnitBackedAdapter):
                     transition_resource,
                 )
             except BaseException as exc:
+                for ref in attempt_refs.values():
+                    self._provider_cleanup_refs[ref.state_id] = ref
                 release_error = exc
 
         current_x = state.get("current_x")
@@ -875,9 +960,11 @@ class GradientOptimizerAdapter(UnitBackedAdapter):
             for name, ref in dict(state.get("provider_slot_refs", {}) or {}).items()
             if isinstance(ref, StateRef)
         }
+        if self._step_transaction_slot_refs:
+            self._provider_slot_refs = dict(self._step_transaction_slot_refs)
         successor_ids = {
             ref.state_id
-            for ref in self._step_transaction_slot_refs.values()
+            for ref in self._provider_slot_refs.values()
             if isinstance(ref, StateRef)
         }
         retired = {
@@ -969,6 +1056,10 @@ class GradientOptimizerAdapter(UnitBackedAdapter):
         return tuple(results)
 
     def _set_algorithm_state(self, state: Mapping[str, Any]) -> None:
+        self._pool_results = PoolRefinementState.from_dict(state.get("pool_results"))
+        self._next_is_proposal = state.get("next_is_proposal", False)
+        if type(self._next_is_proposal) is not bool:
+            raise ValueError("Gradient successor status must be boolean")
         saved_optimizer = str(state.get("optimizer", self.cfg.optimizer) or "").strip().lower()
         if saved_optimizer != self.cfg.optimizer:
             raise ValueError(

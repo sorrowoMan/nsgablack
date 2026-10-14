@@ -146,10 +146,11 @@ def test_real_finite_difference_partial_admission_compacts_coordinates_once(doub
             return draft
     owner = GradientDescentAdapter(max_directions=2)
     owner.current_x = np.array([0., 0.])
-    owner.set_unit_repair(Repair())
     solver = ComposableSolver(Sphere(2), adapter=owner,
         representation_pipeline=RepresentationPipeline(repair=ProblemBounds(low=-10., high=10.)),
         joint_repair_policy=JointRepairPolicy())
+    assert solver.step().committed  # Evaluate the center before its finite-difference poll.
+    owner.set_unit_repair(Repair())
     solver.evaluation_acceptance_policy = Select((1, 3))
     before = owner.get_state()
     if double_compact:
@@ -159,7 +160,7 @@ def test_real_finite_difference_partial_admission_compacts_coordinates_once(doub
     else:
         assert solver.step().committed
         assert len(owner.algorithm_unit.probes) == 2 and owner.algorithm_unit.best is None
-    assert calls == [(4, 2, (1, 3))] and solver.evaluation_count == 4
+    assert calls == [(4, 2, (1, 3))] and solver.evaluation_count == 5
 
 
 @pytest.mark.parametrize("algorithm", ["de", "moead"])

@@ -589,11 +589,11 @@ class SolutionPool:
             raise ValueError("task feedback has no accepted pool candidate")
         return refs
 
-    def read_raw_feedback(self, refs):
-        """Read original evaluation for an explicit, committed selection."""
+    def read_raw_feedback(self, refs, *, allow_pending=False):
+        """Read original evaluation; internal staging reads require explicit opt-in."""
         objectives, violations, loaded = [], [], {}
         for ref in tuple(refs):
-            record = self._record(ref)
+            record = self._record(ref, allow_pending=allow_pending)
             if record.record_id not in loaded:
                 loaded[record.record_id] = self._payload(record)[0]["raw_feedback"]
             raw = loaded[record.record_id]

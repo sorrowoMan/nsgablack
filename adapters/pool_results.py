@@ -26,12 +26,13 @@ class PoolSelection:
     ref: SolutionRef | None
     provenance: CandidateProvenance | None
     metadata: dict
+    semantic: bool = False
 
     def as_dict(self):
         return dict(score=self.score, violation=self.violation,
                     ref=None if self.ref is None else self.ref.as_dict(),
                     provenance=None if self.provenance is None else self.provenance.as_dict(),
-                    metadata=copy.deepcopy(self.metadata))
+                    metadata=copy.deepcopy(self.metadata), semantic=self.semantic)
 
     @classmethod
     def from_dict(cls, value):
@@ -43,7 +44,10 @@ class PoolSelection:
                       else CandidateProvenance.from_dict(dict(value["provenance"])))
         if ref is not None and (provenance is None or provenance.candidate_token != ref.candidate_token):
             raise ValueError("pool refinement reference differs from its candidate provenance")
-        return cls(score, violation, ref, provenance, copy.deepcopy(dict(value["metadata"])))
+        semantic = value.get("semantic", bool(value["metadata"]))
+        if type(semantic) is not bool:
+            raise ValueError("pool selection semantic kind must be boolean")
+        return cls(score, violation, ref, provenance, copy.deepcopy(dict(value["metadata"])), semantic)
 
 
 class PoolRefinementState:
@@ -56,6 +60,7 @@ class PoolRefinementState:
         self.best: PoolSelection | None = None
         self.seed_provenance = None
         self.seed_metadata = {}
+        self.seed_semantic = False
 
     @staticmethod
     def _candidate_details(control, candidate, index=None):
@@ -72,29 +77,30 @@ class PoolRefinementState:
         return provenance, metadata, semantic
 
     def remember_seed(self, control, candidate):
-        provenance, metadata, _ = self._candidate_details(control, candidate)
+        provenance, metadata, semantic = self._candidate_details(control, candidate)
         self.seed_provenance = provenance
         self.seed_metadata = copy.deepcopy(metadata)
+        self.seed_semantic = isinstance(semantic, UnknownState)
 
     def project_current(self, control, candidate, *, semantic=False):
         selected = self.current
         provenance = self.seed_provenance if selected is None else selected.provenance
         metadata = self.seed_metadata if selected is None else selected.metadata
         projected = np.array(candidate, copy=True)
-        if semantic and metadata:
+        if semantic and (self.seed_semantic if selected is None else selected.semantic):
             projected = UnknownState(projected, copy.deepcopy(metadata))
         binder = getattr(control, "bind_candidate_provenance", None)
         if provenance is not None and callable(binder):
             binder([projected], [provenance], activate=False)
         return projected
 
-    def derive_candidate(self, control, values, *, stage):
+    def derive_candidate(self, control, values, *, stage, metadata=None):
         """Bind an algorithm-generated neighbor without reusing its parent's token."""
         selected = self.current
-        metadata = self.seed_metadata if selected is None else selected.metadata
+        metadata = (self.seed_metadata if selected is None else selected.metadata) if metadata is None else metadata
         parent = self.seed_provenance if selected is None else selected.provenance
         candidate = np.array(values, copy=True)
-        if metadata:
+        if metadata or (self.seed_semantic if selected is None else selected.semantic):
             candidate = UnknownState(candidate, copy.deepcopy(metadata))
         prepare = getattr(control, "prepare_candidate_provenance", None)
         binder = getattr(control, "bind_candidate_provenance", None)
@@ -145,7 +151,8 @@ class PoolRefinementState:
         items = getattr(feedback, "items", ())
         value = items[index].info.get("accepted_solution_ref") if items else None
         ref = None if value is None else SolutionRef.from_dict(dict(value))
-        selected = PoolSelection(float(score), float(violation), ref, provenance, copy.deepcopy(metadata))
+        selected = PoolSelection(float(score), float(violation), ref, provenance, copy.deepcopy(metadata),
+                                 isinstance(semantic, UnknownState))
         if ref is not None:
             self.validate(control, selected, candidate=semantic)
         return selected
@@ -175,9 +182,10 @@ class PoolRefinementState:
             if selected is None:
                 continue
             if selected.ref is not None:
+                self.validate(control, selected)
                 refs.append(selected.ref)
             elif selected.provenance is not None:
-                refs.extend(control.solution_pool.refs_for_tokens((selected.provenance.candidate_token,)))
+                raise ValueError("selected pool candidate requires its exact accepted solution reference")
         return tuple(dict.fromkeys(refs))
 
     def results(self, control):
@@ -192,7 +200,7 @@ class PoolRefinementState:
                     current=None if self.current is None else self.current.as_dict(),
                     best=None if self.best is None else self.best.as_dict(),
                     seed_provenance=None if self.seed_provenance is None else self.seed_provenance.as_dict(),
-                    seed_metadata=copy.deepcopy(self.seed_metadata))
+                    seed_metadata=copy.deepcopy(self.seed_metadata), seed_semantic=self.seed_semantic)
 
     @classmethod
     def from_dict(cls, value):
@@ -219,4 +227,7 @@ class PoolRefinementState:
         provenance = value.get("seed_provenance")
         result.seed_provenance = None if provenance is None else CandidateProvenance.from_dict(dict(provenance))
         result.seed_metadata = copy.deepcopy(dict(value.get("seed_metadata", {})))
+        result.seed_semantic = value.get("seed_semantic", bool(result.seed_metadata))
+        if type(result.seed_semantic) is not bool:
+            raise ValueError("pool seed semantic kind must be boolean")
         return result

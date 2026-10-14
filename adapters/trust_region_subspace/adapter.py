@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 
 from ..trust_region_base import TrustRegionBaseAdapter
+from ...core.state.solution_pool import SolutionRef
 
 
 @dataclass
@@ -25,6 +26,7 @@ class TrustRegionSubspaceConfig:
     subspace_dim: int = 8
     basis_method: str = "random"  # random | pca | svd | sparse_pca | cluster
     min_samples: int = 32
+    sample_limit: int = 256
     resample_every: int = 10
     random_seed: Optional[int] = None
 
@@ -40,7 +42,7 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
     context_provides = ()
     context_mutates = ()
     context_cache = ()
-    context_notes = ("Adapter schedules basis refresh; algorithm pipeline constructs the random or population-derived basis.",)
+    context_notes = ("Adapter schedules basis refresh from its own accepted task samples; the algorithm pipeline constructs the basis.",)
 
     def __init__(
         self,
@@ -58,13 +60,30 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
         )
         super().__init__(cfg, name=name, priority=priority, random_seed=cfg.random_seed, unit_binding=unit_binding)
         self.config = self.cfg
+        if int(cfg.sample_limit) < max(1, int(cfg.min_samples)):
+            raise ValueError("subspace sample_limit must cover min_samples")
         self._basis: Optional[np.ndarray] = None
         self._steps = 0
+        self._sample_refs = ()
 
     def _reset_internal_state(self, control: Any) -> None:
         _ = control
         self._basis = None
         self._steps = 0
+        self._sample_refs = ()
+
+    def _record_reference_samples(self, control, candidates, feedback, scores, violations):
+        refs = list(self._sample_refs)
+        for index in range(len(candidates)):
+            selected = self._pool_results.capture(control, candidates, feedback, index, scores[index], violations[index])
+            if selected.ref is None:
+                raise ValueError("subspace samples require exact accepted solution references")
+            if selected.ref not in refs:
+                refs.append(selected.ref)
+        self._sample_refs = tuple(refs[-int(self.cfg.sample_limit):])
+
+    def get_solution_pool_roots(self, control):
+        return tuple(dict.fromkeys((*super().get_solution_pool_roots(control), *self._sample_refs)))
     def _before_propose(self, control: Any, context: Dict[str, Any]) -> None:
         if self._basis is None or (self._steps % max(1, int(self.cfg.resample_every)) == 0):
             self._basis = self._build_or_sample_basis(control)
@@ -86,6 +105,21 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
         z = self._rng.uniform(low=-1.0, high=1.0, size=(self._basis.shape[1],))
         return self._basis @ z
 
+    def _clip_to_bounds(self, x: np.ndarray, control: Any) -> np.ndarray:
+        # Coordinate clipping generally leaves a low-dimensional subspace.
+        # Shorten the same ray so its basis coordinates remain admissible.
+        low, high = self._extract_bounds(control)
+        if low is None or high is None:
+            return x
+        delta = np.asarray(x, dtype=float) - self._center
+        scale = 1.0
+        positive, negative = delta > 0, delta < 0
+        if np.any(positive):
+            scale = min(scale, float(np.min((high[positive] - self._center[positive]) / delta[positive])))
+        if np.any(negative):
+            scale = min(scale, float(np.min((low[negative] - self._center[negative]) / delta[negative])))
+        return self._center + max(0., scale) * delta
+
     def _sample_subspace(self, control: Any) -> np.ndarray:
         dim = int(getattr(control, "dimension", 1) or 1)
         k = min(max(1, int(self.cfg.subspace_dim)), dim)
@@ -98,12 +132,9 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
         if method == "random":
             return self._sample_subspace(control)
 
-        pop = getattr(control, "population", None)
-        if pop is None:
+        if len(self._sample_refs) < int(self.cfg.min_samples):
             return self._sample_subspace(control)
-        X = np.asarray(pop, dtype=float)
-        if X.ndim != 2 or X.shape[0] < int(self.cfg.min_samples):
-            return self._sample_subspace(control)
+        X = control.solution_pool.read(self._sample_refs, allow_pending=True).numeric_matrix
         return self._build_basis_from_population(X, control)
 
     def _build_basis_from_population(self, X: np.ndarray, control: Any) -> np.ndarray:
@@ -143,10 +174,14 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
         return {
             "basis": None if self._basis is None else self._basis.tolist(),
             "steps": int(self._steps),
+            "sample_refs": [ref.as_dict() for ref in self._sample_refs],
         }
 
     def _load_extra_state(self, state: Dict[str, Any]) -> None:
         basis = state.get("basis")
         self._basis = None if basis is None else np.asarray(basis, dtype=float)
+        self._sample_refs = tuple(SolutionRef.from_dict(value) for value in state.get("sample_refs", ()))
+        if len(set(self._sample_refs)) != len(self._sample_refs) or len(self._sample_refs) > int(self.cfg.sample_limit):
+            raise ValueError("invalid restored subspace sample reference window")
         if state.get("steps") is not None:
             self._steps = int(state.get("steps"))

@@ -388,7 +388,7 @@ class ComposableSolver(SolverBase):
     def step(self) -> StepOutcome:
         return self._execute_step_transaction(self._step_transaction_body)
 
-    def _execute_step_transaction(self, body: Callable[[], StepOutcome]) -> StepOutcome:
+    def _execute_step_transaction(self, body: Callable[[], StepOutcome], *, step_extensions: bool = True) -> StepOutcome:
         self.ensure_evaluation_evidence_ready_for_next_step()
         previous_authority = self.get_population_authority_identity()
         previous_authority_key = (
@@ -405,7 +405,8 @@ class ComposableSolver(SolverBase):
         self.begin_snapshot_step_transaction()
         try:
             self.solution_pool.begin_attempt()
-            self.prepare_step_extensions()
+            if step_extensions:
+                self.prepare_step_extensions()
             outcome = body()
             if outcome.committed:
                 # Fallible pool staging must precede the durable disposition
@@ -460,7 +461,8 @@ class ComposableSolver(SolverBase):
                 "evidence": [{"participant": name, "payload": dict(payload)} for name, payload in evidence],
             })
         report = adapter_transaction.commit()
-        return self.notify_step_committed(self._attach_adapter_commit_report(outcome, report))
+        outcome = self._attach_adapter_commit_report(outcome, report)
+        return self.notify_step_committed(outcome) if step_extensions else outcome
 
     def _decide_after_repair_rejection(self, rejected):
         """A scheduling decision has its own rollback and post-decision cleanup."""

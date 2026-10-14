@@ -149,7 +149,10 @@ def test_subspace_adapter_uses_pipeline_basis_and_unit_codec():
         def make_basis(self, parameters):
             return np.array([[1.], [0.]]), "custom-axis"
     adapter = adapters.TrustRegionSubspaceAdapter(unit_binding=UnitBinding(Basis()), subspace_dim=1, batch_size=3)
-    control = SimpleNamespace(dimension=2, best_x=np.zeros(2), problem=Problem())
+    control = SimpleNamespace(dimension=2, init_candidate=lambda context: np.zeros(2), problem=Problem())
+    baseline = adapter.propose(control, {})
+    assert len(baseline) == 1 and adapter.algorithm_unit.basis is None
+    adapter._best_score = 1.  # The following call exercises geometry after baseline feedback.
     proposals = adapter.propose(control, {})
     assert all(row[1] == 0 for row in proposals)
     assert adapter.algorithm_unit.basis_method == "custom-axis"
@@ -175,11 +178,15 @@ def test_finite_difference_uses_repaired_coordinate_distance_and_rejects_coupled
     control = SimpleNamespace(init_candidate=lambda c: np.array([0.]),
                               repair_candidate=lambda x, c: np.maximum(x, 0))
     adapter = adapters.GradientDescentAdapter(epsilon=0.5, learning_rate=0.1)
+    baseline = adapter.propose(control, {})
+    adapter.update(control, baseline, (np.zeros((1, 1)), np.zeros(1)), {})
     candidates = adapter.propose(control, {})
     candidates = [control.repair_candidate(x, {}) for x in candidates]
     adapter.update(control, candidates, (np.array([[1.], [0.]]), np.zeros(2)), {})
     # One-sided difference is 1/0.5, so the unrepaired step would be -0.2.
     assert adapter.algorithm_unit.displacements.tolist() == [[0.5], [0.0]]
+    assert adapter.current_x[0] == 0.0 and adapter.current_score == 0.0
+    assert adapter._trial_values[0] == -0.2  # Still unassessed, not a proxy-scored center.
     adapter = adapters.GradientDescentAdapter(epsilon=0.5)
     adapter.current_x = np.zeros(2)
     adapter._pending_probes = [(0, 1), (0, -1)]

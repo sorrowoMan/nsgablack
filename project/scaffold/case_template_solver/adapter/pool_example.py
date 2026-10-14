@@ -13,7 +13,11 @@
 完整可运行示例见 examples/cases/solution_pool/cases/pool_refinement。
 省略 select 默认读母池；种群用 PoolTaskSpec(mode="initialize") 即按声明大小独立抽样。
 指定子池必须存在。VNS 默认一个起点；count="all" 用于整批精修。
-SA、PatternSearch、SingleTrajectoryAdaptive 同样支持 refine；output要求明确结果接口。
+SA、PatternSearch、SingleTrajectoryAdaptive、GaussianSearch、MAS、有限差分及四种信赖域
+同样支持普通/投影 refine；output要求明确结果接口。
+有限差分 local_steps=3 才覆盖起点、探针和下降点三次派发；步数不同于求值行数。
+GradientOptimizer 支持普通 refine，未同步变换梯度时拒绝投影。
+A*/MOA* 仅显式 pool_start_policy="new_root" 取一个起点，不声明通用 refine。
 普通精修的最终结果视图也能通过 subpools.all(refiner) 交给下一层。
 distribution 可选 independent/partition/shared；on_insufficient 可选 error/wait/available。
 
@@ -26,6 +30,9 @@ setup只准备结构；阶段策略须等 moead.pool_views_ready 再启动精修
 按名字选择投影视图也使用该视图的比较规则，不能退回默认目标求和。
 默认 count=1 是每方向一个起点，partition 分配方向给 VNS 实例，不重复抽签。
 完整装配与双目标问题见 examples/cases/solution_pool/cases/moead_refinement。
+该 Case 的 local_algorithm 可选 vns/sa/pattern/gaussian/mas/finite_difference/
+trust_region/trust_region_mo/trust_region_nonsmooth/trust_region_subspace。
+切换精修器仍使用同一 PoolTaskSpec，不另改母池或返回竞争机制。
 
 继续精修时保留明确的 VNS 实例 coarse，并将它装入上述 local 角色：
     fine_task = PoolTaskSpec(subpools.all(coarse), steps=3, output="fine")

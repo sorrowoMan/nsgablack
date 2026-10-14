@@ -152,4 +152,14 @@ SolutionPool 在算法运行初始化前建立；配置实例的构造顺序不�
 
 池与 manifest schema 为 v2；全部子池具有身份和版本，普通集合、选中结果与投影是不同视图类型。名称和创建者选择同一投影视图不得改变语义。refine 的 output 聚合接纳提案，get_pool_refinement_results 明确返回准确选中版本；普通结果也能继续按创建者选择。透明包装通过 pool_result_owner 解析真实实例。
 
-SA、PatternSearch、SingleTrajectoryAdaptive 与 VNS 已支持普通／投影精修；SA/Single 交付任务最好已评估解。NSGA 家族与 DE 发布普通 population 视图，MOEA/D 发布方向投影视图；成员保留准确引用，不追读同 token 的未来版本。未迁移的路径、梯度和信赖域算法仍明确拒绝相应任务；共享梯度、活 Provider 状态或结构约束不能由池成员关系代替。详细覆盖见 [池与 Adapter 接入契约](SOLUTION_POOL_ADAPTER_READINESS_CN.md)。
+SA、PatternSearch、SingleTrajectoryAdaptive、VNS、GaussianSearch、MAS、有限差分 GradientDescent 和四种信赖域 Adapter 支持普通／投影精修。任务结果是已评估的明确选择；探索 current 与 task-best 可不同，二者分别保护。MAS 的训练历史保护实际反馈的准确版本，所有目标模型完成训练后才参与提案筛选。Subspace 的参考样本来自本任务已接纳版本，默认最多 256 条，不借别人的全局 population。详细覆盖见 [池与 Adapter 接入契约](SOLUTION_POOL_ADAPTER_READINESS_CN.md)。
+
+有限差分的起点、成对探针、下降 trial 分三次派发求值；单侧接纳不能产生该维度梯度，尚未求值的 trial 不能覆盖中心及其评分。GradientOptimizer 支持普通精修，交付已评估前驱中的任务最佳，不给新参数沿用旧损失；仅变换目标而没有同步梯度/Jacobian 的投影视图明确拒绝。Provider slots 仍由原事务维护：没有 transition 不退休活 slots，失败恢复旧 slots，未确认释放的引用保存为清理债务。
+
+数值精修器的已评估 Unit 候选须与所持精确收据交叉验证，不能只检查 ref 自身而放过已变更的内存值；缺失候选同样拒绝。Gaussian／有限差分核对同义当前评分，GradientOptimizer 的未评估后继保留独立状态。MAS 在模型重建前拒绝兼容载荷与 codec Unit 的历史矛盾，历史候选另须对应其保留的池版本；此验证不重跑求值或偏好。
+
+A*／MOA* 仅通过显式 `pool_start_policy="new_root"` 支持单个池种子初始化；修复、求值和接纳成功后才建立新根，不继承来源路径 g。不声明通用 refine／restart／目标投影。节点、标签、父路径及结果保存准确引用；A* 的 best_evaluated 与 MOA* 的 nondominated_path_labels 仍按各自结果含义交付。
+
+NSGA 家族与 DE 发布普通 population 视图，MOEA/D 发布方向投影视图。Evolution 初始化和恢复用 `set_population_state(control, batch, feedback, solution_refs=..., provenance=...)` 交付候选身份、原始反馈和准确收据；`get_population_solution_refs(control)` 是对齐成员行的有序引用，允许重复槽位，不能用无序回收根代替。Role、EliteRetention、StrategyChain 和单子 Composite 可转发完整交付；不支持的 L2 配置在 setup 阶段拒绝，多子 Composite 保持分区语义。旧三数组环境选择须显式 `external_evaluation=True` 断言外部原始求值并导入新身份，不追认旧池版本，也不虚增 Problem 调用。
+
+Evolution 初始化复用步骤事务，保存池、权威状态和证据，但不制造逻辑代或物理尝试；步骤语义扩展仍只用于普通步骤。显式池输入按最终接纳的原提案索引结算，预算外和未接纳种子保持可重试；问题 repair 不因完整身份交付再执行一次。

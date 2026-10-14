@@ -22,7 +22,8 @@ from ..unit_backed import UnitBackedAdapter, UnitField
 from ...representation.structure_builders import DecompositionUnitBuilder
 from ...representation.structure_builders import simplex_points
 from ..algorithm_adapter import AlgorithmAdapter
-from ..population_pool_refs import feedback_pool_bindings, align_pool_bindings, validate_pool_bindings
+from ..population_pool_refs import (feedback_pool_bindings, align_pool_bindings, validate_pool_bindings,
+                                   install_population_state, validate_numeric_population_replacement)
 from ..subpools import adapter_path
 from ...core.state.pool_views import ObjectiveProjection
 from nsgablack.context_keys import (
@@ -576,6 +577,9 @@ class MOEADAdapter(UnitBackedAdapter):
             and np.array_equal(self.pop_X, x_arr, equal_nan=True)
             and len(self._population_candidate_tokens) == int(x_arr.shape[0])
         )
+        same_feedback = (np.array_equal(self.pop_F, f_arr, equal_nan=True)
+                         and np.array_equal(self.pop_V, v_arr, equal_nan=True))
+        validate_numeric_population_replacement(self._population_pool_bindings, preserve_tokens=preserve_tokens)
         # PopulationPartition intentionally exposes immutable arrays.  MOEA/D
         # owns a mutable runtime population, so accepting a Snapshot must cross
         # that ownership boundary with defensive copies.
@@ -591,9 +595,38 @@ class MOEADAdapter(UnitBackedAdapter):
         if self._n == 0 and n > 0:
             self._n = n
 
-        if n > 0:
+        if n > 0 and not (preserve_tokens and same_feedback):
             self._recompute_ideal()
         self._refresh_runtime_projection()
+        return True
+
+    def set_population_state(self, control, batch, feedback, *, solution_refs, provenance):
+        solution_refs = tuple(solution_refs)
+        count, objectives = batch.numeric_matrix.shape[0], feedback.objectives.shape[1]
+        if count < 2 or objectives < 2:
+            raise ValueError("MOEA/D population delivery requires at least two members and objectives")
+        if self.weights is not None and (count != self._n or objectives != self._m):
+            raise ValueError("MOEA/D population delivery cannot change an active decomposition shape")
+        if self._m and objectives != self._m:
+            raise ValueError("MOEA/D population feedback does not match its objective dimension")
+        same_population = (self.weights is not None
+            and tuple(binding["ref"] for binding in self._population_pool_bindings if binding is not None)
+                == tuple(ref.as_dict() for ref in solution_refs)
+            and np.array_equal(self.pop_F, feedback.objectives, equal_nan=True)
+            and np.array_equal(self.pop_V, feedback.violations, equal_nan=True))
+        install_population_state(self, control, batch, feedback, solution_refs=solution_refs, provenance=provenance)
+        if not same_population:
+            self._n, self._m = count, objectives
+            self._initialization_target = count
+            self._initialization_proposed_count = None
+            self._pending_indices, self._pending_modes = [], []
+        if self.weights is None:
+            self.rebuild_unit("decomposition", weights=self._generate_weights(count, objectives),
+                              neighbors=max(1, min(int(self.cfg.neighborhood_size), count)))
+        if not same_population:
+            self._recompute_ideal()
+        self._refresh_runtime_projection()
+        self._publish_direction_views(control)
         return True
 
     # ------------------------------------------------------------------
@@ -656,6 +689,10 @@ class MOEADAdapter(UnitBackedAdapter):
                 (ref,), created_by=creator, slot=i, projection=projection)
 
     def get_solution_pool_roots(self, control):
+        return validate_pool_bindings(self._population_pool_bindings, self.pop_X,
+            self._population_candidate_tokens, control=control, require=True)
+
+    def get_population_solution_refs(self, control):
         return validate_pool_bindings(self._population_pool_bindings, self.pop_X,
             self._population_candidate_tokens, control=control, require=True)
 

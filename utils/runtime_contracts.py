@@ -99,6 +99,14 @@ def inspect_runtime_contracts(solver):
                         "initialize" not in modes or not participant.supports_pool_restart):
                     issues.append(("solution-pool-input-contract-invalid", f"{participant.name}: projected refinement requires initialize and restart"))
                 try:
+                    delivery = participant.supports_population_state_delivery()
+                    if type(delivery) is not bool:
+                        raise TypeError("population state capability must return boolean")
+                    if delivery and type(participant).get_population_solution_refs is AlgorithmAdapter.get_population_solution_refs:
+                        raise ValueError("population identity delivery requires its ordered member-reference reader")
+                except (TypeError, ValueError, AttributeError) as exc:
+                    issues.append(("population-identity-contract-invalid", f"{participant.name}: {exc}"))
+                try:
                     if participant.mutation_operator is not None and not participant.uses_pipeline_mutation:
                         raise ValueError("Adapter does not consume pipeline mutation")
                     if participant.uses_pipeline_mutation:

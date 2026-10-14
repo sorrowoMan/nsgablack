@@ -681,6 +681,29 @@ class AlgorithmAdapter(AdapterBase):
         _ = self.validate_population_snapshot(population, objectives, violations)
         return False
 
+    def set_population_state(self, control, batch, feedback, *, solution_refs, provenance) -> bool:
+        """Receive a complete evaluated population with exact pool identities.
+
+        Opt-in replacement surface for lifecycle initialization/import. The
+        receiver must validate candidates, raw feedback and provenance against
+        the supplied versions before changing its Unit; numerical/token lookup
+        cannot substitute for these receipts. A false return means unsupported.
+        """
+        return False
+
+    def supports_population_state_delivery(self) -> bool:
+        """Read-only assembly check for complete input and ordered ref export."""
+        return (type(self).set_population_state is not AlgorithmAdapter.set_population_state
+                and type(self).get_population_solution_refs is not AlgorithmAdapter.get_population_solution_refs)
+
+    def get_population_solution_refs(self, control):
+        """Exact refs in population row order, including repeated slots.
+
+        None means unsupported. This is distinct from unordered local retention
+        roots, which can additionally own archives, queues or other candidates.
+        """
+        return None
+
     def get_population_candidate_tokens(self) -> tuple[str | None, ...] | None:
         """Return tokens aligned with ``get_population_snapshot()``.
 
@@ -952,6 +975,31 @@ class CompositeAdapter(AlgorithmAdapter):
 
     def _child_prefix(self, index: int, adapter: AlgorithmAdapter) -> str:
         return f"child:{int(index)}:{adapter.name}"
+
+    def resolve_population_state_mode(self):
+        return self.adapters[0].resolve_population_state_mode() if len(self.adapters) == 1 else "partitioned"
+
+    def supported_population_state_modes(self):
+        return (self.adapters[0].supported_population_state_modes() if len(self.adapters) == 1
+                else frozenset(("partitioned",)))
+
+    def get_population_snapshot(self):
+        return self.adapters[0].get_population_snapshot() if len(self.adapters) == 1 else None
+
+    def get_population_candidate_tokens(self):
+        return self.adapters[0].get_population_candidate_tokens() if len(self.adapters) == 1 else None
+
+    def supports_population_state_delivery(self):
+        return len(self.adapters) == 1 and self.adapters[0].supports_population_state_delivery()
+
+    def set_population_state(self, control, batch, feedback, *, solution_refs, provenance):
+        # One child is a transparent owner. Multiple children have no implicit
+        # broadcasting or population aggregation contract.
+        return len(self.adapters) == 1 and self.adapters[0].set_population_state(control, batch, feedback,
+            solution_refs=solution_refs, provenance=provenance)
+
+    def get_population_solution_refs(self, control):
+        return self.adapters[0].get_population_solution_refs(control) if len(self.adapters) == 1 else None
 
     def get_population_partitions(self) -> tuple[PopulationPartition, ...]:
         out: list[PopulationPartition] = []

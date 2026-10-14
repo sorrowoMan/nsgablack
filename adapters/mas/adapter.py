@@ -14,7 +14,10 @@ import numpy as np
 from ..unit_backed import UnitBackedAdapter, UnitField
 from ...representation.structure_builders import ModelSearchUnitBuilder
 from ..algorithm_adapter import AlgorithmAdapter
-from nsgablack.context_keys import KEY_BEST_X
+from ..pool_results import PoolRefinementState
+from ...core.evaluation_feedback import OptimizationFeedbackBatch
+from ...core.state.solution_pool import SolutionRef
+from ...units.contracts import candidate_array
 from ...utils.surrogate.vector_surrogate import VectorSurrogate
 
 
@@ -38,6 +41,9 @@ class MASAdapter(UnitBackedAdapter):
     """
     unit_builder_methods = ("create_model",)
     accepts_proposal_replacement = True
+    pool_input_modes = ("initialize",)
+    supports_pool_restart = True
+    supports_objective_projection = True
     unit_builder_type = ModelSearchUnitBuilder
     unit_schema = ModelSearchUnitBuilder.unit_type.schema
     _center = UnitField("center")
@@ -73,6 +79,8 @@ class MASAdapter(UnitBackedAdapter):
         self._X: list[np.ndarray] = []
         self._Y: list[np.ndarray] = []
         self.solver: Any = None
+        self._pool_results = PoolRefinementState()
+        self._history_refs = []
 
     def setup(self, control: Any) -> None:
         self.solver = control
@@ -80,10 +88,19 @@ class MASAdapter(UnitBackedAdapter):
         self._surrogate = None
         self._X.clear()
         self._Y.clear()
+        self._pool_results = PoolRefinementState()
+        self._history_refs = []
+        self._rng = self.create_local_rng(control, seed=self.cfg.random_seed)
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
-        if self._center is None:
-            self._center = self._init_center(control, context)
+        from nsgablack.context_keys import KEY_SOLUTION_INPUT_REF
+        self._validate_pool_candidate(control)
+        if self._center is None or (self._pool_results.current is None and context.get(KEY_SOLUTION_INPUT_REF) is not None):
+            seed = control.init_candidate(context)
+            self._center = candidate_array(seed).copy()
+            self._pool_results.remember_seed(control, seed)
+        if self._pool_results.current is None:
+            return (self._pool_results.project_current(control, self._center, semantic=True),)
         center = np.asarray(self._center, dtype=float)
         n = max(1, int(self.cfg.batch_size))
         explore_n = int(round(n * float(self.cfg.exploration_ratio)))
@@ -93,11 +110,11 @@ class MASAdapter(UnitBackedAdapter):
         # exploration: random neighborhood
         for _ in range(explore_n):
             cand = center + self._rng.normal(size=center.shape) * 0.5
-            candidates.append(self._clip_to_bounds(cand, control))
+            candidates.append(self._pool_results.derive_candidate(control, self._clip_to_bounds(cand, control), stage="mas_explore"))
 
         # exploitation: use surrogate model if available
         model = self._surrogate
-        if model is not None and exploit_n > 0:
+        if model is not None and self._surrogate_is_fitted() and exploit_n > 0:
             pool = [center + self._rng.normal(size=center.shape) * 0.5 for _ in range(exploit_n * 3)]
             pool_arr = np.stack(pool, axis=0)
             try:
@@ -106,11 +123,16 @@ class MASAdapter(UnitBackedAdapter):
                     scores = preds.reshape(-1)
                 else:
                     scores = np.sum(preds, axis=1)
-            except Exception:
-                scores = np.asarray([np.sum(p ** 2) for p in pool_arr], dtype=float)
+            except Exception as exc:
+                _report_optional_failure(component=__name__, event="mas.predict", exc=exc)
+                scores = np.zeros(len(pool_arr), dtype=float)
             best_idx = np.argsort(scores)[:exploit_n]
             for idx in best_idx:
-                candidates.append(self._clip_to_bounds(pool_arr[idx], control))
+                candidates.append(self._pool_results.derive_candidate(control, self._clip_to_bounds(pool_arr[idx], control), stage="mas_exploit"))
+        elif exploit_n > 0:
+            for _ in range(exploit_n):
+                cand = center + self._rng.normal(size=center.shape) * 0.5
+                candidates.append(self._pool_results.derive_candidate(control, self._clip_to_bounds(cand, control), stage="mas_explore"))
         return candidates
 
     def update(
@@ -120,33 +142,57 @@ class MASAdapter(UnitBackedAdapter):
         feedback: Any,
         context: Dict[str, Any],
     ) -> None:
+        feedback = OptimizationFeedbackBatch.coerce(feedback)
         objectives, violations = feedback
+        if feedback.candidate_count != len(candidates):
+            raise ValueError("MAS feedback must align with candidates")
         if candidates is None or len(candidates) == 0:
             return None
-        scores = self._score(objectives, violations)
-        best_idx = int(np.argmin(scores))
-        self._center = np.asarray(candidates[best_idx], dtype=float).copy()
-        self._update_surrogate(candidates, objectives)
+        scores, violations = self._pool_results.scores(feedback, self._score)
+        best_idx = min(range(len(scores)), key=lambda i: self._pool_results.key(scores[i], violations[i]))
+        selected = self._pool_results.capture(control, candidates, feedback, best_idx, scores[best_idx], violations[best_idx])
+        self._pool_results.current = selected
+        self._pool_results.observe_best(control, candidates, feedback, best_idx, scores[best_idx], violations[best_idx])
+        self._center = candidate_array(candidates[best_idx]).copy()
+        refs = [self._pool_results.capture(control, candidates, feedback, i, scores[i], violations[i]).ref for i in range(len(candidates))]
+        self._update_surrogate(candidates, objectives, refs=refs)
         return None
 
-    def _init_center(self, control: Any, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
-        if isinstance(context, dict):
-            best_ctx = context.get(KEY_BEST_X)
-            if best_ctx is not None:
-                return np.asarray(best_ctx, dtype=float)
-        if getattr(control, "best_x", None) is not None:
-            return np.asarray(control.best_x, dtype=float)
-        pipeline = getattr(control, "representation_pipeline", None)
-        if pipeline is not None and hasattr(pipeline, "init"):
-            try:
-                return np.asarray(pipeline.init({"problem": control.problem}), dtype=float)
-            except Exception:
-                raise
-        low, high = self._extract_bounds(control)
-        if low is None or high is None:
-            dim = int(getattr(control, "dimension", 1) or 1)
-            return self._rng.uniform(low=-1.0, high=1.0, size=(dim,))
-        return self._rng.uniform(low=low, high=high)
+    def default_pool_input_count(self):
+        return 1
+
+    def restart_search(self, control, context=None):
+        self._center, self._surrogate = None, None
+        self._X.clear()
+        self._Y.clear()
+        self._history_refs = []
+        self._pool_results = PoolRefinementState()
+
+    def get_pool_refinement_results(self, control):
+        self._validate_pool_candidate(control)
+        return self._pool_results.results(control)
+
+    def get_solution_pool_roots(self, control):
+        if self._center is not None and self._pool_results.current is None:
+            raise ValueError("MAS center requires exact evaluated pool evidence")
+        if len(self._history_refs) != len(self._X) or any(ref is None for ref in self._history_refs):
+            raise ValueError("MAS training history requires exact pool versions")
+        self._validate_pool_candidate(control)
+        refs = self._pool_results.roots(control)
+        return tuple(dict.fromkeys((*refs, *self._history_refs)))
+
+    def _validate_pool_candidate(self, control):
+        selected = self._pool_results.current
+        if selected is not None and selected.ref is not None:
+            if self._center is None:
+                raise ValueError("MAS evaluated pool selection requires its center")
+            PoolRefinementState.validate(control, selected, candidate=self._center)
+        if self._history_refs and any(ref is not None for ref in self._history_refs):
+            if len(self._history_refs) != len(self._X) or any(ref is None for ref in self._history_refs):
+                raise ValueError("MAS training history requires aligned exact pool versions")
+            batch = control.solution_pool.read(tuple(self._history_refs), allow_pending=True)
+            if not np.array_equal(batch.numeric_matrix, np.asarray(self._X), equal_nan=True):
+                raise ValueError("MAS training candidates differ from their exact pool versions")
 
     def _extract_bounds(self, control: Any) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         bounds = getattr(getattr(control, "problem", None), "bounds", None)
@@ -174,11 +220,16 @@ class MASAdapter(UnitBackedAdapter):
             "surrogate_present": self._surrogate is not None,
             "surrogate_fitted": self._surrogate_is_fitted(),
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
+            "pool_results": self._pool_results.as_dict(),
+            "history_refs": [None if ref is None else ref.as_dict() for ref in self._history_refs],
         }
 
     def _set_algorithm_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
+        self._validate_saved_history(state)
+        self._pool_results = PoolRefinementState.from_dict(state.get("pool_results"))
+        self._history_refs = [None if ref is None else SolutionRef.from_dict(ref) for ref in state.get("history_refs", ())]
         center = state.get("center")
         self._center = None if center is None else np.asarray(center, dtype=float)
         self._X = [
@@ -216,11 +267,16 @@ class MASAdapter(UnitBackedAdapter):
             "surrogate_present": self._surrogate is not None,
             "surrogate_fitted": self._surrogate_is_fitted(),
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
+            "pool_results": self._pool_results.as_dict(),
+            "history_refs": [None if ref is None else ref.as_dict() for ref in self._history_refs],
         }
 
     def _restore_algorithm_step_state(self, state: Mapping[str, Any]) -> None:
         if str(state.get("schema", "")) != "nsgablack.mas_step_transaction/v1":
             raise ValueError("unsupported MASAdapter step transaction schema")
+        self._validate_saved_history(state)
+        self._pool_results = PoolRefinementState.from_dict(state.get("pool_results"))
+        self._history_refs = [None if ref is None else SolutionRef.from_dict(ref) for ref in state.get("history_refs", ())]
         center = state.get("center")
         self._center = None if center is None else np.asarray(center, dtype=float).copy()
         history_x = state.get("history_x")
@@ -246,17 +302,39 @@ class MASAdapter(UnitBackedAdapter):
             fitted=bool(state.get("surrogate_fitted", False)),
         )
 
+    def _validate_saved_history(self, state):
+        """Reject contradictory compatibility fields before fitting a model.
+
+        UnitBacked installs the codec Unit after strategy restoration. Its
+        history must agree with the compatibility payload used for model
+        reconstruction; neither copy may silently override the other.
+        """
+        payload = state.get("algorithm_unit")
+        if payload is None:
+            return  # Legacy numerical state without a Unit codec remains valid.
+        unit = self.unit_binding.restore(payload)
+        for field in ("history_x", "history_y"):
+            raw = state.get(field)
+            rows = [] if raw is None else list(raw)
+            expected = getattr(unit, field)
+            if len(rows) != len(expected) or any(
+                not np.array_equal(np.asarray(row, dtype=float).reshape(-1),
+                                   np.asarray(saved, dtype=float).reshape(-1), equal_nan=True)
+                for row, saved in zip(rows, expected)
+            ):
+                raise ValueError("MAS saved training history disagrees with its authoritative Unit")
+
     def _surrogate_is_fitted(self) -> bool:
         surrogate = self._surrogate
-        if surrogate is None:
+        if surrogate is None or not surrogate.trainers:
             return False
         for trainer in surrogate.trainers:
             model = getattr(trainer, "model", None)
-            if model is not None and (
+            if model is None or not (
                 hasattr(model, "estimators_") or hasattr(model, "_fit_X")
             ):
-                return True
-        return False
+                return False
+        return True
 
     def _restore_surrogate_from_history(self, *, present: bool, fitted: bool) -> None:
         self._surrogate = None
@@ -297,7 +375,7 @@ class MASAdapter(UnitBackedAdapter):
         self._surrogate = self.unit_binding.builder.create_model(
             num_objectives=int(n_obj), model_type=self.cfg.surrogate_model_type)
 
-    def _update_surrogate(self, candidates: Sequence[np.ndarray], objectives: np.ndarray) -> None:
+    def _update_surrogate(self, candidates: Sequence[np.ndarray], objectives: np.ndarray, *, refs=None) -> None:
         if not bool(self.cfg.enable_surrogate):
             return None
         if candidates is None or len(candidates) == 0:
@@ -308,16 +386,18 @@ class MASAdapter(UnitBackedAdapter):
         self._ensure_surrogate(self.solver, obj if obj.size else None)
         if self._surrogate is None:
             return None
-        X = [np.asarray(c, dtype=float).reshape(-1) for c in candidates]
+        X = [candidate_array(c).reshape(-1) for c in candidates]
         Y = [np.asarray(row, dtype=float).reshape(-1) for row in obj]
         self._X.extend(X)
         self._Y.extend(Y)
+        self._history_refs.extend([None] * len(X) if refs is None else refs)
 
         max_keep = max(0, int(self.cfg.surrogate_max_train_samples))
         if max_keep > 0 and len(self._X) > max_keep:
             overflow = len(self._X) - max_keep
             del self._X[:overflow]
             del self._Y[:overflow]
+            del self._history_refs[:overflow]
 
         if len(self._X) >= int(self.cfg.surrogate_min_train_samples) and bool(
             self.cfg.surrogate_retrain_every_call

@@ -226,10 +226,12 @@ def test_finite_difference_repair_geometry_is_validated_before_evaluation():
     adapter.current_x = np.zeros(2)
     solver = ComposableSolver(problem, adapter=adapter,
                               representation_pipeline=RepresentationPipeline(repair=ShiftRepair()))
+    assert solver.step().committed  # Repair establishes the evaluated center first.
+    before, evaluated = adapter.current_x.copy(), len(problem.seen)
     with pytest.raises(ValueError, match="coordinate geometry"):
         solver.step()
-    assert not problem.seen
-    np.testing.assert_array_equal(adapter.current_x, np.zeros(2))
+    assert len(problem.seen) == evaluated  # Coupled probe repair fails before evaluation.
+    np.testing.assert_array_equal(adapter.current_x, before)
 
 
 def test_vns_reconciles_pending_unit_identity_before_evaluation():

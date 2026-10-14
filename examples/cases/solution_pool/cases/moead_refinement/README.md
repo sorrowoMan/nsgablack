@@ -19,7 +19,7 @@ task = PoolTaskSpec(selection, steps=3, output="refined")
 
 `build_solver(config={"view_count": None})` 使用全部方向；directions、workers、local_steps、max_steps、seed 可配置。默认提交预算按初始化、所选方向数、工作实例、精修步数和返回批次估算。steps 包含起点基准评估后的更新，每步可能评估多个邻域候选。
 
-`local_algorithm` 可选 `vns`、`sa`、`pattern`，使用相同来源选择、输出和返回装配。SA 可以探索较差当前点，但派生视图交付任务内最好已评估解。MOEA/D setup 不生成或评估候选；阶段先等待 pool_views_ready，再初始化 GA 和启动精修，不以固定第一步假定方向已经存在。
+`local_algorithm` 可选 `vns`、`sa`、`pattern`、`gaussian`、`mas`、`finite_difference`、`trust_region`、`trust_region_mo`、`trust_region_nonsmooth`、`trust_region_subspace`，使用相同来源选择、输出和返回装配。默认仍为 VNS；两层装配仍明确为 VNS→VNS。SA 可以探索较差当前点，但派生视图交付任务内最好已评估解。有限差分 steps=3 才能完成起点、探针、下降提案的一次完整评估，交付已评估任务最佳，不给下降点套探针分数。MOEA/D setup 不生成或评估候选；阶段先等待 pool_views_ready，再初始化 GA 和启动精修，不以固定第一步假定方向已经存在。
 
 每个任务固定起点版本、方向权重与参考点，起点和邻域均通过原 Problem 求双目标，再投影供 VNS 比较。母池保存原始双目标；返回候选由 MOEA/D 按当前方向与替换上限决定成员。输出包含已接纳提案，不保证全部都是局部改进。本例验证装配机制，不宣称融合优于单算法。
 

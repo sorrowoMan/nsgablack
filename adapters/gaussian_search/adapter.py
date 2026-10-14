@@ -15,6 +15,7 @@ from blackbase.types import UnknownState
 from ..unit_backed import UnitBackedAdapter, UnitField, UnitFeedbackField
 from ...representation.structure_builders import TrajectoryUnitBuilder
 from ..algorithm_adapter import AlgorithmAdapter
+from ..pool_results import PoolRefinementState
 from ...core.evaluation_feedback import OptimizationFeedbackBatch
 
 
@@ -46,6 +47,9 @@ class GaussianSearchConfig:
 class GaussianSearchAdapter(UnitBackedAdapter):
     """Search numeric candidate state without owning model or data semantics."""
     accepts_proposal_replacement = True
+    pool_input_modes = ("initialize",)
+    supports_pool_restart = True
+    supports_objective_projection = True
     unit_builder_type = TrajectoryUnitBuilder
     unit_schema = TrajectoryUnitBuilder.unit_type.schema
     best_x = UnitField("best")
@@ -102,6 +106,7 @@ class GaussianSearchAdapter(UnitBackedAdapter):
         self._candidate_metadata: Dict[str, Any] = {}
         self._rng = np.random.default_rng(int(self.cfg.random_seed))
         self._runtime_projection: Dict[str, Any] = {}
+        self._pool_results = PoolRefinementState()
         self._refresh_runtime_projection()
 
     def setup(self, control: Any) -> None:
@@ -113,20 +118,40 @@ class GaussianSearchAdapter(UnitBackedAdapter):
         self._candidate_kind = "array"
         self._candidate_metadata = {}
         self._rng = np.random.default_rng(int(self.cfg.random_seed))
+        self._pool_results = PoolRefinementState()
         self._refresh_runtime_projection()
 
     def propose(self, control: Any, context: Mapping[str, Any]) -> Sequence[Any]:
+        from nsgablack.context_keys import KEY_SOLUTION_INPUT_REF
+        self._validate_pool_candidate(control)
         n = int(self.cfg.population_size)
+        if context.get(KEY_SOLUTION_INPUT_REF) is not None:
+            return self._initial_candidates(control, control.init_population(
+                control.solution_pool.input_remaining(context[KEY_SOLUTION_INPUT_REF]), context))
         if self.best_x is None:
             if self.cfg.initialization == "population":
-                return tuple(control.init_population(n, context))
+                return self._initial_candidates(control, control.init_population(n, context))
             center = control.init_candidate(context)
             self._capture_candidate_template(center)
-            return self._around_center(center, n)
+            self._pool_results.remember_seed(control, center)
+            return (self._pool_results.project_current(control, self._candidate_array(center), semantic=True),)
 
         if not self.cfg.exploit_best and self.cfg.initialization == "population":
-            return tuple(control.init_population(n, context))
-        return self._around_center(self._wrap_candidate(self.best_x), n)
+            return self._initial_candidates(control, control.init_population(n, context))
+        if self.best_score is None:
+            return (self._pool_results.project_current(control, self.best_x, semantic=True),)
+        return self._around_center(self._wrap_candidate(self.best_x), n, control=control)
+
+    @staticmethod
+    def _initial_candidates(control, candidates):
+        # init_population may expose numeric working rows with bound semantic
+        # metadata. Project each seed without erasing that input evidence.
+        out = []
+        for candidate in candidates:
+            state = PoolRefinementState()
+            state.remember_seed(control, candidate)
+            out.append(state.project_current(control, GaussianSearchAdapter._candidate_array(candidate), semantic=True))
+        return tuple(out)
 
     def update(
         self,
@@ -135,7 +160,6 @@ class GaussianSearchAdapter(UnitBackedAdapter):
         feedback: Any,
         context: Mapping[str, Any],
     ) -> None:
-        _ = (control, context)
         rich_feedback = OptimizationFeedbackBatch.coerce(feedback)
         values = tuple(candidates)
         if len(values) != rich_feedback.candidate_count:
@@ -144,9 +168,11 @@ class GaussianSearchAdapter(UnitBackedAdapter):
                 f"candidates={len(values)}, feedback={rich_feedback.candidate_count}"
             )
         objectives, violations = rich_feedback
+        scores, violations = self._pool_results.scores(rich_feedback,
+            lambda obj, vio: np.asarray([self._score(row) for row in obj]))
         for index, candidate in enumerate(values):
             row = np.asarray(objectives[index], dtype=float).reshape(-1)
-            score = self._score(row)
+            score = float(scores[index])
             violation = float(violations[index])
             if not np.isfinite(score):
                 continue
@@ -154,29 +180,37 @@ class GaussianSearchAdapter(UnitBackedAdapter):
                 violation = float("inf")
             violation = max(0.0, violation)
             if self._is_better(violation, score):
-                self._capture_candidate_template(candidate)
+                selected = self._pool_results.capture(control, values, rich_feedback, index, score, violation)
+                self._candidate_kind = "unknown_state" if selected.semantic else "array"
+                self._candidate_metadata = deepcopy(selected.metadata)
                 self.best_x = self._candidate_array(candidate).copy()
                 self.best_score = float(score)
                 self.best_violation = float(violation)
+                self._pool_results.current = self._pool_results.best = selected
         self.step_index += 1
         self._refresh_runtime_projection()
 
-    def _around_center(self, center: Any, count: int) -> tuple[Any, ...]:
-        self._capture_candidate_template(center)
+    def _around_center(self, center: Any, count: int, *, control=None) -> tuple[Any, ...]:
+        if control is None:
+            self._capture_candidate_template(center)
         base = self._candidate_array(center)
         out: list[Any] = []
         if self.cfg.include_center_candidate:
-            out.append(self._wrap_candidate(base))
+            out.append(self._wrap_candidate(base) if control is None else
+                       self._pool_results.project_current(control, base, semantic=True))
         while len(out) < int(count):
             noise = self._rng.normal(
                 0.0,
                 float(self.cfg.mutation_scale),
                 size=base.shape,
             )
-            out.append(self._wrap_candidate(base + noise, source="gaussian_mutation"))
+            out.append(self._wrap_candidate(base + noise, source="gaussian_mutation") if control is None else
+                       self._pool_results.derive_candidate(control, base + noise, stage="gaussian_search"))
         return tuple(out[: int(count)])
 
     def _is_better(self, violation: float, score: float) -> bool:
+        if self._pool_results.projection is not None:
+            return self._pool_results.improves_current(score, violation)
         if self.best_x is None or self.best_violation is None or self.best_score is None:
             return True
         candidate_feasible = violation <= 0.0
@@ -233,6 +267,35 @@ class GaussianSearchAdapter(UnitBackedAdapter):
             return None
         return (self._wrap_candidate(self.best_x),)
 
+    def default_pool_input_count(self):
+        return int(self.cfg.population_size) if self.cfg.initialization == "population" else 1
+
+    def restart_search(self, control, context=None):
+        self.best_x = self.best_score = self.best_violation = None
+        self._candidate_kind, self._candidate_metadata = "array", {}
+        self._pool_results = PoolRefinementState()
+        self.step_index = 0
+        self._refresh_runtime_projection()
+
+    def get_solution_pool_roots(self, control):
+        if self.best_x is not None and self._pool_results.best is None:
+            raise ValueError("Gaussian incumbent requires exact pool evidence for retention")
+        self._validate_pool_candidate(control)
+        return self._pool_results.roots(control)
+
+    def get_pool_refinement_results(self, control):
+        self._validate_pool_candidate(control)
+        return self._pool_results.results(control)
+
+    def _validate_pool_candidate(self, control):
+        selected = self._pool_results.best
+        if selected is not None and selected.ref is not None:
+            if self.best_x is None:
+                raise ValueError("Gaussian evaluated pool selection requires its incumbent")
+            PoolRefinementState.validate(control, selected, candidate=self.best_x)
+            if self.best_score is None or float(self.best_score) != selected.score:
+                raise ValueError("Gaussian incumbent score differs from its pool selection")
+
     def set_current_candidates(
         self,
         population: Any,
@@ -247,6 +310,9 @@ class GaussianSearchAdapter(UnitBackedAdapter):
             values = ()
         else:
             values = tuple(population)
+        if self._pool_results.best is not None and self._pool_results.best.ref is not None:
+            raise ValueError("Pool-bound Gaussian incumbent replacement requires explicit pool input")
+        self._pool_results = PoolRefinementState()
         if not values:
             self.best_x = None
             self.best_score = None
@@ -297,9 +363,11 @@ class GaussianSearchAdapter(UnitBackedAdapter):
             ),
             "rng_state": deepcopy(self._rng.bit_generator.state),
             "method_id": "search.random_gaussian",
+            "pool_results": self._pool_results.as_dict(),
         }
 
     def _set_algorithm_state(self, state: Mapping[str, Any]) -> None:
+        self._pool_results = PoolRefinementState.from_dict(state.get("pool_results"))
         method_id = str(state.get("method_id", "search.random_gaussian") or "")
         if method_id != "search.random_gaussian":
             raise ValueError("GaussianSearchAdapter checkpoint method does not match")

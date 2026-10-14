@@ -446,6 +446,19 @@ class StrategyChainAdapter(AlgorithmAdapter):
         getter = getattr(adapter, "get_population_candidate_tokens", None)
         return getter() if callable(getter) else None
 
+    def supports_population_state_delivery(self):
+        owner = self._population_owner()
+        return owner is not None and owner[1].supports_population_state_delivery()
+
+    def set_population_state(self, control, batch, feedback, *, solution_refs, provenance):
+        owner = self._population_owner()
+        return owner is not None and owner[1].set_population_state(control, batch, feedback,
+            solution_refs=solution_refs, provenance=provenance)
+
+    def get_population_solution_refs(self, control):
+        owner = self._population_owner()
+        return None if owner is None else owner[1].get_population_solution_refs(control)
+
     def set_population_candidate_tokens(
         self,
         candidate_tokens: Sequence[str | None],

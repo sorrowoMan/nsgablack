@@ -3,6 +3,9 @@ from nsgablack.adapters import (
     MOEADAdapter, NSGA2Adapter, VNSAdapter, PoolTaskSpec, RoleSpec,
     StrategyRouterAdapter, MultiStrategyConfig, SimulatedAnnealingAdapter,
     PatternSearchAdapter, subpools,
+    GaussianSearchAdapter, MASAdapter, GradientDescentAdapter,
+    TrustRegionDFOAdapter, TrustRegionMODFOAdapter, TrustRegionNonSmoothAdapter,
+    TrustRegionSubspaceAdapter,
 )
 
 
@@ -24,6 +27,17 @@ def local_search(index, algorithm="vns"):
         return SimulatedAnnealingAdapter(name=f"sa_{index}", batch_size=2, base_sigma=0.1)
     if algorithm == "pattern":
         return PatternSearchAdapter(name=f"pattern_{index}")
+    if algorithm == "gaussian":
+        return GaussianSearchAdapter(name=f"gaussian_{index}", population_size=2,
+                                     initialization="center", mutation_scale=.1)
+    if algorithm == "mas":
+        return MASAdapter(name=f"mas_{index}", batch_size=2)
+    if algorithm == "finite_difference":
+        return GradientDescentAdapter(name=f"finite_difference_{index}", max_directions=2)
+    regions = {"trust_region": TrustRegionDFOAdapter, "trust_region_mo": TrustRegionMODFOAdapter,
+               "trust_region_nonsmooth": TrustRegionNonSmoothAdapter, "trust_region_subspace": TrustRegionSubspaceAdapter}
+    if algorithm in regions:
+        return regions[algorithm](name=f"{algorithm}_{index}", batch_size=2, initial_radius=.1)
     raise ValueError(f"unsupported local algorithm: {algorithm}")
 
 

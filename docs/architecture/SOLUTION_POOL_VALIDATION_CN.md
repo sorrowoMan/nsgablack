@@ -194,3 +194,43 @@ python -m pytest tests/test_population_pool_bindings.py tests/test_pool_view_con
 ```
 
 Catalog 的 tool.solution_pool／tool.subpools 已核对 default 与 framework-core；原有非 callable 选择器对象的 recipe 签名检查仍显示 unverified，不用 Catalog 可发现性代替行为测试。模板、标准 Case、AGENTS 与中文运行契约已同步；本轮未修改 BlackBase／MLBlack、没有数据库同步或远端推送。生成审计产物不提交 Git。
+
+## 数值、路径与完整种群交付闭环（2026-10-14）
+
+本节接续前一轮验收，关闭此前明确列出的算法迁移缺口。完整支持范围与边界以 [Adapter 接入契约](SOLUTION_POOL_ADAPTER_READINESS_CN.md) 为准；前面提到“尚未迁移”的历史结果不代表当前状态。
+
+EvolutionSolver 初始化、环境选择和恢复同步交付 CandidateBatch、raw/selection feedback、provenance 与精确 SolutionRef；NSGA 家族、DE、MOEA/D 和透明 Role／Elite／Chain／单子 Composite 消费同一契约。`get_population_solution_refs` 是有序成员表，允许同候选占多槽，不与回收根混用。多子 Composite 保持分区，PoolTask 不允许绕过其任务输入；不支持交付的 L2 配置在 setup 阶段、初始化求值前拒绝。初始化复用池/权威/证据事务但不制造逻辑代或普通步骤扩展；池输入按最终原始接纳索引结算，预算外与被拒种子保持可重试。
+
+Gaussian、MAS、有限差分和四种信赖域使用普通／投影池任务、精确结果与保留根。有限差分先评估基准、再探针、再下降点，不把探针分数关联到未评估 trial。MAS 训练历史与准确 refs 同步裁剪，所有目标模型拟合完成后才参与提案筛选，不再在默认小任务中尝试未拟合预测。Subspace 只使用本任务的有限参考样本，裁剪沿子空间采样射线；MO 原生池任务冻结权重，普通换方向也重新评分保存的目标向量。
+
+GradientOptimizer 保留 inline／Provider 梯度协议，支持普通精修并交付已评估任务最佳；没有同步梯度变换时拒绝 objective_projection。无 transition 不释放活 optimizer slots，重启成功后退休旧 slots，失败恢复旧状态，释放未确认的引用保留清理债务。A*／MOA* 显式 `pool_start_policy="new_root"` 取一个池种子并先 repair／evaluate／admit，再建立新根；不假装支持通用 refine／restart／目标投影。图结果仍区分目标聚合最佳与路径非支配标签。
+
+### 行为测试与复验口径
+
+原始主回归选择 711 项、排除本轮未重跑的 `300_candidates` 规模用例，710 项通过；唯一失败是旧有限差分测试假设“首步就是探针”，与现在首步先求值基准的契约不符。同步该测试后，受影响 109 项全部通过，且仍断言耦合 probe repair 在求值前失败、不多消耗求值、恢复中心。公共入口另有 47 项通过。MAS 最终默认训练门闸相关 84 项通过，包含新增实际训练前后筛选测试。不能把这些有交集的执行数相加成不同测试总数，也不能把首轮含一次失败的 JUnit 描述为一次全绿执行。
+
+本轮新增专项包括完整种群身份与包装、路径新根与恢复、四种信赖域、数值精修、Provider 生命周期；覆盖零／部分接纳、异常回滚、正式 CheckpointResumePlugin、同值不同身份、来源 metadata、未评估后继、无 transition、失败释放的精确 ID 重试。最终按 testcase 身份与最后执行结果去重的统计及原始 JUnit 保存在 `artifacts/audit/adapter-pool-completion-20261014/`，生成产物不提交 Git。
+
+最终独立复核补充数值 Unit／池收据交叉验证及 MAS 历史恢复校验，新增 **32 项专项通过**；最终受影响 **128 项通过、5 条既有测试提醒、15.83 秒**，JUnit 为 `restore_final.xml`。损坏候选值、缺失候选、同义评分不符、MAS 历史不一致都在再次求值前拒绝；合法的未评估后继仍通过正式 checkpoint 恢复并继续求值。按上述五次有原始 JUnit 的执行去重，本轮 **791 项不同测试均有最终成功记录，0 项未解决失败**，统计为 `verified_tests.json`；最后只复验受影响集，没有再次执行整个 711 项集合。
+
+```powershell
+python -m pytest tests/test_numeric_pool_restore_identity.py tests/test_pool_numeric_refiners.py tests/test_gradient_pool_provider_lifecycle.py tests/test_search_method_adapters.py tests/test_compound_algorithm_units.py tests/test_repair_boundaries.py -q --disable-warnings --maxfail=2 --junitxml=artifacts/audit/adapter-pool-completion-20261014/restore_final.xml
+```
+
+### 标准 Case 与治理检查
+
+同一个 `moead_refinement.build_solver` 实际运行十种精修器：VNS、SA、PatternSearch、Gaussian、MAS、有限差分、DFO、MO-DFO、NonSmooth、Subspace。统一配置 directions=4、view_count=4、workers=2、local_steps=3，全部 status=ok，moead／ga／local 任务全部 done。PatternSearch 和有限差分为 13 个逻辑提交，其余为 12；求值分别为 96、80，其余为 64。该验证证明装配与任务完成，不是并行加速或优化质量测量。
+
+最后恢复校验完成后，十种 Case 和三条 Doctor 均重新执行成功；最终 Doctor 原始文件名为 `root_doctor_final.json`、`pool_project_doctor_final.json`、`unit_project_doctor_final.json`，Case 完成记录为 `case_smokes.json`。
+
+三个严格 Doctor 均无 error／warning：根目录含 framework-core Catalog；solution_pool 与 algorithm_units 实际 Project 使用 --build。根目录为 175 info、463 completed／90 skipped（62 个未开启 build 的 Case、27 个无本地 Catalog 的 Case、1 个由全局 Catalog 审计的框架 registry）；解池 Project 为 19 info、30 completed／3 skipped；Unit Project 为 16 info、23 completed／3 skipped。Project 的 skip 是各两个无本地 TOML 的 Case registry 及本命令未重复开启的全局 Catalog；不能把根目录覆盖解释成执行了全部 Case 的 build。
+
+```powershell
+python -m nsgablack project doctor --path . --strict --catalog-audit --profile framework-core --format json
+python -m nsgablack project doctor --path examples/cases/solution_pool --strict --build --format json
+python -m nsgablack project doctor --path examples/cases/algorithm_units --strict --build --format json
+```
+
+source Catalog 的 default／framework-core 各核对 17 个相关主干键及 Adapter 导入；framework-core 排除 example/doc，有限差分与 Subspace 参数名与实际 dataclass 一致。没有运行数据库同步或全量 MySQL API 索引导出；两个现存人工增量 API 索引、中文运行契约、AGENTS、可选模板和正式 Case 已同步。
+
+旧三数组 `environmental_selection` 现在必须明确 `external_evaluation=True`，以外部原始求值断言导入新身份。缺失精确成员收据、视图身份、任务解释或 Provider 来源的旧 checkpoint 不能通过数值相等补造身份，须按迁移边界处理。没有执行全仓测试、长期存储压力、数学正确性或算法优越性基准；本轮只改 nsgablack，未改 BlackBase／MLBlack，也未推送远端。

@@ -49,7 +49,7 @@ def test_environmental_selection_uses_full_front_ranking() -> None:
     )
     combined_violations = np.zeros((6,), dtype=float)
 
-    solver.environmental_selection(combined_pop, combined_obj, combined_violations)
+    solver.environmental_selection(combined_pop, combined_obj, combined_violations, external_evaluation=True)
 
     selected_ids = {int(v) for v in solver.population[:, 0].tolist()}
     assert 5 in selected_ids
@@ -100,7 +100,7 @@ def test_environmental_selection_never_uses_crowding_across_violation_levels() -
     objectives = np.array([[0.0, 0.0], [100.0, 100.0], [50.0, 50.0]], dtype=float)
     violations = np.array([3.0, 1.0, 2.0], dtype=float)
 
-    solver.environmental_selection(population, objectives, violations)
+    solver.environmental_selection(population, objectives, violations, external_evaluation=True)
 
     assert sorted(solver.constraint_violations.tolist()) == [1.0, 2.0]
 

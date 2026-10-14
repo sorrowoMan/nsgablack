@@ -16,7 +16,7 @@ from ...representation.structure_builders import PopulationUnitBuilder
 from ...units.population_features import SELECTION_RANKING
 from ..algorithm_adapter import AlgorithmAdapter
 from ..population_pool_refs import (feedback_pool_bindings, align_pool_bindings, validate_pool_bindings,
-                                   publish_population_view, validate_numeric_population_replacement)
+                                   publish_population_view, validate_numeric_population_replacement, install_population_state)
 from nsgablack.context_keys import (
     KEY_ADAPTER_BEST_OBJECTIVES,
     KEY_ADAPTER_BEST_SCORE,
@@ -99,6 +99,10 @@ class NSGA2Adapter(UnitBackedAdapter):
         return validate_pool_bindings(self._population_pool_bindings, self.population,
             self._population_candidate_tokens, control=control, require=True)
 
+    def get_population_solution_refs(self, control):
+        return validate_pool_bindings(self._population_pool_bindings, self.population,
+            self._population_candidate_tokens, control=control, require=True)
+
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         from nsgablack.context_keys import KEY_SOLUTION_INPUT_REF
         input_ref = context.get(KEY_SOLUTION_INPUT_REF)
@@ -171,6 +175,13 @@ class NSGA2Adapter(UnitBackedAdapter):
         self._refresh_ranking()
         self._sync_runtime_projection()
         publish_population_view(self, control)
+
+    def set_population_state(self, control, batch, feedback, *, solution_refs, provenance):
+        install_population_state(self, control, batch, feedback, solution_refs=solution_refs, provenance=provenance)
+        self._refresh_ranking()
+        self._sync_runtime_projection()
+        publish_population_view(self, control)
+        return True
 
     def set_population_snapshot(self, population: np.ndarray, objectives: np.ndarray, violations: np.ndarray) -> bool:
         pop, obj, vio = self.validate_population_snapshot(population, objectives, violations)

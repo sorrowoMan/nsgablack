@@ -296,6 +296,16 @@ class EliteRetentionAdapter(UnitBackedAdapter):
     def set_population_snapshot(self, population, objectives, violations) -> bool:
         return bool(self.inner.set_population_snapshot(population, objectives, violations))
 
+    def supports_population_state_delivery(self):
+        return self.inner.supports_population_state_delivery()
+
+    def set_population_state(self, control, batch, feedback, *, solution_refs, provenance):
+        return self.inner.set_population_state(control, batch, feedback,
+            solution_refs=solution_refs, provenance=provenance)
+
+    def get_population_solution_refs(self, control):
+        return self.inner.get_population_solution_refs(control)
+
     def get_population_candidate_tokens(self):
         return self.inner.get_population_candidate_tokens()
 

@@ -23,6 +23,10 @@ from ...representation.structure_builders import encode_unit_value, decode_unit_
 from ...core.state import StepOutcome
 from ...units import UnitBinding, UnitBuildRequest, SearchNodeUnit, SEARCH_NODE_SCHEMA
 from ...representation.unit_builders import SearchNodeBuilder
+from ...context_keys import KEY_SOLUTION_INPUT_REF
+from ...units.contracts import candidate_array
+from .pool_support import (capture_receipt, derive_neighbor, project_root, receipt_ref, receipt_selection,
+                           validate_receipt_map, validate_pending_receipts)
 
 
 State = np.ndarray
@@ -67,12 +71,15 @@ class AStarConfig:
     # A repaired child is no longer necessarily adjacent to its recorded parent.
     # Recompute is opt-in for domains whose edge_cost accepts the repaired edge.
     repair_policy: str = "reject"  # reject | recompute
+    # Explicitly interpret a pool seed as a new root, never an imported path.
+    pool_start_policy: Optional[str] = None  # None | "new_root"
 
 
 class AStarAdapter(AlgorithmAdapter):
     """Generic A* adapter driven by neighbor expansion and heuristic search."""
     unit_build_operations = ("fresh", "spawn")
     context_requires = ("generation",)
+    context_optional = (KEY_SOLUTION_INPUT_REF,)
     context_provides = ()
     context_mutates = ()
     context_cache = ()
@@ -110,6 +117,8 @@ class AStarAdapter(AlgorithmAdapter):
         self.cfg = self.config
         if self.cfg.repair_policy not in {"reject", "recompute"}:
             raise ValueError("A* repair_policy must be reject or recompute")
+        if self.cfg.pool_start_policy not in {None, "new_root"}:
+            raise ValueError("A* pool_start_policy must be None or 'new_root'")
         self.set_unit_binding(unit_binding or UnitBinding(SearchNodeBuilder()))
         self.neighbors = neighbors
         self.goal_test = goal_test
@@ -127,6 +136,17 @@ class AStarAdapter(AlgorithmAdapter):
         self.solution: Optional[State] = None
         self.best_score: Optional[float] = None
         self.best_state: Optional[State] = None
+        self._root_initialized = False
+        self._node_receipts = {}
+        self._best_receipt = None
+        self._solution_receipt = None
+
+    @property
+    def pool_input_modes(self):
+        return ("initialize",) if self.cfg.pool_start_policy == "new_root" else ()
+
+    def default_pool_input_count(self):
+        return 1
 
     def setup(self, control: Any) -> None:
         self.validate_unit_bindings()
@@ -138,16 +158,39 @@ class AStarAdapter(AlgorithmAdapter):
         self.solution = None
         self.best_score = None
         self.best_state = None
+        self._root_initialized = False
+        self._node_receipts = {}
+        self._best_receipt = self._solution_receipt = None
 
-        start = self._resolve_start_state(control, {})
-        if start is not None:
-            self._push_open(start, g=0.0, context={})
+        if self.cfg.pool_start_policy is None:
+            start = self._resolve_start_state(control, {})
+            if start is not None:
+                self._push_open(start, g=0.0, context={})
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+        input_ref = context.get(KEY_SOLUTION_INPUT_REF)
+        if input_ref is not None:
+            if self.cfg.pool_start_policy != "new_root":
+                raise ValueError("A* pool intake requires explicit pool_start_policy='new_root'")
+            if self._root_initialized or self._open or self._closed:
+                raise ValueError("A* pool intake starts a new tree; cannot replace an active search path")
+            if control.solution_pool.input_remaining(input_ref) != 1:
+                raise ValueError("A* requires exactly one root per pool initialization")
+        if self.cfg.pool_start_policy == "new_root" and not self._root_initialized:
+            start = control.init_candidate(context) if input_ref is not None else self._resolve_start_state(control, context)
+            if start is None:
+                return []
+            start = project_root(control, start)
+            values = candidate_array(start)
+            self._pending = [dict(is_root=True, parent_key=None, parent_id=None,
+                parent_state=None, parent_g=0., base_g=0., proposed_state=values.copy())]
+            return [start]
         if self.found:
             return []
 
         if not self._open:
+            if self.cfg.pool_start_policy == "new_root":
+                return []
             start = self._resolve_start_state(control, context)
             if start is not None:
                 self._push_open(start, g=0.0, context=context)
@@ -167,6 +210,9 @@ class AStarAdapter(AlgorithmAdapter):
             if self.goal_test is not None and self.goal_test(node.state, context):
                 self.found = True
                 self.solution = np.asarray(node.state)
+                self._solution_receipt = self._node_receipts.get(node.unit_id)
+                self._pending = []
+                self._prune_receipts()
                 return []
 
             self._closed[key] = float(node.g)
@@ -193,13 +239,15 @@ class AStarAdapter(AlgorithmAdapter):
                         "parent_state": node.state.copy(),
                         "parent_id": node.unit_id,
                         "proposed_state": child_arr.copy(),
+                        "parent_receipt": copy.deepcopy(self._node_receipts.get(node.unit_id)),
                     }
                 )
-                candidates.append(child_arr)
+                candidates.append(derive_neighbor(control, child_arr, self._node_receipts.get(node.unit_id), stage="astar_neighbor"))
 
             if len(candidates) >= int(self.cfg.max_candidates_per_step):
                 break
 
+        self._prune_receipts()
         return candidates
 
     def get_empty_proposal_outcome(
@@ -230,11 +278,11 @@ class AStarAdapter(AlgorithmAdapter):
             meta = self._pending[index]
             if not np.array_equal(repair.before.numeric_matrix[row], meta["proposed_state"], equal_nan=True):
                 raise ValueError("A* repair source differs from pending path")
-            if self.cfg.repair_policy == "reject":
+            if self.cfg.repair_policy == "reject" and not meta.get("is_root"):
                 raise ValueError("A* candidate changed after proposal; repair_policy='reject'")
             candidate = repair.after.numeric_matrix[row]
             updated = dict(meta)
-            if self.cfg.path_cost_mode == "edge":
+            if self.cfg.path_cost_mode == "edge" and not meta.get("is_root"):
                 updated["base_g"] = float(meta["parent_g"]) + self._edge_cost(meta["parent_state"], candidate, context)
             # Heuristic and dominance are rebuilt from this candidate in update.
             updated["proposed_state"] = candidate.copy()
@@ -262,6 +310,8 @@ class AStarAdapter(AlgorithmAdapter):
         feedback: Any,
         context: Dict[str, Any],
     ) -> None:
+        if getattr(feedback, "metadata", {}).get("subpool_projection") is not None:
+            raise ValueError("A* does not accept objective projection feedback as graph cost")
         objectives, violations = feedback
         candidate_count = len(candidates)
         if candidate_count <= 0:
@@ -282,7 +332,7 @@ class AStarAdapter(AlgorithmAdapter):
             key = self.state_key(cand_arr)
 
             changed = not np.array_equal(cand_arr, meta["proposed_state"], equal_nan=True)
-            if changed and self.cfg.repair_policy == "reject":
+            if changed and self.cfg.repair_policy == "reject" and not meta.get("is_root"):
                 raise ValueError("A* candidate changed after proposal; repair_policy='reject' "
                                  "protects the parent edge. Use recompute only for compatible edges.")
 
@@ -292,7 +342,9 @@ class AStarAdapter(AlgorithmAdapter):
             obj_cost = self._aggregate_objective(obj[i])
             penalty = float(self.cfg.violation_penalty) * float(vio[i])
 
-            if self.cfg.path_cost_mode == "objective":
+            if meta.get("is_root") and self.cfg.path_cost_mode == "edge":
+                g = 0.0  # No parent edge exists; seed evaluation is not accumulated path cost.
+            elif self.cfg.path_cost_mode == "objective":
                 g = float(obj_cost) + penalty
             else:
                 base_g = float(meta.get("base_g", 0.0))
@@ -301,24 +353,28 @@ class AStarAdapter(AlgorithmAdapter):
                 g = base_g + penalty + (float(self.cfg.objective_weight) * float(obj_cost))
 
             h = float(self._heuristic(cand_arr, context))
+            score = float(obj_cost) + penalty
+            receipt = capture_receipt(control, candidates, feedback, i, score, vio[i])
+            if self.cfg.pool_start_policy == "new_root" and receipt is None:
+                raise ValueError("pool-root A* requires exact accepted feedback")
             self._push_open(cand_arr, g=g, h=h, parent_key=meta.get("parent_key"),
-                            parent_id=meta.get("parent_id"), context=context)
+                            parent_id=meta.get("parent_id"), context=context, receipt=receipt)
+            if meta.get("is_root"):
+                self._root_initialized = True
 
             # track best (by objective + penalty)
-            score = float(obj_cost) + penalty
             if self.best_score is None or score < self.best_score:
                 self.best_score = score
                 self.best_state = np.asarray(cand_arr)
+                self._best_receipt = receipt
+        self._pending = []
+        self._prune_receipts()
 
     def _resolve_start_state(self, control: Any, context: Dict[str, Any]) -> Optional[State]:
-        if callable(self.start_state):
-            return np.asarray(self.start_state(context))
-        if self.start_state is not None:
-            return np.asarray(self.start_state)
-        try:
-            return np.asarray(control.init_candidate(context))
-        except Exception:
-            raise
+        start = (self.start_state(context) if callable(self.start_state) else self.start_state
+                 if self.start_state is not None else control.init_candidate(context))
+        # A lazily admitted root retains semantic metadata and source identity.
+        return start if self.cfg.pool_start_policy == "new_root" else np.asarray(start)
 
     def _edge_cost(self, parent: State, child: State, context: Dict[str, Any]) -> float:
         if self.edge_cost is not None:
@@ -358,6 +414,7 @@ class AStarAdapter(AlgorithmAdapter):
         parent_key: Optional[Any] = None,
         parent_id: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None,
+        receipt=None,
     ) -> None:
         if h is None:
             h = self._heuristic(state, context or {})
@@ -372,7 +429,31 @@ class AStarAdapter(AlgorithmAdapter):
             raise ValueError("A* Unit builder must preserve Adapter-supplied costs and priority")
         self._counter = next_id
         heapq.heappush(self._open, (node.f, self._counter, node))
+        self._node_receipts[node.unit_id] = copy.deepcopy(receipt)
         self._trim_open()
+        self._prune_receipts()
+
+    def _prune_receipts(self):
+        live = {node.unit_id for _, _, node in self._open}
+        self._node_receipts = {key: value for key, value in self._node_receipts.items() if key in live}
+
+    def get_solution_pool_roots(self, control):
+        values = [(self._node_receipts.get(node.unit_id), node.state) for _, _, node in self._open]
+        values.extend((item.get("parent_receipt"), item["parent_state"])
+                      for item in self._pending if item.get("parent_id") is not None)
+        values.extend((receipt, candidate) for receipt, candidate in (
+            (self._best_receipt, self.best_state), (self._solution_receipt, self.solution)) if candidate is not None)
+        if any(receipt is None for receipt, _ in values):
+            return None
+        return tuple(dict.fromkeys(receipt_ref(receipt, control, candidate=candidate) for receipt, candidate in values))
+
+    def get_pool_refinement_results(self, control):
+        """Deliver best_evaluated (objective aggregation plus penalty), not path g.
+
+        This result accessor does not promise bounded PoolTask refine/restart.
+        Goal-path import and objective projections require separate semantics.
+        """
+        return () if self.best_state is None else (receipt_ref(self._best_receipt, control, candidate=self.best_state),)
 
     def _trim_open(self) -> None:
         max_open = self.cfg.max_open_size
@@ -395,6 +476,7 @@ class AStarAdapter(AlgorithmAdapter):
             "best_state": None if self.best_state is None else np.asarray(self.best_state).tolist(),
             "open_size": int(len(self._open)),
             "closed_size": int(len(self._closed)),
+            "pool_start_policy": self.cfg.pool_start_policy,
         }
 
     def _restore_summary(self, state: Dict[str, Any]) -> None:
@@ -402,6 +484,8 @@ class AStarAdapter(AlgorithmAdapter):
             return
         if "unit_contract" in state and state["unit_contract"] != self.get_unit_contract():
             raise ValueError("A* checkpoint Unit binding mismatch")
+        if state.get("pool_start_policy") != self.cfg.pool_start_policy:
+            raise ValueError("A* checkpoint pool root interpretation differs")
         if "found" in state:
             self.found = bool(state["found"])
         if "best_score" in state:
@@ -418,12 +502,33 @@ class AStarAdapter(AlgorithmAdapter):
                      for priority, order, node in self._open],
             "closed": self._closed, "pending": self._pending, "counter": self._counter,
             "solution": self.solution,
+            "root_initialized": self._root_initialized, "node_receipts": self._node_receipts,
+            "best_receipt": self._best_receipt, "solution_receipt": self._solution_receipt,
         })
 
     def restore_step_state(self, state) -> None:
         restored = copy.deepcopy(dict(state))
+        if restored["summary"].get("pool_start_policy") != self.cfg.pool_start_policy:
+            raise ValueError("A* checkpoint pool root interpretation differs")
         frontier = [(priority, order, self.unit_binding.restore(payload))
                     for priority, order, payload in restored["open"]]
+        required = self.cfg.pool_start_policy == "new_root"
+        nodes = {node.unit_id: node for _, _, node in frontier}
+        receipts = validate_receipt_map(restored.get("node_receipts", {key: None for key in nodes}), nodes, require=required)
+        for key, candidate in (("best_receipt", restored["summary"].get("best_state")),
+                               ("solution_receipt", restored["solution"])):
+            value = restored.get(key)
+            if value is not None:
+                receipt_selection(value, candidate=candidate)
+            elif required and candidate is not None:
+                raise ValueError("pool-root A* checkpoint requires exact result references")
+        if required and type(restored.get("root_initialized")) is not bool:
+            raise ValueError("pool-root A* checkpoint requires its root admission state")
+        validate_pending_receipts(restored["pending"], require=required)
+        if required and not restored["root_initialized"] and (frontier or restored["closed"]):
+            raise ValueError("uninitialized A* root cannot own an existing tree")
+        if required and restored["root_initialized"] and any(item.get("is_root") for item in restored["pending"]):
+            raise ValueError("admitted A* root cannot be pending initialization")
         self._restore_summary(restored["summary"])
         self.best_state = (None if restored["summary"]["best_state"] is None
                            else np.asarray(restored["summary"]["best_state"]))
@@ -432,6 +537,10 @@ class AStarAdapter(AlgorithmAdapter):
         self._pending = restored["pending"]
         self._counter = restored["counter"]
         self.solution = restored["solution"]
+        self._root_initialized = restored.get("root_initialized", False)
+        self._node_receipts = receipts
+        self._best_receipt = restored.get("best_receipt")
+        self._solution_receipt = restored.get("solution_receipt")
 
     def get_state(self) -> Dict[str, Any]:
         return {**self._summary_state(), "frontier_state": encode_unit_value(self.snapshot_step_state())}

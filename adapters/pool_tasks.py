@@ -98,6 +98,14 @@ class PoolTaskAdapter(RoleAdapter):
     state_recovery_level = "L2"
     state_recovery_notes = "Restores frozen pool inputs, task interpretation, progress and RNG; child state restores independently."
 
+    def supports_population_state_delivery(self):
+        # A pool task is an input policy owner, not a transparent population
+        # wrapper. Global initialization must not bypass its frozen seed spec.
+        return False
+
+    def set_population_state(self, control, batch, feedback, *, solution_refs, provenance):
+        return False
+
     def __init__(self, inner, spec: PoolTaskSpec, *, role, worker=0, workers=1, namespace="root"):
         super().__init__(role, inner, name=f"pool_task:{role}:{worker}", context_requires=(KEY_TASK,))
         self.spec, self.worker, self.workers = spec, worker, workers

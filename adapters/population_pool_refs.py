@@ -7,9 +7,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
+from dataclasses import replace
 
 import numpy as np
-from blackbase.types import UnknownState
+from blackbase.types import CandidateBatch, UnknownState
 
 from ..core.state.solution_pool import SolutionRef
 from ..units.features import _signature
@@ -152,3 +153,48 @@ def validate_numeric_population_replacement(bindings, *, preserve_tokens):
     if not preserve_tokens and any(value is not None for value in bindings):
         raise ValueError("Replacing pool-bound population members requires explicit pool input; "
                          "the numeric snapshot setter only supports same-member feedback refresh")
+
+
+def validate_population_state(control, batch, feedback, *, solution_refs, provenance):
+    """Validate one complete identity handoff without changing an owner."""
+    from ..core.evaluation_feedback import OptimizationFeedbackBatch
+    if not isinstance(batch, CandidateBatch) or not isinstance(feedback, OptimizationFeedbackBatch):
+        raise TypeError("Population state requires CandidateBatch and OptimizationFeedbackBatch")
+    refs, records = tuple(solution_refs), tuple(provenance)
+    count = len(batch.semantic_states)
+    if count != feedback.candidate_count or len(refs) != count or len(records) != count:
+        raise ValueError("Population state candidates, feedback, references and provenance must align")
+    record_payloads = tuple(record.as_dict() if callable(getattr(record, "as_dict", None)) else dict(record)
+                            for record in records)
+    if any(record.get("candidate_token") != token for record, token in zip(record_payloads, batch.candidate_tokens)):
+        raise ValueError("Population state provenance disagrees with candidate tokens")
+    receipted = feedback.from_arrays(feedback.objectives, feedback.violations,
+        items=tuple(replace(item, info={**dict(item.info), "accepted_solution_ref": ref.as_dict()})
+                    for item, ref in zip(feedback.items, refs, strict=True)), metadata=feedback.metadata)
+    bindings = feedback_pool_bindings(control, batch.semantic_states, receipted, batch.candidate_tokens)
+    if refs:
+        raw_f, raw_v = control.solution_pool.read_raw_feedback(refs, allow_pending=True)
+        if (not np.array_equal(raw_f, feedback.raw_objectives, equal_nan=True)
+                or not np.array_equal(raw_v, feedback.raw_violations, equal_nan=True)):
+            raise ValueError("Population state raw feedback differs from its exact pool versions")
+        saved = control.solution_pool.read_provenance(refs, allow_pending=True)
+        if _signature(saved) != _signature(record_payloads):
+            raise ValueError("Population state provenance differs from its exact pool versions")
+    return bindings, record_payloads
+
+
+def install_population_state(adapter, control, batch, feedback, *, solution_refs, provenance):
+    """Validate one complete identity handoff before installing any Unit rows."""
+    bindings, record_payloads = validate_population_state(control, batch, feedback,
+        solution_refs=solution_refs, provenance=provenance)
+    if (_signature(tuple(adapter._population_pool_bindings)) == _signature(bindings)
+            and adapter.algorithm_unit.population is not None
+            and np.array_equal(adapter.algorithm_unit.population, batch.numeric_matrix, equal_nan=True)
+            and tuple(adapter.algorithm_unit.candidate_tokens) == tuple(batch.candidate_tokens)):
+        adapter.algorithm_unit.attach_feedback(feedback.objectives, feedback.violations)
+        return
+    change = adapter.algorithm_unit.initialize_population(batch.numeric_matrix,
+        feedback.objectives, feedback.violations, candidate_tokens=batch.candidate_tokens,
+        candidate_metadata=tuple(dict(state.metadata) for state in batch.semantic_states),
+        candidate_provenance=record_payloads)
+    adapter._population_pool_bindings = align_pool_bindings(adapter._population_pool_bindings, bindings, change)

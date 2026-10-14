@@ -33,7 +33,8 @@ def build_solver(config=None, *, resource_context=None, component_overrides=None
         )
         selected_count = directions if view_count is None else int(view_count)
         workers = int(options.get("workers", 4))
-        local_batch = 2 * int(build_problem().dimension) if options.get("local_algorithm") == "pattern" else 2
+        local_algorithm = options.get("local_algorithm")
+        local_batch = 2 * int(build_problem().dimension) if local_algorithm in {"pattern", "finite_difference"} else 2
         return_candidates = selected_count * (1 + local_batch * (local_steps - 1))
         default_steps = ((directions + 15) // 16 + 1
             + ((selected_count + workers - 1) // workers) * local_steps

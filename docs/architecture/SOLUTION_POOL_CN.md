@@ -404,11 +404,15 @@ all_descendants = pool.children_subpools(source, recursive=True)
 
 当前池与 manifest schema 为 v2。普通 candidate_collection、明确结果 candidate_view 与 objective_projection 都有稳定身份、版本、来源和发布状态；父子仍表达派生，不要求集合包含。旧缺失视图身份的检查点要求显式迁移。
 
-按名称选择投影视图与按创建者选择执行相同能力检查和投影；不能用字符串绕开比较语义。普通具名集合保持每实例配额，按创建者选择以每视图配额分发。VNS、SA、PatternSearch、SingleTrajectoryAdaptive 使用相同 PoolTask 装配；普通精修也发布最终选择视图，下一层可以 subpools.all(refiner)。all/random 不选择聚合 output，不隐含阶段屏障。
+按名称选择投影视图与按创建者选择执行相同能力检查和投影；不能用字符串绕开比较语义。普通具名集合保持每实例配额，按创建者选择以每视图配额分发。VNS、SA、PatternSearch、SingleTrajectoryAdaptive、GaussianSearch、MAS、有限差分 GradientDescent 和四种信赖域使用相同 PoolTask 装配；普通精修也发布最终选择视图，下一层可以 subpools.all(refiner)。all/random 不选择聚合 output，不隐含阶段屏障。
 
 Role 的 pool_result_owner 指向真实结果算法。SA/Single 的 current 可以为探索变差，get_pool_refinement_results 交付 task-best；原始求值与硬准入不改变。NSGA 系列和 MOEA/D 的成员引用与 PopulationChange 一起更新，不能用回收工具 refs_for_tokens 推断最新版本。
 
-NSGA-II／III、SPEA2 和 DE 每实例自动发布一个普通 population 视图，保存全部已选择成员的精确引用；MOEA/D 每方向发布一个投影视图。`PoolTaskSpec(subpools.all(ga), count="all", steps=3, output="refined")` 逐成员精修，默认 count 仍取每视图一个起点。视图更新复用 view_id 并推进 revision，不复制候选记录。仅在全部成员都有精确版本时发布；普通视图可包含部分初始化后已提交的成员，不能替代种群完成屏障。旧 Evolution 数值同步缺少完整身份交付时不发布可交接视图，也不能开启严格成员回收。
+NSGA-II／III、SPEA2 和 DE 每实例自动发布一个普通 population 视图，保存全部已选择成员的精确引用；MOEA/D 每方向发布一个投影视图。`PoolTaskSpec(subpools.all(ga), count="all", steps=3, output="refined")` 逐成员精修，默认 count 仍取每视图一个起点。视图更新复用 view_id 并推进 revision，不复制候选记录。仅在全部成员都有精确版本时发布；普通视图可包含部分初始化后已提交的成员，不能替代种群完成屏障。
+
+EvolutionSolver 初始化、恢复和环境选择已完整交付 CandidateBatch、原始反馈、provenance 及 SolutionRef。`get_population_solution_refs` 保留成员顺序与重复槽位；`get_solution_pool_roots` 只声明回收保护，不充当成员表。Role／EliteRetention／StrategyChain／单子 Composite 转发实际所有者，多子 Composite 保持分区；不支持交付的 L2 配置在求值前拒绝。显式池初始化按最终接纳索引结算游标，拒绝和预算外种子不丢失。旧三数组环境选择需要 `external_evaluation=True`，表示外部原始求值与新身份导入，不能按数值追认旧版本。
+
+GradientOptimizer 可普通精修，但缺少同步梯度变换时拒绝 objective_projection；结果只交付已评估点，Provider slots 按原事务保留与清理。A*／MOA* 可用 `pool_start_policy="new_root"` 从单个池种子建立新搜索根，不声明通用精修或投影。有限差分起点／探针／下降 trial 分别求值；信赖域 repair 继续守区域与子空间不变量。更细的支持矩阵、结果语义和迁移边界见 [Adapter 接入契约](SOLUTION_POOL_ADAPTER_READINESS_CN.md)。
 
 - `test_solution_pool.py`：时间截止、身份与版本、私有可见性、失败高水位、游标回滚、可传输恢复和摘要篡改拒绝。
 - `test_pool_search_adapter.py`：200→两个 100 成员种群→停滞唤醒→返回竞争；不同取解配额/种群容量与超额准备；满种群后的部分接纳重试；第二个子更新失败的整组回滚；正式 checkpoint 恢复。
@@ -419,5 +423,8 @@ NSGA-II／III、SPEA2 和 DE 每实例自动发布一个普通 population 视图
 - 既有 repair、SA、语义候选、评估接纳、步骤事务与 checkpoint 测试确认旧边界仍成立。
 - `test_nested_pool_views.py`：父子身份、来源冻结、同名重建、子树查询、共享引用、发布/回滚和恢复校验。
 - `test_nested_refinement.py` / `test_nested_refinement_contracts.py`：多层 VNS 的最终候选交接、一次投影、原始反馈、异常/零/部分接纳与处理中途恢复。
+- `test_evolution_population_identity.py`：完整初始化与恢复交付、同值不同身份、重复槽位、透明包装、部分种子结算和外部求值导入。
+- `test_pool_numeric_refiners.py` / `test_trust_region_pool_tasks.py`：统一任务输入、精确结果、基准先求值、投影与 repair、零接纳、回滚和正式 checkpoint。
+- `test_graph_pool_contracts.py` / `test_gradient_pool_provider_lifecycle.py`：新根与路径含义、Provider 活 slot 保留、重启与回滚、清理债务重试。
 
 实际运行命令与结果统一记录在本轮验收文档；存在测试源码不能单独解释成验证通过。

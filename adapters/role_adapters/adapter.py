@@ -477,6 +477,16 @@ class RoleAdapter(AlgorithmAdapter):
             else False
         )
 
+    def supports_population_state_delivery(self):
+        return self.inner is not None and self.inner.supports_population_state_delivery()
+
+    def set_population_state(self, control, batch, feedback, *, solution_refs, provenance):
+        return (self.inner is not None and self.inner.set_population_state(control, batch, feedback,
+            solution_refs=solution_refs, provenance=provenance))
+
+    def get_population_solution_refs(self, control):
+        return None if self.inner is None else self.inner.get_population_solution_refs(control)
+
     def get_population_candidate_tokens(self) -> tuple[str | None, ...] | None:
         getter = getattr(self.inner, "get_population_candidate_tokens", None)
         return getter() if callable(getter) else None

@@ -19,7 +19,7 @@ from ..unit_backed import UnitBackedAdapter, UnitField
 from ...representation.structure_builders import DifferentialPopulationBuilder
 from ..algorithm_adapter import AlgorithmAdapter
 from ..population_pool_refs import (feedback_pool_bindings, align_pool_bindings, validate_pool_bindings,
-                                   publish_population_view, validate_numeric_population_replacement)
+                                   publish_population_view, validate_numeric_population_replacement, install_population_state)
 from nsgablack.context_keys import (
     KEY_ADAPTER_BEST_OBJECTIVES,
     KEY_ADAPTER_BEST_SCORE,
@@ -268,6 +268,27 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
             [self._last_target_scores[index] for index in accepted],
             dtype=float,
         )
+
+    def set_population_state(self, control, batch, feedback, *, solution_refs, provenance):
+        solution_refs = tuple(solution_refs)
+        same_population = (self.population is not None
+            and tuple(binding["ref"] for binding in self._population_pool_bindings if binding is not None)
+                == tuple(ref.as_dict() for ref in solution_refs)
+            and np.array_equal(self.objectives, feedback.objectives, equal_nan=True)
+            and np.array_equal(self.violations, feedback.violations, equal_nan=True))
+        install_population_state(self, control, batch, feedback, solution_refs=solution_refs, provenance=provenance)
+        if not same_population:
+            self._initialization_target = len(batch.semantic_states) or None
+            self._initialization_proposed_count = None
+            self._last_target_indices = []
+            self._last_target_scores = np.empty(0, dtype=float)
+        self._sync_runtime_projection({})
+        publish_population_view(self, control)
+        return True
+
+    def get_population_solution_refs(self, control):
+        return validate_pool_bindings(self._population_pool_bindings, self.population,
+            self._population_candidate_tokens, control=control, require=True)
 
     def set_population_snapshot(self, population: np.ndarray, objectives: np.ndarray, violations: np.ndarray) -> bool:
         pop, obj, vio = self.validate_population_snapshot(population, objectives, violations)

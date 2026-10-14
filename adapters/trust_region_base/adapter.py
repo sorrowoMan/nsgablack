@@ -12,8 +12,8 @@ import numpy as np
 
 from ..unit_backed import UnitBackedAdapter, UnitField, UnitFeedbackField
 from ...representation.structure_builders import RegionUnitBuilder
-from ..algorithm_adapter import AlgorithmAdapter
-from nsgablack.context_keys import KEY_BEST_X
+from ..pool_results import PoolRefinementState
+from nsgablack.context_keys import KEY_SOLUTION_INPUT_REF
 
 
 class TrustRegionBaseAdapter(UnitBackedAdapter):
@@ -25,6 +25,9 @@ class TrustRegionBaseAdapter(UnitBackedAdapter):
     - state roundtrip
     """
     accepts_proposal_replacement = True
+    pool_input_modes = ("initialize",)
+    supports_pool_restart = True
+    supports_objective_projection = True
     unit_builder_type = RegionUnitBuilder
     unit_schema = RegionUnitBuilder.unit_type.schema
     _center = UnitField("center")
@@ -55,28 +58,70 @@ class TrustRegionBaseAdapter(UnitBackedAdapter):
         self._center: Optional[np.ndarray] = None
         self._radius: float = float(getattr(self.cfg, "initial_radius", 0.5))
         self._best_score: Optional[float] = None
+        self._pool_results = PoolRefinementState()
+        self._selection_objectives = {"current": None, "best": None}
+        self._pool_input_task = False
+        self._seed_baseline = False
 
     def setup(self, control: Any) -> None:
+        self._rng = self.create_local_rng(control, seed=getattr(self.cfg, "random_seed", None))
+        self.restart_search(control, {})
+
+    def default_pool_input_count(self):
+        return 1
+
+    def restart_search(self, control, context):
+        self.reset_unit()
         self._radius = float(getattr(self.cfg, "initial_radius", 0.5))
         self._center = None
         self._best_score = None
+        self._pool_results = PoolRefinementState()
+        self._selection_objectives = {"current": None, "best": None}
+        self._pool_input_task = False
+        self._seed_baseline = False
         self._reset_internal_state(control)
 
+    def get_solution_pool_roots(self, control):
+        self._validate_current(control)
+        return self._pool_results.roots(control)
+
+    def get_pool_refinement_results(self, control):
+        self._validate_current(control)
+        return self._pool_results.results(control)
+
+    def _validate_current(self, control):
+        selected = self._pool_results.current
+        if selected is not None:
+            if self._best_score != selected.score:
+                raise ValueError("trust-region center differs from its selected feedback")
+            self._pool_results.validate(control, selected, candidate=self._center)
+
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
-        if self._center is None:
-            self._center = self._init_center(control, context)
+        if self._center is None or (self._pool_results.current is None
+                                    and context.get(KEY_SOLUTION_INPUT_REF) is not None):
+            seed = self._init_center(control, context)
+            self._center = np.asarray(seed, dtype=float).copy()
+            self._best_score = None
+            self._pool_results.remember_seed(control, seed)
+            self._pool_input_task = bool(context.get(KEY_SOLUTION_INPUT_REF))
+            self._seed_baseline = True
+        self._validate_current(control)
+        # A task input is an unevaluated starting point under this comparison
+        # frame. It must consume its own accepted step before any neighbors.
+        if self._best_score is None:
+            return [self._pool_results.project_current(control, self._center, semantic=True)]
 
         self._before_propose(control, context)
         center = np.asarray(self._center, dtype=float)
         n = max(1, int(getattr(self.cfg, "batch_size", 1)))
         candidates: List[np.ndarray] = []
         if bool(getattr(self.cfg, "include_center", True)):
-            candidates.append(center.copy())
+            candidates.append(self._pool_results.project_current(control, center, semantic=True))
         while len(candidates) < n:
             delta = np.asarray(self._sample_delta(control, context), dtype=float)
             cand = center + (delta * float(self._radius))
             cand = self._clip_to_bounds(cand, control)
-            candidates.append(cand)
+            candidates.append(self._pool_results.derive_candidate(control, cand, stage="trust_region"))
         self._after_propose(control, context)
         return candidates
 
@@ -87,6 +132,12 @@ class TrustRegionBaseAdapter(UnitBackedAdapter):
                     <= self._radius + 1e-12 * max(1.0, abs(self._radius)))
 
     def on_proposal_repair(self, control, repair, context):
+        if self._seed_baseline:
+            if repair.proposed_count != 1:
+                raise ValueError("Trust-region baseline requires one candidate")
+            # No region has been accepted yet. The repaired, accepted seed
+            # establishes the center; neighbors will be constrained to it.
+            return
         for row in repair.changed_rows:
             if self._center is None or not self._repair_within_region(repair.after.numeric_matrix[row]):
                 raise ValueError(f"{self.name}: repair moved candidate outside the trust region")
@@ -101,27 +152,40 @@ class TrustRegionBaseAdapter(UnitBackedAdapter):
         objectives, violations = feedback
         if candidates is None or len(candidates) == 0:
             return
-        scores = np.asarray(self._score(control, objectives, violations, context), dtype=float).reshape(-1)
+        scores, violations = self._pool_results.scores(
+            feedback, lambda f, v: self._score(control, f, v, context))
         if scores.size == 0:
             return
-        best_idx = int(np.argmin(scores))
+        best_idx = min(range(len(candidates)), key=lambda i: self._pool_results.key(scores[i], violations[i]))
         best_score = float(scores[best_idx])
-        improved = (
-            self._best_score is None
-            or (float(self._best_score) - best_score) > float(getattr(self.cfg, "success_tolerance", 1e-8))
-        )
+        baseline = self._best_score is None
+        if baseline and len(candidates) != 1:
+            raise ValueError("Trust-region baseline feedback requires one candidate")
+        improved = baseline or self._pool_results.improves_current(best_score, violations[best_idx], self._best_score)
+        # Native trust-region tolerance controls radius/center movement. A
+        # projected task must preserve its owner's exact feasibility ordering.
+        if improved and not baseline and self._pool_results.projection is None:
+            improved = float(self._best_score) - best_score > float(getattr(self.cfg, "success_tolerance", 1e-8))
+        if self._pool_results.observe_best(control, candidates, feedback, best_idx, best_score, violations[best_idx]):
+            self._selection_objectives["best"] = np.asarray(objectives[best_idx], dtype=float).reshape(-1).tolist()
         if improved:
             self._center = np.asarray(candidates[best_idx], dtype=float).copy()
             self._best_score = best_score
-            self._radius = min(
-                float(self._radius) * float(getattr(self.cfg, "radius_expand", 1.5)),
-                float(getattr(self.cfg, "max_radius", 2.0)),
-            )
+            self._pool_results.current = self._pool_results.capture(
+                control, candidates, feedback, best_idx, best_score, violations[best_idx])
+            self._selection_objectives["current"] = np.asarray(objectives[best_idx], dtype=float).reshape(-1).tolist()
+            if not baseline:
+                self._radius = min(
+                    float(self._radius) * float(getattr(self.cfg, "radius_expand", 1.5)),
+                    float(getattr(self.cfg, "max_radius", 2.0)),
+                )
         else:
             self._radius = max(
                 float(self._radius) * float(getattr(self.cfg, "radius_shrink", 0.7)),
                 float(getattr(self.cfg, "min_radius", 1e-6)),
             )
+        self._seed_baseline = False
+        self._record_reference_samples(control, candidates, feedback, scores, violations)
         self._after_update(control, candidates, objectives, violations, context, improved=improved)
 
     def _get_algorithm_state(self) -> Dict[str, Any]:
@@ -130,6 +194,10 @@ class TrustRegionBaseAdapter(UnitBackedAdapter):
             "radius": float(self._radius),
             "best_score": None if self._best_score is None else float(self._best_score),
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
+            "pool_refinement": self._pool_results.as_dict(),
+            "selection_objectives": copy.deepcopy(self._selection_objectives),
+            "pool_input_task": self._pool_input_task,
+            "seed_baseline": self._seed_baseline,
         }
         extra = self._extra_state()
         if extra:
@@ -144,29 +212,17 @@ class TrustRegionBaseAdapter(UnitBackedAdapter):
         if state.get("radius") is not None:
             self._radius = float(state["radius"])
         self._best_score = state.get("best_score")
+        self._pool_results = PoolRefinementState.from_dict(state.get("pool_refinement"))
+        self._selection_objectives = copy.deepcopy(state.get("selection_objectives", {"current": None, "best": None}))
+        self._pool_input_task = bool(state.get("pool_input_task", False))
+        self._seed_baseline = bool(state.get("seed_baseline", False))
         rng_state = state.get("rng_state")
         if isinstance(rng_state, dict):
             self._rng.bit_generator.state = copy.deepcopy(rng_state)
         self._load_extra_state(state)
 
     def _init_center(self, control: Any, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
-        if isinstance(context, dict):
-            best_ctx = context.get(KEY_BEST_X)
-            if best_ctx is not None:
-                return np.asarray(best_ctx, dtype=float)
-        if getattr(control, "best_x", None) is not None:
-            return np.asarray(control.best_x, dtype=float)
-        pipeline = getattr(control, "representation_pipeline", None)
-        if pipeline is not None and hasattr(pipeline, "init"):
-            try:
-                return np.asarray(pipeline.init({"problem": control.problem}), dtype=float)
-            except Exception:
-                raise
-        low, high = self._extract_bounds(control)
-        if low is None or high is None:
-            dim = int(getattr(control, "dimension", 1) or 1)
-            return self._rng.uniform(low=-1.0, high=1.0, size=(dim,))
-        return self._rng.uniform(low=low, high=high)
+        return control.init_candidate(context)
 
     def _extract_bounds(self, control: Any) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         bounds = getattr(getattr(control, "problem", None), "bounds", None)
@@ -187,6 +243,9 @@ class TrustRegionBaseAdapter(UnitBackedAdapter):
         return np.minimum(np.maximum(x, low), high)
 
     # Hooks
+    def _record_reference_samples(self, control, candidates, feedback, scores, violations):
+        """A subclass may retain evaluated samples from this accepted batch."""
+
     def _reset_internal_state(self, control: Any) -> None:
         _ = control
 

@@ -24,6 +24,10 @@ from ...units.structures import ParetoLabelUnit, PARETO_LABEL_SCHEMA
 from ...representation.unit_builders import ParetoLabelBuilder
 from ...representation.structure_builders import encode_unit_value, decode_unit_value
 from ...core.state import StepOutcome
+from ...context_keys import KEY_SOLUTION_INPUT_REF
+from ...units.contracts import candidate_array
+from ..astar.pool_support import (capture_receipt, derive_neighbor, project_root, receipt_ref, receipt_selection,
+                                  validate_receipt_map, validate_pending_receipts)
 
 
 State = np.ndarray
@@ -72,10 +76,13 @@ class MOAStarConfig:
     # stop when a goal is found (multi-objective default: False)
     stop_on_goal: bool = False
     repair_policy: str = "reject"  # reject | recompute
+    pool_start_policy: Optional[str] = None  # None | "new_root"; never imports a path label.
 
     def __post_init__(self):
         if self.repair_policy not in {"reject", "recompute"}:
             raise ValueError("MOA* repair_policy must be reject or recompute")
+        if self.pool_start_policy not in {None, "new_root"}:
+            raise ValueError("MOA* pool_start_policy must be None or 'new_root'")
 
 
 class MOAStarAdapter(AlgorithmAdapter):
@@ -85,6 +92,7 @@ class MOAStarAdapter(AlgorithmAdapter):
     unit_contract_mode = "owned"
     accepts_proposal_replacement = False
     context_requires = ("generation",)
+    context_optional = (KEY_SOLUTION_INPUT_REF,)
     context_provides = ()
     context_mutates = ()
     context_cache = ()
@@ -136,8 +144,20 @@ class MOAStarAdapter(AlgorithmAdapter):
         self.goal_states: List[State] = []
         self.pareto_states: List[State] = []
         self.pareto_costs: List[np.ndarray] = []
+        self._root_initialized = False
+        self._node_receipts = {}
+        self._pareto_receipts = []
+        self._goal_receipts = []
+
+    @property
+    def pool_input_modes(self):
+        return ("initialize",) if self.cfg.pool_start_policy == "new_root" else ()
+
+    def default_pool_input_count(self):
+        return 1
 
     def setup(self, control: Any) -> None:
+        self.validate_unit_bindings()
         self._open = []
         self._labels = {}
         self._state_labels = {}
@@ -147,23 +167,48 @@ class MOAStarAdapter(AlgorithmAdapter):
         self.goal_states = []
         self.pareto_states = []
         self.pareto_costs = []
+        self._root_initialized = False
+        self._node_receipts = {}
+        self._pareto_receipts = []
+        self._goal_receipts = []
 
         try:
             self.num_objectives = int(getattr(control, "num_objectives", None) or 1)
         except Exception:
             self.num_objectives = 1
 
-        start = self._resolve_start_state(control, {})
-        if start is not None:
-            g0 = np.zeros(self.num_objectives, dtype=float)
-            h0 = self._heuristic_vec(start, {})
-            self._push_open(start, g=g0, h=h0, parent_key=None)
+        if self.cfg.pool_start_policy is None:
+            start = self._resolve_start_state(control, {})
+            if start is not None:
+                g0 = np.zeros(self.num_objectives, dtype=float)
+                h0 = self._heuristic_vec(start, {})
+                self._push_open(start, g=g0, h=h0, parent_key=None)
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+        input_ref = context.get(KEY_SOLUTION_INPUT_REF)
+        if input_ref is not None:
+            if self.cfg.pool_start_policy != "new_root":
+                raise ValueError("MOA* pool intake requires explicit pool_start_policy='new_root'")
+            if self._root_initialized or self._open or self._labels:
+                raise ValueError("MOA* pool intake starts a new tree; cannot replace an active search path")
+            if control.solution_pool.input_remaining(input_ref) != 1:
+                raise ValueError("MOA* requires exactly one root per pool initialization")
+        if self.cfg.pool_start_policy == "new_root" and not self._root_initialized:
+            start = control.init_candidate(context) if input_ref is not None else self._resolve_start_state(control, context)
+            if start is None:
+                return []
+            start = project_root(control, start)
+            values = candidate_array(start)
+            zero = np.zeros(self.num_objectives or 1, dtype=float)
+            self._pending = [dict(is_root=True, parent_key=None, parent_id=None,
+                parent_state=None, parent_g=zero.copy(), base_g=zero.copy(), proposed_state=values.copy())]
+            return [start]
         if self.found and self.cfg.stop_on_goal:
             return []
 
         if not self._open:
+            if self.cfg.pool_start_policy == "new_root":
+                return []
             start = self._resolve_start_state(control, context)
             if start is not None:
                 g0 = np.zeros(self.num_objectives or 1, dtype=float)
@@ -186,7 +231,9 @@ class MOAStarAdapter(AlgorithmAdapter):
             if self.goal_test is not None and self.goal_test(label.state, context):
                 self.found = True
                 self.goal_states.append(np.asarray(label.state))
+                self._goal_receipts.append(copy.deepcopy(self._node_receipts.get(label.unit_id)))
                 if self.cfg.stop_on_goal:
+                    self._pending = []
                     return []
 
             expanded += 1
@@ -203,8 +250,9 @@ class MOAStarAdapter(AlgorithmAdapter):
                     base_g = base_g + self._edge_cost_vec(label.state, child_arr, context)
                 self._pending.append({"parent_key": key, "base_g": np.array(base_g, copy=True),
                                       "parent_id": label.unit_id, "parent_state": label.state,
-                                      "parent_g": label.g.copy(), "proposed_state": child_arr.copy()})
-                candidates.append(child_arr)
+                                      "parent_g": label.g.copy(), "proposed_state": child_arr.copy(),
+                                      "parent_receipt": copy.deepcopy(self._node_receipts.get(label.unit_id))})
+                candidates.append(derive_neighbor(control, child_arr, self._node_receipts.get(label.unit_id), stage="moa_star_neighbor"))
 
             if len(candidates) >= int(self.cfg.max_candidates_per_step):
                 break
@@ -239,11 +287,11 @@ class MOAStarAdapter(AlgorithmAdapter):
             meta = self._pending[index]
             if not np.array_equal(repair.before.numeric_matrix[row], meta["proposed_state"], equal_nan=True):
                 raise ValueError("MOA* repair source differs from pending path")
-            if self.cfg.repair_policy == "reject":
+            if self.cfg.repair_policy == "reject" and not meta.get("is_root"):
                 raise ValueError("MOA* candidate changed after proposal; repair_policy='reject'")
             candidate = repair.after.numeric_matrix[row]
             updated = dict(meta)
-            if self.cfg.path_cost_mode == "edge":
+            if self.cfg.path_cost_mode == "edge" and not meta.get("is_root"):
                 updated["base_g"] = meta["parent_g"] + self._edge_cost_vec(meta["parent_state"], candidate, context)
             # Heuristic and dominance are rebuilt from this candidate in update.
             updated["proposed_state"] = candidate.copy()
@@ -271,6 +319,8 @@ class MOAStarAdapter(AlgorithmAdapter):
         feedback: Any,
         context: Dict[str, Any],
     ) -> None:
+        if getattr(feedback, "metadata", {}).get("subpool_projection") is not None:
+            raise ValueError("MOA* does not accept objective projection feedback as graph cost")
         objectives, violations = feedback
         candidate_count = len(candidates)
         if candidate_count <= 0:
@@ -292,14 +342,16 @@ class MOAStarAdapter(AlgorithmAdapter):
             meta = self._pending[i]
             cand_arr = np.asarray(cand)
             changed = not np.array_equal(cand_arr, meta["proposed_state"], equal_nan=True)
-            if changed and self.cfg.repair_policy == "reject":
+            if changed and self.cfg.repair_policy == "reject" and not meta.get("is_root"):
                 raise ValueError("MOA* repair changed the proposed state; opt into repair_policy='recompute'")
 
             obj_vec = obj[i]
             penalty = float(self.cfg.violation_penalty) * float(vio[i])
             pen_vec = np.full(obj_vec.shape, penalty, dtype=float)
 
-            if self.cfg.path_cost_mode == "objective":
+            if meta.get("is_root") and self.cfg.path_cost_mode == "edge":
+                g_vec = np.zeros_like(obj_vec)  # A new root has no inherited edge cost.
+            elif self.cfg.path_cost_mode == "objective":
                 g_vec = np.asarray(obj_vec + pen_vec, dtype=float)
             else:
                 base_g = np.asarray(meta.get("base_g", np.zeros_like(obj_vec)), dtype=float)
@@ -308,10 +360,19 @@ class MOAStarAdapter(AlgorithmAdapter):
                 g_vec = base_g + (float(self.cfg.objective_weight) * obj_vec) + pen_vec
 
             h_vec = self._heuristic_vec(cand_arr, context)
-            self._try_add_label(cand_arr, g_vec, h_vec, meta.get("parent_key"), meta.get("parent_id"), context)
-            self._update_pareto(cand_arr, g_vec)
+            receipt = capture_receipt(control, candidates, feedback, i, float(np.sum(obj_vec)) + penalty, vio[i])
+            if self.cfg.pool_start_policy == "new_root" and receipt is None:
+                raise ValueError("pool-root MOA* requires exact accepted feedback")
+            self._try_add_label(cand_arr, g_vec, h_vec, meta.get("parent_key"), meta.get("parent_id"), context, receipt=receipt)
+            if meta.get("is_root"):
+                self._root_initialized = True
+            # Existing path-label output excludes the zero-edge starting node.
+            if not meta.get("is_root") or self.cfg.path_cost_mode == "objective":
+                self._update_pareto(cand_arr, g_vec, receipt=receipt)
+        self._pending = []
+        self._prune_receipts()
 
-    def _try_add_label(self, state: State, g: np.ndarray, h: np.ndarray, parent_key: Optional[Any], parent_id=None, context=None) -> None:
+    def _try_add_label(self, state: State, g: np.ndarray, h: np.ndarray, parent_key: Optional[Any], parent_id=None, context=None, *, receipt=None) -> None:
         key = self.state_key(state)
         current = self._state_labels.get(key, [])
 
@@ -349,45 +410,69 @@ class MOAStarAdapter(AlgorithmAdapter):
 
         self._counter = label_id
         self._labels[label_id] = label
+        self._node_receipts[label.unit_id] = copy.deepcopy(receipt)
         current.append(label_id)
         self._state_labels[key] = current
 
         priority = self._priority(label.f)
         heapq.heappush(self._open, (priority, label_id, label_id))
         self._trim_open()
+        self._prune_receipts()
 
-    def _update_pareto(self, state: State, cost: np.ndarray) -> None:
+    def _update_pareto(self, state: State, cost: np.ndarray, *, receipt=None) -> None:
         if not self.pareto_costs:
             self.pareto_costs = [cost]
             self.pareto_states = [np.asarray(state)]
+            self._pareto_receipts = [copy.deepcopy(receipt)]
             return
 
         dominated = False
         new_costs: List[np.ndarray] = []
         new_states: List[State] = []
-        for c, s in zip(self.pareto_costs, self.pareto_states):
+        new_receipts = []
+        for c, s, previous in zip(self.pareto_costs, self.pareto_states, self._pareto_receipts, strict=True):
             if self._dominates(c, cost):
                 dominated = True
                 break
             if not self._dominates(cost, c):
                 new_costs.append(c)
                 new_states.append(s)
+                new_receipts.append(previous)
         if dominated:
             return
         new_costs.append(cost)
         new_states.append(np.asarray(state))
         self.pareto_costs = new_costs
         self.pareto_states = new_states
+        self._pareto_receipts = [*new_receipts, copy.deepcopy(receipt)]
+
+    def _prune_receipts(self):
+        live = {node.unit_id for node in self._labels.values()}
+        self._node_receipts = {key: value for key, value in self._node_receipts.items() if key in live}
+
+    def get_solution_pool_roots(self, control):
+        values = [(self._node_receipts.get(node.unit_id), node.state) for node in self._labels.values()]
+        values.extend((item.get("parent_receipt"), item["parent_state"])
+                      for item in self._pending if item.get("parent_id") is not None)
+        values.extend(zip(self._pareto_receipts, self.pareto_states, strict=True))
+        values.extend(zip(self._goal_receipts, self.goal_states, strict=True))
+        if any(receipt is None for receipt, _ in values):
+            return None
+        return tuple(dict.fromkeys(receipt_ref(receipt, control, candidate=candidate) for receipt, candidate in values))
+
+    def get_pool_refinement_results(self, control):
+        """Deliver nondominated_path_labels, using this search's existing g order.
+
+        Costs are not raw Problem objectives or an objective projection. This
+        accessor does not advertise bounded PoolTask refine/restart support.
+        """
+        return tuple(dict.fromkeys(receipt_ref(receipt, control, candidate=candidate)
+            for receipt, candidate in zip(self._pareto_receipts, self.pareto_states, strict=True)))
 
     def _resolve_start_state(self, control: Any, context: Dict[str, Any]) -> Optional[State]:
-        if callable(self.start_state):
-            return np.asarray(self.start_state(context))
-        if self.start_state is not None:
-            return np.asarray(self.start_state)
-        try:
-            return np.asarray(control.init_candidate(context))
-        except Exception:
-            raise
+        start = (self.start_state(context) if callable(self.start_state) else self.start_state
+                 if self.start_state is not None else control.init_candidate(context))
+        return start if self.cfg.pool_start_policy == "new_root" else np.asarray(start)
 
     def _edge_cost_vec(self, parent: State, child: State, context: Dict[str, Any]) -> np.ndarray:
         if self.edge_cost is None:
@@ -474,15 +559,20 @@ class MOAStarAdapter(AlgorithmAdapter):
             "schema": "nsgablack.moa_star_state/v2",
             "unit_contract": self.get_unit_contract(),
             "found": bool(self.found),
+            "pool_start_policy": self.cfg.pool_start_policy,
             "labels": [[key, self.unit_binding.dump(label)] for key, label in self._labels.items()],
             "runtime": encode_unit_value({"open": self._open, "state_labels": self._state_labels,
                 "counter": self._counter, "pending": self._pending, "num_objectives": self.num_objectives,
-                "goal_states": self.goal_states, "pareto_states": self.pareto_states, "pareto_costs": self.pareto_costs}),
+                "goal_states": self.goal_states, "pareto_states": self.pareto_states, "pareto_costs": self.pareto_costs,
+                "root_initialized": self._root_initialized, "node_receipts": self._node_receipts,
+                "pareto_receipts": self._pareto_receipts, "goal_receipts": self._goal_receipts}),
         }
 
     def set_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
+        if state.get("pool_start_policy") != self.cfg.pool_start_policy:
+            raise ValueError("MOA* checkpoint pool root interpretation differs")
         if "unit_contract" not in state:  # Legacy summary-only checkpoint.
             self.found = bool(state.get("found", False))
             return
@@ -490,6 +580,27 @@ class MOAStarAdapter(AlgorithmAdapter):
             raise ValueError("MOA* checkpoint Unit binding mismatch")
         labels = {int(key): self.unit_binding.restore(payload) for key, payload in state["labels"]}
         data = decode_unit_value(state["runtime"])
+        required = self.cfg.pool_start_policy == "new_root"
+        nodes = {node.unit_id: node for node in labels.values()}
+        receipts = validate_receipt_map(data.get("node_receipts", {key: None for key in nodes}), nodes, require=required)
+        restored_results = {}
+        for key, values in (("pareto_receipts", data["pareto_states"]), ("goal_receipts", data["goal_states"])):
+            entries = data.get(key, [None] * len(values))
+            if not isinstance(entries, list) or len(entries) != len(values):
+                raise ValueError("MOA* result references must align with saved candidates")
+            for entry, candidate in zip(entries, values):
+                if entry is not None:
+                    receipt_selection(entry, candidate=candidate)
+                elif required:
+                    raise ValueError("pool-root MOA* checkpoint requires exact result references")
+            restored_results[key] = entries
+        if required and type(data.get("root_initialized")) is not bool:
+            raise ValueError("pool-root MOA* checkpoint requires its root admission state")
+        validate_pending_receipts(data["pending"], require=required)
+        if required and not data["root_initialized"] and labels:
+            raise ValueError("uninitialized MOA* root cannot own existing labels")
+        if required and data["root_initialized"] and any(item.get("is_root") for item in data["pending"]):
+            raise ValueError("admitted MOA* root cannot be pending initialization")
         self._labels = labels
         self._open = data["open"]
         self._state_labels = data["state_labels"]
@@ -500,3 +611,7 @@ class MOAStarAdapter(AlgorithmAdapter):
         self.pareto_states = data["pareto_states"]
         self.pareto_costs = data["pareto_costs"]
         self.found = bool(state["found"])
+        self._root_initialized = data.get("root_initialized", False)
+        self._node_receipts = receipts
+        self._pareto_receipts = restored_results["pareto_receipts"]
+        self._goal_receipts = restored_results["goal_receipts"]

@@ -20,7 +20,7 @@ title = "GradientOptimizerAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.gradient_optimizer:GradientOptimizerAdapter"
 tags = ["adapter", "core", "gradient", "sgd", "adam", "adamw", "provider-neutral", "state-transition"]
-summary = "通用一阶优化策略：通过 gradient.sgd/adam/adamw 稳定方法标识消费 Provider 反馈；可请求版本栅栏设备态更新，但不拥有数据、autograd、Tensor 或设备。 / Provider-neutral first-order strategy selected by stable method ID."
+summary = "通用一阶优化：SGD/Adam/AdamW 消费 Provider 梯度，支持普通池精修并交付已评估任务最佳；目标单独投影不冒充梯度变换。Provider slot 事务与资源授权保留原边界。"
 use_when = [
   "Problem/Evaluation Provider 能返回 Feedback.gradients 时。",
   "需要让同一个 SGD/Adam/AdamW 策略跨 NumPy、Torch、JAX 或解析梯度 Provider 复用时。",
@@ -40,7 +40,7 @@ title = "GaussianSearchAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.gaussian_search:GaussianSearchAdapter"
 tags = ["adapter", "core", "black-box", "stochastic", "gaussian", "provider-neutral"]
-summary = "通用高斯随机搜索策略：通过 search.random_gaussian 稳定方法标识搜索数值候选；模型拟合、Codec、数据和指标仍由 Problem/Provider 负责。 / Provider-neutral Gaussian search selected by a stable method ID."
+summary = "高斯随机搜索：支持池初始化、普通／投影精修与精确任务最佳交付；模型、数据、Codec 和指标仍由 Problem/Provider 负责。"
 use_when = [
   "Problem 只能返回目标/约束，无法提供梯度时。",
   "需要在模型参数、结构编码或外部 estimator spec 上复用同一种轻量黑盒搜索时。",
@@ -84,7 +84,8 @@ title = "AStarAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.astar:AStarAdapter"
 tags = ["adapter", "astar", "core", "graph", "heuristic", "pathfinding", "strategy"]
-summary = "A*搜索内核：算法管线通过 UnitBinding 构建节点，Adapter 负责扩展与优先级；支持邻居/启发式/目标判定。"
+summary = "A* 搜索内核：UnitBinding 构建节点，Adapter 决定扩展与优先级；显式 pool_start_policy='new_root' 从池初始化并保留节点精确版本，不继承旧路径代价。"
+config_keys = ["pool_start_policy", "cost_mode", "repair_policy"]
 
 [[entry]]
 key = "adapter.moa_star"
@@ -92,7 +93,8 @@ title = "MOAStarAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.moa_star:MOAStarAdapter"
 tags = ["adapter", "astar", "core", "graph", "heuristic", "multiobjective", "pareto", "strategy"]
-summary = "多目标A*：Pareto标签与支配剪枝。 / Adapter: MOA* with Pareto labels and dominance pruning."
+summary = "多目标 A*：Pareto 标签与支配剪枝；显式 pool_start_policy='new_root' 接入单个池种子，保留精确路径引用，不接受通用标量投影。"
+config_keys = ["pool_start_policy", "cost_mode", "repair_policy"]
 
 [[entry]]
 key = "adapter.async_event_driven"
@@ -195,14 +197,18 @@ title = "GradientDescentAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:GradientDescentAdapter"
 tags = ["adapter", "core", "gradient", "gradient_descent", "local_search", "strategy"]
-summary = "有限差分梯度下降：局部精修。 / Adapter: finite-difference gradient descent local refinement."
+summary = "有限差分精修：起点、成对探针、下降提案各自评估；支持普通／投影池任务，不把探针分数套给未评估的新点。"
 use_when = ["需要在候选附近做快速局部下降精修时", "可以接受有限差分带来的额外评估开销时"]
 minimal_wiring = ["from nsgablack.adapters import GradientDescentAdapter", "solver.set_adapter(GradientDescentAdapter())"]
 config_keys = [
-  "batch_size",
   "learning_rate",
-  "gradient_eps",
-  "max_inner_steps",
+  "epsilon",
+  "max_directions",
+  "lr_growth",
+  "lr_decay",
+  "min_lr",
+  "objective_aggregation",
+  "repair_policy",
 ]
 example_entry = ""
 
@@ -212,7 +218,7 @@ title = "MASAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:MASAdapter"
 tags = ["adapter", "core", "local_search", "mas", "strategy", "surrogate"]
-summary = "Model-and-Search：交替建模与搜索。 / Adapter: model-and-search alternating model update + search."
+summary = "Model-and-Search：支持普通／投影池精修，明确起点与任务最佳；代理模型历史按精确版本保存和裁剪，不隐式借其他算法的全局最优点。"
 use_when = ["希望在线更新轻量模型并引导局部搜索时", "评估昂贵，想优先在模型建议区域探索时"]
 minimal_wiring = ["from nsgablack.adapters import MASAdapter", "solver.set_adapter(MASAdapter())"]
 config_keys = [
@@ -356,7 +362,7 @@ title = "TrustRegionDFOAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:TrustRegionDFOAdapter"
 tags = ["adapter", "core", "dfo", "local_search", "strategy", "trust_region"]
-summary = "信赖域无梯度局部搜索。 / Adapter: trust-region derivative-free local search."
+summary = "信赖域无梯度精修：支持普通／投影池任务，起点先评估，邻域修复守半径，交付精确已评估结果。"
 use_when = ["目标不可导且需要稳定局部改进时", "希望在受控半径内做无梯度精修时"]
 minimal_wiring = ["from nsgablack.adapters import TrustRegionDFOAdapter", "solver.set_adapter(TrustRegionDFOAdapter())"]
 config_keys = [
@@ -373,7 +379,7 @@ title = "TrustRegionMODFOAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:TrustRegionMODFOAdapter"
 tags = ["adapter", "core", "dfo", "multiobjective", "strategy", "trust_region"]
-summary = "多目标信赖域DFO：标量化融合。 / Adapter: MO trust-region DFO with scalarization."
+summary = "多目标信赖域 DFO：原生任务冻结权重，外部投影采用冻结任务规则；普通换方向先重评分历史向量，支持精确池结果。"
 use_when = ["多目标问题需要局部信赖域精修并保持 Pareto 导向时", "希望把多目标优化与局部 DFO 结合时"]
 minimal_wiring = ["from nsgablack.adapters import TrustRegionMODFOAdapter", "solver.set_adapter(TrustRegionMODFOAdapter())"]
 required_companions = ["plugin.pareto_archive"]
@@ -391,7 +397,7 @@ title = "TrustRegionNonSmoothAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:TrustRegionNonSmoothAdapter"
 tags = ["adapter", "core", "local_search", "nonsmooth", "strategy", "trust_region"]
-summary = "非光滑信赖域：支持 Linf 聚合。 / Adapter: non-smooth trust-region with Linf aggregation."
+summary = "非光滑信赖域：原生 Linf 聚合；投影池任务采用明确比较坐标，保留原始反馈与精确结果。"
 use_when = ["目标非光滑或带 max/Linf 类聚合项时", "需要比纯随机局部扰动更稳的非光滑精修时"]
 minimal_wiring = ["from nsgablack.adapters import TrustRegionNonSmoothAdapter", "solver.set_adapter(TrustRegionNonSmoothAdapter())"]
 config_keys = [
@@ -408,7 +414,7 @@ title = "TrustRegionSubspaceAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:TrustRegionSubspaceAdapter"
 tags = ["adapter", "core", "dfo", "strategy", "subspace", "trust_region"]
-summary = "子空间/低秩信赖域搜索：面向高维。 / Adapter: subspace/low-rank trust-region search for high-D."
+summary = "子空间信赖域：使用本任务实际接纳的有界参考样本，裁剪保持子空间；支持普通／投影池精修与精确引用保留。"
 use_when = ["高维变量空间需要降维后再做局部精修时", "希望把评估预算聚焦到主导子空间时"]
 minimal_wiring = ["from nsgablack.adapters import TrustRegionSubspaceAdapter", "solver.set_adapter(TrustRegionSubspaceAdapter())"]
 config_keys = [
@@ -416,6 +422,7 @@ config_keys = [
   "subspace_dim",
   "basis_method",
   "min_samples",
+  "sample_limit",
   "initial_radius",
   "resample_every",
 ]
