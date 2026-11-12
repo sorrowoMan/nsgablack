@@ -20,6 +20,27 @@ python -m pytest tests/test_solver.py tests/test_snapshot_store.py tests/test_ev
 测试环境为 Python 3.13.2，相关算法比较使用 pymoo 0.6.2，并依赖本机 blackbase 开发源码。
 未执行全仓测试，也未完成干净机器的整套安装验证。
 
+## 首页扩充时的 ML 联动核验
+
+本次仅扩充首页说明，没有修改框架实现。使用同一套本机开发依赖追加核验：
+
+- ML Pool 交接与模型投影 checkpoint：12 项通过；pytest 缓存目录不可写产生两条 warning，不影响测试结果。
+- 三级 Solver → Trainer → Solver 的正式执行、权威交付、独立候选池与逻辑时钟：4 项通过。
+- 从 CLI 新建 Project、添加 MLBlack Trainer Case、执行 `--check --build-check` 和实际运行：四步均返回 0。
+- README 中包含数据定义的 NumPy 回归搜索，以及承接该问题的 GA → SGD 两个 Python 片段：均按原文执行通过。
+  前者完成 4 次逻辑提交；后者完成 6 次，交付两个精修候选，未自动替换 GA 成员。
+- 首页的 43 个本仓源码链接均指向已跟踪且存在的文件，Python 代码块语法检查通过。
+
+专项测试命令：
+
+```powershell
+python -m pytest ../mlblack/tests/test_learning_pool_integration.py ../mlblack/tests/test_ml_projection_checkpoint.py -q -o addopts=
+python -m pytest tests/test_super_topology_orchestration.py -k "executes_with_authoritative_lineage_and_settlement or nested_cases_keep_local_pools_identities_and_clocks" -q -o addopts=
+```
+
+其中 MLBlack 专项测试及部分配套接口仍来自本机未发布的开发改动，
+不代表仅克隆公开仓库即可复现全部新功能，也不代表所有模型、Head、Provider 和 Adapter 的组合已验收。
+
 ## Doctor 的真实结果
 
 仓库工作区严格 Doctor 为 **29 errors、11 warnings、241 infos**。
