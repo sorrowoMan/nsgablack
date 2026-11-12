@@ -77,6 +77,7 @@ celerybeat-schedule
 
 # Environments
 .env
+*.checkpoint-key
 .venv
 env/
 venv/
@@ -214,3 +215,17 @@ results/*/visualizations/*.jpg
 !results/.gitkeep
 !results/comparison/.gitkeep
 !results/comparison/visualizations/.gitkeep
+
+# Local test workspaces and runtime evidence; retain them locally.
+/.test-tmp/
+/.acl-reports/
+/.pytest_tmp*/
+/results/
+/examples/**/results/
+*.pkl
+*.prof
+*.pem
+*.key
+.env.*
+!.env.example
+/deployment/**/DEPLOYED_CN.md

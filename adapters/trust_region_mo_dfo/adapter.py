@@ -49,6 +49,9 @@ class TrustRegionMODFOAdapter(TrustRegionBaseAdapter):
         config: Optional[TrustRegionMODFOConfig] = None,
         name: str = "trust_region_mo_dfo",
         priority: int = 0,
+        *,
+        initializer=None,
+        repair=None,
         **config_kwargs,
     ) -> None:
         unit_binding = config_kwargs.pop("unit_binding", None)
@@ -58,7 +61,8 @@ class TrustRegionMODFOAdapter(TrustRegionBaseAdapter):
             config_kwargs=config_kwargs,
             adapter_name="TrustRegionMODFOAdapter",
         )
-        super().__init__(cfg, name=name, priority=priority, random_seed=cfg.random_seed, unit_binding=unit_binding)
+        super().__init__(cfg, name=name, priority=priority, random_seed=cfg.random_seed,
+                         unit_binding=unit_binding, initializer=initializer, repair=repair)
         self.config = self.cfg
         self._weights: Optional[np.ndarray] = None
 

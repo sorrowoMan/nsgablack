@@ -1,0 +1,93 @@
+[[example]]
+id = "bias-domain-feasibility-application"
+title = "Feasibility软成本与raw硬门 · 完整Case接线"
+component_keys = ["bias.feasibility"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "显式提供同次调用problem_data.constraint_violations，按阈值形成软罚，变体由Problem与raw硬门真正拒绝。"
+inputs = ["完整bias_gallery Project副本、二维SoftLimitSphere、共同Report/薄builder/Pipeline与L0；候选局部指标注册。"]
+steps = ["保存完整Problem/Pipeline/Bias工厂与共用文件，关闭缓存并实际挂raw接纳门。", "独立变体只启用Problem硬上限，不把Bias mandatory当准入权限。"]
+dependencies = ["当前nsgablack、blackbase、NumPy。"]
+expected_outputs = ["本轮domain_scores.json的精确成员与last.raw/selection/metrics/delta_matches；软约束与硬接纳分别解释，无运行收据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "domain.continuous_pipeline" }, { path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "domain.soft_limit_problem" }, { path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "bias.feasibility" }, { path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "domain.shared_report" }, { path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "domain.shared_assembly" }]
+
+[[example]]
+id = "bias-domain-engineering-constraint-application"
+title = "工程超出量软罚 · 完整公式与明确统计限制"
+component_keys = ["bias.engineering_constraint"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "实际装配EngineeringConstraintBias，明确函数权重与安全系数、重复总体加权、异常有限软罚和get_constraint_status缺陷。"
+inputs = ["Feasibility主例的完整独立Project/Problem/Pipeline，替换工程评分文件，共用正式Report/builder与L0。"]
+steps = ["按源码所需参数add_engineering_constraint，函数纯且便宜。", "变体降低函数权重并同步独立公式检查，不用总体weight假定线性变化。"]
+dependencies = ["当前nsgablack、blackbase、NumPy。"]
+expected_outputs = ["domain_scores.json中的3倍或1.5倍超出量软成本与raw平方和；不声称工程认证、硬拒绝或坏统计API可用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "bias.engineering_constraint" }, { path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "domain.continuous_pipeline" }, { path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "domain.soft_limit_problem" }, { path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "domain.shared_report" }, { path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "domain.shared_assembly" }]
+
+[[example]]
+id = "bias-domain-production-application"
+title = "生产计数、单计划方差与开关连续性 · 完整整数Case"
+component_keys = ["bias.production_constraint", "bias.production_diversity", "bias.production_continuity"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "三类实际接入2×3整数计划，明确机器日耗材简化、有限软罚、单解方差和开关变化；绝不冒充已有复杂多产品排程。"
+inputs = ["完整bias_gallery Project独立副本、六维0..3整数、明确两机器/BOM列表/库存计数/三天。"]
+steps = ["保存完整TinyPlan/整数Pipeline/三Bias工厂与共用薄builder/Report。", "变体按Problem raw声明硬上限，保留物理尝试活性上限。"]
+dependencies = ["当前nsgablack、blackbase、NumPy。"]
+expected_outputs = ["本轮domain_scores.json中真实整数候选、raw数量误差与三项选择成本对齐；人口多样性/产品切换/BOM数量等未实现语义明确排除。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "bias.production_constraint" }, { path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "domain.shared_report" }, { path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "domain.shared_assembly" }]
+
+[[example]]
+id = "bias-domain-robustness-application"
+title = "每候选场景标准差的软成本 · 完整Provider接线"
+component_keys = ["bias.robustness"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "MonteCarlo正式Provider产生8次场景统计，RobustnessBias只消费当次mc_std；明确weight平方、聚合后power、成本和噪声恢复边界。"
+inputs = ["独立bias_gallery Project、二维ScenarioCost、连续Pipeline、共用Report/薄builder；每候选场景均值与标准差。"]
+steps = ["完整保存ScenarioCost、Robustness工厂与实际attach_evaluation，Report支持NumPy统计序列化。", "变体只改POWER，raw场景均值不变。"]
+dependencies = ["当前nsgablack、blackbase、NumPy；无远程服务。"]
+expected_outputs = ["domain_scores.json里mc_samples=8、mc_*数组、mean与mean+.04*std^POWER及delta_matches；不把candidate调度数混成场景调用数。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "bias.robustness" }, { path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "domain.continuous_pipeline" }, { path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "domain.shared_report" }, { path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "domain.shared_assembly" }]
+
+[[example]]
+id = "bias-domain-placeholder-migration"
+title = "六个旧领域类未装配 · 明确违反函数与正式硬门迁移"
+component_keys = ["bias.safety", "bias.manufacturing", "bias.scheduling", "bias.resource_constraint", "bias.time_window", "bias.engineering_design"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "nsgablack"
+summary = "区分compute恒0与不存在的自动context属性桥；用已有明确Constraint/Problem完整Case替代，不宣称占位业务语义已完成。"
+inputs = ["完整bias_gallery Project与配套领域软评分主例，真实业务数据仍由原Problem负责。"]
+steps = ["先核对逐类缺口，使用明确非负违反函数或正式raw约束。", "硬门变体依旧由Problem权威声明，旧类不挂载。"]
+dependencies = ["当前框架栈与NumPy。"]
+expected_outputs = ["实际Constraint/Problem评分和接纳证据，不把六个名称当作安全、制造或L0授权已生效。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "migration.bias.domain_placeholders" }, { path = "nsgablack/docs/catalog_usage/DOMAIN_SOFT_SCORE_APPLICATIONS_CN.md", section = "bias.preference" }, { path = "nsgablack/docs/catalog_usage/DOMAIN_SOFT_SCORE_APPLICATIONS_CN.md", section = "bias.preference_installation" }]
+
+[[example]]
+id = "bias-domain-engineering-history-migration"
+title = "两个旧精度鲁棒类未装配 · 正式扰动统计与有限差分迁移"
+component_keys = ["bias.engineering_precision", "bias.engineering_robustness"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "nsgablack"
+summary = "揭示伪精度估计、评分内隐式重复求值、固定[0,1]与符号问题，改用正式Provider统计/Adapter步骤并列出不等价边界。"
+inputs = ["本书完整Robustness场景Case或配套有限差分Case；选择一种明确任务，不装配旧类。"]
+steps = ["场景通过Provider发生并保留每候选指标；Bias只形成软成本。", "观察变体weight0保留真实采样开销，不声称省预算或精度控制。"]
+dependencies = ["当前nsgablack、blackbase、NumPy。"]
+expected_outputs = ["真实mc_*和raw/selection来源，或有限差分的独立送评结果；无旧类执行收据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "migration.bias.engineering_history" }, { path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "bias.robustness" }, { path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "domain.continuous_pipeline" }, { path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "domain.shared_report" }, { path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "domain.shared_assembly" }]
+
+[[example]]
+id = "bias-domain-uncertainty-migration"
+title = "旧不确定性类未装配 · 显式指标奖励的替代接线"
+component_keys = ["bias.uncertainty_exploration"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "nsgablack"
+summary = "旧dataclass缺基类初始化；仅在明确逐候选surrogate_std的预建模型示例中，CallableBias实际消费奖励，保持raw保真。"
+inputs = ["配套SurrogateEvaluationProvider完整DE Case的预建SimplifiedModel变体，声明明确uncertainty来源。"]
+steps = ["保存公开CallableBias评分函数，实际在attach_evaluation后调用挂载；旧类不装配。", "暖启缺统计不套用严格版本，观察变体只读不加奖励。"]
+dependencies = ["当前框架栈、NumPy、scikit-learn；不调用或训练外部模型。"]
+expected_outputs = ["最后反馈selection=raw-.2*本候选不确定性均值，保真标记不变；不把演示常数误当校准误差，未修复旧核心。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md", section = "migration.bias.uncertainty_exploration" }, { path = "nsgablack/docs/catalog_usage/EVALUATION_PROVIDER_APPLICATIONS_CN.md", section = "plugin.surrogate_eval" }]

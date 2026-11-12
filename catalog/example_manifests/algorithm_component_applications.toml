@@ -1,0 +1,38 @@
+[[example]]
+id = "algorithm-component-application-bo"
+title = "BO 模型、采集和网格搜索的实际接线"
+component_keys = ["tool.bo_model", "tool.bo_acquisition", "tool.bo_acquisition_optimizer", "tool.bo_unit"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "从 algorithm_semantics/synchronous_bo 正式 Case 完整替换组件工厂，绑定固定 RBF 后验、LCB、网格搜索与按需 Unit，区分真实观测、模型预测和采集分数。"
+inputs = ["完整 algorithm_semantics Project，当前 nsgablack/blackbase/NumPy；原一维 QuadraticProblem、ClipRepair、BOReport 与 Project L0。"]
+steps = ["保存本节完整 adapter 工厂与薄 builder，三类组件实际传入 BayesianOptimizationAdapter；UnitBinding 只装配现成 Builder。变体实际替换为无状态不确定性采集规则。"]
+dependencies = ["当前 nsgablack、blackbase、NumPy；不需要外部模型账号。"]
+expected_outputs = ["原 results/synchronous_bo/report.json 与 summary.json：observations 的真实 x/y/事件来源、model_revision、last_acquisition 的 grid/mean/std/acquisition/selected_index。Project JSON 核对 summary 的正式发布，不把采集 argmin 当真实最优。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ALGORITHM_COMPONENT_APPLICATIONS_CN.md", section = "tool.bo_model" }]
+
+[[example]]
+id = "algorithm-component-application-cma"
+title = "CMA 完整采样批、raw 排名与分布更新的实际接线"
+component_keys = ["tool.cma_sampler", "tool.cma_ranking", "tool.cma_update", "tool.cma_unit"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "从 algorithm_semantics/cmaes_distribution 正式 Case 显式装配 sampler/ranking/updater，与 Adapter 共用参数，保持完整 cohort 和分布状态的含义。"
+inputs = ["完整 algorithm_semantics Project；默认二维无约束平方问题、IdentityRepair、DistributionReport 和原 Project L0。"]
+steps = ["保存完整工厂和薄 builder，绑定 GaussianCohortSampler、StableObjectiveRanking、PositiveCMAUpdate 与 CMAUnitBuilder；变体给固定标准坐标前缀，随后继续随机采样。"]
+dependencies = ["当前 nsgablack、blackbase、NumPy。"]
+expected_outputs = ["原 results/cmaes_distribution/summary.json：mean/covariance/sigma/路径/iteration、末批 cohort_count/selected_indices、已评估 best_candidate/best_objective。均值不是已评估候选；部分 cohort 不冒充一次分布推进。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ALGORITHM_COMPONENT_APPLICATIONS_CN.md", section = "tool.cma_sampler" }]
+
+[[example]]
+id = "algorithm-component-application-map"
+title = "MAP 描述符、格子、竞争和两种 emitter 的实际接线"
+component_keys = ["tool.map_descriptor", "tool.map_cells", "tool.map_competition", "tool.map_sequence_emitter", "tool.map_gaussian_emitter", "tool.map_elites_unit"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "从 algorithm_semantics/map_elites_archive 正式 Case 绑定行为坐标、格子与 raw 竞争；有限序列主例与 Gaussian emitter 加 Pipeline initializer 的变体都真实接入 Adapter。"
+inputs = ["完整 algorithm_semantics Project；原二维 ArchiveProblem、ClipRepair、ArchiveSummary、ArchiveConfig 和 Project L0。"]
+steps = ["保存完整 adapter 工厂和 builder；变体同时替换 adapter 与 pipeline/main.py，空档案种子来自实际初始化组件。Unit 只绑定构建规则，不提前创建。"]
+dependencies = ["当前 nsgablack、blackbase、NumPy。"]
+expected_outputs = ["原 results/map_elites_archive/summary.json 的 cells/candidates/costs/refs 对齐，components 区分档案量、接纳观测和插入替换。SequenceEmitter 耗尽可少于 max_steps；正式 Project summary 发布与本地文件分开核对。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ALGORITHM_COMPONENT_APPLICATIONS_CN.md", section = "tool.map_descriptor" }]

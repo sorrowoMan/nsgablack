@@ -49,6 +49,9 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
         config: Optional[TrustRegionSubspaceConfig] = None,
         name: str = "trust_region_subspace",
         priority: int = 0,
+        *,
+        initializer=None,
+        repair=None,
         **config_kwargs,
     ) -> None:
         unit_binding = config_kwargs.pop("unit_binding", None)
@@ -58,7 +61,8 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
             config_kwargs=config_kwargs,
             adapter_name="TrustRegionSubspaceAdapter",
         )
-        super().__init__(cfg, name=name, priority=priority, random_seed=cfg.random_seed, unit_binding=unit_binding)
+        super().__init__(cfg, name=name, priority=priority, random_seed=cfg.random_seed,
+                         unit_binding=unit_binding, initializer=initializer, repair=repair)
         self.config = self.cfg
         if int(cfg.sample_limit) < max(1, int(cfg.min_samples)):
             raise ValueError("subspace sample_limit must cover min_samples")
@@ -125,7 +129,7 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
         k = min(max(1, int(self.cfg.subspace_dim)), dim)
         self.rebuild_unit("basis", method="random", rank=k,
                           samples=self._rng.normal(size=(dim, k)))
-        return self.algorithm_unit.basis
+        return self.ensure_unit().basis
 
     def _build_or_sample_basis(self, control: Any) -> np.ndarray:
         method = str(getattr(self.cfg, "basis_method", "random") or "random").strip().lower()
@@ -146,12 +150,12 @@ class TrustRegionSubspaceAdapter(TrustRegionBaseAdapter):
 
         try:
             self.rebuild_unit("basis", method=method, rank=k, samples=X, seed=self.cfg.random_seed)
-            return self.algorithm_unit.basis
+            return self.ensure_unit().basis
         except (ImportError, ValueError, np.linalg.LinAlgError):
             if method in {"sparse_pca", "cluster"}:
                 try:
                     self.rebuild_unit("basis", method="pca", rank=k, samples=X)
-                    return self.algorithm_unit.basis
+                    return self.ensure_unit().basis
                 except np.linalg.LinAlgError:
                     pass
             return self._sample_subspace(control)

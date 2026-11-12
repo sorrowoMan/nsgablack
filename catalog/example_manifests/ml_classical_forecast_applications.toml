@@ -1,0 +1,26 @@
+[[example]]
+id="ml-classical-forecast-presets"
+title="三种真实预测Preset · 安全模型蓝图与前缀refit语义"
+component_keys=["mlblack.preset.baseline_forecast_search", "mlblack.representation.baseline_forecast", "mlblack.representation.baseline_forecast_search", "mlblack.model.naive_forecast", "mlblack.preset.linear_autoregressive_forecast", "mlblack.model.linear_autoregressive_fit_spec", "mlblack.model.linear_autoregressive_forecast", "mlblack.representation.forecast_model_spec", "mlblack.preset.arima_sarimax_forecast", "mlblack.model.arimasarimax", "mlblack.model.arimasarimax_forecast", "mlblack.provider.arimasarimax"]
+kind="documentation"
+working_directory="mlblack"
+summary="完整48点时序Case与baseline/linear_ar/arx三分支，正式preset、L0 setter、安全ArtifactSerializer、只读蓝图构造和一次Project报告。"
+inputs=["完整catalog_codec_demo副本、三仓、NumPy；最后8点连续验证，无外生变量。"]
+steps=["保存完整配置/数据/模型Serializer和薄builder，基线搜索与固定拟合使用不同Adapter。", "读取模型Artifact与真实验证指标，明确内部前缀refit/发布完整序列模型；训练期checkpoint恢复未闭合。"]
+dependencies=["三仓与NumPy，不启用statsmodels/网络/下载；不使用unsafe pickle。"]
+expected_outputs=["valid.rmse单目标、真实验证历史大小、可传输系数/历史蓝图和ModelRef；本轮未执行拟合或算法。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_CLASSICAL_FORECAST_APPLICATIONS_CN.md",section="classical.forecast.presets"}, {path="nsgablack/docs/catalog_usage/ML_CLASSICAL_FORECAST_APPLICATIONS_CN.md",section="classical.forecast.presets.wiring"}, {path="nsgablack/docs/catalog_usage/ML_CLASSICAL_ESTIMATOR_APPLICATIONS_CN.md",section="classical.estimator.run"}]
+
+[[example]]
+id="ml-classical-statsmodels-forecast-boundary"
+title="Statsmodels SARIMAX · 已拟合状态与安全交付迁移边界"
+component_keys=["mlblack.model.statsmodels_sarimax_forecast"]
+kind="documentation"
+usage_status="migration_reference"
+working_directory="mlblack"
+summary="核对真实statsmodels Provider路由与不同history触发重拟合，明确describe不足以恢复Results、默认安全Artifact缺口。"
+inputs=["statsmodels可选依赖与完整历史；本节只构造声明，不拟合或加载模型。"]
+steps=["明确spec/backend与模型包装器边界，列出安全格式/读取器/无重拟合restore的迁移要求。"]
+dependencies=["真正运行需要本地statsmodels；本轮不安装、不执行或联网。"]
+expected_outputs=["迁移参考，不将裸Results/pickle或NumPy近似冒充同义完整模型交付。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_CLASSICAL_FORECAST_APPLICATIONS_CN.md",section="classical.forecast.statsmodels.boundary"}]

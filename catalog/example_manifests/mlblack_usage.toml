@@ -1,0 +1,1572 @@
+[[example]]
+id = "ml-usage-001-numeric"
+title = "NumericDataView：组件级使用示例"
+component_keys = ["mlblack.data_view.numeric"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "n_train=4、n_features=2；特征名与样本行显式保存。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["n_train=4、n_features=2；特征名与样本行显式保存。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.data_view.numeric" }]
+
+[[example]]
+id = "ml-usage-002-time-series"
+title = "TimeSeriesDataView：组件级使用示例"
+component_keys = ["mlblack.data_view.time_series"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "60个按时间顺序的观测；这里没有随机切分或泄漏未来值。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["60个按时间顺序的观测；这里没有随机切分或泄漏未来值。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.data_view.time_series" }]
+
+[[example]]
+id = "ml-usage-003-image"
+title = "ImageDataView：组件级使用示例"
+component_keys = ["mlblack.data_view.image"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "4张单通道8×8图像及4个标签；形状由图像DataView检查。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["4张单通道8×8图像及4个标签；形状由图像DataView检查。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.data_view.image" }]
+
+[[example]]
+id = "ml-usage-004-graph"
+title = "GraphDataView：组件级使用示例"
+component_keys = ["mlblack.data_view.graph"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "4个图、每图3节点、每节点2特征，邻接矩阵与标签行对齐。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["4个图、每图3节点、每节点2特征，邻接矩阵与标签行对齐。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.data_view.graph" }]
+
+[[example]]
+id = "ml-usage-005-image-contrastive-pair"
+title = "ImageContrastivePairDataView：组件级使用示例"
+component_keys = ["mlblack.data_view.image_contrastive_pair"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "anchor/positive/negative按三元组对齐；没有伪造监督标签。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["anchor/positive/negative按三元组对齐；没有伪造监督标签。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.data_view.image_contrastive_pair" }]
+
+[[example]]
+id = "ml-usage-006-preference-pair"
+title = "PreferencePairDataView：组件级使用示例"
+component_keys = ["mlblack.data_view.preference_pair"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "两对同形的chosen/rejected序列；用于偏好任务，不等于普通分类y。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["两对同形的chosen/rejected序列；用于偏好任务，不等于普通分类y。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.data_view.preference_pair" }]
+
+[[example]]
+id = "ml-usage-007-point"
+title = "PointHead：组件级使用示例"
+component_keys = ["mlblack.head.point"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.head.point" }]
+
+[[example]]
+id = "ml-usage-008-binary-logistic"
+title = "BinaryLogisticHead：组件级使用示例"
+component_keys = ["mlblack.head.binary_logistic"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.head.binary_logistic" }]
+
+[[example]]
+id = "ml-usage-009-softmax"
+title = "SoftmaxHead：组件级使用示例"
+component_keys = ["mlblack.head.softmax"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.head.softmax" }]
+
+[[example]]
+id = "ml-usage-010-probability-calibration"
+title = "ProbabilityCalibrationHead：组件级使用示例"
+component_keys = ["mlblack.head.probability_calibration"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.head.probability_calibration" }]
+
+[[example]]
+id = "ml-usage-011-center-radius-interval"
+title = "CenterRadiusIntervalHead：组件级使用示例"
+component_keys = ["mlblack.head.center_radius_interval"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.head.center_radius_interval" }]
+
+[[example]]
+id = "ml-usage-012-two-model-interval"
+title = "TwoModelIntervalHead：组件级使用示例"
+component_keys = ["mlblack.head.two_model_interval", "mlblack.head.interval"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.head.two_model_interval" }]
+
+[[example]]
+id = "ml-usage-013-normal"
+title = "NormalHead：组件级使用示例"
+component_keys = ["mlblack.head.normal"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.head.normal" }]
+
+[[example]]
+id = "ml-usage-014-poisson"
+title = "PoissonHead：组件级使用示例"
+component_keys = ["mlblack.head.poisson"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.head.poisson" }]
+
+[[example]]
+id = "ml-usage-015-negative-binomial"
+title = "NegativeBinomialHead：组件级使用示例"
+component_keys = ["mlblack.head.negative_binomial"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.head.negative_binomial" }]
+
+[[example]]
+id = "ml-usage-016-piecewise"
+title = "PiecewiseHead：组件级使用示例"
+component_keys = ["mlblack.head.piecewise"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["输出与4个输入样本逐行对齐；Head决定点、概率、区间或分布语义，Codec只负责参数布局。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.head.piecewise" }]
+
+[[example]]
+id = "ml-usage-017-symbolic-basis-set"
+title = "SymbolicBasisSetHead：组件级使用示例"
+component_keys = ["mlblack.head.symbolic_basis_set"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "两个样本的一列符号基函数值；Head按表达式块路由，不能用线性模型冒充SymbolicExpressionModel。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["两个样本的一列符号基函数值；Head按表达式块路由，不能用线性模型冒充SymbolicExpressionModel。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.head.symbolic_basis_set" }]
+
+[[example]]
+id = "ml-usage-018-linear-point"
+title = "LinearPointCodec：组件级使用示例"
+component_keys = ["mlblack.codec.linear_point"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "预测[-0.5+1, 3, 4.5, 7]的对应点值；encode返回同一线性布局[intercept,w0,w1]，不创建算法Unit。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["预测[-0.5+1, 3, 4.5, 7]的对应点值；encode返回同一线性布局[intercept,w0,w1]，不创建算法Unit。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.codec.linear_point" }]
+
+[[example]]
+id = "ml-usage-019-orthogonal-linear-point"
+title = "OrthogonalLinearPointCodec：组件级使用示例"
+component_keys = ["mlblack.codec.orthogonal_linear_point"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "在训练X上建立正交特征映射，再按映射维数解释参数；后续预测复用该映射。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["在训练X上建立正交特征映射，再按映射维数解释参数；后续预测复用该映射。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.codec.orthogonal_linear_point" }]
+
+[[example]]
+id = "ml-usage-020-tunable-parameter"
+title = "TunableParameterSpec：组件级使用示例"
+component_keys = ["mlblack.codec.tunable_parameter"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "max_depth被修复到整数上界8；该对象描述超参数，不能直接当作拟合模型。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["max_depth被修复到整数上界8；该对象描述超参数，不能直接当作拟合模型。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.codec.tunable_parameter" }]
+
+[[example]]
+id = "ml-usage-021-estimator-spec"
+title = "EstimatorSpecCodec：组件级使用示例"
+component_keys = ["mlblack.codec.estimator_spec"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到参数Spec并经显式factory创建估计器；route字符串只是标识，不会自动导入或fit，实际拟合交给Problem/Provider。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy、scikit-learn；显式factory只创建估计器，不在Codec里训练。"]
+expected_outputs = ["得到参数Spec并经显式factory创建估计器；route字符串只是标识，不会自动导入或fit，实际拟合交给Problem/Provider。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.codec.estimator_spec" }]
+
+[[example]]
+id = "ml-usage-022-neural-temporal-deepar-spec"
+title = "NeuralGraphSpec.temporal_deepar：组件级使用示例"
+component_keys = ["mlblack.codec.neural_temporal_deepar_spec"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "构造本条目对应网络结构与未解析backend描述；精确布局须由正式Trainer/L0后端上下文解析，没有在组件内自行开启后端。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一环境；实际parameter_layout(context=...)与网络求值另需正式ML调用提供支持该架构的backend.session。"]
+expected_outputs = ["构造本条目对应网络结构与未解析backend描述；精确布局须由正式Trainer/L0后端上下文解析，没有在组件内自行开启后端。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.codec.neural_temporal_deepar_spec" }]
+
+[[example]]
+id = "ml-usage-023-neural-temporal-lstm-spec"
+title = "NeuralGraphSpec.temporal_lstm：组件级使用示例"
+component_keys = ["mlblack.codec.neural_temporal_lstm_spec"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "构造本条目对应网络结构与未解析backend描述；精确布局须由正式Trainer/L0后端上下文解析，没有在组件内自行开启后端。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一环境；实际parameter_layout(context=...)与网络求值另需正式ML调用提供支持该架构的backend.session。"]
+expected_outputs = ["构造本条目对应网络结构与未解析backend描述；精确布局须由正式Trainer/L0后端上下文解析，没有在组件内自行开启后端。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.codec.neural_temporal_lstm_spec" }]
+
+[[example]]
+id = "ml-usage-024-neural-temporal-nbeats-spec"
+title = "NeuralGraphSpec.temporal_nbeats：组件级使用示例"
+component_keys = ["mlblack.codec.neural_temporal_nbeats_spec"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "构造本条目对应网络结构与未解析backend描述；精确布局须由正式Trainer/L0后端上下文解析，没有在组件内自行开启后端。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一环境；实际parameter_layout(context=...)与网络求值另需正式ML调用提供支持该架构的backend.session。"]
+expected_outputs = ["构造本条目对应网络结构与未解析backend描述；精确布局须由正式Trainer/L0后端上下文解析，没有在组件内自行开启后端。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.codec.neural_temporal_nbeats_spec" }]
+
+[[example]]
+id = "ml-usage-025-neural-temporal-patchtst-spec"
+title = "NeuralGraphSpec.temporal_patchtst：组件级使用示例"
+component_keys = ["mlblack.codec.neural_temporal_patchtst_spec"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "构造本条目对应网络结构与未解析backend描述；精确布局须由正式Trainer/L0后端上下文解析，没有在组件内自行开启后端。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一环境；实际parameter_layout(context=...)与网络求值另需正式ML调用提供支持该架构的backend.session。"]
+expected_outputs = ["构造本条目对应网络结构与未解析backend描述；精确布局须由正式Trainer/L0后端上下文解析，没有在组件内自行开启后端。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.codec.neural_temporal_patchtst_spec" }]
+
+[[example]]
+id = "ml-usage-026-neural-temporal-tcn-spec"
+title = "NeuralGraphSpec.temporal_tcn：组件级使用示例"
+component_keys = ["mlblack.codec.neural_temporal_tcn_spec"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "构造本条目对应网络结构与未解析backend描述；精确布局须由正式Trainer/L0后端上下文解析，没有在组件内自行开启后端。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一环境；实际parameter_layout(context=...)与网络求值另需正式ML调用提供支持该架构的backend.session。"]
+expected_outputs = ["构造本条目对应网络结构与未解析backend描述；精确布局须由正式Trainer/L0后端上下文解析，没有在组件内自行开启后端。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.codec.neural_temporal_tcn_spec" }]
+
+[[example]]
+id = "ml-usage-027-neural-temporal-tft-spec"
+title = "NeuralGraphSpec.temporal_tft：组件级使用示例"
+component_keys = ["mlblack.codec.neural_temporal_tft_spec"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "构造本条目对应网络结构与未解析backend描述；精确布局须由正式Trainer/L0后端上下文解析，没有在组件内自行开启后端。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一环境；实际parameter_layout(context=...)与网络求值另需正式ML调用提供支持该架构的backend.session。"]
+expected_outputs = ["构造本条目对应网络结构与未解析backend描述；精确布局须由正式Trainer/L0后端上下文解析，没有在组件内自行开启后端。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.codec.neural_temporal_tft_spec" }]
+
+[[example]]
+id = "ml-usage-028-neural-temporal-transformer-spec"
+title = "NeuralGraphSpec.temporal_transformer：组件级使用示例"
+component_keys = ["mlblack.codec.neural_temporal_transformer_spec"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "构造本条目对应网络结构与未解析backend描述；精确布局须由正式Trainer/L0后端上下文解析，没有在组件内自行开启后端。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一环境；实际parameter_layout(context=...)与网络求值另需正式ML调用提供支持该架构的backend.session。"]
+expected_outputs = ["构造本条目对应网络结构与未解析backend描述；精确布局须由正式Trainer/L0后端上下文解析，没有在组件内自行开启后端。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.codec.neural_temporal_transformer_spec" }]
+
+[[example]]
+id = "ml-usage-029-neural-tabular-tabnet-spec"
+title = "NeuralGraphSpec.tabular_tabnet：组件级使用示例"
+component_keys = ["mlblack.codec.neural_tabular_tabnet_spec"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "构造本条目对应网络结构与未解析backend描述；精确布局须由正式Trainer/L0后端上下文解析，没有在组件内自行开启后端。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一环境；实际parameter_layout(context=...)与网络求值另需正式ML调用提供支持该架构的backend.session。"]
+expected_outputs = ["构造本条目对应网络结构与未解析backend描述；精确布局须由正式Trainer/L0后端上下文解析，没有在组件内自行开启后端。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.codec.neural_tabular_tabnet_spec" }]
+
+[[example]]
+id = "ml-usage-030-neural-graph"
+title = "NeuralGraphCodec：组件级使用示例"
+component_keys = ["mlblack.codec.neural_graph"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "一个2→4→1网络的参数向量和布局；布局状态不属于搜索Adapter Unit。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["一个2→4→1网络的参数向量和布局；布局状态不属于搜索Adapter Unit。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.codec.neural_graph" }]
+
+[[example]]
+id = "ml-usage-031-symbolic-expression"
+title = "SymbolicExpressionCodec：组件级使用示例"
+component_keys = ["mlblack.codec.symbolic_expression"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "固定表达式2*x0的预测和可训练参数向量；这里不搜索表达式结构。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["固定表达式2*x0的预测和可训练参数向量；这里不搜索表达式结构。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.codec.symbolic_expression" }]
+
+[[example]]
+id = "ml-usage-032-symbolic-multi-expression"
+title = "SymbolicMultiExpressionCodec：组件级使用示例"
+component_keys = ["mlblack.codec.symbolic_multi_expression"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "第0个表达式的参数块及预测；多表达式不能被当成一个没有分块的普通线性向量。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["第0个表达式的参数块及预测；多表达式不能被当成一个没有分块的普通线性向量。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.codec.symbolic_multi_expression" }]
+
+[[example]]
+id = "ml-usage-033-linear-point"
+title = "LinearPointRepresentation：组件级使用示例"
+component_keys = ["mlblack.representation.linear_point"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "UnknownState保存候选参数，decode产生可预测模型；生产运行时实际初值由Solver.init_candidate统一绑定身份。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["UnknownState保存候选参数，decode产生可预测模型；生产运行时实际初值由Solver.init_candidate统一绑定身份。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.representation.linear_point" }]
+
+[[example]]
+id = "ml-usage-034-orthogonal-linear"
+title = "OrthogonalPointLinearRepresentation：组件级使用示例"
+component_keys = ["mlblack.representation.orthogonal_linear", "mlblack.representation.orthogonal_point_linear"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "两个Catalog键是同一类型；正交映射只由训练数据构建，预测复用冻结映射。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["两个Catalog键是同一类型；正交映射只由训练数据构建，预测复用冻结映射。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.representation.orthogonal_linear" }]
+
+[[example]]
+id = "ml-usage-035-neural-graph"
+title = "NeuralGraphRepresentation：组件级使用示例"
+component_keys = ["mlblack.representation.neural_graph"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "已声明模型维数与图布局；没有为了推断shape而先抽一次初始解。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["已声明模型维数与图布局；没有为了推断shape而先抽一次初始解。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.representation.neural_graph" }]
+
+[[example]]
+id = "ml-usage-036-estimator-spec"
+title = "EstimatorSpecRepresentation：组件级使用示例"
+component_keys = ["mlblack.representation.estimator_spec"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "生成待拟合参数声明，再经显式factory构建估计器；真正fit仍属于Problem/Provider。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy、scikit-learn；route名称不是自动导入入口，factory必须显式准备。"]
+expected_outputs = ["生成待拟合参数声明，再经显式factory构建估计器；真正fit仍属于Problem/Provider。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.representation.estimator_spec" }]
+
+[[example]]
+id = "ml-usage-037-symbolic-expression"
+title = "SymbolicExpressionRepresentation：组件级使用示例"
+component_keys = ["mlblack.representation.symbolic_expression"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "固定符号结构的模型预测；候选仅包含可训练数值参数。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["固定符号结构的模型预测；候选仅包含可训练数值参数。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.representation.symbolic_expression" }]
+
+[[example]]
+id = "ml-usage-038-symbolic-basis-set"
+title = "SymbolicBasisSetRepresentation：组件级使用示例"
+component_keys = ["mlblack.representation.symbolic_basis_set"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "按表达式块产生基函数矩阵；不声称已经拟合一个回归器。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["按表达式块产生基函数矩阵；不声称已经拟合一个回归器。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.representation.symbolic_basis_set" }]
+
+[[example]]
+id = "ml-usage-039-piecewise"
+title = "PiecewiseRepresentation：组件级使用示例"
+component_keys = ["mlblack.representation.piecewise"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "阈值路由到两个独立参数块的线性分支；共享输入数据不等于共享可写优化状态。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["阈值路由到两个独立参数块的线性分支；共享输入数据不等于共享可写优化状态。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.representation.piecewise" }]
+
+[[example]]
+id = "ml-usage-040-baseline-forecast"
+title = "BaselineForecastRepresentation：组件级使用示例"
+component_keys = ["mlblack.representation.baseline_forecast", "mlblack.representation.baseline_forecast_search"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "初始化一个基线策略候选并预测3步；配置和表示两个目录项在片段中都实际使用。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["初始化一个基线策略候选并预测3步；配置和表示两个目录项在片段中都实际使用。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.representation.baseline_forecast" }]
+
+[[example]]
+id = "ml-usage-041-forecast-model-spec"
+title = "ForecastModelSpecRepresentation：组件级使用示例"
+component_keys = ["mlblack.representation.forecast_model_spec"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "把固定预测Spec作为语义候选；这一步尚未拟合时序模型。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["把固定预测Spec作为语义候选；这一步尚未拟合时序模型。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.representation.forecast_model_spec" }]
+
+[[example]]
+id = "ml-usage-042-linear-point"
+title = "LinearPointModel：组件级使用示例"
+component_keys = ["mlblack.model.linear_point"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "4行点预测；模型保存intercept/weights，不拥有训练循环。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["4行点预测；模型保存intercept/weights，不拥有训练循环。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.linear_point" }]
+
+[[example]]
+id = "ml-usage-043-numpy-mlp-point"
+title = "NumpyMLPPointModel：组件级使用示例"
+component_keys = ["mlblack.model.numpy_mlp_point"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "2→3→1纯NumPy前向预测；没有假设网络已经训练。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["2→3→1纯NumPy前向预测；没有假设网络已经训练。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.numpy_mlp_point" }]
+
+[[example]]
+id = "ml-usage-044-binary-logistic-probability"
+title = "BinaryLogisticProbabilityModel：组件级使用示例"
+component_keys = ["mlblack.model.binary_logistic_probability"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.binary_logistic_probability" }]
+
+[[example]]
+id = "ml-usage-045-softmax-probability"
+title = "SoftmaxProbabilityModel：组件级使用示例"
+component_keys = ["mlblack.model.softmax_probability"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.softmax_probability" }]
+
+[[example]]
+id = "ml-usage-046-temperature-calibrated-probability"
+title = "TemperatureCalibratedProbabilityModel：组件级使用示例"
+component_keys = ["mlblack.model.temperature_calibrated_probability"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.temperature_calibrated_probability" }]
+
+[[example]]
+id = "ml-usage-047-probability-calibration"
+title = "ProbabilityCalibrationModel：组件级使用示例"
+component_keys = ["mlblack.model.probability_calibration"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.probability_calibration" }]
+
+[[example]]
+id = "ml-usage-048-interval-prediction"
+title = "IntervalPredictionModel：组件级使用示例"
+component_keys = ["mlblack.model.interval_prediction"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.interval_prediction" }]
+
+[[example]]
+id = "ml-usage-049-center-radius-interval"
+title = "CenterRadiusIntervalModel：组件级使用示例"
+component_keys = ["mlblack.model.center_radius_interval"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.center_radius_interval" }]
+
+[[example]]
+id = "ml-usage-050-normal-distribution"
+title = "NormalDistributionModel：组件级使用示例"
+component_keys = ["mlblack.model.normal_distribution"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.normal_distribution" }]
+
+[[example]]
+id = "ml-usage-051-poisson-distribution"
+title = "PoissonDistributionModel：组件级使用示例"
+component_keys = ["mlblack.model.poisson_distribution"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.poisson_distribution" }]
+
+[[example]]
+id = "ml-usage-052-negative-binomial-distribution"
+title = "NegativeBinomialDistributionModel：组件级使用示例"
+component_keys = ["mlblack.model.negative_binomial_distribution"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["4个输入样本逐行输出本模型声明的概率/区间/分布；这些输出与普通点预测不可混淆。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.negative_binomial_distribution" }]
+
+[[example]]
+id = "ml-usage-053-orthogonal-feature-map"
+title = "OrthogonalFeatureMap：组件级使用示例"
+component_keys = ["mlblack.model.orthogonal_feature_map"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "在训练数据上拟合并应用正交特征映射；预测数据只transform。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["在训练数据上拟合并应用正交特征映射；预测数据只transform。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.orthogonal_feature_map" }]
+
+[[example]]
+id = "ml-usage-054-orthogonal-linear-point"
+title = "OrthogonalLinearPointModel：组件级使用示例"
+component_keys = ["mlblack.model.orthogonal_linear_point"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "使用同一冻结feature_map解释权重并预测4行。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["使用同一冻结feature_map解释权重并预测4行。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.orthogonal_linear_point" }]
+
+[[example]]
+id = "ml-usage-055-router"
+title = "Router：组件级使用示例"
+component_keys = ["mlblack.model.router", "mlblack.model.threshold_router"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "路由编号[0,0,1,1]；Router是扩展协议，ThresholdRouter是这里实际实例化的实现。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["路由编号[0,0,1,1]；Router是扩展协议，ThresholdRouter是这里实际实例化的实现。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.router" }]
+
+[[example]]
+id = "ml-usage-056-piecewise"
+title = "PiecewiseModel：组件级使用示例"
+component_keys = ["mlblack.model.piecewise"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "按行路由并从对应已准备分支取预测；不在该对象里进行多Case调度。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["按行路由并从对应已准备分支取预测；不在该对象里进行多Case调度。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.piecewise" }]
+
+[[example]]
+id = "ml-usage-057-prediction-input"
+title = "PredictionInputSpec：组件级使用示例"
+component_keys = ["mlblack.model.prediction_input"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "输入按二维2特征契约验证，不兼容shape会显式拒绝。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["输入按二维2特征契约验证，不兼容shape会显式拒绝。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.prediction_input" }]
+
+[[example]]
+id = "ml-usage-058-prediction-output"
+title = "PredictionOutputSpec：组件级使用示例"
+component_keys = ["mlblack.model.prediction_output"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "单列预测被规范为长度2的点预测向量；多列分类概率不能冒充点输出。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["单列预测被规范为长度2的点预测向量；多列分类概率不能冒充点输出。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.prediction_output" }]
+
+[[example]]
+id = "ml-usage-059-prediction-io"
+title = "PredictionIOContract：组件级使用示例"
+component_keys = ["mlblack.model.prediction_io"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "按显式key读取并验证这个子模型的输入；没有按名称猜数据流。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["按显式key读取并验证这个子模型的输入；没有按名称猜数据流。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.prediction_io" }]
+
+[[example]]
+id = "ml-usage-060-prediction-integration"
+title = "PredictionIntegrationSpec：组件级使用示例"
+component_keys = ["mlblack.model.prediction_integration", "mlblack.model.integrated_prediction", "mlblack.model.prediction_integration_component"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "组合两个已拟合模型的逐行预测；这是推理语义，不会自动安排训练顺序。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["组合两个已拟合模型的逐行预测；这是推理语义，不会自动安排训练顺序。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.prediction_integration" }]
+
+[[example]]
+id = "ml-usage-061-estimator-spec"
+title = "EstimatorSpecModel：组件级使用示例"
+component_keys = ["mlblack.model.estimator_spec"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "Spec保存route/参数并通过明确factory创建估计器；不传factory会在build_estimator显式拒绝，不偷偷调用训练。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy、scikit-learn；factory是明确的外部估计器构造边界。"]
+expected_outputs = ["Spec保存route/参数并通过明确factory创建估计器；不传factory会在build_estimator显式拒绝，不偷偷调用训练。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.estimator_spec" }]
+
+[[example]]
+id = "ml-usage-062-fitted-estimator"
+title = "FittedEstimatorModel：组件级使用示例"
+component_keys = ["mlblack.model.fitted_estimator"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "包装一个已拟合估计器并预测；正式训练应在ML Problem/Provider内执行。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy、scikit-learn；该片段演示模型封装，不另造训练控制面。"]
+expected_outputs = ["包装一个已拟合估计器并预测；正式训练应在ML Problem/Provider内执行。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.fitted_estimator" }]
+
+[[example]]
+id = "ml-usage-063-naive-forecast"
+title = "NaiveForecastModel：组件级使用示例"
+component_keys = ["mlblack.model.naive_forecast"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "最近3个观测构成的3步预测；严格使用给定历史。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["最近3个观测构成的3步预测；严格使用给定历史。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.naive_forecast" }]
+
+[[example]]
+id = "ml-usage-064-linear-autoregressive-fit-spec"
+title = "LinearAutoregressiveFitSpec：组件级使用示例"
+component_keys = ["mlblack.model.linear_autoregressive_fit_spec", "mlblack.model.linear_autoregressive_forecast"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "时序滞后特征拟合后的3步递归预测；不是把未来目标作为当前输入。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["时序滞后特征拟合后的3步递归预测；不是把未来目标作为当前输入。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.linear_autoregressive_fit_spec" }]
+
+[[example]]
+id = "ml-usage-065-lag-estimator-forecast"
+title = "LagEstimatorForecastModel：组件级使用示例"
+component_keys = ["mlblack.model.lag_estimator_forecast"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "使用明确的滞后配置创建表格估计器预测模型。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy、scikit-learn；正式fit放在Case Problem/Provider。"]
+expected_outputs = ["使用明确的滞后配置创建表格估计器预测模型。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.lag_estimator_forecast" }]
+
+[[example]]
+id = "ml-usage-066-arimasarimax"
+title = "ARIMASARIMAXSpec：组件级使用示例"
+component_keys = ["mlblack.model.arimasarimax", "mlblack.model.arimasarimax_forecast"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "明确选择NumPy fallback得到已拟合模型；fallback不声称支持statsmodels全部ARIMA语义。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["明确选择NumPy fallback得到已拟合模型；fallback不声称支持statsmodels全部ARIMA语义。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.arimasarimax" }]
+
+[[example]]
+id = "ml-usage-067-statsmodels-sarimax-forecast"
+title = "StatsmodelsSARIMAXForecastModel：组件级使用示例"
+component_keys = ["mlblack.model.statsmodels_sarimax_forecast"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "真正statsmodels结果对象的3步预测包装；不能在缺依赖时冒称该后端已启用。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy、statsmodels；正式拟合消耗的资源由Project L0授权。"]
+expected_outputs = ["真正statsmodels结果对象的3步预测包装；不能在缺依赖时冒称该后端已启用。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.statsmodels_sarimax_forecast" }]
+
+[[example]]
+id = "ml-usage-068-symbolic-expression"
+title = "SymbolicExpressionModel：组件级使用示例"
+component_keys = ["mlblack.model.symbolic_expression"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "已给定结构和数值参数的符号模型预测；结构搜索不在模型对象里。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["已给定结构和数值参数的符号模型预测；结构搜索不在模型对象里。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.symbolic_expression" }]
+
+[[example]]
+id = "ml-usage-069-symbolic-basis-set"
+title = "SymbolicBasisSetModel：组件级使用示例"
+component_keys = ["mlblack.model.symbolic_basis_set"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "按atoms顺序生成基函数矩阵；没有自动拟合基函数的线性系数。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["按atoms顺序生成基函数矩阵；没有自动拟合基函数的线性系数。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.model.symbolic_basis_set" }]
+
+[[example]]
+id = "ml-usage-070-identity"
+title = "IdentityComponent：组件级使用示例"
+component_keys = ["mlblack.pipeline.identity"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "对训练数据fit，再transform；validation使用同一fit-state，避免独立拟合造成数据泄漏。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["对训练数据fit，再transform；validation使用同一fit-state，避免独立拟合造成数据泄漏。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.identity" }]
+
+[[example]]
+id = "ml-usage-071-select-columns"
+title = "SelectColumnsComponent：组件级使用示例"
+component_keys = ["mlblack.pipeline.select_columns"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "对训练数据fit，再transform；validation使用同一fit-state，避免独立拟合造成数据泄漏。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["对训练数据fit，再transform；validation使用同一fit-state，避免独立拟合造成数据泄漏。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.select_columns" }]
+
+[[example]]
+id = "ml-usage-072-z-score-normalize"
+title = "ZScoreNormalizeComponent：组件级使用示例"
+component_keys = ["mlblack.pipeline.z_score_normalize"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "对训练数据fit，再transform；validation使用同一fit-state，避免独立拟合造成数据泄漏。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["对训练数据fit，再transform；validation使用同一fit-state，避免独立拟合造成数据泄漏。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.z_score_normalize" }]
+
+[[example]]
+id = "ml-usage-073-data-pipeline"
+title = "DataPipelineComponent：组件级使用示例"
+component_keys = ["mlblack.pipeline.data_pipeline", "mlblack.pipeline.data_pipeline_chain"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "按顺序选择第0列再标准化；基础DataPipelineComponent协议由具体组件消费。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["按顺序选择第0列再标准化；基础DataPipelineComponent协议由具体组件消费。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.data_pipeline" }]
+
+[[example]]
+id = "ml-usage-074-feature-space"
+title = "FeatureSpaceComponent：组件级使用示例"
+component_keys = ["mlblack.pipeline.feature_space"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "产出轻量特征空间描述，并保持候选和优化状态由各自所有者管理。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["产出轻量特征空间描述，并保持候选和优化状态由各自所有者管理。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.feature_space" }]
+
+[[example]]
+id = "ml-usage-075-conditional-primitive-feature"
+title = "ConditionalPrimitiveFeatureComponent：组件级使用示例"
+component_keys = ["mlblack.pipeline.conditional_primitive_feature"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "原始两列后附一列hinge特征，输出4×3；没有在数据管线里训练模型。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["原始两列后附一列hinge特征，输出4×3；没有在数据管线里训练模型。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.conditional_primitive_feature" }]
+
+[[example]]
+id = "ml-usage-076-numeric-batch-loader"
+title = "NumericBatchLoader：组件级使用示例"
+component_keys = ["mlblack.pipeline.numeric_batch_loader"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "第一批2个样本及其原始行号；schedule还负责可恢复的数据游标，不代替Solver代数。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["第一批2个样本及其原始行号；schedule还负责可恢复的数据游标，不代替Solver代数。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.numeric_batch_loader" }]
+
+[[example]]
+id = "ml-usage-077-numeric-batch-schedule"
+title = "NumericBatchSchedule：组件级使用示例"
+component_keys = ["mlblack.pipeline.numeric_batch_schedule"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "第一批2个样本及其原始行号；schedule还负责可恢复的数据游标，不代替Solver代数。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["第一批2个样本及其原始行号；schedule还负责可恢复的数据游标，不代替Solver代数。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.numeric_batch_schedule" }]
+
+[[example]]
+id = "ml-usage-078-row-dataset-stream"
+title = "RowDatasetStream：组件级使用示例"
+component_keys = ["mlblack.pipeline.row_dataset_stream"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "首批1条原始记录及其索引；没有强行把非数值列转成浮点。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["首批1条原始记录及其索引；没有强行把非数值列转成浮点。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.row_dataset_stream" }]
+
+[[example]]
+id = "ml-usage-079-tokenized-text-dataset-builder"
+title = "TokenizedTextDatasetBuilder：组件级使用示例"
+component_keys = ["mlblack.pipeline.tokenized_text_dataset_builder"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "文本先经显式词表数值化，再交付二维token特征和标签；词表是可保存状态。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["文本先经显式词表数值化，再交付二维token特征和标签；词表是可保存状态。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.tokenized_text_dataset_builder" }]
+
+[[example]]
+id = "ml-usage-080-vocabulary-tokenizer"
+title = "VocabularyTokenizer：组件级使用示例"
+component_keys = ["mlblack.numericizer.vocabulary_tokenizer"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "可保存/恢复词表的整数序列；新文本只能使用该词表规则。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["可保存/恢复词表的整数序列；新文本只能使用该词表规则。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.numericizer.vocabulary_tokenizer" }]
+
+[[example]]
+id = "ml-usage-081-target"
+title = "TargetCodec：组件级使用示例"
+component_keys = ["mlblack.numericizer.target"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "按固定类序编码为[1,0]并还原标签；没有从字符串排序猜业务类序。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["按固定类序编码为[1,0]并还原标签；没有从字符串排序猜业务类序。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.numericizer.target" }]
+
+[[example]]
+id = "ml-usage-082-default"
+title = "DefaultNumericizer：组件级使用示例"
+component_keys = ["mlblack.numericizer.default", "mlblack.numericizer.default_numericizer"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "原始行经明确schema/plan变成2×1数值监督视图；两个键是同一实现。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["原始行经明确schema/plan变成2×1数值监督视图；两个键是同一实现。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.numericizer.default" }]
+
+[[example]]
+id = "ml-usage-083-time-series-window"
+title = "TimeSeriesWindowConfig：组件级使用示例"
+component_keys = ["mlblack.pipeline.time_series_window"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "构建仅用过去滞后量的一步预测监督视图，并按时间留出验证区间。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["构建仅用过去滞后量的一步预测监督视图，并按时间留出验证区间。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.time_series_window" }]
+
+[[example]]
+id = "ml-usage-084-time-series-windowing"
+title = "TimeSeriesWindowingComponent：组件级使用示例"
+component_keys = ["mlblack.pipeline.time_series_windowing"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "构建仅用过去滞后量的一步预测监督视图，并按时间留出验证区间。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["构建仅用过去滞后量的一步预测监督视图，并按时间留出验证区间。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.time_series_windowing" }]
+
+[[example]]
+id = "ml-usage-085-seasonal-decomposition"
+title = "SeasonalDecompositionConfig：组件级使用示例"
+component_keys = ["mlblack.pipeline.seasonal_decomposition"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到真实趋势/季节/残差结果，再选择resid转成时间序列DataView；residual_target=False明确要求保留分解结果对象。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy；当前实现是移动平均趋势加周期相位均值的stl_like分解，不是statsmodels STL拟合。"]
+expected_outputs = ["得到真实趋势/季节/残差结果，再选择resid转成时间序列DataView；residual_target=False明确要求保留分解结果对象。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.seasonal_decomposition" }]
+
+[[example]]
+id = "ml-usage-086-stl-seasonal-decomposition"
+title = "STLSeasonalDecompositionComponent：组件级使用示例"
+component_keys = ["mlblack.pipeline.stl_seasonal_decomposition"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到真实趋势/季节/残差结果，再选择resid转成时间序列DataView；residual_target=False明确要求保留分解结果对象。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy；当前实现是移动平均趋势加周期相位均值的stl_like分解，不是statsmodels STL拟合。"]
+expected_outputs = ["得到真实趋势/季节/残差结果，再选择resid转成时间序列DataView；residual_target=False明确要求保留分解结果对象。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.stl_seasonal_decomposition" }]
+
+[[example]]
+id = "ml-usage-087-seasonal-decomposition-result"
+title = "SeasonalDecompositionResult：组件级使用示例"
+component_keys = ["mlblack.pipeline.seasonal_decomposition_result"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到真实趋势/季节/残差结果，再选择resid转成时间序列DataView；residual_target=False明确要求保留分解结果对象。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy；当前实现是移动平均趋势加周期相位均值的stl_like分解，不是statsmodels STL拟合。"]
+expected_outputs = ["得到真实趋势/季节/残差结果，再选择resid转成时间序列DataView；residual_target=False明确要求保留分解结果对象。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.seasonal_decomposition_result" }]
+
+[[example]]
+id = "ml-usage-088-model-conditioned-target"
+title = "ModelConditionedTargetComponent：组件级使用示例"
+component_keys = ["mlblack.pipeline.model_conditioned_target"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "以已准备的参考模型构造残差目标，并显式追加预测特征；参考模型不是在此管线偷偷训练出来。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["以已准备的参考模型构造残差目标，并显式追加预测特征；参考模型不是在此管线偷偷训练出来。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.model_conditioned_target" }]
+
+[[example]]
+id = "ml-usage-089-model-conditioned-target-builder"
+title = "ModelConditionedTargetBuilder：组件级使用示例"
+component_keys = ["mlblack.pipeline.model_conditioned_target_builder"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "以已准备的参考模型构造残差目标，并显式追加预测特征；参考模型不是在此管线偷偷训练出来。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["以已准备的参考模型构造残差目标，并显式追加预测特征；参考模型不是在此管线偷偷训练出来。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.model_conditioned_target_builder" }]
+
+[[example]]
+id = "ml-usage-090-model-conditioned-target-config"
+title = "ModelConditionedTargetConfig：组件级使用示例"
+component_keys = ["mlblack.pipeline.model_conditioned_target_config"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "以已准备的参考模型构造残差目标，并显式追加预测特征；参考模型不是在此管线偷偷训练出来。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["以已准备的参考模型构造残差目标，并显式追加预测特征；参考模型不是在此管线偷偷训练出来。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.model_conditioned_target_config" }]
+
+[[example]]
+id = "ml-usage-091-hive-query-source"
+title = "HiveQuerySource：组件级使用示例"
+component_keys = ["mlblack.pipeline.hive_query_source", "mlblack.pipeline.source.hive_query"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "从指定只读数据源装入数值视图；数据库驱动/访问凭据由部署提供，片段不携带真实秘密。"
+inputs = ["在可信Case内先准备对应只读连接、数据列和必要驱动；域名/桶名为占位配置。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["Hive需pyhive；JDBC需Java/jaydebeapi与驱动；S3需s3fs/pyarrow。只演示所选源的依赖，不代表已联网。"]
+expected_outputs = ["从指定只读数据源装入数值视图；数据库驱动/访问凭据由部署提供，片段不携带真实秘密。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.hive_query_source" }]
+
+[[example]]
+id = "ml-usage-092-jdbc-query-source"
+title = "JDBCQuerySource：组件级使用示例"
+component_keys = ["mlblack.pipeline.jdbc_query_source", "mlblack.pipeline.source.jdbc_query"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "从指定只读数据源装入数值视图；数据库驱动/访问凭据由部署提供，片段不携带真实秘密。"
+inputs = ["在可信Case内先准备对应只读连接、数据列和必要驱动；域名/桶名为占位配置。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["Hive需pyhive；JDBC需Java/jaydebeapi与驱动；S3需s3fs/pyarrow。只演示所选源的依赖，不代表已联网。"]
+expected_outputs = ["从指定只读数据源装入数值视图；数据库驱动/访问凭据由部署提供，片段不携带真实秘密。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.jdbc_query_source" }]
+
+[[example]]
+id = "ml-usage-093-s3-parquet-source"
+title = "S3ParquetSource：组件级使用示例"
+component_keys = ["mlblack.pipeline.s3_parquet_source", "mlblack.pipeline.source.s3_parquet"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "从指定只读数据源装入数值视图；数据库驱动/访问凭据由部署提供，片段不携带真实秘密。"
+inputs = ["在可信Case内先准备对应只读连接、数据列和必要驱动；域名/桶名为占位配置。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["Hive需pyhive；JDBC需Java/jaydebeapi与驱动；S3需s3fs/pyarrow。只演示所选源的依赖，不代表已联网。"]
+expected_outputs = ["从指定只读数据源装入数值视图；数据库驱动/访问凭据由部署提供，片段不携带真实秘密。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.pipeline.s3_parquet_source" }]
+
+[[example]]
+id = "ml-usage-094-binary-gate"
+title = "BinaryGate：组件级使用示例"
+component_keys = ["mlblack.conditional.binary_gate"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "返回按样本对齐的门控/hinge特征，不在组件中做训练调度。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["返回按样本对齐的门控/hinge特征，不在组件中做训练调度。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.conditional.binary_gate" }]
+
+[[example]]
+id = "ml-usage-095-soft-gate"
+title = "SoftGate：组件级使用示例"
+component_keys = ["mlblack.conditional.soft_gate"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "返回按样本对齐的门控/hinge特征，不在组件中做训练调度。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["返回按样本对齐的门控/hinge特征，不在组件中做训练调度。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.conditional.soft_gate" }]
+
+[[example]]
+id = "ml-usage-096-hinge-feature"
+title = "HingeFeature：组件级使用示例"
+component_keys = ["mlblack.conditional.hinge_feature"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "返回按样本对齐的门控/hinge特征，不在组件中做训练调度。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["返回按样本对齐的门控/hinge特征，不在组件中做训练调度。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.conditional.hinge_feature" }]
+
+[[example]]
+id = "ml-usage-097-one-hot-gate"
+title = "OneHotGate：组件级使用示例"
+component_keys = ["mlblack.conditional.one_hot_gate"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "返回按样本对齐的门控/hinge特征，不在组件中做训练调度。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["返回按样本对齐的门控/hinge特征，不在组件中做训练调度。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.conditional.one_hot_gate" }]
+
+[[example]]
+id = "ml-usage-098-conditional"
+title = "ConditionalPrimitive：组件级使用示例"
+component_keys = ["mlblack.conditional.conditional", "mlblack.conditional.primitives"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "抽象ConditionalPrimitive由BinaryGate具体实现消费；不直接实例化会抛NotImplementedError的基类。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["抽象ConditionalPrimitive由BinaryGate具体实现消费；不直接实例化会抛NotImplementedError的基类。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.conditional.conditional" }]
+
+[[example]]
+id = "ml-usage-099-conditional-primitive"
+title = "ConditionalPrimitiveSpec：组件级使用示例"
+component_keys = ["mlblack.conditional.conditional_primitive"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "保存带来源字段的条件原语描述；Spec不是transform实现，也不会自动训练。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["保存带来源字段的条件原语描述；Spec不是transform实现，也不会自动训练。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.conditional.conditional_primitive" }]
+
+[[example]]
+id = "ml-usage-100-composer"
+title = "PrimitiveFeatureComposer：组件级使用示例"
+component_keys = ["mlblack.conditional.composer", "mlblack.conditional.primitive_feature_composer"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "原2列后追加2列条件特征，4×4输出；两个Catalog键是同一类型。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["原2列后追加2列条件特征，4×4输出；两个Catalog键是同一类型。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.conditional.composer" }]
+
+[[example]]
+id = "ml-usage-101-route-then-formula-composer"
+title = "RouteThenFormulaComposer：组件级使用示例"
+component_keys = ["mlblack.conditional.route_then_formula_composer"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "返回路由号及分支描述；该对象本身不求解字符串公式、不训练分支。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["返回路由号及分支描述；该对象本身不求解字符串公式、不训练分支。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.conditional.route_then_formula_composer" }]
+
+[[example]]
+id = "ml-usage-102-shared-backbone-residual-composer"
+title = "SharedBackboneResidualComposer：组件级使用示例"
+component_keys = ["mlblack.conditional.shared_backbone_residual_composer"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "每行基础预测加所选分支残差；分支必须已具备predict，训练归属仍由正式Case决定。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["每行基础预测加所选分支残差；分支必须已具备predict，训练归属仍由正式Case决定。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.conditional.shared_backbone_residual_composer" }]
+
+[[example]]
+id = "ml-usage-103-function-pool-pipeline"
+title = "FunctionPoolPipeline：组件级使用示例"
+component_keys = ["mlblack.symbolic_pipeline.function_pool_pipeline"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "按明确的X/y建立初始函数空间和候选项；不是SolutionPool的候选区域。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["按明确的X/y建立初始函数空间和候选项；不是SolutionPool的候选区域。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.symbolic_pipeline.function_pool_pipeline" }]
+
+[[example]]
+id = "ml-usage-104-function-pool"
+title = "FunctionPool：组件级使用示例"
+component_keys = ["mlblack.symbolic_pipeline.function_pool", "mlblack.symbolic_pipeline.candidate_term"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "读取真实构建的函数项值和按先验相关度选出的最多3项；函数池不是搜索解池。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["读取真实构建的函数项值和按先验相关度选出的最多3项；函数池不是搜索解池。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.symbolic_pipeline.function_pool" }]
+
+[[example]]
+id = "ml-usage-105-function-space"
+title = "FunctionSpace：组件级使用示例"
+component_keys = ["mlblack.symbolic_pipeline.function_space", "mlblack.symbolic_pipeline.function_space_provider"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "FunctionSpaceProvider协议由真实FunctionPoolPipeline实现；空间保留特征名、函数项与注册表摘要。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["FunctionSpaceProvider协议由真实FunctionPoolPipeline实现；空间保留特征名、函数项与注册表摘要。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.symbolic_pipeline.function_space" }]
+
+[[example]]
+id = "ml-usage-106-dynamic-function-pool-pipeline"
+title = "DynamicFunctionPoolPipeline：组件级使用示例"
+component_keys = ["mlblack.symbolic_pipeline.dynamic_function_pool_pipeline"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "根据明确残差与预算信号产生动态函数池更新，不替代Adapter的候选接纳。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["根据明确残差与预算信号产生动态函数池更新，不替代Adapter的候选接纳。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.symbolic_pipeline.dynamic_function_pool_pipeline" }]
+
+[[example]]
+id = "ml-usage-107-primitive-registry"
+title = "PrimitiveRegistry：组件级使用示例"
+component_keys = ["mlblack.symbolic_pipeline.primitive_registry", "mlblack.symbolic_pipeline.unary_primitive", "mlblack.symbolic_pipeline.pair_grammar_rule"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "显式注册一个一元与一个二元原语及其数值语义；正式grammar的回调参数须与builder协议匹配。"
+inputs = ["使用下方公开合成数据；不读取业务文件或启动训练。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy与统一三仓环境。"]
+expected_outputs = ["显式注册一个一元与一个二元原语及其数值语义；正式grammar的回调参数须与builder协议匹配。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.symbolic_pipeline.primitive_registry" }]
+
+[[example]]
+id = "ml-usage-108-mlp-regression"
+title = "MLP regression preset：组件级使用示例"
+component_keys = ["mlblack.preset.mlp_regression"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。"
+inputs = ["在正式Case的build_solver中准备下方形状的数据；本片段只演示装配，不开训练循环。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy及三仓；neural/temporal/tabnet预设实际求值还需对应Torch Provider，L0设备授权由Project提供。"]
+expected_outputs = ["得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.preset.mlp_regression" }]
+
+[[example]]
+id = "ml-usage-109-arima-sarimax-forecast"
+title = "ARIMA/SARIMAX forecast preset：组件级使用示例"
+component_keys = ["mlblack.preset.arima_sarimax_forecast"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。"
+inputs = ["在正式Case的build_solver中准备下方形状的数据；本片段只演示装配，不开训练循环。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy及三仓；neural/temporal/tabnet预设实际求值还需对应Torch Provider，L0设备授权由Project提供。"]
+expected_outputs = ["得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.preset.arima_sarimax_forecast" }]
+
+[[example]]
+id = "ml-usage-110-baseline-forecast-search"
+title = "baseline forecast search preset：组件级使用示例"
+component_keys = ["mlblack.preset.baseline_forecast_search"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。"
+inputs = ["在正式Case的build_solver中准备下方形状的数据；本片段只演示装配，不开训练循环。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy及三仓；neural/temporal/tabnet预设实际求值还需对应Torch Provider，L0设备授权由Project提供。"]
+expected_outputs = ["得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.preset.baseline_forecast_search" }]
+
+[[example]]
+id = "ml-usage-111-linear-autoregressive-forecast"
+title = "linear autoregressive forecast preset：组件级使用示例"
+component_keys = ["mlblack.preset.linear_autoregressive_forecast"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。"
+inputs = ["在正式Case的build_solver中准备下方形状的数据；本片段只演示装配，不开训练循环。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy及三仓；neural/temporal/tabnet预设实际求值还需对应Torch Provider，L0设备授权由Project提供。"]
+expected_outputs = ["得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.preset.linear_autoregressive_forecast" }]
+
+[[example]]
+id = "ml-usage-112-orthogonal-logistic-classification"
+title = "orthogonal logistic classification preset：组件级使用示例"
+component_keys = ["mlblack.preset.orthogonal_logistic_classification"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。"
+inputs = ["在正式Case的build_solver中准备下方形状的数据；本片段只演示装配，不开训练循环。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy及三仓；neural/temporal/tabnet预设实际求值还需对应Torch Provider，L0设备授权由Project提供。"]
+expected_outputs = ["得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.preset.orthogonal_logistic_classification" }]
+
+[[example]]
+id = "ml-usage-113-tabular-tabnet-classification"
+title = "tabular TabNet classification preset：组件级使用示例"
+component_keys = ["mlblack.preset.tabular_tabnet_classification"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。"
+inputs = ["在正式Case的build_solver中准备下方形状的数据；本片段只演示装配，不开训练循环。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy及三仓；neural/temporal/tabnet预设实际求值还需对应Torch Provider，L0设备授权由Project提供。"]
+expected_outputs = ["得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.preset.tabular_tabnet_classification" }]
+
+[[example]]
+id = "ml-usage-114-tabular-tabnet-regression"
+title = "tabular TabNet regression preset：组件级使用示例"
+component_keys = ["mlblack.preset.tabular_tabnet_regression"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。"
+inputs = ["在正式Case的build_solver中准备下方形状的数据；本片段只演示装配，不开训练循环。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy及三仓；neural/temporal/tabnet预设实际求值还需对应Torch Provider，L0设备授权由Project提供。"]
+expected_outputs = ["得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.preset.tabular_tabnet_regression" }]
+
+[[example]]
+id = "ml-usage-115-temporal-deepar-forecast"
+title = "temporal DeepAR forecast preset：组件级使用示例"
+component_keys = ["mlblack.preset.temporal_deepar_forecast"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。"
+inputs = ["在正式Case的build_solver中准备下方形状的数据；本片段只演示装配，不开训练循环。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy及三仓；neural/temporal/tabnet预设实际求值还需对应Torch Provider，L0设备授权由Project提供。"]
+expected_outputs = ["得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.preset.temporal_deepar_forecast" }]
+
+[[example]]
+id = "ml-usage-116-temporal-lstm-forecast"
+title = "temporal LSTM forecast preset：组件级使用示例"
+component_keys = ["mlblack.preset.temporal_lstm_forecast"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。"
+inputs = ["在正式Case的build_solver中准备下方形状的数据；本片段只演示装配，不开训练循环。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy及三仓；neural/temporal/tabnet预设实际求值还需对应Torch Provider，L0设备授权由Project提供。"]
+expected_outputs = ["得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.preset.temporal_lstm_forecast" }]
+
+[[example]]
+id = "ml-usage-117-temporal-nbeats-forecast"
+title = "temporal N-BEATS forecast preset：组件级使用示例"
+component_keys = ["mlblack.preset.temporal_nbeats_forecast"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。"
+inputs = ["在正式Case的build_solver中准备下方形状的数据；本片段只演示装配，不开训练循环。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy及三仓；neural/temporal/tabnet预设实际求值还需对应Torch Provider，L0设备授权由Project提供。"]
+expected_outputs = ["得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.preset.temporal_nbeats_forecast" }]
+
+[[example]]
+id = "ml-usage-118-temporal-patchtst-forecast"
+title = "temporal PatchTST forecast preset：组件级使用示例"
+component_keys = ["mlblack.preset.temporal_patchtst_forecast"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。"
+inputs = ["在正式Case的build_solver中准备下方形状的数据；本片段只演示装配，不开训练循环。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy及三仓；neural/temporal/tabnet预设实际求值还需对应Torch Provider，L0设备授权由Project提供。"]
+expected_outputs = ["得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.preset.temporal_patchtst_forecast" }]
+
+[[example]]
+id = "ml-usage-119-temporal-tcn-forecast"
+title = "temporal TCN forecast preset：组件级使用示例"
+component_keys = ["mlblack.preset.temporal_tcn_forecast"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。"
+inputs = ["在正式Case的build_solver中准备下方形状的数据；本片段只演示装配，不开训练循环。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy及三仓；neural/temporal/tabnet预设实际求值还需对应Torch Provider，L0设备授权由Project提供。"]
+expected_outputs = ["得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.preset.temporal_tcn_forecast" }]
+
+[[example]]
+id = "ml-usage-120-temporal-tft-forecast"
+title = "temporal TFT forecast preset：组件级使用示例"
+component_keys = ["mlblack.preset.temporal_tft_forecast"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。"
+inputs = ["在正式Case的build_solver中准备下方形状的数据；本片段只演示装配，不开训练循环。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy及三仓；neural/temporal/tabnet预设实际求值还需对应Torch Provider，L0设备授权由Project提供。"]
+expected_outputs = ["得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.preset.temporal_tft_forecast" }]
+
+[[example]]
+id = "ml-usage-121-temporal-transformer-forecast"
+title = "temporal Transformer forecast preset：组件级使用示例"
+component_keys = ["mlblack.preset.temporal_transformer_forecast"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。"
+inputs = ["在正式Case的build_solver中准备下方形状的数据；本片段只演示装配，不开训练循环。", "组件级片段不代替完整Project入口；先核对下方装配位置。"]
+steps = ["准备本节显式输入。", "在所述Case职责位置调用该组件。", "检查返回值及依赖；需要训练时交回正式Project运行。"]
+dependencies = ["NumPy及三仓；neural/temporal/tabnet预设实际求值还需对应Torch Provider，L0设备授权由Project提供。"]
+expected_outputs = ["得到已装配LearningSolver门面；实际fit、资源授权、检查点与结果发布由正式Case/Project运行。", "尚无本发布完整训练的执行收据，目录不自动运行此片段。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.preset.temporal_transformer_forecast" }]

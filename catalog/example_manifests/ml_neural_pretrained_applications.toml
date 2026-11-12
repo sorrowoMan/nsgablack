@@ -1,0 +1,53 @@
+[[example]]
+id="ml-neural-hf-sft"
+title="本地HF/PEFT的完整有限fit · 正式LoRA ZIP交付"
+component_keys=["mlblack.integration.hf_sft"]
+kind="documentation"
+working_directory="mlblack"
+summary="复用framework_assistant_sft完整Project，显式本地模型/真实target模块、会话数据、文件预检、薄builder及正式结果读取。"
+inputs=["现成本地HF causal LM/tokenizer/chat template，明确模块名，完整framework_assistant_sft副本与原CPU L0。", "mlblack[sft]可选依赖；示例JSONL只检验输入机制，不构成质量训练集。"]
+steps=["配置local_files_only并拒绝缺失路径/模块名，保存完整Case文件和结果入口。", "变体只增加fit内部optimizer step，不增加Solver generation；完成产物由原finalization发布。"]
+dependencies=["三仓、Torch、transformers、PEFT、accelerate、safetensors；不下载、不启用4bit/GPU。"]
+expected_outputs=["正式训练均值loss、optimizer_steps、best_model_ref的LoRA ZIP，模型/数据/模板摘要由原manifest保留；没有本轮训练或认知质量收据。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_NEURAL_PRETRAINED_APPLICATIONS_CN.md",section="neural.hf_sft"}]
+
+[[example]]
+id="ml-neural-pretrained-bridge-boundary"
+title="预训练三桥的真实操作与未闭合Case边界 · 迁移说明"
+component_keys=["mlblack.integration.pretrained_tokenizer_bridge", "mlblack.integration.pretrained_model_bridge", "mlblack.integration.pretrained_checkpoint_mapper"]
+kind="documentation"
+usage_status="migration_reference"
+working_directory="mlblack"
+summary="完整展示惰性本地桥和显式小张量名映射，说明shape mismatch保留旧值、flat参数不等于Codec布局，以及缺正式任意HF候选/Provider交接。"
+inputs=["已准备本地HF文件与匹配依赖；真实目标模型和张量映射，不从Catalog页面自动load。"]
+steps=["只构造惰性桥读取描述，明确encode/forward/generate的实际数据边界。", "映射工具返回matched/missing/shape_mismatch供调用者检查，不冒称框架步骤事务或通用训练Case。"]
+dependencies=["transformers与PyTorch可选依赖；本轮无模型加载、映射执行或网络。"]
+expected_outputs=["当前为迁移参考，不能表示任意HF模型已进入Pool/Unit/正式Artifact链；已有HF SFT Case和固定tiny模型是明确替代。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_NEURAL_PRETRAINED_APPLICATIONS_CN.md",section="neural.pretrained.bridges"}]
+
+[[example]]
+id="ml-neural-transformer-structural-space"
+title="八维Transformer结构向量 · 真实Spec诊断与边界"
+component_keys=["mlblack.nsgablack_neural.transformer_spec_search_space"]
+kind="documentation"
+working_directory="mlblack"
+summary="完整只读配置工厂校验八维坐标并调用公开Spec映射，解释离散取余、合法head整除与LoRA规格，不触发内层fit。"
+inputs=["当前三仓、NumPy；固定分类vocab8/maxlen4，结构读取不需要权重或训练。"]
+steps=["真实decode返回Spec描述，变体.75展示另一结构；模型计算另回正式文本Case。"]
+dependencies=["三仓与NumPy；实际后端计算所需依赖不由该Spec查询验证。"]
+expected_outputs=["图规格描述而非loss/模型Artifact；明确1端点回到首选，不能当连续单调参数。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_NEURAL_PRETRAINED_APPLICATIONS_CN.md",section="neural.transformer.space"}]
+
+[[example]]
+id="ml-neural-transformer-search-boundary"
+title="TransformerSpecSearchProblem仍直接内fit · 正式嵌套迁移说明"
+component_keys=["mlblack.nsgablack_neural.transformer_spec_search"]
+kind="documentation"
+usage_status="migration_reference"
+working_directory="mlblack"
+summary="明确旧evaluate_detailed直接构造trainer.fit，不具备当前CaseRuntime子grant/Artifact交接；提供固定模型与正式嵌套骨架的真实替代。"
+inputs=["当前统一Project/Case/L0契约与实际源码；不调用旧evaluate或伪造两数字成功。"]
+steps=["读取结构/内步数声明，列出迁移完成条件，参考cross_framework的正式子Case请求。"]
+dependencies=["只读说明无需模型执行；真正结构搜索仍需新增明确内Case graph spec输入。"]
+expected_outputs=["迁移参考/未执行；不能据旧测试或直接fit称正式跨Case结构搜索已支持。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_NEURAL_PRETRAINED_APPLICATIONS_CN.md",section="neural.transformer.legacy_problem"}]

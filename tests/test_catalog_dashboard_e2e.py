@@ -9,12 +9,14 @@ import tempfile
 import time
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
 from nsgablack.catalog import dashboard_page as page_protocol
 from nsgablack.catalog import dashboard_shell as shell_protocol
-from nsgablack.catalog.dashboard import build_streamlit_command
+from nsgablack.catalog.dashboard import build_streamlit_command, _build_deep_link_query, _read_query_params
 
 sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
 
@@ -121,23 +123,24 @@ def _wait_for_selection(page, selected_key: str, *, timeout_ms: int = 60000) -> 
     last_text = ""
     while time.time() < deadline:
         page.wait_for_timeout(1000)
-        last_text = page.locator("body").inner_text()
-        if selected_key in last_text:
+        # The result list already contains many keys. Only a matching detail
+        # header and canonical URL prove that the selection actually changed.
+        detail = page.locator(".st-key-catalog_detail .catalog-entry-key")
+        last_text = detail.inner_text() if detail.count() else ""
+        selected_values = parse_qs(urlsplit(page.url).query).get("selected", [])
+        if last_text.strip() == selected_key and selected_values == [selected_key]:
             return
     raise AssertionError(f"catalog dashboard did not reach selection {selected_key!r}.\nLast body text:\n{last_text[:4000]}")
 
 
 def _click_button_by_text(page, label: str) -> None:
-    labels = page.locator("button").all_text_contents()
-    try:
-        index = labels.index(label)
-    except ValueError as exc:
-        raise AssertionError(f"catalog dashboard button not found: {label!r}; buttons={labels[:20]}") from exc
-    page.locator("button").nth(index).click()
+    # Streamlit can replace buttons during a rerun; resolve the intended
+    # accessible button at click time instead of retaining a stale DOM index.
+    page.get_by_role("button", name=label, exact=True).click()
 
 
 def _results_expander_is_open(page) -> bool:
-    details = page.locator('[data-testid="stExpander"]').first.locator("details").first
+    details = page.locator('.st-key-catalog_results [data-testid="stExpander"]').first.locator("details").first
     return details.get_attribute("open") is not None
 
 
@@ -201,10 +204,44 @@ def test_catalog_ui_shared_page_protocol_sections_e2e():
 
             assert _results_expander_is_open(page) is False
             assert page.locator(f"#{page_protocol.FILTER_SECTION_ID}").inner_text().startswith("FILTER")
-            assert page.locator(f"#{page_protocol.RESULT_SECTION_ID}").inner_text().startswith("RESULTS")
-            assert page.locator(f"#{page_protocol.DETAIL_SECTION_ID}").inner_text().startswith("DETAIL")
+            assert page.locator(f"#{page_protocol.RESULT_SECTION_ID}").inner_text().startswith("组件")
+            assert page.locator(".catalog-entry-title").inner_text() == "NSGA2Adapter"
             assert all(page.locator(f"#{row_id}").count() == 1 for row_id in _CONTROL_ROW_IDS)
 
+            browser.close()
+
+
+def test_catalog_ui_concept_filter_and_guidance_e2e():
+    filters = {"concepts": ("替换采集函数",), "role": ("acquisition",)}
+    link = _build_deep_link_query(
+        profile="framework-core", scope="framework", kind="all", query="替换采集函数",
+        field="all", selected="tool.bo_acquisition", project_path="", include_global=False,
+        db_path="", source_mode="off", sort_by="default", sort_dir="asc",
+        detail_tab="interface", open_relations="", column_mode="standard", page_size=50,
+        results_collapse="expanded", field_filters=filters,
+    )
+    with _running_catalog_ui("--kind", "all", "--source-mode", "off") as base_url:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(channel="msedge", headless=True)
+            page = browser.new_page(viewport={"width": 1600, "height": 1400})
+            page.goto(base_url + link, wait_until="load", timeout=120000)
+            _wait_for_sections(page)
+            _wait_for_selection(page, "tool.bo_acquisition")
+            page.get_by_text("配方结构状态", exact=True).wait_for(state="visible", timeout=60000)
+            body = page.locator("body").inner_text()
+            for label in ("LowerConfidenceBound", "支持边界", "运行方法", "装配配置", "仅签名检查"):
+                assert label in body, body[-5000:]
+            assert "真实求值" in body or "真实目标" in body or "原目标" in body
+            params = {key: values[-1] for key, values in parse_qs(urlsplit(page.url).query).items()}
+            _, restored = _read_query_params(SimpleNamespace(query_params=params))
+            assert restored == filters
+            page.reload(wait_until="load")
+            _wait_for_selection(page, "tool.bo_acquisition")
+            page.get_by_text("配方结构状态", exact=True).wait_for(state="visible", timeout=60000)
+            assert "仅签名检查" in page.locator("body").inner_text()
+            screenshot = _ROOT / ".pytest_cache" / "catalog-guidance.png"
+            screenshot.parent.mkdir(exist_ok=True)
+            page.screenshot(path=str(screenshot), full_page=True)
             browser.close()
 
 

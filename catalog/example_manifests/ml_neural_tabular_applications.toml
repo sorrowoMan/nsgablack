@@ -1,0 +1,12 @@
+[[example]]
+id = "ml-neural-tabular-presets"
+title = "MLP与TabNet任务装配 · 实际Codec/Provider/Artifact链"
+component_keys = ["mlblack.codec.neural_graph", "mlblack.codec.neural_tabular_tabnet_spec", "mlblack.preset.mlp_regression", "mlblack.preset.tabular_tabnet_regression", "mlblack.preset.tabular_tabnet_classification", "mlblack.problem.tabular_neural_regression", "mlblack.problem.tabular_neural_classification", "mlblack.integration.nsgablack_gradient", "mlblack.provider.torch_evaluation", "mlblack.core.neural_graph_artifact", "mlblack.core.torch_model_artifact"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "完整Case按任务选择MLP或TabNet，真实连接神经Codec、Problem、梯度Provider与正式模型Artifact；含显式TorchModelArtifact变体。"
+inputs = ["catalog_codec_demo独立完整Project及原L0/规范入口；当前三仓、NumPy、CPU torch>=2.0。", "8行训练/4行验证/两特征，连续回归或显式0/1类别。"]
+steps = ["保存完整配置、数据、神经工厂和薄builder，通过正规preset/build_gradient_trainer执行。", "变体实际改变模型/Head/Problem/Artifact类型，结果薄入口只调用原execute_project一次。"]
+dependencies = ["blackbase、nsgablack、mlblack、NumPy、PyTorch；没有模型账号或权重下载。"]
+expected_outputs = ["本次results/neural.json含已评估incumbent的原始目标、训练/验证指标、Provider证据及模型引用；NPZ载荷和typed metadata走正式发布。", "仅源码核对，不承诺训练效果或optimizer恢复，不将规格和Provider当独立算法。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_NEURAL_TABULAR_APPLICATIONS_CN.md", section="neural.tabular"}, {path="nsgablack/docs/catalog_usage/ML_NEURAL_TABULAR_APPLICATIONS_CN.md", section="neural.tabular.run"}]

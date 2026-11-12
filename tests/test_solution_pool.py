@@ -90,7 +90,10 @@ def test_pool_stores_raw_feedback_and_repair_preserves_previous_version():
     ),), violations=[0.])
     refs = p.put(batch((5.,), ("x",)), stage="accepted", feedback=feedback)
     data = p.snapshots.read_verified(p._record(refs[0]).snapshot).data
-    assert data["raw_feedback"] == {"objectives": [[5.]], "violations": [4.]}
+    assert data["raw_feedback"]["objectives"] == [[5.]]
+    assert data["raw_feedback"]["violations"] == [4.]
+    assert p.read_raw_feedback_info(refs)[0]["raw_evaluation"] == {
+        "objectives": [5.], "constraint_violation": 4.}
 
 
 def test_empty_selection_and_exhausted_input_do_not_invent_candidates():

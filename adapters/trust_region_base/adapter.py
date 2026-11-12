@@ -24,6 +24,7 @@ class TrustRegionBaseAdapter(UnitBackedAdapter):
     - candidate propose loop
     - state roundtrip
     """
+    operation_methods = {"initializer": "initialize", "repair": "repair"}
     accepts_proposal_replacement = True
     pool_input_modes = ("initialize",)
     supports_pool_restart = True
@@ -51,8 +52,12 @@ class TrustRegionBaseAdapter(UnitBackedAdapter):
         priority: int = 0,
         random_seed: Optional[int] = None,
         unit_binding=None,
+        initializer=None,
+        repair=None,
     ) -> None:
         super().__init__(name=name, priority=priority, unit_binding=unit_binding)
+        self.set_initializer(initializer)
+        self.set_repair(repair)
         self.cfg = config
         self._rng = np.random.default_rng(random_seed)
         self._center: Optional[np.ndarray] = None
@@ -65,6 +70,7 @@ class TrustRegionBaseAdapter(UnitBackedAdapter):
 
     def setup(self, control: Any) -> None:
         self._rng = self.create_local_rng(control, seed=getattr(self.cfg, "random_seed", None))
+        self.seed_operator_bindings(self._rng)
         self.restart_search(control, {})
 
     def default_pool_input_count(self):
@@ -222,7 +228,7 @@ class TrustRegionBaseAdapter(UnitBackedAdapter):
         self._load_extra_state(state)
 
     def _init_center(self, control: Any, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
-        return control.init_candidate(context)
+        return self.init_candidate(control, context)
 
     def _extract_bounds(self, control: Any) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         bounds = getattr(getattr(control, "problem", None), "bounds", None)

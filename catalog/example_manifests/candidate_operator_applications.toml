@@ -1,0 +1,38 @@
+[[example]]
+id = "candidate-operator-application-representation.polynomial_mutation"
+title = "有边界连续变量的多项式扰动 · 正式 Case 与具名算子变体"
+component_keys = ["representation.polynomial_mutation"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "在 catalog_recipes/composite 的真实 NSGA2 原生变化路径使用 PolynomialMutation；移除会遮住 pipeline 的直属变异绑定，并区分交叉、变异和独立问题修复。"
+inputs = ["当前 blackbase、nsgablack、NumPy 与独立 catalog_recipes Project 副本；保留二维平方和 Problem、运行入口和 Project L0/default 组。", "按正文替换 pipeline 工厂、薄 builder，新增观察插件与包导出；变体给两个真实叶 Adapter 选择不同具名变异算子。"]
+steps = ["父代由各 NSGA2 选出，先原生交叉再多项式变异；正常新提案预算裁剪后由 Solver 单独修复并送评。", "通过正式 Project 运行指定 Case；观察器读取保留的真实 owner 最终成员与 raw feedback，不靠数值猜身份。"]
+dependencies = ["blackbase、nsgablack 与 NumPy；不需要外部模型或 GPU。"]
+expected_outputs = ["本次 cases/composite/results/operators.json 中 a/b 各四个二维最终成员，原始目标一列为平方和、违反量为零。", "概率变异不保证每行变化；成员不是 accepted 历史或 Solver 单点 best，静态核对不构成运行成功收据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/CANDIDATE_OPERATOR_APPLICATIONS_CN.md", section = "representation.polynomial_mutation" }]
+
+[[example]]
+id = "candidate-operator-application-representation.sbx_crossover"
+title = "先重组双亲，再对孩子变异 · 原生消费与双子交付"
+component_keys = ["representation.sbx_crossover"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "在现有 catalog_recipes/composite 为 NSGA2 配置 SBX，解释双亲到双子接口与原生只取一个孩子的消费位置；变体用完整 change 交付两个独立孩子。"
+inputs = ["blackbase、nsgablack、NumPy 与独立 catalog_recipes Project 副本；保留平方和 Problem、L0/default 组、Case 运行入口。", "按正文完整接线 pipeline、builder、报告插件；变体给完整 callback 定义与两个实际 NSGA2 的 set_change 挂载。"]
+steps = ["SBX crossover 接收两个一维父代并返回两个孩子，不能当单点 mutator；原生路径随机取一个孩子再变异。", "完整 change 变体保留逐孩子 ChangeResult/source_refs 和 max_outputs，不叠加旧交叉/变异；独立问题修复仍由 Solver 调度。"]
+dependencies = ["blackbase、nsgablack 与 NumPy；本地 CPU 正式 Project。"]
+expected_outputs = ["本次 operators.json 区分两个独立 owner 的四成员表、原始平方和目标与违反量。", "SBX 返回两名孩子不自动翻倍 offspring_size；变体也服从四后代预算；不以随机数值宣称性能改进。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/CANDIDATE_OPERATOR_APPLICATIONS_CN.md", section = "representation.sbx_crossover" }]
+
+[[example]]
+id = "candidate-operator-application-representation.parallel_repair"
+title = "有限资源内批量执行问题修复 · 盒约束与权重约束"
+component_keys = ["representation.parallel_repair"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "在 catalog_recipes/composite 的独立 ProblemRepair 阶段配置 ParallelRepair，显式申请两线程、保序读取输出并严格传播失败；变体同步修改 Problem 与单纯形投影。"
+inputs = ["当前 blackbase、nsgablack、NumPy 和独立 catalog_recipes Project 副本；按正文将既有 composite 资源请求设为两线程。", "替换 pipeline 与 builder、追加独立报告插件；变体给完整 WeightProblem 与 ProjectionRepair 工厂，不凭 clip 假装满足总和约束。"]
+steps = ["Solver 预算裁剪后调用 pipeline.repair_batch，inner 对每行修复；小批串行，足够批量最多两线程；提案函数不重复修复。", "strict 失败传播，last_batch_errors 只属于最近一次非空批次；观察器在正式结束与发布阶段读取/写出脱离结果。"]
+dependencies = ["blackbase、nsgablack、NumPy 与 Project 明确的两线程 L0 授权；不调用模型或额外资源服务。"]
+expected_outputs = ["本次 operators.json 保存各 owner 最终成员、raw_objectives/raw_violations 和最近批次错误；检查边界与原始目标公式。", "权重变体还检查非负、总和约为一及 g<=0 的真实约束语义；成员、历史、incumbent 分开，不承诺并行更快或把旧文件称作新运行收据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/CANDIDATE_OPERATOR_APPLICATIONS_CN.md", section = "representation.parallel_repair" }]

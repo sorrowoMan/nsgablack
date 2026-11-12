@@ -12,8 +12,12 @@ from .collections import (
     RegionUnit, ModelSearchUnit, ArchiveUnit, NeighborhoodUnit,
 )
 from .structures import CandidateUnit, SearchNodeUnit, ParetoLabelUnit, CANDIDATE_SCHEMA, SEARCH_NODE_SCHEMA, PARETO_LABEL_SCHEMA
+from .bayesian import BayesianOptimizationUnit
+from .cmaes import CMAUnit
+from .map_elites import MapElitesUnit
 
 __all__ = [
+    "BayesianOptimizationUnit", "CMAUnit", "MapElitesUnit",
     "PopulationChange",
     "UnitInputSpec", "UnitInputs",
     "UnitFeature", "FeatureUnit", "FeatureContractError", "POPULATION_DISTANCES", "SELECTION_RANKING",

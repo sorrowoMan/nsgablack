@@ -1,4 +1,4 @@
-"""Algorithm-pipeline construction for compound search structures.
+"""Explicit construction for Adapter-owned compound search structures.
 
 Builders are stateless. They transform explicit construction inputs; scheduling,
 selection, acceptance and objective/gradient evaluation stay in Adapters.
@@ -6,7 +6,8 @@ selection, acceptance and objective/gradient evaluation stay in Adapters.
 from __future__ import annotations
 
 from dataclasses import fields
-from typing import Any, Mapping
+from typing import Any
+from collections.abc import Mapping
 import numpy as np
 from blackbase.types import UnknownState
 from ..units.collections import (
@@ -18,6 +19,8 @@ from ..units.collections import (
 
 def encode_unit_value(value: Any) -> Any:
     """Closed data codec: no pickle, arbitrary services or object-graph copies."""
+    if value is None or type(value) in (str, bool, int, float):
+        return value
     if isinstance(value, UnknownState):
         return {"type": "semantic", "value": value.as_dict()}
     if isinstance(value, bytes):
@@ -79,6 +82,24 @@ class StructureUnitBuilder:
     def restore(self, payload):
         # No build(), fitting, geometry sampling or Provider side effects here.
         return self.unit_type(**{k: decode_unit_value(v) for k, v in payload.items()})
+
+    def _native_step_codec_available(self):
+        # A custom persistent codec may carry extra semantics. Inherited native
+        # hooks must not silently bypass it, including instance monkeypatches.
+        return all(getattr(getattr(self, name), "__func__", None) is original
+                   and original.__code__ is code
+                   for name, original, code in _STRUCTURE_PERSISTENT_CODECS)
+
+    def _dump_step(self, unit):
+        return {f.name: getattr(unit, f.name) for f in fields(unit)}
+
+    def _restore_step(self, payload):
+        return self.unit_type(**payload)
+
+
+_STRUCTURE_PERSISTENT_CODECS = tuple(
+    (name, method, method.__code__) for name, method in (
+        ("dump", StructureUnitBuilder.dump), ("restore", StructureUnitBuilder.restore)))
 
 
 class TrajectoryUnitBuilder(StructureUnitBuilder):

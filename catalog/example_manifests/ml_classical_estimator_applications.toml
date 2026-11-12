@@ -1,0 +1,12 @@
+[[example]]
+id="ml-classical-estimator-ridge"
+title="Estimator配置搜索与真实fit · 已拟合系数/只读恢复/正式交付"
+component_keys=["mlblack.codec.estimator_spec", "mlblack.codec.tunable_parameter", "mlblack.model.estimator_spec", "mlblack.model.fitted_estimator", "mlblack.representation.estimator_spec", "mlblack.problem.supervised_estimator_fit", "mlblack.problem.supervised_estimator_fit_regression"]
+kind="documentation"
+working_directory="mlblack"
+summary="完整NumPy岭估计器/Codec/回归Problem/搜索Adapter/薄builder，明确fit超参数与模型权重的区别，附固定配置变体。"
+inputs=["完整catalog_codec_demo副本、三仓和NumPy；训练16行验证8行两特征。"]
+steps=["按完整Case文件装配一维ridge搜索，原Problem负责每候选fit。", "保存反馈系数与JSON模型蓝图，只读restore不重新拟合；正式Project运行一次读取结果。"]
+dependencies=["三仓、NumPy；不需要sklearn/网络/模型下载。"]
+expected_outputs=["目标valid.mse和零复杂度项、训练loss、fit生命周期、三系数模型Artifact引用；本轮未拟合或执行算法。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_CLASSICAL_ESTIMATOR_APPLICATIONS_CN.md",section="classical.estimator.ridge"}, {path="nsgablack/docs/catalog_usage/ML_CLASSICAL_ESTIMATOR_APPLICATIONS_CN.md",section="classical.estimator.run"}]

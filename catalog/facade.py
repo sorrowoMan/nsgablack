@@ -9,16 +9,20 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from nsgablack.project.catalog import find_project_root, load_project_catalog
 
+from .assembly_relations import build_assembly_neighbor_sections
 from .contract_relations import build_contract_neighbor_sections
 from .fingerprint import catalog_entries_digest
-from .registry import Catalog, CatalogEntry, get_catalog, get_source_catalog
+from .guidance import GUIDANCE_FIELDS, guidance_payload
+from .registry import Catalog, CatalogEntry, get_source_catalog, _enrich_catalog_entries
 from .store import catalog_db_config_backend, catalog_db_config_enabled, catalog_db_config_info, catalog_db_config_mode, resolve_catalog_store
-from .usage import build_usage_profile, enrich_context_contracts, enrich_usage_contracts
+from .usage import build_usage_profile
 
 _CATALOG_FIELD_ORDER: tuple[str, ...] = (
     "key",
     "title",
     "kind",
+    "role",
+    "concepts",
     "import_path",
     "module",
     "symbol",
@@ -38,7 +42,11 @@ _CATALOG_FIELD_ORDER: tuple[str, ...] = (
     "minimal_wiring",
     "required_companions",
     "config_keys",
+    "operations",
+    "boundaries",
     "example_entry",
+    "wiring_status",
+    "wiring_notes",
 )
 
 _FIELD_GROUPS: dict[str, tuple[str, ...]] = {
@@ -54,7 +62,7 @@ _FIELD_GROUPS: dict[str, tuple[str, ...]] = {
         "phase_in",
         "phase_out",
     ),
-    "usage": ("use_when", "minimal_wiring", "required_companions", "config_keys", "example_entry"),
+    "usage": ("role", "concepts", "use_when", "minimal_wiring", "required_companions", "config_keys", "operations", "boundaries", "example_entry", "wiring_status", "wiring_notes"),
 }
 
 _DEFAULT_FACET_FIELDS: dict[str, tuple[str, ...]] = {
@@ -68,6 +76,10 @@ _DEFAULT_FACET_FIELDS: dict[str, tuple[str, ...]] = {
     "tool": ("tags", "companions"),
     "doc": ("tags",),
     "example": ("tags", "companions"),
+}
+_DEFAULT_FACET_FIELDS = {
+    kind: ("concepts", "role", *fields)
+    for kind, fields in _DEFAULT_FACET_FIELDS.items()
 }
 
 
@@ -356,7 +368,7 @@ def _load_catalog_context(
     normalized_scope = _normalize_scope(scope)
     if normalized_scope == "framework":
         return CatalogContext(
-            catalog=get_catalog(profile=profile),
+            catalog=get_source_catalog(profile=profile),
             scope="framework",
             profile=normalized_profile,
             project_root=None,
@@ -519,6 +531,10 @@ def _entry_values(entry: CatalogEntry, field_name: str) -> tuple[str, ...]:
     field = str(field_name or "").strip().lower()
     if not field:
         return ()
+    if field in GUIDANCE_FIELDS:
+        return _normalize_strings(guidance_payload(entry)[field])
+    if field in {"wiring_status", "wiring_notes"}:
+        return _normalize_strings(getattr(build_usage_profile(entry), field))
     if field == "key":
         return (entry.key,)
     if field in {"title", "name"}:
@@ -579,9 +595,10 @@ def _enrich_preferred_db_entries(
     items = list(entries)
     if route.source_mode != "prefer":
         return items
-    runtime_catalog = get_catalog(profile=route.profile)
+    runtime_catalog = get_source_catalog(profile=route.profile)
     runtime_items: list[CatalogEntry] = []
     contract_fields = (
+        "contract",
         "context_requires",
         "context_provides",
         "context_mutates",
@@ -603,12 +620,7 @@ def _enrich_preferred_db_entries(
                 **{field: getattr(runtime_entry, field) for field in contract_fields},
             )
         )
-    items = runtime_items
-    items = enrich_context_contracts(
-        items,
-        kinds=("plugin", "adapter", "bias", "representation"),
-    )
-    return enrich_usage_contracts(items)
+    return _enrich_catalog_entries(runtime_items)
 
 
 def _matches_tags(entry: CatalogEntry, tags: Sequence[str] | None) -> bool:
@@ -657,6 +669,9 @@ def _entry_payload(entry: CatalogEntry) -> dict[str, Any]:
         "key": entry.key,
         "title": entry.title,
         "kind": entry.kind,
+        "metadata": dict(getattr(entry, "metadata", {}) or {}),
+        "contract": dict(getattr(entry, "contract", {}) or {}),
+        **guidance_payload(entry),
         "import_path": entry.import_path,
         "module": entry.import_path.partition(":")[0].strip(),
         "symbol": entry.import_path.partition(":")[2].strip(),
@@ -677,6 +692,8 @@ def _entry_payload(entry: CatalogEntry) -> dict[str, Any]:
         "required_companions": tuple(usage.required_companions),
         "config_keys": tuple(usage.config_keys),
         "example_entry": str(usage.example_entry or ""),
+        "wiring_status": usage.wiring_status,
+        "wiring_notes": tuple(usage.wiring_notes),
     }
 
 
@@ -1096,7 +1113,7 @@ def catalog_facets(
     if normalized_scope == "framework":
         route = _resolve_read_route(profile=profile, db_path=db_path, source_mode=source_mode)
         if route.db_store is not None:
-            facet_fields = tuple(fields or _DEFAULT_FACET_FIELDS.get(normalized_kind or "", ("tags", "companions")))
+            facet_fields = tuple(fields or _DEFAULT_FACET_FIELDS.get(normalized_kind or "", ("concepts", "role", "tags", "companions")))
             payload = route.db_store.facet_rows(
                 profile=route.profile,
                 kind=normalized_kind,
@@ -1176,7 +1193,7 @@ def catalog_facets(
             db_path=db_path,
             source_mode=source_mode,
         )
-    facet_fields = tuple(fields or _DEFAULT_FACET_FIELDS.get(normalized_kind or "", ("tags", "companions")))
+    facet_fields = tuple(fields or _DEFAULT_FACET_FIELDS.get(normalized_kind or "", ("concepts", "role", "tags", "companions")))
     payload: dict[str, list[dict[str, Any]]] = {}
     for field_name in facet_fields:
         counter: Counter[str] = Counter()
@@ -1201,6 +1218,15 @@ def catalog_facets(
         "total": len(entries),
         "facets": payload,
     }
+
+
+def _add_assembly_neighbors(payload: dict[str, Any], entry: CatalogEntry, *, candidates: Sequence[CatalogEntry]) -> None:
+    sections = build_assembly_neighbor_sections(entry, candidates=candidates)
+    for name in ("relation_groups", "relation_labels"):
+        payload[name] = {**dict(payload.get(name, {}) or {}), **sections[name]}
+    payload["relation_cards"] = (*tuple(payload.get("relation_cards", ()) or ()), *sections["relation_cards"])
+    for name in ("assembly_status", "assembly_diagnostics", "assembly_note"):
+        payload[name] = sections[name]
 
 
 def catalog_neighbors(
@@ -1240,6 +1266,7 @@ def catalog_neighbors(
                 for section_name in ("relation_cards", "relation_chain_cards"):
                     if not payload.get(section_name):
                         payload[section_name] = computed_sections.get(section_name, ())
+                _add_assembly_neighbors(payload, current, candidates=enriched)
             payload.update(
                 {
                     "scope": "framework",
@@ -1287,7 +1314,7 @@ def catalog_neighbors(
         if candidate.key != entry.key
     ]
     contract_sections = build_contract_neighbor_sections(entry, candidates=all_candidates)
-    return {
+    payload = {
         "key": entry.key,
         "scope": context.scope,
         "project_root": context.project_root,
@@ -1296,6 +1323,8 @@ def catalog_neighbors(
         "linked_by": linked_by,
         **contract_sections,
     }
+    _add_assembly_neighbors(payload, entry, candidates=catalog_entries)
+    return payload
 
 
 def catalog_ui_snapshot(

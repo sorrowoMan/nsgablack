@@ -21,10 +21,8 @@ from .backend_utils import (
 from .copt_templates import TemplateSolveFn, build_default_templates
 from .copt_templates.utils import add_gen_constraints, add_indicator_constraints, apply_feas_relaxation, apply_model_params
 
-try:
-    import coptpy as _COPT_MODULE
-except Exception:
-    _COPT_MODULE = None
+_COPT_UNLOADED = object()
+_COPT_MODULE = _COPT_UNLOADED
 
 
 CoptSolveFn = Callable[[BackendSolveRequest, Any], Mapping[str, Any]]
@@ -130,6 +128,13 @@ class CoptBackend:
         return arr
 
     def _load_copt_module(self) -> Any:
+        global _COPT_MODULE
+        if _COPT_MODULE is _COPT_UNLOADED:
+            try:
+                import coptpy
+                _COPT_MODULE = coptpy
+            except Exception:
+                _COPT_MODULE = None
         if _COPT_MODULE is not None:
             return _COPT_MODULE
         raise ImportError("coptpy not importable")

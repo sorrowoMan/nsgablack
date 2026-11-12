@@ -70,7 +70,7 @@ class TaggedBuilder(PopulationUnitBuilder):
 
 def test_declared_custom_schema_keeps_extra_state_through_rollback():
     adapter = NSGA2Adapter(unit_binding=UnitBinding(TaggedBuilder()))
-    assert adapter.algorithm_unit.schema != adapter.unit_schema
+    assert adapter.ensure_unit().schema != adapter.unit_schema
     transaction = adapter.begin_step_transaction()
     adapter.algorithm_unit.tag = "changed"
     transaction.rollback()

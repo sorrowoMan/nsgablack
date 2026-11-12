@@ -3,6 +3,30 @@ from pathlib import Path
 import pytest
 
 
+def test_direct_operator_bindings_are_recorded_without_rng_and_change_assembly_signature(sample_problem, tmp_path):
+    from nsgablack.adapters import NSGA2Adapter, MixedPoolParentSelector
+    from nsgablack.core import ComposableSolver
+    from nsgablack.plugins import RuntimeSurfaceTrackerConfig, RuntimeSurfaceTrackerPlugin
+    from nsgablack.representation import GaussianMutation, RepresentationPipeline
+
+    tracker = RuntimeSurfaceTrackerPlugin(config=RuntimeSurfaceTrackerConfig(db_path=str(tmp_path / "operators.sqlite3")))
+
+    def record(pool_name):
+        solver = ComposableSolver(sample_problem, adapter=NSGA2Adapter(
+            parent_selector=MixedPoolParentSelector(pool_name), mutator=GaussianMutation(sigma=0.2)),
+            representation_pipeline=RepresentationPipeline())
+        return tracker._build_contract_records(solver=solver, result={}, run_id="operator-test")[1].to_dict()
+
+    first, second = record("elite_a"), record("elite_b")
+    operators = first["component_slots_json"]["operator_bindings"]["nsga2"]
+    assert set(operators) == {"parent_selector", "mutator"}
+    assert operators["parent_selector"]["contract"]["identity"]["pool_name"] == "elite_a"
+    assert operators["mutator"]["contract"]["identity"]["sigma"] == 0.2
+    assert all("state" not in binding["contract"] for binding in operators.values())
+    assert all(binding["ref"] in first["component_refs"] for binding in operators.values())
+    assert first["assembly_signature"] != second["assembly_signature"]
+
+
 @pytest.mark.parametrize("named", [False, True])
 def test_runtime_surface_tracker_materializes_solver_run_surface(sample_problem, sample_bias, tmp_path: Path, named):
     from nsgablack.adapters import SAConfig, SimulatedAnnealingAdapter

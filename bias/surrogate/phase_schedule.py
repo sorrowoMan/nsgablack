@@ -12,7 +12,7 @@ class PhaseScheduleBias(SurrogateControlBias):
     context_provides = ()
     context_mutates = ()
     context_cache = ()
-    context_notes = "No explicit context dependency; outputs scalar bias only."
+    context_notes = "Reads progress/generation and returns a control-update mapping; no automatic Solver consumer."
 
 
 

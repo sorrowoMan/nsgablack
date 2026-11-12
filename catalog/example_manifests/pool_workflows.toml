@@ -1,0 +1,44 @@
+[[example]]
+id = "pool-workflow-ga"
+title = "GA：双后代变化、Pareto 留存与精英池"
+component_keys = ["adapter.nsga2", "tool.change_batch_result", "tool.pool", "tool.pool_output", "tool.pool_task_spec", "tool.solution_pool", "tool.subpools"]
+kind = "project"
+working_directory = "nsgablack"
+summary = "现有 pool_workflow_pilot 的 ga_search Case：把普通变化函数、Pool 生存选择与档案维护装配到 NSGA-II。Project 同时串行运行三个独立 Case；它不是 GA→VNS 的候选交接示例。"
+inputs = ["二维连续候选，问题边界为 [-2, 2]，原始目标为到两个中心的平方距离。", "Pipeline 生成8个初始池引用，GA从中取6个建立种群；种子数量与成员数量分别配置。"]
+steps = ["查看 paired_change：同一对父代共享交叉掩码，返回两个独立后代。", "查看 build_adapter：安装变化、Pareto 生存选择和精英维护函数。", "在 nsgablack 仓库根目录运行 Project，读取 ga_search 的结果；另外两个 Case 拥有各自独立的池。"]
+run_command = "python examples/cases/pool_workflow_pilot/run_project.py"
+dependencies = ["nsgablack 与 blackbase 的正式 Project/L0 运行环境", "NumPy；无需可选深度学习后端"]
+parameters = [{ name = "population_size", value = "6", meaning = "GA成员数量，来自该Case默认配置。" }, { name = "offspring_size", value = "4", meaning = "每轮后代许可；与母池种子数不是同一个设置。" }, { name = "archive_source", value = "accepted", meaning = "默认精英档案消费本批接纳提案；可改为members只取最终成员。" }]
+expected_outputs = ["ga_search 交付带原始双目标反馈的种群与 Pareto 结果。", "ga_trials 收集已接纳提案，elite 是显式维护的普通引用集合；它们不等同于最终GA成员。", "实际步数、求值数和数值结果以同版本执行收据为准。"]
+sources = [{ path = "nsgablack/examples/cases/pool_workflow_pilot/cases/ga_search/adapter/workflow.py", symbol = "build_adapter" }, { path = "nsgablack/examples/cases/pool_workflow_pilot/cases/ga_search/adapter/workflow.py", symbol = "paired_change" }, { path = "nsgablack/examples/cases/pool_workflow_pilot/cases/ga_search/adapter/workflow.py", symbol = "choose_survivors" }, { path = "nsgablack/examples/cases/pool_workflow_pilot/pool_source.py", symbol = "on_solver_init" }]
+
+[[example]]
+id = "pool-workflow-vns"
+title = "VNS：当前点与参考池共同生成邻域"
+component_keys = ["adapter.vns", "tool.change_result", "tool.pool_output", "tool.pool_task_spec", "tool.solution_pool", "tool.subpools"]
+kind = "project"
+working_directory = "nsgablack"
+summary = "现有 vns_search Case 用普通 change 函数读取当前点与 reference 集合；比较、邻域切换和当前点更新仍由 VNS 负责。默认 Project 还运行另外两个独立 Case。"
+inputs = ["Pipeline 生成3个初始数值候选；PoolTask取1个起点。", "变化函数显式读取 reference 普通集合，输入保留精确父引用。"]
+steps = ["查看 neighborhood_change：从 reference 取一个参考点，和当前点组合后按 sigma 扰动。", "查看 build_adapter：装配 VNS、允许读取的子池与精英维护函数。", "运行同一标准 Project，读取 vns_search 的结果与池集合；不用额外编写求解循环。"]
+run_command = "python examples/cases/pool_workflow_pilot/run_project.py"
+dependencies = ["nsgablack 与 blackbase 的正式 Project/L0 运行环境", "NumPy；CPU运行"]
+parameters = [{ name = "source_count", value = "3", meaning = "母池初始种子数；VNS起点数量仍是1。" }, { name = "batch_size", value = "3", meaning = "该Case每轮提案批次。" }, { name = "base_sigma", value = "0.15", meaning = "VNS默认邻域扰动尺度，在build_adapter中装配。" }]
+expected_outputs = ["vns_search 返回自身任务最终选择的已评估解与原始反馈。", "vns_trials 记录接纳提案，elite 由独立维护函数整理，不保证每条试探都是局部改进。", "运行次数与实际数值以同版本执行收据为准。"]
+sources = [{ path = "nsgablack/examples/cases/pool_workflow_pilot/cases/vns_search/adapter/workflow.py", symbol = "build_adapter" }, { path = "nsgablack/examples/cases/pool_workflow_pilot/cases/vns_search/adapter/workflow.py", symbol = "neighborhood_change" }, { path = "nsgablack/examples/cases/pool_workflow_pilot/pool_source.py", symbol = "on_solver_init" }]
+
+[[example]]
+id = "pool-workflow-moead"
+title = "MOEA/D：按方向编排交叉与扰动"
+component_keys = ["adapter.moead", "tool.change_request", "tool.pool_output", "tool.pool_task_spec", "tool.solution_pool", "tool.subpools"]
+kind = "project"
+working_directory = "nsgablack"
+summary = "现有 moead_search Case 按方向调用普通变化函数，偶数方向先交叉再扰动，奇数方向反序。方向比较、权重、理想点与槽位替换由原MOEA/D维护。"
+inputs = ["二维连续候选与两个原始目标；8个母池种子中取6个初始化方向成员。", "变化函数显式读取母池接纳区与 reference 集合作为额外来源。"]
+steps = ["查看 direction_change：读取方向编号及获授权池候选，安排变化操作顺序。", "查看 build_adapter：装配6个方向、weighted_sum比较与池读取范围。", "运行标准 Project 并查看 moead_search；三个Case独立运行，不把各算法Unit拼成一个种群。"]
+run_command = "python examples/cases/pool_workflow_pilot/run_project.py"
+dependencies = ["nsgablack 与 blackbase 的正式 Project/L0 运行环境", "NumPy；CPU运行"]
+parameters = [{ name = "directions", value = "6", meaning = "MOEA/D方向和初始化成员数量。" }, { name = "batch_size", value = "3", meaning = "每轮变化提案数量。" }, { name = "decomposition", value = "weighted_sum", meaning = "只用于方向比较；不能把标量覆盖原始双目标。" }]
+expected_outputs = ["moead_search 保留方向成员及两列原始目标；方向比较值不写回原始目标。", "moead_trials 为已接纳提案集合，elite 使用显式raw规则维护。", "各方向实际运行与数值结果以同版本执行收据为准。"]
+sources = [{ path = "nsgablack/examples/cases/pool_workflow_pilot/cases/moead_search/adapter/workflow.py", symbol = "build_adapter" }, { path = "nsgablack/examples/cases/pool_workflow_pilot/cases/moead_search/adapter/workflow.py", symbol = "direction_change" }, { path = "nsgablack/examples/cases/pool_workflow_pilot/cases/moead_search/adapter/workflow.py", symbol = "crossover_then_mutation" }]

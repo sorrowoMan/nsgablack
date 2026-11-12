@@ -1,0 +1,35 @@
+[[example]]
+id = "ml-backend-contract-four-backends"
+title = "四后端全部能力声明 · 只读查询与显式选择"
+component_keys = [
+  "mlblack.backend_capability.numpy.tensor",
+  "mlblack.backend_capability.numpy.neural_lowering",
+  "mlblack.backend_capability.numpy.losses",
+  "mlblack.backend_capability.numpy.artifacts",
+  "mlblack.backend_capability.torch.tensor",
+  "mlblack.backend_capability.torch.neural_lowering",
+  "mlblack.backend_capability.torch.autograd",
+  "mlblack.backend_capability.torch.optimizers",
+  "mlblack.backend_capability.torch.losses",
+  "mlblack.backend_capability.torch.artifacts",
+  "mlblack.backend_capability.jax.tensor",
+  "mlblack.backend_capability.jax.neural_lowering",
+  "mlblack.backend_capability.jax.autograd",
+  "mlblack.backend_capability.jax.optimizers",
+  "mlblack.backend_capability.jax.losses",
+  "mlblack.backend_capability.jax.artifacts",
+  "mlblack.backend_capability.tensorflow.tensor",
+  "mlblack.backend_capability.tensorflow.neural_lowering",
+  "mlblack.backend_capability.tensorflow.autograd",
+  "mlblack.backend_capability.tensorflow.optimizers",
+  "mlblack.backend_capability.tensorflow.losses",
+  "mlblack.backend_capability.tensorflow.artifacts",
+]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "公开注册表查询四个后端全部22份capability声明，按真实模型/Problem需求解释缺项并显式preferred选择；这是契约参考，不是22个训练算法。"
+inputs = ["当前三仓和基础依赖 NumPy；使用者在自己的配置检查模块或本地 Python 会话调用公开 mlblack.backends 查询入口。", "主例读取 NeuralGraphRepresentation 与 TinyCNNImageClassificationProblem 的真实 backend_requires，再加真实 CNN lowering 要求；不构造模型或训练 Case。"]
+steps = ["list_backends 注册名字，list_backend_capabilities 读取四后端全部声明，explain_backend_requirements 显示精确名称缺项。", "resolve_backend(preferred='torch') 做显式声明匹配，只输出 contract 字典；变体明确展示 preferred='numpy' 缺能力的拒绝诊断，不悄悄回退。"]
+dependencies = ["查询会导入内置 backend 模块并首次缓存 facade/能力组件，不是零成本静态JSON读取；实际计算另需对应 torch/jax/tensorflow 依赖与 Project L0 授权。"]
+expected_outputs = ["四个 capability_count 在当前内置源码分别为 NumPy4、Torch/JAX/TensorFlow各6；每条真实声明有 provides/methods 等字段，诊断有 ok/missing/requirements。", "ok只代表字符串需求匹配，不证明库安装、设备授权、模型数据适配或训练成功；descriptor/facade 不是 BackendSession、Provider 或 ResourceContext。", "变体返回实际缺项与选择拒绝原因，不调用张量/模型方法，也不把声明查询算成后端计算执行。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_BACKEND_CONTRACT_APPLICATIONS_CN.md", section = "mlblack.backend_capability.torch.tensor" }]

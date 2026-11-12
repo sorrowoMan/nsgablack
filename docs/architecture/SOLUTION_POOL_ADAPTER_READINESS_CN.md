@@ -32,7 +32,7 @@ PoolTaskSpec 可以指定母池、具名视图、引用选择函数或 subpools.
 
 ## 4. 输出、最终选择和接收
 
-output 聚合集合保存任务接纳的提案。get_pool_refinement_results 明确交付最终选择的精确引用；这不是 retention roots 的别名。声明 output 的 refine 消费者必须实现结果交付。
+显式 output 聚合集合保存任务接纳的提案。get_pool_refinement_results 明确交付最终选择的精确引用；这不是 retention roots 的别名。refine 消费者都须实现结果交付；output=None 也发布最终视图，且不创建累计提案历史。
 
 普通精修也发布 candidate_view，下一层可以使用 subpools.all(refiner)。投影精修发布继承当前有效比较参数的 objective_projection。下一层从新反馈应用有效投影一次，不把已标量化分数再次投影。
 

@@ -7,6 +7,7 @@ from typing import Iterable, Sequence, Tuple
 from .contract_relations import _entry_field_values
 from blackbase.context import get_component_contract
 from .recipes import ADAPTER_RECIPES, constructor_check, required_arguments
+from .guidance import guidance_for
 
 
 @dataclass(frozen=True)
@@ -20,9 +21,14 @@ class CatalogUsage:
     wiring_notes: Tuple[str, ...] = ()
 
 
-def _normalize_values(values: object) -> Tuple[str, ...]:
+def _normalize_values(values: object, *, preserve_whitespace: bool = False) -> Tuple[str, ...]:
     if values is None:
         return ()
+    if preserve_whitespace:
+        if isinstance(values, str):
+            return (values,) if values else ()
+        if isinstance(values, (list, tuple)):
+            return tuple(str(item) for item in values)
     if isinstance(values, str):
         text = values.strip()
         return (text,) if text else ()
@@ -109,8 +115,9 @@ def _infer_minimal_wiring(kind: str, import_path: str, entry=None) -> Tuple[str,
 
 
 def _infer_required_companions(companions: Iterable[str]) -> Tuple[str, ...]:
-    vals = tuple(str(c).strip() for c in companions if str(c).strip())
-    return vals if vals else ("(none)",)
+    # Navigation links can include alternatives and examples. Only explicit
+    # declarations establish mandatory assembly dependencies.
+    return ("(none)",)
 
 
 def _infer_config_keys(entry) -> Tuple[str, ...]:
@@ -146,19 +153,33 @@ def _infer_example_entry(entry) -> str:
     if entry.key in ADAPTER_RECIPES:
         case = entry.key.split(".")[-1]
         return f"examples/cases/catalog_recipes/cases/{case}/build_solver.py"
-    return "尚无已验证的专用 Case；通用装配见 docs/standard_scaffold_tutorial/01_create_and_run.md"
+    # This field is an address, not a sentence ending in a Markdown suffix.
+    # A general scaffold guide stays a reference; only a focused usage recipe
+    # establishes component-specific coverage.
+    return "docs/standard_scaffold_tutorial/01_create_and_run.md"
 
 
 def build_usage_profile(entry) -> CatalogUsage:
+    if getattr(entry, "metadata", {}).get("catalog_framework", "nsgablack") != "nsgablack":
+        # The source framework owns its assembly vocabulary. Empty ML usage
+        # declarations must not become guessed NSGA Bias/Pipeline recipes.
+        return CatalogUsage(
+            use_when=_normalize_values(getattr(entry, "use_when", ())),
+            minimal_wiring=_normalize_values(getattr(entry, "minimal_wiring", ()), preserve_whitespace=True),
+            required_companions=_normalize_values(getattr(entry, "required_companions", ())),
+            config_keys=_normalize_values(getattr(entry, "config_keys", ())),
+            example_entry=str(getattr(entry, "example_entry", "") or ""),
+        )
+    guidance_for(entry)  # Validate descriptive extensions before publishing usage.
     use_when = _normalize_values(getattr(entry, "use_when", ()))
-    minimal_wiring = _normalize_values(getattr(entry, "minimal_wiring", ()))
+    minimal_wiring = _normalize_values(getattr(entry, "minimal_wiring", ()), preserve_whitespace=True)
     required_companions = _normalize_values(getattr(entry, "required_companions", ()))
     config_keys = _infer_config_keys(entry)
     example_entry = _infer_example_entry(entry)
 
     if not use_when:
         use_when = _infer_use_when(getattr(entry, "kind", ""))
-    if entry.key in ADAPTER_RECIPES:
+    if not minimal_wiring and entry.key in ADAPTER_RECIPES:
         minimal_wiring = ADAPTER_RECIPES[entry.key]
     if not minimal_wiring:
         minimal_wiring = _infer_minimal_wiring(getattr(entry, "kind", ""), getattr(entry, "import_path", ""), entry)

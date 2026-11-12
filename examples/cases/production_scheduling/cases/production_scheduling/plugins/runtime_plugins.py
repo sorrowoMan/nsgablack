@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 
+from blackbase.participation import ParticipationContract
 from nsgablack.plugins import Plugin
 from reporting import write_schedule_audit_report
 
@@ -52,8 +53,6 @@ class ConsoleProgressPlugin(Plugin):
         now = time.time()
         dt = (now - self._last_t) if self._last_t is not None else 0.0
         self._last_t = now
-        best = getattr(solver, "best_objective", None)
-
         n = None
         try:
             n = int(getattr(solver, "last_step_summary", {}).get("num_candidates"))
@@ -61,45 +60,56 @@ class ConsoleProgressPlugin(Plugin):
             n = None
 
         elapsed = (now - self._t0) if self._t0 is not None else 0.0
-        if best is None:
-            print(f"[step {generation:04d}] elapsed={elapsed:8.1f}s  last_step={dt:6.2f}s  candidates={n}")
-            return
-
-        best_total_output, best_constraint_violation = self._compute_best_metrics(solver)
-        out_str = f"{best_total_output:.6g}" if isinstance(best_total_output, (float, int)) else "n/a"
-        vio_str = (
-            f"{best_constraint_violation:.6g}"
-            if isinstance(best_constraint_violation, (float, int))
-            else "n/a"
-        )
+        best, best_total_output, best_selection_violation = self._compute_best_metrics(solver)
+        score_str = "n/a" if best is None else f"{best:.6g}"
+        out_str = "n/a" if best_total_output is None else f"{best_total_output:.6g}"
+        vio_str = "n/a" if best_selection_violation is None else f"{best_selection_violation:.6g}"
         print(
             f"[step {generation:04d}] elapsed={elapsed:8.1f}s  last_step={dt:6.2f}s  "
-            f"candidates={n}  best_score={best:.6g}  "
-            f"best_total_output={out_str}  best_constraint_violation={vio_str}"
+            f"candidates={n}  best_score={score_str}  "
+            f"best_total_output={out_str}  best_selection_violation={vio_str}"
         )
 
     @staticmethod
-    def _compute_best_metrics(solver) -> tuple[Optional[float], Optional[float]]:
-        bx = getattr(solver, "best_x", None)
-        problem = getattr(solver, "problem", None)
-        if bx is None or problem is None or not hasattr(problem, "evaluate"):
-            return None, None
+    def _finite_metric(value) -> Optional[float]:
         try:
-            obj = np.asarray(problem.evaluate(np.asarray(bx, dtype=float)), dtype=float).reshape(-1)
-            best_total_output = float(-obj[0]) if obj.size >= 1 and np.isfinite(obj[0]) else None
+            scalar = np.asarray(value)
+            if scalar.ndim != 0 or scalar.dtype.kind not in "iuf":
+                return None
+            result = float(scalar)
+            return result if np.isfinite(result) else None
+        except (TypeError, ValueError, OverflowError):
+            return None
 
-            best_constraint_violation = None
-            if hasattr(problem, "evaluate_constraints"):
-                cons = np.asarray(problem.evaluate_constraints(np.asarray(bx, dtype=float)), dtype=float).reshape(-1)
-                if cons.size == 0:
-                    best_constraint_violation = 0.0
-                else:
-                    finite = cons[np.isfinite(cons)]
-                    if finite.size > 0:
-                        best_constraint_violation = float(np.max(np.maximum(0.0, finite)))
-            return best_total_output, best_constraint_violation
-        except (TypeError, ValueError, AttributeError):
-            return None, None
+    @staticmethod
+    def _compute_best_metrics(solver) -> tuple[Optional[float], Optional[float], Optional[float]]:
+        # A console observer never evaluates candidates. Incumbent feedback is
+        # a selection view, so label its violation explicitly instead of
+        # presenting a softened constraint as a raw Problem measurement.
+        get_incumbent = getattr(solver, "get_incumbent", None)
+        incumbent = get_incumbent() if callable(get_incumbent) else None
+        if incumbent is None:
+            return None, None, None
+        score = ConsoleProgressPlugin._finite_metric(getattr(incumbent, "score", None))
+        violation = ConsoleProgressPlugin._finite_metric(getattr(incumbent, "constraint_violation", None))
+        problem = getattr(solver, "problem", None)
+        decode = getattr(problem, "decode_schedule", None)
+        if not callable(decode):
+            return score, None, violation
+        try:
+            candidate = np.asarray(getattr(incumbent, "candidate", None))
+            if (candidate.ndim != 1 or not candidate.size or candidate.dtype.kind not in "biuf"
+                    or not np.all(np.isfinite(candidate))):
+                return score, None, violation
+            schedule = np.asarray(decode(candidate))
+            if (schedule.ndim != 2 or not schedule.size or schedule.dtype.kind not in "biuf"
+                    or not np.all(np.isfinite(schedule))):
+                return score, None, violation
+            with np.errstate(over="ignore", invalid="ignore"):
+                total = ConsoleProgressPlugin._finite_metric(np.sum(schedule, dtype=float))
+            return score, total, violation
+        except (TypeError, ValueError, AttributeError, OverflowError):
+            return score, None, violation
 
 
 class ProductionExportPlugin(Plugin):
@@ -139,7 +149,9 @@ class ProductionExportPlugin(Plugin):
         self._export_pareto_batch = export_pareto_batch
         self._supply_tag_from_path = supply_tag_from_path
 
-    def on_solver_finish(self, _result):
+    participation = ParticipationContract(vetoes=("finalization",))
+
+    def on_solver_finalization_prepare(self, _result):
         if bool(getattr(self.args, "no_export", False)):
             return
         solver = getattr(self, "solver", None)
@@ -157,6 +169,7 @@ class ProductionExportPlugin(Plugin):
         for label, chosen, _obj in choices:
             schedule = self.problem.decode_schedule(chosen)
             schedule = self._project_schedule_material_feasible(self.problem, schedule)
+            schedule = np.floor(np.asarray(schedule, dtype=float))
             export_path = self._get_export_path(base_export, label, supply_tag=supply_tag)
             self._export_schedule(export_path, schedule)
             cons = self.problem.evaluate_constraints(schedule.reshape(-1))
@@ -175,10 +188,7 @@ class ProductionExportPlugin(Plugin):
                 days=int(schedule.shape[1]),
             )
             audit_path = export_path.with_suffix(".audit.json")
-            try:
-                write_schedule_audit_report(self.problem, schedule, audit_path, label=label)
-            except Exception as exc:
-                print(f"[audit] {label}: failed to write schedule audit ({exc!r})")
+            write_schedule_audit_report(self.problem, schedule, audit_path, label=label)
             print(
                 f"[export] saved {label}: {export_path} "
                 f"feasible={is_feasible} total_output={total_output:.6g} "

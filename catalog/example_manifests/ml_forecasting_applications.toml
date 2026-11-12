@@ -1,0 +1,27 @@
+[[example]]
+id = "ml-forecasting-application-holdout-and-rolling"
+title = "有序时序留尾验证与滚动起点 · 正式ML Case装配"
+component_keys = ["mlblack.data_view.time_series", "mlblack.problem.time_series_forecasting", "mlblack.problem.rolling_origin_forecasting"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "复制现有 catalog_codec_demo Project，在原 linear_point Case 用 TimeSeriesDataView、基线预测表示和无梯度搜索形成独立正式装配；主例尾段验证，代码变体改为 RollingOriginForecastingProblem。Problem只补Case专属蓝图发布与基线只读恢复，不另造控制循环。"
+inputs = ["48个公开合成、按日序排列的单变量观测；主例36历史点与12验证点，保留原Project L0与运行入口。", "完整替换正文列出的pipeline、Problem、Adapter和builder，新增报告Plugin；模型布局由BaselineForecastRepresentation持有。"]
+steps = ["按给出的五个完整文件装配LearningSolver，不在builder中提前init采样或私自发放资源。", "运行主例按valid.rmse/valid.mae选择基线策略，报告最终实际求值的反馈与模型蓝图引用。", "完整替换Problem工厂可改为六个滚动起点的三步终点误差，其余文件保持本节接线。"]
+dependencies = ["当前blackbase、nsgablack、mlblack与NumPy；公开合成数据、CPU，不调用外部模型/网络。"]
+parameters = [{name = "validation_size", value = "12", meaning = "主例连续尾段长度，不是随机验证比例。"}, {name = "horizon", value = "3", meaning = "滚动变体在每个历史起点预测三步，只取第三步误差。"}, {name = "max_origins", value = "6", meaning = "滚动变体最多选择六个起点，不等于六条完整三步轨迹全部计分。"}]
+expected_outputs = ["用户运行后在Project副本results/forecast.json核对当前run_id、两项目标、误差指标、残差行序与正式模型蓝图引用。", "主例12项验证残差，滚动变体6项终点残差；不声称精确预测、未来泛化、恢复兼容或本轮已运行。"]
+sources = [{path = "nsgablack/docs/catalog_usage/ML_FORECASTING_APPLICATIONS_CN.md", section = "mlblack.problem.time_series_forecasting"}]
+
+[[example]]
+id = "ml-forecasting-application-distribution-heads"
+title = "Normal/Poisson/NegativeBinomial输出 · NLL消费者与成套计数变体"
+component_keys = ["mlblack.head.normal", "mlblack.head.poisson", "mlblack.head.negative_binomial"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "在现有标准ML Project副本中，LinearPointRepresentation的实际Head由FAMILY选择，Case-local LearningProblem调用log_prob并返回训练NLL；两个代码变体同时切换计数数据、Poisson或NB Head及对应消费者族，不以导入代替装配。"
+inputs = ["40行一维有序坐标，前28行训练、后12行验证；主例连续目标，两个变体为非负整数计数。", "正文完整列出config、数据/表示工厂、Case NLL Problem、无梯度Adapter、报告与规范builder；不沿用不匹配的SGD。"]
+steps = ["默认FAMILY=normal，将Head的参数分块交给LinearPointCodec，实际模型由NLL Problem消费。", "仅按完整变体替换config.py，配套工厂同时选择Poisson或NegativeBinomial；保留计数类型校验。", "通过正式Project驱动并读取当前报告；模型蓝图经Problem Artifact hook发布，不启用unsafe pickle。"]
+dependencies = ["当前blackbase、nsgablack、mlblack与NumPy；CPU本地搜索，无外部模型/API。"]
+parameters = [{name = "FAMILY", value = "normal | poisson | negative_binomial", meaning = "本Case配置，联动数据、Head和NLL消费者，不是三个头叠加。"}, {name = "positive transform", value = "softplus", meaning = "Normal尺度、Poisson rate或NB alpha的对应正值变换；NB均值在predict_params中另作截正。"}]
+expected_outputs = ["用户运行后在results/distribution.json核对本轮run_id、原始train.nll、12项验证NLL与参数布局：Normal/NB为4参数，Poisson为2参数。", "明确Poisson/NB当前log_prob使用近似阶乘/Gamma；不承诺精确似然、概率校准或多步forecast能力。本轮未执行算法。"]
+sources = [{path = "nsgablack/docs/catalog_usage/ML_FORECASTING_APPLICATIONS_CN.md", section = "mlblack.head.normal"}]

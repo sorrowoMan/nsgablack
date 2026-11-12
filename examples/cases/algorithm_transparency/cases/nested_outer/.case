@@ -1,0 +1,3 @@
+name = nested_outer
+kind = solver
+framework = nsgablack

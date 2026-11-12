@@ -1,0 +1,25 @@
+[[example]]
+id = "pool-selection-application-ga"
+title = "一次选择交回GA成员与精英池 · 父代和生存规则的完整接线"
+component_keys = ["tool.change_selection", "tool.pool_partition", "tool.parent_selection_request", "tool.mixed_pool_parent_selector", "tool.selection_request", "tool.feasibility_first_selection"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "在pool_workflow_pilot/ga_search正式Case完整替换Adapter工厂，用Pool与partition做位置级生存分流，再从已提交精英池选精确父代；变体分别接Pareto规则、SelectionRequest组件和自定义ParentSelectionRequest组件。"
+inputs = ["完整pool_workflow_pilot Project副本；现有TwoCenters、PipelineSource、CaseConfig、WorkflowTrace及Project L0；种子8、成员6、后代4、步数10分开声明。"]
+steps = ["保存完整adapter/workflow.py，原薄builder继续消费同一工厂。", "保留L0并在project_config.py追加selection组；每个变体独立修改明确的绑定行。"]
+dependencies = ["当前nsgablack、blackbase、NumPy；无需模型API或外部后端。"]
+expected_outputs = ["本次results/ga_search.json中最终成员、elite精确引用、ga_trials接纳输出和孩子change_source_refs分别核对；reserve须在提交后观察。默认主例明确改变NSGA比较规则，不宣称是Pareto生存。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/POOL_SELECTION_APPLICATIONS_CN.md", section = "tool.pool_partition" }, { path = "nsgablack/docs/catalog_usage/POOL_SELECTION_APPLICATIONS_CN.md", section = "pool.selection.variants" }]
+
+[[example]]
+id = "pool-selection-application-identity"
+title = "精确成员引用、逻辑时点与闲置回收配置 · 完整Case观察接线"
+component_keys = ["tool.solution_ref", "tool.solution_stamp", "tool.pool_retention_policy"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "在同一正式GA Case挂只读IdentityTrace，序列化并还原精确引用、核对token顺序与raw反馈；首次发布前配置保留策略，区分历史筛选与存储闭包保留。"
+inputs = ["上述独立Project主例、原Source与Router/GA、默认10逻辑步；原WorkflowTrace状态codec、正式Project入口与L0。"]
+steps = ["保存plugins/identity_trace.py与完整薄builder。", "宽限窗口明确长于运行，保留原历史观察器前提；变体用已序列化stamp只读筛选仍存活的接纳历史。"]
+dependencies = ["当前nsgablack、blackbase、NumPy；不连接数据库或模型，不执行算法恢复。"]
+expected_outputs = ["原results/ga_search.json含identity_audit的stamp/member_refs/raw反馈/publication；不同层面的身份不互换。ga_trials保留历史，故本例不声称已减少空间；at不复活已回收值，读取不延长闲置寿命。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/POOL_SELECTION_APPLICATIONS_CN.md", section = "tool.solution_ref" }, { path = "nsgablack/docs/catalog_usage/POOL_SELECTION_APPLICATIONS_CN.md", section = "pool.identity.variant" }]

@@ -46,6 +46,7 @@ class GaussianSearchConfig:
 
 class GaussianSearchAdapter(UnitBackedAdapter):
     """Search numeric candidate state without owning model or data semantics."""
+    operation_methods = {"initializer": "initialize", "repair": "repair"}
     accepts_proposal_replacement = True
     pool_input_modes = ("initialize",)
     supports_pool_restart = True
@@ -88,6 +89,8 @@ class GaussianSearchAdapter(UnitBackedAdapter):
         config: Optional[GaussianSearchConfig] = None,
         name: str = "gaussian_search",
         priority: int = 0,
+        initializer=None,
+        repair=None,
         **config_kwargs: Any,
     ) -> None:
         super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
@@ -107,9 +110,13 @@ class GaussianSearchAdapter(UnitBackedAdapter):
         self._rng = np.random.default_rng(int(self.cfg.random_seed))
         self._runtime_projection: Dict[str, Any] = {}
         self._pool_results = PoolRefinementState()
+        for role, component in (("initializer", initializer), ("repair", repair)):
+            if component is not None:
+                self.set_operation(role, component)
         self._refresh_runtime_projection()
 
     def setup(self, control: Any) -> None:
+        self.reset_unit()
         _ = control
         self.best_x = None
         self.best_score = None
@@ -118,6 +125,7 @@ class GaussianSearchAdapter(UnitBackedAdapter):
         self._candidate_kind = "array"
         self._candidate_metadata = {}
         self._rng = np.random.default_rng(int(self.cfg.random_seed))
+        self.seed_operator_bindings(self._rng)
         self._pool_results = PoolRefinementState()
         self._refresh_runtime_projection()
 
@@ -126,18 +134,18 @@ class GaussianSearchAdapter(UnitBackedAdapter):
         self._validate_pool_candidate(control)
         n = int(self.cfg.population_size)
         if context.get(KEY_SOLUTION_INPUT_REF) is not None:
-            return self._initial_candidates(control, control.init_population(
+            return self._initial_candidates(control, self.init_population(control,
                 control.solution_pool.input_remaining(context[KEY_SOLUTION_INPUT_REF]), context))
         if self.best_x is None:
             if self.cfg.initialization == "population":
-                return self._initial_candidates(control, control.init_population(n, context))
-            center = control.init_candidate(context)
+                return self._initial_candidates(control, self.init_population(control, n, context))
+            center = self.init_candidate(control, context)
             self._capture_candidate_template(center)
             self._pool_results.remember_seed(control, center)
             return (self._pool_results.project_current(control, self._candidate_array(center), semantic=True),)
 
         if not self.cfg.exploit_best and self.cfg.initialization == "population":
-            return self._initial_candidates(control, control.init_population(n, context))
+            return self._initial_candidates(control, self.init_population(control, n, context))
         if self.best_score is None:
             return (self._pool_results.project_current(control, self.best_x, semantic=True),)
         return self._around_center(self._wrap_candidate(self.best_x), n, control=control)
@@ -271,6 +279,7 @@ class GaussianSearchAdapter(UnitBackedAdapter):
         return int(self.cfg.population_size) if self.cfg.initialization == "population" else 1
 
     def restart_search(self, control, context=None):
+        self.reset_unit()
         self.best_x = self.best_score = self.best_violation = None
         self._candidate_kind, self._candidate_metadata = "array", {}
         self._pool_results = PoolRefinementState()

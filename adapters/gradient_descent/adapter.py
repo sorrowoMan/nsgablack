@@ -38,6 +38,7 @@ class GradientDescentConfig:
 
 
 class GradientDescentAdapter(UnitBackedAdapter):
+    operation_methods = {"initializer": "initialize", "repair": "repair"}
     pool_input_modes = ("initialize",)
     supports_pool_restart = True
     supports_objective_projection = True
@@ -63,9 +64,14 @@ class GradientDescentAdapter(UnitBackedAdapter):
         config: Optional[GradientDescentConfig] = None,
         name: str = "gradient_descent",
         priority: int = 0,
+        *,
+        initializer=None,
+        repair=None,
         **config_kwargs,
     ) -> None:
         super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
+        self.set_initializer(initializer)
+        self.set_repair(repair)
         self.config = self.resolve_config(
             config=config,
             config_cls=GradientDescentConfig,
@@ -84,7 +90,9 @@ class GradientDescentAdapter(UnitBackedAdapter):
         self._trial_values = None
 
     def setup(self, control: Any) -> None:
+        self.reset_unit()
         self._rng = self.create_local_rng(control)
+        self.seed_operator_bindings(self._rng)
         self.current_x = None
         self.current_score = None
         self.learning_rate = float(self.cfg.learning_rate)
@@ -98,7 +106,7 @@ class GradientDescentAdapter(UnitBackedAdapter):
         from nsgablack.context_keys import KEY_SOLUTION_INPUT_REF
         self._validate_pool_candidate(control)
         if self.current_x is None or (self.current_score is None and context.get(KEY_SOLUTION_INPUT_REF) is not None):
-            seed = control.init_candidate(context)
+            seed = self.init_candidate(control, context)
             self.current_x = candidate_array(seed).copy()
             self._pool_results.remember_seed(control, seed)
         if self.current_score is None:
@@ -114,10 +122,10 @@ class GradientDescentAdapter(UnitBackedAdapter):
         self.rebuild_unit("poll", dimensions=dims, context=context)
         out = []
         eps = float(self.cfg.epsilon)
-        for direction in self.algorithm_unit.directions:
+        for direction in self.ensure_unit().directions:
             point = self.current_x + eps * direction
             out.append(self._pool_results.derive_candidate(control, point, stage="gradient_probe"))
-        self.algorithm_unit.displacements = np.asarray([candidate_array(row) for row in out]) - self.current_x
+        self.ensure_unit().displacements = np.asarray([candidate_array(row) for row in out]) - self.current_x
         self._runtime_projection = {KEY_MUTATION_SIGMA: float(self.learning_rate)}
         return out
 
@@ -141,7 +149,7 @@ class GradientDescentAdapter(UnitBackedAdapter):
         for row, index in enumerate(repair.proposal_indices):
             displacement = repair.after.numeric_matrix[row] - self.current_x
             self._validate_probe_displacement(*self._pending_probes[index], displacement)
-            self.algorithm_unit.displacements[index] = displacement
+            self.ensure_unit().displacements[index] = displacement
 
     def on_proposal_disposition(
         self,
@@ -165,10 +173,12 @@ class GradientDescentAdapter(UnitBackedAdapter):
             for index in disposition.accepted_indices
         ]
         rows = list(disposition.accepted_indices)
-        if self.algorithm_unit.directions is not None:
-            self.algorithm_unit.directions = self.algorithm_unit.directions[rows]
-        if self.algorithm_unit.displacements is not None:
-            self.algorithm_unit.displacements = self.algorithm_unit.displacements[rows]
+        unit = self.algorithm_unit
+        if unit is not None:
+            if unit.directions is not None:
+                unit.directions = unit.directions[rows]
+            if unit.displacements is not None:
+                unit.displacements = unit.displacements[rows]
 
     def update(
         self,
@@ -214,7 +224,7 @@ class GradientDescentAdapter(UnitBackedAdapter):
         paired_scores: Dict[int, Dict[int, float]] = {}
         paired_steps: Dict[int, Dict[int, float]] = {}
         actual = np.asarray([candidate_array(row) for row in candidates]) - self.current_x
-        self.algorithm_unit.displacements = actual.copy()
+        self.ensure_unit().displacements = actual.copy()
         for (dimension, sign), score, displacement in zip(self._pending_probes, scores, actual):
             self._validate_probe_displacement(dimension, sign, displacement)
             paired_scores.setdefault(int(dimension), {})[int(sign)] = float(score)
@@ -250,10 +260,10 @@ class GradientDescentAdapter(UnitBackedAdapter):
         return 1
 
     def restart_search(self, control, context=None):
+        self.reset_unit()
         self.current_x = self.current_score = None
         self.learning_rate = float(self.cfg.learning_rate)
         self._pending_probes = []
-        self.algorithm_unit.directions = self.algorithm_unit.displacements = None
         self._pool_results = PoolRefinementState()
         self._pending_stage = self._trial_values = None
         self._refresh_runtime_projection()

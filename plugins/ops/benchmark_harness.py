@@ -1,9 +1,9 @@
 """
 Benchmark harness plugin (unified experiment protocol).
 
-This plugin is intentionally read-only with respect to solver behavior:
-- It never changes solver control flow.
-- It only reads public solver fields and writes external logs.
+This plugin records public solver state and writes external logs. Optional
+config.seed reapplies the solver RNG seed at initialization; leave it unset
+when the Case owns seed configuration. It does not replace the search loop.
 
 Goal:
 Provide a stable, comparable output schema (CSV + summary JSON) so different

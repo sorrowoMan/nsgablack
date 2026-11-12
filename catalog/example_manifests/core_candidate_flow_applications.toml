@@ -1,0 +1,38 @@
+[[example]]
+id = "candidate-flow-routing-application"
+title = "局部k路由与有序变化 · 数据管线的真实消费者"
+component_keys = ["repr.context_dispatch", "repr.dynamic_repair", "repr.pipeline_orchestrator", "tool.representation_capabilities"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整正式VNS Case按本所有者k路由确定性变化，PipelineOrchestrator串行处理候选，再独立DynamicRepair修复；叶算子只声明真实能力。"
+inputs = ["完整catalog_recipes独立副本/composite Case，二维平方问题、默认单Case/L0。"]
+steps = ["保存完整叶算子/路由/动态repair、Problem、薄builder与共用报告/构造。", "实质变体交换先位移后收缩的顺序，不改变Adapter调度或Problem边界。"]
+dependencies = ["当前nsgablack/blackbase与NumPy，无线程池、DB或模型接口。"]
+expected_outputs = ["本次flow.json的二维精确引用、raw平方目标与零违反量；k和主generation分别控制路由/repair阶段。", "确定性叶子不证明任意嵌套对象可恢复，generic wrapper不自动转发UnitInputs；未运行。"]
+sources = [{path="nsgablack/docs/catalog_usage/CANDIDATE_FLOW_APPLICATIONS_CN.md",section="flow.routing"}, {path="nsgablack/docs/catalog_usage/CANDIDATE_FLOW_APPLICATIONS_CN.md",section="flow.host"}]
+
+[[example]]
+id = "candidate-flow-joint-repair-application"
+title = "联合修复 · 对同一个最终候选共同验证Problem和Unit"
+component_keys = ["tool.problem_repair", "tool.unit_repair", "tool.joint_repair_policy"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整单行Gaussian正式Case接入ProblemRepair/UnitRepair真实实现与JointRepairPolicy；保留提案token、结构草稿和最终版本的双重验证。"
+inputs = ["完整catalog_recipes第二份独立副本，Problem0..1、Unit上限cap=.5、一个候选/批、正式Project/L0。"]
+steps = ["保存完整配置/问题修复/Unit修复/Problem/薄builder与共用报告，不在propose重复repair。", "cap=.8实质变体放宽结构范围，Problem可行性不改；多行部分接纳明确尚未实现投影。"]
+dependencies = ["当前nsgablack/blackbase与NumPy，无模型/DB/API。"]
+expected_outputs = ["同次flow.json的0..CAP已评估点、原平方目标、零违反；正式joint_repair证据由原提交链保存。", "单行示例不声称任意种群/取消恢复或失败注入验证；本轮仅静态核对。"]
+sources = [{path="nsgablack/docs/catalog_usage/CANDIDATE_FLOW_APPLICATIONS_CN.md",section="flow.joint_repair"}, {path="nsgablack/docs/catalog_usage/CANDIDATE_FLOW_APPLICATIONS_CN.md",section="flow.host"}]
+
+[[example]]
+id = "candidate-flow-operator-binding-application"
+title = "OperatorBinding · DE真实选择计数与显式codec"
+component_keys = ["tool.operator_binding"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整DE Case安装有状态严格替换选择器，Adapter自动拥有OperatorBinding；报告读取真实本地绑定，失败回滚/恢复沿父所有者状态。"
+inputs = ["完整assembled_parallel_cases副本/de_bowl，原12成员/12批/Problem/Pipeline/L0。"]
+steps = ["保存完整选择器工厂、BindingReport与规范builder wrapper，不额外手造第二个OperatorBinding。", "实质变体改为无状态同规则选择器，checkpoint身份明确变化。"]
+dependencies = ["当前nsgablack/blackbase/NumPy，无服务或模型调用。"]
+expected_outputs = ["本次operator_binding.json真实schema/method/identity/stateless/state.count，原正式DE结果仍独立核对。", "计数不虚构成代数乘批量，不将静态codec说明当失败/恢复运行证明。"]
+sources = [{path="nsgablack/docs/catalog_usage/EVOLUTIONARY_ALGORITHM_APPLICATIONS_CN.md",section="adapter.de"}, {path="nsgablack/docs/catalog_usage/CANDIDATE_FLOW_APPLICATIONS_CN.md",section="flow.operator_binding"}]

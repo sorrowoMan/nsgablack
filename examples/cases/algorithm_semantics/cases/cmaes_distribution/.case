@@ -1,0 +1,3 @@
+name = cmaes_distribution
+kind = solver
+framework = nsgablack

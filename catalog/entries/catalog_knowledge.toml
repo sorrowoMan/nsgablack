@@ -1,0 +1,12 @@
+[[entry]]
+key = "tool.catalog_curate"
+title = "Catalog AI 资料整理"
+kind = "tool"
+import_path = "nsgablack.catalog.curate:curate_packets"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+tags = ["catalog", "ai", "documentation", "incremental", "deepseek"]
+summary = "依据受限源码证据增量整理组件用途、输入输出、装配思路与资料缺项；生成说明独立保存，不改运行契约。"
+use_when = ["AI资料整理", "自动整理组件说明", "检查过期说明与缺项"]
+minimal_wiring = ["from nsgablack.catalog.curate import curate_packets", "# 由独立 writer 任务读取证据包与私密模型配置；网页只读取整理结果。"]
+config_keys = ["packets", "store", "generator", "model", "limit", "workers", "keys"]
+contract = { catalog = { role = "catalog_maintenance", concepts = ["AI资料整理", "自动整理", "组件说明", "源码证据", "增量发布"], operations = ["curate_packets"], boundaries = ["解释性说明不是运行验收；接口和能力仍由源码声明决定。", "按源码摘要、模型和提示版本复用；网页不持有AI凭据，也不触发生成。", "每批limit约束新整理条目数，不是硬金额预算。"] } }

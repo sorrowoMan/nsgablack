@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+from contextlib import nullcontext
 import numpy as np
 
 from blackbase.representation import representation_capabilities
@@ -44,16 +45,18 @@ def repair_problem_batch(control, batch, contexts, provenance):
             inspect.signature(pipeline.repair_batch).bind(candidates, contexts=contexts)
         except (TypeError, ValueError):
             use_batch = False
-    repaired = list(pipeline.repair_batch(candidates, contexts=contexts) if use_batch else
-                    [control.repair_candidate(value, contexts[i]) for i, value in enumerate(candidates)])
-    if len(repaired) != len(batch.semantic_states):
-        raise ValueError("Representation repair must preserve candidate count")
-    values = [value if isinstance(value, UnknownState) else batch.semantic_states[i].with_values(value)
-              for i, value in enumerate(repaired)]
-    result = normalize_candidate_batch(values, dimension=control.dimension, owner="problem_repair",
-                                       candidate_tokens=batch.candidate_tokens)
-    ProposalRepair(len(values), tuple(range(len(values))), batch, result)
-    return result
+    stage_batch = getattr(control, "_batch_candidate_pool_writes", nullcontext)
+    with stage_batch():
+        repaired = list(pipeline.repair_batch(candidates, contexts=contexts) if use_batch else
+                        [control.repair_candidate(value, contexts[i]) for i, value in enumerate(candidates)])
+        if len(repaired) != len(batch.semantic_states):
+            raise ValueError("Representation repair must preserve candidate count")
+        values = [value if isinstance(value, UnknownState) else batch.semantic_states[i].with_values(value)
+                  for i, value in enumerate(repaired)]
+        result = normalize_candidate_batch(values, dimension=control.dimension, owner="problem_repair",
+                                           candidate_tokens=batch.candidate_tokens)
+        ProposalRepair(len(values), tuple(range(len(values))), batch, result)
+        return result
 
 
 def inspect_joint_repair_contracts(control, participants):
@@ -77,7 +80,10 @@ def inspect_joint_repair_contracts(control, participants):
             if (tuple(owner.step_transaction_children()) or not hasattr(owner, "algorithm_unit")
                     or not isinstance(getattr(owner, "unit_binding", None), UnitBinding)):
                 raise TypeError("UnitRepair requires a leaf algorithm_unit and UnitBinding")
-            owner.unit_binding.validate(owner.algorithm_unit)
+            # An inactive leaf owns a binding, not an eagerly built structure.
+            # Value validation happens when its first proposal constructs it.
+            if owner.algorithm_unit is not None:
+                owner.unit_binding.validate(owner.algorithm_unit)
             validate_admission_fields(owner)
         except (TypeError, ValueError) as exc:
             issues.append(("joint-repair-contract-invalid", f"{owner.name}: {exc}"))
@@ -154,6 +160,12 @@ def _install_unit(owner, payload):
         refresh()
 
 
+def _admission_unit_revision(owner):
+    """A declared reset is an absent structure, never a request to build one."""
+    unit = owner.algorithm_unit
+    return _digest(None if unit is None else owner.unit_binding.dump(unit))
+
+
 class RepairBaseline:
     """Local participant state after propose, before any repair/reconciliation."""
     def __init__(self, control, original, proposed_count, context):
@@ -221,12 +233,21 @@ class PendingUnitAdmission:
                                                        reason=disposition.reason)))
             audit.append({"owner_path": path, "accepted_indices": list(accepted.proposal_indices),
                           "candidate_tokens": list(accepted.after.candidate_tokens),
-                          "unit_revision": _digest(owner.unit_binding.dump(owner.algorithm_unit))})
+                          "unit_revision": _admission_unit_revision(owner)})
         self.report["admission"] = audit
 
     def validate_after_disposition(self):
+        accepted_owners = {id(owner) for owner, *_ in self.accepted}
         for owner, _, _, original, _ in self.rows:
-            if owner.algorithm_unit.unit_id != owner.unit_binding.restore(original).unit_id:
+            if owner.algorithm_unit is None:
+                # Pool refinement may explicitly restart after total rejection.
+                # Its local state keeps the identity while leaving Unit absent;
+                # accepted proposals, in contrast, still require their structure.
+                local = capture_runtime_snapshot(owner)
+                if (id(owner) in accepted_owners or local.get("algorithm_unit", False) is not None
+                        or local.get("unit_id") != original["unit_id"]):
+                    raise ValueError("UnitRepair disposition must preserve Unit identity")
+            elif owner.algorithm_unit.unit_id != original["unit_id"]:
                 raise ValueError("UnitRepair disposition must preserve Unit identity")
         for owner, evidence, ctx, local, original, partial, disposition in self.accepted:
             self.control.checkpoint_case_runtime()
@@ -252,7 +273,7 @@ class PendingUnitAdmission:
         by_path = {path: owner for owner, _, _, _, path in self.rows}
         for row in self.report["admission"]:
             owner = by_path[row["owner_path"]]
-            row["unit_revision"] = _digest(owner.unit_binding.dump(owner.algorithm_unit))
+            row["unit_revision"] = _admission_unit_revision(owner)
         self.control.checkpoint_case_runtime()
 
 

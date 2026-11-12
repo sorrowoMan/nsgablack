@@ -14,6 +14,7 @@ from blackbase.context import StateStoreConfig
 from blackbase.types import CandidateBatch, Feedback, PopulationSnapshot
 from blackbase.contracts import BatchDisposition
 from .evaluation_feedback import OptimizationFeedbackBatch
+from .nested_solver import CaseInnerRuntimeEvaluator
 from .state.incumbent import CandidateProvenance
 from nsgablack.context_keys import KEY_SNAPSHOT_KEY, KEY_SOLUTION_INPUT_REF
 from ..adapters import NSGA2Adapter, NSGA2Config
@@ -473,6 +474,12 @@ class EvolutionSolver(ComposableSolver):
 
     def evaluate_population(self, population: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         try:
+            if isinstance(
+                getattr(self.problem, "inner_runtime_evaluator", None), CaseInnerRuntimeEvaluator
+            ):
+                # Complete Cases use Project L0/CaseStage dispatch. The legacy
+                # numerical thread/Redis evaluator owns a different task type.
+                return super().evaluate_population(population)
             if _has_problem_inner_runtime_evaluator(self):
                 nested = self._ensure_nested_parallel_evaluator()
                 if nested is not None:
@@ -584,7 +591,7 @@ class EvolutionSolver(ComposableSolver):
             selected_records = tuple(records[i] for i in indices)
             refs = self.store_solutions(selected_batch, stage="accepted", feedback=selected_feedback,
                                         provenance=selected_records)
-            self._install_population_state(selected_batch, selected_feedback, refs)
+            self._install_population_state(selected_batch, selected_feedback, refs, provenance=selected_records)
             self.plugin_manager.on_population_init(self.population, self.objectives, self.constraint_violations)
             try:
                 self._runtime_governance_on_population_init(self.population, self.objectives, self.constraint_violations)
@@ -597,13 +604,19 @@ class EvolutionSolver(ComposableSolver):
         self._execute_step_transaction(initialize, step_extensions=False)
         return result[0]
 
-    def _install_population_state(self, batch, feedback, solution_refs):
+    def _install_population_state(self, batch, feedback, solution_refs, *, provenance=None):
         """Deliver existing versions to the Adapter and its authority projection."""
         refs = tuple(solution_refs)
-        saved = self.solution_pool.read_provenance(refs, allow_pending=True)
-        if any(record is None for record in saved):
-            raise ValueError("Population state requires exact pool provenance")
-        records = tuple(CandidateProvenance.from_dict(record) for record in saved)
+        if provenance is None:
+            saved = self.solution_pool.read_provenance(refs, allow_pending=True)
+            if any(record is None for record in saved):
+                raise ValueError("Population state requires exact pool provenance")
+            records = tuple(CandidateProvenance.from_dict(record) for record in saved)
+        else:
+            # store_solutions freezes the candidate's semantic metadata into
+            # lineage; use that same projection for already-known records.
+            records = tuple(self._with_candidate_semantics(record, state)
+                for record, state in zip(provenance, batch.semantic_states, strict=True))
         mode = self.adapter.resolve_population_state_mode()
         if mode == "none":
             # L1 search owns its own trajectory/beam, not this evaluated batch.
@@ -744,7 +757,8 @@ class EvolutionSolver(ComposableSolver):
                 "constraint_violation": float(self.constraint_violations[i]),
                 "raw_evaluation": {"objectives": raw_f[i].tolist(), "constraint_violation": float(raw_v[i])}})
                 for i in range(len(refs))))
-        self._install_population_state(batch, feedback, refs)
+        self._install_population_state(batch, feedback, refs,
+            provenance=self.get_candidate_population_provenance())
 
     def _sync_solver_from_adapter(self) -> None:
         adapter = getattr(self, "adapter", None)
@@ -960,7 +974,8 @@ class EvolutionSolver(ComposableSolver):
             chosen, chosen_feedback = batch.subset(selected), feedback.subset(selected)
             chosen_refs = (self.store_solutions(chosen, stage="accepted", feedback=chosen_feedback,
                 provenance=tuple(records[i] for i in selected)) if refs is None else tuple(refs[i] for i in selected))
-            self._install_population_state(chosen, chosen_feedback, chosen_refs)
+            self._install_population_state(chosen, chosen_feedback, chosen_refs,
+                provenance=tuple(records[i] for i in selected))
             self._finish_population_publication()
             disposition = BatchDisposition(len(batch.semantic_states), tuple(selected), reason="environmental_selection")
             return StepOutcome(status="committed", proposals=len(batch.semantic_states), metadata={

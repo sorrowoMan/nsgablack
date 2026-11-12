@@ -16,7 +16,7 @@ from __future__ import annotations
 from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 import math
 
@@ -39,6 +39,14 @@ from ..algorithm_adapter import (
 from ..runtime_projection import aggregate_adapter_runtime_projections
 from ..strategy_task import StrategyTask, attach_strategy_origin, TASK_CONTEXT_KEYS
 from ..pool_tasks import PoolTaskSpec, PoolTaskAdapter
+from ..pool_scope import (
+    KEY_WORKING_POOL,
+    bind_working_pool,
+    restore_working_pool_context,
+    stage_working_pool_results,
+    validate_working_pool_name,
+    working_pool_descriptor,
+)
 from ..empty_outcome import (
     aggregate_named_empty_outcomes,
     child_empty_proposal_outcome,
@@ -202,6 +210,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
     unit_contract_mode = "delegated"
     context_requires = ("generation",)
     context_provides = (
+        KEY_WORKING_POOL,
         KEY_SHARED,
         KEY_STRATEGY,
         KEY_STRATEGY_ID,
@@ -235,6 +244,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         "population partitions, tokens, and child adapter states."
     )
     population_state_mode = "partitioned"
+    operation_methods = {"pool_maintenance": "maintain"}
 
     def __init__(
         self,
@@ -244,6 +254,8 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         config: Optional[MultiStrategyConfig] = None,
         name: str = "multi_strategy_controller",
         priority: int = 0,
+        working_pool: str | None = None,
+        pool_maintenance=None,
         **config_kwargs,
     ) -> None:
         super().__init__(name=name, priority=priority)
@@ -254,6 +266,10 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             adapter_name="StrategyRouterAdapter",
         )
         self.cfg = self.config
+        self.set_pool_maintenance(pool_maintenance)
+        self._working_pool = validate_working_pool_name(working_pool)
+        self._working_pool_used = False
+        self._proposal_pool_context = None
         self.strategies: List[StrategySpec] = list(strategies or [])
         self.roles: List[RoleSpec] = list(roles or [])
         self.units: List[StrategyInstanceSpec] = []
@@ -287,8 +303,47 @@ class StrategyRouterAdapter(AlgorithmAdapter):
 
         if self.roles and self.strategies:
             raise ValueError("StrategyRouterAdapter: provide either strategies=... or roles=..., not both.")
+        self._dispatch_stop_outcome = None
+        self._capture_policy_baseline()
+
+    @property
+    def working_pool(self):
+        return self._working_pool
+
+    @working_pool.setter
+    def working_pool(self, name):
+        self.set_working_pool(name)
+
+    def set_working_pool(self, name):
+        name = validate_working_pool_name(name)
+        if self._working_pool_used and name != self._working_pool:
+            raise RuntimeError("working_pool cannot change after strategy execution has started")
+        self._working_pool = name
+        return self
+
+    def _working_pool_state(self, state):
+        name = validate_working_pool_name(state.get("working_pool"))
+        if name != self.working_pool:
+            raise ValueError("StrategyRouterAdapter working_pool binding mismatch")
+        original = state.get("working_pool_context")
+        if original is not None:
+            if not isinstance(original, Mapping) or set(original).difference((KEY_WORKING_POOL,)):
+                raise ValueError("StrategyRouterAdapter working pool context is invalid")
+            descriptor = working_pool_descriptor(original)
+            if name is not None and descriptor is None:
+                raise ValueError("StrategyRouterAdapter proposal is missing its working_pool binding")
+            if descriptor is not None and name is not None and descriptor["name"] != name:
+                raise ValueError("StrategyRouterAdapter proposal working_pool disagrees with its binding")
+            original = copy.deepcopy(dict(original))
+        elif name is not None and state.get("step", 0):
+            raise ValueError("StrategyRouterAdapter running state is missing its working_pool binding")
+        return bool(state.get("step", 0)) or original is not None, original
 
     def setup(self, control: Any) -> None:
+        self._reset_policy_for_fresh_setup()
+        self._dispatch_stop_outcome = None
+        self._working_pool_used = False
+        self._proposal_pool_context = None
         self._rng = self.create_local_rng(control)
         self._step = 0
         self._best_score.clear()
@@ -325,6 +380,12 @@ class StrategyRouterAdapter(AlgorithmAdapter):
     def teardown(self, control: Any) -> None:
         for unit in self.units:
             unit.adapter.teardown(control)
+
+    def on_schedule_activation(self, control, activation_id):
+        super().on_schedule_activation(control, activation_id)
+        for unit in self.units:
+            unit.adapter.on_schedule_activation(control,
+                f"{activation_id}/{self._unit_prefix(unit)}")
 
     def _build_units(self) -> List[StrategyInstanceSpec]:
         specs = self.strategies or self.roles
@@ -748,8 +809,11 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         total = int(max(1, int(self.cfg.total_batch_size)))
         probs = weights / max(1e-12, float(np.sum(weights)))
 
-        raw = probs * float(total)
-        budgets = np.floor(raw).astype(int)
+        # Reserve required minima before weighting the remainder. Topping up
+        # zero allocations afterwards could exceed total (e.g. 100:1 with 2).
+        minimum = 1 if total >= len(enabled) else 0
+        raw = probs * float(total - minimum * len(enabled))
+        budgets = np.floor(raw).astype(int) + minimum
         remain = total - int(np.sum(budgets))
         if remain > 0:
             frac = raw - budgets
@@ -758,11 +822,6 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 budgets[idx] += 1
 
         out = {enabled[i][0]: int(max(0, budgets[i])) for i in range(len(enabled))}
-        # ensure at least 1 for each enabled role when total allows
-        if total >= len(enabled):
-            for name, _w in enabled:
-                if out.get(name, 0) == 0:
-                    out[name] = 1
         return out
 
     def _split_to_units(self, role_budgets: Dict[str, int]) -> Dict[Tuple[str, int], int]:
@@ -874,6 +933,12 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         }
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[UnknownState]:
+        self._dispatch_stop_outcome = None
+        context = bind_working_pool(control, context, self.working_pool,
+            previous=working_pool_descriptor(self._proposal_pool_context))
+        self._working_pool_used = True
+        self._proposal_pool_context = ({KEY_WORKING_POOL: copy.deepcopy(context[KEY_WORKING_POOL])}
+                                       if KEY_WORKING_POOL in context else {})
         # No previous proposal projection may describe an empty/failed attempt.
         self._last_allocations = []
         self._unit_tasks = {}
@@ -968,6 +1033,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 region_id=None if region_id is None else int(region_id),
                 region_bounds=region_bounds, seeds=seeds,
             )
+            task = self._prepare_strategy_task(unit, task)
             ctx = task.bind(context)
             ctx[KEY_SHARED] = copy.deepcopy(shared)
             unit_key = (unit.role, int(unit.unit_id))
@@ -976,6 +1042,17 @@ class StrategyRouterAdapter(AlgorithmAdapter):
 
             proposed = self.coerce_candidates(unit.adapter.propose(control, ctx))
             if not proposed:
+                outcome = child_empty_proposal_outcome(unit.adapter, control, ctx)
+                if outcome is not None and (outcome.status == "cancelled" or outcome.stop_requested):
+                    # Already proposed siblings must see zero admission through
+                    # their original ranges before control state is committed.
+                    self._last_allocations = allocations
+                    if cursor:
+                        self.on_proposal_disposition(control, BatchDisposition.prefix(
+                            proposed_count=cursor, accepted_count=0,
+                            reason="sibling_cancelled"), context)
+                    self._dispatch_stop_outcome = outcome
+                    return []
                 continue
 
             selected = proposed[:k]
@@ -1008,11 +1085,17 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self._broadcast_state(control)
         return candidates
 
+    def _prepare_strategy_task(self, unit, task):
+        """Bind a structured schedule's local phase before proposal ownership freezes."""
+        return task
+
     def get_empty_proposal_outcome(
         self,
         control: Any,
         context: Dict[str, Any],
     ) -> Any | None:
+        if self._dispatch_stop_outcome is not None:
+            return self._dispatch_stop_outcome
         by_key = {(unit.role, int(unit.unit_id)): unit for unit in self.units}
         rows = []
         for key, proposal_context in self._unit_proposal_contexts.items():
@@ -1119,8 +1202,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
     def _task_context(self, key, current):
         # Current lifecycle facts win; task-owned fields always come from the
         # immutable original request, never from global observation projections.
-        context = dict(self._unit_proposal_contexts[key])
-        context.update(current)
+        context = restore_working_pool_context(self._unit_proposal_contexts[key], current)
         return StrategyTask.from_dict(self._unit_tasks[key]).bind(context)
 
     def _task_summaries(self):
@@ -1243,6 +1325,8 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 subset_adapter_feedback(feedback, slice(start, end)),
                 ctx,
             )
+            stage_working_pool_results(self, control, sub_cands,
+                subset_adapter_feedback(feedback, slice(start, end)), ctx)
             self._record_unit_report(role, int(unit_id), sub_cands, sub_obj, sub_vio, scores_arr[start:end])
 
         # decision: adapt strategy weights
@@ -1258,6 +1342,13 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self.shared_state["phase"] = self._current_phase_name
         self.shared_state["regions"] = self._build_region_stats()
         self._broadcast_state(control)
+
+        if self.get_bound_operator("pool_maintenance") is not None:
+            from ..pool_maintenance import run_pool_maintenance, population_member_owners
+            active = tuple(by_key[(role, int(unit_id))].adapter
+                           for role, unit_id, start, end in self._last_allocations if end > start)
+            run_pool_maintenance(self, control, candidates, feedback, context, rng=self._rng,
+                member_owners=population_member_owners(self, active))
 
         self._unit_proposal_contexts = {}
         self._unit_base_dispositions = {}
@@ -1337,9 +1428,269 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             out[key] = copy.deepcopy(dict(item.get("value", {}) or {}))
         return out
 
+    @staticmethod
+    def _policy_declaration(value):
+        """Detach declarations, without copying a callback's live object graph.
+
+        Python code, defaults and provably pure closure values participate in
+        identity. Live captures stay explicit opaque type boundaries. This is
+        not a side-effect, global-variable or arbitrary object-state proof.
+        """
+        import functools
+        import hashlib
+        import json
+        import types
+
+        active = set()
+        remaining = [4096]
+        function_types = (types.FunctionType, types.MethodType, types.BuiltinFunctionType)
+
+        def type_name(item):
+            return f"{type(item).__module__}.{type(item).__qualname__}"
+
+        def callable_name(item):
+            return (f"{getattr(item, '__module__', type(item).__module__)}."
+                    f"{getattr(item, '__qualname__', type(item).__qualname__)}")
+
+        def opaque(item, boundary="runtime_value"):
+            return {"opaque_type": type_name(item), "boundary": boundary}
+
+        def pure_capture(item, depth):
+            """Prove a complete value tree before treating it as configuration.
+
+            A container holding a live owner is opaque as a whole: inspecting
+            some of its fields must not turn that owner's mutable bookkeeping
+            into supposedly immutable callback parameters.
+            """
+            remaining[0] -= 1
+            if depth > 64 or remaining[0] < 0:
+                return False, opaque(item, "capture_limit")
+            if item is None or isinstance(item, (str, bool, int)):
+                return True, item
+            if isinstance(item, np.generic):
+                return pure_capture(item.item(), depth + 1)
+            if isinstance(item, float):
+                return ((True, item) if math.isfinite(item)
+                        else (False, opaque(item, "nonfinite")))
+            if isinstance(item, bytes):
+                return True, {"bytes": item.hex()}
+            if isinstance(item, function_types):
+                return True, declare(item, depth + 1)
+            if id(item) in active:
+                return False, opaque(item, "cycle")
+            if not (type(item) in (tuple, list, dict, set, frozenset)
+                    or is_dataclass(item) and not isinstance(item, type)):
+                return False, opaque(item)
+            active.add(id(item))
+            try:
+                if type(item) is dict:
+                    if any(type(key) is not str for key in item):
+                        return False, opaque(item, "non_string_keys")
+                    children = {key: pure_capture(part, depth + 1) for key, part in item.items()}
+                    kind = "dict"
+                elif is_dataclass(item) and not isinstance(item, type):
+                    children = {field.name: pure_capture(getattr(item, field.name), depth + 1)
+                                for field in fields(item)}
+                    kind = type_name(item)
+                else:
+                    children = {str(index): pure_capture(part, depth + 1)
+                                for index, part in enumerate(item)}
+                    kind = type(item).__name__
+                if any(not known for known, _ in children.values()):
+                    return False, opaque(item, "contains_runtime_value")
+                values = {key: part for key, (_, part) in children.items()}
+                if kind in {"tuple", "list", "set", "frozenset"}:
+                    values = list(values.values())
+                    if kind in {"set", "frozenset"}:
+                        values.sort(key=lambda part: json.dumps(part, sort_keys=True))
+                return True, {"type": kind, "value": values}
+            finally:
+                active.remove(id(item))
+
+        def capture(item, depth):
+            return pure_capture(item, depth)[1]
+
+        def code_value(code):
+            def constant(item):
+                if isinstance(item, types.CodeType):
+                    return code_value(item)
+                if isinstance(item, bytes):
+                    return {"bytes": item.hex()}
+                if isinstance(item, (tuple, frozenset)):
+                    items = [constant(part) for part in item]
+                    return {"kind": type(item).__name__, "items": sorted(items, key=repr)
+                            if isinstance(item, frozenset) else items}
+                if item is None or isinstance(item, (str, bool, int, float)):
+                    return item
+                return {"constant_type": type(item).__name__, "value": repr(item)}
+            return {"bytecode": code.co_code.hex(), "constants": [constant(v) for v in code.co_consts],
+                    "names": list(code.co_names), "locals": list(code.co_varnames),
+                    "freevars": list(code.co_freevars), "cellvars": list(code.co_cellvars),
+                    "argcount": code.co_argcount, "kwonly": code.co_kwonlyargcount,
+                    "posonly": code.co_posonlyargcount, "flags": code.co_flags,
+                    "exceptions": getattr(code, "co_exceptiontable", b"").hex()}
+
+        def declare(item, depth=0):
+            remaining[0] -= 1
+            if depth > 64 or remaining[0] < 0:
+                raise ValueError("router policy declaration exceeds its finite value limit")
+            if item is None or isinstance(item, (str, bool, int)):
+                return item
+            if isinstance(item, np.generic):
+                return declare(item.item(), depth + 1)
+            if isinstance(item, float):
+                if not math.isfinite(item):
+                    raise ValueError("router policy declarations require finite numbers")
+                return item
+            if id(item) in active:
+                if isinstance(item, function_types):
+                    return {"recursive_callable": callable_name(item)}
+                raise ValueError("router policy declaration contains a cycle")
+            active.add(id(item))
+            try:
+                if isinstance(item, Mapping):
+                    if any(not isinstance(key, str) for key in item):
+                        raise TypeError("router policy declaration keys must be strings")
+                    return {key: declare(part, depth + 1) for key, part in item.items()}
+                if isinstance(item, (tuple, list)):
+                    return [declare(part, depth + 1) for part in item]
+                if isinstance(item, (set, frozenset)):
+                    items = [declare(part, depth + 1) for part in item]
+                    return {"set": sorted(items, key=lambda part: json.dumps(part, sort_keys=True))}
+                if isinstance(item, functools.partial):
+                    return {"partial": declare(item.func, depth + 1),
+                            "args": capture(item.args, depth + 1),
+                            "keywords": capture(item.keywords or {}, depth + 1)}
+                if is_dataclass(item) and not isinstance(item, type):
+                    return {"type": type_name(item), "fields": {
+                        field.name: declare(getattr(item, field.name), depth + 1) for field in fields(item)}}
+                if callable(item):
+                    result = {"callable": callable_name(item)}
+                    code = getattr(item, "__code__", None)
+                    if code is not None:
+                        payload = json.dumps(code_value(code), sort_keys=True, separators=(",", ":"))
+                        result["code"] = hashlib.sha256(payload.encode()).hexdigest()
+                        result["defaults"] = capture(getattr(item, "__defaults__", None), depth + 1)
+                        result["kwdefaults"] = capture(getattr(item, "__kwdefaults__", None), depth + 1)
+                        captured = {}
+                        for name, cell in zip(code.co_freevars, getattr(item, "__closure__", None) or ()):
+                            try:
+                                part = cell.cell_contents
+                            except ValueError:
+                                captured[name] = {"boundary": "empty_cell"}
+                            else:
+                                captured[name] = capture(part, depth + 1)
+                        result["captures"] = captured
+                    owner = getattr(item, "__self__", None)
+                    if owner is not None:
+                        result["bound_owner"] = opaque(owner)
+                    return result
+                raise TypeError(f"router policy declaration is not a supported value: {type(item).__name__}")
+            finally:
+                active.remove(id(item))
+
+        return declare(value)
+
+    def _capture_policy_baseline(self):
+        """Capture assembly declarations, keeping actual Strategy/Role owners intact.
+
+        Construction may precede final assembly configuration. The baseline
+        becomes immutable at first setup or state capture/restore, not merely
+        when an Adapter configuration instance is created.
+        """
+        from blackbase.wire import freeze_wire_mapping
+        if getattr(self, "_policy_baseline_sealed", False):
+            return
+        specs = self.strategies or self.roles
+        rows = []
+        for spec in specs:
+            weight = float(spec.weight)
+            if not math.isfinite(weight):
+                raise ValueError("router policy weights must be finite")
+            rows.append({"name": str(spec.name), "weight": weight,
+                         "enabled": bool(spec.enabled),
+                         "n_units": int(getattr(spec, "n_units", 1))})
+        self._policy_baseline = freeze_wire_mapping({
+            "kind": "strategies" if self.strategies else "roles",
+            "config": self._policy_declaration(self.cfg), "owners": rows})
+
+    def _policy_identity(self):
+        from blackbase.wire import thaw_wire_mapping
+        self._capture_policy_baseline()
+        self._policy_baseline_sealed = True
+        identity = thaw_wire_mapping(self._policy_baseline)
+        specs = self.strategies or self.roles
+        current = [{"name": str(spec.name), "enabled": bool(spec.enabled),
+                    "n_units": int(getattr(spec, "n_units", 1))} for spec in specs]
+        if len({row["name"] for row in current}) != len(current):
+            raise ValueError("router policy owner names must be unique")
+        declared = [{key: row[key] for key in ("name", "enabled", "n_units")}
+                    for row in identity["owners"]]
+        if (current != declared or self._policy_declaration(self.cfg) != identity["config"]
+                or identity["kind"] != ("strategies" if self.strategies else "roles")):
+            raise ValueError("router policy configuration changed after assembly; rebuild or migrate explicitly")
+        return identity
+
+    def _reset_policy_for_fresh_setup(self):
+        identity = self._policy_identity()
+        initial = {row["name"]: row["weight"] for row in identity["owners"]}
+        for spec in self.strategies or self.roles:
+            spec.weight = initial[str(spec.name)]
+
+    def _policy_weights(self):
+        result = {str(spec.name): float(spec.weight) for spec in self.strategies or self.roles}
+        if any(not math.isfinite(weight) for weight in result.values()):
+            raise ValueError("router runtime policy weights must be finite")
+        return result
+
+    @staticmethod
+    def _stop_outcome_payload(outcome):
+        from ...core.state.step_outcome import StepOutcome
+        from blackbase.wire import thaw_wire_mapping
+        if outcome is None:
+            return None
+        if not isinstance(outcome, StepOutcome) or outcome.committed or not outcome.terminal:
+            raise ValueError("router dispatch stop outcome must be a noncommitted terminal StepOutcome")
+        return {field.name: (thaw_wire_mapping(outcome.metadata) if field.name == "metadata"
+                            else getattr(outcome, field.name)) for field in fields(StepOutcome)}
+
+    def _validated_policy_state(self, state):
+        from ...core.state.step_outcome import StepOutcome
+        if state.get("policy_identity") != self._policy_identity():
+            raise ValueError("router policy checkpoint configuration mismatch")
+        weights = state.get("policy_weights")
+        expected = {str(spec.name) for spec in self.strategies or self.roles}
+        if not isinstance(weights, Mapping) or set(weights) != expected:
+            raise ValueError("router policy weights do not match declared owners")
+        parsed = {}
+        for name, value in weights.items():
+            if type(value) not in (int, float) or not math.isfinite(float(value)):
+                raise ValueError("router policy checkpoint weights must be finite numbers")
+            parsed[name] = float(value)
+        raw = state.get("dispatch_stop_outcome")
+        outcome = None
+        if raw is not None:
+            if not isinstance(raw, Mapping) or set(raw) != {field.name for field in fields(StepOutcome)}:
+                raise ValueError("router dispatch stop outcome fields mismatch")
+            outcome = StepOutcome(**dict(raw))
+            self._stop_outcome_payload(outcome)
+        return parsed, outcome
+
+    def _apply_policy_state(self, parsed):
+        weights, outcome = parsed
+        for spec in self.strategies or self.roles:
+            spec.weight = weights[str(spec.name)]
+        self._dispatch_stop_outcome = outcome
+
     def get_state(self) -> Dict[str, Any]:
         return {
-            "schema": "nsgablack.strategy_router_state/v3",
+            **({"operator_bindings": self.operator_bindings_state()} if self._operator_bindings() else {}),
+            "schema": "nsgablack.strategy_router_state/v4",
+            "policy_identity": self._policy_identity(),
+            "policy_weights": self._policy_weights(),
+            "dispatch_stop_outcome": self._stop_outcome_payload(getattr(self, "_dispatch_stop_outcome", None)),
+            "working_pool": self.working_pool,
+            "working_pool_context": copy.deepcopy(self._proposal_pool_context),
             "step": int(self._step),
             "current_phase_name": str(self._current_phase_name),
             "phase_step": int(self._phase_step),
@@ -1386,9 +1737,15 @@ class StrategyRouterAdapter(AlgorithmAdapter):
     def set_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
+        with self.restoring_operator_bindings(state.get("operator_bindings")):
+            self._set_router_state(state)
+
+    def _set_router_state(self, state):
         schema = str(state.get("schema", ""))
-        if schema != "nsgablack.strategy_router_state/v3":
-            raise ValueError(f"unsupported StrategyRouterAdapter state schema: {schema}")
+        if schema != "nsgablack.strategy_router_state/v4":
+            raise ValueError(f"unsupported StrategyRouterAdapter state schema: {schema}; legacy policy state requires explicit migration")
+        policy_state = self._validated_policy_state(state)
+        pool_used, pool_context = self._working_pool_state(state)
         if not self.units:
             self.units = self._build_units()
         raw_units = tuple(state.get("units", ()) or ())
@@ -1463,12 +1820,15 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self._runtime_shared_projection = {}
         self._runtime_meta_projection = {}
         self._last_projection_writers = {}
+        self._working_pool_used = self._working_pool_used or pool_used
+        self._proposal_pool_context = pool_context
         self._broadcast_state(None)
         raw_partitions = tuple(state.get("population_partitions", ()) or ())
         if raw_partitions:
             self.set_population_partitions(
                 tuple(PopulationPartition.from_dict(item) for item in raw_partitions)
             )
+        self._apply_policy_state(policy_state)
 
     def step_transaction_children(self) -> Sequence[AlgorithmAdapter]:
         if not self.units:
@@ -1485,7 +1845,13 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             self.units = self._build_units()
         self.validate_composition_contract()
         return {
-            "schema": "nsgablack.strategy_router_step_transaction/v2",
+            **({"operator_bindings": self.operator_bindings_state()} if self._operator_bindings() else {}),
+            "schema": "nsgablack.strategy_router_step_transaction/v3",
+            "policy_identity": self._policy_identity(),
+            "policy_weights": self._policy_weights(),
+            "dispatch_stop_outcome": self._stop_outcome_payload(getattr(self, "_dispatch_stop_outcome", None)),
+            "working_pool": self.working_pool,
+            "working_pool_context": copy.deepcopy(self._proposal_pool_context),
             "step": int(self._step),
             "current_phase_name": str(self._current_phase_name),
             "phase_step": int(self._phase_step),
@@ -1550,8 +1916,14 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         }
 
     def restore_step_state(self, state: Mapping[str, Any]) -> None:
-        if str(state.get("schema", "")) != "nsgablack.strategy_router_step_transaction/v2":
-            raise ValueError("unsupported StrategyRouterAdapter step transaction schema")
+        with self.restoring_operator_bindings(state.get("operator_bindings")):
+            self._restore_router_step_state(state)
+
+    def _restore_router_step_state(self, state):
+        if str(state.get("schema", "")) != "nsgablack.strategy_router_step_transaction/v3":
+            raise ValueError("unsupported StrategyRouterAdapter step transaction schema; legacy policy state requires explicit migration")
+        policy_state = self._validated_policy_state(state)
+        pool_used, pool_context = self._working_pool_state(state)
         if not self.units:
             self.units = self._build_units()
         expected = {(unit.role, int(unit.unit_id)): unit for unit in self.units}
@@ -1573,6 +1945,8 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self._step = max(0, int(state.get("step", 0) or 0))
         self._current_phase_name = str(state.get("current_phase_name", "explore"))
         self._phase_step = max(0, int(state.get("phase_step", 0) or 0))
+        self._working_pool_used = self._working_pool_used or pool_used
+        self._proposal_pool_context = pool_context
         self._best_score = {
             str(key): float(value)
             for key, value in dict(state.get("best_score", {}) or {}).items()
@@ -1642,6 +2016,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         if not isinstance(rng_state, Mapping):
             raise TypeError("StrategyRouterAdapter transaction RNG state is invalid")
         self._rng.bit_generator.state = copy.deepcopy(dict(rng_state))
+        self._apply_policy_state(policy_state)
 
     def get_runtime_context_projection(self, solver: Any) -> RuntimeContextProjection:
         own_fields: Dict[str, Any] = {}

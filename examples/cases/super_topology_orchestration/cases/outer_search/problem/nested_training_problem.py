@@ -72,6 +72,7 @@ class NestedTrainingOptimizationProblem(BlackBoxProblem):
             "trainer_control_plane": trainer_result.report.get("control_plane"),
             "trainer_committed_steps": summary.get("committed_steps"),
             "trainer_evaluation_count": summary.get("evaluation_count"),
+            "trainer_pool": dict(summary["solution_pool"]),
             "trainer_resource_lineage": {
                 "namespace": resource.get("namespace"),
                 "lease_id": lease.get("lease_id"),

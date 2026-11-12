@@ -1,0 +1,12 @@
+[[example]]
+id = "ml-symbolic-audit-application"
+title = "已拟合表达式的实际审计链与发布后路径观察"
+component_keys = ["mlblack.nsgablack_symbolic.expression_graph_cache", "mlblack.nsgablack_symbolic.function_pool_index_search_space", "mlblack.nsgablack_symbolic.orthogonal_basis_set_artifact", "mlblack.nsgablack_symbolic.symbolic_basis_consensus_analyzer", "mlblack.nsgablack_symbolic.symbolic_branch_evaluator", "mlblack.nsgablack_symbolic.symbolic_candidate_scorer", "mlblack.nsgablack_symbolic.symbolic_expression_audit_producer", "mlblack.nsgablack_symbolic.symbolic_fold_evaluator", "mlblack.nsgablack_symbolic.symbolic_overfit_guard", "mlblack.nsgablack_symbolic.symbolic_path_memory", "mlblack.nsgablack_symbolic.symbolic_replay_record_builder", "mlblack.nsgablack_symbolic.symbolic_structure_guard", "mlblack.nsgablack_symbolic.symbolic_task_artifact"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "正式固定符号Case实际调用缓存、index值、Guard/Scorer、拟合Artifact和多类派生报告；SQLite只在显式变体的最终发布后观察，不假装步骤事务或自动决策。"
+inputs = ["完整catalog_codec_demo Project副本；两参数固定符号模型、32训练/12留出；当前三仓NumPy，变体使用标准库SQLite。"]
+steps = ["保存全部完整工厂/Problem/Plugin/builder文件，通过正式Project/L0执行；诊断在Artifact准备读取冻结模型，路径记录在最终发布后。"]
+dependencies = ["当前三仓、NumPy；无外部模型；SQLite变体未执行。"]
+expected_outputs = ["原始训练MSE/留出指标、正式model_ref和实际reports；明确fold不重训、单basis非多运行共识、Replay非checkpoint、PathMemory非权威结果。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_SYMBOLIC_AUDIT_APPLICATIONS_CN.md",section="mlblack.nsgablack_symbolic.symbolic_candidate_scorer"}, {path="nsgablack/docs/catalog_usage/ML_SYMBOLIC_AUDIT_APPLICATIONS_CN.md",section="symbolic.audit.problem"}, {path="nsgablack/docs/catalog_usage/ML_SYMBOLIC_AUDIT_APPLICATIONS_CN.md",section="symbolic.audit.wiring"}, {path="nsgablack/docs/catalog_usage/ML_SYMBOLIC_AUDIT_APPLICATIONS_CN.md",section="symbolic.audit.runner"}]

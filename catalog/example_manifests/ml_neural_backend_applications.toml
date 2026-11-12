@@ -1,0 +1,12 @@
+[[example]]
+id = "ml-neural-backend-facades"
+title = "四后端Facade的真实查询、声明选择和装配边界"
+component_keys = ["mlblack.backend.numpy", "mlblack.backend.torch", "mlblack.backend.jax", "mlblack.backend.tensorflow"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "复用完整四后端查询主例：公开registry经过get_backend构造并缓存Facade，返回脱离contract，显式preferred拒绝缺能力；不是四份训练收据。"
+inputs = ["当前三仓与NumPy；本地配置诊断会话，先收集实际消费者需求。"]
+steps = ["读取四后端的真实注册、capability与缺项，显式选择Torch的声明；变体展示NumPy缺能力拒绝。", "通过正式Case的compute_backend/Provider/ResourceContext落实计算，Facade不充当模型或资源授权。"]
+dependencies = ["查询只检查声明；实际Torch/JAX/TensorFlow计算仍需各自可用可选依赖。"]
+expected_outputs = ["JSON注册名、四BackendContract/能力字典及requirement_check；不报告训练成功、依赖已装或GPU可用。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_BACKEND_CONTRACT_APPLICATIONS_CN.md", section="mlblack.backend_capability.torch.tensor"}]

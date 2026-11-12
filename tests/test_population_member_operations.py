@@ -26,8 +26,7 @@ from nsgablack.units import (
 
 
 @dataclass
-class AgeReferenceUnit(AgePopulationUnit):
-    reference_points: np.ndarray = field(default_factory=lambda: np.zeros((0, 0)))
+class AgeReferenceUnit(ReferencePopulationUnit, AgePopulationUnit):
     schema = UnitSchema("test.age_reference", required_fields=(
         *ReferencePopulationUnit.schema.required_fields, "age"), candidate_projection=False)
 
@@ -100,7 +99,7 @@ def test_equal_numeric_candidates_have_different_member_sources():
 ])
 def test_real_adapter_selects_without_knowing_custom_age(adapter_type, builder):
     adapter = adapter_type(population_size=3, unit_binding=UnitBinding(builder()))
-    seed(adapter.algorithm_unit)
+    seed(adapter.ensure_unit())
     control = SimpleNamespace(candidate_provenance_for=lambda candidate: SimpleNamespace(candidate_token="d"))
     adapter.update(control, [[4.]], (np.array([[1.]]), np.zeros(1)), {})
     assert adapter.get_population_candidate_tokens() == ("c", "d", "a")
@@ -202,7 +201,7 @@ def test_custom_validator_cannot_bypass_base_member_alignment():
 ])
 def test_codec_and_nested_transaction_restore_exact_age_without_replaying_hook(adapter_type, builder):
     adapter = adapter_type(unit_binding=UnitBinding(builder()))
-    seed(adapter.algorithm_unit)
+    seed(adapter.ensure_unit())
     saved = json.loads(json.dumps(adapter.get_state()))
     transaction = CompositeAdapter([adapter]).begin_step_transaction()
     adapter.algorithm_unit.apply_selection([3], [[4.]], [[1.]], [0.], candidate_tokens=("d",))
@@ -215,7 +214,7 @@ def test_codec_and_nested_transaction_restore_exact_age_without_replaying_hook(a
 
 def test_snapshot_feedback_refresh_is_not_a_selection_but_new_population_is_initialization():
     adapter = NSGA2Adapter(unit_binding=UnitBinding(AgePopulationBuilder()))
-    seed(adapter.algorithm_unit)
+    seed(adapter.ensure_unit())
     adapter.set_population_snapshot([[1.], [2.], [3.]], [[4.], [9.], [1.]], [0., 0., 0.])
     np.testing.assert_array_equal(adapter.algorithm_unit.age, [10, 4, 7])
     adapter.set_population_snapshot([[9.]], [[81.]], [0.])
@@ -227,9 +226,11 @@ def test_snapshot_feedback_refresh_is_not_a_selection_but_new_population_is_init
 ])
 def test_legacy_numeric_state_without_unit_envelope_initializes_member_extensions(adapter_type, builder):
     adapter = adapter_type(unit_binding=UnitBinding(builder()))
-    seed(adapter.algorithm_unit)
+    seed(adapter.ensure_unit())
     state = json.loads(json.dumps(adapter.get_state()))
-    state["algorithm_unit"] = None
+    # A legacy numerical checkpoint has no Unit envelope or absence contract.
+    state.pop("algorithm_unit")
+    state.pop("unit_contract")
     clone = adapter_type(unit_binding=UnitBinding(builder()))
     clone.set_state(state)
     assert clone.get_population_candidate_tokens() == ("a", "b", "c")
@@ -241,7 +242,7 @@ def test_doctor_rejects_invalid_member_contract_without_running_hook():
     from nsgablack.project.doctor_core.model import add_diagnostic
     from nsgablack.project.doctor_core.rules.build_solver import check_unit_bindings
     adapter = NSGA2Adapter()
-    adapter.algorithm_unit.member_fields = ("population",)
+    adapter.ensure_unit().member_fields = ("population",)
     diagnostics = []
     check_unit_bindings(solver=SimpleNamespace(adapter=adapter), build_file=None,
                         diags=diagnostics, add=add_diagnostic)

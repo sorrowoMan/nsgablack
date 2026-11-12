@@ -1,0 +1,3 @@
+name = parallel_a
+kind = solver
+framework = nsgablack

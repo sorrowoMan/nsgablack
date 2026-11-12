@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Optional, Tuple
+from typing import Mapping, Tuple
 
 import numpy as np
 
+from blackbase.project import build_case, load_case_builder
 from blackbase.resources import ResourceRequirement
 
 
@@ -15,6 +16,8 @@ class InnerProductionSolverConfig:
     generations: int = 3
     max_active_machines_per_day: int = 8
     max_production_per_machine: float = 3000.0
+    seed: int = 42
+    max_evaluations: int | None = None
     parallel: bool = False
     parallel_backend: str = "thread"
     parallel_workers: int = 1
@@ -39,176 +42,81 @@ class InnerProductionSolverConfig:
         metadata.setdefault("layer", "L2")
         metadata.setdefault("source", "supply_adjustment_nested.inner")
         return ResourceRequirement(
-            threads=int(base.threads),
-            gpus=int(base.gpus),
-            resource_backend=str(base.resource_backend),
-            device_tokens=tuple(base.device_tokens),
-            memory_mb=base.memory_mb,
-            gpu_memory_mb=base.gpu_memory_mb,
-            capabilities=caps,
-            timeout_seconds=base.timeout_seconds,
-            metadata=metadata,
+            threads=int(base.threads), gpus=int(base.gpus), resource_backend=str(base.resource_backend),
+            device_tokens=tuple(base.device_tokens), memory_mb=base.memory_mb,
+            gpu_memory_mb=base.gpu_memory_mb, capabilities=caps,
+            timeout_seconds=base.timeout_seconds, metadata=metadata,
         )
 
 
 def build_inner_production_solver(
-    *,
-    bom_matrix: np.ndarray,
-    supply_matrix: np.ndarray,
-    production_case_dir: Path,
-    cfg: InnerProductionSolverConfig,
+    *, bom_matrix: np.ndarray, supply_matrix: np.ndarray,
+    production_case_dir: Path, cfg: InnerProductionSolverConfig, resource_context=None,
 ):
-    """Build a standard production scheduling solver for nested runtime."""
-    import sys
-
+    """Use the production Case's canonical builder with an explicit local scenario."""
     case_dir = Path(production_case_dir).resolve()
-    if str(case_dir) not in sys.path:
-        sys.path.insert(0, str(case_dir))
-
-    for name in (
-        "problem",
-        "plugins",
-        "adapter",
-        "bias",
-        "pipeline",
-        "reporting",
-        "solver",
-        "cli",
-        "refactor_data",
-        "build_solver",
-        "working_integrated_optimizer",
-    ):
-        mod = sys.modules.get(name)
-        mod_file = str(getattr(mod, "__file__", "") or "")
-        if mod is not None and str(case_dir) not in mod_file:
-            sys.modules.pop(name, None)
-
-    from refactor_data import ProductionData
-    from problem import ProductionConstraints, ProductionSchedulingProblem
-    from build_solver import build_multi_agent_solver
-
-    bom = np.asarray(bom_matrix, dtype=float)
-    supply = np.asarray(supply_matrix, dtype=float)
-    if bom.ndim != 2 or supply.ndim != 2:
-        raise ValueError("bom_matrix/supply_matrix must be 2D arrays")
-
+    if case_dir.parent.name != "cases" or not (case_dir / "build_solver.py").is_file():
+        raise ValueError("production_case_dir must name a standard production Case")
+    bom, supply = np.asarray(bom_matrix, dtype=float), np.asarray(supply_matrix, dtype=float)
+    if bom.ndim != 2 or supply.ndim != 2 or bom.shape[1] != supply.shape[0]:
+        raise ValueError("BOM and supply must have compatible two-dimensional shapes")
     machines, materials = bom.shape
-    days = int(supply.shape[1])
-
-    data = ProductionData(
-        machines=int(machines),
-        materials=int(materials),
-        days=int(days),
-        bom_matrix=np.asarray(bom > 0.0, dtype=bool),
-        supply_matrix=np.asarray(supply, dtype=float),
-        machine_weights=np.ones(int(machines), dtype=float),
-        bom_path=None,
-        supply_path=None,
-    )
-
-    constraints = ProductionConstraints(
-        max_machines_per_day=int(cfg.max_active_machines_per_day),
-        min_machines_per_day=5,
-        min_production_per_machine=50,
-        max_production_per_machine=int(cfg.max_production_per_machine),
-        shortage_unit_penalty=1.0,
-        include_penalty_objective=True,
-        penalty_objective_scale=0.001,
-    )
-    problem = ProductionSchedulingProblem(data=data, constraints=constraints)
-
-    class _Args:
-        pass
-
+    days = supply.shape[1]
+    if days != 31:
+        raise ValueError("nested production uses the original day0..30 planning window")
     req = cfg.effective_resource_requirement()
-    a = _Args()
-    a.material_cap_ratio = 2.0
-    a.daily_floor_ratio = 0.7
-    a.donor_keep_ratio = 0.6
-    a.daily_cap_ratio = 1.0
-    a.reserve_ratio = 0.2
-    a.coverage_bonus = 0.3
-    a.budget_mode = "average"
-    a.smooth_strength = 0.8
-    a.smooth_passes = 1
-    a.no_pipeline = False
-    a.no_bias = False
-    a.coverage_reward = 0.03
-    a.smoothness_penalty = 0.01
-    a.variance_penalty = 0.03
-    a.pop_size = int(max(8, cfg.pop_size))
-    a.explorer_adapter = "moead"
-    a.exploiter_adapter = "vns"
-    a.seed = 42
-    a.moead_pop_size = int(max(16, cfg.pop_size))
-    a.moead_neighborhood = 10
-    a.moead_nr = 2
-    a.moead_delta = 0.9
-    a.vns_batch_size = int(max(8, cfg.pop_size // 2))
-    a.vns_k_max = 3
-    a.vns_base_sigma = 0.2
-    a.adapt_interval = 8
-    a.comm_interval = 5
-    a.generations = int(max(1, cfg.generations))
-    a.allow_infeasible_update = False
-    a.parallel = bool(cfg.parallel)
-    a.parallel_backend = str(cfg.parallel_backend)
-    a.parallel_workers = int(max(1, req.threads))
-    a.parallel_chunk_size = cfg.parallel_chunk_size
-    a.parallel_verbose = False
-    a.parallel_no_precheck = False
-    a.parallel_strict = bool(cfg.parallel_strict)
-    a.parallel_thread_bias_isolation = str(cfg.parallel_thread_bias_isolation)
-    a.no_run_logs = True
-    a.no_bias_md = True
-    a.no_profile = True
-    a.no_decision_trace = True
-    a.decision_trace_flush_every = 10
-    a.log_every = 10
-    a.run_dir = None
-    a.run_id = None
-    a.report_every = 100
-    a.no_export = True
-    a.pareto_export = 0
-    a.pareto_export_mode = "crowding"
-    a.bom = None
-    a.supply = None
-    a.machines = int(machines)
-    a.materials = int(materials)
-    a.days = int(days)
-    a.max_machines = int(cfg.max_active_machines_per_day)
-    a.min_machines = 5
-    a.min_prod = 50
-    a.max_prod = int(cfg.max_production_per_machine)
-    a.shortage_unit_penalty = 1.0
-    a.penalty_objective = True
-    a.penalty_scale = 0.001
-
-    solver = build_multi_agent_solver(problem, a)
+    argv = [
+        "--solver", "multi-agent", "--cooperation", "phased",
+        "--machines", str(machines), "--materials", str(materials), "--days", str(days),
+        "--max-machines", str(cfg.max_active_machines_per_day),
+        "--min-machines", "5", "--min-prod", "50",
+        "--max-prod", str(int(cfg.max_production_per_machine)),
+        "--penalty-objective", "--penalty-scale", "0.001", "--shortage-unit-penalty", "1.0",
+        "--material-cap-ratio", "2.0", "--daily-floor-ratio", "0.7",
+        "--donor-keep-ratio", "0.6", "--daily-cap-ratio", "1.0",
+        "--reserve-ratio", "0.2", "--coverage-bonus", "0.3", "--budget-mode", "average",
+        "--smooth-strength", "0.8", "--smooth-passes", "1",
+        "--coverage-reward", "0.03", "--smoothness-penalty", "0.01", "--variance-penalty", "0.03",
+        "--pop-size", str(max(8, cfg.pop_size)), "--generations", str(max(1, cfg.generations)),
+        "--moead-pop-size", str(max(16, cfg.pop_size)), "--moead-neighborhood", "10",
+        "--moead-nr", "2", "--moead-delta", "0.9", "--explorer-adapter", "moead",
+        "--vns-batch-size", str(max(8, cfg.pop_size // 2)), "--vns-k-max", "3",
+        "--vns-base-sigma", "0.2", "--exploiter-adapter", "vns",
+        "--adapt-interval", "8", "--comm-interval", "5", "--seed", str(cfg.seed),
+        "--parallel-backend", cfg.parallel_backend, "--parallel-workers", str(max(1, req.threads)),
+        "--parallel-thread-bias-isolation", cfg.parallel_thread_bias_isolation,
+        "--no-run-logs", "--no-bias-md", "--no-profile", "--no-decision-trace", "--no-export",
+        "--pareto-export", "0", "--report-every", "100",
+    ]
+    if cfg.parallel:
+        argv.append("--parallel")
+    if cfg.parallel_strict:
+        argv.append("--parallel-strict")
+    if cfg.parallel_chunk_size is not None:
+        argv.extend(("--parallel-chunk-size", str(cfg.parallel_chunk_size)))
+    if cfg.max_evaluations is not None:
+        if type(cfg.max_evaluations) is not int or cfg.max_evaluations < 1:
+            raise ValueError("inner max_evaluations must be a positive integer")
+        argv.extend(("--max-evaluations", str(cfg.max_evaluations)))
+    builder = load_case_builder(case_dir.parents[1], case_dir.name, "solver")
+    solver = build_case(builder, resource_context=resource_context, component_overrides={
+        "argv": argv,
+        "scenario": {"schema": "production_scheduling.scenario/v1",
+                     "bom_matrix": (bom > 0).astype(int).tolist(), "supply_matrix": supply.tolist(),
+                     "machine_weights": np.ones(machines).tolist()},
+    })
     solver.l0_resource_requirement = req
     solver.resource_request = req.to_resource_request(label="supply_adjustment_inner")
     solver.accepted_parent_contracts = ("outer.default", "supply_adjustment_nested.outer")
-    solver.set_max_steps(int(a.generations))
-    return solver, problem
+    return solver, solver.problem
 
 
-def extract_total_output(solver, problem) -> Tuple[float, Optional[np.ndarray]]:
-    """Best-effort extraction of total output from a production solver run."""
-    x = getattr(solver, "best_x", None)
-    if x is None:
-        try:
-            pop = np.asarray(getattr(solver, "population", None), dtype=float)
-            obj = np.asarray(getattr(solver, "objectives", None), dtype=float)
-            if pop.ndim == 2 and pop.shape[0] > 0:
-                if obj.ndim == 2 and obj.shape[0] == pop.shape[0]:
-                    idx = int(np.argmin(np.sum(obj, axis=1)))
-                else:
-                    idx = 0
-                x = pop[idx]
-        except Exception:
-            x = None
-    if x is None:
-        return 0.0, None
-    schedule = problem.decode_schedule(np.asarray(x, dtype=float))
-    total_output = float(np.sum(schedule))
-    return total_output, schedule
+def extract_total_output(solver, problem) -> Tuple[float, np.ndarray]:
+    """Read the complete authoritative incumbent; missing results are failures."""
+    incumbent = solver.get_incumbent()
+    if incumbent is None or not incumbent.candidate_token:
+        raise RuntimeError("inner production has no authoritative evaluated incumbent")
+    schedule = np.asarray(problem.decode_schedule(incumbent.candidate), dtype=float)
+    if schedule.shape != (problem.machines, problem.days) or not np.all(np.isfinite(schedule)):
+        raise RuntimeError("inner production incumbent contains an invalid schedule")
+    return float(schedule.sum()), schedule.copy()

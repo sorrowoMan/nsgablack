@@ -9,7 +9,7 @@ use_when = ["需要在 UnitRepair 修改候选后重新确认问题约束时。"
 minimal_wiring = ["# Implement repair(candidate, context) and validate(semantic_candidate, context) -> bool", "pipeline = RepresentationPipeline(repair=problem_repair)"]
 required_companions = ["JointRepairPolicy"]
 config_keys = ["repair", "validate"]
-example_entry = "python -m nsgablack catalog show tool.problem_repair"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "tool.unit_repair"
@@ -22,7 +22,7 @@ use_when = ["有 algorithm_unit/UnitBinding 的叶 Adapter 需要独立结构修
 minimal_wiring = ["# Implement repair(unit, evidence, context) -> CandidateBatch and validate(unit, evidence, context) -> bool", "# Partial admission: project_admission receives a draft already compacted by Adapter disposition", "adapter.set_unit_repair(unit_repair)"]
 required_companions = ["UnitBinding", "ProblemRepair", "JointRepairPolicy"]
 config_keys = ["repair", "validate", "project_admission"]
-example_entry = "python -m nsgablack catalog show tool.unit_repair"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "tool.joint_repair_policy"
@@ -35,4 +35,4 @@ use_when = ["必须在送评前同时满足已声明的问题约束和 Unit 不�
 minimal_wiring = ["from nsgablack.representation import JointRepairPolicy", "solver = ComposableSolver(problem, adapter=adapter, representation_pipeline=pipeline, joint_repair_policy=JointRepairPolicy(max_rounds=1))"]
 required_companions = ["ProblemRepair", "ComposableSolver or EvolutionSolver"]
 config_keys = ["max_rounds", "on_rejection"]
-example_entry = "python -m nsgablack catalog show tool.joint_repair_policy"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"

@@ -7,10 +7,23 @@ import_path = "nsgablack.units:PopulationChange"
 tags = ["unit", "population", "members", "provenance"]
 summary = "成员操作的明确来源映射：Adapter 决策，Unit 对齐候选/反馈/token 并维护自定义行字段。"
 use_when = ["自定义种群成员字段，需要随选择或替换维护时。"]
-minimal_wiring = ["from nsgablack.units import PopulationChange", "# Declare member_fields and on_members_changed(change) on a PopulationUnit subclass.", "# Return extra field updates using change.previous_member_indices."]
-required_companions = ["PopulationUnit", "UnitBinding"]
+minimal_wiring = [
+  "from dataclasses import dataclass, field",
+  "import numpy as np",
+  "from nsgablack.units import PopulationUnit",
+  "@dataclass",
+  "class AgePopulation(PopulationUnit):",
+  "    age: object = field(default=None)",
+  "    member_fields = ('age',)",
+  "    def on_members_changed(self, change):",
+  "        return {'age': np.array([0 if i is None else self.age[i]",
+  "            for i in change.previous_member_indices])}",
+]
+required_companions = ["tool.population_unit", "tool.unit_binding"]
 config_keys = ["operation", "previous_count", "incoming_count", "previous_member_indices", "incoming_member_indices"]
-example_entry = "python -m nsgablack catalog show tool.population_change"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+companions = ["tool.population_unit", "tool.unit_binding"]
+contract = { catalog = { role = "member_change", concepts = ["种群扩展字段", "成员变化传播", "成员对齐", "新增Unit字段"], operations = [], boundaries = ["Adapter 决定成员，Unit 按来源映射维护声明字段。", "只读 on_members_changed 不执行选择、评估或修改原 Unit。"] } }
 
 [[entry]]
 key = "tool.unit_input_spec"
@@ -21,9 +34,11 @@ tags = ["unit", "operator", "dependency", "readonly"]
 summary = "变异算子显式声明 Unit 字段与特征，由实际 Adapter 提供脱离只读输入。"
 use_when = ["变异需要读取种群、区域或其他 Unit 信息时。"]
 minimal_wiring = ["from nsgablack.units import UnitInputSpec", "unit_inputs = UnitInputSpec(fields=('population',))", "# Define mutate(candidate, context, *, unit); read unit.fields['population']"]
-required_companions = ["UnitInputs", "RepresentationPipeline", "owning Adapter"]
+required_companions = ["UnitInputs", "owning Adapter"]
 config_keys = ["fields", "features", "feedback_view", "schema"]
-example_entry = "python -m nsgablack catalog show tool.unit_input_spec"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+companions = ["tool.population_unit", "tool.unit_binding"]
+contract = { catalog = { role = "unit_dependency", concepts = ["Unit依赖", "种群扩展字段", "算子读取Unit"], operations = [], boundaries = ["依赖由实际叶 Adapter 捕获；共享 context 不用于猜测 Unit 所有者。"] } }
 
 [[entry]]
 key = "tool.unit_inputs"
@@ -33,10 +48,21 @@ import_path = "nsgablack.units:UnitInputs"
 tags = ["unit", "operator", "readonly"]
 summary = "调用局部的只读 Unit 字段/特征投影，携带 unit_id、schema 和依赖版本。"
 use_when = ["读取算子声明的 Unit 依赖，不暴露可写 Unit 或 Solver 时。"]
-minimal_wiring = ["inputs = spec.capture(adapter.get_operator_unit())", "draft = pipeline.mutate(candidate, context, unit=inputs)"]
+minimal_wiring = [
+  "from nsgablack.units import UnitInputSpec",
+  "class TowardCenter:",
+  "    stateless = True",
+  "    unit_inputs = UnitInputSpec(fields=('population',))",
+  "    def checkpoint_identity(self): return {'name': 'toward_center', 'version': 1}",
+  "    def mutate(self, candidate, context, *, unit):",
+  "        return candidate + 0.1 * (unit.fields['population'].mean(axis=0) - candidate)",
+  "adapter.set_mutator(TowardCenter())",
+]
 required_companions = ["UnitInputSpec"]
 config_keys = ["unit_id", "schema", "revision", "fields", "features"]
-example_entry = "python -m nsgablack catalog show tool.unit_inputs"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+companions = ["tool.population_unit", "tool.unit_binding"]
+contract = { catalog = { role = "unit_dependency", concepts = ["Unit依赖", "种群扩展字段", "算子读取Unit"], operations = [], boundaries = ["依赖由实际叶 Adapter 捕获；共享 context 不用于猜测 Unit 所有者。"] } }
 
 [[entry]]
 key = "tool.unit_feature"
@@ -49,7 +75,9 @@ use_when = ["给 Unit 添加按依赖变化维护的派生特征时。"]
 minimal_wiring = ["from nsgablack.units import UnitFeature", "feature = UnitFeature('center', ('population',), lambda data: data['population'].mean(axis=0))", "center = unit.feature(feature)"]
 required_companions = ["FeatureUnit"]
 config_keys = ["name", "depends_on", "compute", "feedback_view", "update"]
-example_entry = "python -m nsgablack catalog show tool.unit_feature"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+companions = ["tool.population_unit", "tool.unit_binding"]
+contract = { catalog = { role = "unit_feature", concepts = ["Unit依赖", "种群扩展字段", "算子读取Unit"], operations = [], boundaries = ["依赖由实际叶 Adapter 捕获；共享 context 不用于猜测 Unit 所有者。"] } }
 
 [[entry]]
 key = "tool.feature_unit"
@@ -59,7 +87,9 @@ import_path = "nsgablack.units:FeatureUnit"
 tags = ["unit", "feature", "readonly", "cache"]
 summary = "Unit 的按需派生特征能力：按实例隔离、校验依赖内容、只读结果、缓存不进入 checkpoint。"
 use_when = ["使用或扩展内置 Unit 的派生特征维护能力时。"]
-minimal_wiring = ["distances = population_unit.pairwise_distances()", "fresh = population_unit.pairwise_distances(cache=False)"]
+minimal_wiring = ["value = unit.feature(feature)", "fresh = unit.feature(feature, cache=False)", "unit.clear_features()"]
 required_companions = ["UnitFeature", "explicit Unit data fields"]
-config_keys = ["cache", "feature_feedback_fields"]
-example_entry = "python -m nsgablack catalog show tool.feature_unit"
+config_keys = []
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+companions = ["tool.population_unit", "tool.unit_feature", "tool.unit_binding"]
+contract = { catalog = { role = "unit_feature_base", concepts = ["Unit派生特征", "增量特征", "特征失效"], operations = ["feature", "clear_features"], boundaries = ["只读派生缓存不是另一份权威成员；缓存不进入 checkpoint。"] } }

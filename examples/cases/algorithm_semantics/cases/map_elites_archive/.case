@@ -1,0 +1,3 @@
+name = map_elites_archive
+kind = solver
+framework = nsgablack

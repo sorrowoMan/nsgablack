@@ -8,12 +8,39 @@ import argparse
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Refactored production scheduling (pipeline-first).")
     parser.add_argument("--solver", choices=["multi-agent", "baseline-aco", "baseline-greedy"], default="multi-agent")
+    parser.add_argument("--cooperation", choices=["phased", "directional", "constructive", "moead"], default="phased",
+                        help="phased preserves the original baseline; directional refines frozen MOEA/D direction views and returns their exact final candidates.")
+    parser.add_argument("--quality-cycles", type=int, default=2,
+                        help="Number of complete search/refine/return cycles in directional mode.")
+    parser.add_argument("--explore-steps", type=int, default=12,
+                        help="Committed MOEA/D search steps per directional cycle.")
+    parser.add_argument("--refine-steps", type=int, default=5,
+                        help="Committed steps per selected direction, including the starting-point evaluation.")
+    parser.add_argument("--refine-directions", type=int, default=8,
+                        help="Direction views selected per cycle; 0 selects all directions.")
+    parser.add_argument("--objective-output-scale", type=float, default=100000.0,
+                        help="Positive output-axis comparison scale; raw Problem feedback is unchanged.")
+    parser.add_argument("--max-evaluations", type=int, default=None,
+                        help="Optional hard cap on actual evaluations, enforced by the shared BudgetController.")
+    parser.add_argument("--mutation-attempts", type=int, choices=range(1, 9), default=1,
+                        help="Bounded retries when the quality mutator returns an unchanged schedule (default: 1).")
+    parser.add_argument("--ablation-audit", action="store_true",
+                        help="Seal raw committed-evaluation observations for controlled ablation; never changes selection.")
+    parser.add_argument("--checkpoint-dir", default=None,
+                        help="Enable signed periodic/final checkpoints in this directory.")
+    parser.add_argument("--checkpoint-every", type=int, default=None,
+                        help="Save every N committed steps (default: 10); requires checkpoint-dir or resume.")
+    parser.add_argument("--resume", nargs="?", const="latest", default=None, metavar="PATH",
+                        help="Resume a signed checkpoint; with no PATH, use latest in checkpoint-dir.")
+    parser.add_argument("--checkpoint-key-file", default=None,
+                        help="Optional signing key file; defaults to signing.checkpoint-key in checkpoint-dir.")
     parser.add_argument("--ui", action="store_true", help="Launch Run Inspector UI before running.")
     parser.add_argument("--check", action="store_true", help="Build and audit assembly without running it.")
     parser.add_argument("--bom", type=str, default=None)
     parser.add_argument("--supply", type=str, default=None)
     parser.add_argument("--machines", type=int, default=22)
-    parser.add_argument("--materials", type=int, default=156)
+    parser.add_argument("--materials", type=int, default=157,
+                        help="Material ID slots; the canonical data has 156 IDs with maximum ID 157.")
     parser.add_argument("--days", type=int, default=31)
     parser.add_argument("--max-machines", type=int, default=8)
     parser.add_argument("--min-machines", type=int, default=5)

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import numpy as np
 
+from blackbase.wire import thaw_wire_value
 from mlblack.core import Feedback, LearningProblem
 
 from ..evaluation.fit_method import NestedFitMethod
@@ -54,8 +57,24 @@ class NestedLearningProblem(LearningProblem):
                 "inner_deadline_at": float(child.control.deadline_at),
                 "inner_cancellation": child.control.cancellation.as_dict(),
                 "inner_best_objectives": result.best_objectives.tolist(),
+                "inner_pool": dict(result.metadata["solution_pool"]),
+                "calibration_target": self.calibration_target,
+                "selected_calibration": calibration,
             },
         }
+
+    def restore_model_for_evaluation(self, model, state, feedback, context):
+        """Restore the calibration from its recorded child result, without a run."""
+        del state, context
+        audit = feedback.info.get("nested_audit")
+        if not isinstance(audit, Mapping) or "selected_calibration" not in audit:
+            raise ValueError("nested model restoration requires recorded calibration evidence")
+        calibration = float(audit["selected_calibration"])
+        if not np.isfinite(calibration):
+            raise ValueError("recorded nested calibration must be finite")
+        if float(audit.get("calibration_target", np.nan)) != self.calibration_target:
+            raise ValueError("nested calibration evidence belongs to another outer problem")
+        return {**model, "calibration": calibration, "nested_audit": thaw_wire_value(audit)}
 
     @property
     def calibration_target(self) -> float:

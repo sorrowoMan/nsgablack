@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, Sequence
 
 import numpy as np
 from blackbase.evaluation import EvaluationEventEnvelope
@@ -240,7 +240,9 @@ def _validate_candidate_identity(
         ):
             raise ValueError("one candidate token identifies different population states")
         seen_tokens[token] = state
-    if not isinstance(provenance_payload, (list, tuple)):
+    if not isinstance(provenance_payload, Sequence) or isinstance(
+        provenance_payload, (str, bytes)
+    ):
         raise ValueError("authoritative population snapshot requires provenance")
     from ..state.incumbent import CandidateProvenance
 
@@ -367,10 +369,10 @@ def validate_population_snapshot_v2(
 
 
 def population_snapshot_authority_mode(payload: Any) -> str:
-    if not isinstance(payload, dict):
+    if not isinstance(payload, Mapping):
         return "single"
     authority = payload.get(POPULATION_AUTHORITY_KEY)
-    if not isinstance(authority, dict):
+    if not isinstance(authority, Mapping):
         if POPULATION_PARTITIONS_KEY in payload or LAST_EVALUATED_BATCH_KEY in payload:
             return "partitioned"
         return "single"
@@ -395,11 +397,11 @@ def population_snapshot_authority_mode(payload: Any) -> str:
     return mode
 
 
-def require_single_population_payload(payload: Any) -> Dict[str, Any]:
+def require_single_population_payload(payload: Any) -> Mapping[str, Any]:
     """Return the numeric payload unless its authority is partitioned."""
 
-    if not isinstance(payload, dict):
-        raise TypeError("population snapshot payload must be a dict")
+    if not isinstance(payload, Mapping):
+        raise TypeError("population snapshot payload must be a Mapping")
     mode = population_snapshot_authority_mode(payload)
     if mode == "partitioned":
         raise PartitionedPopulationSnapshotError(
@@ -428,7 +430,7 @@ def build_snapshot_payload(
     if violations is not None:
         out[KEY_CONSTRAINT_VIOLATIONS] = violations
     if pareto_solutions is not None:
-        if isinstance(pareto_solutions, dict) and "individuals" in pareto_solutions:
+        if isinstance(pareto_solutions, Mapping) and "individuals" in pareto_solutions:
             out[KEY_PARETO_SOLUTIONS] = pareto_solutions.get("individuals")
         else:
             out[KEY_PARETO_SOLUTIONS] = pareto_solutions

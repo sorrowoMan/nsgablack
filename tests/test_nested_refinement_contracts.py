@@ -100,8 +100,8 @@ def test_bare_vns_is_not_a_projection_publisher():
         RoleSpec("consumer", consumer, pool_task=PoolTaskSpec(
             subpools.all(bare), output="results"))])
     solver = ComposableSolver(RouteProblem(), adapter=router)
-    assert any("no projection pool task with output" in message for message in pool_task_issues(solver))
-    with pytest.raises(ValueError, match="no projection pool task with output"):
+    assert any("no projection pool task" in message for message in pool_task_issues(solver))
+    with pytest.raises(ValueError, match="no projection pool task"):
         workers(router, "consumer")[0].validate_pool_task(router)
 
 

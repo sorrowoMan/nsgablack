@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import shutil
+from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from blackbase.project import execute_project
@@ -22,8 +25,9 @@ EXAMPLE_ROOT = (
 )
 
 
-@pytest.fixture(scope="module")
-def topology_result(tmp_path_factory):
+@pytest.fixture(scope="module", params=[None, "case_workspace"],
+                ids=["default-pools", "outer-working-pool"])
+def topology_run(tmp_path_factory, request):
     tmp_path = tmp_path_factory.mktemp("super_topology")
     project_root = tmp_path / "super_topology_orchestration"
     shutil.copytree(
@@ -32,15 +36,31 @@ def topology_result(tmp_path_factory):
         ignore=shutil.ignore_patterns(".blackbase", "__pycache__", "*.pyc"),
     )
 
-    return execute_project(
+    working_pool = request.param
+    if working_pool is not None:
+        config = project_root / "project_config.py"
+        with config.open("a", encoding="utf-8") as stream:
+            stream.write("\nSTAGES[0]['component_overrides'] = "
+                         "{'outer_search': {'working_pool': 'case_workspace'}}\n")
+
+    # Keep the real process backend: evidence crosses the same formal Case
+    # result/Artifact boundary as production data, never a captured live object.
+    result = execute_project(
         project_root,
         run_id="super-topology-e2e",
         record=False,
     )
+    return SimpleNamespace(result=result,
+                           working_pool=working_pool, project_root=project_root)
+
+
+@pytest.fixture(scope="module")
+def topology_result(topology_run):
+    return topology_run.result
 
 
 def test_super_topology_executes_with_authoritative_lineage_and_settlement(
-    topology_result,
+    topology_result, topology_run,
 ) -> None:
     from mlblack.core import LearningProblem, ModelRepresentation
     from mlblack.integrations import LearningSolver
@@ -87,7 +107,9 @@ def test_super_topology_executes_with_authoritative_lineage_and_settlement(
         == baseline_trainer.artifact_publications["summary"]
     )
     assert outer.artifact_publications["topology_report"].receipt_digest
-    assert outer.artifact_refs["topology_report"].size_bytes < 64_000
+    # Bounded member evidence for nineteen separate pools is published as an
+    # Artifact; this is not a lightweight shared-context payload.
+    assert outer.artifact_refs["topology_report"].size_bytes < 128_000
     assert outer.request.metadata["dag"]["dependencies"] == (
         "baseline_solver",
         "baseline_trainer",
@@ -100,7 +122,16 @@ def test_super_topology_executes_with_authoritative_lineage_and_settlement(
     solver_result = SolverResult.from_dict(outer.output)
     audit = dict(solver_result.metadata["super_topology"])
     assert audit["schema"] == "nsgablack.super_topology_audit/v2"
-    assert audit["candidate_trainer_calls"] == 6
+    outer_pool = audit["solution_pool"]
+    assert outer_pool["evidence_complete"] is True
+    by_generation = Counter(member["stamp"]["generation"]
+                            for member in outer_pool["members"])
+    # Each phase commits once: exploration has three proposals, the two
+    # trajectory phases evaluate their baseline, and DE evaluates all four
+    # initialization members before it can start producing batch_size=1 trials.
+    assert by_generation == {0: 3, 1: 1, 2: 1, 3: 4}
+    assert audit["candidate_trainer_calls"] == sum(by_generation.values())
+    assert outer_pool["evaluation_count"] == sum(by_generation.values())
     assert tuple(audit["adapter_topology"]["phases"]) == (
         "explore",
         "vns_refine",
@@ -151,6 +182,90 @@ def test_super_topology_executes_with_authoritative_lineage_and_settlement(
 
     child_audit = outer.metadata["runtime_audit"]["child_invocations"]
     assert not child_audit["pending_budget_settlements"]
+
+
+def test_nested_cases_keep_local_pools_identities_and_clocks(topology_run):
+    outer_result = topology_run.result.case_results[-1]
+    audit = SolverResult.from_dict(outer_result.output).metadata["super_topology"]
+    outer = audit["solution_pool"]
+    assert outer["case_run_id"] == outer_result.identity.case_run_id
+    pools = [outer]
+    for record in audit["nested_calls"]:
+        trainer = record["trainer_pool"]
+        inner = record["inner"]["inner_pool"]
+        pools.extend((trainer, inner))
+        assert trainer["case_run_id"] == record["trainer_identity"]["case_run_id"]
+        assert inner["case_run_id"] == record["inner"]["inner_identity"]["case_run_id"]
+        assert trainer["committed_steps"] == inner["committed_steps"] == 1
+        assert trainer["dimension"] == 2
+        assert inner["dimension"] == 1
+        assert trainer["accepted_count"] == inner["accepted_count"] == 1
+        assert trainer["evaluation_count"] == inner["evaluation_count"] == 1
+        for child in (trainer, inner):
+            assert child["working_pool"] is None
+            assert not child["working_members"]
+            assert child["has_working_pool_context"] is False
+
+    assert len(pools) == 19
+    assert len({pool["pool_id"] for pool in pools}) == len(pools)
+    assert len({pool["run_id"] for pool in pools}) == len(pools)
+    assert len({pool["case_run_id"] for pool in pools}) == len(pools)
+    assert outer["committed_steps"] == 4
+    assert outer["dimension"] == 2
+    for pool in pools:
+        assert pool["evidence_complete"] is True
+        assert pool["clock"]["run_id"] == pool["run_id"]
+        assert pool["clock"]["sequence"] > 0
+        assert len(pool["members"]) == pool["accepted_count"]
+        for member in pool["members"]:
+            assert member["ref"]["pool_id"] == pool["pool_id"]
+            assert member["stamp"]["run_id"] == pool["run_id"]
+            assert member["stamp"]["sequence"] <= pool["clock"]["sequence"]
+            assert len(member["values"]) == pool["dimension"]
+    assert outer["working_pool"] == topology_run.working_pool
+    if topology_run.working_pool is not None:
+        assert tuple(outer["working_members"]) == tuple(member["ref"] for member in outer["members"])
+    else:
+        assert not outer["working_members"]
+
+
+def test_outer_candidate_changes_inner_task_and_returns_real_raw_objectives(topology_run):
+    outer_result = topology_run.result.case_results[-1]
+    audit = SolverResult.from_dict(outer_result.output).metadata["super_topology"]
+    outer = audit["solution_pool"]
+    expected_rows = []
+    targets = []
+    for record in audit["nested_calls"]:
+        point = np.asarray(record["candidate"], dtype=float)
+        trainer = record["trainer_pool"]
+        inner = record["inner"]["inner_pool"]
+        target = float(np.clip(.5 * (point[0] - point[1]), -1., 1.))
+        targets.append(target)
+        assert record["inner"]["calibration_target"] == pytest.approx(target)
+        inner_member, = inner["members"]
+        calibration = float(record["inner"]["selected_calibration"])
+        assert inner_member["values"][0] == pytest.approx(calibration)
+        np.testing.assert_allclose(inner_member["raw_objectives"], [(calibration - target) ** 2])
+        assert inner_member["raw_violation"] == 0.
+        expected = np.asarray([
+            (point[0] - .65) ** 2 + (point[1] - .25) ** 2
+            + .2 * (calibration - target) ** 2,
+            point[0] ** 2 + .5 * point[1],
+        ])
+        trainer_member, = trainer["members"]
+        np.testing.assert_array_equal(trainer_member["values"], point)
+        np.testing.assert_allclose(trainer_member["raw_objectives"], expected)
+        assert trainer_member["raw_violation"] == 0.
+        np.testing.assert_allclose(record["objectives"], expected)
+        expected_rows.append((*point, *expected))
+
+    # Compare the complete multiset, preserving repeated evaluations; this is
+    # numerical result verification, not inference of identity from equality.
+    actual_rows = [(*member["values"], *member["raw_objectives"])
+                   for member in outer["members"]]
+    np.testing.assert_allclose(sorted(actual_rows), sorted(expected_rows))
+    assert all(member["raw_violation"] == 0. for member in outer["members"])
+    assert len(set(targets)) > 1
 
 
 @pytest.mark.parametrize(("path", "value", "check"), [

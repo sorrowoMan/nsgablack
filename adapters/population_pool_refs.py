@@ -22,7 +22,8 @@ def _semantic_binding_digest(ref, candidate_payload):
     return _signature({"ref": ref.as_dict(), "candidate": candidate_payload})
 
 
-def feedback_pool_bindings(control, candidates, feedback, tokens, *, candidate_metadata=None):
+def feedback_pool_bindings(control, candidates, feedback, tokens, *, candidate_metadata=None,
+                           _verified_batch=None):
     items = getattr(feedback, "items", ())
     metadata = (tuple(candidate_metadata) if candidate_metadata is not None else
                 tuple(dict(candidate.metadata) if isinstance(candidate, UnknownState) else {}
@@ -52,7 +53,9 @@ def feedback_pool_bindings(control, candidates, feedback, tokens, *, candidate_m
         pool = getattr(control, "solution_pool", None)
         if pool is None:
             raise ValueError("Population accepted receipts require their SolutionPool")
-        batch = pool.read(refs, allow_pending=True)
+        batch = pool.read(refs, allow_pending=True) if _verified_batch is None else _verified_batch
+        if len(batch.semantic_states) != len(refs):
+            raise ValueError("Population verified pool batch must align with receipts")
         for ref, state, token, semantic in zip(refs, batch.semantic_states, batch.candidate_tokens, expected, strict=True):
             if token != ref.candidate_token or _signature(state.as_dict()) != _signature(semantic):
                 raise ValueError("Population accepted receipt differs from candidate semantic content")
@@ -171,15 +174,17 @@ def validate_population_state(control, batch, feedback, *, solution_refs, proven
     receipted = feedback.from_arrays(feedback.objectives, feedback.violations,
         items=tuple(replace(item, info={**dict(item.info), "accepted_solution_ref": ref.as_dict()})
                     for item, ref in zip(feedback.items, refs, strict=True)), metadata=feedback.metadata)
-    bindings = feedback_pool_bindings(control, batch.semantic_states, receipted, batch.candidate_tokens)
+    verified = None
     if refs:
-        raw_f, raw_v = control.solution_pool.read_raw_feedback(refs, allow_pending=True)
+        verified, saved, (raw_f, raw_v) = control.solution_pool._read_selection(
+            refs, allow_pending=True, include_provenance=True, include_raw_feedback=True)
         if (not np.array_equal(raw_f, feedback.raw_objectives, equal_nan=True)
                 or not np.array_equal(raw_v, feedback.raw_violations, equal_nan=True)):
             raise ValueError("Population state raw feedback differs from its exact pool versions")
-        saved = control.solution_pool.read_provenance(refs, allow_pending=True)
         if _signature(saved) != _signature(record_payloads):
             raise ValueError("Population state provenance differs from its exact pool versions")
+    bindings = feedback_pool_bindings(control, batch.semantic_states, receipted, batch.candidate_tokens,
+        _verified_batch=verified)
     return bindings, record_payloads
 
 
@@ -187,13 +192,14 @@ def install_population_state(adapter, control, batch, feedback, *, solution_refs
     """Validate one complete identity handoff before installing any Unit rows."""
     bindings, record_payloads = validate_population_state(control, batch, feedback,
         solution_refs=solution_refs, provenance=provenance)
+    unit = adapter.ensure_unit()
     if (_signature(tuple(adapter._population_pool_bindings)) == _signature(bindings)
-            and adapter.algorithm_unit.population is not None
-            and np.array_equal(adapter.algorithm_unit.population, batch.numeric_matrix, equal_nan=True)
-            and tuple(adapter.algorithm_unit.candidate_tokens) == tuple(batch.candidate_tokens)):
-        adapter.algorithm_unit.attach_feedback(feedback.objectives, feedback.violations)
+            and unit.population is not None
+            and np.array_equal(unit.population, batch.numeric_matrix, equal_nan=True)
+            and tuple(unit.candidate_tokens) == tuple(batch.candidate_tokens)):
+        unit.attach_feedback(feedback.objectives, feedback.violations)
         return
-    change = adapter.algorithm_unit.initialize_population(batch.numeric_matrix,
+    change = unit.initialize_population(batch.numeric_matrix,
         feedback.objectives, feedback.violations, candidate_tokens=batch.candidate_tokens,
         candidate_metadata=tuple(dict(state.metadata) for state in batch.semantic_states),
         candidate_provenance=record_payloads)

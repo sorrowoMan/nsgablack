@@ -8,7 +8,7 @@ from typing import Any, Callable, Mapping
 
 import numpy as np
 from blackbase.types import UnknownState
-from .wire import detach_codec_payload
+from .wire import detach_codec_payload, detach_step_value
 
 
 @dataclass(frozen=True)
@@ -228,4 +228,27 @@ class UnitBinding:
         self.validate(unit)
         if "unit_id" in saved and unit.unit_id != saved["unit_id"]:
             raise ValueError("Unit codec restore changed the saved identity")
+        return unit
+
+    def snapshot_step(self, unit: Any) -> dict[str, Any]:
+        available = getattr(self.builder, "_native_step_codec_available", None)
+        if not callable(available) or not available():
+            return self.dump(unit)
+        self.validate(unit)
+        return {"contract": self.describe(), "unit_id": unit.unit_id,
+                "step_schema": "nsgablack.unit_step/native-v1",
+                "payload": detach_step_value(self.builder._dump_step(unit))}
+
+    def restore_step(self, saved: Mapping[str, Any]) -> Any:
+        if "step_schema" not in saved:
+            return self.restore(saved)
+        available = getattr(self.builder, "_native_step_codec_available", None)
+        if (saved["step_schema"] != "nsgablack.unit_step/native-v1"
+                or saved.get("contract") != self.describe()
+                or not callable(available) or not available()):
+            raise ValueError("Saved Unit step snapshot differs from the configured codec/binding")
+        unit = self.builder._restore_step(detach_step_value(saved["payload"]))
+        self.validate(unit)
+        if unit.unit_id != saved["unit_id"]:
+            raise ValueError("Unit step restore changed the saved identity")
         return unit

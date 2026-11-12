@@ -1,0 +1,71 @@
+[[entry]]
+key = "project.problem.ga_search"
+title = "TwoCenters"
+kind = "tool"
+import_path = "problem:TwoCenters"
+tags = ["project", "example", "problem"]
+summary = "池流程试作的原始解析问题；不读取算法 Unit。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["只定义候选原始目标。"]
+use_when = ["验证普通变化函数不改写 Problem 语义。"]
+minimal_wiring = ["from cases.ga_search.problem import TwoCenters", "problem = TwoCenters()"]
+required_companions = []
+config_keys = []
+example_entry = "cases.ga_search.build_solver:build_solver"
+
+[[entry]]
+key = "project.change.ga_search"
+title = "paired_change"
+kind = "tool"
+import_path = "adapter.workflow:paired_change"
+tags = ["project", "example", "change", "plain_function"]
+summary = "普通函数共享一次掩码交叉，按max_outputs交付两个身份独立的后代。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["只读取参数化请求，不写共享 context。"]
+use_when = ["直接装配完整变化，不继承变异组件基类。"]
+minimal_wiring = ["from cases.ga_search.adapter.workflow import paired_change", "adapter = NSGA2Adapter(change=paired_change)"]
+required_companions = ["nsgablack.adapters:NSGA2Adapter"]
+config_keys = []
+example_entry = "cases.ga_search.build_solver:build_solver"
+
+[[entry]]
+key = "project.plugin.pipeline_source"
+title = "PipelineSource"
+kind = "plugin"
+import_path = "plugins:PipelineSource"
+tags = ["project", "example", "plugin", "initialization"]
+summary = "正式启动钩子的薄桥；Pipeline 先预填母池，不建立 Unit 或伪造反馈。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["经公开 init_population 预填母池，保存 run 身份与 seeded 标志。"]
+use_when = ["在原生 Adapter 池输入开始前生成未评初始种子。"]
+minimal_wiring = ["from cases.ga_search.plugins import PipelineSource", "solver.add_plugin(PipelineSource(8))"]
+required_companions = ["nsgablack.core:ComposableSolver"]
+config_keys = ["count"]
+example_entry = "cases.ga_search.build_solver:build_solver"
+
+[[entry]]
+key = "project.plugin.workflow_trace"
+title = "WorkflowTrace"
+kind = "plugin"
+import_path = "plugins:WorkflowTrace"
+tags = ["project", "example", "plugin", "observe"]
+summary = "只读提交状态，核对未激活 Unit、精确输入引用、原始反馈和最终成员。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["观察不构建 Unit，不改池，不求值。"]
+use_when = ["整理正式 Project 的同次运行证据。"]
+minimal_wiring = ["from cases.ga_search.plugins import WorkflowTrace", "solver.add_plugin(WorkflowTrace(case_name='ga_search', max_steps=10))"]
+required_companions = ["nsgablack.core:ComposableSolver"]
+config_keys = ["case_name", "max_steps"]
+example_entry = "cases.ga_search.build_solver:build_solver"

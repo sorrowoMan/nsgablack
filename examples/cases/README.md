@@ -4,6 +4,14 @@ This directory stores runnable example Projects. Each direct child is a
 Project wrapper, and each runnable Solver/Trainer lives inside that Project as
 a standard Case scaffold.
 
+## 完整装配示例
+
+[综合装配工作台](assembly_workbench/README.md) 用一个四 Case Project 展示完整 Problem／Pipeline／Unit／Adapter／Bias／Plugin 装配、两轮 GA→VNS→GA、MOEA/D 投影与两种精修器、Case 内并行、Project 并行／DAG、权威 Artifact 与真正内层 Case 调用。含详细中文逐层讲解、真实源码读本和运行结果。
+
+[VNS / MOEA-D 普通函数与母池输入试作](pool_workflow_pilot/README.md) 展示 Pipeline 生成母池种子、Adapter 按需建立 Unit，以及普通函数组合变化操作。
+
+[四个完整 Project 阅读指南](ASSEMBLED_PROJECTS_GUIDE_CN.md) 串联 GA＋VNS、MOEA/D 双层方向精修、SA 池驱动恢复、DE／SA 多 Case 并发。每个例子提供真实脚手架、全部本地源码、框架源码索引及已经保存的运行结果。
+
 ## Current Rule
 
 Formal examples use the shared Project / Case / Scaffold / L0 substrate:

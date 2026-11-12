@@ -134,8 +134,10 @@ class ProductionGreedyBaselineAdapter(UnitBackedAdapter):
     state_recovery_notes = "Restores schedule geometry, pheromone and RNG through the Unit codec."
 
     def _ensure_schedule(self, control):
-        if not self.algorithm_unit.machines:
-            self.rebuild_unit("layout", **schedule_parameters(control.problem))
+        unit = self.algorithm_unit
+        if unit is None or not unit.machines:
+            return self.rebuild_unit("layout", **schedule_parameters(control.problem))
+        return unit
 
     def _get_algorithm_state(self):
         return {"rng_state": copy.deepcopy(self._rng.bit_generator.state)}
@@ -156,8 +158,8 @@ class ProductionGreedyBaselineAdapter(UnitBackedAdapter):
 
     def propose(self, control, context):
         _ = context
-        self._ensure_schedule(control)
-        x = _build_greedy_schedule(self.algorithm_unit, rng=self._rng)
+        unit = self._ensure_schedule(control)
+        x = _build_greedy_schedule(unit, rng=self._rng)
         return [x]
 
     def update(self, control, candidates, feedback, context):
@@ -175,8 +177,10 @@ class ProductionACOBaselineAdapter(UnitBackedAdapter):
     state_recovery_notes = "Restores schedule geometry, pheromone and RNG through the Unit codec."
 
     def _ensure_schedule(self, control):
-        if not self.algorithm_unit.machines:
-            self.rebuild_unit("layout", **schedule_parameters(control.problem))
+        unit = self.algorithm_unit
+        if unit is None or not unit.machines:
+            return self.rebuild_unit("layout", **schedule_parameters(control.problem))
+        return unit
 
     def _get_algorithm_state(self):
         return {"rng_state": copy.deepcopy(self._rng.bit_generator.state)}
@@ -212,15 +216,15 @@ class ProductionACOBaselineAdapter(UnitBackedAdapter):
     _pheromone = UnitField("pheromone")
 
     def _ensure_pheromone(self, control):
-        self._ensure_schedule(control)
+        return self._ensure_schedule(control)
 
     def propose(self, control, context):
         _ = context
-        self._ensure_pheromone(control)
+        unit = self._ensure_pheromone(control)
         out = []
         for _ in range(max(1, self.ants)):
             x = _build_greedy_schedule(
-                self.algorithm_unit,
+                unit,
                 rng=self._rng,
                 pheromone=self._pheromone,
                 alpha=self.alpha,

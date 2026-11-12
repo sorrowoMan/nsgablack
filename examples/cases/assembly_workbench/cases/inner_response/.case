@@ -1,0 +1,3 @@
+name = inner_response
+kind = solver
+framework = nsgablack

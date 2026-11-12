@@ -1,0 +1,4 @@
+.blackbase/
+results/**/checkpoints/
+results/map_smoke/
+results/*.log

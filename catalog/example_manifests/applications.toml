@@ -1,0 +1,246 @@
+[[example]]
+id = "application-tool.solution_pool"
+title = "先供给候选，再按精确版本读取 · 基础应用与变体"
+component_keys = ["tool.solution_pool"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "想把一批初始化候选交给 GA，或在观察/结果阶段核对原始目标、候选身份和来源。池不是另一份种群数组；两个算法读取同一候选，也各自保留自己的 Unit 和选择状态。"
+inputs = ["使用正式 [pool_workflow_pilot/ga_partition](../../examples/cases/pool_workflow_pilot/cases/ga_partition/build_solver.py)。其 `CaseConfig` 默认有 `source_count=100`、`population_size=100`、`offspring_size=80`，三个数量分别表示源候选数、GA 容量和后代上限。`PipelineSource` 在 Solver 已有池之后调用正式初始化，登记 `stage=\"initial\"` 的版本；它不求值，所以不能读取这些种子的 raw feedback 当作已评估结果。"]
+steps = ["在原 `build_solver` 中用 `attach_initial_source(solver, settings)` 替换原来那一行 `solver.add_plugin(PipelineSource(...))`，只挂一次。原插件已经保存运行身份、seeded 标志和恢复状态，不要另写一个每次 init 都重新播种的钩子。", "这只读取已提交成员：`batch.numeric_matrix` 是 `(n,d)`，语义候选和 token 与 refs 同序，原始目标/违反量分别是 `(n,m)/(n,)`。普通根 `select(stage=\"accepted\")` 是接纳历史，不是 GA 当前成员顺序。当前 Case 的观察器通过已有 `workflow_worker(solver.adapter).inner` 找实际叶实例；其它拓扑应从自己的工厂保留 owner，不能按类型名猜唯一实例。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["原 [workflow_trace.py](../../examples/cases/pool_workflow_pilot/workflow_trace.py) 记录 `initial.initial_refs`、`records[*].accepted_count` 和最终 `result.refs/candidates/raw_objectives/raw_violations/provenance`。初始化引用应先存在；GA 消费后才有已评估成员引用。不要把 initial 的数量写成真实求值次数。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/POOL_AND_ORCHESTRATION_APPLICATIONS_CN.md", section = "tool.solution_pool" }]
+
+[[example]]
+id = "application-tool.pool"
+title = "一次选择交回成员，同时组织精英或档案 · 基础应用与变体"
+component_keys = ["tool.pool"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "已有一批可比较的候选，想用普通函数选择成员，并把最终成员中的精英交到具名集合。这里的 Pool 是本次回调的有序引用视图，不是任意时刻都能创建的永久容器。"
+inputs = ["使用 [assembled_ga_vns 的 GA 生存选择](../../examples/cases/assembled_ga_vns/cases/hybrid_search/adapter/composition.py)，通过正式 Project 的 `--group elite` 或 `--group plan` 启用成套精英配置；自行配置时，须在构造原 settings 时令 `refinement_source=\"elite\"` 并满足该 Case 的配置校验。默认 `refinement_source=\"population\"` 不会挂载本节 selector。函数输入 pool 由 NSGA2 的 survivor 请求提供，包含当前比较用的 objectives/violations。`count` 是应保留的成员数，`elite_count` 不能被当成池容量。单目标例子的选择键可以明确用当前选择反馈；多目标仍保留非支配排序与拥挤度。"]
+steps = ["以下完整回调保留 NSGA 的默认比较规则，再从实际生存成员中分流精英："]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["本次主返回值仍是 GA 最终成员。Pool 只在本次回调作用域内可读，不保留活 `members` 等待提交后再读。该次 GA 提交后的既有观察回调可用其 `control`（本 Case 的 solver）与装配时保留的真实 `ga` 实例，通过 `ga.get_population_solution_refs(control)` 取得当前成员引用，再与 `control.solution_pool.subpool_refs(\"ga_elite\")` 核对；副池引用应全部属于同次最终成员。原 elite/plan 观察记录的 `elite.refs`、`ga_member_refs` 也可用于核对。Unit 更新或后续提交失败时，副池不能提前成为下游输入。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/POOL_AND_ORCHESTRATION_APPLICATIONS_CN.md", section = "tool.pool" }]
+
+[[example]]
+id = "application-tool.subpools"
+title = "按实际算法实例选择结果视图 · 基础应用与变体"
+component_keys = ["tool.subpools"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "局部算法需要精修某个 MOEA/D 实例发布的方向，或接着精修上一层已经完成的结果。选择依据是具体实例，而不是类名、候选生产者名字或你拼出的子池字符串前缀。"
+inputs = ["使用 [assembly_workbench/directions](../../examples/cases/assembly_workbench/cases/directions/adapter/composition.py)：一维候选、两个最小化目标、3 个 MOEA/D 方向；先有完整已评估 bootstrap，再派发 coarse/fine。`settings` 是该 Case 的 DirectionsConfig，包含 local_steps；`moead` 与 `coarse` 都是同一工厂创建并放入同一所有权树的实例。"]
+steps = ["`subpools.all(moead)` 在请求开始时选择该实例已发布的方向视图；`count=1` 表示每个方向取一个起点。权重、参考点、候选引用和视图身份在本请求冻结。`all` 不隐含等待，原 plan 中先 `stage(\"moead\", steps=settings.bootstrap_steps)` 的屏障必须保留。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["原 `results/directions/summary.json` 有 `views`、`tasks`、`result_receipts`、`final_results` 和 `final_population`；逐视图看 created_by、projection 和 descriptor，最终原始目标仍是两列。该文件由实际完成的 Case 生成，旧文件不代表本轮执行。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/POOL_AND_ORCHESTRATION_APPLICATIONS_CN.md", section = "tool.subpools" }]
+
+[[example]]
+id = "application-tool.pool_task_spec"
+title = "声明输入怎么被算法消费 · 基础应用与变体"
+component_keys = ["tool.pool_task_spec"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "“这批引用拿来初始化、逐个精修，还是交回现有种群竞争”需要明确表达时。它配置消费语义，不建立第二个 Solver，也不把其它 Adapter 的 Unit 当候选解码。"
+inputs = ["用 `pool_workflow_pilot/ga_partition` 已挂载的 Source 提供初始版本。`settings.population_size` 是本 GA 的容量；源引用数由 source_count 另定。NSGA2 支持 initialize/compete，VNS 支持以 initialize 接起点并进行 refine；不能仅换一个类名就假定它支持任意池任务。"]
+steps = ["省略 select 时读取最近组合的 working_pool；没有绑定时读根公开来源，包括 initial 种子。请求开始时确定引用队列，算法经正常 repair/evaluate/admission 逐步消费；零接纳不会把相应输入当作已经完成。initialize 完成后继续算法自己的搜索，不因为下一阶段到了就再初始化。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["`WorkflowTrace.records[*].task` 是该 worker 的实际 task_status，最终 result.refs 是算法真正选择的成员。读取任务状态与读取结果分开：正在运行的 refine 请求没有可交付的最终结果，完成并提交后才可读取。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/POOL_AND_ORCHESTRATION_APPLICATIONS_CN.md", section = "tool.pool_task_spec" }]
+
+[[example]]
+id = "application-adapter.search_plan"
+title = "用局部完成表达 GA → 精修 → 返回竞争 · 基础应用与变体"
+component_keys = ["adapter.search_plan"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "想有限重复整个流程，并等待每个精修任务真正完成；不想按“全局第几代”手算各子任务进度。"
+inputs = ["使用 [assembled_ga_vns 的 plan 分支](../../examples/cases/assembled_ga_vns/cases/hybrid_search/adapter/composition.py)。其已有 DemoConfig、GA/VNS 构造、AgePopulationBuilder、精英选择回调，以及 `select_current_refinement_results`。下段完整计划工厂明确接收这两个实际实例与来源，不在每个 stage 重新实例化算法。"]
+steps = ["`stage(\"ga\", steps=...)` 是该叶有接纳更新的局部额度；VNS 和 return 叶省略 stage.steps，等待对应 PoolTask 本请求完成。名字 ga 在计划中出现两次，仍是同一个 ga 实例。role/strategy 名称必须与 plan 的 owner 名称准确匹配。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["原 `results/plan/trace.json` 的 `records[*].execution_plan.cursor/completed/tasks` 记录计划游标与各任务进度，return 记录的 selected_return 是本轮结果；`aggregate_return` 是累计接纳历史。等待、空控制切换不产生额外逻辑 generation。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/POOL_AND_ORCHESTRATION_APPLICATIONS_CN.md", section = "adapter.search_plan" }]
+
+[[example]]
+id = "application-adapter.serial_strategy"
+title = "用阶段包住现有算法或 Router · 基础应用与变体"
+component_keys = ["adapter.serial_strategy"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "已有可运行的子 Adapter/Router，要按阶段依次执行，或者在外层绑定共同工作区域。真实 Catalog key 是 adapter.serial_strategy，类名才是 StrategyChainAdapter。"
+inputs = ["从 ga_partition 的原 build_adapter 中拿到已经构造好的 router；它负责 GA 的池初始化与选择。`settings.working_pool` 若非 None，必须由同 Case 的 PipelineSource 在首次提案前创建并发布普通集合。"]
+steps = ["这里 phase 没有限定正数 steps，继续由外层 Solver 的预算决定持续多久。外层 Chain 的工作区域被内层 Router 继承；这不会自动给裸子 Adapter 添加池任务。需要取池输入的仍是内层已有 PoolTaskSpec。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["既有 WorkflowTrace 用 `step_transaction_children()` 穿过单阶段 Chain，再读取真实 worker；设置 workspace 后，PartitionTrace 会多记 working_pool.descriptor/refs。它不会为了观察构造 Unit。阶段名与最终种群所有者不同，不能仅凭“当前阶段切了”就假定已经有新种群发布。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/POOL_AND_ORCHESTRATION_APPLICATIONS_CN.md", section = "adapter.serial_strategy" }]
+
+[[example]]
+id = "application-adapter.multi_strategy"
+title = "一个角色下装配多个独立搜索实例 · 基础应用与变体"
+component_keys = ["adapter.multi_strategy"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "多种搜索角色需要共享一次 Solver 的评估与调度，并按角色配额分配提案机会。它负责调用上下文和反馈路由，不把角色数当线程数，也不把实例的 Unit 共享成一个可写种群。"
+inputs = ["以 super_topology 的 `_exploration_router()` 为锚点：`neighborhood_explorer` 有两个 VNS，`region_probe` 有一个 TrustRegionDFO。该 Case 的候选管线负责 `[0,1]` 初始化、上下文高斯变化和 ClipRepair；维数由它自己的模型设计 Problem 声明。不要把下面工厂直接拿到“只有 repair、没有初始化”的另一个 Case 中使用。"]
+steps = ["以下将原两个 lambda 工厂写成可定位的函数，并保留默认组合；新参数只属于本 Case 的工厂，不是新增框架 API。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["对实际探索 Router 读取 `get_state()[\"units\"]` 与 `unit_reports`，核对角色、unit_id、adapter_name 和各自 n_candidates；观察切片用 `get_runtime_context_projection(control)` 的 strategy_instances。保留角色命名后，原 describe_topology 也须反映正确 n_units。这些读取不应构建新 Unit；运行权重与初始配置权重是不同事实。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/POOL_AND_ORCHESTRATION_APPLICATIONS_CN.md", section = "adapter.multi_strategy" }]
+
+[[example]]
+id = "application-mlblack.integration.learning_solver"
+title = "把数据、模型与搜索接成可运行Case · 基础应用与变体"
+component_keys = ["mlblack.integration.learning_solver"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "要在正式Case中搜索模型参数，并取得最佳模型、原始反馈和ML报告。这里先用24条合成数据拟合一个两特征线性模型。"
+inputs = ["使用mlblack仓库已有的 `examples/cases/catalog_codec_demo/`，其中默认组只运行 `cases/linear_point/`。先确认blackbase、nsgablack、mlblack与NumPy可导入；不需要Torch、GPU或模型API。该Case已经有 `config.py::DEFAULTS`，字段为seed17、n_samples24、max_steps3、learning_rate0.05；保留这个配置文件。下文路径中的Case均指这个 `linear_point`，不要把代码放在项目根目录。 本节保留宿主已有problem/__init__.py的回归Problem工厂（use_valid_objective=False）与adapter/__init__.py的gradient.sgd工厂；它们是实际存在、被下面builder调用的消费者。 数据工厂也保留宿主现有24行2列的连续回归数据。"]
+steps = ["先核对本章列出的所有文件，再从正式Project入口运行。builder先取得DataView，再构造带Head的模型表示、Problem和Adapter；运行中Adapter提出参数候选，表示将UnknownState解释成模型，Problem用数据生成原始反馈，Adapter按自己的规则消费反馈并选择后继，Solver负责接纳、事务提交和逻辑步计数。装配、观察和读取dimension不应提前调用init或构建算法Unit。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["本例表示的dimension应为3，坐标为[intercept,w0,w1]；模型predict(X)返回(n_samples,)单值数组。回归Problem的原始objectives为[MSE,0]（复杂度权重默认0），梯度来自训练集；metrics有train.mse/train.rmse/train.mae/train.r2。读取loss正则项与原始目标时不要混为一个数。 在保留同一次正式Case实例的程序式调用中，solver.fit()/run()返回TrainerResult；从result.best_model读取模型，result.best_feedback读取反馈，result.best_state读取参数，result.report读取ML报告。这里的solver/result是实际运行实例及其返回值，不是装配时凭空预建的对象。默认Project终端摘要不保证打印这些完整对象；不要为了读取它们再次不加区分地运行一次训练。 权威结果：result.best_state/best_model/best_feedback来自Solver权威incumbent，不等于Adapter最后后继或最终成员；局部objective_aggregation不自动配置Solver最终scalarizer。未显式配置scalarizer时默认sum，本例为MSE+0。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_COMPONENT_APPLICATIONS_CN.md", section = "mlblack.integration.learning_solver" }]
+
+[[example]]
+id = "application-mlblack.trainer.learning_solver"
+title = "同一个LearningSolver的Trainer目录入口 · 基础应用与变体"
+component_keys = ["mlblack.trainer.learning_solver"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "从Trainer视角找到ML运行门面，同时保持唯一规范builder；这个键与integration.learning_solver指向同一个类，不应装配第二套训练循环。"
+inputs = ["使用mlblack仓库已有的 `examples/cases/catalog_codec_demo/`，其中默认组只运行 `cases/linear_point/`。先确认blackbase、nsgablack、mlblack与NumPy可导入；不需要Torch、GPU或模型API。该Case已经有 `config.py::DEFAULTS`，字段为seed17、n_samples24、max_steps3、learning_rate0.05；保留这个配置文件。下文路径中的Case均指这个 `linear_point`，不要把代码放在项目根目录。 本节保留宿主已有problem/__init__.py的回归Problem工厂（use_valid_objective=False）与adapter/__init__.py的gradient.sgd工厂；它们是实际存在、被下面builder调用的消费者。 数据工厂也保留宿主现有24行2列的连续回归数据。"]
+steps = ["先核对本章列出的所有文件，再从正式Project入口运行。builder先取得DataView，再构造带Head的模型表示、Problem和Adapter；运行中Adapter提出参数候选，表示将UnknownState解释成模型，Problem用数据生成原始反馈，Adapter按自己的规则消费反馈并选择后继，Solver负责接纳、事务提交和逻辑步计数。装配、观察和读取dimension不应提前调用init或构建算法Unit。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["本例表示的dimension应为3，坐标为[intercept,w0,w1]；模型predict(X)返回(n_samples,)单值数组。回归Problem的原始objectives为[MSE,0]（复杂度权重默认0），梯度来自训练集；metrics有train.mse/train.rmse/train.mae/train.r2。读取loss正则项与原始目标时不要混为一个数。 在保留同一次正式Case实例的程序式调用中，solver.fit()/run()返回TrainerResult；从result.best_model读取模型，result.best_feedback读取反馈，result.best_state读取参数，result.report读取ML报告。这里的solver/result是实际运行实例及其返回值，不是装配时凭空预建的对象。默认Project终端摘要不保证打印这些完整对象；不要为了读取它们再次不加区分地运行一次训练。 权威结果：result.best_state/best_model/best_feedback来自Solver权威incumbent，不等于Adapter最后后继或最终成员；局部objective_aggregation不自动配置Solver最终scalarizer。未显式配置scalarizer时默认sum，本例为MSE+0。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_COMPONENT_APPLICATIONS_CN.md", section = "mlblack.trainer.learning_solver" }]
+
+[[example]]
+id = "application-mlblack.data_view.numeric"
+title = "数值数据、标签与训练验证区域 · 基础应用与变体"
+component_keys = ["mlblack.data_view.numeric"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "把二维特征和逐行标签交给学习Problem；本例先用24行两特征回归，再在本章变体中演示验证集与顺序切分。"
+inputs = ["使用mlblack仓库已有的 `examples/cases/catalog_codec_demo/`，其中默认组只运行 `cases/linear_point/`。先确认blackbase、nsgablack、mlblack与NumPy可导入；不需要Torch、GPU或模型API。该Case已经有 `config.py::DEFAULTS`，字段为seed17、n_samples24、max_steps3、learning_rate0.05；保留这个配置文件。下文路径中的Case均指这个 `linear_point`，不要把代码放在项目根目录。 本节保留宿主已有problem/__init__.py的回归Problem工厂（use_valid_objective=False）与adapter/__init__.py的gradient.sgd工厂；它们是实际存在、被下面builder调用的消费者。 数据工厂的完整替换代码在本章给出。"]
+steps = ["先核对本章列出的所有文件，再从正式Project入口运行。builder先取得DataView，再构造带Head的模型表示、Problem和Adapter；运行中Adapter提出参数候选，表示将UnknownState解释成模型，Problem用数据生成原始反馈，Adapter按自己的规则消费反馈并选择后继，Solver负责接纳、事务提交和逻辑步计数。装配、观察和读取dimension不应提前调用init或构建算法Unit。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["本例表示的dimension应为3，坐标为[intercept,w0,w1]；模型predict(X)返回(n_samples,)单值数组。回归Problem的原始objectives为[MSE,0]（复杂度权重默认0），梯度来自训练集；metrics有train.mse/train.rmse/train.mae/train.r2。读取loss正则项与原始目标时不要混为一个数。 在保留同一次正式Case实例的程序式调用中，solver.fit()/run()返回TrainerResult；从result.best_model读取模型，result.best_feedback读取反馈，result.best_state读取参数，result.report读取ML报告。这里的solver/result是实际运行实例及其返回值，不是装配时凭空预建的对象。默认Project终端摘要不保证打印这些完整对象；不要为了读取它们再次不加区分地运行一次训练。 权威结果：result.best_state/best_model/best_feedback来自Solver权威incumbent，不等于Adapter最后后继或最终成员；局部objective_aggregation不自动配置Solver最终scalarizer。未显式配置scalarizer时默认sum，本例为MSE+0。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_COMPONENT_APPLICATIONS_CN.md", section = "mlblack.data_view.numeric" }]
+
+[[example]]
+id = "application-mlblack.codec.linear_point"
+title = "线性参数布局与模型往返 · 基础应用与变体"
+component_keys = ["mlblack.codec.linear_point"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "确认参数数组每个坐标的含义，或从已有线性参数建立候选。正式运行中由LinearPointRepresentation内部调用LinearPointCodec，不额外挂第二份Codec。"
+inputs = ["使用mlblack仓库已有的 `examples/cases/catalog_codec_demo/`，其中默认组只运行 `cases/linear_point/`。先确认blackbase、nsgablack、mlblack与NumPy可导入；不需要Torch、GPU或模型API。该Case已经有 `config.py::DEFAULTS`，字段为seed17、n_samples24、max_steps3、learning_rate0.05；保留这个配置文件。下文路径中的Case均指这个 `linear_point`，不要把代码放在项目根目录。 本节保留宿主已有problem/__init__.py的回归Problem工厂（use_valid_objective=False）与adapter/__init__.py的gradient.sgd工厂；它们是实际存在、被下面builder调用的消费者。 数据工厂也保留宿主现有24行2列的连续回归数据。"]
+steps = ["先核对本章列出的所有文件，再从正式Project入口运行。builder先取得DataView，再构造带Head的模型表示、Problem和Adapter；运行中Adapter提出参数候选，表示将UnknownState解释成模型，Problem用数据生成原始反馈，Adapter按自己的规则消费反馈并选择后继，Solver负责接纳、事务提交和逻辑步计数。装配、观察和读取dimension不应提前调用init或构建算法Unit。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["本例表示的dimension应为3，坐标为[intercept,w0,w1]；模型predict(X)返回(n_samples,)单值数组。回归Problem的原始objectives为[MSE,0]（复杂度权重默认0），梯度来自训练集；metrics有train.mse/train.rmse/train.mae/train.r2。读取loss正则项与原始目标时不要混为一个数。 在保留同一次正式Case实例的程序式调用中，solver.fit()/run()返回TrainerResult；从result.best_model读取模型，result.best_feedback读取反馈，result.best_state读取参数，result.report读取ML报告。这里的solver/result是实际运行实例及其返回值，不是装配时凭空预建的对象。默认Project终端摘要不保证打印这些完整对象；不要为了读取它们再次不加区分地运行一次训练。 权威结果：result.best_state/best_model/best_feedback来自Solver权威incumbent，不等于Adapter最后后继或最终成员；局部objective_aggregation不自动配置Solver最终scalarizer。未显式配置scalarizer时默认sum，本例为MSE+0。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_COMPONENT_APPLICATIONS_CN.md", section = "mlblack.codec.linear_point" }]
+
+[[example]]
+id = "application-mlblack.representation.linear_point"
+title = "模型候选的初始化、修复与解释 · 基础应用与变体"
+component_keys = ["mlblack.representation.linear_point"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "让算法搜索线性模型的UnknownState，明确初始化、参数布局、输出Head和Problem如何连接；本章也给出业务已知初值和概率输出两个改法。"
+inputs = ["使用mlblack仓库已有的 `examples/cases/catalog_codec_demo/`，其中默认组只运行 `cases/linear_point/`。先确认blackbase、nsgablack、mlblack与NumPy可导入；不需要Torch、GPU或模型API。该Case已经有 `config.py::DEFAULTS`，字段为seed17、n_samples24、max_steps3、learning_rate0.05；保留这个配置文件。下文路径中的Case均指这个 `linear_point`，不要把代码放在项目根目录。 本节保留宿主已有problem/__init__.py的回归Problem工厂（use_valid_objective=False）与adapter/__init__.py的gradient.sgd工厂；它们是实际存在、被下面builder调用的消费者。 数据工厂也保留宿主现有24行2列的连续回归数据。"]
+steps = ["先核对本章列出的所有文件，再从正式Project入口运行。builder先取得DataView，再构造带Head的模型表示、Problem和Adapter；运行中Adapter提出参数候选，表示将UnknownState解释成模型，Problem用数据生成原始反馈，Adapter按自己的规则消费反馈并选择后继，Solver负责接纳、事务提交和逻辑步计数。装配、观察和读取dimension不应提前调用init或构建算法Unit。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["本例表示的dimension应为3，坐标为[intercept,w0,w1]；模型predict(X)返回(n_samples,)单值数组。回归Problem的原始objectives为[MSE,0]（复杂度权重默认0），梯度来自训练集；metrics有train.mse/train.rmse/train.mae/train.r2。读取loss正则项与原始目标时不要混为一个数。 在保留同一次正式Case实例的程序式调用中，solver.fit()/run()返回TrainerResult；从result.best_model读取模型，result.best_feedback读取反馈，result.best_state读取参数，result.report读取ML报告。这里的solver/result是实际运行实例及其返回值，不是装配时凭空预建的对象。默认Project终端摘要不保证打印这些完整对象；不要为了读取它们再次不加区分地运行一次训练。 权威结果：result.best_state/best_model/best_feedback来自Solver权威incumbent，不等于Adapter最后后继或最终成员；局部objective_aggregation不自动配置Solver最终scalarizer。未显式配置scalarizer时默认sum，本例为MSE+0。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_COMPONENT_APPLICATIONS_CN.md", section = "mlblack.representation.linear_point" }]
+
+[[example]]
+id = "application-mlblack.head.point"
+title = "单值输出、回归指标与梯度 · 基础应用与变体"
+component_keys = ["mlblack.head.point"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "每行预测一个连续数值，例如产量或金额。PointHead使用一个基础线性块，配回归Problem后才具有本例的解析梯度。"
+inputs = ["使用mlblack仓库已有的 `examples/cases/catalog_codec_demo/`，其中默认组只运行 `cases/linear_point/`。先确认blackbase、nsgablack、mlblack与NumPy可导入；不需要Torch、GPU或模型API。该Case已经有 `config.py::DEFAULTS`，字段为seed17、n_samples24、max_steps3、learning_rate0.05；保留这个配置文件。下文路径中的Case均指这个 `linear_point`，不要把代码放在项目根目录。 本节保留宿主已有problem/__init__.py的回归Problem工厂（use_valid_objective=False）与adapter/__init__.py的gradient.sgd工厂；它们是实际存在、被下面builder调用的消费者。 数据工厂也保留宿主现有24行2列的连续回归数据。"]
+steps = ["先核对本章列出的所有文件，再从正式Project入口运行。builder先取得DataView，再构造带Head的模型表示、Problem和Adapter；运行中Adapter提出参数候选，表示将UnknownState解释成模型，Problem用数据生成原始反馈，Adapter按自己的规则消费反馈并选择后继，Solver负责接纳、事务提交和逻辑步计数。装配、观察和读取dimension不应提前调用init或构建算法Unit。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["本例表示的dimension应为3，坐标为[intercept,w0,w1]；模型predict(X)返回(n_samples,)单值数组。回归Problem的原始objectives为[MSE,0]（复杂度权重默认0），梯度来自训练集；metrics有train.mse/train.rmse/train.mae/train.r2。读取loss正则项与原始目标时不要混为一个数。 在保留同一次正式Case实例的程序式调用中，solver.fit()/run()返回TrainerResult；从result.best_model读取模型，result.best_feedback读取反馈，result.best_state读取参数，result.report读取ML报告。这里的solver/result是实际运行实例及其返回值，不是装配时凭空预建的对象。默认Project终端摘要不保证打印这些完整对象；不要为了读取它们再次不加区分地运行一次训练。 权威结果：result.best_state/best_model/best_feedback来自Solver权威incumbent，不等于Adapter最后后继或最终成员；局部objective_aggregation不自动配置Solver最终scalarizer。未显式配置scalarizer时默认sum，本例为MSE+0。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_COMPONENT_APPLICATIONS_CN.md", section = "mlblack.head.point" }]
+
+[[example]]
+id = "application-mlblack.head.binary_logistic"
+title = "二元概率的完整装配 · 基础应用与变体"
+component_keys = ["mlblack.head.binary_logistic"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "把两特征模型用于二分类，输出类别0/1的两列概率；数据、Head、Problem与搜索方法需要一起接好。"
+inputs = ["使用mlblack仓库已有的 `examples/cases/catalog_codec_demo/`，其中默认组只运行 `cases/linear_point/`。先确认blackbase、nsgablack、mlblack与NumPy可导入；不需要Torch、GPU或模型API。该Case已经有 `config.py::DEFAULTS`，字段为seed17、n_samples24、max_steps3、learning_rate0.05；保留这个配置文件。下文路径中的Case均指这个 `linear_point`，不要把代码放在项目根目录。 当前宿主实际默认是点回归和SGD；本节明确把它改为当前任务，下面所有替换都必须完成，不能只新增Head工厂或假定已经存在无梯度Adapter。"]
+steps = ["先核对本章列出的所有文件，再从正式Project入口运行。builder先取得DataView，再构造带Head的模型表示、Problem和Adapter；运行中Adapter提出参数候选，表示将UnknownState解释成模型，Problem用数据生成原始反馈，Adapter按自己的规则消费反馈并选择后继，Solver负责接纳、事务提交和逻辑步计数。装配、观察和读取dimension不应提前调用init或构建算法Unit。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["表示dimension应为3，模型predict_proba(X)返回(n_samples,2)，每行和约为1；predict(X)返回0/1。分类Problem直接从概率argmax计算标签指标，metrics键为train.log_loss/train.error_rate/train.accuracy；它不产生梯度。本章高斯搜索只按第一目标log_loss作比较，不把第二目标error_rate丢出原始反馈。 在保留同一次正式Case实例的程序式调用中，solver.fit()/run()返回TrainerResult；从result.best_model读取模型，result.best_feedback读取反馈，result.best_state读取参数，result.report读取ML报告。这里的solver/result是实际运行实例及其返回值，不是装配时凭空预建的对象。默认Project终端摘要不保证打印这些完整对象；不要为了读取它们再次不加区分地运行一次训练。 权威结果：result.best_state/best_model/best_feedback来自Solver权威incumbent，不等于Adapter最后后继或最终成员；局部objective_aggregation不自动配置Solver最终scalarizer。本例未显式配置scalarizer，最终按log_loss+error_rate之和，非仅log_loss。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_COMPONENT_APPLICATIONS_CN.md", section = "mlblack.head.binary_logistic" }]
+
+[[example]]
+id = "application-mlblack.head.softmax"
+title = "三分类的完整装配 · 基础应用与变体"
+component_keys = ["mlblack.head.softmax"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "把两特征模型用于三个互斥类别，输出0/1/2的三列概率。每类一个基础线性块，合起来是一个9维模型候选，不是三个Solver。"
+inputs = ["使用mlblack仓库已有的 `examples/cases/catalog_codec_demo/`，其中默认组只运行 `cases/linear_point/`。先确认blackbase、nsgablack、mlblack与NumPy可导入；不需要Torch、GPU或模型API。该Case已经有 `config.py::DEFAULTS`，字段为seed17、n_samples24、max_steps3、learning_rate0.05；保留这个配置文件。下文路径中的Case均指这个 `linear_point`，不要把代码放在项目根目录。 当前宿主实际默认是点回归和SGD；本节明确把它改为当前任务，下面所有替换都必须完成，不能只新增Head工厂或假定已经存在无梯度Adapter。"]
+steps = ["先核对本章列出的所有文件，再从正式Project入口运行。builder先取得DataView，再构造带Head的模型表示、Problem和Adapter；运行中Adapter提出参数候选，表示将UnknownState解释成模型，Problem用数据生成原始反馈，Adapter按自己的规则消费反馈并选择后继，Solver负责接纳、事务提交和逻辑步计数。装配、观察和读取dimension不应提前调用init或构建算法Unit。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["表示dimension应为9，候选被拆成三个3维logit块。模型predict_proba(X)返回(n_samples,3)，每行和约为1；predict(X)返回0/1/2。分类Problem直接从概率argmax计算标签指标，metrics键为train.log_loss/train.error_rate/train.accuracy；默认两个原始目标是[log_loss,error_rate]。本章高斯搜索只用第一目标log_loss作比较，error_rate仍保留在原始反馈中。 在保留同一次正式Case实例的程序式调用中，solver.fit()/run()返回TrainerResult；从result.best_model读取模型，result.best_feedback读取反馈，result.best_state读取参数，result.report读取ML报告。这里的solver/result是实际运行实例及其返回值，不是装配时凭空预建的对象。默认Project终端摘要不保证打印这些完整对象；不要为了读取它们再次不加区分地运行一次训练。 权威结果：result.best_state/best_model/best_feedback来自Solver权威incumbent，不等于Adapter最后后继或最终成员；局部objective_aggregation不自动配置Solver最终scalarizer。本例未显式配置scalarizer，最终按log_loss+error_rate之和，非仅log_loss；F1单目标变体无第二项。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_COMPONENT_APPLICATIONS_CN.md", section = "mlblack.head.softmax" }]
+
+[[example]]
+id = "application-mlblack.head.probability_calibration"
+title = "把温度纳入模型参数搜索 · 基础应用与变体"
+component_keys = ["mlblack.head.probability_calibration"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "在二分类模型的基础参数之外，再搜索一个温度参数，让原始目标直接评估温度变换后的概率。"
+inputs = ["使用mlblack仓库已有的 `examples/cases/catalog_codec_demo/`，其中默认组只运行 `cases/linear_point/`。先确认blackbase、nsgablack、mlblack与NumPy可导入；不需要Torch、GPU或模型API。该Case已经有 `config.py::DEFAULTS`，字段为seed17、n_samples24、max_steps3、learning_rate0.05；保留这个配置文件。下文路径中的Case均指这个 `linear_point`，不要把代码放在项目根目录。 当前宿主实际默认是点回归和SGD；本节明确把它改为当前任务，下面所有替换都必须完成，不能只新增Head工厂或假定已经存在无梯度Adapter。"]
+steps = ["先核对本章列出的所有文件，再从正式Project入口运行。builder先取得DataView，再构造带Head的模型表示、Problem和Adapter；运行中Adapter提出参数候选，表示将UnknownState解释成模型，Problem用数据生成原始反馈，Adapter按自己的规则消费反馈并选择后继，Solver负责接纳、事务提交和逻辑步计数。装配、观察和读取dimension不应提前调用init或构建算法Unit。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["表示dimension应为4，模型predict_proba(X)返回(n_samples,2)，每行和约为1；predict(X)返回0/1。分类Problem直接从概率argmax计算标签指标，metrics键为train.log_loss/train.error_rate/train.accuracy；它不产生梯度。本章高斯搜索只按第一目标log_loss作比较，不把第二目标error_rate丢出原始反馈。最后一维是raw temperature，经softplus和边界限制得到实际温度，不应把raw值直接当实际温度。 在保留同一次正式Case实例的程序式调用中，solver.fit()/run()返回TrainerResult；从result.best_model读取模型，result.best_feedback读取反馈，result.best_state读取参数，result.report读取ML报告。这里的solver/result是实际运行实例及其返回值，不是装配时凭空预建的对象。默认Project终端摘要不保证打印这些完整对象；不要为了读取它们再次不加区分地运行一次训练。 权威结果：result.best_state/best_model/best_feedback来自Solver权威incumbent，不等于Adapter最后后继或最终成员；局部objective_aggregation不自动配置Solver最终scalarizer。本例未显式配置scalarizer，最终按log_loss+error_rate之和，非仅log_loss。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_COMPONENT_APPLICATIONS_CN.md", section = "mlblack.head.probability_calibration" }]
+
+[[example]]
+id = "application-mlblack.head.two_model_interval"
+title = "上下界模型与覆盖约束 · 基础应用与变体"
+component_keys = ["mlblack.head.two_model_interval"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "预测连续目标的上下界，同时考虑覆盖率、区间宽度和漏出距离。上下界各由一个基础线性块生成。"
+inputs = ["使用mlblack仓库已有的 `examples/cases/catalog_codec_demo/`，其中默认组只运行 `cases/linear_point/`。先确认blackbase、nsgablack、mlblack与NumPy可导入；不需要Torch、GPU或模型API。该Case已经有 `config.py::DEFAULTS`，字段为seed17、n_samples24、max_steps3、learning_rate0.05；保留这个配置文件。下文路径中的Case均指这个 `linear_point`，不要把代码放在项目根目录。 当前宿主实际默认是点回归和SGD；本节明确把它改为当前任务，下面所有替换都必须完成，不能只新增Head工厂或假定已经存在无梯度Adapter。"]
+steps = ["先核对本章列出的所有文件，再从正式Project入口运行。builder先取得DataView，再构造带Head的模型表示、Problem和Adapter；运行中Adapter提出参数候选，表示将UnknownState解释成模型，Problem用数据生成原始反馈，Adapter按自己的规则消费反馈并选择后继，Solver负责接纳、事务提交和逻辑步计数。装配、观察和读取dimension不应提前调用init或构建算法Unit。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["表示dimension应为6，模型predict_interval(X)返回等长lower/upper，predict(X)是(n_samples,2)。metrics含train.coverage/train.mean_width/train.mean_miss_distance；原始objectives为[width_weight*width+miss_weight*miss,width,miss]，constraints为[target_coverage-coverage]。高斯搜索按首个区间目标比较，仍须同时检查覆盖约束是否满足。 在保留同一次正式Case实例的程序式调用中，solver.fit()/run()返回TrainerResult；从result.best_model读取模型，result.best_feedback读取反馈，result.best_state读取参数，result.report读取ML报告。这里的solver/result是实际运行实例及其返回值，不是装配时凭空预建的对象。默认Project终端摘要不保证打印这些完整对象；不要为了读取它们再次不加区分地运行一次训练。 权威结果：result.best_state/best_model/best_feedback来自Solver权威incumbent，不等于Adapter最后后继或最终成员；局部objective_aggregation不自动配置Solver最终scalarizer。本例未显式配置scalarizer，默认sum三个目标，非仅首项。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_COMPONENT_APPLICATIONS_CN.md", section = "mlblack.head.two_model_interval" }]
+
+[[example]]
+id = "application-mlblack.head.interval"
+title = "两模型区间Head的直接别名 · 基础应用与变体"
+component_keys = ["mlblack.head.interval"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "使用短名称IntervalHead装配同一个两模型区间实现；它是TwoModelIntervalHead的直接别名，不是又一套区间算法。"
+inputs = ["使用mlblack仓库已有的 `examples/cases/catalog_codec_demo/`，其中默认组只运行 `cases/linear_point/`。先确认blackbase、nsgablack、mlblack与NumPy可导入；不需要Torch、GPU或模型API。该Case已经有 `config.py::DEFAULTS`，字段为seed17、n_samples24、max_steps3、learning_rate0.05；保留这个配置文件。下文路径中的Case均指这个 `linear_point`，不要把代码放在项目根目录。 当前宿主实际默认是点回归和SGD；本节明确把它改为当前任务，下面所有替换都必须完成，不能只新增Head工厂或假定已经存在无梯度Adapter。"]
+steps = ["先核对本章列出的所有文件，再从正式Project入口运行。builder先取得DataView，再构造带Head的模型表示、Problem和Adapter；运行中Adapter提出参数候选，表示将UnknownState解释成模型，Problem用数据生成原始反馈，Adapter按自己的规则消费反馈并选择后继，Solver负责接纳、事务提交和逻辑步计数。装配、观察和读取dimension不应提前调用init或构建算法Unit。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["表示dimension应为6，模型predict_interval(X)返回等长lower/upper，predict(X)是(n_samples,2)。metrics含train.coverage/train.mean_width/train.mean_miss_distance；原始objectives为[width_weight*width+miss_weight*miss,width,miss]，constraints为[target_coverage-coverage]。高斯搜索按首个区间目标比较，仍须同时检查覆盖约束是否满足。 在保留同一次正式Case实例的程序式调用中，solver.fit()/run()返回TrainerResult；从result.best_model读取模型，result.best_feedback读取反馈，result.best_state读取参数，result.report读取ML报告。这里的solver/result是实际运行实例及其返回值，不是装配时凭空预建的对象。默认Project终端摘要不保证打印这些完整对象；不要为了读取它们再次不加区分地运行一次训练。 权威结果：result.best_state/best_model/best_feedback来自Solver权威incumbent，不等于Adapter最后后继或最终成员；局部objective_aggregation不自动配置Solver最终scalarizer。本例未显式配置scalarizer，默认sum三个目标，非仅首项。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_COMPONENT_APPLICATIONS_CN.md", section = "mlblack.head.interval" }]
+
+[[example]]
+id = "application-mlblack.head.center_radius_interval"
+title = "中心与非负半径的区间模型 · 基础应用与变体"
+component_keys = ["mlblack.head.center_radius_interval"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "将区间解释为中心预测加减非负半径，分别解释位置与幅度；仍由区间Problem衡量覆盖、宽度和漏出。"
+inputs = ["使用mlblack仓库已有的 `examples/cases/catalog_codec_demo/`，其中默认组只运行 `cases/linear_point/`。先确认blackbase、nsgablack、mlblack与NumPy可导入；不需要Torch、GPU或模型API。该Case已经有 `config.py::DEFAULTS`，字段为seed17、n_samples24、max_steps3、learning_rate0.05；保留这个配置文件。下文路径中的Case均指这个 `linear_point`，不要把代码放在项目根目录。 当前宿主实际默认是点回归和SGD；本节明确把它改为当前任务，下面所有替换都必须完成，不能只新增Head工厂或假定已经存在无梯度Adapter。"]
+steps = ["先核对本章列出的所有文件，再从正式Project入口运行。builder先取得DataView，再构造带Head的模型表示、Problem和Adapter；运行中Adapter提出参数候选，表示将UnknownState解释成模型，Problem用数据生成原始反馈，Adapter按自己的规则消费反馈并选择后继，Solver负责接纳、事务提交和逻辑步计数。装配、观察和读取dimension不应提前调用init或构建算法Unit。"]
+dependencies = ["当前nsgablack与blackbase；ML例子另需mlblack，具体数据与后端见正文前提。"]
+expected_outputs = ["表示dimension应为6，模型predict_interval(X)返回等长lower/upper，predict(X)是(n_samples,2)。metrics含train.coverage/train.mean_width/train.mean_miss_distance；原始objectives为[width_weight*width+miss_weight*miss,width,miss]，constraints为[target_coverage-coverage]。高斯搜索按首个区间目标比较，仍须同时检查覆盖约束是否满足。 在保留同一次正式Case实例的程序式调用中，solver.fit()/run()返回TrainerResult；从result.best_model读取模型，result.best_feedback读取反馈，result.best_state读取参数，result.report读取ML报告。这里的solver/result是实际运行实例及其返回值，不是装配时凭空预建的对象。默认Project终端摘要不保证打印这些完整对象；不要为了读取它们再次不加区分地运行一次训练。 权威结果：result.best_state/best_model/best_feedback来自Solver权威incumbent，不等于Adapter最后后继或最终成员；局部objective_aggregation不自动配置Solver最终scalarizer。本例未显式配置scalarizer，默认sum三个目标，非仅首项。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_COMPONENT_APPLICATIONS_CN.md", section = "mlblack.head.center_radius_interval" }]

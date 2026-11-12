@@ -173,8 +173,10 @@ def _print_contract_fields(e) -> None:
 
 def _print_usage_fields(e) -> None:
     from nsgablack.catalog import build_usage_profile
+    from nsgablack.catalog.guidance import WIRING_STATUS_NOTE, guidance_for, wiring_status_label
 
     usage = build_usage_profile(e)
+    guidance = guidance_for(e)
 
     def _print_list(label: str, items: tuple[str, ...]) -> None:
         if not items:
@@ -184,11 +186,18 @@ def _print_usage_fields(e) -> None:
         for item in items:
             print(f"  - {item}")
 
-    _print_list("use_when", usage.use_when)
-    _print_list("minimal_wiring", usage.minimal_wiring)
-    _print_list("required_companions", usage.required_companions)
-    _print_list("config_keys", usage.config_keys)
-    print(f"example_entry: {usage.example_entry or '(none)'}")
+    print(f"职责 (role): {guidance.role}")
+    _print_list("相关概念 (concepts)", guidance.concepts)
+    _print_list("支持边界 (boundaries)", guidance.boundaries)
+    _print_list("适用场景 (use_when)", usage.use_when)
+    _print_list("运行方法 (operations)", guidance.operations)
+    _print_list("装配配置 (config_keys)", usage.config_keys)
+    print(f"配方结构状态 (wiring_status): {wiring_status_label(usage.wiring_status)} [{usage.wiring_status}]")
+    _print_list("结构检查说明 (wiring_notes)", usage.wiring_notes)
+    print(WIRING_STATUS_NOTE)
+    _print_list("最小接线 (minimal_wiring)", usage.minimal_wiring)
+    _print_list("必备搭档 (required_companions)", usage.required_companions)
+    print(f"示例入口 (example_entry): {usage.example_entry or '(none)'}")
 
 
 def _cmd_catalog_search(args: argparse.Namespace) -> int:

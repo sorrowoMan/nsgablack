@@ -1,0 +1,25 @@
+[[example]]
+id = "core-explicit-preference-deltas"
+title = "PreferenceDelta · 真实软评分声明、raw硬门与报告"
+component_keys = ["tool.preference_delta"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "结构化PreferenceProvider返回有限显式增量，正式控制面检查允许key并保留raw；完整二维Case与不同中心变体。"
+inputs = ["完整bias_gallery Project副本、NSGA、Problem/Pipeline、纯候选PreferenceProvider、L0和报告。"]
+steps = ["保存完整四组件与薄builder，set_bias_module实际消费preferences。", "改中心而不改raw约束，报告从实际实例读参数核对公式。"]
+dependencies = ["当前框架与NumPy。"]
+expected_outputs = ["explicit_delta.json最后批raw/selection/deltas/逐行公式与真实成员raw违反量；没有算法运行声明。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/CORE_PREFERENCE_PROJECTION_APPLICATIONS_CN.md", section = "core.preference_delta" }, { path = "nsgablack/docs/catalog_usage/CORE_PREFERENCE_PROJECTION_APPLICATIONS_CN.md", section = "core.preference_host" }]
+
+[[example]]
+id = "core-direction-objective-projection"
+title = "ObjectiveProjection · 真实方向视图、两层精修与只读审计"
+component_keys = ["tool.objective_projection"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整assembly_workbench directions装配，MOEA/D自动发布比较框架，VNS/Pattern任务冻结继承；报告实际from_dict/apply核对保存raw算术。"
+inputs = ["完整原Project、DirectionsConfig、双目标Problem、Clip Pipeline、原DirectionTrace与L0。"]
+steps = ["保存完整三策略SearchPlan与正式builder/ProjectionAudit。", "decomposition常量变为weighted_sum，实际owner/子视图/消费者同步改变。"]
+dependencies = ["当前框架与NumPy；不调用模型、数据库或API。"]
+expected_outputs = ["summary真实视图/冻结收据/两列raw，以及projection_audit当前视图算术matches；不回写标量到母池或重复送评。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/CORE_PREFERENCE_PROJECTION_APPLICATIONS_CN.md", section = "core.objective_projection" }, { path = "nsgablack/docs/catalog_usage/CORE_PREFERENCE_PROJECTION_APPLICATIONS_CN.md", section = "core.projection_host" }]

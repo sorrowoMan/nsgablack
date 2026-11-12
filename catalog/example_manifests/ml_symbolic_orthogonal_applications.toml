@@ -1,0 +1,25 @@
+[[example]]
+id = "ml-symbolic-orthogonal-classification-application"
+title = "训练特征基、正交Codec与分类preset的实际接线"
+component_keys = ["mlblack.codec.orthogonal_linear_point", "mlblack.model.orthogonal_feature_map", "mlblack.model.orthogonal_linear_point", "mlblack.representation.orthogonal_linear", "mlblack.representation.orthogonal_point_linear", "mlblack.preset.orthogonal_logistic_classification"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "正式Case调用真实preset和数据SVD特征基，通过公开ArtifactProvider/Serializer发布安全JSON；明确实际秩、验证目标和配置别名。"
+inputs = ["完整catalog_codec_demo独立副本；两原始特征40训练/16验证；当前三仓与NumPy。"]
+steps = ["完整配置/数据/serializer/builder，实际运行入口复用Project/L0；变化主成分上限并从模型引用读取真实feature map。"]
+dependencies = ["当前三仓与NumPy；无外部模型或下载。"]
+expected_outputs = ["正式TrainerResult valid.log_loss、模型引用；JSON模型保存训练mean/components、实际秩及原生正交logit；未运行。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_SYMBOLIC_ORTHOGONAL_APPLICATIONS_CN.md",section="mlblack.preset.orthogonal_logistic_classification"}, {path="nsgablack/docs/catalog_usage/ML_SYMBOLIC_ORTHOGONAL_APPLICATIONS_CN.md",section="orthogonal.shared_report"}]
+
+[[example]]
+id = "ml-symbolic-conditioned-target-application"
+title = "参考模型残差目标、公开Builder别名和额外预测特征"
+component_keys = ["mlblack.pipeline.model_conditioned_target", "mlblack.pipeline.model_conditioned_target_builder", "mlblack.pipeline.model_conditioned_target_config"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "实际变换训练与验证标签，固定参考模型不训练；完整残差Case与Artifact保存参考/目标定义，变体真实追加参考预测特征。"
+inputs = ["完整catalog_codec_demo独立副本；固定参考函数，32训练/12验证；当前三仓与NumPy。"]
+steps = ["保存完整Pipeline/Problem/Builder和配置；通过正式Project运行与TrainerResult读取，区别残差模型和最终组合。"]
+dependencies = ["当前三仓与NumPy。"]
+expected_outputs = ["残差train/valid MSE与模型引用；真实参考系数、目标变换和残差蓝图，无独立训练循环或恢复证明。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_SYMBOLIC_ORTHOGONAL_APPLICATIONS_CN.md",section="mlblack.pipeline.model_conditioned_target"}, {path="nsgablack/docs/catalog_usage/ML_SYMBOLIC_ORTHOGONAL_APPLICATIONS_CN.md",section="orthogonal.shared_report"}]

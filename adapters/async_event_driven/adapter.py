@@ -186,6 +186,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
 
     def setup(self, control: Any) -> None:
         self._solver_ref = control
+        self._rng = self.create_local_rng(control)
         self._step = 0
         self._event_id = 0
         self._queue = []

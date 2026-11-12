@@ -1,0 +1,153 @@
+{
+  "schema": "nsgablack.assistant_cases/v1",
+  "version": "2026-10-24.2",
+  "cases": [
+    {
+      "id": "framework_roles_01", "family": "framework_responsibilities", "split": "train",
+      "instruction": "先给我整体认识：Problem、Pipeline、Pool、Unit、Adapter、Bias、Plugin 与 Solver 到底怎么合作？不要把它们讲成一条固定执行链。",
+      "answer": "这些名称描述职责。Problem 定义原始目标和约束；Pipeline 处理候选及表示；Pool 按身份和版本保存解；Unit 在候选基础上保存算法特征和关系，由所属 Adapter 按需建立。Adapter 使用这些结构作搜索决策、提出候选并消费反馈；Bias 提供保留原始评估的软偏好；Plugin 参与评估、日志、恢复等生命周期。Solver 负责控制和装配。一次提案经修复对账、求值、接纳、Adapter 更新后，只有事务提交才发布新的权威状态，不能把职责顺序当成固定七阶段循环。",
+      "rubric": {"delivery": "discussion", "criteria": ["区分职责关系和固定执行链", "说明候选身份、Unit 所有权及提交边界", "不将 Unit 解释为候选编码"], "forbidden_inferences": ["每个组件必须按名单顺序执行", "Unit 拥有 Solver 生命周期"]},
+      "source_checks": [{"path": "AGENTS.md", "anchor": "理解与装配的主线是"}, {"path": "core/evaluation_acceptance.py", "anchor": "class FeasibleEvaluationAcceptance:"}]
+    },
+    {
+      "id": "unit_reuse_01", "family": "unit_lazy_reuse", "split": "train",
+      "instruction": "我只换 GA 的交叉方法，种群成员结构没有变化。要不要重新写 Unit？还未启用的 VNS 是否应在装配时创建 Unit？",
+      "answer": "只换交叉方法且现有种群结构足够时，复用 PopulationUnit，修改实际 Adapter 支持的变化位置即可；完整 set_change 替代原变化逻辑，其内部负责交叉、变异的顺序和概率。装配 UnitBinding 只提供构建规则，不创建运行结构。未启用的 VNS 可保持 algorithm_unit=None，实际需要时由 ensure_unit 创建一次并复用；暂停继续不重建，恢复已有 Unit 走 codec。观察或检查不能为了读取字段提前创建 Unit。",
+      "rubric": {"delivery": "discussion", "criteria": ["复用 PopulationUnit", "完整变化替代旧流程", "区分装配和按需创建"], "forbidden_inferences": ["每个新算子都需要新 Unit", "装配即创建运行 Unit"]},
+      "source_checks": [{"path": "adapters/unit_backed.py", "anchor": "    def ensure_unit(self):"}, {"path": "catalog/lab_assistant.py", "anchor": "只换交叉而不改变成员关系时优先复用现有 PopulationUnit"}]
+    },
+    {
+      "id": "ga_final_members_01", "family": "ga_survivor_archive", "split": "train",
+      "instruction": "GA 本轮接纳了六个提案，但最后种群有四个成员。我只想从最终成员挑精英创建 elite 池，再让 VNS 用。应该取 accepted 吗？是不是一定有两个提案被淘汰？",
+      "answer": "只收最终成员时用实际 survivor 返回的 members，或评估后维护回调的 request.members，不能用 request.accepted 代替。accepted 是本批获准进入算法更新的提案，members 是选择后的有序最终种群，可能包含旧父代，所以不能由六和四推出恰好两个新提案被淘汰。选出精英后创建或精确替换普通 elite 集合，并与 Unit 更新共同提交；VNS 在提交后读取。若在 PoolTask 中维护或读取额外集合，还应按该调用位置声明准确来源权限。",
+      "rubric": {"delivery": "discussion", "criteria": ["明确 members 与 accepted 区别", "保留旧父代可能性", "精英池与 Unit 同事务提交"], "forbidden_inferences": ["六个提案减四个成员等于淘汰两个新提案", "PoolOutput 等同最终精英"]},
+      "source_checks": [{"path": "adapters/pool_maintenance.py", "anchor": "class PoolMaintenanceRequest:"}, {"path": "docs/architecture/POOL_API_REFERENCE_CN.md", "anchor": "`request.members` 是算法最终选择"}]
+    },
+    {
+      "id": "moead_vns_01", "family": "moead_direction_task", "split": "train",
+      "instruction": "MOEA/D 有多个方向，VNS 通过 subpools.all(moead_instance) 精修这些方向。它是不是仍用自己的 sum/first 评分？结果能直接覆盖槽位吗？",
+      "answer": "方向池任务在请求开始时冻结所选视图、候选版本、权重和参考点。VNS 的起点基准与新邻域使用同一投影；PoolRefinementState 在有 subpool_projection 时直接读投影后的单列目标，不再调用普通 sum/first 聚合。原始多目标反馈保留，不能把方向标量写回母池原始目标。VNS 交付本任务最终选中的已评估候选精确引用，再由 MOEA/D 按当前比较规则正常竞争替换，不能直接覆盖槽位或把新解的分数记到原解上。all 选择的是该实例已发布视图，不隐含等待屏障。",
+      "rubric": {"delivery": "discussion", "criteria": ["冻结方向比较框架", "投影评分绕过普通聚合", "返回真实候选参与 MOEA/D 当前竞争"], "forbidden_inferences": ["沿用普通 sum/first", "标量覆盖 raw", "直接覆盖方向槽位"]},
+      "source_checks": [{"path": "adapters/pool_results.py", "anchor": "    def scores(self, feedback, ordinary_scores):"}, {"path": "AGENTS.md", "anchor": "- MOEA/D 按方向自动发布投影子池"}]
+    },
+    {
+      "id": "bias_raw_01", "family": "bias_hard_admission", "split": "train",
+      "instruction": "我打开 ignore_constraint_violation_when_bias，让违反量在选择视图里变成 0。FeasibleEvaluationAcceptance 就应该全部放行吗？禁忌软惩罚和硬禁止又怎么分？",
+      "answer": "不应全部放行。开关只软化选择视图，OptimizationFeedbackBatch 仍保留 raw_objectives/raw_violations。FeasibleEvaluationAcceptance 读取 raw_violations，只有原始违反量有限且不超过容差才接纳，因此不能被软评分开关打开。禁忌软惩罚可作为 Bias；明确禁止接纳应使用显式准入规则，改变搜索决定则属于 Adapter 的决策，不能用软偏好冒充硬约束。",
+      "rubric": {"delivery": "discussion", "criteria": ["硬可行性读取 raw_violations", "解释选择视图独立", "区分软惩罚和硬拒绝"], "forbidden_inferences": ["选择违反量为零即原问题可行"]},
+      "source_checks": [{"path": "core/evaluation_acceptance.py", "anchor": "        violations = np.asarray(feedback.raw_violations"}, {"path": "AGENTS.md", "anchor": "### 6.4 Bias API"}]
+    },
+    {
+      "id": "ctx_pool_01", "family": "context_storage", "split": "train",
+      "instruction": "ctx 和 Pool 是不是重复？我可以把整个种群矩阵、历代分数和所有路径长期塞到 context 吗？",
+      "answer": "两者职责不同。Pool 保存有身份和版本的候选及具名引用集合，Unit 保存算法工作结构，ctx 传一次调用或主流程所需的轻量信息，例如阶段、计数和池输入标识。大对象进入 SnapshotStore，context 只保留引用或 snapshot key；共享键需要注册并声明读写契约。context 参数、ContextStore 和 context contract 也不是同一个概念。单个子流程时它们可能看起来接近，但不能用共享 context 矩阵建立另一份可写种群权威。",
+      "rubric": {"delivery": "discussion", "criteria": ["区分三种 context 含义", "大对象使用 SnapshotStore", "Pool 与 Unit 不混同"], "forbidden_inferences": ["context 是第二份种群权威"]},
+      "source_checks": [{"path": "AGENTS.md", "anchor": "### 5.1 强制规则"}, {"path": "core/state/solution_pool.py", "anchor": "class SolutionPool:"}]
+    },
+    {
+      "id": "plugin_01", "family": "plugin_lifecycle", "split": "train",
+      "instruction": "我要给 GA 加每代数据库日志、checkpoint 和严格发布检查。应该写成算法插件改变 GA 的选择流程吗？观察者是否代表没有成本？",
+      "answer": "日志、checkpoint 和发布检查属于 Plugin 生命周期能力，复用 blackbase PluginBase/PluginManager，不应重写 GA 搜索选择。物理尝试钩子覆盖失败和拒绝，逻辑代钩子只对应 committed 更新；严格发布检查在提交前声明 finalization 否决角色。观察权限不等于零 I/O 或零成本，重日志后端仍需要明确配置和资源安排。可选观察失败能否软处理依组件声明；求值、权威快照和严格发布失败必须传播。",
+      "rubric": {"delivery": "discussion", "criteria": ["Plugin 复用共享生命周期", "物理尝试与逻辑代分开", "观察权限和成本分开"], "forbidden_inferences": ["所有观察失败都可忽略", "Plugin 代替 GA 选择"]},
+      "source_checks": [{"path": "plugins/base.py", "anchor": "class Plugin(PluginBase):"}, {"path": "AGENTS.md", "anchor": "### 6.2 Plugin API"}]
+    },
+    {
+      "id": "repair_alignment_01", "family": "repair_admission_alignment", "split": "train",
+      "instruction": "repair 改了 A* 子节点的候选，只保留 token 然后等 BatchDisposition 筛索引是不是就足够？",
+      "answer": "不够。ProposalRepair 表达评估前同一提案的修改，保留 before/after、token 和原提案坐标；所属 Adapter 必须在送评前重建或拒绝被破坏的结构不变量。A* 路径代价可能已不对应修复后的节点，默认 repair_policy 为 reject，显式 recompute 还需要领域能够重新解释父边。BatchDisposition 是求值后预算与准入的筛选，两者不能替代。不能只重新绑定 token，也不能先压缩 pending 再通知修复；修复对账失败应回滚且不开始 Problem/Provider 求值。",
+      "rubric": {"delivery": "discussion", "criteria": ["修复对账发生在求值前", "BatchDisposition 不能替代", "保留原始坐标与结构不变量"], "forbidden_inferences": ["保留 token 即保证 g 正确", "disposition 能补救修复"]},
+      "source_checks": [{"path": "adapters/proposal_repair.py", "anchor": "class ProposalRepair:"}, {"path": "AGENTS.md", "anchor": "A*/MOA* 默认 `repair_policy="}]
+    },
+    {
+      "id": "ml_codec_01", "family": "ml_codec_search_unit", "split": "train",
+      "instruction": "模型 Codec 带布局信息，GA 又有 PopulationUnit。这两个是不是同一个结构，我把 UnknownState 当数组处理就可以了吗？",
+      "answer": "二者不能合并。ML Codec 负责模型语义与布局的表示，Adapter Unit 负责种群、轨迹等搜索状态。CandidateBatch 同时保留语义候选、数值矩阵和身份；数值算子可以操作脱离的数值草稿，但新提案必须保留模型 metadata 和精确父成员来源，不能按数值相等反推身份。NSGA 语义初值先经过正式 repair、evaluate、admission，再建立已评估成员，不能把 UnknownState 列表直接当普通种群矩阵。跨仓通过正式语义和 Provider/Artifact 接口衔接，不在优化核心硬编码训练器内部。",
+      "rubric": {"delivery": "discussion", "criteria": ["Codec 模型布局与 Unit 搜索状态分离", "语义初值走正式评估接纳", "保留 metadata/token/provenance"], "forbidden_inferences": ["数值相等足以恢复身份", "Codec 就是 PopulationUnit"]},
+      "source_checks": [{"path": "AGENTS.md", "anchor": "- NSGA 家族遇到语义初值时"}, {"path": "README.md", "anchor": "## 三仓边界"}]
+    },
+    {
+      "id": "revision_01", "family": "user_decision_revision", "split": "train",
+      "instruction": "我改主意了：保留原问题和 GA，只把变化改成先变异再交叉。VNS 先不加，也不要替我换问题。这次先讨论，不应用装配。",
+      "design_notes": "已确认的意图：保留现有问题和 GA；原先建议先交叉后变异，并在 GA 后增加 VNS。建议但未确认：精英池容量。",
+      "history": [{"role": "user", "content": "也许 GA 后面接 VNS，变化先交叉后变异。"}, {"role": "assistant", "content": "先记录为待确认方案，问题定义保持现状。"}],
+      "answer": "本次按你的新决定更新：问题和 GA 保持，变化顺序改为先变异再交叉，VNS 暂不加入。完整 change 可以显式编排这个顺序，但先后顺序会改变分布，不能当成等价操作；其内部自行负责概率，不默认沿用旧 crossover_rate。这次只讨论，draft 为 null，不应用装配。精英池容量仍未确认。",
+      "answer_notes": "已确认的意图：保留现有问题和 GA；变化顺序为先变异再交叉；暂不增加 VNS。建议但未确认：精英池容量。实现落点与验证：完整 change 编排顺序和概率，后续再检查身份、repair 与接纳对齐；本次未应用装配。",
+      "rubric": {"delivery": "discussion", "criteria": ["新用户决定覆盖旧方案", "保留未修改意图", "不擅自应用草案或加入 VNS"], "forbidden_inferences": ["AI 旧建议当成已确认", "顺序变化等价"]},
+      "source_checks": [{"path": "catalog/lab_assistant.py", "anchor": "只修改用户要求的部分"}, {"path": "catalog/lab_assistant.py", "anchor": "有实质设计进展时整理为"}]
+    },
+    {
+      "id": "seed_edit_01", "family": "bounded_assembly_seed", "split": "train",
+      "instruction": "只把现有 GA 装配的随机种子改为 19，其他配置保持，给出完整可应用草案，不运行。",
+      "answer": "仅将随机种子改为 19，保留问题、算法、池输入、计划和预算；尚未执行试跑。",
+      "answer_action": {"kind": "seed", "value": 19},
+      "rubric": {"delivery": "draft", "criteria": ["完整合法草案", "仅 seed 改成 19", "不宣称运行结果"], "forbidden_inferences": ["擅自改代数或问题"]},
+      "source_checks": [{"path": "catalog/lab_assembly.py", "anchor": "def normalize_assembly(value: Mapping)"}, {"path": "catalog/lab_assistant.py", "anchor": "def validate_draft(value: Mapping"}]
+    },
+    {
+      "id": "missing_formula_01", "family": "problem_requirements", "split": "train",
+      "instruction": "做一个费用和时间都低的排程问题吧，你帮我定义成能跑的，我还没提供变量、数据或者公式。",
+      "answer": "费用和时间是目标名称，还不足以形成可计算问题。需要先明确决策变量及范围、两个目标的计算公式或数据来源，以及必须满足的硬约束。当前表达式入口只支持有有限边界的连续变量；若排程需要整数、类别或外部数据，应通过正式 Project 扩展，不能把它们偷偷当连续变量。先澄清这些内容，再给可执行 Problem 草案。",
+      "questions": ["决策变量是什么、取值类型与范围是什么？", "费用和时间怎样由变量计算，或需要哪类外部数据？", "有哪些必须满足的硬约束？"],
+      "rubric": {"delivery": "clarification", "criteria": ["不捏造公式", "询问必要定义", "说明在线连续表达式限制"], "forbidden_inferences": ["擅自填演示问题", "猜整数排程公式"]},
+      "source_checks": [{"path": "catalog/lab_assistant.py", "anchor": "新建问题时先检查用户是否给出决策变量"}, {"path": "catalog/lab_assembly.py", "anchor": "def assembly_catalog()"}]
+    },
+    {
+      "id": "budget_01", "family": "dynamic_plan_accounting", "split": "validation",
+      "instruction": "repeat 计划有 GA 搜索、逐起点 VNS 精修和返回竞争。input.steps=2，max_steps 很小。能只把 stage.steps 相加就断言完整运行次数吗？失败尝试算一代吗？",
+      "answer": "不能只加 stage.steps。叶步骤额度计实际收到非空接纳反馈并更新的次数；PoolTask 的每起点 input.steps 包含基准评估，精修和竞争阶段等待请求完成，返回竞争还会消费候选。全局 max_steps 可提前结束计划，需要查看 plan_completed 和真实步骤、求值记录，不能只由配置断言完整次数。失败、等待和控制切换不制造 generation，但已发生的评估与预算消耗保留，物理尝试数单独计数。",
+      "rubric": {"delivery": "discussion", "criteria": ["分清局部额度、基准、竞争、全局预算", "失败尝试不计 committed 代", "不凭配置给精确运行数"], "forbidden_inferences": ["简单相加即可证明完整运行", "回滚退还求值预算"]},
+      "source_checks": [{"path": "adapters/search_plan.py", "anchor": "class SearchPlanAdapter(StrategyRouterAdapter):"}, {"path": "catalog/lab_assembly.py", "anchor": "`max_steps` 可以提前终止整个计划"}]
+    },
+    {
+      "id": "failure_summary_01", "family": "error_evidence_interpretation", "split": "validation",
+      "instruction": "以下是我提供的假设场景，不是这次运行证据：摘要显示 3 次逻辑提交、5 次物理尝试、plan_completed=false，随后出现提交后观察通知错误。可以说整个运行没提交、所有评估都回滚了吗？",
+      "answer": "不能这样解释。给出的假设摘要表示已有三次逻辑提交，五次物理尝试不等于五代，plan_completed=false 只说明整个计划未完成。提交后观察通知错误不能把已经提交的结果和计数改成未提交；提交前失败才恢复步骤参与者，已发生评估和预算也不会回滚。需要继续查看错误所属阶段、权威快照和处置证据，不能从摘要推断具体候选或每次尝试的因果；这里也不能把你的假设摘要冒充本次实际运行结果。",
+      "rubric": {"delivery": "discussion", "criteria": ["识别假设输入", "提交后错误保留提交", "不从摘要编造因果"], "forbidden_inferences": ["全部未提交", "全部评估回滚", "假设等于执行证据"]},
+      "source_checks": [{"path": "AGENTS.md", "anchor": "- `register_semantic_extension(...)`"}, {"path": "core/semantic_extension.py", "anchor": "class SolverSemanticExtension:"}]
+    },
+    {
+      "id": "problem_formula_01", "family": "problem_formula_delivery", "split": "validation",
+      "instruction": "仅定义连续变量 x∈[0,2]，最小化 x²，没有其他约束。保留当前 GA、预算和编排，提供完整草案，不试跑。",
+      "answer": "定义一个有有限边界的连续变量 x，目标为最小化 x**2，无额外约束；同步 dimension 与按问题边界初始化，其他装配保留，尚未试跑。",
+      "answer_action": {"kind": "expression"},
+      "rubric": {"delivery": "draft", "criteria": ["合法单变量 expression", "方向 min 和空约束正确", "仅必要同步 dimension/initializer"], "forbidden_inferences": ["删除 GA", "捏造约束"]},
+      "source_checks": [{"path": "catalog/lab_assistant.py", "anchor": "定义 expression 问题时让顶层 dimension"}, {"path": "catalog/lab_assembly.py", "anchor": "def normalize_assembly(value: Mapping)"}]
+    },
+    {
+      "id": "bo_roles_01", "family": "bo_model_observation_acquisition", "split": "test",
+      "instruction": "我说想加点贝叶斯：一方面可能只想用预测风险惩罚 GA 分数，另一方面也可能让模型和采集函数决定下一批采样。都做成 Bias 可以吗？当前页面能直接执行完整 BO 吗？",
+      "answer": "应先分清两个意图。预测风险只作为软评分时，可以讨论保留原始评估的 Bias，但模型预测本身仍需正式 Provider 或桥接与证据来源。模型和采集策略决定下一批采样则涉及 BO 搜索决策、观测状态与求值证据绑定，不是普通 Bias。当前 assembly_catalog 明确列出 BO 尚未开放通用在线池绑定，因此可以给扩展设计，不能捏造在线组件参数或声称已经连接训练服务。下一步应确认你希望软引导还是由 BO 决定采样。",
+      "questions": ["你希望预测风险只影响 GA 的软评分，还是让模型与采集函数决定下一批采样？"],
+      "rubric": {"delivery": "clarification", "criteria": ["按用户意图分类", "BO 不退化为 Bias", "依据当前在线能力表判断"], "forbidden_inferences": ["在线表无 BO 即框架没有 BO", "预测等于已连接模型服务"]},
+      "source_checks": [{"path": "catalog/lab_assembly.py", "anchor": "dict(component=\"adapter.bayesian_optimization\""}, {"path": "units/bayesian.py", "anchor": "class Bayesian"}]
+    },
+    {
+      "id": "member_sigma_01", "family": "population_member_sigma", "split": "test",
+      "instruction": "我给 PopulationUnit 加每成员 sigma。部分接纳后可以让 GA 按数值相等找回旧行，再随便写 sigma 数组吗？mutator 从全局 ctx 读行号行不行？",
+      "answer": "不能按数值相等猜行或在 Adapter 内猜未知字段维护。新增行字段声明 member_fields，通过只读 on_members_changed(PopulationChange) 返回更新，使用本次结构操作的 previous_member_indices/incoming_member_indices 及对齐 incoming 数据。incoming 索引属于当前调用，不可直接当成原始提案全局索引，也不是 BatchDisposition；具体映射要看实际选择或替换路径。mutator 声明 UnitInputSpec，经实际所属 Adapter 取得候选副本和只读 UnitInputs，不从全局 ctx 猜所有者或行。还应覆盖部分接纳、重复槽位、repair、codec 与步骤回滚的行为检查；这里只是静态设计。",
+      "rubric": {"delivery": "discussion", "criteria": ["维护扩展行字段", "明确操作内局部索引", "显式只读 UnitInputs"], "forbidden_inferences": ["按数值相等猜身份", "incoming 索引必然是原提案全局坐标", "任意 ctx 行号安全"]},
+      "source_checks": [{"path": "units/population_operations.py", "anchor": "class PopulationChange:"}, {"path": "units/collections.py", "anchor": "    def on_members_changed(self, change: PopulationChange)"}, {"path": "units/operator_inputs.py", "anchor": "class UnitInputSpec:"}]
+    },
+    {
+      "id": "nested_view_01", "family": "nested_projection_identity", "split": "test",
+      "instruction": "MOEA/D→VNS→另一精修器使用子池的子池。如果父视图删除，后代应一起删吗？按名字前缀找父子、按 token 读取最新候选、再算一次投影是否方便？",
+      "answer": "这些便利做法会改变语义。嵌套视图保留稳定 view_id/revision 和冻结 parent/ancestors，父子关系由 descriptor 表达，名字前缀不是拓扑。父级删除不级联删除后代；候选使用精确 SolutionRef 版本，不能按 token 追读未来版本。投影任务继承的比较解释对本层新反馈只应用一次，不能重复标量化；最终交付引用与累计接纳 output 也要分开。视图提交前不可读，选择器不自动替代阶段屏障。",
+      "rubric": {"delivery": "discussion", "criteria": ["身份/修订/父子拓扑明确", "精确版本引用", "投影只应用一次"], "forbidden_inferences": ["名字前缀就是父子", "删除父视图必删后代", "按 token 读最新版本"]},
+      "source_checks": [{"path": "AGENTS.md", "anchor": "- 投影池任务可递归发布派生视图"}, {"path": "AGENTS.md", "anchor": "- 投影任务的派生结果视图与聚合 output 分开"}]
+    },
+    {
+      "id": "cross_case_01", "family": "cross_case_scope_resources", "split": "test",
+      "instruction": "外层优化 Case 想把候选池对象和 GPU grant 直接交给内层 ML Case，内层再发自己的全局 lease。这和同一 Case 内 GA→VNS 是一样的吧？",
+      "answer": "应区分同一 Case 内 Adapter 协作和跨 Case 调用。GA→VNS 可以共享该运行的池与任务解释；跨 Case 的问题语义、运行身份和存储 scope 可能不同，不能把活池对象直接当成可传输候选权威。通过 Project 编排和正式 task payload、Artifact/Snapshot 引用与结果收据交接，需要验证引用 scope、版本和身份。只有 Project-level L0 发放 ResourceContext grant；内层 Case 声明需求并使用授予资源，不能另起全局 lease 权威。ML 训练语义归 mlblack，公共编排和授权归 blackbase。",
+      "rubric": {"delivery": "discussion", "criteria": ["区分 Case 内与跨 Case", "传输正式引用而非活对象", "单一 L0 资源授权"], "forbidden_inferences": ["内层可自行发全局 lease", "跨 Case 默认共享活池和问题"]},
+      "source_checks": [{"path": "README.md", "anchor": "## 三仓边界"}, {"path": "AGENTS.md", "anchor": "- 所有标准 Case 都可以声明资源需求"}]
+    },
+    {
+      "id": "evidence_recovery_01", "family": "durable_recovery_causality", "split": "test",
+      "instruction": "恢复时发现 pending Evaluation Event，没有可靠的 terminal 裁决。为了补齐结果，重新调用 Problem 和接纳规则，再让 Adapter.update 一次可以吗？",
+      "answer": "不可以隐式重跑。先区分尚未有持久裁决与已有持久裁决但待核验：reserved 阶段事件快照暂不可读时保留 deferred；decision_ready 或尚未验证的 finalized 在补结算中遇到不可读或验证失败，也保留 deferred，不能把暂不可读当成无裁决。event_ready 且没有持久化处置时才按 decision_not_durable 归档 abandoned。证据充分则幂等补结算。Problem、AcceptancePolicy、Adapter 不因恢复被重新执行，已发生的求值与预算不回滚；失败事件也不能覆盖上一份权威种群。",
+      "rubric": {"delivery": "discussion", "criteria": ["恢复只按 durable evidence 对账", "区分持久裁决待核验的 deferred 与确无持久裁决的 abandoned", "不重跑业务回调"], "forbidden_inferences": ["恢复自动重评", "pending 必然已经接纳", "暂不可读即归档 abandoned"]},
+      "source_checks": [{"path": "core/evidence_semantics.py", "anchor": "    EVENT_SNAPSHOT_UNREADABLE ="}, {"path": "README.md", "anchor": "的 Event 或 authority 不再被恢复器误判为 abandoned。"}]
+    }
+  ]
+}

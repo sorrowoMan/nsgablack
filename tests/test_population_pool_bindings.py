@@ -112,7 +112,8 @@ def test_moead_delayed_start_uses_published_mother_pool_after_empty_partition():
         representation_pipeline=RepresentationPipeline(initializer=Operator(), mutator=Operator()))
     solver.setup()
     assert solver.step().committed
-    assert adapter.pop_X.shape == (0, 0)
+    # Observing an unscheduled role must not instantiate an empty Unit.
+    assert adapter.algorithm_unit is None and adapter.pop_X is None
     assert solver.step().committed and adapter.pool_views_ready
     assert len(adapter.get_solution_pool_roots(solver)) == 4
 
@@ -226,6 +227,18 @@ def test_nsga_family_initializes_its_own_population_without_implicit_snapshot_in
                 "constraint_violations": solver.constraint_violations}
     solver.read_snapshot = unrelated_snapshot
     candidates = adapter.propose(solver, solver.build_context())
+    if kind is NSGA3Adapter:
+        # Canonical NSGA-III sends its initial population for evaluation before
+        # CV-based mating; an uncommitted manual proposal is not membership.
+        from nsgablack.units.contracts import candidate_array
+        np.testing.assert_array_equal(np.vstack([candidate_array(x) for x in candidates]), np.full((4, 1), 9.))
+        assert calls == {"init":4,"mutate":0,"repair":4}
+        solver.read_snapshot = reader
+        assert solver.step().committed
+        assert calls == {"init":8,"mutate":0,"repair":12}
+        np.testing.assert_array_equal(adapter.population, np.full((4,1),8.))
+        assert len(adapter.get_solution_pool_roots(solver)) == 4
+        return
     # The ordinary initializer's own repair still runs once per seed. No
     # additional proposal repair is performed by Adapter.propose().
     np.testing.assert_array_equal(candidates, np.full((3, 1), 8.))

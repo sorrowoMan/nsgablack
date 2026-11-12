@@ -57,8 +57,12 @@ from .structure_builders import (
     TrajectoryUnitBuilder, PollUnitBuilder, ParameterUnitBuilder, PopulationUnitBuilder, ReferencePopulationBuilder, DifferentialPopulationBuilder, DecompositionUnitBuilder, RegionUnitBuilder, ModelSearchUnitBuilder, ArchiveUnitBuilder, NeighborhoodUnitBuilder
 )
 from .unit_builders import CandidateUnitBuilder, SearchNodeBuilder, ParetoLabelBuilder
+from .bayesian_builder import BayesianUnitBuilder
+from .cmaes_builder import CMAUnitBuilder
+from .map_elites_builder import MapElitesUnitBuilder
 
 __all__ = [
+    "BayesianUnitBuilder", "CMAUnitBuilder", "MapElitesUnitBuilder",
     "ProblemRepair", "UnitRepair", "JointRepairPolicy", "JointRepairRejected",
     'TrajectoryUnitBuilder', 'PollUnitBuilder', 'ParameterUnitBuilder', 'PopulationUnitBuilder', 'ReferencePopulationBuilder', 'DifferentialPopulationBuilder', 'DecompositionUnitBuilder', 'RegionUnitBuilder', 'ModelSearchUnitBuilder', 'ArchiveUnitBuilder', 'NeighborhoodUnitBuilder', 'ParetoLabelBuilder',
     "CandidateUnitBuilder",

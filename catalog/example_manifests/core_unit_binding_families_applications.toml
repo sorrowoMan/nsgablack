@@ -1,0 +1,116 @@
+[[example]]
+id = "unit-binding-vns-candidate-neighborhood"
+title = "VNS双槽 · 候选本体与邻域尺度分别构建/恢复"
+component_keys = ["repr.unit_candidate", "repr.unit_neighborhood"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整单纯形VNS Case保留Problem/Pipeline/报告，在规范薄入口明确绑定Candidate与Neighborhood两个真实槽位，构造检查不创建运行结构。"
+inputs = ["完整catalog_recipes独立副本，composite Case，三维比例与正式Project/L0。"]
+steps = ["保存连续布局与共用正式Case全部文件，再将原builder保存为base_solver并安装完整双槽入口。", "原实质变体同步改变Problem/投影总量；builder不得代替repair。"]
+dependencies = ["当前nsgablack/blackbase与NumPy。"]
+expected_outputs = ["原layout.json中同次精确ref/raw反馈；current_unit与neighborhood_unit各自codec，装配时仍None。", "静态源码说明，不是运行、回滚或恢复收据。"]
+sources = [{path="nsgablack/docs/catalog_usage/CANDIDATE_LAYOUT_APPLICATIONS_CN.md",section="repr.continuous"}, {path="nsgablack/docs/catalog_usage/CANDIDATE_LAYOUT_APPLICATIONS_CN.md",section="layout.shared_case"}, {path="nsgablack/docs/catalog_usage/UNIT_BINDING_FAMILIES_APPLICATIONS_CN.md",section="binding.vns"}]
+
+[[example]]
+id = "unit-binding-trajectory-model-search"
+title = "TrajectoryUnit · 模型Codec外的Gaussian当前/最好候选"
+component_keys = ["repr.unit_trajectory"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "完整NumPy自定义模型Case实际绑定TrajectoryUnitBuilder，区分模型布局与搜索current/best/关联反馈，不提前init或创建结构。"
+inputs = ["完整catalog_codec_demo独立副本；AffineHead三参数真实Case及原Project/L0。"]
+steps = ["保存完整模型/Problem/报告/原builder，再同包保存base_solver与新绑定入口。", "用原关闭状态观察变体区分本地状态摘要与正式Trajectory checkpoint。"]
+dependencies = ["当前三仓与NumPy，无Torch/JAX。"]
+expected_outputs = ["本次core.json、模型引用及v2轨迹结构含义；未执行算法或恢复。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_CORE_CONTRACT_APPLICATIONS_CN.md",section="core.contract.model"}, {path="nsgablack/docs/catalog_usage/ML_CORE_CONTRACT_APPLICATIONS_CN.md",section="core.contract.host"}, {path="nsgablack/docs/catalog_usage/ML_CORE_CONTRACT_APPLICATIONS_CN.md",section="core.contract.run"}, {path="nsgablack/docs/catalog_usage/UNIT_BINDING_FAMILIES_APPLICATIONS_CN.md",section="binding.trajectory"}]
+
+[[example]]
+id = "unit-binding-poll-pattern-search"
+title = "PollUnit · 方向、探针身份和修复位移保留在实际Pattern所有者"
+component_keys = ["repr.unit_poll"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整二维谷地Case接PatternSearch的PollUnitBuilder，明确initialize/poll操作与探针对账，完整结果和后接SA变体仍走正式Project。"
+inputs = ["assembled_parallel_cases完整副本，sa_valley已按原配方换PatternSearch；另DE独立。"]
+steps = ["保存完整Pattern工厂/问题/管线，再原builder同包改base_solver与显式Poll绑定薄入口。"]
+dependencies = ["当前nsgablack/blackbase/NumPy。"]
+expected_outputs = ["原本次sa_valley结果与已评估精确ref；不能拿最后探针冒充最佳或按SA一行计数。"]
+sources = [{path="nsgablack/docs/catalog_usage/LOCAL_SEARCH_APPLICATIONS_CN.md",section="adapter.pattern_search"}, {path="nsgablack/docs/catalog_usage/UNIT_BINDING_FAMILIES_APPLICATIONS_CN.md",section="binding.poll"}]
+
+[[example]]
+id = "unit-binding-gradient-parameters"
+title = "ParameterUnit · 真正梯度消费者的成对优化器矩"
+component_keys = ["repr.unit_parameters"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "完整JAX函数线性Case实际绑定ParameterUnitBuilder，SGD/Adam区别由真实Adapter方法确定，模型Blueprint不持有矩状态。"
+inputs = ["完整catalog_codec_demo独立副本，原函数梯度Case、3坐标b/w0/w1、Project L0。"]
+steps = ["保存完整函数表示/Problem/builder与Project报告，再同包增加绑定薄入口。", "原Adam变体实际消费同形first/second moment，不假装兼容旧SGD状态。"]
+dependencies = ["当前三仓、NumPy、现有可选JAX；不安装或运行。"]
+expected_outputs = ["本次core.json的真实梯度信号/已评估参数与模型引用；slots按Adapter请求生成与codec恢复，不重新拟合。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_CORE_CONTRACT_APPLICATIONS_CN.md",section="core.functional.gradient"}, {path="nsgablack/docs/catalog_usage/ML_CORE_CONTRACT_APPLICATIONS_CN.md",section="core.contract.run"}, {path="nsgablack/docs/catalog_usage/UNIT_BINDING_FAMILIES_APPLICATIONS_CN.md",section="binding.parameters"}]
+
+[[example]]
+id = "unit-binding-reference-nsga3"
+title = "ReferencePopulation · 真实NSGA3消费者的参考方向"
+component_keys = ["repr.unit_reference_population"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整三目标NSGA3 Case显式绑定reference_directions构建操作，成员维护与生态位选择仍归各自正式所有者。"
+inputs = ["完整原nsga3_application生成配方、12成员、二维候选/三距离目标、Project/L0。"]
+steps = ["保存完整Problem/Pipeline/Adapter/报告/原builder，再同包安装Reference绑定薄入口。", "原双孩子交叉变体保持本结构与精确来源。"]
+dependencies = ["当前nsgablack/blackbase/NumPy。"]
+expected_outputs = ["本次12成员/三raw目标报告及明确reference_points语义；不宣称覆盖保证或恢复成功。"]
+sources = [{path="nsgablack/docs/catalog_usage/EVOLUTIONARY_ALGORITHM_APPLICATIONS_CN.md",section="adapter.nsga3"}, {path="nsgablack/docs/catalog_usage/UNIT_BINDING_FAMILIES_APPLICATIONS_CN.md",section="binding.reference_population"}]
+
+[[example]]
+id = "unit-binding-differential-de"
+title = "DifferentialPopulation · trial与提案时目标槽位对应保存"
+component_keys = ["repr.unit_differential_population"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整DE Case显式绑定DifferentialPopulationBuilder，保留目标索引/分数与候选tokens，不用三数组丢失trial身份。"
+inputs = ["assembled_parallel_cases完整副本/de_bowl，二维Bowl与12成员/批，正式Project/L0。"]
+steps = ["保存完整原DE配方与严格平分变体，再安装同包薄绑定入口。"]
+dependencies = ["当前nsgablack/blackbase/NumPy。"]
+expected_outputs = ["本次正式DE结果和精确成员顺序，pending对应冻结提案基准；不是根accepted历史或恢复证明。"]
+sources = [{path="nsgablack/docs/catalog_usage/EVOLUTIONARY_ALGORITHM_APPLICATIONS_CN.md",section="adapter.de"}, {path="nsgablack/docs/catalog_usage/UNIT_BINDING_FAMILIES_APPLICATIONS_CN.md",section="binding.differential_population"}]
+
+[[example]]
+id = "unit-binding-decomposition-moead"
+title = "DecompositionUnit · 同一个三目标Problem换方向槽位竞争"
+component_keys = ["repr.unit_decomposition"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整ThreeCenters正式Case只换真实MOEA/D工厂，明确权重/邻域/ideal构建与方向比较边界，DE变化不依赖不存在的Pipeline mutator。"
+inputs = ["原三目标完整Project的独立副本、ThreeCenters/ClipRepair/MemberReport与L0。"]
+steps = ["保留原规范builder，完整替换Adapter工厂为12方向MOEA/D与DecompositionUnitBuilder。", "完整变体由weighted_sum改tchebycheff，raw三目标不改写。"]
+dependencies = ["当前nsgablack/blackbase/NumPy。"]
+expected_outputs = ["本次12行成员/三raw目标、weights/neighbors/ideal及方向来源；不继续称NSGA3前沿或性能结果。"]
+sources = [{path="nsgablack/docs/catalog_usage/EVOLUTIONARY_ALGORITHM_APPLICATIONS_CN.md",section="adapter.nsga3"}, {path="nsgablack/docs/catalog_usage/UNIT_BINDING_FAMILIES_APPLICATIONS_CN.md",section="binding.decomposition"}]
+
+[[example]]
+id = "unit-binding-archive-elite-wrapper"
+title = "ArchiveUnit · wrapper精英历史与孩子种群分别维护"
+component_keys = ["repr.unit_archive"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整NSGA3 Case前装EliteRetentionAdapter和ArchiveUnitBuilder，原MemberReport通过正式转发读取孩子成员，wrapper近期记录按自己事务保存。"
+inputs = ["原三目标正式Project独立副本、允许普通提案替换的数值NSGA3与原L0。"]
+steps = ["保存原完整NSGA3配方，再同包保存base_solver和完整Archive wrapper入口。", "原内层双孩子变体仍须保留精确候选来源；不将archive等同Pareto池或禁忌表。"]
+dependencies = ["当前nsgablack/blackbase/NumPy。"]
+expected_outputs = ["本次内层准确成员与wrapper独立archive checkpoint含义；派生孩子仍正式送评，不用旧分数免评。"]
+sources = [{path="nsgablack/docs/catalog_usage/EVOLUTIONARY_ALGORITHM_APPLICATIONS_CN.md",section="adapter.nsga3"}, {path="nsgablack/docs/catalog_usage/UNIT_BINDING_FAMILIES_APPLICATIONS_CN.md",section="binding.archive"}]
+
+[[example]]
+id = "unit-binding-graph-node-label"
+title = "路径结构 · A*标量节点与MOA*向量标签的两个独立Case"
+component_keys = ["repr.unit_search_node", "repr.unit_pareto_label"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "两个完整正式网格Case分别绑定SearchNodeBuilder与ParetoLabelBuilder，父路径身份/边代价/启发式由原Adapter提供，codec不重跑求值。"
+inputs = ["两份独立catalog_recipes副本、原A*/MOA*完整Problem/图回调/报告/Project组与L0。"]
+steps = ["分别保存完整原路径配方，再将各自builder同包保存为base_solver并安装对应薄绑定入口。", "不只换builder就宣称标量路径变成多目标，使用完整MOA*配方的真实边代价与标签比较。"]
+dependencies = ["当前nsgablack/blackbase/NumPy。"]
+expected_outputs = ["A*原path.json目标found/solution，MOA*原二维标签结果；不能用raw目标或Solver单个incumbent替代路径目标集合。", "默认repair reject保护原边；没有运行或checkpoint互换证据。"]
+sources = [{path="nsgablack/docs/catalog_usage/BAYESIAN_AND_GRAPH_SEARCH_APPLICATIONS_CN.md",section="adapter.astar"}, {path="nsgablack/docs/catalog_usage/BAYESIAN_AND_GRAPH_SEARCH_APPLICATIONS_CN.md",section="adapter.moa_star"}, {path="nsgablack/docs/catalog_usage/UNIT_BINDING_FAMILIES_APPLICATIONS_CN.md",section="binding.search_nodes"}]

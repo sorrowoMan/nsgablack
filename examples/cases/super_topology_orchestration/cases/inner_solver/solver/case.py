@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Mapping
+from ..._pool_audit import describe_pool
 
 
 class InnerSolverCase:
@@ -44,5 +45,6 @@ class InnerSolverCase:
                 **dict(result.metadata),
                 "calibration_target": self.problem.target,
                 "case_identity": self.case_runtime.identity.as_dict(),
+                "solution_pool": describe_pool(self.solver),
             },
         )

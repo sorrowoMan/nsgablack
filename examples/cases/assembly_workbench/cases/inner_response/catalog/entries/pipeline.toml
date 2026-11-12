@@ -1,0 +1,17 @@
+[[entry]]
+key = "project.pipeline.response_operators"
+title = "ResponseOperators"
+kind = "representation"
+import_path = "pipeline.operators:ResponseOperators"
+tags = ["project", "pipeline", "init", "mutate"]
+summary = "根据当前条件生成基准并向目标移动，不内嵌 repair 或求值。"
+context_requires = ["vns_k"]
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["条件标量由 Case 显式绑定；邻域参数 vns_k 是 Adapter 的调用局部输入。"]
+use_when = ["手算两步响应以验证真实后继反馈。"]
+minimal_wiring = ["from cases.inner_response.pipeline.operators import ResponseOperators", "operator = ResponseOperators()"]
+required_companions = ["nsgablack.representation:RepresentationPipeline"]
+config_keys = []
+example_entry = "cases.inner_response.build_solver:build_solver"

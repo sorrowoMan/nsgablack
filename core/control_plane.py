@@ -137,15 +137,21 @@ class ControlArbiter:
             # Budget can be merged conservatively by min if key exists.
             if domain == "budget":
                 mins: Dict[str, float] = {}
+                stop_reasons = []
                 slot = rows_sorted[0].slot
                 for row in rows_sorted:
                     payload = dict(row.payload or {})
+                    if bool(payload.get("stop", False)):
+                        stop_reasons.append(row.reason)
                     for k, v in payload.items():
                         try:
                             fv = float(v)
                         except (TypeError, ValueError, OverflowError):
                             continue
-                        mins[k] = fv if k not in mins else min(mins[k], fv)
+                        if k == "stop":
+                            mins[k] = max(mins.get(k, 0.0), fv)
+                        else:
+                            mins[k] = fv if k not in mins else min(mins[k], fv)
                 if mins:
                     out[domain] = ControlDecision(
                         domain=domain,
@@ -153,7 +159,8 @@ class ControlArbiter:
                         controller="arbiter",
                         payload=mins,
                         priority=min(r.priority for r in rows_sorted),
-                        reason="budget-min-merge",
+                        reason=(stop_reasons[0] if stop_reasons and len(set(stop_reasons)) == 1
+                                else "budget_exhausted" if stop_reasons else "budget-min-merge"),
                     )
                     continue
 
@@ -345,10 +352,12 @@ class BudgetController(BaseController):
 
     def propose(self, solver: Any, slot: str, context: Mapping[str, Any]) -> Optional[ControlDecision]:
         payload: Dict[str, float] = {}
+        stop_reason = ""
         if self.max_generations is not None and str(slot) == GENERATION_END:
             gen = int(context.get("generation", 0))
             if gen + 1 >= self.max_generations:
                 payload["stop"] = 1.0
+                stop_reason = "generation_budget_exhausted"
         if self.max_evaluations is not None:
             evals = int(context.get("evaluation_count", context.get("total_evaluations", 0)))
             payload["max_evaluations"] = float(self.max_evaluations)
@@ -357,9 +366,10 @@ class BudgetController(BaseController):
             )
             if evals >= self.max_evaluations:
                 payload["stop"] = 1.0
+                stop_reason = "evaluation_budget_exhausted"
         if not payload:
             return None
-        reason = "budget exhausted" if bool(payload.get("stop", False)) else "budget active"
+        reason = stop_reason or "budget active"
         return ControlDecision(
             domain="budget",
             slot=slot,

@@ -158,33 +158,33 @@ def create_bindings(*, ExampleAdapter, safe_exceptions=(TypeError, ValueError, K
     def custom(fn: Callable[[dict], bool]) -> Cond:
         return fn
 
-    def group(registry: AdapterRegistry, name: str, adapter_keys: Sequence[str]) -> object:
+    def group(registry: AdapterRegistry, name: str, adapter_keys: Sequence[str], *, working_pool=None) -> object:
         specs: list[StrategySpec] = []
         for key in adapter_keys:
             adapter = require_adapter(registry, key)
             specs.append(StrategySpec(adapter=adapter, name=str(key)))
-        if len(specs) == 1:
+        if len(specs) == 1 and working_pool is None:
             return specs[0].adapter
         base_cfg = registry.orchestration.multi or MultiStrategyConfig()
-        return StrategyRouterAdapter(strategies=specs, config=base_cfg, name=str(name))
+        return StrategyRouterAdapter(strategies=specs, config=base_cfg, name=str(name), working_pool=working_pool)
 
-    def multi(registry: AdapterRegistry, name: str, adapters: Sequence[object]) -> object:
+    def multi(registry: AdapterRegistry, name: str, adapters: Sequence[object], *, working_pool=None) -> object:
         items = [a for a in adapters if a is not None]
-        if len(items) == 1:
+        if len(items) == 1 and working_pool is None:
             return items[0]
         specs = [StrategySpec(adapter=a, name=getattr(a, "name", f"adapter_{i}")) for i, a in enumerate(items)]
         base_cfg = registry.orchestration.multi or MultiStrategyConfig()
-        return StrategyRouterAdapter(strategies=specs, config=base_cfg, name=str(name))
+        return StrategyRouterAdapter(strategies=specs, config=base_cfg, name=str(name), working_pool=working_pool)
 
     def phase(name: str, adapter: object, *, steps: int = -1, advance_when: Cond | None = None):
         return SerialPhaseSpec(name=str(name), adapter=adapter, steps=int(steps), advance_when=advance_when)
 
-    def serial(registry: AdapterRegistry, name: str, phases: Sequence[SerialPhaseSpec]) -> object:
+    def serial(registry: AdapterRegistry, name: str, phases: Sequence[SerialPhaseSpec], *, working_pool=None) -> object:
         items = [p for p in phases if p is not None]
-        if len(items) == 1:
+        if len(items) == 1 and working_pool is None:
             return items[0].adapter
         base_cfg = registry.orchestration.serial or SerialStrategyConfig()
-        return StrategyChainAdapter(phases=items, config=base_cfg, name=str(name))
+        return StrategyChainAdapter(phases=items, config=base_cfg, name=str(name), working_pool=working_pool)
 
     def event_case(
         name: str,

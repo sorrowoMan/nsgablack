@@ -77,6 +77,7 @@ class AStarConfig:
 
 class AStarAdapter(AlgorithmAdapter):
     """Generic A* adapter driven by neighbor expansion and heuristic search."""
+    operation_methods = {"initializer": "initialize"}
     unit_build_operations = ("fresh", "spawn")
     context_requires = ("generation",)
     context_optional = (KEY_SOLUTION_INPUT_REF,)
@@ -105,9 +106,13 @@ class AStarAdapter(AlgorithmAdapter):
         name: str = "astar",
         priority: int = 0,
         unit_binding: Optional[UnitBinding] = None,
+        initializer=None,
         **config_kwargs,
     ) -> None:
         super().__init__(name=name, priority=priority)
+        if initializer is not None and start_state is not None:
+            raise ValueError("A* initializer and start_state are alternative root sources")
+        self.set_initializer(initializer)
         self.config = self.resolve_config(
             config=config,
             config_cls=AStarConfig,
@@ -150,6 +155,8 @@ class AStarAdapter(AlgorithmAdapter):
 
     def setup(self, control: Any) -> None:
         self.validate_unit_bindings()
+        if self.get_local_operator_bindings():
+            self.seed_operator_bindings(self.create_local_rng(control))
         self._open = []
         self._closed = {}
         self._pending = []
@@ -177,7 +184,7 @@ class AStarAdapter(AlgorithmAdapter):
             if control.solution_pool.input_remaining(input_ref) != 1:
                 raise ValueError("A* requires exactly one root per pool initialization")
         if self.cfg.pool_start_policy == "new_root" and not self._root_initialized:
-            start = control.init_candidate(context) if input_ref is not None else self._resolve_start_state(control, context)
+            start = self.init_candidate(control, context) if input_ref is not None else self._resolve_start_state(control, context)
             if start is None:
                 return []
             start = project_root(control, start)
@@ -372,7 +379,7 @@ class AStarAdapter(AlgorithmAdapter):
 
     def _resolve_start_state(self, control: Any, context: Dict[str, Any]) -> Optional[State]:
         start = (self.start_state(context) if callable(self.start_state) else self.start_state
-                 if self.start_state is not None else control.init_candidate(context))
+                 if self.start_state is not None else self.init_candidate(control, context))
         # A lazily admitted root retains semantic metadata and source identity.
         return start if self.cfg.pool_start_policy == "new_root" else np.asarray(start)
 
@@ -496,7 +503,7 @@ class AStarAdapter(AlgorithmAdapter):
 
     def snapshot_step_state(self) -> Dict[str, Any]:
         # Capture detached node payloads; construction pipelines are never replayed.
-        return copy.deepcopy({
+        state = copy.deepcopy({
             "summary": self._summary_state(),
             "open": [(priority, order, self.unit_binding.dump(node))
                      for priority, order, node in self._open],
@@ -505,8 +512,16 @@ class AStarAdapter(AlgorithmAdapter):
             "root_initialized": self._root_initialized, "node_receipts": self._node_receipts,
             "best_receipt": self._best_receipt, "solution_receipt": self._solution_receipt,
         })
+        bindings = self.operator_bindings_state()
+        if bindings:
+            state["operator_bindings"] = bindings
+        return state
 
     def restore_step_state(self, state) -> None:
+        with self.restoring_operator_bindings(state.get("operator_bindings", {})):
+            self._restore_frontier_step_state(state)
+
+    def _restore_frontier_step_state(self, state) -> None:
         restored = copy.deepcopy(dict(state))
         if restored["summary"].get("pool_start_policy") != self.cfg.pool_start_policy:
             raise ValueError("A* checkpoint pool root interpretation differs")
@@ -543,10 +558,19 @@ class AStarAdapter(AlgorithmAdapter):
         self._solution_receipt = restored.get("solution_receipt")
 
     def get_state(self) -> Dict[str, Any]:
-        return {**self._summary_state(), "frontier_state": encode_unit_value(self.snapshot_step_state())}
+        snapshot = self.snapshot_step_state()
+        bindings = snapshot.pop("operator_bindings", {})
+        state = {**self._summary_state(), "frontier_state": encode_unit_value(snapshot)}
+        if bindings:
+            state["operator_bindings"] = bindings
+        return state
 
     def set_state(self, state: Dict[str, Any]) -> None:
         if "frontier_state" in state:
-            self.restore_step_state(decode_unit_value(state["frontier_state"]))
+            snapshot = decode_unit_value(state["frontier_state"])
+            if "operator_bindings" in state:
+                snapshot["operator_bindings"] = state["operator_bindings"]
+            self.restore_step_state(snapshot)
         else:
-            self._restore_summary(state)
+            with self.restoring_operator_bindings(state.get("operator_bindings", {})):
+                self._restore_summary(state)

@@ -291,16 +291,10 @@ def sync_query_filters_to_session(
         state_key = facet_state_key(scope, kind, str(field_name))
         values = tuple(str(value).strip() for value in query_filters.get(str(field_name), ()) if str(value).strip())
         if multi_value:
-            if str(field_name) in query_filters:
-                st.session_state[state_key] = values
-            else:
-                st.session_state.setdefault(state_key, values)
+            st.session_state.setdefault(state_key, values)
         else:
             value = values[0] if values else ""
-            if str(field_name) in query_filters:
-                st.session_state[state_key] = value
-            else:
-                st.session_state.setdefault(state_key, value)
+            st.session_state.setdefault(state_key, value)
 
 
 def collect_session_filters(

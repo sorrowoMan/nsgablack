@@ -35,6 +35,12 @@ def _snapshot(value):
     return digest, _readonly(decode_unit_value(encoded))
 
 
+def _detached_readonly(value):
+    """Call-local inputs need isolation, without a feature-cache digest."""
+    from ..representation.structure_builders import encode_unit_value, decode_unit_value
+    return _readonly(decode_unit_value(encode_unit_value(value)))
+
+
 def _signature(value):
     from ..representation.structure_builders import encode_unit_value
     return hashlib.sha256(json.dumps(encode_unit_value(value), sort_keys=True).encode()).hexdigest()

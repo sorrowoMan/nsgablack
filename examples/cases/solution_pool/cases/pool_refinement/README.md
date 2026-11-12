@@ -20,4 +20,4 @@ python -m nsgablack project doctor --path examples/cases/solution_pool --strict 
 
 默认运行 25 个提交步骤。`config` 支持 `max_steps` 和 `pool_idle_steps`。作为 Project 一部分执行时，L0 由 `project_config.py` 授权；本 Case 不创建资源授权者。
 
-完整契约见 [解池文档](../../../../../docs/architecture/SOLUTION_POOL_CN.md)。当前通用精修入口支持显式声明池初始化及搜索重启的 Adapter；已覆盖 SA/VNS。NSGA-II/III 支持池初始化和返回竞争。MOEA/D 的子问题比较与目标槽位绑定尚未接入，不能仅更换类名宣称完成。
+完整契约见 [解池文档](../../../../../docs/architecture/SOLUTION_POOL_CN.md)。当前通用精修入口支持显式声明池初始化及搜索重启的 Adapter；已覆盖 SA/VNS。NSGA-II/III 支持池初始化和返回竞争。MOEA/D 的方向投影、来源选择和返回竞争已接入，见 [MOEA/D 精修示例](../moead_refinement/README.md)；它需要相应的方向任务装配，不能只替换本例的类名。返回候选由 MOEA/D 按当前分解与替换范围竞争，不默认只返回原来源方向的槽位。

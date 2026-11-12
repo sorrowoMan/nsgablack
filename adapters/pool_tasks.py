@@ -10,6 +10,8 @@ import numpy as np
 
 from .role_adapters import RoleAdapter
 from .strategy_task import StrategyTask
+from .change_access import scoped_change_access
+from .pool_scope import KEY_WORKING_POOL, working_pool_source
 from .subpools import SubpoolSelection, adapter_path
 from nsgablack.context_keys import KEY_PHASE, KEY_SEEDS, KEY_TASK, KEY_SOLUTION_INPUT_REF, KEY_SOLUTION_INPUT_MODE
 from nsgablack.core.state.solution_pool import SolutionPool, SolutionRef, SolutionStamp
@@ -29,7 +31,8 @@ def _callable_id(value):
 class PoolTaskSpec:
     """Select a subpool once per request and run bounded searches on its refs.
 
-    Omitted ``select`` reads published mother-pool candidates. A named subpool
+    Omitted ``select`` reads the nearest composite working area, or published
+    root-pool candidates when no working area is bound. A named subpool
     must exist; a callback returns explicit source refs. ``count`` is per worker,
     or 'all' for the whole selection. Refine runs one seed per trajectory; compete
     presents the selected batch to a population's ordinary admission/selection.
@@ -39,6 +42,16 @@ class PoolTaskSpec:
     A SubpoolSelection selects directions once for the whole role; count then
     means seeds per selected view (default one). Partition distributes these
     jobs; shared repeats them explicitly. Each job freezes its projection.
+    Refinement always publishes its final selections. ``output`` optionally
+    retains an aggregate history of all admitted trials; omitting it does not
+    disable final-result delivery.
+
+    Ordinary change functions may read current input references and their
+    owned parents. Additional donors require ``change_sources`` (exact public
+    subpool names, without a task namespace) or ``change_allow_main=True``.
+    Nested task declarations can only narrow the enclosing donor permissions.
+    ``on_insufficient="available"`` completes an empty request without creating
+    a result collection; ``"wait"`` retains waiting semantics instead.
     """
     select: Callable | str | SubpoolSelection | None = None
     mode: str = "refine"
@@ -50,6 +63,8 @@ class PoolTaskSpec:
     distribution: str | None = None
     on_insufficient: str = "error"
     shuffle: bool = True
+    change_sources: tuple[str, ...] = ()
+    change_allow_main: bool = False
 
     def __post_init__(self):
         if self.select is not None and not (isinstance(self.select, SubpoolSelection) or callable(self.select) or isinstance(self.select, str) and self.select.strip()):
@@ -76,6 +91,12 @@ class PoolTaskSpec:
             raise ValueError("unknown pool task shortage policy")
         if type(self.shuffle) is not bool:
             raise TypeError("pool task shuffle must be a boolean")
+        if (not isinstance(self.change_sources, tuple)
+                or any(not isinstance(name, str) or not name.strip() for name in self.change_sources)
+                or len(set(self.change_sources)) != len(self.change_sources)):
+            raise ValueError("pool task change_sources must be distinct nonempty subpool names")
+        if type(self.change_allow_main) is not bool:
+            raise TypeError("pool task change_allow_main must be a boolean")
 
     def identity(self):
         selection = (self.select.identity() if isinstance(self.select, SubpoolSelection)
@@ -84,6 +105,7 @@ class PoolTaskSpec:
                     output=self.output, phases=self.phases,
                     count=self.count, distribution=self.distribution,
                     on_insufficient=self.on_insufficient, shuffle=self.shuffle,
+                    change_sources=self.change_sources, change_allow_main=self.change_allow_main,
                     request_key=None if self.request_key is None else _callable_id(self.request_key))
 
 
@@ -94,7 +116,7 @@ class PoolTaskAdapter(RoleAdapter):
     ordinary transaction child. Task queues and views share SolutionPool's
     existing checkpoint, rollback, admission and retention mechanisms.
     """
-    context_optional = (KEY_SOLUTION_INPUT_REF, KEY_SOLUTION_INPUT_MODE)
+    context_optional = (KEY_SOLUTION_INPUT_REF, KEY_SOLUTION_INPUT_MODE, KEY_WORKING_POOL)
     state_recovery_level = "L2"
     state_recovery_notes = "Restores frozen pool inputs, task interpretation, progress and RNG; child state restores independently."
 
@@ -128,7 +150,7 @@ class PoolTaskAdapter(RoleAdapter):
         if self.spec.mode == "refine" and not self.inner.supports_pool_restart:
             raise ValueError(f"{self.inner.name} does not support explicit search restart")
         count = self.input_count
-        if self.spec.mode == "refine" and self.spec.output is not None and not callable(self.inner.get_pool_refinement_results):
+        if self.spec.mode == "refine" and not callable(self.inner.get_pool_refinement_results):
             raise ValueError("refinement output requires explicit get_pool_refinement_results")
         if isinstance(self.spec.select, SubpoolSelection):
             if self.distribution == "independent":
@@ -163,15 +185,14 @@ class PoolTaskAdapter(RoleAdapter):
         while pending:
             adapter = pending.pop()
             if isinstance(adapter, PoolTaskAdapter) and adapter.inner.pool_result_owner() is creator:
-                if (adapter.spec.mode != "refine" or adapter.spec.output is None
-                        or not callable(creator.get_pool_refinement_results)):
-                    raise ValueError("selected refiner needs a projection pool task with output")
+                if adapter.spec.mode != "refine" or not callable(creator.get_pool_refinement_results):
+                    raise ValueError("selected refiner needs a projection pool task")
                 if isinstance(adapter.spec.select, SubpoolSelection):
                     PoolTaskAdapter._validate_projection_publisher(
                         root, adapter.spec.select.creator.pool_result_owner(), visiting)
                 return
             pending.extend(adapter.step_transaction_children())
-        raise ValueError("selected refiner has no projection pool task with output")
+        raise ValueError("selected refiner has no projection pool task")
 
     @property
     def input_count(self):
@@ -212,10 +233,26 @@ class PoolTaskAdapter(RoleAdapter):
     def _name(self, value, context):
         return f"{self._namespace(context)}/{value}"
 
+    def _request_key(self, control, context):
+        """Resolve one request identity without changing its input or progress.
+
+        An enclosing execution plan may specialize this seam to bind repeated
+        activations. Ordinary Router tasks retain their explicit callback or
+        phase identity, including initialize-once semantics.
+        """
+        return (self.spec.request_key(control, context) if self.spec.request_key
+                else str(context.get(KEY_PHASE, "default")))
+
+    def _finish_empty_request(self, request, *, uses_view_jobs):
+        self._local = dict(request=request, status="done", view=None, next=0,
+                           count=0, steps=0, input=None, results=[], output=None,
+                           result_views=[], uses_view_jobs=uses_view_jobs)
+        if uses_view_jobs:
+            self._local["jobs"] = []
+
     def _start_request(self, control, context):
         pool = control.solution_pool
-        request = (self.spec.request_key(control, context) if self.spec.request_key
-                   else str(context.get(KEY_PHASE, "default")))
+        request = self._request_key(control, context)
         if not isinstance(request, str) or not request:
             raise ValueError("pool task request key must be a nonempty string")
         if self._local.get("status") == "running" or self._local.get("request") == request:
@@ -242,13 +279,16 @@ class PoolTaskAdapter(RoleAdapter):
             if allocations is None:
                 self._local = {}
                 return
+            if not any(allocations):
+                self._finish_empty_request(request, uses_view_jobs=True)
+                return
             pool.create_subpool(base)
             for i, jobs in enumerate(allocations):
                 pool.create_subpool(f"{base}/{i}",
                     [SolutionRef.from_dict(job["ref"]) for job in jobs], metadata={"jobs": jobs})
         if not pool.has_subpool(base):
             if self.spec.select is None:
-                refs = pool.select(stage=None)
+                refs = pool.select(stage=None, subpool=working_pool_source(pool, context))
             elif isinstance(self.spec.select, str):
                 refs = pool.subpool_refs(source)
             else:
@@ -262,14 +302,25 @@ class PoolTaskAdapter(RoleAdapter):
                 # request's done status and fall through to ordinary search.
                 self._local = {}
                 return
+            if not any(allocations):
+                self._finish_empty_request(request, uses_view_jobs=False)
+                return
             pool.create_subpool(base)
             for i, selected in enumerate(allocations):
                 pool.create_subpool(f"{base}/{i}", selected)
         view = f"{base}/{self.worker}"
         refs = pool.subpool_refs(view, allow_pending=True)
+        if not refs:
+            # Another worker can own a nonempty slice of the same allocation.
+            # Preserve its marker and queue; this worker owns no readable view
+            # or output, including when an idle step rolls pool staging back.
+            pool.drop_subpool(view)
+            self._finish_empty_request(request, uses_view_jobs=job_source)
+            return
         self._local = dict(request=request, status="running" if refs else "done",
                            view=view, next=0, count=len(refs), steps=0,
-                           input=None, results=[], output=None, uses_view_jobs=job_source)
+                           input=None, results=[], output=None, result_views=[],
+                           uses_view_jobs=job_source)
         if "jobs" in pool.subpool_metadata(view):
             self._local["jobs"] = pool.subpool_metadata(view)["jobs"]
         if self.spec.output is not None:
@@ -277,8 +328,6 @@ class PoolTaskAdapter(RoleAdapter):
             if not pool.has_subpool(output):
                 pool.create_subpool(output)
             self._local["output"] = output
-        if not refs:
-            pool.drop_subpool(view)
 
     def _allocate(self, refs):
         count, mode = self.input_count, self.distribution
@@ -286,8 +335,10 @@ class PoolTaskAdapter(RoleAdapter):
         if len(refs) < needed:
             if self.spec.on_insufficient == "error":
                 raise ValueError(f"pool task {self.role} needs {needed} distinct references; available={len(refs)}")
-            if self.spec.on_insufficient == "wait" or not refs:
+            if self.spec.on_insufficient == "wait":
                 return None
+            if not refs:
+                return tuple(() for _ in range(self.workers))
         def sample(limit):
             indices = self._rng.permutation(len(refs)) if self.spec.shuffle else range(len(refs))
             return tuple(refs[i] for i in list(indices)[:limit])
@@ -307,8 +358,10 @@ class PoolTaskAdapter(RoleAdapter):
         if not names or len(names) < wanted:
             if self.spec.on_insufficient == "error":
                 raise ValueError(f"creator has {len(names)} projection subpools; requested {wanted or 'all'}")
-            if self.spec.on_insufficient == "wait" or not names:
+            if self.spec.on_insufficient == "wait":
                 return None
+            if not names:
+                return tuple(() for _ in range(self.workers))
         if count is not None or self.spec.shuffle:
             names = tuple(names[i] for i in self._rng.permutation(len(names))[:wanted])
         return self._allocate_views(pool, names)
@@ -366,18 +419,36 @@ class PoolTaskAdapter(RoleAdapter):
         local.update(self._local.get("call_input", {}))
         return local
 
+    def _change_seed_refs(self, control):
+        # A finished initialization task has released its queue. Its child's
+        # current parents still carry exact source_refs in ChangeRequest.
+        if self._local.get("status") != "running":
+            return ()
+        refs = control.solution_pool.subpool_refs(self._local["view"], allow_pending=True)
+        if self.spec.mode == "refine":
+            return refs[self._local["next"]:self._local["next"] + 1]
+        return refs
+
+    def _propose_with_change_access(self, control, context):
+        # Additional sources use exact public SolutionPool names. Unlike the
+        # legacy task select/output names, no task namespace is prepended.
+        with scoped_change_access(self._change_seed_refs(control),
+                                 subpools=self.spec.change_sources,
+                                 allow_main=self.spec.change_allow_main):
+            return super().propose(control, context)
+
     def propose(self, control, context):
         if self.spec.phases and context.get(KEY_PHASE) not in self.spec.phases:
             if self._local.get("status") == "running":
                 return []  # Pause unfinished work; do not mutate it as a different task.
             self._local["passthrough"] = True
-            return super().propose(control, context)
+            return self._propose_with_change_access(control, context)
         self._local["passthrough"] = False
         self._start_request(control, context)
         if self._local.get("status") != "running":
             if self._local.get("status") == "done" and self.spec.mode in {"initialize", "compete"}:
                 self._local["passthrough"] = True
-                return super().propose(control, context)
+                return self._propose_with_change_access(control, context)
             return []
         pool = control.solution_pool
         if "jobs" in self._local:
@@ -402,7 +473,7 @@ class PoolTaskAdapter(RoleAdapter):
         self._local["call_input"] = ({KEY_SOLUTION_INPUT_REF: key,
             KEY_SOLUTION_INPUT_MODE: "initialize" if self.spec.mode == "refine" else self.spec.mode} if remaining else {})
         self._local["stamp"] = pool.timestamp.as_dict()
-        proposed = super().propose(control, self._context(context))
+        proposed = self._propose_with_change_access(control, self._context(context))
         consumed = remaining - pool.input_remaining(key)
         if consumed not in (0, len(proposed)) or remaining and consumed == 0:
             raise ValueError("pool task must submit its input candidates before generating neighbors")
@@ -411,6 +482,17 @@ class PoolTaskAdapter(RoleAdapter):
 
     def _proposal_contexts(self, proposed_count, context):
         return super()._proposal_contexts(proposed_count, self._context(context))
+
+    def get_empty_proposal_outcome(self, control, context):
+        outcome = super().get_empty_proposal_outcome(control, context)
+        if (self._local.get("status") == "running"
+                and not self._local.get("passthrough")
+                and outcome is not None and outcome.terminal
+                and outcome.status != "cancelled" and not outcome.stop_requested):
+            raise RuntimeError(
+                "pool task inner terminal before request completion is unsupported; "
+                "remaining seeds and final-result publication must not be skipped")
+        return outcome
 
     def proposal_repair_children(self, repair, context):
         return super().proposal_repair_children(repair, self._context(context))
@@ -431,7 +513,12 @@ class PoolTaskAdapter(RoleAdapter):
             job = self._local["jobs"][self._local["next"]]
             if job["projection"] is not None:
                 projected = ObjectiveProjection.from_dict(job["projection"]).apply(feedback)
-        super().update(control, candidates, projected, self._context(context))
+        # Update-side collection decisions have the same declared input scope
+        # as proposal-side changes, including every enclosing task restriction.
+        with scoped_change_access(self._change_seed_refs(control),
+                                 subpools=self.spec.change_sources,
+                                 allow_main=self.spec.change_allow_main):
+            super().update(control, candidates, projected, self._context(context))
         if self._local.get("passthrough") or not len(candidates):
             return
         pool = control.solution_pool
@@ -445,8 +532,8 @@ class PoolTaskAdapter(RoleAdapter):
             return
         if self._local["output"] is not None:
             pool.add_to_subpool(self._local["output"], self.get_solution_pool_roots(control))
-            if self.spec.mode == "refine":
-                self._publish_refinement_view(control)
+        if self.spec.mode == "refine":
+            self._publish_refinement_view(control)
         self._local["next"] += 1 if self.spec.mode == "refine" else self._local["count"]
         self._local["input"], self._local["results"] = None, []
         if self._local["next"] >= self._local["count"]:
@@ -464,9 +551,7 @@ class PoolTaskAdapter(RoleAdapter):
         refs = tuple(self.inner.get_pool_refinement_results(control))
         if not refs:
             raise ValueError("completed projected refinement has no selected result")
-        request_id = hashlib.sha256(self._local["request"].encode()).hexdigest()[:24]
-        name = (f"{self._local['output']}/result:{self.role}/{request_id}/"
-                f"{self.worker}/{self._local['next']}")
+        name = self._refinement_result_name(self._local["next"])
         creator = adapter_path(control.adapter, self.inner.pool_result_owner())
         if job is not None and job["projection"] is not None:
             pool.publish_projection_subpool(name, refs, created_by=creator, slot=job["slot"],
@@ -474,6 +559,63 @@ class PoolTaskAdapter(RoleAdapter):
         else:
             pool.publish_subpool_view(name, refs, created_by=creator,
                 parent=None if job is None else job["source_descriptor"])
+        metadata = pool.subpool_metadata(name)
+        # This receipt records the staged view's identity/interpretation; the
+        # Pool remains authoritative and the getter additionally requires its
+        # normal publication commit before the receipt is usable.
+        descriptor = dict(pool_id=pool.pool_id, name=name,
+            view_id=metadata["view_id"], revision=metadata["revision"],
+            ancestors=pool._view_ancestors(metadata))
+        self._local["result_views"].append(dict(descriptor=descriptor,
+            kind=metadata["kind"], created_by=copy.deepcopy(metadata["created_by"]),
+            projection=copy.deepcopy(metadata.get("projection")),
+            slot=metadata.get("slot"), refs=[ref.as_dict() for ref in refs]))
+
+    def _refinement_result_name(self, index, *, state=None):
+        state = self._local if state is None else state
+        if state["output"] is None:
+            base = state["view"].rsplit("/", 1)[0]
+            return f"{base}/results/{self.worker}/{index}"
+        request_id = hashlib.sha256(state["request"].encode()).hexdigest()[:24]
+        return (f"{state['output']}/result:{self.role}/{request_id}/"
+                f"{self.worker}/{index}")
+
+    def get_pool_task_results(self, control):
+        """Read this completed request's committed final selections in order.
+
+        The aggregate output contains all admitted trials across requests. It
+        is deliberately not used to deliver this request's selected results.
+        """
+        if self.spec.mode != "refine":
+            raise ValueError("pool task results require a refine task")
+        if self._local.get("status") != "done":
+            raise RuntimeError("pool task results are unavailable before request completion")
+        if self._local["count"] == 0:
+            return ()
+        self._validate_local(self._local)
+        pool = control.solution_pool
+        refs = []
+        creator = list(adapter_path(control.adapter, self.inner.pool_result_owner()))
+        for receipt in self._local["result_views"]:
+            expected = receipt["descriptor"]
+            if expected["pool_id"] != pool.pool_id:
+                raise ValueError("pool task result belongs to another SolutionPool")
+            name = expected["name"]
+            if not pool.has_subpool(name) or not pool.subpool_metadata(name)["published"]:
+                raise RuntimeError("pool task results are unavailable before result commit")
+            metadata = pool.subpool_metadata(name)
+            if (pool.subpool_descriptor(name) != expected
+                    or metadata["kind"] != receipt["kind"]
+                    or metadata["created_by"] != receipt["created_by"]
+                    or receipt["created_by"] != creator
+                    or metadata.get("projection") != receipt["projection"]
+                    or metadata.get("slot") != receipt["slot"]):
+                raise ValueError("pool task final-result view identity or interpretation changed")
+            selected = pool.subpool_refs(name)
+            if tuple(ref.as_dict() for ref in selected) != tuple(receipt["refs"]):
+                raise ValueError("pool task final-result view members changed")
+            refs.extend(selected)
+        return tuple(refs)
 
     def get_solution_pool_roots(self, control):
         return tuple(SolutionRef.from_dict(ref) for ref in self._local.get("results", ()))
@@ -523,12 +665,28 @@ class PoolTaskAdapter(RoleAdapter):
             raise ValueError("invalid pool task progress")
         if state["next"] > state["count"] or (state["status"] == "done" and state["next"] != state["count"]):
             raise ValueError("pool task progress exceeds its selection")
-        for key in ("request", "view"):
-            if not isinstance(state.get(key), str) or not state[key]:
+        if not isinstance(state.get("request"), str) or not state["request"]:
+            raise ValueError("pool task is missing its selection identity")
+        empty_done = state["status"] == "done" and state["count"] == 0
+        if not (empty_done and state.get("view") is None):
+            if not isinstance(state.get("view"), str) or not state["view"]:
                 raise ValueError("pool task is missing its selection identity")
+        if empty_done and state.get("view") is None and any(
+                state.get(key) is not None for key in ("input", "output")):
+            raise ValueError("empty pool task must not retain input, view or output handles")
         for key in ("input", "output"):
             if state.get(key) is not None and (not isinstance(state[key], str) or not state[key]):
                 raise ValueError(f"pool task {key} must be a nonempty reference or None")
+        if not empty_done:
+            request_id = hashlib.sha256(state["request"].encode()).hexdigest()[:24]
+            suffix = f"/task:{self.role}/{request_id}/{self.worker}"
+            if not state["view"].endswith(suffix) or len(state["view"]) <= len(suffix):
+                raise ValueError("pool task selection differs from its request identity")
+            namespace = state["view"][:-len(suffix)]
+            output = None if self.spec.output is None else f"{namespace}/{self.spec.output}"
+            if state.get("output") != output:
+                raise ValueError("pool task output differs from its declared request")
+        self._validate_result_views(state)
         if "stamp" in state:
             SolutionStamp.from_dict(state["stamp"])
         if not isinstance(state.get("results"), list):
@@ -564,6 +722,37 @@ class PoolTaskAdapter(RoleAdapter):
                     raise ValueError("projection task requires source view, creator and slot")
                 if isinstance(self.spec.select, SubpoolSelection) and tuple(job["created_by"] or ()) != self._creator_path:
                     raise ValueError("projection task creator differs from its selector")
+
+    def _validate_result_views(self, state):
+        receipts = state.get("result_views")
+        if not isinstance(receipts, list):
+            raise ValueError("pool task checkpoint is missing final-result identity receipts")
+        expected_count = state["next"] if self.spec.mode == "refine" else 0
+        if len(receipts) != expected_count:
+            raise ValueError("pool task result receipts do not match completed seeds")
+        fields = {"descriptor", "kind", "created_by", "projection", "slot", "refs"}
+        for index, receipt in enumerate(receipts):
+            if not isinstance(receipt, dict) or set(receipt) != fields:
+                raise ValueError("invalid pool task final-result identity receipt")
+            descriptor = SolutionPool.validate_subpool_descriptor(receipt["descriptor"])
+            if descriptor["name"] != self._refinement_result_name(index, state=state):
+                raise ValueError("pool task result receipt differs from its request")
+            creator = receipt["created_by"]
+            if (not isinstance(creator, list) or not creator
+                    or any(not isinstance(part, str) or not part or "/" in part for part in creator)):
+                raise ValueError("pool task result receipt requires a stable creator path")
+            if not isinstance(receipt["refs"], list) or not receipt["refs"]:
+                raise ValueError("pool task result receipt requires selected candidates")
+            for value in receipt["refs"]:
+                ref = SolutionRef.from_dict(value)
+                if ref.pool_id != descriptor["pool_id"]:
+                    raise ValueError("pool task result receipt has a foreign candidate")
+            if receipt["kind"] == "objective_projection":
+                ObjectiveProjection.from_dict(receipt["projection"])
+                if receipt["slot"] is not None and (type(receipt["slot"]) is not int or receipt["slot"] < 0):
+                    raise ValueError("pool task projection receipt has an invalid slot")
+            elif receipt["kind"] != "candidate_view" or receipt["projection"] is not None or receipt["slot"] is not None:
+                raise ValueError("pool task result receipt has an invalid view interpretation")
 
     def snapshot_step_state(self):
         return {**super().snapshot_step_state(), "pool_task": copy.deepcopy(self._local),

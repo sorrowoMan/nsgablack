@@ -87,6 +87,7 @@ class MOAStarConfig:
 
 class MOAStarAdapter(AlgorithmAdapter):
     """Pareto A* adapter with dominance pruning per state."""
+    operation_methods = {"initializer": "initialize"}
     unit_build_operations = ("fresh",)
     unit_schema = PARETO_LABEL_SCHEMA
     unit_contract_mode = "owned"
@@ -114,9 +115,13 @@ class MOAStarAdapter(AlgorithmAdapter):
         config: Optional[MOAStarConfig] = None,
         name: str = "moa_star",
         priority: int = 0,
+        initializer=None,
         **config_kwargs,
     ) -> None:
         super().__init__(name=name, priority=priority)
+        if initializer is not None and start_state is not None:
+            raise ValueError("MOA* initializer and start_state are alternative root sources")
+        self.set_initializer(initializer)
         self.set_unit_binding(config_kwargs.pop("unit_binding", None) or UnitBinding(ParetoLabelBuilder()))
         self.config = self.resolve_config(
             config=config,
@@ -158,6 +163,8 @@ class MOAStarAdapter(AlgorithmAdapter):
 
     def setup(self, control: Any) -> None:
         self.validate_unit_bindings()
+        if self.get_local_operator_bindings():
+            self.seed_operator_bindings(self.create_local_rng(control))
         self._open = []
         self._labels = {}
         self._state_labels = {}
@@ -194,7 +201,7 @@ class MOAStarAdapter(AlgorithmAdapter):
             if control.solution_pool.input_remaining(input_ref) != 1:
                 raise ValueError("MOA* requires exactly one root per pool initialization")
         if self.cfg.pool_start_policy == "new_root" and not self._root_initialized:
-            start = control.init_candidate(context) if input_ref is not None else self._resolve_start_state(control, context)
+            start = self.init_candidate(control, context) if input_ref is not None else self._resolve_start_state(control, context)
             if start is None:
                 return []
             start = project_root(control, start)
@@ -471,7 +478,7 @@ class MOAStarAdapter(AlgorithmAdapter):
 
     def _resolve_start_state(self, control: Any, context: Dict[str, Any]) -> Optional[State]:
         start = (self.start_state(context) if callable(self.start_state) else self.start_state
-                 if self.start_state is not None else control.init_candidate(context))
+                 if self.start_state is not None else self.init_candidate(control, context))
         return start if self.cfg.pool_start_policy == "new_root" else np.asarray(start)
 
     def _edge_cost_vec(self, parent: State, child: State, context: Dict[str, Any]) -> np.ndarray:
@@ -555,7 +562,7 @@ class MOAStarAdapter(AlgorithmAdapter):
         heapq.heapify(self._open)
 
     def get_state(self) -> Dict[str, Any]:
-        return {
+        state = {
             "schema": "nsgablack.moa_star_state/v2",
             "unit_contract": self.get_unit_contract(),
             "found": bool(self.found),
@@ -567,8 +574,17 @@ class MOAStarAdapter(AlgorithmAdapter):
                 "root_initialized": self._root_initialized, "node_receipts": self._node_receipts,
                 "pareto_receipts": self._pareto_receipts, "goal_receipts": self._goal_receipts}),
         }
+        bindings = self.operator_bindings_state()
+        if bindings:
+            state["operator_bindings"] = bindings
+        return state
 
     def set_state(self, state: Dict[str, Any]) -> None:
+        saved = None if state is None else state.get("operator_bindings", {})
+        with self.restoring_operator_bindings(saved):
+            self._restore_label_state(state)
+
+    def _restore_label_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
         if state.get("pool_start_policy") != self.cfg.pool_start_policy:

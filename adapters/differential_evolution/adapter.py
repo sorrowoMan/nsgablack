@@ -18,6 +18,7 @@ from blackbase.contracts import BatchDisposition
 from ..unit_backed import UnitBackedAdapter, UnitField
 from ...representation.structure_builders import DifferentialPopulationBuilder
 from ..algorithm_adapter import AlgorithmAdapter
+from ..selection import SelectionRequest
 from ..population_pool_refs import (feedback_pool_bindings, align_pool_bindings, validate_pool_bindings,
                                    publish_population_view, validate_numeric_population_replacement, install_population_state)
 from nsgablack.context_keys import (
@@ -43,6 +44,8 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
     """Process-model DE adapter with propose/update contract."""
     pool_input_modes = ("initialize",)
     publishes_subpools = True
+    operation_methods = {"initializer": "initialize", "mutator": "mutate",
+                         "selector": "select", "repair": "repair"}
     # Trial replacement keeps its target index and pre-proposal comparison
     # score. No stored displacement or path cost depends on the trial vector.
     accepts_proposal_replacement = True
@@ -79,6 +82,11 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
         config: Optional[DEConfig] = None,
         name: str = "de",
         priority: int = 0,
+        *,
+        initializer=None,
+        mutator=None,
+        selector=None,
+        repair=None,
         **config_kwargs,
     ) -> None:
         super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
@@ -100,6 +108,11 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
         self._last_target_scores: np.ndarray = np.zeros(0, dtype=float)
         self._runtime_projection: Dict[str, Any] = {}
         self._rng = np.random.default_rng()
+        self._last_target_baselines = None
+        self.set_initializer(initializer)
+        self.set_mutator(mutator)
+        self.set_selector(selector)
+        self.set_repair(repair)
 
     def setup(self, control: Any) -> None:
         self._rng = self.create_local_rng(control)
@@ -110,6 +123,8 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
         self._last_target_indices = []
         self._last_target_scores = np.zeros(0, dtype=float)
         self._runtime_projection = {KEY_STRATEGY_ID: str(self.cfg.strategy)}
+        self._last_target_baselines = None
+        self.seed_operator_bindings(self._rng)
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         from nsgablack.context_keys import KEY_SOLUTION_INPUT_REF
@@ -124,21 +139,38 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
                 if self._initialization_target < 2:
                     raise ValueError("DE initialization requires at least two selected pool candidates")
             count = remaining if remaining is not None else self._initialization_target - have
-            candidates = control.init_population(count, context)
+            candidates = self.init_population(control, count, context)
             self._last_target_indices, self._last_target_scores = [], np.zeros(0)
+            self._last_target_baselines = None
             self._initialization_proposed_count = len(candidates)
-            return candidates
+            return (tuple(self.semantic_proposal(control, candidate) for candidate in candidates)
+                    if self._operator_bindings() else candidates)
 
         n = int(self.population.shape[0])
         batch = max(1, int(self.cfg.batch_size))
         target_indices = self._rng.integers(0, n, size=batch).tolist()
         target_scores = self._population_scores()
+        self._last_target_baselines = None
+        if self.get_bound_selector() is not None:
+            # A target may occur repeatedly in a batch. Every comparison keeps
+            # the same proposal-time baseline, even after another trial wins.
+            self._last_target_baselines = dict(
+                population=np.array(self.population[target_indices], copy=True),
+                objectives=np.array(self.objectives[target_indices], copy=True),
+                violations=np.array(self.violations[target_indices], copy=True))
+        refs = self.get_population_solution_refs(control) if self.get_bound_mutator() is not None else None
         out: List[np.ndarray] = []
         for idx in target_indices:
             target = np.asarray(self.population[idx], dtype=float)
             mutant = self._mutant_vector(idx)
             trial = self._binomial_crossover(target, mutant)
-            out.append(np.asarray(trial, dtype=float))
+            if self.get_bound_mutator() is not None:
+                parent = control.propose_solutions((refs[idx],)).semantic_states[0]
+                control.bind_candidate_provenance((trial,), (control.candidate_provenance_for(parent),), activate=False)
+                trial = self.mutate_candidate(control, trial, context)
+                out.append(self.semantic_proposal(control, trial))
+            else:
+                out.append(np.asarray(trial, dtype=float))
 
         self._last_target_indices = target_indices
         if target_scores.shape[0] == n:
@@ -176,14 +208,14 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
             capacity = int(self._initialization_target)
             if self.population is None or not len(self.population) or self.objectives is None or self.violations is None:
                 keep = np.argsort(cand_scores, kind="stable")[:capacity] if len(cand) > capacity else np.arange(len(cand))
-                change = self.algorithm_unit.initialize_population(cand[keep], obj[keep], vio[keep],
+                change = self.ensure_unit().initialize_population(cand[keep], obj[keep], vio[keep],
                     candidate_tokens=tuple(candidate_tokens[i] for i in keep),
                     **{name: tuple(rows[i] for i in keep) for name, rows in member_inputs.items()})
                 incoming_bindings = tuple(incoming_bindings[i] for i in keep)
             else:
                 scores = np.concatenate((self._population_scores(), cand_scores))
                 keep = np.argsort(scores, kind="stable")[:capacity] if len(scores) > capacity else np.arange(len(scores))
-                change = self.algorithm_unit.apply_selection(keep, cand, obj, vio,
+                change = self.ensure_unit().apply_selection(keep, cand, obj, vio,
                     candidate_tokens=candidate_tokens, **member_inputs)
             self._population_pool_bindings = align_pool_bindings(self._population_pool_bindings, incoming_bindings, change)
             self._initialization_proposed_count = None
@@ -202,7 +234,7 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
         if self.objectives is None or self.violations is None:
             n = int(self.population.shape[0])
             m = int(obj.shape[1]) if obj.ndim == 2 else 1
-            self.algorithm_unit.attach_feedback(np.full((n, m), np.inf, dtype=float),
+            self.ensure_unit().attach_feedback(np.full((n, m), np.inf, dtype=float),
                                                 np.full(n, np.inf, dtype=float))
 
         if len(self._last_target_indices) != candidate_count:
@@ -210,16 +242,29 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
         if len(self._last_target_scores) != candidate_count:
             raise ValueError("DE feedback must align with pending target scores")
 
-        self.algorithm_unit.require_current_feedback()
+        self.ensure_unit().require_current_feedback()
         accepted = []
         for j, target_idx in enumerate(self._last_target_indices):
             if target_idx < 0 or target_idx >= self.population.shape[0]:
                 raise ValueError(f"DE target index {target_idx} is outside the population")
             target_score = float(self._last_target_scores[j])
-            if float(cand_scores[j]) <= target_score:
+            if self.get_bound_selector() is None:
+                selected = float(cand_scores[j]) <= target_score
+            else:
+                baseline = self._target_baselines(candidate_count)
+                request = SelectionRequest("replacement",
+                    np.vstack([baseline["population"][j], cand[j]]),
+                    np.vstack([baseline["objectives"][j], obj[j]]),
+                    [baseline["violations"][j], vio[j]], 1,
+                    scores=[target_score, cand_scores[j]],
+                    parameters={"algorithm": "differential_evolution", "target_index": int(target_idx),
+                                "comparison": str(self.cfg.objective_aggregation), "baseline": "proposal"},
+                    context=context)
+                selected = int(self.select_indices(request, rng=self._rng)[0]) == 1
+            if selected:
                 accepted.append(j)
         if accepted:
-            change = self.algorithm_unit.replace_evaluated_rows(
+            change = self.ensure_unit().replace_evaluated_rows(
                 [self._last_target_indices[j] for j in accepted],
                 cand[accepted], obj[accepted], vio[accepted],
                 candidate_tokens=tuple(candidate_tokens[j] for j in accepted),
@@ -260,6 +305,7 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
             raise ValueError(
                 "DE pending target indices and scores must have the same length"
             )
+        baselines = self._target_baselines(pending_count) if self.get_bound_selector() is not None else None
         accepted = disposition.accepted_indices
         self._last_target_indices = [
             self._last_target_indices[index] for index in accepted
@@ -268,6 +314,10 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
             [self._last_target_scores[index] for index in accepted],
             dtype=float,
         )
+        if baselines is not None:
+            self._last_target_baselines = ({
+                name: np.array(rows[list(accepted)], copy=True) for name, rows in baselines.items()}
+                if accepted else None)
 
     def set_population_state(self, control, batch, feedback, *, solution_refs, provenance):
         solution_refs = tuple(solution_refs)
@@ -282,6 +332,7 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
             self._initialization_proposed_count = None
             self._last_target_indices = []
             self._last_target_scores = np.empty(0, dtype=float)
+            self._last_target_baselines = None
         self._sync_runtime_projection({})
         publish_population_view(self, control)
         return True
@@ -300,9 +351,9 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
         )
         validate_numeric_population_replacement(self._population_pool_bindings, preserve_tokens=preserve_tokens)
         if preserve_tokens:
-            self.algorithm_unit.attach_feedback(obj, vio)
+            self.ensure_unit().attach_feedback(obj, vio)
         else:
-            self.algorithm_unit.initialize_population(pop, obj, vio)
+            self.ensure_unit().initialize_population(pop, obj, vio)
             self._population_pool_bindings = (None,) * len(pop)
         self._sync_runtime_projection({})
         return True
@@ -344,7 +395,7 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
         return {k: source for k in self._runtime_projection.keys()}
 
     def _get_algorithm_state(self) -> Dict[str, Any]:
-        return {
+        state = {
             "population": None if self.population is None else self.population.tolist(),
             "objectives": None if self.objectives is None else self.objectives.tolist(),
             "violations": None if self.violations is None else self.violations.tolist(),
@@ -357,6 +408,10 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
             "last_target_scores": self._last_target_scores.tolist(),
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
+        if self._last_target_baselines is not None:
+            state["target_baselines"] = {name: rows.tolist()
+                                         for name, rows in self._last_target_baselines.items()}
+        return state
 
     def _set_algorithm_state(self, state: Dict[str, Any]) -> None:
         if not state:
@@ -377,9 +432,10 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
             self._last_target_indices = []
             self._last_target_scores = np.zeros(0)
             if pop is None:
-                self.algorithm_unit.clear_population()
+                if self.algorithm_unit is not None:
+                    self.algorithm_unit.clear_population()
             else:
-                self.algorithm_unit.initialize_population(pop, obj, vio,
+                self.ensure_unit().initialize_population(pop, obj, vio,
                     candidate_tokens=tuple(state.get("candidate_tokens", ()) or ()))
         if self.population is not None and len(self._population_candidate_tokens) not in {
             0,
@@ -397,6 +453,11 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
         ).reshape(-1)
         if len(self._last_target_indices) != len(self._last_target_scores):
             raise ValueError("DE checkpoint proposal bookkeeping is misaligned")
+        saved_baselines = state.get("target_baselines")
+        self._last_target_baselines = (None if saved_baselines is None else
+            {name: np.asarray(rows, dtype=float) for name, rows in saved_baselines.items()})
+        if self.get_bound_selector() is not None and self._last_target_indices:
+            self._target_baselines(len(self._last_target_indices))
         rng_state = state.get("rng_state")
         if isinstance(rng_state, dict):
             self._rng.bit_generator.state = copy.deepcopy(rng_state)
@@ -412,8 +473,19 @@ class DifferentialEvolutionAdapter(UnitBackedAdapter):
             if self.population is None:
                 return np.zeros(0, dtype=float)
             return np.full(self.population.shape[0], np.inf, dtype=float)
-        self.algorithm_unit.require_current_feedback()
+        self.ensure_unit().require_current_feedback()
         return self._scores(self.objectives, self.violations)
+
+    def _target_baselines(self, count):
+        baseline = self._last_target_baselines
+        if (not isinstance(baseline, dict)
+                or set(baseline) != {"population", "objectives", "violations"}
+                or any(len(rows) != count for rows in baseline.values())
+                or np.ndim(baseline["population"]) != 2
+                or np.ndim(baseline["objectives"]) != 2
+                or np.ndim(baseline["violations"]) != 1):
+            raise ValueError("DE replacement selector requires aligned proposal-time target baselines")
+        return baseline
 
     def _mutant_vector(self, target_index: int) -> np.ndarray:
         assert self.population is not None

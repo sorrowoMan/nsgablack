@@ -1,0 +1,17 @@
+[[entry]]
+key = "project.plugin.workbench_direction_trace"
+title = "DirectionTrace"
+kind = "plugin"
+import_path = "plugins.trace:DirectionTrace"
+tags = ["project", "example", "plugin", "observe", "finalization", "subpool", "lineage"]
+summary = "只读汇总方向与精修证据，经 Case 最终事务发布 summary，并保存观察轨迹。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["观察文件不替代 Artifact；summary 经共享 Case finalization 事务发布，严格失败可否决。"]
+use_when = ["核对嵌套方向精修与精确最终结果交付时。"]
+minimal_wiring = ["from cases.directions.plugins import DirectionTrace", "solver.add_plugin(DirectionTrace(output_dir=path, settings=settings))"]
+required_companions = ["nsgablack.core:ComposableSolver"]
+config_keys = ["output_dir", "settings"]
+example_entry = "cases.directions.build_solver:build_solver"

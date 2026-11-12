@@ -147,37 +147,8 @@ def run_nsga2(problem, args):
     )
 
 
-def build_multi_agent_solver(problem, args):
-    """Build solver for multi-agent cooperation (no run)."""
-    pipeline = build_schedule_pipeline(
-        problem,
-        problem.constraints,
-        material_cap_ratio=args.material_cap_ratio,
-        daily_floor_ratio=args.daily_floor_ratio,
-        donor_keep_ratio=args.donor_keep_ratio,
-        daily_cap_ratio=args.daily_cap_ratio,
-        reserve_ratio=args.reserve_ratio,
-        coverage_bonus=args.coverage_bonus,
-        budget_mode=args.budget_mode,
-        smooth_strength=args.smooth_strength,
-        smooth_passes=args.smooth_passes,
-    )
-    if bool(getattr(args, "no_pipeline", False)):
-        pipeline.repair = None
-
-    bias_module = (
-        None
-        if args.no_bias
-        else build_production_bias_module(
-            problem,
-            weights={
-                "coverage_reward": args.coverage_reward,
-                "smoothness_penalty": args.smoothness_penalty,
-                "variance_penalty": args.variance_penalty,
-            },
-        )
-    )
-
+def _build_phased_adapter(args):
+    """保留旧分阶段装配，作为显式对照。"""
     total_batch = max(8, int(args.pop_size))
     explorer_batch = max(4, int(total_batch * 0.65))
     exploiter_batch = max(4, total_batch - explorer_batch)
@@ -256,7 +227,57 @@ def build_multi_agent_solver(problem, args):
         phase_schedule=(("explore", max(5, int(args.generations // 3))), ("exploit", -1)),
         phase_roles={"explore": ["explorer"], "exploit": ["exploiter"]},
     )
-    controller = StrategyRouterAdapter(roles=roles, config=cfg)
+    return StrategyRouterAdapter(roles=roles, config=cfg)
+
+
+def build_multi_agent_solver(problem, args):
+    """Build solver for multi-agent cooperation (no run)."""
+    cooperation = str(getattr(args, "cooperation", "phased"))
+    if cooperation in {"directional", "constructive", "moead"}:
+        from pipeline.neighborhood_search import build_quality_pipeline
+        pipeline = build_quality_pipeline(problem, args)
+    elif cooperation == "phased":
+        pipeline = build_schedule_pipeline(
+            problem,
+            problem.constraints,
+            material_cap_ratio=args.material_cap_ratio,
+            daily_floor_ratio=args.daily_floor_ratio,
+            donor_keep_ratio=args.donor_keep_ratio,
+            daily_cap_ratio=args.daily_cap_ratio,
+            reserve_ratio=args.reserve_ratio,
+            coverage_bonus=args.coverage_bonus,
+            budget_mode=args.budget_mode,
+            smooth_strength=args.smooth_strength,
+            smooth_passes=args.smooth_passes,
+        )
+    else:
+        raise ValueError(f"unknown production cooperation mode: {cooperation}")
+    if bool(getattr(args, "no_pipeline", False)):
+        pipeline.repair = None
+
+    bias_module = (
+        None
+        if args.no_bias
+        else build_production_bias_module(
+            problem,
+            weights={
+                "coverage_reward": args.coverage_reward,
+                "smoothness_penalty": args.smoothness_penalty,
+                "variance_penalty": args.variance_penalty,
+            },
+        )
+    )
+
+    if cooperation == "directional":
+        from adapter.directional import build_directional_adapter
+        controller = build_directional_adapter(problem, args)
+    elif cooperation == "moead":
+        from adapter.directional import build_moead_adapter
+        controller = build_moead_adapter(problem, args)
+    elif cooperation == "constructive":
+        controller = ProductionRandomSearchAdapter(batch_size=int(args.moead_pop_size))
+    else:
+        controller = _build_phased_adapter(args)
 
     SolverClass = with_parallel_evaluation(ComposableSolver)
     factory = (
@@ -362,7 +383,7 @@ def build_baseline_solver(problem, args, *, mode: str) -> ComposableSolver:
     return solver
 
 
-def _build_solver_from_args(args, *, resource_context=None) -> ComposableSolver:
+def _build_solver_from_args(args, *, resource_context=None, scenario=None) -> ComposableSolver:
     if int(getattr(args, "days", 31)) != 31:
         print(f"[run] override --days={args.days} ignored; enforcing 31-day window (day0..30).")
     args.days = 31
@@ -377,14 +398,28 @@ def _build_solver_from_args(args, *, resource_context=None) -> ComposableSolver:
         if getattr(args, "parallel_thread_bias_isolation", None) == "deepcopy":
             args.parallel_thread_bias_isolation = "disable_cache"
             print("[run] baseline solver -> force --parallel-thread-bias-isolation disable_cache")
-    problem = build_problem(args, base_dir=_THIS_DIR, print_paths=True)
+    args._production_scenario = scenario
+    problem = build_problem(args, base_dir=_THIS_DIR, print_paths=True, scenario=scenario)
     if args.solver == "baseline-aco":
         solver = build_baseline_solver(problem, args, mode="baseline-aco")
     elif args.solver == "baseline-greedy":
         solver = build_baseline_solver(problem, args, mode="baseline-greedy")
     else:
         solver = build_multi_agent_solver(problem, args)
+    evaluation_budget = getattr(args, "max_evaluations", None)
+    if evaluation_budget is not None:
+        if type(evaluation_budget) is not int or evaluation_budget < 1:
+            raise ValueError("max_evaluations must be a positive integer")
+        from nsgablack.core.control_plane import BudgetController
+        solver.register_controller(BudgetController(
+            max_evaluations=evaluation_budget, name="production_evaluation_budget",
+        ))
     solver.set_resource_context(resource_context)
+    from plugins.checkpoint import attach_production_checkpoint
+    attach_production_checkpoint(solver, args)
+    if bool(getattr(args, "ablation_audit", False)):
+        from plugins.ablation import ProductionAblationAudit
+        solver.add_plugin(ProductionAblationAudit(arm=args.cooperation, seed=args.seed))
     return solver
 
 
@@ -392,15 +427,19 @@ def build_solver(argv: Optional[list] = None, *, case_root: Optional[Path] = Non
     del case_root
     overrides = dict(component_overrides or {})
     configured_argv = overrides.pop("argv", argv)
+    scenario = overrides.pop("scenario", None)
     parser = build_parser()
     args = parser.parse_args(configured_argv if configured_argv is not None else [])
     if bool(getattr(args, "check", False)):
         args.no_run_logs = True
     if not getattr(args, "run_id", None):
         args.run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Legacy domain operators use the process-wide RNG. Nested callers must
+    # execute this complete Case inside the formal process isolation boundary.
     random.seed(args.seed)
     np.random.seed(args.seed)
-    solver = _build_solver_from_args(args, resource_context=resource_context)
+    solver = _build_solver_from_args(args, resource_context=resource_context, scenario=scenario)
+    solver.set_random_seed(args.seed)
     from nsgablack.project import apply_solver_component_overrides
 
     apply_solver_component_overrides(solver, overrides)

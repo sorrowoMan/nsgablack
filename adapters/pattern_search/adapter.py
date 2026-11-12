@@ -15,6 +15,7 @@ from ...representation.structure_builders import PollUnitBuilder
 from ...units.contracts import candidate_array
 from ..algorithm_adapter import AlgorithmAdapter
 from ..pool_results import PoolRefinementState
+from ..selection import SelectionRequest
 from nsgablack.context_keys import KEY_ADAPTER_BEST_SCORE, KEY_MUTATION_SIGMA
 
 
@@ -29,6 +30,7 @@ class PatternSearchConfig:
 
 
 class PatternSearchAdapter(UnitBackedAdapter):
+    operation_methods = {"initializer": "initialize", "selector": "select", "repair": "repair"}
     pool_input_modes = ("initialize",)
     supports_pool_restart = True
     supports_objective_projection = True
@@ -52,6 +54,9 @@ class PatternSearchAdapter(UnitBackedAdapter):
         config: Optional[PatternSearchConfig] = None,
         name: str = "pattern_search",
         priority: int = 0,
+        initializer=None,
+        selector=None,
+        repair=None,
         **config_kwargs,
     ) -> None:
         super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
@@ -68,6 +73,9 @@ class PatternSearchAdapter(UnitBackedAdapter):
         self._runtime_projection: Dict[str, Any] = {}
         self._rng = np.random.default_rng()
         self._pool_results = PoolRefinementState()
+        for role, component in (("initializer", initializer), ("selector", selector), ("repair", repair)):
+            if component is not None:
+                self.set_operation(role, component)
 
     def default_pool_input_count(self):
         return 1
@@ -87,11 +95,12 @@ class PatternSearchAdapter(UnitBackedAdapter):
 
     def setup(self, control: Any) -> None:
         self._rng = self.create_local_rng(control)
+        self.seed_operator_bindings(self._rng)
         self.restart_search(control, {})
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self.current_x is None:
-            seed = control.init_candidate(context)
+            seed = self.init_candidate(control, context)
             self.current_x = np.asarray(seed, dtype=float)
             self._pool_results.remember_seed(control, seed)
         if self.current_score is None:
@@ -101,10 +110,10 @@ class PatternSearchAdapter(UnitBackedAdapter):
         dims = self._rng.choice(dim, size=n_dirs, replace=False)
         self.rebuild_unit("poll", dimensions=dims, context=context)
         out = []
-        for direction in self.algorithm_unit.directions:
+        for direction in self.ensure_unit().directions:
             point = self.current_x + float(self.step_size) * direction
             out.append(self._pool_results.derive_candidate(control, point, stage="poll"))
-        self.algorithm_unit.displacements = np.asarray([candidate_array(value) for value in out]) - self.current_x
+        self.ensure_unit().displacements = np.asarray([candidate_array(value) for value in out]) - self.current_x
         self._runtime_projection = {KEY_MUTATION_SIGMA: float(self.step_size)}
         return out
 
@@ -113,10 +122,10 @@ class PatternSearchAdapter(UnitBackedAdapter):
             if repair.proposed_count != 1:
                 raise ValueError("Pattern-search baseline requires one candidate")
             return
-        if repair.proposed_count != len(self.algorithm_unit.probes):
+        if repair.proposed_count != len(self.ensure_unit().probes):
             raise ValueError("Pattern-search repair must align with pending probes")
         for row, index in enumerate(repair.proposal_indices):
-            self.algorithm_unit.displacements[index] = repair.after.numeric_matrix[row] - self.current_x
+            self.ensure_unit().displacements[index] = repair.after.numeric_matrix[row] - self.current_x
 
     def update(
         self,
@@ -135,6 +144,11 @@ class PatternSearchAdapter(UnitBackedAdapter):
         if baseline and len(candidates) != 1:
             raise ValueError("Pattern-search baseline feedback requires one candidate")
         self._pool_results.observe_best(control, candidates, feedback, best_idx, best_score, violations[best_idx])
+        if not baseline and self.get_bound_operator("selector") is not None:
+            request = SelectionRequest("candidate", candidates, objectives, violations, 1,
+                scores=scores, parameters={"step_size": float(self.step_size)}, context=context)
+            best_idx, = self.select_indices(request, rng=self._rng)
+            best_score = float(scores[best_idx])
         if baseline or self._pool_results.improves_current(best_score, violations[best_idx], self.current_score):
             self.current_x = np.asarray(candidates[best_idx], dtype=float)
             self.current_score = best_score

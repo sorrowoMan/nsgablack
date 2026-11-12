@@ -28,10 +28,11 @@ class Owner(UnitBackedAdapter):
     def __init__(self, name="owner", candidates=(0.2,)):
         super().__init__(name)
         self.values = candidates
-        self.algorithm_unit.current = np.array([0.25])
+        self.ensure_unit().current = np.array([0.25])
         self.rejections = []
         self.observed_local = []
     def propose(self, control, context):
+        self.ensure_unit()
         return [UnknownState([value], {"row": i}) for i, value in enumerate(self.values)]
     def on_proposal_repair(self, control, evidence, context):
         self.observed_local.append((evidence.proposal_indices, dict(context)))
@@ -40,7 +41,8 @@ class Owner(UnitBackedAdapter):
     def update(self, control, candidates, feedback, context):
         self.algorithm_unit.current = np.array(candidates[0], copy=True)
     def on_joint_repair_rejected(self, control, report):
-        self.rejections.append((report, self.algorithm_unit.current.copy()))
+        unit = self.algorithm_unit
+        self.rejections.append((report, None if unit is None else unit.current.copy()))
         return super().on_joint_repair_rejected(control, report)
 
 

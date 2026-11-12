@@ -1,0 +1,1780 @@
+[[example]]
+id = "ml-extra-assembly-build_trainer"
+title = "build_trainer：具体调用与数据交接"
+component_keys = ["mlblack.assembly.build_trainer"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Builds one ML trainer Case surface; orchestration belongs to the shared Project substrate."
+inputs = ["NumericDataView及Project注入的resource_context。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["装配好的LearningSolver；由Case/Project负责运行与Artifact发布。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "assembly.build_trainer" }]
+
+[[example]]
+id = "ml-extra-bias-branch_policy"
+title = "BranchPolicyBias：具体调用与数据交接"
+component_keys = ["mlblack.bias.branch_policy"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Exposes branch preferences for conditional/piecewise representations."
+inputs = ["Case已约定分支编号/FunctionPool成员名，策略上下文键需按本地契约注册。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["新策略上下文与可审计的策略描述；消费者仍明确选择这些信号。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "bias.branch_policy" }]
+
+[[example]]
+id = "ml-extra-bias-dynamic_pool"
+title = "DynamicPoolBias：具体调用与数据交接"
+component_keys = ["mlblack.bias.dynamic_pool"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Projects a context-dependent candidate/model pool hint."
+inputs = ["Case已约定分支编号/FunctionPool成员名，策略上下文键需按本地契约注册。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["新策略上下文与可审计的策略描述；消费者仍明确选择这些信号。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "bias.dynamic_pool" }]
+
+[[example]]
+id = "ml-extra-bias-l2_scale"
+title = "L2ScaleBias：具体调用与数据交接"
+component_keys = ["mlblack.bias.l2_scale"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Expose a dynamic L2 scale to problems/adapters through context."
+inputs = ["逻辑step=5的轻量上下文；实际Problem须显式消费bias.l2_scale。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["新的上下文值；不修改原Problem的求值结果。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "bias.l2_scale" }]
+
+[[example]]
+id = "ml-extra-bias-noop"
+title = "NoopBias：具体调用与数据交接"
+component_keys = ["mlblack.bias.noop"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Soft preference component for optimization feedback/context."
+inputs = ["同一候选的UnknownState及原始Feedback；权重个数与目标数一致。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["选择反馈selected；raw保持原值，完整Solver路径保存raw_evaluation证据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "bias.noop" }]
+
+[[example]]
+id = "ml-extra-bias-objective_policy"
+title = "ObjectivePolicyBias：具体调用与数据交接"
+component_keys = ["mlblack.bias.objective_policy"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Context-aware objective reweighting policy."
+inputs = ["同一候选的UnknownState及原始Feedback；权重个数与目标数一致。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["选择反馈selected；raw保持原值，完整Solver路径保存raw_evaluation证据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "bias.objective_policy" }]
+
+[[example]]
+id = "ml-extra-bias-objective_weight"
+title = "ObjectiveWeightBias：具体调用与数据交接"
+component_keys = ["mlblack.bias.objective_weight"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Reweights objective dimensions before adapter update."
+inputs = ["同一候选的UnknownState及原始Feedback；权重个数与目标数一致。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["选择反馈selected；raw保持原值，完整Solver路径保存raw_evaluation证据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "bias.objective_weight" }]
+
+[[example]]
+id = "ml-extra-bias-optimization"
+title = "OptimizationBias：具体调用与数据交接"
+component_keys = ["mlblack.bias.optimization"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Soft preference component for optimization feedback/context."
+inputs = ["同一候选的UnknownState及原始Feedback；权重个数与目标数一致。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["选择反馈selected；raw保持原值，完整Solver路径保存raw_evaluation证据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "bias.optimization" }]
+
+[[example]]
+id = "ml-extra-bias-state_l2"
+title = "StateL2Bias：具体调用与数据交接"
+component_keys = ["mlblack.bias.state_l2"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Adds a soft L2 penalty to feedback objectives."
+inputs = ["同一候选的UnknownState及原始Feedback；权重个数与目标数一致。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["选择反馈selected；raw保持原值，完整Solver路径保存raw_evaluation证据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "bias.state_l2" }]
+
+[[example]]
+id = "ml-extra-capability-experiment_tracker"
+title = "ExperimentTrackerCapability：具体调用与数据交接"
+component_keys = ["mlblack.capability.experiment_tracker"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Records fit/step/evaluation events to an experiment store."
+inputs = ["已装配LearningSolver；明确选择内存或SQLite记录存储。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["共享生命周期中的实际实验记录，而非另一个训练循环。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "capability.experiment_tracker" }]
+
+[[example]]
+id = "ml-extra-capability-resource_audit"
+title = "ResourceAuditCapability：具体调用与数据交接"
+component_keys = ["mlblack.capability.resource_audit"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Audits effective ResourceContext during fit."
+inputs = ["由Project注入有效ResourceContext的LearningSolver。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["记录实际资源绑定的观察能力；不能通过它增加授权。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "capability.resource_audit" }]
+
+[[example]]
+id = "ml-extra-catalog-materialize_db"
+title = "materialize catalog DB：具体调用与数据交接"
+component_keys = ["mlblack.catalog.materialize_db"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Materializes the authoritative TOML catalog into a SQLite DB snapshot."
+inputs = ["开发者明确选择的本地SQLite输出路径。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["SQLite内置；本函数会写指定的开发数据库，勿指向生产库。"]
+expected_outputs = ["从源码重建的目录索引统计；不是新增第二份手工权威定义。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "catalog.materialize_db" }]
+
+[[example]]
+id = "ml-extra-catalog-query"
+title = "catalog query：具体调用与数据交接"
+component_keys = ["mlblack.catalog.query"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Search catalog entries with facets and deep-link payload."
+inputs = ["源码Catalog对象及查询条件；显式catalog参数避免隐式访问数据库。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["匹配组件与facets/deep link，不实例化模型。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "catalog.query" }]
+
+[[example]]
+id = "ml-extra-catalog-query_db"
+title = "DB-only catalog query：具体调用与数据交接"
+component_keys = ["mlblack.catalog.query_db"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Query a materialized catalog DB without loading the TOML source surface."
+inputs = ["已物化、只读使用的本地Catalog SQLite路径。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["数据库中的Problem条目；不触发模型或训练。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "catalog.query_db" }]
+
+[[example]]
+id = "ml-extra-catalog-resolve_store"
+title = "resolve_catalog_store：具体调用与数据交接"
+component_keys = ["mlblack.catalog.resolve_store"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Resolves SQLite or PostgreSQL catalog stores from URL/path/env configuration."
+inputs = ["已存在索引路径或明确配置的数据库URL。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["只读store的统计摘要；不创建缺失schema。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "catalog.resolve_store" }]
+
+[[example]]
+id = "ml-extra-catalog-store_postgresql"
+title = "PostgresCatalogStore：具体调用与数据交接"
+component_keys = ["mlblack.catalog.store_postgresql"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "PostgreSQL implementation of the DB-only catalog store surface."
+inputs = ["已有数据库的路径/URL，从私有运行配置取得，示例不填写任何真实凭据。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["SQLite内置；PostgreSQL需要psycopg与已授权数据库。"]
+expected_outputs = ["只读Catalog统计；连接失败会报告，不能默认为源码查询成功。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "catalog.store_postgresql" }]
+
+[[example]]
+id = "ml-extra-catalog-store_sqlite"
+title = "SQLiteCatalogStore：具体调用与数据交接"
+component_keys = ["mlblack.catalog.store_sqlite"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "SQLite implementation of the DB-only catalog store surface."
+inputs = ["已有数据库的路径/URL，从私有运行配置取得，示例不填写任何真实凭据。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["SQLite内置；PostgreSQL需要psycopg与已授权数据库。"]
+expected_outputs = ["只读Catalog统计；连接失败会报告，不能默认为源码查询成功。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "catalog.store_sqlite" }]
+
+[[example]]
+id = "ml-extra-core-provider_backed_learning"
+title = "ProviderBackedLearningProblem：具体调用与数据交接"
+component_keys = ["mlblack.core.provider_backed_learning"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "保留 ML Problem 语义并通过 BlackBase EvaluationGateway 绑定 Provider 的正式 Problem facade。"
+inputs = ["真实semantic_problem与实现Provider协议、声明EvaluationProviderSpec的Provider。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["保持原问题语义的Provider facade与共享EvaluationGateway。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.provider_backed_learning" }]
+
+[[example]]
+id = "ml-extra-core-functional_gradient_learning"
+title = "FunctionalGradientLearningProblem：具体调用与数据交接"
+component_keys = ["mlblack.core.functional_gradient_learning"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "在 ML Problem/Provider 边界生成函数式梯度，交由 NSGABlack gradient.* Adapter 消费。"
+inputs = ["实现compute_functional_gradient的Problem、匹配模型/state与JAX或TF已授权会话上下文。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["JAX或TensorFlow可选后端及相应autograd能力。"]
+expected_outputs = ["保留原目标/约束并附加扁平梯度的Feedback，由gradient.* Adapter消费。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.functional_gradient_learning" }]
+
+[[example]]
+id = "ml-extra-core-artifact_bundle"
+title = "ArtifactBundle：具体调用与数据交接"
+component_keys = ["mlblack.core.artifact_bundle"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Final output bundle with explicit product boundaries."
+inputs = ["已完成并可被ArtifactProvider处理的模型。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["模型、报告等边界明确的ArtifactBundle；正式保存由发布事务处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.artifact_bundle" }]
+
+[[example]]
+id = "ml-extra-core-capability"
+title = "Capability：具体调用与数据交接"
+component_keys = ["mlblack.core.capability"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "ML semantic Plugin with fit-oriented hook names."
+inputs = ["Case构造的具体Capability子类实例与LearningSolver。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["加入共享Plugin生命周期的ML能力；不建立第二个调度器。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.capability" }]
+
+[[example]]
+id = "ml-extra-core-diagnostic"
+title = "DiagnosticProblem：具体调用与数据交接"
+component_keys = ["mlblack.core.diagnostic"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Problem surface for a single non-search ML diagnostic evaluation."
+inputs = ["轻量诊断回调；大型诊断产物另由Artifact保存。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["一次诊断的Feedback；正式运行采用build_diagnostic_solver。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.diagnostic" }]
+
+[[example]]
+id = "ml-extra-core-diagnostic_representation"
+title = "DiagnosticRepresentation：具体调用与数据交接"
+component_keys = ["mlblack.core.diagnostic_representation"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "诊断 Case 的固定语义候选表示；控制生命周期由 NSGABlack FixedCandidateAdapter 提供。"
+inputs = ["Project授权的resource_context；诊断逻辑通过runner提供。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["使用固定语义表示和FixedCandidateAdapter的正式Solver；不在装配前调用init。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.diagnostic_representation" }]
+
+[[example]]
+id = "ml-extra-core-estimator_state_artifact"
+title = "EstimatorStateArtifact：具体调用与数据交接"
+component_keys = ["mlblack.core.estimator_state_artifact"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "EstimatorStateArtifact(name: 'str', model: 'Any', family: 'str' = '', head: 'str' = 'point', representation: 'Mapping[str, Any]' = <factory>, metadata: 'Mapping[str, Any]' = <factory>, artifact_type: 'str' = 'estimator_state', estimator_state: 'Mapping[str, Any]' = <factory>)"
+inputs = ["与该Artifact类型对应的已完成模型，以及Codec布局报告；NeuralGraph/Tree/Torch等不可混用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["类型化Artifact及序列化描述；正式权威交付仍经FinalizationHooks/ArtifactProvider。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.estimator_state_artifact" }]
+
+[[example]]
+id = "ml-extra-core-head_block"
+title = "HeadBlock：具体调用与数据交接"
+component_keys = ["mlblack.core.head_block"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Contiguous parameter block consumed by an output head."
+inputs = ["一个具有明确[start,stop)位置的数值向量。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["该Head的数值切片与布局描述；不改变候选本身。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.head_block" }]
+
+[[example]]
+id = "ml-extra-core-integrated_model_artifact"
+title = "IntegratedModelArtifact：具体调用与数据交接"
+component_keys = ["mlblack.core.integrated_model_artifact"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "IntegratedModelArtifact(name: 'str', model: 'Any', family: 'str' = '', head: 'str' = 'point', representation: 'Mapping[str, Any]' = <factory>, metadata: 'Mapping[str, Any]' = <factory>, artifact_type: 'str' = 'integrated_model')"
+inputs = ["与该Artifact类型对应的已完成模型，以及Codec布局报告；NeuralGraph/Tree/Torch等不可混用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["类型化Artifact及序列化描述；正式权威交付仍经FinalizationHooks/ArtifactProvider。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.integrated_model_artifact" }]
+
+[[example]]
+id = "ml-extra-core-learning"
+title = "LearningProblem：具体调用与数据交接"
+component_keys = ["mlblack.core.learning"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "定义数据相关的 loss、指标与约束；具有拟合或内层求解准备的模型，须用 restore_model_for_evaluation 从已保存证据恢复。"
+inputs = ["实际LearningProblem子类实例、Codec模型与同版本state。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["共享Feedback；LearningProblem本身是抽象角色，不直接实例化。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.learning" }]
+
+[[example]]
+id = "ml-extra-core-model"
+title = "ModelRepresentation：具体调用与数据交接"
+component_keys = ["mlblack.core.model"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "解释候选的模型含义，提供 Codec、布局与修复；维度来自模型布局，真实初始化在共享 Pool 建立后的运行阶段执行。"
+inputs = ["具体ModelRepresentation实现，以及共享Solver已生成的UnknownState。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["解码模型及语义指纹；不将它当作Adapter Unit或再次初始化。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.model" }]
+
+[[example]]
+id = "ml-extra-core-model_artifact"
+title = "ModelArtifact：具体调用与数据交接"
+component_keys = ["mlblack.core.model_artifact"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Serializable boundary around the trained model payload."
+inputs = ["与该Artifact类型对应的已完成模型，以及Codec布局报告；NeuralGraph/Tree/Torch等不可混用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["类型化Artifact及序列化描述；正式权威交付仍经FinalizationHooks/ArtifactProvider。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.model_artifact" }]
+
+[[example]]
+id = "ml-extra-core-neural_graph_artifact"
+title = "NeuralGraphArtifact：具体调用与数据交接"
+component_keys = ["mlblack.core.neural_graph_artifact"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "NeuralGraphArtifact(name: 'str', model: 'Any', family: 'str' = '', head: 'str' = 'point', representation: 'Mapping[str, Any]' = <factory>, metadata: 'Mapping[str, Any]' = <factory>, artifact_type: 'str' = 'neural_graph', graph_spec: 'Mapping[str, Any]' = <factory>, parameter_layout: 'Mapping[str, Any]' = <factory>, head_artifact: 'Mapping[str, Any]' = <factory>, audit_artifact: 'Mapping[str, Any]' = <factory>, graph_spec_digest: 'str' = '', parameter_layout_digest: 'str' = '')"
+inputs = ["与该Artifact类型对应的已完成模型，以及Codec布局报告；NeuralGraph/Tree/Torch等不可混用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["类型化Artifact及序列化描述；正式权威交付仍经FinalizationHooks/ArtifactProvider。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.neural_graph_artifact" }]
+
+[[example]]
+id = "ml-extra-core-output"
+title = "OutputHead：具体调用与数据交接"
+component_keys = ["mlblack.core.output"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Decoder-side output semantics."
+inputs = ["具体OutputHead实例、符合该Head长度的候选值，以及Codec提供的base_decode。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["带输出语义的模型/预测对象和HeadBlock布局。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.output" }]
+
+[[example]]
+id = "ml-extra-core-representation_pipeline"
+title = "RepresentationPipeline：具体调用与数据交接"
+component_keys = ["mlblack.core.representation_pipeline"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Unknown-state encoder/decoder, equivalent to nsgablack Representation."
+inputs = ["具体ModelRepresentation实现，以及共享Solver已生成的UnknownState。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["解码模型及语义指纹；不将它当作Adapter Unit或再次初始化。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.representation_pipeline" }]
+
+[[example]]
+id = "ml-extra-core-run_report"
+title = "RunReport：具体调用与数据交接"
+component_keys = ["mlblack.core.run_report"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Auditable run summary distinct from artifact and trainer state."
+inputs = ["本次真实run的指标、组件和已生效资源描述；示例数值只说明字段。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["可序列化RunReport；示例字段不是本轮训练成绩。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.run_report" }]
+
+[[example]]
+id = "ml-extra-core-sklearn_mlp_artifact"
+title = "SklearnMLPArtifact：具体调用与数据交接"
+component_keys = ["mlblack.core.sklearn_mlp_artifact"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "SklearnMLPArtifact(name: 'str', model: 'Any', family: 'str' = '', head: 'str' = 'point', representation: 'Mapping[str, Any]' = <factory>, metadata: 'Mapping[str, Any]' = <factory>, artifact_type: 'str' = 'sklearn_mlp')"
+inputs = ["与该Artifact类型对应的已完成模型，以及Codec布局报告；NeuralGraph/Tree/Torch等不可混用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["类型化Artifact及序列化描述；正式权威交付仍经FinalizationHooks/ArtifactProvider。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.sklearn_mlp_artifact" }]
+
+[[example]]
+id = "ml-extra-core-symbolic_interval_artifact"
+title = "SymbolicIntervalArtifact：具体调用与数据交接"
+component_keys = ["mlblack.core.symbolic_interval_artifact"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "SymbolicIntervalArtifact(name: 'str', model: 'Any', family: 'str' = '', head: 'str' = 'point', representation: 'Mapping[str, Any]' = <factory>, metadata: 'Mapping[str, Any]' = <factory>, artifact_type: 'str' = 'symbolic_interval')"
+inputs = ["与该Artifact类型对应的已完成模型，以及Codec布局报告；NeuralGraph/Tree/Torch等不可混用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["类型化Artifact及序列化描述；正式权威交付仍经FinalizationHooks/ArtifactProvider。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.symbolic_interval_artifact" }]
+
+[[example]]
+id = "ml-extra-core-symbolic_model_artifact"
+title = "SymbolicModelArtifact：具体调用与数据交接"
+component_keys = ["mlblack.core.symbolic_model_artifact"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "SymbolicModelArtifact(name: 'str', model: 'Any', family: 'str' = '', head: 'str' = 'point', representation: 'Mapping[str, Any]' = <factory>, metadata: 'Mapping[str, Any]' = <factory>, artifact_type: 'str' = 'symbolic_model')"
+inputs = ["与该Artifact类型对应的已完成模型，以及Codec布局报告；NeuralGraph/Tree/Torch等不可混用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["类型化Artifact及序列化描述；正式权威交付仍经FinalizationHooks/ArtifactProvider。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.symbolic_model_artifact" }]
+
+[[example]]
+id = "ml-extra-core-torch_model_artifact"
+title = "TorchModelArtifact：具体调用与数据交接"
+component_keys = ["mlblack.core.torch_model_artifact"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "TorchModelArtifact(name: 'str', model: 'Any', family: 'str' = '', head: 'str' = 'point', representation: 'Mapping[str, Any]' = <factory>, metadata: 'Mapping[str, Any]' = <factory>, artifact_type: 'str' = 'torch_model')"
+inputs = ["与该Artifact类型对应的已完成模型，以及Codec布局报告；NeuralGraph/Tree/Torch等不可混用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["类型化Artifact及序列化描述；正式权威交付仍经FinalizationHooks/ArtifactProvider。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.torch_model_artifact" }]
+
+[[example]]
+id = "ml-extra-core-trainer_state_artifact"
+title = "TrainerStateArtifact：具体调用与数据交接"
+component_keys = ["mlblack.core.trainer_state_artifact"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Checkpoint-style trainer state payload."
+inputs = ["安全阶段可读取状态的实际LearningSolver；state是脱离后的Mapping。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["TrainerStateArtifact描述；恢复仍排队进入统一post-setup事务。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.trainer_state_artifact" }]
+
+[[example]]
+id = "ml-extra-core-tree_ensemble_artifact"
+title = "TreeEnsembleArtifact：具体调用与数据交接"
+component_keys = ["mlblack.core.tree_ensemble_artifact"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "TreeEnsembleArtifact(name: 'str', model: 'Any', family: 'str' = '', head: 'str' = 'point', representation: 'Mapping[str, Any]' = <factory>, metadata: 'Mapping[str, Any]' = <factory>, artifact_type: 'str' = 'tree_ensemble')"
+inputs = ["与该Artifact类型对应的已完成模型，以及Codec布局报告；NeuralGraph/Tree/Torch等不可混用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["类型化Artifact及序列化描述；正式权威交付仍经FinalizationHooks/ArtifactProvider。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.tree_ensemble_artifact" }]
+
+[[example]]
+id = "ml-extra-core-typed_model_artifact"
+title = "TypedModelArtifact：具体调用与数据交接"
+component_keys = ["mlblack.core.typed_model_artifact"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "TypedModelArtifact(name: 'str', model: 'Any', family: 'str' = '', head: 'str' = 'point', representation: 'Mapping[str, Any]' = <factory>, metadata: 'Mapping[str, Any]' = <factory>, artifact_type: 'str' = 'model')"
+inputs = ["与该Artifact类型对应的已完成模型，以及Codec布局报告；NeuralGraph/Tree/Torch等不可混用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["类型化Artifact及序列化描述；正式权威交付仍经FinalizationHooks/ArtifactProvider。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.typed_model_artifact" }]
+
+[[example]]
+id = "ml-extra-core-xg_boost_artifact"
+title = "XGBoostArtifact：具体调用与数据交接"
+component_keys = ["mlblack.core.xg_boost_artifact"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "XGBoostArtifact(name: 'str', model: 'Any', family: 'str' = '', head: 'str' = 'point', representation: 'Mapping[str, Any]' = <factory>, metadata: 'Mapping[str, Any]' = <factory>, artifact_type: 'str' = 'xgboost')"
+inputs = ["与该Artifact类型对应的已完成模型，以及Codec布局报告；NeuralGraph/Tree/Torch等不可混用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["类型化Artifact及序列化描述；正式权威交付仍经FinalizationHooks/ArtifactProvider。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "core.xg_boost_artifact" }]
+
+[[example]]
+id = "ml-extra-dashboard-artifact_html"
+title = "artifact dashboard export：具体调用与数据交接"
+component_keys = ["mlblack.dashboard.artifact_html"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Exports a static HTML viewer for typed mlblack artifacts."
+inputs = ["开发输出HTML路径与可信模型Artifact描述Mapping/JSON路径。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["静态模型查看页，不执行模型训练。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "dashboard.artifact_html" }]
+
+[[example]]
+id = "ml-extra-dashboard-backend_matrix_html"
+title = "backend capability matrix export：具体调用与数据交接"
+component_keys = ["mlblack.dashboard.backend_matrix_html"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Exports a static HTML matrix of backend capability support."
+inputs = ["开发输出HTML路径；矩阵来自已声明backend contracts。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["后端能力矩阵；声明可见性不等于依赖已安装或执行已通过。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "dashboard.backend_matrix_html" }]
+
+[[example]]
+id = "ml-extra-dashboard-catalog_html"
+title = "catalog dashboard export：具体调用与数据交接"
+component_keys = ["mlblack.dashboard.catalog_html"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Exports a lightweight HTML catalog report."
+inputs = ["开发输出HTML路径及当前源码Catalog。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["可离线查看的静态目录页。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "dashboard.catalog_html" }]
+
+[[example]]
+id = "ml-extra-dashboard-catalog_streamlit"
+title = "catalog Streamlit dashboard：具体调用与数据交接"
+component_keys = ["mlblack.dashboard.catalog_streamlit"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Launches an interactive Streamlit catalog dashboard similar to the nsgablack catalog UI."
+inputs = ["mlblack/catalog/dashboard.py实际脚本路径；仅在用户明确启动本地UI时调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["Streamlit；示例不在审计时启动监听器。"]
+expected_outputs = ["本机Streamlit目录进程退出码；页面浏览不训练模型。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "dashboard.catalog_streamlit" }]
+
+[[example]]
+id = "ml-extra-dashboard-catalog_web"
+title = "catalog query web app：具体调用与数据交接"
+component_keys = ["mlblack.dashboard.catalog_web"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Serves a lightweight catalog query UI and JSON API without external web dependencies."
+inputs = ["已物化本地目录库；端口仅绑定loopback，启动和关闭由使用者明确控制。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["Python标准库及本地数据库；示例不自动启动网络服务。"]
+expected_outputs = ["HTTPServer对象；不是AI Operator Shell，不复用退休8765服务。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "dashboard.catalog_web" }]
+
+[[example]]
+id = "ml-extra-dashboard-experiment_html"
+title = "experiment dashboard export：具体调用与数据交接"
+component_keys = ["mlblack.dashboard.experiment_html"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Exports a lightweight HTML experiment record report."
+inputs = ["ExperimentQuery返回的ExperimentRecord列表与HTML输出路径。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["实验记录HTML报告，保留原run与step信息。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "dashboard.experiment_html" }]
+
+[[example]]
+id = "ml-extra-example-etf_temporal_forecast"
+title = "ETF Temporal Forecast：具体调用与数据交接"
+component_keys = ["mlblack.example.etf_temporal_forecast"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "ETF walk-forward temporal forecast case with ridge/boosting baselines and rank-IC, hit-rate, Sharpe, drawdown and turnover metrics."
+inputs = ["已准备的ETF panel_builder、walk-forward配置、输出目录与Project授权。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["配置指定的数据与可选统计/boosting依赖；示例不联网取金融数据，也不执行投资操作。"]
+expected_outputs = ["含多种预测/组合指标的真实结果；不能把历史收益或示例预期当本次结果。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "example.etf_temporal_forecast" }]
+
+[[example]]
+id = "ml-extra-example-traffic_arimax_attribution"
+title = "ARIMAX Factor Attribution on Traffic CI：具体调用与数据交接"
+component_keys = ["mlblack.example.traffic_arimax_attribution"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "ARIMAX(2,0,1) factor group attribution decomposing CI variation into Weather/AQI/Holiday/CI_Lags/Time_Cyclic groups."
+inputs = ["该Case README声明的真实交通数据、依赖与配置；父Project提供resource_context。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["依Case需要statsmodels/scipy/sklearn/xgboost/shap等可选依赖；发布包不默认携带业务数据。"]
+expected_outputs = ["该Case实际Solver；正式运行入口是examples/cases/traffic_congestion/run_project.py。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "example.traffic_arimax_attribution" }]
+
+[[example]]
+id = "ml-extra-example-traffic_gam_linearity"
+title = "GAM Nonlinearity Check on Traffic CI：具体调用与数据交接"
+component_keys = ["mlblack.example.traffic_gam_linearity"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "B-spline GAM vs linear regression comparison diagnosing whether linear assumptions hold for traffic CI prediction."
+inputs = ["该Case README声明的真实交通数据、依赖与配置；父Project提供resource_context。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["依Case需要statsmodels/scipy/sklearn/xgboost/shap等可选依赖；发布包不默认携带业务数据。"]
+expected_outputs = ["该Case实际Solver；正式运行入口是examples/cases/traffic_congestion/run_project.py。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "example.traffic_gam_linearity" }]
+
+[[example]]
+id = "ml-extra-example-traffic_granger_causality"
+title = "Granger Causality Check on Traffic CI：具体调用与数据交接"
+component_keys = ["mlblack.example.traffic_granger_causality"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Pairwise Granger causality tests between CI and external factors (weather, AQI, holidays) on real traffic data."
+inputs = ["该Case README声明的真实交通数据、依赖与配置；父Project提供resource_context。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["依Case需要statsmodels/scipy/sklearn/xgboost/shap等可选依赖；发布包不默认携带业务数据。"]
+expected_outputs = ["该Case实际Solver；正式运行入口是examples/cases/traffic_congestion/run_project.py。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "example.traffic_granger_causality" }]
+
+[[example]]
+id = "ml-extra-example-traffic_shap_consistency"
+title = "SHAP Contribution Consistency on Traffic CI：具体调用与数据交接"
+component_keys = ["mlblack.example.traffic_shap_consistency"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Cross-paradigm feature importance comparison: Linear coefficients vs XGBoost gain vs SHAP vs Permutation on traffic CI."
+inputs = ["该Case README声明的真实交通数据、依赖与配置；父Project提供resource_context。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["依Case需要statsmodels/scipy/sklearn/xgboost/shap等可选依赖；发布包不默认携带业务数据。"]
+expected_outputs = ["该Case实际Solver；正式运行入口是examples/cases/traffic_congestion/run_project.py。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "example.traffic_shap_consistency" }]
+
+[[example]]
+id = "ml-extra-example-traffic_symbolic_regression"
+title = "Symbolic Regression on Traffic CI：具体调用与数据交接"
+component_keys = ["mlblack.example.traffic_symbolic_regression"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Gradient-descent linear regression on traffic CI mechanism reconstruction (same-day features), baseline for symbolic approach."
+inputs = ["该Case README声明的真实交通数据、依赖与配置；父Project提供resource_context。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["依Case需要statsmodels/scipy/sklearn/xgboost/shap等可选依赖；发布包不默认携带业务数据。"]
+expected_outputs = ["该Case实际Solver；正式运行入口是examples/cases/traffic_congestion/run_project.py。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "example.traffic_symbolic_regression" }]
+
+[[example]]
+id = "ml-extra-example-traffic_xgboost_baseline"
+title = "XGBoost Baseline for Traffic CI Prediction：具体调用与数据交接"
+component_keys = ["mlblack.example.traffic_xgboost_baseline"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "XGBoost baseline on traffic CI forward prediction (lag-only features), using mlblack tree_boosting preset."
+inputs = ["该Case README声明的真实交通数据、依赖与配置；父Project提供resource_context。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["依Case需要statsmodels/scipy/sklearn/xgboost/shap等可选依赖；发布包不默认携带业务数据。"]
+expected_outputs = ["该Case实际Solver；正式运行入口是examples/cases/traffic_congestion/run_project.py。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "example.traffic_xgboost_baseline" }]
+
+[[example]]
+id = "ml-extra-experiment-query"
+title = "experiment query：具体调用与数据交接"
+component_keys = ["mlblack.experiment.query"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Query SQLite experiment records with simple filters and facets."
+inputs = ["ExperimentTracker已写出的SQLite实验记录路径。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["符合run与步数条件的真实记录及facets；空集不是训练成功证据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "experiment.query" }]
+
+[[example]]
+id = "ml-extra-integration-hf_sft"
+title = "build_hf_sft_solver：具体调用与数据交接"
+component_keys = ["mlblack.integration.hf_sft"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "真实 HF + PEFT 会话 SFT：复用 LearningSolver、EvaluationGateway 与 Case Artifact，完整 fit 是一次评估，非逐 optimizer step 回滚。"
+inputs = ["本地已准备的模型与对话JSONL路径、Project授权；不会默认访问或下载远程权重。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["Torch、transformers、PEFT、accelerate；资源取自Project，不在本示例训练。"]
+expected_outputs = ["一次完整SFT fit作为一个求值的正式Solver；不是逐optimizer step回滚。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "integration.hf_sft" }]
+
+[[example]]
+id = "ml-extra-integration-nsgablack_gradient"
+title = "build_gradient_trainer：具体调用与数据交接"
+component_keys = ["mlblack.integration.nsgablack_gradient"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "稳定 method ID 装配：nsgablack GradientOptimizerAdapter + mlblack Problem/Provider + BlackBase L0/StateRef runtime。"
+inputs = ["ML神经Problem、布局匹配的表示及Project CPU/GPU授权。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["Torch及统一框架栈；不在装配示例中执行训练。"]
+expected_outputs = ["统一的GradientOptimizerAdapter/Provider/LearningSolver组合。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "integration.nsgablack_gradient" }]
+
+[[example]]
+id = "ml-extra-integration-nsgablack_optimization"
+title = "build_optimization_adapter：具体调用与数据交接"
+component_keys = ["mlblack.integration.nsgablack_optimization"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "把 ML 用户词汇解析为稳定优化方法标识，并装配 nsgablack 的 provider-neutral Adapter。"
+inputs = ["稳定method ID及对应参数；Problem/Provider须提供梯度。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["provider-neutral优化Adapter，装配给LearningSolver使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "integration.nsgablack_optimization" }]
+
+[[example]]
+id = "ml-extra-integration-learning_solver"
+title = "LearningSolver：具体调用与数据交接"
+component_keys = ["mlblack.integration.learning_solver"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "ML 语义 facade：复用共享 Pool、Unit、编排和唯一 Solver 生命周期；v7 状态保存池值闭包，正式 checkpoint 保存 ML 最佳反馈绑定。"
+inputs = ["支持解析梯度的Problem、布局已知的ModelRepresentation、Project授权资源。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["由同一个ComposableSolver驱动的ML求解器；正式Case负责fit/run与发布。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.integration.learning_solver" }]
+
+[[example]]
+id = "ml-extra-integration-ml_learning_problem_bridge"
+title = "MLLearningProblemBridge：具体调用与数据交接"
+component_keys = ["mlblack.integration.ml_learning_problem_bridge"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "把 MLBlack LearningProblem 的模型/状态/Feedback 语义投影为 NSGABlack BlackBoxProblem。"
+inputs = ["已知dimension、真实ML Problem和ModelRepresentation；完整控制绑定由LearningSolver完成。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["供NSGABlack控制面使用的Problem边界及目标数，不重复训练。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "integration.ml_learning_problem_bridge" }]
+
+[[example]]
+id = "ml-extra-integration-ml_representation_bridge"
+title = "MLRepresentationBridge：具体调用与数据交接"
+component_keys = ["mlblack.integration.ml_representation_bridge"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "在仓库边界转换 UnknownState 与 ndarray；模型布局、初始化、修复和解码仍由 ML Codec 独占。"
+inputs = ["支持encode/decode的具体ModelRepresentation与已知模型；不调用init来猜维度。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["保持模型语义metadata的UnknownState以及解码模型；不是算法Unit转换。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "integration.ml_representation_bridge" }]
+
+[[example]]
+id = "ml-extra-integration-nsgablack_learning_case_evaluator"
+title = "NsgablackLearningCaseEvaluator：具体调用与数据交接"
+component_keys = ["mlblack.integration.nsgablack_learning_case_evaluator"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Invoke a complete ML semantic child Case through the shared CaseRuntime."
+inputs = ["已在同一Project注册的linear_point内层Case；当前调用身份与CaseRuntime由外层提供。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["Evaluation Provider可调用的内层Case桥，结果经正式payload/Artifact返回。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "integration.nsgablack_learning_case_evaluator" }]
+
+[[example]]
+id = "ml-extra-integration-pretrained_checkpoint_mapper"
+title = "PretrainedCheckpointMapper：具体调用与数据交接"
+component_keys = ["mlblack.integration.pretrained_checkpoint_mapper"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Map an external checkpoint state_dict into an mlblack neural graph."
+inputs = ["已加载可信state_dict及布局匹配的目标NeuralGraph模型。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["具体模型路线所需Torch/transformers；加载可信文件由调用者负责。"]
+expected_outputs = ["映射报告与目标模型布局下的扁平值；不把外部权重误当成Adapter Unit。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "integration.pretrained_checkpoint_mapper" }]
+
+[[example]]
+id = "ml-extra-integration-pretrained_model_bridge"
+title = "PretrainedModelBridge：具体调用与数据交接"
+component_keys = ["mlblack.integration.pretrained_model_bridge"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Lazy pretrained-model loader for external-model/component use cases."
+inputs = ["本地模型目录；device_from_grant必须来自已授权ResourceContext。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["transformers、Torch及本地模型；不默认联网下载。"]
+expected_outputs = ["惰性加载的外部模型供正式Provider消费，不另拥有训练生命周期。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "integration.pretrained_model_bridge" }]
+
+[[example]]
+id = "ml-extra-integration-pretrained_tokenizer_bridge"
+title = "PretrainedTokenizerBridge：具体调用与数据交接"
+component_keys = ["mlblack.integration.pretrained_tokenizer_bridge"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Lazy bridge to HuggingFace tokenizers."
+inputs = ["本地已准备的tokenizer目录与字符串批次。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["transformers与本地tokenizer文件；不默认联网下载。"]
+expected_outputs = ["token ID及attention mask矩阵，可作为模型数据输入。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "integration.pretrained_tokenizer_bridge" }]
+
+[[example]]
+id = "ml-extra-nsgablack_neural-transformer_spec_search"
+title = "TransformerSpecSearchProblem：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_neural.transformer_spec_search"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "nsgablack-facing problem for outer TransformerSpec search."
+inputs = ["适配分类或LM任务的NumericDataView与父Project资源授权。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["Torch等内层神经后端；嵌套执行仍走正式Case/共享授权。"]
+expected_outputs = ["外层结构搜索Problem与解码后的Transformer规格；真实evaluate会调用内层ML训练。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_neural.transformer_spec_search" }]
+
+[[example]]
+id = "ml-extra-nsgablack_neural-transformer_spec_search_space"
+title = "TransformerSpecSearchSpace：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_neural.transformer_spec_search_space"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Auto-discovered mlblack component `nsgablack_neural.transformer_spec_search_space`."
+inputs = ["8维[0,1]外层配置向量；task约定由TransformerSpecSearchConfig提供。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["NeuralGraphSpec与外层边界；解码配置不执行内层训练。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_neural.transformer_spec_search_space" }]
+
+[[example]]
+id = "ml-extra-nsgablack_symbolic-basis_conditioned_symbolic_task"
+title = "BasisConditionedSymbolicTaskProblem：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_symbolic.basis_conditioned_symbolic_task"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "nsgablack-compatible Stage 2 problem."
+inputs = ["Stage1已发布的OrthogonalBasisSetArtifact、同语义DataView和派生资源授权。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["条件于已冻结基组的Stage2 Problem；不隐式重做Stage1。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_symbolic.basis_conditioned_symbolic_task" }]
+
+[[example]]
+id = "ml-extra-nsgablack_symbolic-expression_graph_cache"
+title = "ExpressionGraphCache：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_symbolic.expression_graph_cache"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Reusable cache for symbolic expression values and derivative expressions."
+inputs = ["合法的符号表达式树及样本矩阵；相同批次缓存键必须符合输入内容。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["表达式数值与缓存统计；缓存不是模型训练状态。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_symbolic.expression_graph_cache" }]
+
+[[example]]
+id = "ml-extra-nsgablack_symbolic-function_pool_index_search_space"
+title = "FunctionPoolIndexSearchSpace：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_symbolic.function_pool_index_search_space"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Index-coded outer search space over a symbolic FunctionPool."
+inputs = ["至少2项且与本次数据匹配的FunctionPool。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["规范化索引和CandidateTerm；不把索引当作已拟合系数。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_symbolic.function_pool_index_search_space" }]
+
+[[example]]
+id = "ml-extra-nsgablack_symbolic-orthogonal_basis_outer"
+title = "OrthogonalBasisOuterProblem：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_symbolic.orthogonal_basis_outer"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "nsgablack-compatible Stage 1 problem for symbolic basis search."
+inputs = ["NumericDataView、候选FunctionPool、父Project授权。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["Stage1正交基搜索Problem，由外层Adapter送评；运行后build_artifact交付Stage2。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_symbolic.orthogonal_basis_outer" }]
+
+[[example]]
+id = "ml-extra-nsgablack_symbolic-orthogonal_basis_set_artifact"
+title = "OrthogonalBasisSetArtifact：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_symbolic.orthogonal_basis_set_artifact"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Stage 1 output boundary consumed by Stage 2."
+inputs = ["Stage1正式Artifact与对应NumericDataView，特征顺序必须一致。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["可传给Stage2的基空间DataView和FunctionPool；旧SymbolicBasisArtifact索引已退役。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_symbolic.orthogonal_basis_set_artifact" }]
+
+[[example]]
+id = "ml-extra-nsgablack_symbolic-symbolic_basis_consensus_analyzer"
+title = "SymbolicBasisConsensusAnalyzer：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_symbolic.symbolic_basis_consensus_analyzer"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Artifact/report capability for basis consensus and overlap."
+inputs = ["多次独立Stage1产物序列和同特征顺序样本X。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["专门的审计/一致性/过拟合/结构报告；由搜索策略显式决定如何使用，不自动改Problem。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_symbolic.symbolic_basis_consensus_analyzer" }]
+
+[[example]]
+id = "ml-extra-nsgablack_symbolic-symbolic_branch_evaluator"
+title = "SymbolicBranchEvaluator：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_symbolic.symbolic_branch_evaluator"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Branch/regime audit evaluator for fitted symbolic task artifacts."
+inputs = ["已拟合SymbolicTaskArtifact与NumericDataView。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["专门的审计/一致性/过拟合/结构报告；由搜索策略显式决定如何使用，不自动改Problem。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_symbolic.symbolic_branch_evaluator" }]
+
+[[example]]
+id = "ml-extra-nsgablack_symbolic-symbolic_candidate_scorer"
+title = "SymbolicCandidateScorer：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_symbolic.symbolic_candidate_scorer"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Candidate scoring policy for nsgablack symbolic outer search."
+inputs = ["同一候选原始目标/约束与训练验证指标；若用path memory须明确实例。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["CandidateScoreReport供外层搜索排序；不把评分覆盖为原始测量。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_symbolic.symbolic_candidate_scorer" }]
+
+[[example]]
+id = "ml-extra-nsgablack_symbolic-symbolic_expression_audit_producer"
+title = "SymbolicExpressionAuditProducer：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_symbolic.symbolic_expression_audit_producer"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Produces symbolic artifact audit sections from expressions and term metadata."
+inputs = ["合法expression Mapping序列与真实feature_names。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["专门的审计/一致性/过拟合/结构报告；由搜索策略显式决定如何使用，不自动改Problem。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_symbolic.symbolic_expression_audit_producer" }]
+
+[[example]]
+id = "ml-extra-nsgablack_symbolic-symbolic_fold_evaluator"
+title = "SymbolicFoldEvaluator：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_symbolic.symbolic_fold_evaluator"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Lightweight fold evaluator for symbolic artifacts."
+inputs = ["SymbolicTaskArtifact与已配置验证切分的NumericDataView。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["专门的审计/一致性/过拟合/结构报告；由搜索策略显式决定如何使用，不自动改Problem。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_symbolic.symbolic_fold_evaluator" }]
+
+[[example]]
+id = "ml-extra-nsgablack_symbolic-symbolic_orthogonal_nested_suite"
+title = "SymbolicOrthogonalNestedSuite：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_symbolic.symbolic_orthogonal_nested_suite"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Serial Stage 1 -> Stage 2 symbolic plan surface."
+inputs = ["Stage1正式Problem、Stage2配置、共同数据与父授权。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["串行Stage1→Stage2计划描述；由共享Project执行阶段与授权。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_symbolic.symbolic_orthogonal_nested_suite" }]
+
+[[example]]
+id = "ml-extra-nsgablack_symbolic-symbolic_overfit_guard"
+title = "SymbolicOverfitGuard：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_symbolic.symbolic_overfit_guard"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Scores train/validation drift for symbolic structure search."
+inputs = ["同一候选train/valid指标Mapping，不能混用不同运行的指标。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["专门的审计/一致性/过拟合/结构报告；由搜索策略显式决定如何使用，不自动改Problem。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_symbolic.symbolic_overfit_guard" }]
+
+[[example]]
+id = "ml-extra-nsgablack_symbolic-symbolic_path_memory"
+title = "SymbolicPathMemory：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_symbolic.symbolic_path_memory"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Persistent memory for symbolic structure search paths."
+inputs = ["稳定表达式键及本次真实评价增量；独立实验用独立namespace。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["可用于下轮搜索的PathPrior；不与候选Pool身份混为一谈。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_symbolic.symbolic_path_memory" }]
+
+[[example]]
+id = "ml-extra-nsgablack_symbolic-symbolic_replay_record_builder"
+title = "SymbolicReplayRecordBuilder：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_symbolic.symbolic_replay_record_builder"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Builds JSON-compatible replay records for nested symbolic candidates."
+inputs = ["正式evaluate_detailed返回的record与本轮资源上下文。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["JSON兼容的候选replay记录；记录不隐式重跑求值。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_symbolic.symbolic_replay_record_builder" }]
+
+[[example]]
+id = "ml-extra-nsgablack_symbolic-symbolic_structure_guard"
+title = "SymbolicStructureGuard：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_symbolic.symbolic_structure_guard"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Outer-search structural guard for symbolic candidates."
+inputs = ["CandidateTerm或等价Mapping序列，已声明表达式结构。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["专门的审计/一致性/过拟合/结构报告；由搜索策略显式决定如何使用，不自动改Problem。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_symbolic.symbolic_structure_guard" }]
+
+[[example]]
+id = "ml-extra-nsgablack_symbolic-symbolic_task_artifact"
+title = "SymbolicTaskArtifact：具体调用与数据交接"
+component_keys = ["mlblack.nsgablack_symbolic.symbolic_task_artifact"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Stage 2 task-expression artifact."
+inputs = ["Stage2运行后正式发布的SymbolicTaskArtifact。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["含表达式、拟合状态、指标和schema的可审计产物描述。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "nsgablack_symbolic.symbolic_task_artifact" }]
+
+[[example]]
+id = "ml-extra-problem-fixed_symbolic_regression"
+title = "FixedSymbolicRegressionProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.fixed_symbolic_regression"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Regression evaluator for fixed symbolic expression decoders."
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.fixed_symbolic_regression" }]
+
+[[example]]
+id = "ml-extra-problem-orthogonal_basis_evaluation"
+title = "OrthogonalBasisEvaluationProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.orthogonal_basis_evaluation"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Evaluate a fitted symbolic basis set for orthogonality objectives."
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.orthogonal_basis_evaluation" }]
+
+[[example]]
+id = "ml-extra-problem-piecewise_regression"
+title = "PiecewiseRegressionProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.piecewise_regression"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Regression evaluator with branch distribution metrics for piecewise models."
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.piecewise_regression" }]
+
+[[example]]
+id = "ml-extra-problem-rolling_origin_forecasting"
+title = "RollingOriginForecastingProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.rolling_origin_forecasting"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Rolling-origin evaluator for horizon-specific forecast quality."
+inputs = ["TimeSeriesDataView：有时间顺序的单变量序列及验证窗口；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.rolling_origin_forecasting" }]
+
+[[example]]
+id = "ml-extra-problem-supervised_classification"
+title = "SupervisedClassificationProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.supervised_classification"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Evaluator for classification accuracy and log-loss objectives."
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.supervised_classification" }]
+
+[[example]]
+id = "ml-extra-problem-tabular_neural_classification"
+title = "TabularNeuralClassificationProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.tabular_neural_classification"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "表格 NeuralGraph 分类语义：定义交叉熵、验证目标和分类指标，由 EvaluationProvider 执行 backend loss/autograd。"
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.tabular_neural_classification" }]
+
+[[example]]
+id = "ml-extra-problem-tabular_neural_regression"
+title = "TabularNeuralRegressionProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.tabular_neural_regression"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "表格 NeuralGraph 回归语义：定义 MSE、验证目标和回归指标，由 EvaluationProvider 执行 backend loss/autograd。"
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.tabular_neural_regression" }]
+
+[[example]]
+id = "ml-extra-problem-supervised_estimator_fit"
+title = "SupervisedEstimatorFitRegressionProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.supervised_estimator_fit"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Fits decoded estimator specs and scores the fitted estimator."
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.supervised_estimator_fit" }]
+
+[[example]]
+id = "ml-extra-problem-supervised_estimator_fit_regression"
+title = "SupervisedEstimatorFitRegressionProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.supervised_estimator_fit_regression"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Evaluator that fits decoded external estimator specs before scoring."
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.supervised_estimator_fit_regression" }]
+
+[[example]]
+id = "ml-extra-problem-supervised_interval_regression"
+title = "SupervisedIntervalRegressionProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.supervised_interval_regression"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Evaluator for decoded interval-output models."
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.supervised_interval_regression" }]
+
+[[example]]
+id = "ml-extra-problem-supervised_regression"
+title = "SupervisedRegressionProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.supervised_regression"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Data-dependent evaluator for point regression."
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.supervised_regression" }]
+
+[[example]]
+id = "ml-extra-problem-temporal_neural_forecasting"
+title = "TemporalNeuralForecastingProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.temporal_neural_forecasting"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Evaluate temporal neural graph models (LSTM/TCN/Transformer) for sequence forecasting."
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.temporal_neural_forecasting" }]
+
+[[example]]
+id = "ml-extra-problem-temporal_neural_probabilistic_forecasting"
+title = "TemporalNeuralProbabilisticForecastingProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.temporal_neural_probabilistic_forecasting"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Evaluate temporal neural graph models with negative log-likelihood loss for probabilistic forecasting."
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.temporal_neural_probabilistic_forecasting" }]
+
+[[example]]
+id = "ml-extra-problem-temporal_neural_rolling_origin"
+title = "TemporalNeuralRollingOriginProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.temporal_neural_rolling_origin"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Rolling-origin evaluation for temporal neural graph forecasters."
+inputs = ["TimeSeriesDataView：有时间顺序的单变量序列及验证窗口；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.temporal_neural_rolling_origin" }]
+
+[[example]]
+id = "ml-extra-problem-time_series_forecasting"
+title = "TimeSeriesForecastingProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.time_series_forecasting"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Evaluator for univariate time-series forecasting models."
+inputs = ["TimeSeriesDataView：有时间顺序的单变量序列及验证窗口；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.time_series_forecasting" }]
+
+[[example]]
+id = "ml-extra-problem-tiny_cnn_image_classification"
+title = "TinyCNNImageClassificationProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.tiny_cnn_image_classification"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Evaluate tiny CNN image classification heads."
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.tiny_cnn_image_classification" }]
+
+[[example]]
+id = "ml-extra-problem-tiny_cnn_image_contrastive"
+title = "TinyCNNImageContrastiveProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.tiny_cnn_image_contrastive"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Triplet contrastive/retrieval loss over tiny CNN embedding heads."
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.tiny_cnn_image_contrastive" }]
+
+[[example]]
+id = "ml-extra-problem-tiny_gnn_graph_classification"
+title = "TinyGNNGraphClassificationProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.tiny_gnn_graph_classification"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Evaluate tiny GNN graph classification heads."
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.tiny_gnn_graph_classification" }]
+
+[[example]]
+id = "ml-extra-problem-tiny_transformer_classification"
+title = "TinyTransformerClassificationProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.tiny_transformer_classification"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Evaluate tiny Transformer classification heads with torch autograd."
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.tiny_transformer_classification" }]
+
+[[example]]
+id = "ml-extra-problem-tiny_transformer_dpo_preference"
+title = "TinyTransformerDPOPreferenceProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.tiny_transformer_dpo_preference"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "DPO-style preference loss over chosen/rejected token sequences."
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.tiny_transformer_dpo_preference" }]
+
+[[example]]
+id = "ml-extra-problem-tiny_transformer_language_model"
+title = "TinyTransformerLanguageModelProblem：具体调用与数据交接"
+component_keys = ["mlblack.problem.tiny_transformer_language_model"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Evaluate tiny Transformer LM heads on next-token prediction."
+inputs = ["与当前模型语义匹配的DataView：分类标签/连续目标/图/图像/偏好对；训练验证切分已由Case完成；decoded_model与state是同一候选版本；context来自正式Solver求值调用。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈；神经任务需所声明的Torch/JAX/TF能力，ARIMA路线可选statsmodels。"]
+expected_outputs = ["Feedback的原始目标、约束与指标；交回共享评估链，偏好和接纳另行处理。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.tiny_transformer_language_model" }]
+
+[[example]]
+id = "ml-extra-problem-training_proxy"
+title = "MLBlackTrainingProxy：具体调用与数据交接"
+component_keys = ["mlblack.problem.training_proxy"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Framework-neutral proxy for outer optimizers invoking mlblack inner training."
+inputs = ["数值DataView、已确认的内层trainer_spec、外层候选与资源上下文。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["可传递TrainingTask；真实训练结果必须由正式inner Case交付。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem.training_proxy" }]
+
+[[example]]
+id = "ml-extra-problem_bridge-ml_black_training"
+title = "MLBlackTrainingProxy：具体调用与数据交接"
+component_keys = ["mlblack.problem_bridge.ml_black_training"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Framework-neutral proxy for outer optimizers."
+inputs = ["数值DataView、已确认的内层trainer_spec、外层候选与资源上下文。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["可传递TrainingTask；真实训练结果必须由正式inner Case交付。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "problem_bridge.ml_black_training" }]
+
+[[example]]
+id = "ml-extra-provider-torch_evaluation"
+title = "TorchEvaluationProvider：具体调用与数据交接"
+component_keys = ["mlblack.provider.torch_evaluation"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Torch 评估 Provider：在 Project L0 grant 内执行 ML Problem 的 loss/autograd/device 语义，并持有版本化参数、梯度与 optimizer slot；优化方法仍由 nsgablack Adapter 选择。"
+inputs = ["带backend loss语义的ML Problem及匹配representation。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["Torch与Project授权；不手工绕过Gateway调用状态转移。"]
+expected_outputs = ["共享Gateway绑定的Provider facade；活参数/梯度/slot由Provider版本化持有。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "provider.torch_evaluation" }]
+
+[[example]]
+id = "ml-extra-provider-arimasarimax"
+title = "ARIMASARIMAXProvider：具体调用与数据交接"
+component_keys = ["mlblack.provider.arimasarimax"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Provider that fits ARIMA/SARIMAX specs through numpy or statsmodels."
+inputs = ["TimeSeriesDataView及Case求值上下文，预测3步；此fit应在Problem/Provider求值内部。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["NumPy；选择statsmodels实现时需该可选包。"]
+expected_outputs = ["已拟合时序模型的预测，不新建Trainer控制循环。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "provider.arimasarimax" }]
+
+[[example]]
+id = "ml-extra-schema-scaffold_config"
+title = "ScaffoldConfig：具体调用与数据交接"
+component_keys = ["mlblack.schema.scaffold_config"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Top-level JSON-compatible scaffold contract."
+inputs = ["明确原始字段与目标的schema及内层训练定义。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["JSON兼容ScaffoldConfig和DatasetSchema；数据仍由Case pipeline解析。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "schema.scaffold_config" }]
+
+[[example]]
+id = "ml-extra-trainer-learning_solver"
+title = "LearningSolver：具体调用与数据交接"
+component_keys = ["mlblack.trainer.learning_solver"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "复用 NSGABlack 的 Pool、Unit 和求解生命周期；fit/TrainerResult 投影 ML 结果，状态与正式 checkpoint 保留候选及最佳反馈身份。"
+inputs = ["支持解析梯度的Problem、布局已知的ModelRepresentation、Project授权资源。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["由同一个ComposableSolver驱动的ML求解器；正式Case负责fit/run与发布。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_COMPONENT_USAGE_CN.md", section = "mlblack.trainer.learning_solver" }]
+
+[[example]]
+id = "ml-extra-trainer-diagnostic_solver"
+title = "build_diagnostic_solver：具体调用与数据交接"
+component_keys = ["mlblack.trainer.diagnostic_solver"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "通过 NSGABlack FixedCandidateAdapter 运行一次 ML 诊断，不建立私有 Trainer 循环。"
+inputs = ["只执行一次的诊断回调与Project授权。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["统一框架栈与NumPy；仅展示组件调用，不在此创建训练或资源循环。"]
+expected_outputs = ["固定候选的一次正式求值；原core.diagnostic错误import已迁移到integration实现。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "trainer.diagnostic_solver" }]
+
+[[example]]
+id = "ml-extra-backend-jax"
+title = "jax：具体调用与数据交接"
+component_keys = ["mlblack.backend.jax"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for jax."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际jax计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend.jax" }]
+
+[[example]]
+id = "ml-extra-backend_capability-jax-tensor"
+title = "jax.tensor：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.jax.tensor"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for jax.tensor."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际jax计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.jax.tensor" }]
+
+[[example]]
+id = "ml-extra-backend_capability-jax-neural_lowering"
+title = "jax.neural_lowering：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.jax.neural_lowering"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for jax.neural_lowering."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际jax计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.jax.neural_lowering" }]
+
+[[example]]
+id = "ml-extra-backend_capability-jax-losses"
+title = "jax.losses：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.jax.losses"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for jax.losses."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际jax计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.jax.losses" }]
+
+[[example]]
+id = "ml-extra-backend_capability-jax-autograd"
+title = "jax.autograd：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.jax.autograd"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for jax.autograd."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际jax计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.jax.autograd" }]
+
+[[example]]
+id = "ml-extra-backend_capability-jax-optimizers"
+title = "jax.optimizers：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.jax.optimizers"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for jax.optimizers."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际jax计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.jax.optimizers" }]
+
+[[example]]
+id = "ml-extra-backend_capability-jax-artifacts"
+title = "jax.artifacts：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.jax.artifacts"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for jax.artifacts."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际jax计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.jax.artifacts" }]
+
+[[example]]
+id = "ml-extra-backend-numpy"
+title = "numpy：具体调用与数据交接"
+component_keys = ["mlblack.backend.numpy"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for numpy."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际numpy计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend.numpy" }]
+
+[[example]]
+id = "ml-extra-backend_capability-numpy-tensor"
+title = "numpy.tensor：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.numpy.tensor"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for numpy.tensor."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际numpy计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.numpy.tensor" }]
+
+[[example]]
+id = "ml-extra-backend_capability-numpy-neural_lowering"
+title = "numpy.neural_lowering：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.numpy.neural_lowering"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for numpy.neural_lowering."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际numpy计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.numpy.neural_lowering" }]
+
+[[example]]
+id = "ml-extra-backend_capability-numpy-losses"
+title = "numpy.losses：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.numpy.losses"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for numpy.losses."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际numpy计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.numpy.losses" }]
+
+[[example]]
+id = "ml-extra-backend_capability-numpy-artifacts"
+title = "numpy.artifacts：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.numpy.artifacts"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for numpy.artifacts."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际numpy计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.numpy.artifacts" }]
+
+[[example]]
+id = "ml-extra-backend-tensorflow"
+title = "tensorflow：具体调用与数据交接"
+component_keys = ["mlblack.backend.tensorflow"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for tensorflow."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际tensorflow计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend.tensorflow" }]
+
+[[example]]
+id = "ml-extra-backend_capability-tensorflow-tensor"
+title = "tensorflow.tensor：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.tensorflow.tensor"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for tensorflow.tensor."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际tensorflow计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.tensorflow.tensor" }]
+
+[[example]]
+id = "ml-extra-backend_capability-tensorflow-neural_lowering"
+title = "tensorflow.neural_lowering：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.tensorflow.neural_lowering"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for tensorflow.neural_lowering."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际tensorflow计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.tensorflow.neural_lowering" }]
+
+[[example]]
+id = "ml-extra-backend_capability-tensorflow-losses"
+title = "tensorflow.losses：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.tensorflow.losses"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for tensorflow.losses."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际tensorflow计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.tensorflow.losses" }]
+
+[[example]]
+id = "ml-extra-backend_capability-tensorflow-autograd"
+title = "tensorflow.autograd：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.tensorflow.autograd"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for tensorflow.autograd."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际tensorflow计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.tensorflow.autograd" }]
+
+[[example]]
+id = "ml-extra-backend_capability-tensorflow-optimizers"
+title = "tensorflow.optimizers：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.tensorflow.optimizers"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for tensorflow.optimizers."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际tensorflow计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.tensorflow.optimizers" }]
+
+[[example]]
+id = "ml-extra-backend_capability-tensorflow-artifacts"
+title = "tensorflow.artifacts：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.tensorflow.artifacts"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for tensorflow.artifacts."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际tensorflow计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.tensorflow.artifacts" }]
+
+[[example]]
+id = "ml-extra-backend-torch"
+title = "torch：具体调用与数据交接"
+component_keys = ["mlblack.backend.torch"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for torch."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际torch计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend.torch" }]
+
+[[example]]
+id = "ml-extra-backend_capability-torch-tensor"
+title = "torch.tensor：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.torch.tensor"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for torch.tensor."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际torch计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.torch.tensor" }]
+
+[[example]]
+id = "ml-extra-backend_capability-torch-neural_lowering"
+title = "torch.neural_lowering：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.torch.neural_lowering"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for torch.neural_lowering."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际torch计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.torch.neural_lowering" }]
+
+[[example]]
+id = "ml-extra-backend_capability-torch-autograd"
+title = "torch.autograd：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.torch.autograd"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for torch.autograd."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际torch计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.torch.autograd" }]
+
+[[example]]
+id = "ml-extra-backend_capability-torch-optimizers"
+title = "torch.optimizers：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.torch.optimizers"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for torch.optimizers."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际torch计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.torch.optimizers" }]
+
+[[example]]
+id = "ml-extra-backend_capability-torch-losses"
+title = "torch.losses：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.torch.losses"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for torch.losses."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际torch计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.torch.losses" }]
+
+[[example]]
+id = "ml-extra-backend_capability-torch-artifacts"
+title = "torch.artifacts：具体调用与数据交接"
+component_keys = ["mlblack.backend_capability.torch.artifacts"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Backend catalog entry for torch.artifacts."
+inputs = ["已确定的backend名称与Problem所需能力标识；这里只做合同查询与选择，不分配设备。"]
+steps = ["在正式Case声明输入并完成对应数据/模型准备。", "将下方片段放在该组件对应的装配、求值或报告位置。", "核对输出并交给明确的消费者；完整执行仍由Project/Case负责。"]
+dependencies = ["合同发现不要求执行后端；实际torch计算必须安装相应可选包并消费Project L0授权。"]
+expected_outputs = ["匹配报告、真实capability方法表与backend对象，供正式Provider/session使用。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/MLBLACK_EXTRA_COMPONENT_USAGE_CN.md", section = "backend_capability.torch.artifacts" }]

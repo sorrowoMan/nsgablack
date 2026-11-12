@@ -1,0 +1,25 @@
+[[example]]
+id = "core-ml-diagnostic-application"
+title = "一次诊断的真实Problem、哨兵Representation与统一Solver工厂"
+component_keys = ["mlblack.core.diagnostic", "mlblack.core.diagnostic_representation", "mlblack.trainer.diagnostic_solver"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "完整标准Case计算已知序列统计，使用正式FixedAdapter和统一控制面，输出本轮Feedback；明确默认decode=None不发布模型。"
+inputs = ["独立完整catalog_codec_demo副本、当前三仓与NumPy，16条明确观测。"]
+steps = ["保存pipeline/runner/builder与一次Project结果入口；变体直接返回Feedback。"]
+dependencies = ["三仓与NumPy，不需外部数据/模型。"]
+expected_outputs = ["本次diagnostic.json原始方差21.25/count16/mean7.5，无模型引用；未执行本例。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_DIAGNOSTIC_SCHEMA_APPLICATIONS_CN.md", section="mlblack.core.diagnostic"}]
+
+[[example]]
+id = "core-ml-scaffold-config-application"
+title = "ScaffoldConfig怎样被Case实际解析并装配单Trainer"
+component_keys = ["mlblack.schema.scaffold_config"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "完整JSON与builder实际消费schema/inner_training，验证列顺序并沿正式TrainerAssemblySpec传递Project grant；不恢复废弃flow调度。"
+inputs = ["独立正式Project副本，引用已给出的完整两特征Pipeline和结果入口。"]
+steps = ["保存JSON并替换builder；variant显式调整步长；运行仍由Project负责。"]
+dependencies = ["三仓与NumPy。"]
+expected_outputs = ["本次classical.json与真实模型引用；schema列不匹配明确失败；本轮未训练。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_DIAGNOSTIC_SCHEMA_APPLICATIONS_CN.md", section="mlblack.schema.scaffold_config"}]

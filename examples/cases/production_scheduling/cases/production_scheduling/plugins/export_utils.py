@@ -11,26 +11,31 @@ from typing import Callable, Optional
 import numpy as np
 
 from reporting import write_schedule_audit_report
+from reporting.quality_selection import evaluate_schedule_quality, select_schedule_quality
 
 
 def choose_pareto_solutions(problem, individuals: np.ndarray, objectives: np.ndarray):
     if individuals is None or len(individuals) == 0:
         return []
-    penalties = []
-    for ind in individuals:
-        schedule = problem.decode_schedule(ind)
-        penalties.append(problem._compute_penalty(schedule))
-    penalties = np.asarray(penalties, dtype=float)
-
-    idx_penalty = int(np.argmin(penalties))
-    idx_prod = int(np.argmin(objectives[:, 0]))
+    # Recommendations concern exactly the integer values that CSV will carry.
+    # They do not replace candidate feedback or the Adapter's comparison frame.
+    del objectives
+    schedules = [np.floor(np.asarray(problem.decode_schedule(ind), dtype=float)) for ind in individuals]
+    reports = [evaluate_schedule_quality(problem, schedule, label=f"candidate_{i}")
+               for i, schedule in enumerate(schedules)]
     picks = []
-    seen = set()
-    for label, idx in (("penalty", idx_penalty), ("production", idx_prod)):
-        if idx in seen:
+    for policy in ("production", "stability", "balanced"):
+        if policy == "balanced" and reports[0]["raw_objective_count"] == 1:
             continue
-        seen.add(idx)
-        picks.append((label, individuals[idx], objectives[idx]))
+        selection = select_schedule_quality(reports, policy=policy)
+        for idx in selection["selected_indices"]:
+            picks.append((policy, schedules[idx].reshape(-1).copy(),
+                          np.asarray(reports[idx]["raw_objectives"], dtype=float)))
+    feasible = [i for i, report in enumerate(reports) if report["hard_feasible"]]
+    if feasible:
+        idx = min(feasible, key=lambda i: problem._compute_penalty(schedules[i]))
+        picks.append(("penalty", schedules[idx].reshape(-1).copy(),
+                      np.asarray(reports[idx]["raw_objectives"], dtype=float)))
     return picks
 
 
@@ -108,14 +113,12 @@ def export_pareto_batch(
         label = f"pareto{rank:02d}"
         schedule = problem.decode_schedule(individuals[idx])
         schedule = project_schedule_material_feasible(problem, schedule)
+        schedule = np.floor(np.asarray(schedule, dtype=float))
         obj_vals = problem.evaluate(schedule.reshape(-1))
         summary = problem.summarize_schedule(schedule)
         export_path = export_root / f"{label}{ext}"
         export_schedule(export_path, schedule)
-        try:
-            write_schedule_audit_report(problem, schedule, export_path.with_suffix(".audit.json"), label=label)
-        except Exception as exc:
-            print(f"[audit] {label}: failed to write Pareto schedule audit ({exc!r})")
+        write_schedule_audit_report(problem, schedule, export_path.with_suffix(".audit.json"), label=label)
         row = {"label": label, "file": str(export_path)}
         for j, value in enumerate(obj_vals):
             row[f"obj{j}"] = float(value)
@@ -193,6 +196,13 @@ def write_export_summary(
         "max_violation": float(max([0.0] + [max(0.0, float(v)) for v in constraints])),
         "total_output": float(total_output),
         "days": int(days),
+        "quantity_view": "delivered_integer_schedule",
+        "selection_policy": {
+            "production": "maximum integer output among feasible non-dominated exported candidates",
+            "stability": "minimum daily CV among feasible non-dominated exported candidates",
+            "balanced": "equal-weight normalized minimax regret over the supplied feasible Pareto frontier",
+            "penalty": "minimum original Problem soft penalty among feasible exported candidates",
+        }.get(str(label), str(label)),
     }
     summary_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -200,6 +210,8 @@ def write_export_summary(
 def export_schedule(path: Path, schedule: np.ndarray) -> None:
     import pandas as pd
 
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     schedule = np.asarray(schedule, dtype=float)
     schedule = np.clip(np.floor(schedule), 0, None).astype(int)
     machines, days = schedule.shape

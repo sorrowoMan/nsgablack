@@ -1,0 +1,55 @@
+[[example]]
+id = "lifecycle-diversity-init-migration"
+title = "旧DiversityInit未装配 · 实际观察与Unit偏好迁移"
+component_keys = ["plugin.diversity_init"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "nsgablack"
+summary = "should_accept没有正式调用点，旧插件不自动拒绝相似初值；给出当前Unit偏好完整Case且不伪称初始化硬保证。"
+inputs = ["当前初始化调用链与完整bias_gallery UnitPreference Case。"]
+steps = ["撤下旧插件，区分初始化需求与运行软评分。", "采用实际绑定Unit的偏好/观察变体；真正批量覆盖初始化仍需实现。"]
+dependencies = ["当前框架栈和NumPy。"]
+expected_outputs = ["精确作用边界与可用替代Case，旧初始化类不计active。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/LIFECYCLE_LEGACY_MIGRATIONS_CN.md", section = "migration.plugin.diversity_init" }, { path = "nsgablack/docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md", section = "bias.unit_preference" }]
+
+[[example]]
+id = "lifecycle-dynamic-switch-migration"
+title = "旧动态切换未装配 · 用有状态Adapter规则调度"
+component_keys = ["plugin.dynamic_switch"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "nsgablack"
+summary = "说明attempt回调任意副作用与未保存phase字段，不伪称可回滚；用完整EventCase正式Case表达实际调用切换。"
+inputs = ["完整orchestration host和事件规则工厂。"]
+steps = ["移除DynamicSwitchPlugin，设置event_cases并使用命名条件。", "阈值提前变体只改时机，数据交接另用PoolTask。"]
+dependencies = ["当前框架栈。"]
+expected_outputs = ["真实event_decision与Adapter状态，旧插件未装配也未声称已修复。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/LIFECYCLE_LEGACY_MIGRATIONS_CN.md", section = "migration.plugin.dynamic_switch" }, { path = "nsgablack/docs/catalog_usage/ORCHESTRATION_ADAPTER_APPLICATIONS_CN.md", section = "orchestration.roles_events" }, { path = "nsgablack/docs/catalog_usage/ORCHESTRATION_ADAPTER_APPLICATIONS_CN.md", section = "orchestration.host" }]
+
+[[example]]
+id = "lifecycle-gpu-template-migration"
+title = "旧GPU模板未装配 · 设备授权与decline边界"
+component_keys = ["plugin.gpu_eval_template"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "nsgablack"
+summary = "选中后None不自动CPU降级，全球CUDA查询也不等于Case grant；给出完整CPU合法路径并列出真正GPU Provider尚需实现的接缝。"
+inputs = ["完整CPU orchestration Case，无GPU探测或任务。"]
+steps = ["撤下旧模板Provider，让Problem接回正式CPU评估。", "只改角色配额变体，明确没有宣称GPU加速或安全回退。"]
+dependencies = ["当前框架栈与NumPy；不需要GPU依赖。"]
+expected_outputs = ["CPU正式评估报告与GPU待实现边界，旧模板不计active。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/LIFECYCLE_LEGACY_MIGRATIONS_CN.md", section = "migration.plugin.gpu_eval_template" }, { path = "nsgablack/docs/catalog_usage/ORCHESTRATION_ADAPTER_APPLICATIONS_CN.md", section = "orchestration.roles_events" }, { path = "nsgablack/docs/catalog_usage/ORCHESTRATION_ADAPTER_APPLICATIONS_CN.md", section = "orchestration.host" }]
+
+[[example]]
+id = "lifecycle-sensitivity-project-migration"
+title = "旧敏感性插件未装配 · 两stage正式参数试验"
+component_keys = ["plugin.sensitivity_analysis"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "nsgablack"
+summary = "run_study私有运行与frozen配置路径问题逐项说明，完整Project component_overrides在构造期设置sigma，每次有L0和Case身份。"
+inputs = ["完整catalog_recipes host、正式Gaussian、两stage Project配置、独立结果与报告入口。"]
+steps = ["不调用旧run_study，保存完整新builder/Project配置/报告。", "只在Project常量位置改变large尺度，不直接setattr frozen cfg。"]
+dependencies = ["当前框架栈与NumPy，无批量运行证据。"]
+expected_outputs = ["sigma_study.json各正式Case身份与目标，旧插件仅迁移说明，不冒充统计对照已完成。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/LIFECYCLE_LEGACY_MIGRATIONS_CN.md", section = "migration.plugin.sensitivity_analysis" }, { path = "nsgablack/docs/catalog_usage/ORCHESTRATION_ADAPTER_APPLICATIONS_CN.md", section = "orchestration.host" }]

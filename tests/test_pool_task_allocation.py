@@ -14,14 +14,15 @@ from nsgablack.representation import RepresentationPipeline
 from tests.test_subpool_tasks import Sphere, Operator
 
 
-def make_solver(spec, *, workers=2, capacity=3, budget=None, vns=False):
+def make_solver(spec, *, workers=2, capacity=3, budget=None, vns=False, phase_policy=None):
     def factory(uid):
         if vns:
             return VNSAdapter(name=f"local_{uid}", batch_size=1, restart_on_stagnation=False)
         return NSGA2Adapter(name=f"ga_{uid}", population_size=capacity, offspring_size=1)
     router = StrategyRouterAdapter(name="allocation", roles=[
         RoleSpec("search", factory, n_units=workers, pool_task=spec),
-    ], config=MultiStrategyConfig(total_batch_size=budget or workers * capacity, adapt_weights=False))
+    ], config=MultiStrategyConfig(total_batch_size=budget or workers * capacity,
+        adapt_weights=False, phase_policy=phase_policy))
     solver = ComposableSolver(Sphere(), adapter=router,
         representation_pipeline=RepresentationPipeline(initializer=Operator(), mutator=Operator(1.)))
     solver.set_random_seed(17)
@@ -255,8 +256,7 @@ def two_phases(context):
 
 
 def test_initialization_is_not_repeated_after_phase_change():
-    solver, router = make_solver(PoolTaskSpec(mode="initialize"))
-    router.cfg.phase_policy = two_phases
+    solver, router = make_solver(PoolTaskSpec(mode="initialize"), phase_policy=two_phases)
     seeds(solver, 20)
     solver.step()
     assert all(u.adapter.task_status["request"] == "start" for u in router.units)

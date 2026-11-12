@@ -15,12 +15,22 @@ class _FakeSolver:
     def __init__(self) -> None:
         self.adapter = None
         self.resource_context = {}
+        self.problem = None
+        self.representation_pipeline = None
+        self.plugin_manager = None
+        self.evaluation_mediator = None
 
     def set_adapter(self, adapter) -> None:
         self.adapter = adapter
 
     def set_resource_context(self, context) -> None:
         self.resource_context = dict(context or {})
+
+    def get_resource_context(self):
+        return self.resource_context
+
+    def set_random_seed(self, seed):
+        self.random_seed = seed
 
 
 @pytest.mark.parametrize(

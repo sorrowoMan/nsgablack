@@ -1,0 +1,25 @@
+[[example]]
+id="ml-classical-trainer-assembly"
+title="TrainerAssemblySpec的真实preset装配 · 正交线性正式Case"
+component_keys=["mlblack.assembly.build_trainer"]
+kind="documentation"
+working_directory="mlblack"
+summary="完整数据与薄builder，明确assembly的linear_point映射到正交preset、授权后绑定、参数合并和安全原生Artifact。"
+inputs=["完整catalog_codec_demo副本、三仓与NumPy；32训练12验证两特征。"]
+steps=["把实际Project grant转为spec的resource_context，调用build_trainer而不自己造控制循环。", "读取一次Project返回值与正交模型Artifact；变体仅更改步长。"]
+dependencies=["三仓与NumPy；不联网、不安装、不训练。"]
+expected_outputs=["valid.mse与训练loss、真实基维度/参数与ModelRef；本轮为静态装配说明。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_CLASSICAL_DATA_ASSEMBLY_APPLICATIONS_CN.md",section="classical.assembly.trainer"}, {path="nsgablack/docs/catalog_usage/ML_CLASSICAL_ESTIMATOR_APPLICATIONS_CN.md",section="classical.estimator.run"}]
+
+[[example]]
+id="ml-classical-seasonal-diagnostic"
+title="加性季节分解 · 完整事后诊断Case与报告Artifact"
+component_keys=["mlblack.pipeline.seasonal_decomposition", "mlblack.pipeline.seasonal_decomposition_result", "mlblack.pipeline.stl_seasonal_decomposition"]
+kind="documentation"
+working_directory="mlblack"
+summary="正式固定候选诊断Case实际调用组件/direct/result，保留时间/数组/恒等式与结果引用，明确居中/全段统计不适合作冻结验证预处理。"
+inputs=["完整catalog_codec_demo副本、42点合成序列、period7、三仓NumPy。"]
+steps=["一次正式诊断送评消费三项能力，紧凑metrics与大数组Artifact分开。", "变体trend_window15展示平滑改变；不将0目标或重构恒等式称预测成功。"]
+dependencies=["三仓与NumPy；无statsmodels/网络/DB；本轮不执行数据计算。"]
+expected_outputs=["reconstruction_error/resid_std/n_obs、42条对齐分解数组与正式报告ModelRef；未承诺checkpoint诊断结果恢复。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_CLASSICAL_DATA_ASSEMBLY_APPLICATIONS_CN.md",section="classical.seasonal.diagnostic"}, {path="nsgablack/docs/catalog_usage/ML_CLASSICAL_ESTIMATOR_APPLICATIONS_CN.md",section="classical.estimator.run"}]

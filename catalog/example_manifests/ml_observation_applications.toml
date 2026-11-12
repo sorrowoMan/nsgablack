@@ -1,0 +1,25 @@
+[[example]]
+id="ml-observation-case"
+title="实验Tracker与ResourceAudit · 内存默认/显式SQLite/正式发布后导出"
+component_keys=["mlblack.capability.experiment_tracker", "mlblack.capability.resource_audit", "mlblack.core.capability", "mlblack.dashboard.experiment_html"]
+kind="documentation"
+working_directory="mlblack"
+summary="完整正式线性Case实际挂载Tracker/Audit/Capability子类，结束观察与finalized导出分开，HTML与权威ModelRef分别核对。"
+inputs=["完整catalog_codec_demo副本、三仓/NumPy，原24行数据工厂；默认只用内存store。"]
+steps=["保存完整config/plugins/builder与正式Project入口，运行前绑定已有L0 grant。", "变体显式开启SQLite/evaluation记录；明确装配建schema和观察非事务/非幂等的界限。"]
+dependencies=["三仓、NumPy；SQLite仅显式变体使用。本轮无训练、DB、网络。"]
+expected_outputs=["本次events.json/html、资源摘要、正式ModelRef；fit_end不冒充最终发布收据。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_OBSERVATION_APPLICATIONS_CN.md",section="observation.case"}, {path="nsgablack/docs/catalog_usage/ML_OBSERVATION_APPLICATIONS_CN.md",section="observation.run"}]
+
+[[example]]
+id="ml-observation-query"
+title="查询已有实验观察 · 真实过滤/顺序/limit语义与HTML"
+component_keys=["mlblack.experiment.query", "mlblack.dashboard.experiment_html"]
+kind="documentation"
+working_directory="mlblack"
+summary="完整已存在SQLite检查/本次run_name过滤/结果JSON与HTML工具，明确初始化写schema、过滤后facets及非分页limit。"
+inputs=["上例真实SQLite变体留下的数据库/events.json；无数据时拒绝，不自动伪造空库。"]
+steps=["用公开ExperimentQuery筛选已提交步骤观察，再用真实HTML exporter展示。", "变体查询fit_end须删step过滤，不能等同模型已发布。"]
+dependencies=["三仓、标准库SQLite；本轮只静态读取源码不连接数据库。"]
+expected_outputs=["query.json/selected_events.html观察文件，无新模型、训练或服务。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_OBSERVATION_APPLICATIONS_CN.md",section="observation.query"}]

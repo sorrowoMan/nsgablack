@@ -1,0 +1,17 @@
+[[entry]]
+key = "project.problem.two_targets"
+title = "TwoTargets"
+kind = "tool"
+import_path = "problem.two_targets:TwoTargets"
+tags = ["project", "example", "problem", "multi_objective", "analytic"]
+summary = "一维双目标 f=[(x-1)^2,(x+1)^2]；方向比较不改写原始目标。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["只定义原始目标和边界约束，不读取 Unit 或写共享 context。"]
+use_when = ["核对 MOEA/D 投影视图与两层局部精修的原始求值时。"]
+minimal_wiring = ["from cases.direction_refinement.problem import TwoTargets", "problem = TwoTargets()"]
+required_companions = []
+config_keys = []
+example_entry = "cases.direction_refinement.build_solver:build_solver"

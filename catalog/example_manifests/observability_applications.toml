@@ -1,0 +1,51 @@
+[[example]]
+id = "observability-application-plugin.memory"
+title = "进程内存采样与 GC 对照 · 正式 Case 用法"
+component_keys = ["plugin.memory"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "在现有 composite Case 中保存 RSS/VMS 样本，分清主动 GC、temp_data 清理与采样峰值。"
+inputs = ["完整 catalog_recipes Project；当前 nsgablack、blackbase、NumPy 和 psutil。沿用原二维 QuadraticProblem、Pipeline 与两个 NSGA2 实例。"]
+steps = ["按本节完整保存 memory_recipe.py 与替换 builder；attach_memory 在装配期调用，enable_auto_gc=True 实际启用周期清理与采样。"]
+dependencies = ["nsgablack、blackbase、NumPy；psutil 缺失会跳过内存采样。"]
+expected_outputs = ["Project results/memory/memory.json：run_id、开关、usage.current_mb/peak_mb/growth_mb 与 snapshots[].generation/rss_mb/vms_mb。关闭主动 GC 的变体同时取消周期采样；文件不代表最终成功收据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/OBSERVABILITY_PLUGIN_APPLICATIONS_CN.md", section = "plugin.memory" }]
+
+[[example]]
+id = "observability-application-plugin.benchmark_harness"
+title = "统一 CSV 与平均吞吐读法 · 正式 Case 用法"
+component_keys = ["plugin.benchmark_harness"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "在现有 composite Case 的提交钩子写统一 CSV，区分累计吞吐、观察分数和两个最终子种群。"
+inputs = ["完整 catalog_recipes Project；原二维单目标与 wide/narrow 两实例。seed=None 不额外重设 Solver 随机源。"]
+steps = ["按本节完整保存 benchmark_recipe.py 与替换 builder，注册 BenchmarkHarnessPlugin；用 read_benchmark 消费实际 CSV/summary。"]
+dependencies = ["当前 nsgablack、blackbase 和 NumPy。"]
+expected_outputs = ["Project results/benchmark/composite.csv 与 composite.summary.json：eval_count、elapsed_s、throughput_eval_s、best_score 和 finishing status。变体按 RunSession 身份独立命名，不自动构成公平性能结论。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/OBSERVABILITY_PLUGIN_APPLICATIONS_CN.md", section = "plugin.benchmark_harness" }]
+
+[[example]]
+id = "observability-application-plugin.sequence_graph"
+title = "根调用顺序聚合与时间 trace · 正式 Case 用法"
+component_keys = ["plugin.sequence_graph"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "在正式 composite Case 观察根 Adapter 和 Solver 调用，按 propose 划分序列并读取截断、计数与可选 span。"
+inputs = ["完整 catalog_recipes Project；保留二维 Problem、Pipeline 与两个算法。自动包装只到根 CompositeAdapter，不递归给所有叶方法插桩。"]
+steps = ["按本节完整保存 sequence_recipe.py 与替换 builder，显式启用根提案/更新和批评估捕获；变体开启 full trace 与插件事件。"]
+dependencies = ["当前 nsgablack、blackbase 和 NumPy。"]
+expected_outputs = ["Project results/sequence/composite.sequence_graph.json：event_counts、sequence_records、cycle_count、dropped_sequences、trace_events。cycle 不是提交数，final 是 finishing flush；有界 full trace 可能丢事件。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/OBSERVABILITY_PLUGIN_APPLICATIONS_CN.md", section = "plugin.sequence_graph" }]
+
+[[example]]
+id = "observability-application-plugin.runtime_surface_tracker"
+title = "本地运行面数据库与产物索引 · 正式 Case 用法"
+component_keys = ["plugin.runtime_surface_tracker"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "在正式 composite Case 将装配与 finishing 观察写入显式 SQLite，按真实公开查询 API 读取，再接入 benchmark 路径索引。"
+inputs = ["完整 catalog_recipes Project；显式本地 SQLite 路径和包含 build_solver.py 的 case_root，不依赖外部账号或隐式数据库配置。"]
+steps = ["按本节完整保存 surface_recipe.py、替换 builder 并保存 read_surface.py；先通过正式 Project 运行，随后用诊断 CLI 查询既有数据库。"]
+dependencies = ["当前 nsgablack、blackbase、NumPy 和 Python 自带 SQLite。"]
+expected_outputs = ["Project results/surface/surface.sqlite3 的 run_id、assembly_signature、entry_path、component_slots_json、metric_summary_json 与 artifact_records_json。benchmark 变体由优先级保证路径先登记再采集；数据库记录不是最终成功收据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/OBSERVABILITY_PLUGIN_APPLICATIONS_CN.md", section = "plugin.runtime_surface_tracker" }]

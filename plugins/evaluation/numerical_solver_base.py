@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
 import numpy as np
 from scipy import optimize
+from blackbase.types import Feedback
 
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
 from nsgablack.context_keys import (
@@ -13,9 +14,7 @@ from nsgablack.context_keys import (
     KEY_METRICS_IMPLICIT_RESIDUAL,
     KEY_METRICS_IMPLICIT_SUCCESS,
 )
-from blackbase.context import build_minimal_context
 from ...utils.extension_contracts import (
-    normalize_bias_output,
     normalize_candidate,
     normalize_objectives,
     normalize_violation,
@@ -146,42 +145,8 @@ class NumericalSolverProviderPlugin(EvaluationProviderPluginBase):
         cons_arr, violation = evaluate_constraints_safe(problem, x)
         return cons_arr, float(violation)
 
-    def _apply_bias(
-        self,
-        solver: Any,
-        x: np.ndarray,
-        obj: np.ndarray,
-        individual_id: Optional[int],
-        context: Dict[str, Any],
-    ) -> np.ndarray:
-        if not bool(getattr(solver, "enable_bias", False)):
-            return obj
-        bias_module = getattr(solver, "bias_module", None)
-        if bias_module is None:
-            return obj
-        if callable(getattr(bias_module, "compute_bias_vector", None)):
-            return np.asarray(
-                bias_module.compute_bias_vector(x, obj, individual_id, context=context),
-                dtype=float,
-            ).reshape(-1)
-        if callable(getattr(bias_module, "compute_bias", None)):
-            if obj.size == 1:
-                val = normalize_bias_output(
-                    bias_module.compute_bias(x, float(obj[0]), individual_id, context=context),
-                    name="bias.compute_bias",
-                )
-                return np.array([val], dtype=float)
-            out = []
-            for idx in range(obj.size):
-                val = normalize_bias_output(
-                    bias_module.compute_bias(x, float(obj[idx]), individual_id, context=context),
-                    name="bias.compute_bias",
-                )
-                out.append(val)
-            return np.asarray(out, dtype=float)
-        return obj
-
-    def evaluate_individual_runtime(self, solver, x: np.ndarray, individual_id: Optional[int] = None):
+    def evaluate_individual_runtime(self, solver, x: np.ndarray,
+                                    individual_id: Optional[int] = None) -> Optional[Feedback]:
         problem = getattr(solver, "problem", None)
         if problem is None:
             return None
@@ -213,15 +178,9 @@ class NumericalSolverProviderPlugin(EvaluationProviderPluginBase):
             value = problem.evaluate(x_arr)
             obj = normalize_objectives(value, num_objectives=int(getattr(solver, "num_objectives", 1)), name="problem.evaluate")
             cons, violation = evaluate_constraints_safe(problem, x_arr)
-            context = build_minimal_context(
-                generation=int(getattr(solver, "generation", 0)),
-                individual_id=eval_context["individual_id"],
-                constraints=cons.tolist() if np.asarray(cons).size > 0 else [],
-                constraint_violation=float(violation),
-                extra={"problem": problem},
-            )
-            obj = self._apply_bias(solver, x_arr, obj, individual_id, context)
-            return obj, normalize_violation(violation, name="constraint_violation")
+            return Feedback(objectives=obj, constraints=cons,
+                            info={"constraint_violation": normalize_violation(violation, name="constraint_violation"),
+                                  "implicit_fallback": True})
 
         if result.success:
             self.stats["success"] += 1.0
@@ -239,27 +198,13 @@ class NumericalSolverProviderPlugin(EvaluationProviderPluginBase):
         cons_arr, violation = self._compute_violation(problem, x_arr, result.solution, eval_context)
         violation = normalize_violation(violation, name="constraint_violation")
 
-        context = build_minimal_context(
-            generation=int(getattr(solver, "generation", 0)),
-            individual_id=eval_context["individual_id"],
-            constraints=cons_arr.tolist() if np.asarray(cons_arr).size > 0 else [],
-            constraint_violation=violation,
-            extra={"problem": problem},
-        )
-        metrics = context.get(KEY_METRICS)
-        if not isinstance(metrics, dict):
-            metrics = {}
-            context[KEY_METRICS] = metrics
+        metrics = {}
         metrics[KEY_METRICS_IMPLICIT_RESIDUAL.split(".", 1)[1]] = float(result.residual_norm)
         metrics[KEY_METRICS_IMPLICIT_ITERS.split(".", 1)[1]] = float(result.iterations)
         metrics[KEY_METRICS_IMPLICIT_SUCCESS.split(".", 1)[1]] = 1.0 if result.success else 0.0
 
-        obj = self._apply_bias(solver, x_arr, obj, individual_id, context)
-        if bool(getattr(solver, "ignore_constraint_violation_when_bias", False)) and bool(
-            getattr(solver, "enable_bias", False)
-        ):
-            violation = 0.0
-        return obj, float(violation)
+        return Feedback(objectives=obj, constraints=cons_arr, metrics=metrics,
+                        info={"constraint_violation": float(violation)})
 
     def get_report(self) -> Optional[Dict[str, Any]]:
         return {"stats": dict(self.stats)}

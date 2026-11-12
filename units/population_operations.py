@@ -47,7 +47,7 @@ class PopulationChange:
         object.__setattr__(self, "incoming_member_indices", new)
         # Inputs are call-local, detached and immutable. Existing index-only
         # construction remains valid; structural operations always supply data.
-        from .features import _snapshot
+        from .features import _detached_readonly
         x, f, v = self.incoming_population, self.incoming_objectives, self.incoming_violations
         if x is not None:
             x = np.asarray(x, dtype=float)
@@ -75,8 +75,8 @@ class PopulationChange:
         for token, record in zip(tokens, provenance):
             if record is not None and record.get("candidate_token") != token:
                 raise ValueError("PopulationChange provenance disagrees with candidate token")
-        _, data = _snapshot(dict(population=x, objectives=f, violations=v, tokens=tokens,
-                                 metadata=metadata, provenance=provenance))
+        data = _detached_readonly(dict(population=x, objectives=f, violations=v, tokens=tokens,
+                                      metadata=metadata, provenance=provenance))
         for name, value in data.items():
             object.__setattr__(self, "incoming_" + name, value)
 

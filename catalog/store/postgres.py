@@ -24,7 +24,10 @@ from ..contracts import (
     ParamContract,
     UsageContract,
 )
-from ..contract_relations import build_contract_neighbor_sections, enrich_entry_relation_fields
+from ..contract_relations import build_contract_neighbor_sections
+from ..fingerprint import _json_value
+from ..guidance import GUIDANCE_FIELDS, guidance_payload
+from ..usage import build_usage_profile
 from ..registry import CatalogEntry, _expand_token_groups
 from .mysql import (
     _CONTEXT_FIELD_NAMES,
@@ -32,6 +35,8 @@ from .mysql import (
     _USAGE_FIELD_NAMES,
     _apply_profile_to_entry,
     _like_pattern,
+    _load_contract,
+    _load_metadata,
     _normalize_field_filters,
     _normalize_strings,
     _profile_sql_filters,
@@ -65,6 +70,9 @@ _SURFACE_FIELD_ORDER = (
     "required_companions",
     "config_keys",
     "example_entry",
+    *GUIDANCE_FIELDS,
+    "wiring_status",
+    "wiring_notes",
 )
 
 _SURFACE_FIELD_GROUPS = {
@@ -80,7 +88,9 @@ _SURFACE_FIELD_GROUPS = {
         "phase_in",
         "phase_out",
     ),
-    "usage": ("use_when", "minimal_wiring", "required_companions", "config_keys", "example_entry"),
+    "usage": ("use_when", "minimal_wiring", "required_companions", "config_keys", "example_entry",
+              "wiring_status", "wiring_notes"),
+    "guidance": GUIDANCE_FIELDS,
 }
 
 _FORMAL_SURFACE_TABLES = (
@@ -232,10 +242,12 @@ def _utc_now_iso() -> str:
 
 
 def _json_dumps(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, default=str)
+    return json.dumps(_json_value(value), ensure_ascii=False)
 
 
 def _json_loads(text: object) -> object:
+    if isinstance(text, (Mapping, list, tuple)):
+        return _json_value(text)
     raw = str(text or "").strip()
     if not raw:
         return {}
@@ -264,6 +276,10 @@ def _pg_table_row_count(cur, table_name: str) -> int:
 
 def _entry_values(entry: CatalogEntry, field_name: str) -> Tuple[str, ...]:
     key = str(field_name or "").strip()
+    if key in GUIDANCE_FIELDS:
+        return _normalize_strings(guidance_payload(entry)[key])
+    if key in {"wiring_status", "wiring_notes"}:
+        return _normalize_strings(getattr(build_usage_profile(entry), key))
     if key == "key":
         return (entry.key,) if entry.key else ()
     if key == "title":
@@ -288,6 +304,7 @@ def _entry_values(entry: CatalogEntry, field_name: str) -> Tuple[str, ...]:
 
 
 def _entry_to_surface_fields(entry: CatalogEntry, *, source_scope: str = "", source_hash: str = "") -> dict[str, object]:
+    usage = build_usage_profile(entry)
     return {
         "key": entry.key,
         "title": entry.title,
@@ -315,6 +332,11 @@ def _entry_to_surface_fields(entry: CatalogEntry, *, source_scope: str = "", sou
         "detail_ref": entry.detail_ref,
         "source_scope": source_scope,
         "source_hash": source_hash,
+        "contract": _json_value(entry.contract),
+        "metadata": _json_value(entry.metadata),
+        **guidance_payload(entry),
+        "wiring_status": usage.wiring_status,
+        "wiring_notes": list(usage.wiring_notes),
     }
 
 
@@ -354,6 +376,8 @@ def _entry_scalar_rows(entry: CatalogEntry) -> List[dict[str, str]]:
     add("base", "summary", entry.summary)
     add("base", "tags", entry.tags)
     add("base", "companions", entry.companions)
+    for field, values in guidance_payload(entry).items():
+        add("guidance", field, values)
     add("context", "context_requires", entry.context_requires)
     add("context", "context_provides", entry.context_provides)
     add("context", "context_mutates", entry.context_mutates)
@@ -368,6 +392,9 @@ def _entry_scalar_rows(entry: CatalogEntry) -> List[dict[str, str]]:
     add("usage", "required_companions", entry.required_companions)
     add("usage", "config_keys", entry.config_keys)
     add("usage", "example_entry", entry.example_entry)
+    usage = build_usage_profile(entry)
+    add("usage", "wiring_status", usage.wiring_status)
+    add("usage", "wiring_notes", usage.wiring_notes)
     return rows
 
 
@@ -505,11 +532,37 @@ CREATE TABLE IF NOT EXISTS catalog_schema_migrations (
             conn.close()
 
     def _ensure_schema(self, conn) -> None:
+        if self._readonly:
+            self._validate_read_schema(conn)
+            return
         self._apply_migrations(conn)
         self._ensure_surface_tables(conn)
         if not self._legacy_support_retired(conn):
             self._ensure_field_value_table(conn)
             self._ensure_field_value_index(conn)
+
+    def _validate_read_schema(self, conn) -> None:
+        """Require an existing formal surface without DDL or read-time repair."""
+        probes = (
+            ("catalog_schema_migrations", "version"),
+            ("catalog_profiles", "profile, built_at_utc, total, summary_json, schema_json"),
+            ("catalog_entries", "profile, key, kind, name, source, path, summary, tags_json, metadata_json, fields_json, relations_json, search_text, built_at_utc"),
+            ("catalog_scalars", "profile, entry_key, scope, field_name, scalar_value"),
+        )
+        cur = conn.cursor()
+        try:
+            for table, columns in probes:
+                quoted = ", ".join(f'"{name.strip()}"' for name in columns.split(","))
+                try:
+                    cur.execute(f'SELECT {quoted} FROM "{table}" WHERE 1 = 0')
+                    cur.fetchall()
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Read-only Catalog schema unavailable or outdated at {table}; "
+                        "materialize the Catalog with a writable account before serving reads."
+                    ) from exc
+        finally:
+            cur.close()
 
     def _ensure_surface_tables(self, conn) -> None:
         cur = conn.cursor()
@@ -713,6 +766,8 @@ CREATE TABLE IF NOT EXISTS catalog_field_value (
                             "ALTER TABLE catalog_context_contract ADD COLUMN phase_out_json TEXT",
                         ),
                     ),
+                    (9, ("ALTER TABLE catalog_component ADD COLUMN IF NOT EXISTS contract_json TEXT",)),
+                    (10, ("ALTER TABLE catalog_component ADD COLUMN IF NOT EXISTS metadata_json TEXT",)),
                 ]
             )
 
@@ -747,7 +802,7 @@ CREATE TABLE IF NOT EXISTS catalog_field_value (
         cur = conn.cursor()
         cur.execute(
             """
-SELECT c.id, c.key, c.kind, c.title, c.import_path, c.summary, c.tags, c.companions_json,
+SELECT c.id, c.key, c.kind, c.title, c.import_path, c.summary, c.tags, c.companions_json, c.contract_json, c.metadata_json,
        ctx.requires_json AS context_requires, ctx.provides_json AS context_provides,
        ctx.mutates_json AS context_mutates, ctx.cache_json AS context_cache, ctx.notes_json AS context_notes,
        ctx.artifact_requires_json AS artifact_requires, ctx.artifact_provides_json AS artifact_provides,
@@ -790,6 +845,13 @@ LEFT JOIN catalog_usage_contract AS usage_tbl ON c.id = usage_tbl.component_id
             add_rows(component_id, "base", "summary", rec.get("summary"))
             add_rows(component_id, "base", "tags", self._load_json_tuple(rec.get("tags")))
             add_rows(component_id, "base", "companions", self._load_json_tuple(rec.get("companions_json")))
+            guidance_entry = self._catalog_entry_from_record(rec, profile="default")
+            if guidance_entry is not None:
+                for field, values in guidance_payload(guidance_entry).items():
+                    add_rows(component_id, "guidance", field, values)
+                usage = build_usage_profile(guidance_entry)
+                add_rows(component_id, "usage", "wiring_status", usage.wiring_status)
+                add_rows(component_id, "usage", "wiring_notes", usage.wiring_notes)
             add_rows(component_id, "context", "context_requires", self._load_json_tuple(rec.get("context_requires")))
             add_rows(component_id, "context", "context_provides", self._load_json_tuple(rec.get("context_provides")))
             add_rows(component_id, "context", "context_mutates", self._load_json_tuple(rec.get("context_mutates")))
@@ -1011,8 +1073,8 @@ VALUES (%s, %s, %s, %s, %s)
             cur.execute(
                 """
 INSERT INTO catalog_component
-(key, kind, title, import_path, summary, tags, companions_json, source_scope, source_hash, last_sync_at)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+(key, kind, title, import_path, summary, tags, companions_json, source_scope, source_hash, contract_json, metadata_json, last_sync_at)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
 ON CONFLICT (key) DO UPDATE SET
   kind = EXCLUDED.kind,
   title = EXCLUDED.title,
@@ -1022,6 +1084,8 @@ ON CONFLICT (key) DO UPDATE SET
   companions_json = EXCLUDED.companions_json,
   source_scope = EXCLUDED.source_scope,
   source_hash = EXCLUDED.source_hash,
+  contract_json = EXCLUDED.contract_json,
+  metadata_json = EXCLUDED.metadata_json,
   last_sync_at = CURRENT_TIMESTAMP
 RETURNING id
 """,
@@ -1035,6 +1099,8 @@ RETURNING id
                     json.dumps(list(comp.companions), ensure_ascii=False),
                     comp.source_scope,
                     comp.source_hash,
+                    _json_dumps(comp.contract),
+                    _json_dumps(comp.metadata),
                 ),
             )
             row = cur.fetchone()
@@ -1155,6 +1221,8 @@ ON CONFLICT (component_id) DO UPDATE SET
             add_values(component_id, "base", "tags", component.tags)
             add_values(component_id, "base", "companions", component.companions)
             add_values(component_id, "base", "summary", component.summary)
+            for field, values in guidance_payload(component).items():
+                add_values(component_id, "guidance", field, values)
 
             context = context_by_key.get(component.key)
             if context is not None:
@@ -1171,6 +1239,8 @@ ON CONFLICT (component_id) DO UPDATE SET
                 add_values(component_id, "usage", "required_companions", usage.required_companions)
                 add_values(component_id, "usage", "config_keys", usage.config_keys)
                 add_values(component_id, "usage", "example_entry", usage.example_entry)
+                add_values(component_id, "usage", "wiring_status", usage.wiring_status)
+                add_values(component_id, "usage", "wiring_notes", usage.wiring_notes)
 
         if rows:
             cur.executemany(
@@ -1297,6 +1367,8 @@ ON CONFLICT (component_id) DO UPDATE SET
                 config_keys=tuple(usage.config_keys) if usage is not None else (),
                 example_entry=str(usage.example_entry or "") if usage is not None else "",
                 detail_ref="",
+                contract=component.contract,
+                metadata=component.metadata,
             )
             out.append((entry, str(component.source_scope or ""), str(component.source_hash or "")))
         return out
@@ -1313,8 +1385,12 @@ ON CONFLICT (component_id) DO UPDATE SET
 
         entry_rows: List[tuple[object, ...]] = []
         scalar_rows: List[tuple[object, ...]] = []
+        usage_by_key = {usage.component_key: usage for usage in bundle.usages}
         for entry, source_scope, source_hash in paired_entries:
             fields = _entry_to_surface_fields(entry, source_scope=source_scope, source_hash=source_hash)
+            usage = usage_by_key.get(entry.key)
+            if usage is not None:
+                fields.update(wiring_status=usage.wiring_status, wiring_notes=list(usage.wiring_notes))
             relations = _entry_to_relations(entry)
             metadata = {
                 "import_path": entry.import_path,
@@ -1380,19 +1456,23 @@ VALUES (%s, %s, %s, %s, %s)
             )
         cur.close()
 
-    def _load_json_tuple(self, value: object) -> Tuple[str, ...]:
+    def _load_json_tuple(self, value: object, *, preserve_whitespace: bool = False) -> Tuple[str, ...]:
         if not value:
             return ()
         if isinstance(value, (list, tuple)):
+            if preserve_whitespace:
+                return tuple(str(item) for item in value)
             return tuple(str(item).strip() for item in value if str(item).strip())
         if isinstance(value, str):
             try:
                 parsed = json.loads(value)
                 if isinstance(parsed, list):
+                    if preserve_whitespace:
+                        return tuple(str(item) for item in parsed)
                     return tuple(str(item).strip() for item in parsed if str(item).strip())
             except (ValueError, TypeError):
                 pass
-            text = value.strip()
+            text = value if preserve_whitespace else value.strip()
             return (text,) if text else ()
         return ()
 
@@ -1415,14 +1495,17 @@ VALUES (%s, %s, %s, %s, %s)
             phase_in=self._load_json_tuple(rec.get("phase_in")),
             phase_out=self._load_json_tuple(rec.get("phase_out")),
             use_when=self._load_json_tuple(rec.get("use_when")),
-            minimal_wiring=self._load_json_tuple(rec.get("minimal_wiring")),
+            minimal_wiring=self._load_json_tuple(rec.get("minimal_wiring"), preserve_whitespace=True),
             required_companions=self._load_json_tuple(rec.get("required_companions")),
             config_keys=self._load_json_tuple(rec.get("config_keys")),
             example_entry=str(rec.get("example_entry", "") or "").strip(),
+            contract=_load_contract(rec.get("contract_json")),
+            metadata=_load_metadata(rec.get("metadata_json")),
         )
         if not entry.key or not entry.kind or not entry.import_path:
             return None
-        return _apply_profile_to_entry(enrich_entry_relation_fields(entry), profile=profile)
+        # Published entries already carry source-owned relation declarations.
+        return _apply_profile_to_entry(entry, profile=profile)
 
     def _surface_row_to_entry(self, row: Mapping[str, object], *, profile: str) -> CatalogEntry | None:
         fields = _json_loads(row.get("fields_json"))
@@ -1450,15 +1533,17 @@ VALUES (%s, %s, %s, %s, %s)
             phase_in=tuple(str(item).strip() for item in (fields.get("phase_in", []) or []) if str(item).strip()),
             phase_out=tuple(str(item).strip() for item in (fields.get("phase_out", []) or []) if str(item).strip()),
             use_when=tuple(str(item).strip() for item in (fields.get("use_when", []) or []) if str(item).strip()),
-            minimal_wiring=tuple(str(item).strip() for item in (fields.get("minimal_wiring", []) or []) if str(item).strip()),
+            minimal_wiring=self._load_json_tuple(fields.get("minimal_wiring"), preserve_whitespace=True),
             required_companions=tuple(str(item).strip() for item in (fields.get("required_companions", []) or []) if str(item).strip()),
             config_keys=tuple(str(item).strip() for item in (fields.get("config_keys", []) or []) if str(item).strip()),
             example_entry=str(fields.get("example_entry", "") or "").strip(),
             detail_ref=str(fields.get("detail_ref", "") or "").strip(),
+            contract=_load_contract(fields.get("contract")),
+            metadata=_load_metadata(fields.get("metadata")),
         )
         if not entry.key or not entry.kind or not entry.import_path:
             return None
-        return _apply_profile_to_entry(enrich_entry_relation_fields(entry), profile=profile)
+        return _apply_profile_to_entry(entry, profile=profile)
 
     def _surface_profile_exists(self, conn, *, profile: str) -> bool:
         cur = conn.cursor()
@@ -1565,6 +1650,14 @@ VALUES (%s, %s, %s, %s, %s)
                         "AND s_search.field_name = 'tags' AND LOWER(s_search.scalar_value) LIKE %s)",
                     ]
                     local_params.extend([pattern] * 5)
+                    guidance_placeholders = ", ".join(["%s"] * len(GUIDANCE_FIELDS))
+                    all_clauses.append(
+                        "EXISTS (SELECT 1 FROM catalog_scalars s_search "
+                        "WHERE s_search.profile = e.profile AND s_search.entry_key = e.key "
+                        f"AND s_search.field_name IN ({guidance_placeholders}) "
+                        "AND LOWER(s_search.scalar_value) LIKE %s)"
+                    )
+                    local_params.extend([*GUIDANCE_FIELDS, pattern])
                     if use_context_in_all:
                         placeholders = ", ".join(["%s"] * len(_CONTEXT_FIELD_NAMES))
                         all_clauses.append(
@@ -1730,6 +1823,14 @@ VALUES (%s, %s, %s, %s, %s)
                         "AND fv_search.field_value_norm LIKE %s)",
                     ]
                     params.extend([pattern] * 5)
+                    guidance_placeholders = ", ".join(["%s"] * len(GUIDANCE_FIELDS))
+                    all_clauses.append(
+                        "EXISTS (SELECT 1 FROM catalog_field_value fv_search "
+                        "WHERE fv_search.component_id = c.id "
+                        f"AND fv_search.field_name IN ({guidance_placeholders}) "
+                        "AND fv_search.field_value_norm LIKE %s)"
+                    )
+                    params.extend([*GUIDANCE_FIELDS, pattern])
                     if use_context_in_all:
                         placeholders = ", ".join(["%s"] * len(_CONTEXT_FIELD_NAMES))
                         all_clauses.append(
@@ -1755,7 +1856,7 @@ VALUES (%s, %s, %s, %s, %s)
         cur = conn.cursor()
         cur.execute(
             """
-SELECT c.id, c.key, c.kind, c.title, c.import_path, c.summary, c.tags, c.companions_json,
+SELECT c.id, c.key, c.kind, c.title, c.import_path, c.summary, c.tags, c.companions_json, c.contract_json, c.metadata_json,
        ctx.requires_json AS context_requires, ctx.provides_json AS context_provides,
        ctx.mutates_json AS context_mutates, ctx.cache_json AS context_cache, ctx.notes_json AS context_notes,
        ctx.artifact_requires_json AS artifact_requires, ctx.artifact_provides_json AS artifact_provides,
@@ -1783,6 +1884,8 @@ WHERE """
                     "summary": rec.get("summary"),
                     "tags": rec.get("tags"),
                     "companions": rec.get("companions_json"),
+                    "contract_json": rec.get("contract_json"),
+                    "metadata_json": rec.get("metadata_json"),
                     "context_requires": rec.get("context_requires"),
                     "context_provides": rec.get("context_provides"),
                     "context_mutates": rec.get("context_mutates"),
@@ -1986,6 +2089,8 @@ WHERE """
                     values = (symbol_name,) if symbol_name else ()
                 elif target_field == "summary":
                     values = (entry.summary,) if entry.summary else ()
+                elif target_field in GUIDANCE_FIELDS or target_field in {"wiring_status", "wiring_notes"}:
+                    values = _entry_values(entry, target_field)
                 else:
                     values = tuple(getattr(entry, target_field, ()) or ())
                 for value in values:

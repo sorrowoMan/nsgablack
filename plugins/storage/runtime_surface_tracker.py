@@ -847,6 +847,34 @@ class RuntimeSurfaceTrackerPlugin(Plugin):
             or name.endswith("EvaluationPlugin")
         )
 
+    def _operator_refs(self, adapter: Any) -> tuple[tuple[str, ...], dict[str, Any]]:
+        """Record explicit Adapter-owned bindings, excluding mutable codec state."""
+        references: list[str] = []
+        bindings: dict[str, Any] = {}
+        visited: set[int] = set()
+
+        def visit(owner: Any, path: str) -> None:
+            if owner is None or id(owner) in visited:
+                return
+            visited.add(id(owner))
+            getter = getattr(owner, "get_local_operator_bindings", None)
+            local = getter() if callable(getter) else {}
+            if local:
+                bindings[path] = {}
+                for role, binding in local.items():
+                    reference = self._catalog_ref_for_object(binding.component, fallback_prefix="operator")
+                    bindings[path][role] = {"ref": reference, "contract": binding.describe()}
+                    if reference is not None:
+                        references.append(reference)
+            children = getattr(owner, "step_transaction_children", None)
+            if callable(children):
+                for index, child in enumerate(children()):
+                    visit(child, f"{path}/{index}:{child.name}")
+
+        if adapter is not None:
+            visit(adapter, adapter.name)
+        return _dedupe(references), bindings
+
     def _collect_plugin_refs(self, solver: Any) -> tuple[tuple[str, ...], tuple[str, ...], dict[int, str]]:
         plugin_manager = getattr(solver, "plugin_manager", None)
         plugins = plugin_manager.list_plugins(enabled_only=False) if plugin_manager is not None and hasattr(plugin_manager, "list_plugins") else []
@@ -982,6 +1010,7 @@ class RuntimeSurfaceTrackerPlugin(Plugin):
 
         pipeline = getattr(solver, "representation_pipeline", None)
         representation_refs, pipeline_refs, representation_slots = self._representation_refs(pipeline)
+        operator_refs, operator_bindings = self._operator_refs(adapter)
         describe_units = getattr(getattr(solver, "adapter", None), "get_unit_contracts", None)
         unit_contracts = describe_units() if callable(describe_units) else {}
         mutation_bindings = {path: contract["mutation_operator"]
@@ -1000,8 +1029,8 @@ class RuntimeSurfaceTrackerPlugin(Plugin):
         bias_ref = self._catalog_ref_for_object(getattr(solver, "bias_module", None), fallback_prefix="bias")
         provider_refs, plugin_refs, plugin_ref_by_id = self._collect_plugin_refs(solver)
         bias_refs = _dedupe((bias_ref,))
-        component_refs = _dedupe((*representation_refs, *bias_refs))
-        mount_order = _dedupe((solver_ref, adapter_ref, *pipeline_refs, *representation_refs, *bias_refs, *provider_refs, *plugin_refs))
+        component_refs = _dedupe((*representation_refs, *operator_refs, *bias_refs))
+        mount_order = _dedupe((solver_ref, adapter_ref, *pipeline_refs, *representation_refs, *operator_refs, *bias_refs, *provider_refs, *plugin_refs))
 
         solver_contracts = collect_solver_contracts(solver)
         contract_summary = [
@@ -1032,6 +1061,7 @@ class RuntimeSurfaceTrackerPlugin(Plugin):
                 "adapter": adapter_ref,
                 "representation_pipeline": list(pipeline_refs),
                 "representation_slots": representation_slots,
+                **({"operator_bindings": operator_bindings} if operator_bindings else {}),
                 **({"mutation_bindings": mutation_bindings} if mutation_bindings else {}),
                 **repair_binding,
                 "bias_module": list(bias_refs),

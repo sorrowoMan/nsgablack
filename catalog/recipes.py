@@ -32,6 +32,34 @@ ADAPTER_RECIPES = {
         "    return [np.asarray(state) + 0.1]",
         "solver.set_adapter(MOAStarAdapter(neighbors=neighbors, start_state=np.zeros(solver.problem.dimension)))",
     ),
+    # Existing per-key overrides also prevent unsupported legacy components
+    # from being inferred as normal constructor/add recipes. Keep these tuples
+    # nonempty and entirely explanatory; no component is assembled by them.
+    "bias.diversity": (
+        "# 旧 DiversityBias 依赖单种群 population_ref，没有明确 Unit 实例的正式装配配方。",
+        "# 迁移说明：docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md（旧类未装配）。",
+        "# bias.unit_preference / bias.population_diversity 提供显式欧氏最近邻偏好，不等价替代旧类全部距离度量或历史统计。",
+    ),
+    "bias.diversity_adaptive": (
+        "# 旧 AdaptiveDiversityBias 的方向、重复加权和参考绑定待迁移；此处不构造或挂载旧类。",
+        "# 当前边界：docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md。",
+        "# bias.unit_preference / bias.population_diversity 是明确 Unit 的固定权重最近邻路径，不等价于自适应公式。",
+    ),
+    "bias.diversity_crowding": (
+        "# 旧 CrowdingDistanceBias 的方向、重复加权、非有限值和参考绑定尚未形成正常稀疏奖励配方。",
+        "# 当前边界：docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md（旧类未装配）。",
+        "# bias.unit_preference / bias.population_diversity 可绑定最近邻新颖性，不等价于 k 邻域均值或 NSGA2 拥挤距离。",
+    ),
+    "bias.diversity_sharing": (
+        "# 旧 SharingFunctionBias 的倒数公式、重复加权、身份与参考依赖待迁移；此处不挂载旧类。",
+        "# 当前边界：docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md。",
+        "# bias.unit_preference / bias.population_diversity 提供显式 Unit 最近邻偏好，不等价于 sigma_share/alpha 共享核。",
+    ),
+    "bias.diversity_niche": (
+        "# 旧 NicheDiversityBias 缺少正式成员维护、提交恢复和正确最小化方向；此处不构造或挂载旧类。",
+        "# 当前边界：docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md。",
+        "# bias.unit_preference / bias.population_diversity 可用于显式 Unit 新颖性或观察，不等价于生态位计数或容量约束。",
+    ),
 }
 
 

@@ -12,12 +12,15 @@ This case models a nested operations problem, not a flat ML demo. The outer solv
 
 ## Problem Boundary
 
-- Day 0 supply is fixed.
+- Day 0 means today: its inventory is fixed per material. Neither outbound moves nor future arrivals pulled into Day 0 are permitted.
+- A future event can move no earlier than Day 1. Day 1 events keep their original candidate positions with zero-width `[0, 0]` bounds.
 - Events can move earlier only; delays are forbidden.
 - Events move as whole units; splitting is forbidden.
 - Supply conservation is audited per material.
 - Optional hard cap controls number of moved events.
 - Inner production evaluation uses the production scheduling scaffold, not a detached toy score.
+
+2026-10-28 语义修订：以上“今天不动”已由用户明确确认。旧实现允许未来事件移入 Day 0；旧候选和目标值不能在新规则下直接复用，须重新求解与审计。事件位置保留不表示旧目标仍然有效。Day 0 的检查须逐物料为零，不能只核对合计而允许物料之间抵消。
 
 ## Serious Comparison Matrix
 

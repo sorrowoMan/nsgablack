@@ -1,0 +1,25 @@
+[[example]]
+id = "ml-bias-feedback-chain"
+title = "ML反馈偏好 · 完整线性Case、L2与二维权重链"
+component_keys = ["mlblack.bias.noop", "mlblack.bias.objective_weight", "mlblack.bias.objective_policy", "mlblack.bias.state_l2"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "正式LearningSolver.add_bias顺序装配，无导数Gaussian消费投影反馈，逐行保留raw并核对L2、二维权重和真实指标阈值。"
+inputs = ["完整catalog_codec_demo Project副本、两特征24行合成回归、LinearPoint三坐标、Gaussian、Report与Project L0。"]
+steps = ["保存完整Problem/Adapter/Bias工厂/报告/薄builder和结果入口。", "chain切l2或noop隔离偏好效果，不改loss或梯度。"]
+dependencies = ["当前mlblack、nsgablack、blackbase、NumPy；无模型下载、可选服务或新Provider。"]
+expected_outputs = ["ml_bias.json的last raw/selection/expected/matches与正式TrainerResult模型引用；不声明本轮训练或算法运行。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_BIAS_FEEDBACK_APPLICATIONS_CN.md", section = "ml_bias.feedback" }, { path = "nsgablack/docs/catalog_usage/ML_BIAS_FEEDBACK_APPLICATIONS_CN.md", section = "ml_bias.host" }]
+
+[[example]]
+id = "ml-bias-context-consumers"
+title = "ML上下文提示 · 显式L2消费者与分支/集合审计"
+component_keys = ["mlblack.bias.optimization", "mlblack.bias.l2_scale", "mlblack.bias.branch_policy", "mlblack.bias.dynamic_pool"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "OptimizationBias实际Case子类消费L2Scale并审计Branch/DynamicPool字符串提示，说明其不自动创建SolutionPool或切换模型的边界。"
+inputs = ["同一正式完整线性Case副本、无状态project_context链、明确Case消费者、Report与资源授权。"]
+steps = ["完整替换preference.py并沿host装配add_bias。", "改变SWITCH_AT核对literal fallback提示，L2反馈由明确消费者执行。"]
+dependencies = ["当前三仓和NumPy；不加载条件模型或操作外部池。"]
+expected_outputs = ["ml_bias.json真实hints、步数系数与逐行公式；Branch与DynamicPool仅记录实际提示，未冒称自动路由/模型切换。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_BIAS_FEEDBACK_APPLICATIONS_CN.md", section = "ml_bias.context" }, { path = "nsgablack/docs/catalog_usage/ML_BIAS_FEEDBACK_APPLICATIONS_CN.md", section = "ml_bias.host" }]

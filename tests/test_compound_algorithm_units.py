@@ -119,7 +119,10 @@ def test_nsga3_consumes_pipeline_directions_and_restores_without_reconstruction(
                 values["reference_points"] = np.array([[0.25, 0.75], [0.75, 0.25]])
     binding = UnitBinding(Directions(), name="custom/directions/v1")
     adapter = adapters.NSGA3Adapter(unit_binding=binding, divisions=2)
-    adapter.setup(ComposableSolver(problem=Problem(), adapter=adapter))
+    control = ComposableSolver(problem=Problem(), adapter=adapter)
+    control.setup()
+    assert adapter.algorithm_unit is None
+    adapter.propose(control, {})
     assert adapter.reference_points.tolist() == [[0.25, 0.75], [0.75, 0.25]]
     saved = adapter.get_state()
     clone = adapters.NSGA3Adapter(unit_binding=binding)
@@ -244,6 +247,7 @@ def test_schedule_pipeline_builds_pheromone_and_adapter_updates_it_then_restores
             min_production_per_machine=1, max_production_per_machine=5))
     control = SimpleNamespace(problem=problem, repair_candidate=lambda x, c: x)
     adapter = ProductionACOBaselineAdapter(ants=2)
+    assert adapter.algorithm_unit is None
     candidates = adapter.propose(control, {})
     np.testing.assert_array_equal(adapter.algorithm_unit.pheromone, np.ones((2, 2)))
     adapter.update(control, candidates, (np.array([[1.], [2.]]), np.zeros(2)), {})

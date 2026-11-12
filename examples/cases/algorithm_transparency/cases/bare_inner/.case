@@ -1,0 +1,3 @@
+name = bare_inner
+kind = solver
+framework = nsgablack

@@ -11,6 +11,8 @@ from blackbase.catalog import load_catalog_paths
 
 from blackbase.catalog import Catalog as SharedCatalog
 from blackbase.catalog import CatalogEntry as SharedCatalogEntry
+from .federation import PROVIDERS_ENV, load_federated_entries
+from .guidance import guidance_text
 
 try:  # py>=3.11
     import tomllib as _toml
@@ -64,11 +66,13 @@ def _example_project_context(module_path: str) -> tuple[Path, str] | None:
 
 
 class Catalog(SharedCatalog):
-    def __init__(self, entries: Sequence[CatalogEntry]):
+    def __init__(self, entries: Sequence[CatalogEntry], *, details_resolved: bool = False):
         super().__init__(entries)
         self._entries = list(self._entries)
         self._context_blob_cache: Dict[str, str] = {}
-        self._detail_entry_cache: Dict[str, CatalogEntry] = {}
+        self._detail_entry_cache: Dict[str, CatalogEntry] = (
+            {entry.key: entry for entry in self._entries} if details_resolved else {}
+        )
         self._detail_file_cache: Dict[str, Dict[str, object]] = {}
 
     def get(self, key: str) -> Optional[CatalogEntry]:
@@ -85,7 +89,7 @@ class Catalog(SharedCatalog):
         if tag is not None:
             t = str(tag).lower().strip()
             out = [e for e in out if t in (x.lower() for x in e.tags)]
-        return out
+        return [self._hydrate_entry(entry) for entry in out]
 
     def search(
         self,
@@ -122,7 +126,7 @@ class Catalog(SharedCatalog):
                 if not tag_set.issubset(e_tags):
                     return False
             target = e
-            if field in ("context", "usage") or use_context_in_all or use_usage_in_all:
+            if e.detail_ref or field in ("context", "usage") or use_context_in_all or use_usage_in_all:
                 target = self._hydrate_entry(e)
             if field == "name":
                 hay = " ".join([target.key, target.title]).lower()
@@ -133,14 +137,14 @@ class Catalog(SharedCatalog):
             elif field == "usage":
                 hay = self._entry_usage_blob(target)
             else:
-                hay = " ".join([target.key, target.title, target.kind, target.summary, " ".join(target.tags)]).lower()
+                hay = " ".join([target.key, target.title, target.kind, target.summary, " ".join(target.tags), guidance_text(target)]).lower()
                 if use_context_in_all:
                     hay = f"{hay} {self._entry_context_blob(target)}"
                 if use_usage_in_all:
                     hay = f"{hay} {self._entry_usage_blob(target)}"
             return all(any(t in hay for t in group) for group in token_groups)
 
-        out = [e for e in self._entries if match(e)]
+        out = [self._hydrate_entry(e) for e in self._entries if match(e)]
 
         # keep stable-ish grouping by kind and key
         def rank(e: CatalogEntry) -> Tuple[int, str]:
@@ -184,10 +188,11 @@ class Catalog(SharedCatalog):
             phase_in=_coerce_str_tuple(payload.get("phase_in", entry.phase_in)),
             phase_out=_coerce_str_tuple(payload.get("phase_out", entry.phase_out)),
             use_when=_coerce_str_tuple(payload.get("use_when", entry.use_when)),
-            minimal_wiring=_coerce_str_tuple(payload.get("minimal_wiring", entry.minimal_wiring)),
+            minimal_wiring=_coerce_str_tuple(payload.get("minimal_wiring", entry.minimal_wiring), preserve_whitespace=True),
             required_companions=_coerce_str_tuple(payload.get("required_companions", entry.required_companions)),
             config_keys=_coerce_str_tuple(payload.get("config_keys", entry.config_keys)),
             example_entry=str(payload.get("example_entry", entry.example_entry) or entry.example_entry),
+            contract={**entry.contract, **dict(payload.get("contract", {}) or {})},
         )
         self._detail_entry_cache[entry.key] = merged
         self._by_key[entry.key] = merged
@@ -307,12 +312,18 @@ class Catalog(SharedCatalog):
         parts.extend(_coerce_str_tuple(getattr(e, "example_entry", "")))
         if not parts:
             parts.extend(_coerce_str_tuple(getattr(e, "companions", ())))
+        parts.append(guidance_text(e))
         return " ".join(parts).lower()
 
 
-def _coerce_str_tuple(value: object) -> Tuple[str, ...]:
+def _coerce_str_tuple(value: object, *, preserve_whitespace: bool = False) -> Tuple[str, ...]:
     if value is None:
         return ()
+    if preserve_whitespace:
+        if isinstance(value, str):
+            return (value,) if value else ()
+        if isinstance(value, (list, tuple)):
+            return tuple(str(item) for item in value)
     if isinstance(value, str):
         text = value.strip()
         return (text,) if text else ()
@@ -416,8 +427,12 @@ def _normalize_catalog_profile(profile: Optional[str]) -> str:
     return "default"
 
 
-_CATALOG_BY_PROFILE: Dict[str, Catalog] = {}
-_SOURCE_CATALOG_BY_PROFILE: Dict[str, Catalog] = {}
+_CATALOG_BY_PROFILE: Dict[tuple[str, str], Catalog] = {}
+_SOURCE_CATALOG_BY_PROFILE: Dict[tuple[str, str], Catalog] = {}
+
+
+def _catalog_cache_key(profile: str) -> tuple[str, str]:
+    return profile, os.environ.get(PROVIDERS_ENV, "").strip()
 
 
 def _uses_examples_path(text: str) -> bool:
@@ -425,6 +440,8 @@ def _uses_examples_path(text: str) -> bool:
     return (
         "examples/" in raw
         or "examples\\" in raw
+        or raw.startswith("examples.")
+        or ".examples." in raw
     )
 
 
@@ -474,10 +491,10 @@ def _load_entrypoint_entries() -> List[CatalogEntry]:
             obj = ep.load()
             if callable(obj):
                 obj = obj()
-            if isinstance(obj, CatalogEntry):
-                out.append(obj)
+            if isinstance(obj, SharedCatalogEntry):
+                out.append(CatalogEntry(**obj.as_dict()))
             elif isinstance(obj, (list, tuple)):
-                out.extend([x for x in obj if isinstance(x, CatalogEntry)])
+                out.extend(CatalogEntry(**x.as_dict()) for x in obj if isinstance(x, SharedCatalogEntry))
         except Exception as _fallback_error:
             _report_optional_failure(component=__name__, event='_load_entrypoint_entries.fallback_104', exc=_fallback_error)
             continue
@@ -556,33 +573,56 @@ def _load_external_entries() -> List[CatalogEntry]:
     return out
 
 
+def _enrich_catalog_entries(entries: Sequence[CatalogEntry]) -> List[CatalogEntry]:
+    """Infer native declarations only; foreign registries own their semantics."""
+
+    from .usage import enrich_context_contracts, enrich_usage_contracts
+
+    native = [entry for entry in entries
+              if entry.metadata.get("catalog_framework", "nsgablack") == "nsgablack"]
+    native = enrich_context_contracts(
+        native, kinds=("plugin", "adapter", "bias", "representation", "resource", "backend"),
+    )
+    by_key = {
+        entry.key: replace(entry, metadata={**dict(entry.metadata), "catalog_framework": "nsgablack"})
+        for entry in enrich_usage_contracts(native)
+    }
+    return [by_key.get(entry.key, entry) for entry in entries]
+
+
 def get_source_catalog(*, refresh: bool = False, profile: Optional[str] = None) -> Catalog:
     """Return the source registry, never a configured database materialization."""
 
     global _SOURCE_CATALOG_BY_PROFILE
     profile_name = _normalize_catalog_profile(profile)
-    if refresh or profile_name not in _SOURCE_CATALOG_BY_PROFILE:
-        from .usage import enrich_context_contracts, enrich_usage_contracts
-
+    cache_key = _catalog_cache_key(profile_name)
+    if refresh or cache_key not in _SOURCE_CATALOG_BY_PROFILE:
         merged: Dict[str, CatalogEntry] = {entry.key: entry for entry in _load_external_entries()}
         for entry in _load_entrypoint_entries():
             merged[entry.key] = entry
-        profiled_entries = _apply_catalog_profile(list(merged.values()), profile_name)
-        enriched = enrich_context_contracts(
-            profiled_entries,
-            kinds=("plugin", "adapter", "bias", "representation", "resource", "backend"),
-        )
-        enriched = enrich_usage_contracts(enriched)
-        _SOURCE_CATALOG_BY_PROFILE[profile_name] = Catalog(enriched)
-    return _SOURCE_CATALOG_BY_PROFILE[profile_name]
+        # Resolve the declared detail source once, before profile filtering,
+        # usage enrichment, materialization and fingerprinting. Otherwise the
+        # UI can show facts which are absent from the published source digest.
+        materialized = Catalog(list(merged.values())).list()
+        enriched = _enrich_catalog_entries(materialized)
+        # Foreign public registries deliver their own materialized semantics.
+        # Do not hydrate their detail refs relative to this package or infer
+        # NSGA assembly recipes for ML components. One union feeds DB sync.
+        enriched.extend(CatalogEntry(**entry.as_dict())
+                        for entry in load_federated_entries(refresh=refresh))
+        Catalog(enriched, details_resolved=True)  # reject namespace collisions
+        # Derive every profile from the same fully enriched source. Filtering
+        # first lets usage inference reintroduce stripped example references.
+        profiled_entries = _apply_catalog_profile(enriched, profile_name)
+        _SOURCE_CATALOG_BY_PROFILE[cache_key] = Catalog(profiled_entries, details_resolved=True)
+    return _SOURCE_CATALOG_BY_PROFILE[cache_key]
 
 
 def get_catalog(*, refresh: bool = False, profile: Optional[str] = None) -> Catalog:
     global _CATALOG_BY_PROFILE
     profile_name = _normalize_catalog_profile(profile)
-    if refresh or profile_name not in _CATALOG_BY_PROFILE:
-        from .usage import enrich_context_contracts, enrich_usage_contracts
-
+    cache_key = _catalog_cache_key(profile_name)
+    if refresh or cache_key not in _CATALOG_BY_PROFILE:
         # PostgreSQL "only" mode — all entries from DB, zero memory overhead.
         try:
             from .store.postgres import postgres_config_enabled, postgres_config_mode
@@ -596,13 +636,9 @@ def get_catalog(*, refresh: bool = False, profile: Optional[str] = None) -> Cata
             if postgres_config_enabled() and postgres_config_mode() == "only":
                 pg_entries = PostgresCatalogProvider().load()
                 profiled_entries = _apply_catalog_profile(list(pg_entries), profile_name)
-                enriched = enrich_context_contracts(
-                    profiled_entries,
-                    kinds=("plugin", "adapter", "bias", "representation", "resource", "backend"),
-                )
-                enriched = enrich_usage_contracts(enriched)
-                _CATALOG_BY_PROFILE[profile_name] = Catalog(enriched)
-                return _CATALOG_BY_PROFILE[profile_name]
+                enriched = _enrich_catalog_entries(profiled_entries)
+                _CATALOG_BY_PROFILE[cache_key] = Catalog(_apply_catalog_profile(enriched, profile_name), details_resolved=True)
+                return _CATALOG_BY_PROFILE[cache_key]
 
         # MySQL "only" mode — same pattern.
         try:
@@ -617,16 +653,12 @@ def get_catalog(*, refresh: bool = False, profile: Optional[str] = None) -> Cata
             if mysql_config_enabled() and mysql_config_mode() == "only":
                 mysql_entries = MySQLCatalogProvider().load()
                 profiled_entries = _apply_catalog_profile(list(mysql_entries), profile_name)
-                enriched = enrich_context_contracts(
-                    profiled_entries,
-                    kinds=("plugin", "adapter", "bias", "representation", "resource", "backend"),
-                )
-                enriched = enrich_usage_contracts(enriched)
-                _CATALOG_BY_PROFILE[profile_name] = Catalog(enriched)
-                return _CATALOG_BY_PROFILE[profile_name]
+                enriched = _enrich_catalog_entries(profiled_entries)
+                _CATALOG_BY_PROFILE[cache_key] = Catalog(_apply_catalog_profile(enriched, profile_name), details_resolved=True)
+                return _CATALOG_BY_PROFILE[cache_key]
 
-        _CATALOG_BY_PROFILE[profile_name] = get_source_catalog(
+        _CATALOG_BY_PROFILE[cache_key] = get_source_catalog(
             refresh=refresh,
             profile=profile_name,
         )
-    return _CATALOG_BY_PROFILE[profile_name]
+    return _CATALOG_BY_PROFILE[cache_key]

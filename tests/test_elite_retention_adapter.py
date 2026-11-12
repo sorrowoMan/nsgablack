@@ -90,7 +90,7 @@ def test_elite_archive_rolls_back_with_step_transaction() -> None:
     control = _Control()
     adapter.setup(control)
     transaction = adapter.begin_step_transaction()
-    adapter._archive.append(
+    adapter.ensure_unit().entries.append(
         {
             "candidate": np.asarray([4.0]),
             "objectives": np.asarray([4.0]),
@@ -98,7 +98,9 @@ def test_elite_archive_rolls_back_with_step_transaction() -> None:
             "score": 4.0,
         }
     )
+    assert adapter.algorithm_unit is not None
 
     transaction.rollback()
 
     assert adapter._archive == []
+    assert adapter.algorithm_unit is None

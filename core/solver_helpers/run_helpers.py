@@ -102,12 +102,17 @@ def _control_context(solver: Any, context: Any) -> dict[str, Any]:
     return {}
 
 
-def _request_stop(solver: Any) -> None:
+def _request_stop(solver: Any, reason: str | None = None) -> None:
     request = getattr(solver, "request_stop", None)
     if callable(request):
-        request()
+        if reason and not getattr(solver, "stop_reason", None):
+            request(reason)
+        else:
+            request()
     else:
         setattr(solver, "stop_requested", True)
+        if reason and not getattr(solver, "stop_reason", None):
+            setattr(solver, "stop_reason", reason)
 
 
 def _apply_resolved_decisions(solver: Any, resolved: Any, context: Mapping[str, Any]) -> None:
@@ -126,7 +131,7 @@ def _apply_resolved_decisions(solver: Any, resolved: Any, context: Mapping[str, 
         # A stop request has the same meaning regardless of the arbitration
         # domain that produced it (for example budget or stopping).
         if bool(payload.get("stop", False)):
-            _request_stop(solver)
+            _request_stop(solver, str(getattr(decision, "reason", "") or f"{domain}_stop"))
 
 def apply_runtime_control_slot(solver: Any, *, slot: str, value: Any = None, context: Any = None) -> Any:
     """Apply a runtime control slot through the solver runtime controller."""

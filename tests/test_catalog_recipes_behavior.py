@@ -1,3 +1,4 @@
+import ast
 from pathlib import Path
 import pytest
 from blackbase.project import build_case, load_case_builder, run_case
@@ -7,7 +8,15 @@ from nsgablack.catalog.recipes import ADAPTER_RECIPES, constructor_check
 from nsgablack.catalog.sync import build_catalog_bundle
 
 
-@pytest.mark.parametrize("key", ADAPTER_RECIPES)
+# Comment-only migration overrides deliberately have no standard Case or
+# executable statements. Keep the real adapter Cases in the behavior test and
+# verify guidance separately instead of treating a legacy Bias as an Adapter.
+EXECUTABLE_RECIPES = tuple(key for key, lines in ADAPTER_RECIPES.items()
+                           if ast.parse("\n".join(lines)).body)
+GUIDANCE_RECIPES = tuple(key for key in ADAPTER_RECIPES if key not in EXECUTABLE_RECIPES)
+
+
+@pytest.mark.parametrize("key", EXECUTABLE_RECIPES)
 def test_recipe_standard_case_runs_and_exports(key):
     root = Path(__file__).resolve().parents[1] / "examples/cases/catalog_recipes"
     solver = build_case(load_case_builder(root, key.split(".")[-1]), resource_context={"threads": 1})
@@ -15,6 +24,27 @@ def test_recipe_standard_case_runs_and_exports(key):
     assert result is not None
     assert solver.run_progress_steps > 0
     assert solver.evaluation_count > 0
+
+
+@pytest.mark.parametrize("key", GUIDANCE_RECIPES)
+def test_explanation_only_recipe_is_explicit_non_executable_guidance(key, monkeypatch):
+    monkeypatch.setenv("NSGABLACK_CATALOG_DB_MODE", "off")
+    lines = ADAPTER_RECIPES[key]
+    assert lines and all(line.startswith("#") for line in lines)
+    assert ast.parse("\n".join(lines)).body == []
+    entry = next(item for item in get_source_catalog(profile="framework-core").list() if item.key == key)
+    usage = build_usage_profile(entry)
+    assert usage.wiring_status == "guidance"
+    assert constructor_check(entry, usage.minimal_wiring)[0] == "guidance"
+    assert ast.parse("\n".join(usage.minimal_wiring)).body == []
+    assert usage.example_entry and (Path(__file__).resolve().parents[1] / usage.example_entry).is_file()
+
+
+def test_recipe_classification_preserves_every_actual_adapter_case():
+    assert EXECUTABLE_RECIPES
+    assert set(EXECUTABLE_RECIPES) == {key for key in ADAPTER_RECIPES if key.startswith("adapter.")}
+    assert set(EXECUTABLE_RECIPES).isdisjoint(GUIDANCE_RECIPES)
+    assert set(EXECUTABLE_RECIPES) | set(GUIDANCE_RECIPES) == set(ADAPTER_RECIPES)
 
 
 def test_source_usage_has_no_invalid_constructor_recipes_or_fake_examples():

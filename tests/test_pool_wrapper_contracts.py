@@ -178,6 +178,7 @@ def test_unversioned_legacy_archive_does_not_silently_authorize_collection(kind)
              "objectives": np.array([1.]), "objective": np.array([1.]),
              "score": 1., "violation": 0.}
     if kind == "elite":
+        adapter.ensure_unit()
         adapter._archive.append(entry)
     else:
         adapter.archive.append(entry)
@@ -194,6 +195,7 @@ def test_elite_intake_cannot_replace_consumed_seed_with_archive_candidate():
         retention_probability=1., retention_ratio=1.))
     solver = make_solver(adapter)
     refs = source_refs(solver, 3)
+    adapter.ensure_unit()
     adapter._archive.append({"candidate": np.array([90.]), "score": 0., "violation": 0.})
     key = solver.solution_pool.bind_input(refs)
     proposed = adapter.propose(solver, {KEY_SOLUTION_INPUT_REF: key})

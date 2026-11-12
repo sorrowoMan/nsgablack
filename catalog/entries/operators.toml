@@ -1,0 +1,242 @@
+# Explicit algorithm operations. These are not a second Solver lifecycle.
+[[entry]]
+key = "tool.change_request"
+title = "ChangeRequest"
+kind = "tool"
+import_path = "nsgablack.adapters:ChangeRequest"
+tags = ["core", "change", "plain-function", "readonly", "solution-pool", "nsga2", "vns", "moead"]
+summary = "NSGA/VNS/MOEA-D 普通完整变化函数的只读输入：父候选矩阵、精确引用、Unit参数、max_outputs及调用期request.pool。读取来源保持精确版本；批量消费者明确许可孩子数量，池访问不进入checkpoint。"
+use_when = ["直接安排交叉、变异与跨池父代来源；NSGA可一次交付多个独立后代，单候选叶仍保持原生数量约束。"]
+minimal_wiring = ["def change(request, *, rng): return request.candidate + rng.normal(0, 0.1, request.candidate.shape)", "adapter = VNSAdapter(change=change)", "# request.pool.subpool('elite').random(1, rng=rng).values reads committed exact versions lazily.", "# Task-scoped access permits only the frozen inputs and explicitly declared change_sources/change_allow_main.", "# Return ChangeResult(candidate, outputs=(PoolOutput('offspring', create=True),)) for accepted-proposal delivery."]
+required_companions = ["(none)"]
+config_keys = ["parents", "source_refs", "parameters", "context", "unit_id", "pool", "max_outputs"]
+example_entry = "docs/architecture/POOL_WORKFLOW_PILOT_CN.md"
+
+[[entry]]
+key = "tool.change_result"
+title = "ChangeResult"
+kind = "tool"
+import_path = "nsgablack.adapters:ChangeResult"
+tags = ["core", "change", "plain-function", "solution-pool", "provenance", "output"]
+summary = "普通 change 的可选返回：单个候选、可选精确 source_refs 与 PoolOutput 目标。读取依赖自动保留，声明来源不能绕过任务范围；评估、硬接纳与池事务仍由控制面执行。"
+use_when = ["需要声明输出子池或补充精确源版本；只返回候选时不必包装。"]
+minimal_wiring = [
+  "from nsgablack.adapters import VNSAdapter, ChangeResult, PoolOutput",
+  "def change(request, *, rng):",
+  "    child = request.candidate + rng.normal(0., 0.1, request.candidate.shape)",
+  "    return ChangeResult(child, outputs=(PoolOutput('trials', create=True),))",
+  "adapter = VNSAdapter(change=change)",
+]
+required_companions = ["tool.change_request"]
+config_keys = ["candidate", "source_refs", "outputs", "edits"]
+example_entry = "docs/architecture/POOL_WORKFLOW_PILOT_CN.md"
+
+[[entry]]
+key = "tool.pool_output"
+title = "PoolOutput"
+kind = "tool"
+import_path = "nsgablack.adapters:PoolOutput"
+tags = ["core", "change", "solution-pool", "output", "transaction"]
+summary = "change 的具名普通引用集合输出声明：缺省要求目标已存在，create=True 允许控制面在接纳后创建；声明本身不写池，不允许把候选追加进算法投影视图。"
+use_when = ["将已接纳的新提案交付现有或显式创建的普通子池，保持提交后才可见与失败回滚。"]
+minimal_wiring = [
+  "from nsgablack.adapters import VNSAdapter, ChangeResult, PoolOutput",
+  "def change(request, *, rng):",
+  "    child = request.candidate + rng.normal(0., 0.1, request.candidate.shape)",
+  "    return ChangeResult(child, outputs=(PoolOutput('trials', create=True),))",
+  "adapter = VNSAdapter(change=change)",
+]
+required_companions = ["tool.change_result"]
+config_keys = ["name", "create"]
+example_entry = "docs/architecture/POOL_WORKFLOW_PILOT_CN.md"
+
+[[entry]]
+key = "tool.pool_edit"
+title = "PoolEdit"
+kind = "tool"
+import_path = "nsgablack.adapters:PoolEdit"
+tags = ["core", "solution-pool", "collection", "transaction", "revision"]
+summary = "普通子池的精确成员替换计划，冻结目标身份和revision；replace_members(create=True)也可冻结缺失目标并创建。经change的静态edits或每批更新后maintenance提交，复用生存choose副结果的同一计划事务，不直接写算法结果视图。"
+use_when = ["在普通变化函数中按已发布反馈更新精英集合、移除或裁剪成员。"]
+minimal_wiring = [
+  "from nsgablack.adapters import ChangeResult",
+  "def change(request, *, rng):",
+  "    members = request.pool.main(stage='accepted').take(range(2))",
+  "    edit = request.pool.replace_members('elite', members.refs, create=True)",
+  "    return ChangeResult(request.candidate, edits=(edit,))",
+]
+required_companions = ["tool.change_result"]
+config_keys = ["name", "members", "expected"]
+example_entry = "docs/architecture/POOL_COLLECTION_OPERATIONS_CN.md"
+
+[[entry]]
+key = "tool.change_selection"
+title = "ChangeSelection"
+kind = "tool"
+import_path = "nsgablack.adapters.change_pool:ChangeSelection"
+tags = ["core", "solution-pool", "selection", "readonly", "collection"]
+summary = "公开Pool的兼容类型名：调用内有序精确引用选择；保留旧take/random/where/top用法，复用同一引用存储与授权，不产生第二套候选集合。"
+use_when = ["用少量普通函数表达取解规则，保留候选身份、来源权限与冻结时点。"]
+minimal_wiring = ["source = request.pool.subpool('elite')", "selected = source.where(predicate).top(5, key=explicit_key)", "groups = selected.groups(2)", "# predicate(selection) returns (N,) bool; key(selection) returns finite (N,) or (N,K) scores."]
+required_companions = ["tool.change_request"]
+config_keys = ["parent", "name"]
+example_entry = "docs/architecture/POOL_COLLECTION_OPERATIONS_CN.md"
+companions = ["tool.pool"]
+contract = { catalog = { role = "pool_view", concepts = ["Pool对象", "兼容选择视图"], operations = ["take", "random", "merge", "where", "order_by", "top", "intersection", "difference", "groups"], boundaries = ["ChangeSelection 是公开 Pool 的兼容类型名，不建立第二套候选存储。"] } }
+
+[[entry]]
+key = "tool.pool"
+title = "Pool"
+kind = "tool"
+import_path = "nsgablack.adapters:Pool"
+tags = ["core", "solution-pool", "selection", "transaction", "identity"]
+summary = "调用内候选集合：生存规则可声明count接收本次实际数量，member_field读取所属Unit槽位属性；chosen执行纯选择，Pool(parent=..., name=...)创建空草稿，inject追加或显式精确替换。GA生存选择或成员维护将具名副Pool草稿交给原池事务；不改raw、不扩读权限、不创建调度器。旧主Pool和具名副Pool映射返回仍支持。"
+use_when = ["用普通choose函数选择已有解；需要时同时交付最终成员中的精英或未选位置，不重复执行选择。"]
+minimal_wiring = ["from nsgablack.adapters import Pool", "def choose(pool, *, rng):", "    members = pool.chosen(select_members, rng=rng)", "    Pool(parent=members, name='elite').inject(members.take(range(min(2, len(members)))), replace=True)", "    return members", "ga.set_selector(choose)", "# Named inject: survivor or maintenance only; append to an existing target requires declared read access.", "# parent supplies call scope, not persistent topology or automatic Adapter dispatch."]
+required_companions = ["tool.selection_request"]
+config_keys = ["parent", "name"]
+example_entry = "docs/architecture/POOL_API_REFERENCE_CN.md"
+companions = ["tool.solution_pool", "tool.pool_maintenance_request", "tool.pool_partition"]
+contract = { catalog = { role = "pool_view", concepts = ["解池选择", "选择精英", "创建精英池", "Pool对象", "入池", "选择后变化"], operations = ["chosen", "inject", "all", "take", "concat", "merge", "top", "where", "order_by", "intersection", "difference", "groups", "selection_feedback", "raw_feedback", "member_field"], boundaries = ["Pool 是一次调用内的有序引用视图，不是新的持久 SnapshotStore。", "parent 提供调用范围，不表示持久拓扑或自动调度算法。", "具名 inject 在生存选择或成员维护中交付原池事务，不能改写算法投影视图。"] } }
+
+[[entry]]
+key = "tool.pool_partition"
+title = "partition"
+kind = "tool"
+import_path = "nsgablack.adapters:partition"
+tags = ["core", "solution-pool", "selection", "readonly", "position"]
+summary = "对非空Pool调用一次普通choose，空输入不调用；返回所选位置与有序补集两个Pool。重复引用的不同位置分别处理，结果映回原调用者坐标；不改成员、不建子池、不求值。"
+use_when = ["同时需要精英与其余候选，避免重复计算选择规则或用引用集合差误删重复槽位。"]
+minimal_wiring = ["from nsgablack.adapters import partition", "selected, remaining = partition(pool, by=choose_elite, rng=rng)", "# choose_elite(Pool[, *, rng]) -> Pool; it runs once for nonempty input.", "# Both views retain caller scope; save refs/data rather than live Pool objects."]
+required_companions = ["tool.pool"]
+config_keys = ["pool", "by", "rng"]
+example_entry = "docs/architecture/POOL_API_REFERENCE_CN.md"
+
+[[entry]]
+key = "tool.change_batch_result"
+title = "ChangeBatchResult"
+kind = "tool"
+import_path = "nsgablack.adapters:ChangeBatchResult"
+tags = ["core", "change", "batch", "provenance", "nsga2"]
+summary = "一次完整变化的有序多个ChangeResult；每个孩子独立派生身份、修复、预算和接纳坐标。实际消费者给出max_outputs，不能让单候选算法隐式接收任意批量。"
+use_when = ["一对父代共享一次随机交叉，交付两个相关但身份独立的后代。"]
+minimal_wiring = [
+  "from nsgablack.adapters import NSGA2Adapter, ChangeBatchResult, ChangeResult",
+  "def change(request, *, rng):",
+  "    parent = request.parents[0]",
+  "    noise = rng.normal(0., 0.1, parent.shape)",
+  "    children = (ChangeResult(parent + noise), ChangeResult(parent - noise))",
+  "    return ChangeBatchResult(children[:request.max_outputs])",
+  "adapter = NSGA2Adapter(change=change)",
+]
+required_companions = ["tool.change_request", "tool.change_result"]
+config_keys = ["results"]
+example_entry = "docs/architecture/POOL_API_REFERENCE_CN.md"
+
+[[entry]]
+key = "tool.pool_maintenance_request"
+title = "PoolMaintenanceRequest"
+kind = "tool"
+import_path = "nsgablack.adapters:PoolMaintenanceRequest"
+tags = ["core", "solution-pool", "maintenance", "transaction", "readonly"]
+summary = "Router 可在子更新后统一维护档案，members_by_owner 保留各所有者字段，聚合 members 需显式统一评分；最终成员 members 支持 member_field 读取所属 Unit 声明字段；实际叶Adapter更新后的只读维护输入：受限来源、本批accepted及有序最终种群members；轨迹算法members为None。二者保留各自选择反馈，合并历史显式使用raw；返回PoolEdit与同一Authority/manifest提交，不开放其他pending或重复求值。"
+use_when = ["按本批接纳试探或本轮最终成员分别维护历史精英/Pareto集合，不把档案计算塞入每个change。"]
+minimal_wiring = ["def maintain(request, *, rng):", "    if request.members is None: raise ValueError('population result required')", "    old = request.pool.subpool('archive') if 'archive' in request.pool.describe()['subpools'] else request.members.take(())", "    kept = old.merge(request.members).top(20, key=raw_key)", "    return (request.pool.replace_members('archive', kept.refs, create=True),)", "adapter.set_pool_maintenance(maintain)", "# Declare exact public name archive in enclosing PoolTask.change_sources, including before creation."]
+required_companions = ["tool.pool_edit", "tool.pool"]
+config_keys = ["pool", "accepted", "objectives", "violations", "parameters", "context", "members", "members_by_owner"]
+example_entry = "docs/architecture/POOL_API_REFERENCE_CN.md"
+
+[[entry]]
+key = "tool.operator_binding"
+title = "OperatorBinding"
+kind = "tool"
+import_path = "nsgablack.adapters.operator_binding:OperatorBinding"
+tags = ["core", "operator", "checkpoint", "ownership"]
+summary = "独立初始化、变化、选择或结构修复的身份与状态绑定；由实际叶 Adapter 一并 checkpoint/回滚，有状态组件只允许一个绑定所有者。"
+use_when = ["实现支持独立算子装配的 Adapter；用户通常通过 Adapter setter 绑定组件。"]
+minimal_wiring = ["adapter.set_mutator(mutator)", "adapter.set_parent_selector(selector)", "# Components declare checkpoint_identity() and stateless=True or get_state()/set_state()."]
+required_companions = ["(none)"]
+config_keys = ["component", "method"]
+example_entry = "docs/architecture/ADAPTER_OPERATION_BOUNDARIES_CN.md"
+
+[[entry]]
+key = "tool.parent_selection_request"
+title = "ParentSelectionRequest"
+kind = "tool"
+import_path = "nsgablack.adapters.parent_selection:ParentSelectionRequest"
+tags = ["core", "operator", "selection", "solution-pool", "readonly"]
+summary = "父代选择输入：members Pool保留真实成员槽位与声明字段，可返回其筛选或有放回抽样结果；旧引用返回要求成员槽位无歧义。完整change通过parent_pool读取对应属性。"
+use_when = ["编写返回 SolutionRef 序列的父代选择器；不把本地整数索引当成跨池候选。"]
+minimal_wiring = [
+  "from nsgablack.adapters import NSGA2Adapter",
+  "class FirstParents:",
+  "    stateless = True",
+  "    def checkpoint_identity(self): return {'name': 'first_parents', 'version': 1}",
+  "    def select(self, request, *, pool, rng):",
+  "        return request.members.sample(request.count, rng=rng, replace=True)",
+  "adapter = NSGA2Adapter(parent_selector=FirstParents())",
+]
+required_companions = ["adapter.nsga2", "tool.solution_pool"]
+config_keys = ["population_refs", "rank", "crowding", "count", "context", "members"]
+example_entry = "docs/architecture/ADAPTER_OPERATOR_BINDINGS_CN.md"
+
+[[entry]]
+key = "tool.mixed_pool_parent_selector"
+title = "MixedPoolParentSelector"
+kind = "tool"
+import_path = "nsgablack.adapters.parent_selection:MixedPoolParentSelector"
+tags = ["core", "operator", "selection", "solution-pool", "nsga2"]
+summary = "从本种群 rank/crowding 锦标赛与已发布具名子池混合抽取父代，返回准确引用；不修改环境选择或创建精英池。"
+use_when = ["希望只替换 NSGA-II 的父代来源，保留交叉、变异、评估和生存选择时。"]
+minimal_wiring = ["from nsgablack.adapters import MixedPoolParentSelector, NSGA2Adapter", "adapter = NSGA2Adapter()", "adapter.set_parent_selector(MixedPoolParentSelector('elite', pool_fraction=0.5))", "# Publish a nonempty named 'elite' pool before the first parent-selection call."]
+required_companions = ["adapter.nsga2", "tool.solution_pool"]
+config_keys = ["pool_name", "pool_fraction"]
+example_entry = "docs/architecture/ADAPTER_OPERATOR_BINDINGS_CN.md"
+
+[[entry]]
+key = "repr.gaussian_mutation"
+title = "GaussianMutation"
+kind = "representation"
+import_path = "nsgablack.representation.continuous:GaussianMutation"
+tags = ["core", "continuous", "mutation", "operator", "checkpoint"]
+summary = "高斯变异：可直接绑定明确消费 mutator 的 Adapter，或接既有 Pipeline；DE 的直属变化在差分 trial 后执行，随机状态随实际所有者恢复。"
+use_when = ["需要为 NSGA、DE、MOEA/D 或轨迹算法独立指定可恢复变异；动态邻域优先考虑 ContextGaussianMutation。"]
+minimal_wiring = ["from nsgablack.adapters import NSGA2Adapter", "from nsgablack.representation.continuous import GaussianMutation", "adapter = NSGA2Adapter()", "adapter.set_mutator(GaussianMutation(sigma=0.1))", "# Do not share this stateful instance with another Adapter or the pipeline."]
+required_companions = ["(none)"]
+config_keys = ["sigma", "low", "high"]
+example_entry = "docs/architecture/ADAPTER_OPERATOR_BINDINGS_CN.md"
+
+[[entry]]
+key = "tool.selection_request"
+title = "SelectionRequest"
+kind = "tool"
+import_path = "nsgablack.adapters.selection:SelectionRequest"
+tags = ["core", "operator", "selection", "readonly", "purpose"]
+summary = "评估后只读行选择请求：survivor 保留成员、replacement 比较槽位、candidate 选本批候选、proposal_order 重排本批；不承担父代引用选择或硬接纳。"
+use_when = ["编写明确消费算法比较视图与参数的 selector，而不直接修改 Adapter/Unit；MOEA/D 必须使用该方向提供的分数。"]
+minimal_wiring = [
+  "from nsgablack.adapters import DifferentialEvolutionAdapter",
+  "class FirstOffered:",
+  "    stateless = True",
+  "    def checkpoint_identity(self): return {'name': 'first_offered', 'version': 1}",
+  "    def select(self, request, *, rng):",
+  "        if request.purpose != 'replacement': raise ValueError('replacement only')",
+  "        return list(range(request.count))",
+  "adapter = DifferentialEvolutionAdapter(selector=FirstOffered())",
+]
+required_companions = ["(none)"]
+config_keys = ["purpose", "candidates", "objectives", "violations", "count", "scores", "parameters", "context", "pool"]
+example_entry = "docs/architecture/ADAPTER_OPERATION_BOUNDARIES_CN.md"
+
+[[entry]]
+key = "tool.feasibility_first_selection"
+title = "FeasibilityFirstSelection"
+kind = "tool"
+import_path = "nsgablack.adapters.selection:FeasibilityFirstSelection"
+tags = ["core", "operator", "selection", "feasibility", "stateless"]
+summary = "显式可行性优先行选择：使用算法提供的 scores 或指定目标；不自动装配，也不等价于 NSGA Pareto 选择、Metropolis 或硬可行性接纳。"
+use_when = ["确实希望覆盖已声明选择位置的策略时；首先明确该 Adapter 请求的 purpose 与 scores 含义。"]
+minimal_wiring = ["from nsgablack.adapters import DifferentialEvolutionAdapter, FeasibilityFirstSelection", "adapter = DifferentialEvolutionAdapter(selector=FeasibilityFirstSelection())", "# Explicitly overrides target/trial replacement; omit selector to retain the native policy."]
+required_companions = ["tool.selection_request"]
+config_keys = ["objective_index", "constraint_tolerance"]
+example_entry = "docs/architecture/ADAPTER_OPERATION_BOUNDARIES_CN.md"

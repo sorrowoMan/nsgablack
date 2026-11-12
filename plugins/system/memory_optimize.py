@@ -16,8 +16,9 @@ class MemoryPlugin(Plugin):
     context_mutates = ()
     context_cache = ()
     context_notes = (
-        "Optimizes solver memory usage and snapshots memory metrics; "
-        "mutates solver temp_data/population arrays in-place for cleanup."
+        "Samples process memory when psutil is available; automatic cleanup "
+        "runs garbage collection and clears optional solver.temp_data. "
+        "Does not edit population arrays or SolutionPool membership."
     )
 
     def __init__(self, cleanup_interval: int = 10, enable_auto_gc: bool = True) -> None:

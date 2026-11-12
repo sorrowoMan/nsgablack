@@ -2,6 +2,7 @@ from __future__ import annotations
 from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -19,7 +20,13 @@ if __package__ in {None, ""}:
     from nsgablack.catalog import dashboard_page as _page
     from nsgablack.catalog import dashboard_shell as _shell
     from nsgablack.catalog import dashboard_shared as _shared
+    from nsgablack.catalog import curation_ui as _curation
+    from nsgablack.catalog import examples_ui as _examples
+    from nsgablack.catalog import navigation as _navigation
+    from nsgablack.catalog.dashboard_style import DASHBOARD_CSS
+    from nsgablack.catalog.ui_theme import WORKSPACE_BRAND
     from nsgablack.catalog.facade import (
+        _entry_payload,
         catalog_facets,
         catalog_neighbors,
         catalog_schema,
@@ -29,11 +36,18 @@ if __package__ in {None, ""}:
         search_entries,
         show_entry,
     )
+    from nsgablack.catalog.guidance import WIRING_STATUS_NOTE, wiring_status_label
 else:
     from . import dashboard_page as _page
     from . import dashboard_shell as _shell
     from . import dashboard_shared as _shared
+    from . import curation_ui as _curation
+    from . import examples_ui as _examples
+    from . import navigation as _navigation
+    from .dashboard_style import DASHBOARD_CSS
+    from .ui_theme import WORKSPACE_BRAND
     from .facade import (
+        _entry_payload,
         catalog_facets,
         catalog_neighbors,
         catalog_schema,
@@ -43,11 +57,66 @@ else:
         search_entries,
         show_entry,
     )
+    from .guidance import WIRING_STATUS_NOTE, wiring_status_label
 
 _KIND_ALL = "all"
 _NAV_ACTION_LOCATE_SELECTED = "locate_selected"
 _PENDING_LOCATE_KEY = "catalog_ui_pending_locate_selected"
 _PENDING_SCROLL_TARGET_KEY = "catalog_ui_pending_scroll_target"
+_HOSTED_SOURCE_VALUES = {
+    "scope": "framework",
+    "project_path": "",
+    "include_global": False,
+    "db_path": "",
+    "source_mode": "off",
+}
+
+
+def _hosted_mode() -> bool:
+    return os.environ.get("NSGABLACK_CATALOG_HOSTED", "").strip() == "1"
+
+
+def _hosted_source_values() -> dict[str, Any]:
+    """Only trusted process configuration can choose the hosted read model."""
+    values = dict(_HOSTED_SOURCE_VALUES)
+    source = os.environ.get("NSGABLACK_CATALOG_HOSTED_SOURCE", "registry").strip()
+    if source not in {"registry", "database"}:
+        raise RuntimeError("Invalid hosted Catalog source configuration")
+    if source == "database":
+        if not os.environ.get("NSGABLACK_CATALOG_DB_URL", "").strip():
+            raise RuntimeError("Hosted Catalog database configuration is required")
+        values["source_mode"] = "only"
+    return values
+
+
+def _catalog_source_options(
+    scope: str,
+    project_path: str | None,
+    include_global: bool,
+    db_path: str | None,
+    source_mode: str | None,
+) -> dict[str, Any]:
+    """One read boundary for local configuration and the fixed hosted source."""
+    values = _hosted_source_values() if _hosted_mode() else {
+        "scope": scope, "project_path": project_path, "include_global": include_global,
+        "db_path": db_path, "source_mode": source_mode,
+    }
+    for field in ("project_path", "db_path", "source_mode"):
+        values[field] = values[field] or None
+    return values
+
+
+def _public_query_params(values: Mapping[str, object]) -> dict[str, object]:
+    params = dict(values)
+    if _hosted_mode():
+        params.update({**_hosted_source_values(), "include_global": ""})
+    return params
+
+
+def _enforce_hosted_session(st: Any) -> None:
+    if _hosted_mode():
+        for key, value in _hosted_source_values().items():
+            st.session_state[f"catalog_ui_{key}"] = value
 
 _KIND_ORDER: tuple[str, ...] = (
     _KIND_ALL,
@@ -62,15 +131,40 @@ _KIND_ORDER: tuple[str, ...] = (
 )
 
 _KIND_LABELS: dict[str, str] = {
-    _KIND_ALL: "全部 All",
-    "adapter": "Adapter 策略",
-    "plugin": "Plugin 能力",
-    "bias": "Bias 偏置",
-    "representation": "Representation 表示",
+    _KIND_ALL: "全部组件",
+    "adapter": "搜索策略 Adapter",
+    "plugin": "运行能力 Plugin",
+    "bias": "评估偏好 Bias",
+    "representation": "管线与结构",
     "suite": "Suite 套件",
-    "tool": "Tool 工具",
-    "doc": "Doc 文档",
-    "example": "Example 示例",
+    "tool": "操作与工具",
+    "doc": "设计文档",
+    "example": "项目示例",
+    "assembly": "装配入口",
+    "backend": "计算后端",
+    "backend_capability": "后端能力",
+    "capability": "生命周期能力",
+    "catalog": "目录工具",
+    "codec": "模型参数 Codec",
+    "conditional": "条件管线",
+    "core": "核心协议",
+    "dashboard": "可视化工具",
+    "data_view": "数据视图 DataView",
+    "experiment": "实验管理",
+    "head": "模型输出 Head",
+    "integration": "框架连接",
+    "model": "模型组件",
+    "nsgablack_neural": "神经模型搜索",
+    "nsgablack_symbolic": "符号模型搜索",
+    "numericizer": "数据数值化",
+    "pipeline": "候选与数据管线",
+    "preset": "装配预设",
+    "problem": "评估问题 Problem",
+    "problem_bridge": "问题连接",
+    "provider": "模型执行 Provider",
+    "schema": "数据结构规范",
+    "symbolic_pipeline": "符号表达式管线",
+    "trainer": "训练入口 Trainer",
 }
 
 _SCOPE_LABELS: dict[str, str] = {
@@ -95,9 +189,15 @@ _SOURCE_MODE_LABELS: dict[str, str] = {
 }
 
 _FIELD_LABELS: dict[str, str] = {
+    "role": "职责",
+    "concepts": "相关概念",
+    "operations": "运行方法",
+    "boundaries": "支持边界",
+    "wiring_status": "配方结构状态",
+    "wiring_notes": "结构检查说明",
     "tags": "标签",
     "companions": "关联条目",
-    "required_companions": "必备搭档",
+    "required_companions": "声明的依赖",
     "linked_by": "反向关联",
     "context_requires": "读取上下文",
     "context_provides": "提供上下文",
@@ -110,13 +210,15 @@ _FIELD_LABELS: dict[str, str] = {
     "phase_out": "输出阶段",
     "use_when": "适用场景",
     "minimal_wiring": "最小接线",
-    "config_keys": "关键配置",
+    "config_keys": "装配配置",
     "example_entry": "示例入口",
     "import_path": "导入路径",
     "summary": "摘要",
 }
 
 _PRIMARY_FILTER_FIELDS: tuple[str, ...] = (
+    "concepts",
+    "role",
     "tags",
     "companions",
     "required_companions",
@@ -133,17 +235,18 @@ _SORT_LABELS: dict[str, str] = {
     "key": "Key",
     "kind": "分类",
 }
-_DETAIL_TABS: tuple[str, ...] = ("overview", "relations", "source")
+_DETAIL_TABS: tuple[str, ...] = ("overview", "interface", "relations", "source")
 _DETAIL_TAB_LABELS: dict[str, str] = {
-    "overview": "概览",
+    "overview": "用法",
+    "interface": "接口",
     "relations": "关系",
     "source": "来源",
 }
 _COLUMN_MODE_OPTIONS: tuple[str, ...] = ("compact", "standard", "full")
 _COLUMN_MODE_LABELS: dict[str, str] = {
-    "compact": "紧凑列",
-    "standard": "标准列",
-    "full": "完整列",
+    "compact": "简洁列表",
+    "standard": "组件列表",
+    "full": "完整表格",
 }
 _RESULTS_COLLAPSE_OPTIONS: tuple[str, ...] = ("expanded", "collapsed")
 _RESULTS_COLLAPSE_LABELS: dict[str, str] = {
@@ -266,7 +369,7 @@ def _set_page_config(st: Any) -> None:
             page_title="nsgablack Catalog",
             page_icon="NC",
             layout="wide",
-            initial_sidebar_state="collapsed",
+            initial_sidebar_state="auto",
         )
     except Exception as _fallback_error:
         _report_optional_failure(component=__name__, event='_set_page_config.fallback_89', exc=_fallback_error)
@@ -274,302 +377,7 @@ def _set_page_config(st: Any) -> None:
 
 
 def _inject_style(st: Any) -> None:
-    st.markdown(
-        (
-            """
-        <style>
-        .block-container {padding-top: 1.02rem; padding-bottom: 1.28rem; max-width: 1560px;}
-        [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {display: none !important;}
-        .catalog-hero {
-            background: linear-gradient(135deg, #efe7db 0%, #dfcdb0 45%, #bf9f74 100%);
-            border: 1px solid rgba(92, 63, 28, 0.14);
-            border-radius: 24px;
-            padding: 1.15rem 1.3rem;
-            margin-bottom: 1rem;
-            box-shadow: 0 18px 40px rgba(79, 55, 27, 0.08);
-        }
-        .catalog-hero-head {
-            display: flex;
-            align-items: center;
-            gap: 0.88rem;
-            margin-bottom: 0.38rem;
-        }
-        .catalog-brand {display: flex; align-items: center; gap: 0.88rem;}
-        .catalog-icon {
-            width: 48px;
-            height: 48px;
-            border-radius: 14px;
-            background: linear-gradient(180deg, rgba(58, 38, 20, 0.96), rgba(96, 68, 36, 0.96));
-            color: #f6ede2;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.05rem;
-            font-weight: 900;
-            letter-spacing: 0.06em;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 12px 24px rgba(63, 41, 20, 0.14);
-        }
-        .catalog-kicker {font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: #6e4a21; font-weight: 800;}
-        .catalog-title {font-size: 2.0rem; line-height: 1.05; color: #2d1e12; font-weight: 800; margin: 0.18rem 0 0.34rem 0;}
-        .catalog-sub {font-size: 0.96rem; color: #59442d; max-width: 82ch;}
-        .catalog-inline-filters {
-            border: 1px solid rgba(90, 62, 28, 0.12);
-            border-radius: 18px;
-            padding: 0.2rem 0.32rem 0.32rem 0.32rem;
-            background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(249,245,239,0.96));
-            margin-bottom: 0.9rem;
-        }
-        .catalog-stat {
-            background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,244,238,0.96));
-            border: 1px solid rgba(90, 62, 28, 0.12);
-            border-radius: 18px;
-            padding: 0.9rem 1rem;
-            min-height: 110px;
-        }
-        .catalog-stat-label {font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.06em; color: #7b5b38; font-weight: 700;}
-        .catalog-stat-value {font-size: 1.45rem; font-weight: 800; color: #2f2115; margin-top: 0.14rem;}
-        .catalog-stat-note {font-size: 0.87rem; color: #65513a; margin-top: 0.16rem;}
-        .catalog-chip {
-            display: inline-block;
-            margin: 0.12rem 0.32rem 0.12rem 0;
-            padding: 0.18rem 0.48rem;
-            border-radius: 999px;
-            background: rgba(68, 47, 23, 0.08);
-            color: #4e3419;
-            font-size: 0.8rem;
-            font-weight: 600;
-        }
-        .catalog-detail {
-            background: white;
-            border: 1px solid rgba(90, 62, 28, 0.12);
-            border-radius: 20px;
-            padding: 1rem 1.05rem;
-        }
-        .catalog-section-title {font-size: 0.92rem; color: #72502d; font-weight: 780; margin-top: 0.88rem; margin-bottom: 0.32rem;}
-        .catalog-empty {
-            border: 1px dashed rgba(101, 73, 41, 0.26);
-            border-radius: 18px;
-            padding: 1rem;
-            background: rgba(255, 251, 246, 0.9);
-            color: #5d4831;
-        }
-        .catalog-floating {
-            position: sticky;
-            top: 0.6rem;
-            z-index: 30;
-            background: linear-gradient(180deg, rgba(255,250,243,0.98), rgba(250,242,230,0.98));
-            border: 1px solid rgba(101, 70, 35, 0.18);
-            border-radius: 18px;
-            padding: 0.82rem 0.9rem;
-            margin-bottom: 0.9rem;
-            box-shadow: 0 10px 24px rgba(77, 54, 29, 0.08);
-        }
-        .catalog-floating-label {font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.06em; color: #8a6439; font-weight: 700;}
-        .catalog-floating-title {font-size: 1.02rem; color: #2f2115; font-weight: 800; margin-top: 0.18rem;}
-        .catalog-floating-meta {font-size: 0.86rem; color: #6a543c; margin-top: 0.18rem;}
-        .catalog-warning {
-            border: 1px solid rgba(170, 118, 34, 0.25);
-            border-radius: 16px;
-            padding: 0.78rem 0.86rem;
-            background: rgba(255, 248, 235, 0.96);
-            color: #674c22;
-            margin-bottom: 0.85rem;
-        }
-        .catalog-relation-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 0.72rem;
-            margin: 0.38rem 0 0.92rem 0;
-        }
-        .catalog-relation-card {
-            border: 1px solid rgba(101, 70, 35, 0.14);
-            border-radius: 18px;
-            padding: 0.82rem 0.9rem;
-            background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(249,244,237,0.98));
-            box-shadow: 0 10px 22px rgba(77, 54, 29, 0.06);
-        }
-        .catalog-relation-chain-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 0.78rem;
-            margin: 0.38rem 0 1rem 0;
-        }
-        .catalog-relation-chain-card {
-            border: 1px solid rgba(101, 70, 35, 0.16);
-            border-radius: 20px;
-            padding: 0.9rem 0.96rem;
-            background: linear-gradient(180deg, rgba(255,250,244,0.99), rgba(245,238,229,0.99));
-            box-shadow: 0 12px 24px rgba(77, 54, 29, 0.07);
-        }
-        .catalog-relation-chain-key {
-            margin-top: 0.24rem;
-            padding: 0.36rem 0.56rem;
-            border-radius: 14px;
-            background: rgba(90, 62, 28, 0.08);
-            color: #2f2115;
-            font-size: 0.96rem;
-            font-weight: 800;
-        }
-        .catalog-relation-chain-meta {
-            margin-top: 0.22rem;
-            font-size: 0.82rem;
-            color: #6a543c;
-        }
-        .catalog-relation-chain-lanes {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 0.62rem;
-            margin-top: 0.7rem;
-        }
-        .catalog-relation-lane {
-            border-radius: 14px;
-            padding: 0.56rem 0.6rem;
-            background: rgba(255,255,255,0.68);
-            border: 1px solid rgba(101, 70, 35, 0.10);
-        }
-        .catalog-relation-lane-title {
-            font-size: 0.76rem;
-            color: #8b6640;
-            font-weight: 780;
-            margin-bottom: 0.34rem;
-        }
-        .catalog-relation-lane-empty {
-            font-size: 0.78rem;
-            color: #8c7b67;
-        }
-        .catalog-relation-lane-item {
-            font-size: 0.82rem;
-            color: #4c3822;
-            padding: 0.22rem 0.34rem;
-            border-radius: 10px;
-            background: rgba(90, 62, 28, 0.05);
-            margin-bottom: 0.26rem;
-        }
-        .catalog-relation-lane-item:last-child {
-            margin-bottom: 0;
-        }
-        .catalog-relation-lane-key {
-            display: block;
-            font-size: 0.74rem;
-            color: #7f6140;
-        }
-        .catalog-relation-family {
-            font-size: 0.74rem;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            color: #8b6640;
-            font-weight: 800;
-        }
-        .catalog-relation-title {
-            margin-top: 0.2rem;
-            font-size: 0.98rem;
-            line-height: 1.35;
-            color: #2f2115;
-            font-weight: 780;
-        }
-        .catalog-relation-meta {
-            margin-top: 0.18rem;
-            font-size: 0.83rem;
-            color: #6a543c;
-        }
-        .catalog-relation-preview {
-            margin-top: 0.55rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.26rem;
-        }
-        .catalog-relation-preview-item {
-            font-size: 0.83rem;
-            color: #4c3822;
-            padding: 0.28rem 0.44rem;
-            border-radius: 12px;
-            background: rgba(90, 62, 28, 0.06);
-        }
-        .catalog-relation-preview-key {
-            color: #7f6140;
-            font-size: 0.76rem;
-            margin-left: 0.26rem;
-        }
-        .catalog-fab-stack {
-            position: fixed;
-            right: 1.15rem;
-            bottom: 1.15rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.62rem;
-            z-index: 9998;
-        }
-        .catalog-fab {
-            width: 48px;
-            height: 48px;
-            border-radius: 15px;
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-decoration: none !important;
-            background: linear-gradient(180deg, rgba(60, 39, 18, 0.96), rgba(103, 72, 37, 0.96));
-            color: #f8efe5 !important;
-            box-shadow: 0 14px 30px rgba(57, 38, 20, 0.2);
-            border: 1px solid rgba(255,255,255,0.08);
-            font-size: 1.22rem;
-            font-weight: 800;
-            transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
-        }
-        .catalog-fab:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 18px 32px rgba(57, 38, 20, 0.24);
-        }
-        .catalog-fab-disabled {
-            opacity: 0.42;
-            pointer-events: none;
-        }
-        .catalog-fab[data-tooltip]::before,
-        .catalog-fab[data-tooltip]::after {
-            position: absolute;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 120ms ease, transform 120ms ease;
-        }
-        .catalog-fab[data-tooltip]::before {
-            content: "";
-            right: calc(100% + 6px);
-            top: 50%;
-            transform: translateY(-50%) translateX(6px);
-            border-width: 6px 0 6px 7px;
-            border-style: solid;
-            border-color: transparent transparent transparent rgba(45, 31, 18, 0.96);
-        }
-        .catalog-fab[data-tooltip]::after {
-            content: attr(data-tooltip);
-            right: calc(100% + 14px);
-            top: 50%;
-            transform: translateY(-50%) translateX(6px);
-            white-space: nowrap;
-            padding: 0.42rem 0.58rem;
-            border-radius: 10px;
-            background: rgba(45, 31, 18, 0.96);
-            color: #fff6ea;
-            font-size: 0.78rem;
-            font-weight: 700;
-            letter-spacing: 0.01em;
-            box-shadow: 0 12px 24px rgba(31, 20, 10, 0.22);
-        }
-        .catalog-fab[data-tooltip]:hover::before,
-        .catalog-fab[data-tooltip]:hover::after,
-        .catalog-fab[data-tooltip]:focus-visible::before,
-        .catalog-fab[data-tooltip]:focus-visible::after {
-            opacity: 1;
-            transform: translateY(-50%) translateX(0);
-        }
-        """
-            + _page.PAGE_PROTOCOL_STYLE
-            + """
-        </style>
-        """
-        ),
-        unsafe_allow_html=True,
-    )
+    st.markdown(DASHBOARD_CSS, unsafe_allow_html=True)
 
 
 def _scope_label(scope: str) -> str:
@@ -577,6 +385,8 @@ def _scope_label(scope: str) -> str:
 
 
 def _kind_label(kind: str) -> str:
+    if _navigation.is_group(kind):
+        return _navigation.group_title(kind)
     return _KIND_LABELS.get(str(kind or "").strip().lower(), str(kind or ""))
 
 
@@ -613,6 +423,8 @@ def _relation_group_label(relation_name: str, relation_labels: Mapping[str, str]
     custom = str((relation_labels or {}).get(key, "") or "").strip()
     if custom:
         return custom
+    if key in {"companions", "linked_by"}:
+        return {"companions": "目录声明的配套组件", "linked_by": "哪些组件关联了它"}[key]
     if key.startswith("context_provides::"):
         _, _, context_key = key.partition("::")
         return f"产物 -> {context_key} -> 消费者"
@@ -899,7 +711,7 @@ def _render_scalar(value: Any) -> str:
 
 
 def _chips(values: Sequence[str]) -> str:
-    return "".join(f"<span class='catalog-chip'>{str(value)}</span>" for value in values if str(value).strip())
+    return "".join(f"<span class='catalog-chip'>{escape(str(value))}</span>" for value in values if str(value).strip())
 
 
 def _item_sort_value(item: Mapping[str, Any], sort_by: str) -> str:
@@ -922,7 +734,7 @@ def _sorted_items(items: Sequence[Mapping[str, Any]], *, sort_by: str, sort_dir:
 
 
 def _read_query_params(st: Any) -> tuple[dict[str, str], dict[str, tuple[str, ...]]]:
-    return _shared.read_query_params(
+    params, filters = _shared.read_query_params(
         st,
         base_keys=(
             "profile",
@@ -945,6 +757,12 @@ def _read_query_params(st: Any) -> tuple[dict[str, str], dict[str, tuple[str, ..
             "nav_action",
         ),
     )
+    if _hosted_mode():
+        safe_params = _public_query_params(params)
+        if safe_params != params:
+            _shared.write_query_params(st, base_params=safe_params, field_filters=filters)
+        params = {key: str(value) for key, value in safe_params.items()}
+    return params, filters
 
 
 def _query_param_payload(
@@ -969,7 +787,7 @@ def _query_param_payload(
     field_filters: Mapping[str, object] | None = None,
 ) -> dict[str, str]:
     return _shared.build_query_param_payload(
-        base_params={
+        base_params=_public_query_params({
             "profile": str(profile),
             "scope": str(scope),
             "kind": str(kind),
@@ -987,7 +805,7 @@ def _query_param_payload(
             "column_mode": str(column_mode),
             "page_size": str(int(page_size)),
             "results_collapse": str(results_collapse),
-        },
+        }),
         field_filters=field_filters,
     )
 
@@ -1014,7 +832,7 @@ def _build_deep_link_query(
     field_filters: Mapping[str, object] | None = None,
 ) -> str:
     return _shared.build_deep_link_query(
-        base_params={
+        base_params=_public_query_params({
             "profile": str(profile),
             "scope": str(scope),
             "kind": str(kind),
@@ -1032,7 +850,7 @@ def _build_deep_link_query(
             "column_mode": str(column_mode),
             "page_size": str(int(page_size)),
             "results_collapse": str(results_collapse),
-        },
+        }),
         field_filters=field_filters,
     )
 
@@ -1061,7 +879,7 @@ def _write_query_params(
 ) -> None:
     _shared.write_query_params(
         st,
-        base_params={
+        base_params=_public_query_params({
             "profile": str(profile),
             "scope": str(scope),
             "kind": str(kind),
@@ -1079,7 +897,7 @@ def _write_query_params(
             "column_mode": str(column_mode),
             "page_size": str(int(page_size)),
             "results_collapse": str(results_collapse),
-        },
+        }),
         field_filters=field_filters,
     )
 
@@ -1178,8 +996,8 @@ def _selected_table_row_indices(event: Any) -> tuple[int, ...]:
 
 def _pick_default_kind(kind: str, kinds: Sequence[str]) -> str:
     raw = str(kind or "").strip().lower()
-    if raw == _KIND_ALL:
-        return _KIND_ALL
+    if raw == _KIND_ALL or _navigation.is_group(raw):
+        return raw
     if raw in kinds:
         return raw
     if kinds:
@@ -1199,6 +1017,7 @@ def _other_kind_hits(
     db_path: str | None = None,
     source_mode: str | None = None,
     limit: int = 24,
+    filters_key: tuple[tuple[str, tuple[str, ...]], ...] = (),
 ) -> dict[str, list[Any]]:
     text = str(query or "").strip()
     if not text:
@@ -1206,21 +1025,19 @@ def _other_kind_hits(
     hits = search_entries(
         text,
         profile=profile,
-        scope=scope,
-        project_path=project_path,
-        include_global=include_global,
+        **_catalog_source_options(scope, project_path, include_global, db_path, source_mode),
         kind=None,
         field=field,
         limit=limit,
-        db_path=db_path,
-        source_mode=source_mode,
+        field_filters=_shell.thaw_filters(filters_key),
     )
     grouped: dict[str, list[Any]] = {}
     for entry in hits:
         entry_kind = str(getattr(entry, "kind", "") or "").strip().lower()
-        if not entry_kind or entry_kind == current_kind:
+        if not entry_kind or _navigation.contains_kind(current_kind, entry_kind):
             continue
-        grouped.setdefault(entry_kind, []).append(entry)
+        target = _navigation.group_for_kind(entry_kind) if _navigation.is_group(current_kind) else entry_kind
+        grouped.setdefault(target, []).append(entry)
     return grouped
 
 
@@ -1253,6 +1070,9 @@ def _source_badges(entry: Mapping[str, Any], source_info: Mapping[str, Any]) -> 
         f"entry:{_entry_source_scope(str(entry.get('key', '')))}",
         f"view:{str(source_info.get('effective_source', 'framework'))}",
     ]
+    metadata = entry.get("metadata", {}) or {}
+    if isinstance(metadata, Mapping) and metadata.get("catalog_framework"):
+        badges.insert(0, str(metadata["catalog_framework"]))
     framework_source = str(source_info.get("framework_source", "") or "").strip()
     if framework_source:
         badges.append(f"framework-backend:{framework_source}")
@@ -1266,6 +1086,8 @@ def _source_badges(entry: Mapping[str, Any], source_info: Mapping[str, Any]) -> 
 
 
 def _resolve_source_file(import_path: str, *, project_root: str | None = None) -> Path | None:
+    if _hosted_mode():
+        return None
     module_name = str(import_path or "").partition(":")[0].strip()
     if not module_name:
         return None
@@ -1298,6 +1120,8 @@ def _resolve_source_file(import_path: str, *, project_root: str | None = None) -
 
 
 def _reveal_source_file(path: Path) -> bool:
+    if _hosted_mode():
+        return False
     target = Path(path).resolve()
     if not target.exists():
         return False
@@ -1315,6 +1139,8 @@ def _reveal_source_file(path: Path) -> bool:
 
 
 def _open_source_file(path: Path) -> bool:
+    if _hosted_mode():
+        return False
     target = Path(path).resolve()
     if not target.exists():
         return False
@@ -1365,6 +1191,7 @@ def _selection_state(
 
 
 def _result_rows(items: Sequence[Mapping[str, Any]], *, column_mode: str) -> list[dict[str, str]]:
+    example_snapshot = _examples.examples_snapshot()
     rows: list[dict[str, str]] = []
     normalized_mode = _normalize_column_mode(column_mode)
     for index, item in enumerate(items, start=1):
@@ -1372,6 +1199,7 @@ def _result_rows(items: Sequence[Mapping[str, Any]], *, column_mode: str) -> lis
             "序号": str(index),
             "标题": str(item.get("title", "") or item.get("key", "")),
             "Key": str(item.get("key", "")),
+            "示例": _examples.example_status(item, example_snapshot),
         }
         if normalized_mode in {"standard", "full"}:
             row["分类"] = _kind_label(str(item.get("kind", "")))
@@ -1388,6 +1216,11 @@ def _visible_result_items(items: Sequence[Mapping[str, Any]], *, page_size: int)
 
 def _clear_scope_kind_filters(st: Any, *, scope: str, kind: str) -> None:
     _shared.clear_scope_kind_filters(st, scope=scope, kind=kind, facet_fields=_PRIMARY_FILTER_FIELDS)
+    params = getattr(st, "query_params", None)
+    if params is not None:
+        for name in tuple(params):
+            if str(name).startswith("f_"):
+                del params[name]
 
 
 def _scroll_to_anchor(st: Any, *, anchor_id: str) -> None:
@@ -1503,8 +1336,10 @@ def _selection_presence(
 def _catalog_kind_from_target(*, target_key: str, target_kind: str = "") -> str:
     raw_kind = str(target_kind or "").strip().lower()
     if not raw_kind and "." in str(target_key):
-        raw_kind = str(target_key).split(".", 1)[0].strip().lower()
-    return raw_kind if raw_kind in _KIND_ORDER else ""
+        segments = str(target_key).split(".")
+        raw_kind = segments[1] if segments[0] == "mlblack" and len(segments) > 1 else segments[0]
+        raw_kind = raw_kind.strip().lower()
+    return raw_kind if raw_kind in _KIND_LABELS else ""
 
 
 def _select_catalog_entry(
@@ -1520,7 +1355,8 @@ def _select_catalog_entry(
 
 
 def _callback_select_entry(st: Any, *, target_key: str, target_kind: str = "") -> None:
-    _select_catalog_entry(st, target_key=target_key, target_kind=target_kind)
+    # Previous/next browse the current result set; relations own cross-kind jumps.
+    st.session_state["catalog_ui_selected"] = str(target_key or "")
 
 
 def _callback_reveal_selected(st: Any, *, scope: str, kind: str) -> None:
@@ -1589,18 +1425,51 @@ def _callback_jump_relation(
     current_entry: Mapping[str, Any] | None,
     target_key: str,
     target_kind: str = "",
+    detail_tab: str | None = None,
 ) -> None:
     _push_navigation_stack(st, current_entry=current_entry)
     _select_catalog_entry(st, target_key=target_key, target_kind=target_kind)
+    if detail_tab is not None:
+        tab = _normalize_detail_tab(detail_tab)
+        target_view = _view_state_key(str(st.session_state.get("catalog_ui_scope", "framework")),
+                                     str(st.session_state.get("catalog_ui_kind", "all")), "detail_tab")
+        st.session_state[target_view] = tab
+        st.query_params["detail_tab"] = tab
     st.session_state[_PENDING_SCROLL_TARGET_KEY] = "catalog-detail-anchor"
 
 
 def _callback_switch_kind(st: Any, *, target_kind: str) -> None:
+    # Suggestions promise the same query in the target category, without a
+    # hidden filter remembered from an earlier visit to that category.
+    _clear_scope_kind_filters(st, scope=str(st.session_state.get("catalog_ui_scope", "framework")),
+                              kind=str(target_kind or _KIND_ALL))
     st.session_state["catalog_ui_kind"] = str(target_kind or "")
+
+
+def _callback_browse_kind(st: Any) -> None:
+    target = str(st.session_state.get("catalog_ui::browse_kind", _KIND_ALL))
+    _clear_scope_kind_filters(st, scope=str(st.session_state.get("catalog_ui_scope", "framework")), kind=target)
+    st.session_state.update({"catalog_ui_kind": target, "catalog_ui_query": "",
+                             "catalog_ui_field": "all", "catalog_ui_selected": ""})
+
+
+def _callback_browse_subkind(st: Any) -> None:
+    target = str(st.session_state.get("catalog_ui::browse_subkind", _KIND_ALL))
+    _clear_scope_kind_filters(st, scope=str(st.session_state.get("catalog_ui_scope", "framework")), kind=target)
+    st.session_state.update({"catalog_ui_kind": target, "catalog_ui_query": "",
+                             "catalog_ui_field": "all", "catalog_ui_selected": ""})
 
 
 def _callback_clear_filters(st: Any, *, scope: str, kind: str) -> None:
     _clear_scope_kind_filters(st, scope=scope, kind=kind)
+
+
+def _callback_reset_search(st: Any) -> None:
+    scope = str(st.session_state.get("catalog_ui_scope", "framework"))
+    kind = str(st.session_state.get("catalog_ui_kind", _KIND_ALL))
+    _clear_scope_kind_filters(st, scope=scope, kind=kind)
+    st.session_state["catalog_ui_query"] = ""
+    st.session_state["catalog_ui_field"] = "all"
 
 
 def _raw_relation_neighbor_groups(entry: Mapping[str, Any] | None) -> dict[str, list[dict[str, Any]]]:
@@ -1655,33 +1524,13 @@ def _entry_list_payload(entry: Any) -> dict[str, Any]:
         "kind": str(getattr(entry, "kind", "") or ""),
         "tags": tuple(getattr(entry, "tags", ()) or ()),
         "summary": str(getattr(entry, "summary", "") or ""),
+        "minimal_wiring": tuple(getattr(entry, "minimal_wiring", ()) or ()),
+        "example_entry": str(getattr(entry, "example_entry", "") or ""),
     }
 
 
 def _entry_detail_payload(entry: Any) -> dict[str, Any]:
-    return {
-        "key": str(getattr(entry, "key", "") or ""),
-        "title": str(getattr(entry, "title", "") or ""),
-        "kind": str(getattr(entry, "kind", "") or ""),
-        "import_path": str(getattr(entry, "import_path", "") or ""),
-        "tags": tuple(getattr(entry, "tags", ()) or ()),
-        "summary": str(getattr(entry, "summary", "") or ""),
-        "companions": tuple(getattr(entry, "companions", ()) or ()),
-        "context_requires": tuple(getattr(entry, "context_requires", ()) or ()),
-        "context_provides": tuple(getattr(entry, "context_provides", ()) or ()),
-        "context_mutates": tuple(getattr(entry, "context_mutates", ()) or ()),
-        "context_cache": tuple(getattr(entry, "context_cache", ()) or ()),
-        "context_notes": tuple(getattr(entry, "context_notes", ()) or ()),
-        "artifact_requires": tuple(getattr(entry, "artifact_requires", ()) or ()),
-        "artifact_provides": tuple(getattr(entry, "artifact_provides", ()) or ()),
-        "phase_in": tuple(getattr(entry, "phase_in", ()) or ()),
-        "phase_out": tuple(getattr(entry, "phase_out", ()) or ()),
-        "use_when": tuple(getattr(entry, "use_when", ()) or ()),
-        "minimal_wiring": tuple(getattr(entry, "minimal_wiring", ()) or ()),
-        "required_companions": tuple(getattr(entry, "required_companions", ()) or ()),
-        "config_keys": tuple(getattr(entry, "config_keys", ()) or ()),
-        "example_entry": str(getattr(entry, "example_entry", "") or ""),
-    }
+    return _entry_payload(entry)
 
 
 def _load_source_info(
@@ -1694,11 +1543,7 @@ def _load_source_info(
 ) -> dict[str, Any]:
     return catalog_source_info(
         profile=profile,
-        scope=scope,
-        project_path=project_path or None,
-        include_global=include_global,
-        db_path=db_path or None,
-        source_mode=source_mode or None,
+        **_catalog_source_options(scope, project_path, include_global, db_path, source_mode),
     )
 
 
@@ -1715,11 +1560,7 @@ def _load_summary(
 ) -> dict[str, Any]:
     return catalog_summary(
         profile=profile,
-        scope=scope,
-        project_path=project_path or None,
-        include_global=include_global,
-        db_path=db_path or None,
-        source_mode=source_mode or None,
+        **_catalog_source_options(scope, project_path, include_global, db_path, source_mode),
     )
 
 
@@ -1736,11 +1577,7 @@ def _load_schema(
 ) -> dict[str, Any]:
     return catalog_schema(
         profile=profile,
-        scope=scope,
-        project_path=project_path or None,
-        include_global=include_global,
-        db_path=db_path or None,
-        source_mode=source_mode or None,
+        **_catalog_source_options(scope, project_path, include_global, db_path, source_mode),
     )
 
 
@@ -1758,17 +1595,18 @@ def _load_facets(
     db_path: str,
     source_mode: str,
 ) -> dict[str, Any]:
+    scoped_kind, scoped_filters = _navigation.query_scope(
+        kind, available_kinds=tuple(_cached_summary(
+            profile, scope, project_path, include_global, db_path, source_mode).get("by_kind", {})))
     return catalog_facets(
         profile=profile,
-        scope=scope,
-        project_path=project_path or None,
-        include_global=include_global,
-        kind=_catalog_kind_arg(kind),
+        **_catalog_source_options(scope, project_path, include_global, db_path, source_mode),
+        kind=scoped_kind,
+        field_filters=scoped_filters,
         query=query,
         search_field=search_field,
+        fields=_PRIMARY_FILTER_FIELDS,
         limit_per_field=24,
-        db_path=db_path or None,
-        source_mode=source_mode or None,
     )
 
 
@@ -1787,32 +1625,26 @@ def _load_items(
     db_path: str,
     source_mode: str,
 ) -> tuple[dict[str, Any], ...]:
-    filters = _shell.thaw_filters(filters_key)
+    scoped_kind, filters = _navigation.query_scope(
+        kind, _shell.thaw_filters(filters_key), available_kinds=tuple(_cached_summary(
+            profile, scope, project_path, include_global, db_path, source_mode).get("by_kind", {})))
     entries = (
         search_entries(
             query,
             profile=profile,
-            scope=scope,
-            project_path=project_path or None,
-            include_global=include_global,
-            kind=_catalog_kind_arg(kind),
+            **_catalog_source_options(scope, project_path, include_global, db_path, source_mode),
+            kind=scoped_kind,
             field=search_field,
-            limit=250,
+            limit=max(1, int(_cached_summary(profile, scope, project_path, include_global, db_path, source_mode).get("total", 0))),
             field_filters=filters,
-            db_path=db_path or None,
-            source_mode=source_mode or None,
         )
         if str(query).strip()
         else list_entries(
             profile=profile,
-            scope=scope,
-            project_path=project_path or None,
-            include_global=include_global,
-            kind=_catalog_kind_arg(kind),
-            limit=250,
+            **_catalog_source_options(scope, project_path, include_global, db_path, source_mode),
+            kind=scoped_kind,
+            limit=None,
             field_filters=filters,
-            db_path=db_path or None,
-            source_mode=source_mode or None,
         )
     )
     return tuple(_entry_list_payload(entry) for entry in entries)
@@ -1836,11 +1668,7 @@ def _load_selected_entry(
     entry = show_entry(
         key,
         profile=profile,
-        scope=scope,
-        project_path=project_path or None,
-        include_global=include_global,
-        db_path=db_path or None,
-        source_mode=source_mode or None,
+        **_catalog_source_options(scope, project_path, include_global, db_path, source_mode),
     )
     return None if entry is None else _entry_detail_payload(entry)
 
@@ -1863,11 +1691,7 @@ def _load_neighbors(
     return catalog_neighbors(
         key,
         profile=profile,
-        scope=scope,
-        project_path=project_path or None,
-        include_global=include_global,
-        db_path=db_path or None,
-        source_mode=source_mode or None,
+        **_catalog_source_options(scope, project_path, include_global, db_path, source_mode),
     )
 
 
@@ -1891,27 +1715,7 @@ def _render_selection_float(
         return
 
     title = str((selected_entry or {}).get("title", "") or selected_key)
-    safe_title = escape(title)
-    safe_key = escape(selected_key)
     row_index = selection.get("row_index")
-    if selection.get("visible", False) and isinstance(row_index, int):
-        meta = f"当前选中项位于结果表格第 {int(row_index) + 1} 行。"
-    elif selection.get("hidden", False):
-        meta = "当前选中项被筛选条件暂时隐藏。"
-    else:
-        meta = "当前选中项不在结果表格里。"
-
-    st.markdown(
-        (
-            "<div class='catalog-floating'>"
-            "<div class='catalog-floating-label'>Current Selection</div>"
-            f"<div class='catalog-floating-title'>{safe_title}</div>"
-            f"<div class='catalog-floating-meta'><code>{safe_key}</code><br/>{escape(meta)}</div>"
-            "</div>"
-        ),
-        unsafe_allow_html=True,
-    )
-
     visible_rows = list(visible_items or ())
     if selection.get("visible", False) and isinstance(row_index, int) and len(visible_rows) > 1:
         nav_cols = st.columns((1.0, 1.0))
@@ -1944,41 +1748,88 @@ def _render_selection_float(
             },
         )
 
-    stack = _navigation_stack(st)
-    action_cols = st.columns((1.0, 1.0, 1.0))
-    if selection.get("hidden", False):
-        action_cols[0].button(
-            "显示它",
-            key=f"catalog_ui::reveal::{scope}::{kind}",
+    with st.expander("选中项操作", expanded=False):
+        st.caption(title)
+        stack = _navigation_stack(st)
+        action_cols = st.columns((1.0, 1.0, 1.0))
+        if selection.get("hidden", False):
+            action_cols[0].button(
+                "显示它",
+                key=f"catalog_ui::reveal::{scope}::{kind}",
+                width="stretch",
+                on_click=_callback_reveal_selected,
+                kwargs={"st": st, "scope": scope, "kind": kind},
+            )
+        else:
+            action_cols[0].button(
+                "定位到结果区",
+                key=f"catalog_ui::locate_selection::{scope}::{kind}",
+                width="stretch",
+                on_click=_callback_locate_selected,
+                kwargs={"st": st},
+            )
+        if stack:
+            action_cols[1].button(
+                "返回上一个",
+                key=f"catalog_ui::back::{scope}::{kind}",
+                width="stretch",
+                on_click=_callback_pop_navigation,
+                kwargs={"st": st},
+            )
+        else:
+            action_cols[1].caption("跳转栈为空")
+        action_cols[2].button(
+            "清除选中",
+            key=f"catalog_ui::clear_selected::{scope}::{kind}",
             width="stretch",
-            on_click=_callback_reveal_selected,
-            kwargs={"st": st, "scope": scope, "kind": kind},
-        )
-    else:
-        action_cols[0].button(
-            "定位到结果区",
-            key=f"catalog_ui::locate_selection::{scope}::{kind}",
-            width="stretch",
-            on_click=_callback_locate_selected,
+            on_click=_callback_clear_selected,
             kwargs={"st": st},
         )
-    if stack:
-        action_cols[1].button(
-            "返回上一个",
-            key=f"catalog_ui::back::{scope}::{kind}",
-            width="stretch",
-            on_click=_callback_pop_navigation,
-            kwargs={"st": st},
-        )
-    else:
-        action_cols[1].caption("跳转栈为空")
-    action_cols[2].button(
-        "清除选中",
-        key=f"catalog_ui::clear_selected::{scope}::{kind}",
-        width="stretch",
-        on_click=_callback_clear_selected,
-        kwargs={"st": st},
-    )
+
+
+
+def _callback_results_selection(st: Any, *, table_key: str, item_keys: Sequence[str]) -> None:
+    rows = _selected_table_row_indices(st.session_state.get(table_key, {}))
+    if rows and 0 <= int(rows[0]) < len(item_keys):
+        st.session_state["catalog_ui_selected"] = item_keys[int(rows[0])]
+    elif not rows:
+        st.session_state["catalog_ui_selected"] = _NO_SELECTION
+
+
+def _callback_results_choice(st: Any, *, choice_key: str) -> None:
+    st.session_state["catalog_ui_selected"] = st.session_state.get(choice_key) or _NO_SELECTION
+
+
+def _view_control_key(st: Any, *, state_key: str, value: object) -> str:
+    key = state_key + "::control"
+    if key in st.session_state and st.session_state[key] != value:
+        st.session_state[key] = value
+    return key
+
+
+def _callback_view_control(st: Any, *, state_key: str, parameter: str) -> None:
+    value = st.session_state[state_key + "::control"]
+    st.session_state[state_key] = value
+    # Query restoration runs before rendering. Commit the user's choice first
+    # so the previous URL cannot overwrite a new widget value on that rerun.
+    st.query_params[parameter] = str(value)
+
+
+def _entry_description(entry: Mapping[str, Any], *, limit: int | None = None) -> str:
+    """Use the primary-language summary in browsing; keep the source declaration intact."""
+    summary = " ".join(str(entry.get("summary", "") or "").split())
+    primary, separator, _ = summary.partition(" / ")
+    if separator and any("\u4e00" <= char <= "\u9fff" for char in primary):
+        summary = primary.rstrip(" /;")
+    if limit and len(summary) > limit:
+        summary = summary[:limit].rstrip("，。；、 ") + "…"
+    return summary
+
+
+def _callback_show_more(st: Any, *, page_size_key: str, total: int) -> None:
+    count = min(total, _normalize_page_size(st.session_state.get(page_size_key, 50)) + 50)
+    st.session_state[page_size_key] = count
+    st.query_params["page_size"] = str(count)
 
 
 def _render_results_table(
@@ -1994,26 +1845,59 @@ def _render_results_table(
     selected_key = raw_selected_key
     if selected_key == _NO_SELECTION:
         selected_key = ""
+    item_keys = tuple(str(item.get("key", "")) for item in items)
+    st.session_state["catalog_ui_result_keys"] = item_keys
     if not items:
-        st.markdown("<div class='catalog-empty'>当前筛选条件下没有结果。可以清空筛选、切换分类，或直接使用“全部 All”全局搜索。</div>", unsafe_allow_html=True)
-        return ""
+        st.markdown("<div class='catalog-empty'>没有匹配的组件。试试更短的关键词，或清空筛选。</div>", unsafe_allow_html=True)
+        return raw_selected_key
+
+    if not selected_key and not cleared_selection:
+        selected_key = item_keys[0]
+    rows_digest = hashlib.sha256("\0".join(item_keys).encode()).hexdigest()[:12]
+    if column_mode != "full":
+        titles = {str(item.get("key", "")): str(item.get("title", "") or item.get("key", "")) for item in items}
+        choice_key = f"catalog_ui::component_list::{scope}::{kind}::{rows_digest}"
+        selected_choice = selected_key if selected_key in item_keys else None
+        if choice_key in st.session_state and st.session_state[choice_key] != selected_choice:
+            # External navigation updates the existing widget without replacing
+            # it, so successive arrow-key selections keep keyboard focus.
+            st.session_state[choice_key] = selected_choice
+        with st.container(key="catalog_component_list", height=596, border=False):
+            st.radio(
+                "组件列表",
+                options=item_keys,
+                index=item_keys.index(selected_key) if selected_key in item_keys else None,
+                format_func=lambda key: titles[key],
+                captions=[_entry_description(item, limit=64) for item in items] if column_mode == "standard" else None,
+                label_visibility="collapsed",
+                key=choice_key,
+                width="stretch",
+                on_change=_callback_results_choice,
+                kwargs={"st": st, "choice_key": choice_key},
+            )
+        return selected_key or (_NO_SELECTION if cleared_selection else "")
 
     try:
         import pandas as pd
 
-        table_event = st.dataframe(
+        table_key = f"catalog_ui::results::{scope}::{kind}::{rows_digest}::{selected_key}"
+        selected_rows = [item_keys.index(selected_key)] if selected_key in item_keys else []
+        st.dataframe(
             pd.DataFrame(_result_rows(items, column_mode=column_mode)),
             width="stretch",
+            height=min(596, max(145, 42 + 38 * len(items))),
             hide_index=True,
-            on_select="rerun",
+            column_config={"序号": None, "标题": st.column_config.TextColumn("组件", width="medium"),
+                           "Key": st.column_config.TextColumn("标识", width="medium"),
+                           "示例": st.column_config.TextColumn("使用示例", width="small"),
+                           "分类": st.column_config.TextColumn("分类", width="small"),
+                           "标签": st.column_config.TextColumn("标签", width="medium")},
+            on_select=lambda: _callback_results_selection(st, table_key=table_key, item_keys=item_keys),
             selection_mode="single-row",
-            key=f"catalog_ui::results::{scope}::{kind}",
+            selection_default={"selection": {"rows": selected_rows}},
+            row_height=38,
+            key=table_key,
         )
-        selected_rows = _selected_table_row_indices(table_event)
-        if selected_rows:
-            index = int(selected_rows[0])
-            if 0 <= index < len(items):
-                selected_key = str(items[index].get("key", ""))
     except Exception:
         st.table(_result_rows(items, column_mode=column_mode))
 
@@ -2023,13 +1907,43 @@ def _render_results_table(
 
 
 def _render_sequence(st: Any, *, title: str, values: Sequence[str]) -> None:
-    cleaned = [str(value).strip() for value in values if str(value).strip()]
-    st.markdown(f"<div class='catalog-section-title'>{title}</div>", unsafe_allow_html=True)
+    cleaned = [str(value).strip() for value in values if str(value).strip() and str(value).strip().lower() not in {"(none)", "none", "无"}]
     if not cleaned:
-        st.caption("无")
         return
+    st.markdown(f"<div class='catalog-section-title'>{escape(title)}</div>", unsafe_allow_html=True)
     for value in cleaned:
         st.markdown(f"- {value}")
+
+
+def _render_usage_overview(st: Any, entry: Mapping[str, Any], *, include_wiring: bool = True) -> None:
+    """Present declared guidance and structural checks without running a recipe."""
+    _render_sequence(st, title=_field_label("use_when"), values=tuple(entry.get("use_when", ()) or ()))
+    wiring = tuple(str(value) for value in entry.get("minimal_wiring", ()) or () if str(value).strip())
+    if wiring and include_wiring:
+        st.markdown("<div class='catalog-section-title'>最小接线</div>", unsafe_allow_html=True)
+        code = "\n".join(wiring)
+        if hasattr(st, "code"):
+            st.code(code, language="python", wrap_lines=True)
+        else:
+            st.markdown(code)
+    for field in ("operations", "config_keys"):
+        values = tuple(str(value) for value in entry.get(field, ()) or ()
+                       if str(value).strip() and str(value).strip().lower() not in {"(none)", "none", "无"})
+        if values:
+            st.markdown(f"<div class='catalog-section-title'>{_field_label(field)}</div>", unsafe_allow_html=True)
+            st.markdown(_chips(values), unsafe_allow_html=True)
+    _render_sequence(st, title=_field_label("boundaries"), values=tuple(entry.get("boundaries", ()) or ()))
+    role = str(entry.get("role", "") or "").strip()
+    _render_sequence(st, title=_field_label("role"), values=(role,) if role else ())
+    concepts = tuple(entry.get("concepts", ()) or ())
+    if concepts:
+        st.markdown("<div class='catalog-section-title'>相关概念</div>", unsafe_allow_html=True)
+        st.markdown(_chips(concepts), unsafe_allow_html=True)
+    st.markdown(f"<div class='catalog-section-title'>{_field_label('wiring_status')}</div>", unsafe_allow_html=True)
+    st.markdown(wiring_status_label(str(entry.get("wiring_status", "unverified") or "unverified")))
+    for note in entry.get("wiring_notes", ()) or ():
+        st.caption(str(note))
+    st.caption(WIRING_STATUS_NOTE)
 
 
 def _render_navigation_stack(st: Any, *, current_key: str) -> None:
@@ -2056,6 +1970,23 @@ def _render_navigation_stack(st: Any, *, current_key: str) -> None:
         )
 
 
+def _render_detail_header(st: Any, entry: Mapping[str, Any] | None) -> None:
+    st.markdown(f"<div id='{_page.DETAIL_SECTION_ID}'></div><div id='catalog-detail-anchor'></div>", unsafe_allow_html=True)
+    if not entry:
+        return
+    entry_key = str(entry.get("key", "") or "")
+    title = str(entry.get("title", "") or entry_key)
+    kind_label = _kind_label(str(entry.get("kind", "") or ""))
+    st.markdown(
+        "<div class='catalog-entry-header'>"
+        f"<div class='catalog-entry-meta'>{escape(kind_label)}</div>"
+        f"<h2 class='catalog-entry-title'>{escape(title)}</h2>"
+        f"<div class='catalog-entry-key'>{escape(entry_key)}</div>"
+        f"<p class='catalog-entry-summary'>{escape(_entry_description(entry))}</p></div>",
+        unsafe_allow_html=True,
+    )
+
+
 def _render_detail(
     st: Any,
     *,
@@ -2073,25 +2004,12 @@ def _render_detail(
         return
 
     entry_key = str(entry.get("key", "") or "")
-    entry_kind = str(entry.get("kind", "") or "")
-    entry_title = str(entry.get("title", "") or entry_key)
     import_path = str(entry.get("import_path", "") or "")
-    source_path = _resolve_source_file(import_path, project_root=str(source_info.get("project_root", "") or "") or None)
+    hosted = _hosted_mode()
+    source_path = None if hosted else _resolve_source_file(
+        import_path, project_root=str(source_info.get("project_root", "") or "") or None,
+    )
     badges = _source_badges(entry, source_info)
-
-    st.markdown("<div id='catalog-detail-anchor'></div>", unsafe_allow_html=True)
-    st.markdown("<div class='catalog-detail'>", unsafe_allow_html=True)
-    st.markdown(f"## {entry_title}")
-    st.code(entry_key, language=None)
-    badge_values = tuple(badges) + tuple(str(value) for value in entry.get("tags", ()) if str(value).strip())
-    if badge_values:
-        st.markdown(_chips(badge_values), unsafe_allow_html=True)
-
-    summary = str(entry.get("summary", "") or "").strip()
-    if summary:
-        st.markdown(summary)
-
-    _render_navigation_stack(st, current_key=entry_key)
 
     current_tab = _normalize_detail_tab(detail_tab)
     expanded_groups = {
@@ -2099,48 +2017,97 @@ def _render_detail(
         for value in expanded_relation_groups
         if str(value).strip()
     }
+    # Usage links land on the overview tab. Keep the same navigation history
+    # available there instead of requiring a detour through the relations tab.
+    _render_navigation_stack(st, current_key=entry_key)
 
     if current_tab == "overview":
-        _render_sequence(st, title=_field_label("use_when"), values=tuple(entry.get("use_when", ()) or ()))
-        _render_sequence(st, title=_field_label("minimal_wiring"), values=tuple(entry.get("minimal_wiring", ()) or ()))
-        _render_sequence(st, title=_field_label("config_keys"), values=tuple(entry.get("config_keys", ()) or ()))
-        _render_sequence(st, title=_field_label("context_requires"), values=tuple(entry.get("context_requires", ()) or ()))
-        _render_sequence(st, title=_field_label("context_provides"), values=tuple(entry.get("context_provides", ()) or ()))
-        _render_sequence(st, title=_field_label("context_mutates"), values=tuple(entry.get("context_mutates", ()) or ()))
-        _render_sequence(st, title=_field_label("context_cache"), values=tuple(entry.get("context_cache", ()) or ()))
-        _render_sequence(st, title=_field_label("context_notes"), values=tuple(entry.get("context_notes", ()) or ()))
-        _render_sequence(st, title=_field_label("artifact_requires"), values=tuple(entry.get("artifact_requires", ()) or ()))
-        _render_sequence(st, title=_field_label("artifact_provides"), values=tuple(entry.get("artifact_provides", ()) or ()))
-        _render_sequence(st, title=_field_label("phase_in"), values=tuple(entry.get("phase_in", ()) or ()))
-        _render_sequence(st, title=_field_label("phase_out"), values=tuple(entry.get("phase_out", ()) or ()))
+        _examples.render_examples(st, entry,
+                                  profile=str(st.session_state.get("catalog_ui_profile", "default")))
+        example_state = _examples.examples_snapshot()
+        if example_state.get("available"):
+            from nsgablack.catalog.usage_navigation import render_documentation_navigation
+            available_entries = _cached_items(
+                str(st.session_state.get("catalog_ui_profile", "default")), scope,
+                str(st.session_state.get("catalog_ui_project_path", "") or ""),
+                bool(st.session_state.get("catalog_ui_include_global", False)),
+                "all", "", "all", (),
+                str(st.session_state.get("catalog_ui_db_path", "") or ""),
+                str(st.session_state.get("catalog_ui_source_mode", "") or ""),
+            )
+            render_documentation_navigation(
+                st, entry=entry, index=example_state["index"], available_entries=available_entries,
+                on_navigate=_callback_jump_relation, navigation_kwargs={"st": st, "current_entry": entry},
+            )
+        related = {}
+        for row in (*dict((neighbors or {}).get("relation_groups", {})).get("assembly_uses", ()),
+                    *((neighbors or {}).get("companions", ()) or ())):
+            if row.get("key"):
+                related.setdefault(row["key"], row)
+        if related:
+            st.markdown("**这段用法关联的组件**")
+            st.caption("按需查看配套组件的接入方式；这里的关联不表示必须全部启用。")
+            rows = tuple(related.items())
 
-        example_entry = str(entry.get("example_entry", "") or "").strip()
-        st.markdown(f"<div class='catalog-section-title'>{_field_label('example_entry')}</div>", unsafe_allow_html=True)
-        if example_entry:
-            st.code(example_entry, language=None)
-        else:
-            st.caption("无")
+            def render_related(values):
+                for key, row in values:
+                    st.button(str(row.get("title") or key), key=f"catalog_ui::usage_related::{entry_key}::{key}",
+                              on_click=_callback_jump_relation,
+                              kwargs={"st": st, "current_entry": entry, "target_key": key,
+                                      "target_kind": str(row.get("kind") or ""), "detail_tab": "overview"})
+
+            render_related(rows[:5])
+            if len(rows) > 5:
+                with st.expander(f"查看其余 {len(rows) - 5} 个关联组件（共 {len(rows)} 个）", expanded=False):
+                    render_related(rows[5:])
+
+    elif current_tab == "interface":
+        _render_usage_overview(st, entry, include_wiring=True)
+        _curation.render_note(st, entry_key=entry_key,
+                              profile=str(st.session_state.get("catalog_ui_profile", "default")),
+                              on_navigate=_callback_jump_relation,
+                              navigation_kwargs={"st": st, "current_entry": entry})
+        contract_fields = ("context_requires", "context_provides", "context_mutates", "context_cache",
+                           "context_notes", "artifact_requires", "artifact_provides", "phase_in", "phase_out")
+        if any(entry.get(field) for field in contract_fields):
+            with st.expander("契约与依赖", expanded=False):
+                for field in contract_fields:
+                    _render_sequence(st, title=_field_label(field), values=tuple(entry.get(field, ()) or ()))
+        declared_contract = entry.get("contract", {}) or {}
+        declared_metadata = entry.get("metadata", {}) or {}
+        if declared_contract or declared_metadata:
+            with st.expander("原始组件声明", expanded=False):
+                st.json({"contract": declared_contract, "metadata": declared_metadata})
 
     elif current_tab == "relations":
         neighbor_groups = _relation_neighbor_groups(entry=entry, neighbors=neighbors)
+        used_keys = {row.get("key") for row in neighbor_groups.get("assembly_uses", ())}
+        declared_keys = {row.get("key") for row in neighbor_groups.get("companions", ())}
+        if used_keys and neighbor_groups.get("companions"):
+            neighbor_groups["companions"] = [row for row in neighbor_groups["companions"] if row.get("key") not in used_keys]
         relation_labels = dict((neighbors or {}).get("relation_labels", {}) or {})
         relation_cards = tuple((neighbors or {}).get("relation_cards", ()) or ())
         relation_chain_cards = tuple((neighbors or {}).get("relation_chain_cards", ()) or ())
+        st.caption("配套组件来自目录声明；“用法片段使用了”来自实际代码调用。"
+                   "下方契约关系表示输入输出的键匹配，仍需按各组件的接入条件装配。")
         if not neighbor_groups:
-            st.info("当前条目还没有可跳转的关系。")
-        _render_relation_chain_cards(
-            st,
-            relation_chain_cards,
-            current_entry=entry,
-            scope=scope,
-            kind=kind,
-            expanded_relation_groups=tuple(expanded_groups),
-        )
-        _render_relation_cards(st, relation_cards)
-        for relation_name, rows in neighbor_groups.items():
+            st.info("当前公开声明和用法代码中尚未找到可跳转的组件关系。可先在“用法”页核对装配位置与输入条件。")
+        if (neighbors or {}).get("missing_companions"):
+            st.caption("当前目录范围未收录的关联项：" + "、".join((neighbors or {})["missing_companions"]))
+        if relation_chain_cards or relation_cards:
+            with st.expander("查看上下文、Artifact 与阶段契约概览", expanded=False):
+                _render_relation_chain_cards(
+                    st, relation_chain_cards, current_entry=entry, scope=scope, kind=kind,
+                    expanded_relation_groups=tuple(expanded_groups),
+                )
+                _render_relation_cards(st, relation_cards)
+        priority = {"assembly_uses": 0, "companions": 1, "assembly_used_by": 2, "linked_by": 3}
+        ordered_groups = sorted(neighbor_groups.items(), key=lambda item: priority.get(item[0], 4))
+        for relation_name, rows in ordered_groups:
             if not rows:
                 continue
-            with st.expander(f"{_relation_group_label(relation_name, relation_labels)} ({len(rows)})", expanded=relation_name in expanded_groups):
+            with st.expander(f"{_relation_group_label(relation_name, relation_labels)} ({len(rows)})",
+                             expanded=relation_name in expanded_groups or relation_name in {"assembly_uses", "companions"}):
                 for index, item in enumerate(rows):
                     key = str(item.get("key", "") or "")
                     label = str(item.get("title", "") or key)
@@ -2153,12 +2120,24 @@ def _render_detail(
                         st.markdown(f"**{label or key}**")
                         st.caption(f"{_kind_label(str(item.get('kind', '') or ''))} | {key}")
                         if relation_note:
-                            st.caption(relation_note)
+                            if relation_name == "assembly_uses":
+                                st.caption("本组件的用法代码创建或调用了它。" +
+                                           ("目录也将它列为配套组件。" if key in declared_keys else ""))
+                            elif relation_name == "assembly_used_by":
+                                st.caption("它的用法代码使用了当前组件。")
+                            else:
+                                st.caption(relation_note)
                         if summary:
-                            st.caption(summary)
+                            st.caption(_entry_description(item, limit=160))
+                        evidence = tuple(item.get("evidence", ()) or ())
+                        if evidence:
+                            with st.expander("查看这条关系的依据", expanded=False):
+                                for proof in evidence:
+                                    source = proof.get("source_path") or "组件的 minimal_wiring"
+                                    st.caption(f"{source} · 第 {proof.get('line', '?')} 行 · {proof.get('call', '')}")
                     with cols[1]:
                         st.button(
-                            "跳转",
+                            "查看用法",
                             key=f"catalog_ui::jump::{entry_key}::{relation_name}::{index}::{key}",
                             width="stretch",
                             on_click=_callback_jump_relation,
@@ -2167,11 +2146,14 @@ def _render_detail(
                                 "current_entry": entry,
                                 "target_key": key,
                                 "target_kind": str(item.get("kind", "") or ""),
+                                "detail_tab": "overview",
                             },
                         )
 
     else:
         st.markdown("<div class='catalog-section-title'>来源与链接</div>", unsafe_allow_html=True)
+        if badges:
+            st.markdown(_chips(badges), unsafe_allow_html=True)
         link_cols = st.columns((1.1, 0.95, 0.95))
         with link_cols[0]:
             _copy_current_url(st, key=f"catalog_ui::copy_link::{scope}::{kind}::{entry_key}")
@@ -2197,21 +2179,161 @@ def _render_detail(
         st.text_input("Deep-Link", value=deep_link_query, key=f"catalog_ui::deeplink::{entry_key}")
         st.markdown(f"<div class='catalog-section-title'>{_field_label('import_path')}</div>", unsafe_allow_html=True)
         st.code(import_path, language=None)
-        st.markdown("<div class='catalog-section-title'>Source File</div>", unsafe_allow_html=True)
-        if source_path is not None:
+        if hosted:
+            st.caption("服务器只读视图不解析或打开本地源码文件。")
+        elif source_path is not None:
+            st.markdown("<div class='catalog-section-title'>Source File</div>", unsafe_allow_html=True)
             st.code(str(source_path), language=None)
         else:
+            st.markdown("<div class='catalog-section-title'>Source File</div>", unsafe_allow_html=True)
             st.caption("当前条目暂时无法解析到本地 source file。")
 
-    st.caption(f"kind={entry_kind or 'unknown'} | scope={scope} | active-view={kind}")
-    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _callback_search_intent(st: Any, *, query: str, target_key: str) -> None:
+    scope = str(st.session_state.get("catalog_ui_scope", "framework"))
+    for kind in (str(st.session_state.get("catalog_ui_kind", _KIND_ALL)), _KIND_ALL):
+        _clear_scope_kind_filters(st, scope=scope, kind=kind)
+    st.session_state.update({"catalog_ui_query": query, "catalog_ui_field": "all",
+                             "catalog_ui_kind": _KIND_ALL, "catalog_ui_selected": target_key})
+    for key in tuple(st.query_params):
+        if str(key).startswith("f_"):
+            del st.query_params[key]
+    st.query_params.update({"query": query, "field": "all", "kind": _KIND_ALL,
+                            "selected": target_key, "detail_tab": "overview"})
+    st.session_state[_view_state_key(scope, _KIND_ALL, "detail_tab")] = "overview"
+
+
+def _render_workbench_controls(st: Any, *, summary: Mapping[str, Any], kinds: Sequence[str],
+                               current_kind: str, hosted: bool) -> dict[str, Any]:
+    """Keep discovery on the main surface and configuration in the sidebar."""
+    values = {key: st.session_state[f"catalog_ui_{key}"] for key in
+              ("scope", "profile", "query", "field", "project_path", "include_global", "db_path", "source_mode")}
+    with st.sidebar:
+        values["profile"] = st.selectbox("目录范围", options=("default", "framework-core"),
+            index=0 if values["profile"] == "default" else 1,
+            format_func=lambda value: "全部组件与示例" if value == "default" else "仅框架主干")
+        counts = summary.get("by_kind", {})
+        _examples.render_material_status(st)
+        _curation.render_status(st, profile=str(values["profile"]))
+        st.markdown("<div class='catalog-section-title'>浏览分类</div>", unsafe_allow_html=True)
+        primary = _navigation.group_for_kind(current_kind)
+        grouped_counts = _navigation.group_counts(counts)
+        if st.session_state.get("catalog_ui::browse_kind") != primary:
+            st.session_state["catalog_ui::browse_kind"] = primary
+        selected_group = st.radio("分类", options=list(_navigation.PRIMARY_OPTIONS),
+            index=_navigation.PRIMARY_OPTIONS.index(primary),
+            format_func=lambda value: f"{_navigation.group_title(value)} · {grouped_counts[value]}",
+            key="catalog_ui::browse_kind", on_change=_callback_browse_kind, kwargs={"st": st},
+            label_visibility="collapsed")
+        values["kind"] = selected_group
+        if selected_group != _KIND_ALL:
+            subkinds = (selected_group, *_navigation.member_kinds(selected_group, kinds))
+            selected_kind = current_kind if current_kind in subkinds else selected_group
+            if st.session_state.get("catalog_ui::browse_subkind") != selected_kind:
+                st.session_state["catalog_ui::browse_subkind"] = selected_kind
+            values["kind"] = st.selectbox("组件类型", options=list(subkinds),
+                index=subkinds.index(selected_kind),
+                format_func=lambda value: (f"本组全部 · {grouped_counts[selected_group]}" if value == selected_group
+                                          else f"{_kind_label(value)} · {counts.get(value, 0)}"),
+                key="catalog_ui::browse_subkind", on_change=_callback_browse_subkind, kwargs={"st": st})
+        st.caption("点击分类浏览完整列表；切换分类会清除搜索条件。")
+        if not hosted:
+            with st.expander("数据源与项目", expanded=False):
+                values["scope"] = st.radio("视图", options=("framework", "project"),
+                    index=0 if values["scope"] == "framework" else 1, format_func=_scope_label, horizontal=True)
+                values["project_path"] = st.text_input("Project Path", value=values["project_path"],
+                    disabled=values["scope"] != "project")
+                values["include_global"] = st.checkbox("项目视图并入框架条目", value=values["include_global"],
+                    disabled=values["scope"] != "project")
+                db_disabled = values["scope"] == "project" and not values["include_global"]
+                values["db_path"] = st.text_input("DB Path / URL", value=values["db_path"], disabled=db_disabled)
+                mode = str(values["source_mode"] or "")
+                values["source_mode"] = st.selectbox("Source Mode", options=list(_SOURCE_MODE_OPTIONS),
+                    index=_SOURCE_MODE_OPTIONS.index(mode) if mode in _SOURCE_MODE_OPTIONS else 0,
+                    format_func=_source_mode_label, disabled=db_disabled)
+        st.markdown(f"<div id='{_page.SECONDARY_CONTROLS_ROW_ID}' class='catalog-sidebar-note'>"
+                    f"{'服务器只读预览' if hosted else '本地组件目录'} · {int(summary.get('total', 0))} 条目</div>",
+                    unsafe_allow_html=True)
+        if hosted:
+            st.caption("服务器只读模式读取已发布 Catalog 数据库；组件定义来自框架源码同步。"
+                       if _hosted_source_values()["source_mode"] == "only" else
+                       "服务器只读模式固定读取框架 registry，不连接项目或数据库。")
+
+    _page.render_top_anchor(st)
+    with st.container(key="catalog_topbar"):
+        st.markdown(f"<div id='{_page.HERO_SECTION_ID}' class='catalog-heading'>"
+                    "<div><div class='heading-kicker'>WORKSPACE / CATALOG</div>"
+                    "<h1 class='heading-title'>组件目录</h1>"
+                    "<p class='heading-subtitle'>查找算法与组件，查看接口、装配方式和支持边界。</p></div>"
+                    f"<span class='catalog-mode-badge'>{'只读预览' if hosted else _scope_label(str(values['scope']))}</span>"
+                    "</div>", unsafe_allow_html=True)
+    with st.container(key="catalog_search"):
+        st.markdown(f"<div id='{_page.PRIMARY_CONTROLS_ROW_ID}'></div>", unsafe_allow_html=True)
+        search_cols = st.columns((4, 1.1, 0.9), gap="small")
+        values["query"] = search_cols[0].text_input("搜索组件", value=str(values["query"] or ""),
+            placeholder="搜索名称、用途或想法，例如：贝叶斯、精英池、GA + VNS", label_visibility="collapsed")
+        field = str(values["field"] or "all")
+        values["field"] = search_cols[1].selectbox("搜索范围", options=list(_SEARCH_FIELD_LABELS),
+            index=list(_SEARCH_FIELD_LABELS).index(field) if field in _SEARCH_FIELD_LABELS else 0,
+            format_func=_search_field_label, label_visibility="collapsed")
+        search_cols[2].button("重置搜索", key="catalog_ui::reset_search", width="stretch",
+                              on_click=_callback_reset_search, kwargs={"st": st})
+        quick = (("贝叶斯优化", "贝叶斯引导", "adapter.bayesian_optimization"),
+                 ("GA + VNS 编排", "GA停滞VNS精修", "adapter.search_plan"),
+                 ("解池操作", "解池", "tool.solution_pool"),
+                 ("扩展 Unit", "种群扩展字段", "tool.population_change"))
+        with st.container(key="catalog_intents"):
+            quick_cols = st.columns(len(quick), gap="small")
+            for col, (label, query, target) in zip(quick_cols, quick):
+                col.button(label, key=f"catalog_ui::intent::{target}", width="stretch",
+                    on_click=_callback_search_intent, kwargs={"st": st, "query": query, "target_key": target})
+    return values
+
+
+def _render_sidebar_facets(st: Any, *, available: Sequence[tuple[str, list[str]]], scope: str, kind: str) -> None:
+    active = _shared.collect_session_filters(st, scope=scope, kind=kind,
+                                            facet_fields=_PRIMARY_FILTER_FIELDS, multi_value=True)
+    with st.sidebar:
+        st.markdown(f"<div id='{_page.FILTER_SECTION_ID}' class='catalog-section-title'>FILTER · 精细筛选</div>",
+                    unsafe_allow_html=True)
+        with st.expander(f"字段筛选{f' · {len(active)} 项' if active else ''}", expanded=bool(active)):
+            if not available:
+                st.caption("当前没有可用的筛选项。")
+            for field_name, options in available:
+                state_key = f"catalog_ui::facet::{scope}::{kind}::{field_name}"
+                if state_key not in st.session_state:
+                    st.session_state[state_key] = []
+                st.multiselect(_field_label(field_name), options=options, key=state_key)
+            st.button("清空字段筛选", width="stretch", on_click=_callback_clear_filters,
+                      kwargs={"st": st, "scope": scope, "kind": kind})
 
 
 def run_dashboard(argv: Sequence[str] | None = None) -> None:
     args = _parse_args(argv)
+    hosted = _hosted_mode()
     st = _require_streamlit()
     _set_page_config(st)
     _inject_style(st)
+
+    # The assembly workbench is a separate workspace. Browsing Catalog still
+    # performs no trial execution and does not construct algorithm Units.
+    requested_workspace = "装配实验台" if st.query_params.get("view") == "lab" else "组件目录"
+    if "view" in st.query_params:
+        st.session_state["catalog_ui::workspace"] = requested_workspace
+    st.session_state.setdefault("catalog_ui::workspace", requested_workspace)
+    def _workspace_changed():
+        if st.session_state["catalog_ui::workspace"] == "装配实验台":
+            st.query_params["view"] = "lab"
+        elif "view" in st.query_params:
+            del st.query_params["view"]
+    st.sidebar.markdown(WORKSPACE_BRAND, unsafe_allow_html=True)
+    st.sidebar.radio("工作区", ("组件目录", "装配实验台"), key="catalog_ui::workspace",
+                     on_change=_workspace_changed)
+    if st.session_state["catalog_ui::workspace"] == "装配实验台":
+        from nsgablack.catalog.lab_ui import render_workbench
+        render_workbench(st, hosted=hosted)
+        return
 
     query_params, query_filters = _read_query_params(st)
     st.session_state.setdefault("catalog_ui_profile", str(query_params.get("profile", args.profile or "framework-core")))
@@ -2227,6 +2349,8 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
     )
     st.session_state.setdefault("catalog_ui_db_path", str(query_params.get("db_path", args.db_path or "")))
     st.session_state.setdefault("catalog_ui_source_mode", str(query_params.get("source_mode", args.source_mode or "")))
+    # Restored Streamlit sessions are untrusted source selection too.
+    _enforce_hosted_session(st)
     st.session_state.setdefault(_NAV_STACK_KEY, [])
     if str(query_params.get("nav_action", "") or "").strip().lower() == _NAV_ACTION_LOCATE_SELECTED:
         st.session_state[_PENDING_LOCATE_KEY] = True
@@ -2271,7 +2395,10 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
         scope=current_scope,
         kind=current_kind,
         facet_fields=_PRIMARY_FILTER_FIELDS,
-        query_filters=query_filters,
+        # URL filters initialize their own category only. Thereafter widget
+        # session state owns edits; an old URL must not overwrite them on rerun.
+        query_filters=(query_filters if str(query_params.get("kind", current_kind)) == current_kind
+                       and str(query_params.get("scope", current_scope)) == current_scope else {}),
         multi_value=True,
     )
     sort_by_key = _view_state_key(current_scope, current_kind, "sort_by")
@@ -2316,129 +2443,10 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
     if st.session_state.get(results_collapse_key) != results_collapse_value:
         st.session_state[results_collapse_key] = results_collapse_value
 
-    _page.render_top_anchor(st)
-    _page.render_hero(
-        st,
-        _page.HeroSpec(
-            icon_text="NC",
-            kicker="nsgablack catalog",
-            title="框架 / 项目双视图查询页",
-            subtitle=(
-                "顶部集中控制查询与字段筛选，中间是可点击选中的结果表格，右侧展示详情、来源、跳转栈与 source file 动作。"
-                "同一套页面既能看 framework-core，也能切到项目本地 catalog。"
-            ),
-        ),
-    )
-    root_note = str(source_info.get("project_root", "") or "")
-    _page.render_stat_cards(
-        st,
-        (
-            _page.StatCardSpec(
-                label="Scope",
-                value=_scope_label(current_scope),
-                note=f"effective={str(source_info.get('effective_source', 'framework'))}",
-            ),
-            _page.StatCardSpec(
-                label="Entries",
-                value=str(int(summary.get("total", 0))),
-                note="当前视图下的条目总数",
-            ),
-            _page.StatCardSpec(
-                label="Kinds",
-                value=str(len(summary.get("by_kind", {}))),
-                note=" / ".join(sorted(summary.get("by_kind", {}).keys())[:5]),
-            ),
-            _page.StatCardSpec(
-                label="Project Root",
-                value="已连接" if bool(root_note) else "未连接",
-                note=root_note or "当前不是 project scaffold 目录",
-            ),
-        ),
-    )
-
-    _page.render_section_header(
-        st,
-        _page.SectionHeaderSpec(
-            section_id=_page.FILTER_SECTION_ID,
-            label="Filter",
-            title="查询与筛选",
-            subtitle="先确定视图、profile、分类与数据源，再用字段筛选把结果收窄到可点选范围。",
-        ),
-    )
-
-    primary_controls = _page.render_control_row(st, _primary_controls_spec())
-    scope = primary_controls["scope"].column.radio(
-        primary_controls["scope"].label,
-        options=("framework", "project"),
-        index=0 if current_scope == "framework" else 1,
-        horizontal=True,
-        format_func=_scope_label,
-    )
-    profile = primary_controls["profile"].column.selectbox(
-        primary_controls["profile"].label,
-        options=("framework-core", "default"),
-        index=0 if current_profile == "framework-core" else 1,
-    )
-    kind = primary_controls["kind"].column.selectbox(
-        primary_controls["kind"].label,
-        options=list(kinds),
-        index=max(0, list(kinds).index(current_kind)) if current_kind in kinds else 0,
-        format_func=_kind_label,
-    )
-    query = primary_controls["query"].column.text_input(
-        primary_controls["query"].label,
-        value=str(st.session_state["catalog_ui_query"] or ""),
-        placeholder=primary_controls["query"].placeholder,
-    )
-
-    secondary_controls = _page.render_control_row(st, _secondary_controls_spec())
-    field = secondary_controls["field"].column.selectbox(
-        secondary_controls["field"].label,
-        options=list(_SEARCH_FIELD_LABELS.keys()),
-        index=list(_SEARCH_FIELD_LABELS.keys()).index(str(st.session_state["catalog_ui_field"] or "all"))
-        if str(st.session_state["catalog_ui_field"] or "all") in _SEARCH_FIELD_LABELS
-        else 0,
-        format_func=_search_field_label,
-    )
-    project_path = secondary_controls["project_path"].column.text_input(
-        secondary_controls["project_path"].label,
-        value=str(st.session_state["catalog_ui_project_path"] or ""),
-        disabled=scope != "project",
-        help=secondary_controls["project_path"].help,
-    )
-    include_global = secondary_controls["include_global"].column.checkbox(
-        secondary_controls["include_global"].label,
-        value=bool(st.session_state["catalog_ui_include_global"]),
-        disabled=scope != "project",
-    )
-    db_controls_disabled = scope == "project" and not include_global
-    db_path = secondary_controls["db_path"].column.text_input(
-        secondary_controls["db_path"].label,
-        value=str(st.session_state["catalog_ui_db_path"] or ""),
-        disabled=db_controls_disabled,
-        placeholder=secondary_controls["db_path"].placeholder,
-        help=secondary_controls["db_path"].help,
-    )
-    source_mode = secondary_controls["source_mode"].column.selectbox(
-        secondary_controls["source_mode"].label,
-        options=list(_SOURCE_MODE_OPTIONS),
-        index=list(_SOURCE_MODE_OPTIONS).index(current_source_mode) if current_source_mode in _SOURCE_MODE_OPTIONS else 0,
-        format_func=_source_mode_label,
-        disabled=db_controls_disabled,
-        help=secondary_controls["source_mode"].help,
-    )
-    if kind == _KIND_ALL:
-        secondary_controls["field"].caption("当前是全局搜索：会跨 Adapter / Bias / Plugin / Representation 等分类一起查。")
-    else:
-        secondary_controls["field"].caption(f"当前关键词只在“{_kind_label(kind)}”内搜索。找不到时可切到“全部 All”。")
-    if db_controls_disabled:
-        secondary_controls["db_path"].caption("当前项目视图只看本地 catalog，未并入框架条目时不读取数据库。")
-    else:
-        configured_backend = str(source_info.get("db_backend", "") or "").strip()
-        if not db_path and configured_backend:
-            secondary_controls["db_path"].caption(f"未填写 DB URL 时，会默认使用本地已配置的 {configured_backend} catalog。")
-        else:
-            secondary_controls["db_path"].caption("框架视图可直接切到 DB-backed catalog；项目视图仅在并入框架条目时读取 DB。")
+    controls = _render_workbench_controls(st, summary=summary, kinds=kinds, current_kind=current_kind, hosted=hosted)
+    scope, profile, kind, query, field = (controls[key] for key in ("scope", "profile", "kind", "query", "field"))
+    project_path, include_global, db_path, source_mode = (controls[key] for key in
+        ("project_path", "include_global", "db_path", "source_mode"))
 
     state_changed = False
     updates = {
@@ -2452,6 +2460,8 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
         "catalog_ui_db_path": db_path,
         "catalog_ui_source_mode": source_mode,
     }
+    if hosted:
+        updates.update({f"catalog_ui_{key}": value for key, value in _hosted_source_values().items()})
     for key, value in updates.items():
         if st.session_state.get(key) != value:
             st.session_state[key] = value
@@ -2470,11 +2480,8 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
         )
     elif db_error:
         st.warning(f"DB catalog 当前不可用，已回退到 {str(source_info.get('effective_source', 'registry'))}：{db_error}")
-    else:
-        active_backend = str(source_info.get("effective_source", "registry") or "registry")
-        active_mode = _source_mode_label(str(source_info.get("source_mode", "") or ""))
-        db_target = "显式 DB URL" if bool(source_info.get("explicit_db_path", False)) else "catalog DB 配置"
-        st.caption(f"当前读取后端：`{active_backend}` · Source Mode：`{active_mode}` · DB 来源：{db_target} · 不带 --db-path 时也会优先吃本地 catalog DB 配置。")
+    elif not hosted:
+        st.sidebar.caption(f"Current source: {source_info.get('effective_source', 'registry')}")
 
     facet_payload = _cached_facets(
         current_profile,
@@ -2496,30 +2503,7 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
         ]
         if options:
             filter_fields_with_options.append((field_name, options))
-    with st.container():
-        st.markdown("<div class='catalog-inline-filters'>", unsafe_allow_html=True)
-        expander_title = "字段筛选"
-        if current_kind != _KIND_ALL:
-            expander_title += f" · {_kind_label(current_kind)}"
-        with st.expander(expander_title, expanded=False):
-            if not filter_fields_with_options:
-                st.caption("当前分类下没有可用的字段筛选项。")
-            else:
-                filter_cols = st.columns(min(3, len(filter_fields_with_options)))
-                for index, (field_name, options) in enumerate(filter_fields_with_options):
-                    state_key = f"catalog_ui::facet::{current_scope}::{current_kind}::{field_name}"
-                    existing = tuple(value for value in st.session_state.get(state_key, ()) if value in options)
-                    if state_key not in st.session_state:
-                        st.session_state[state_key] = list(existing)
-                    with filter_cols[index % len(filter_cols)]:
-                        st.multiselect(_field_label(field_name), options=options, key=state_key)
-                st.button(
-                    "清空字段筛选",
-                    width="content",
-                    on_click=_callback_clear_filters,
-                    kwargs={"st": st, "scope": current_scope, "kind": current_kind},
-                )
-        st.markdown("</div>", unsafe_allow_html=True)
+    _render_sidebar_facets(st, available=filter_fields_with_options, scope=current_scope, kind=current_kind)
     field_filters = _shared.collect_session_filters(
         st,
         scope=current_scope,
@@ -2528,56 +2512,70 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
         multi_value=True,
     )
 
-    sort_cols = st.columns((0.9, 0.78, 1.52))
-    current_sort_by = _normalize_sort_by(st.session_state.get(sort_by_key, _shared.DEFAULT_SORT_BY))
-    current_sort_dir = _normalize_sort_dir(st.session_state.get(sort_dir_key, _shared.DEFAULT_SORT_DIR))
-    sort_by = sort_cols[0].selectbox(
-        "结果排序",
-        options=list(_SORT_OPTIONS),
-        index=list(_SORT_OPTIONS).index(current_sort_by),
-        format_func=_sort_label,
-    )
-    sort_dir = sort_cols[1].radio(
-        "方向",
-        options=("asc", "desc"),
-        index=0 if current_sort_dir == "asc" else 1,
-        horizontal=True,
-        format_func=lambda value: "升序" if value == "asc" else "降序",
-    )
-    sort_cols[2].caption("Deep-link 会记住当前排序方式。")
-    st.session_state[sort_by_key] = sort_by
-    st.session_state[sort_dir_key] = sort_dir
-
-    display_cols = st.columns((0.9, 0.8, 0.95, 1.45))
-    current_column_mode = _normalize_column_mode(st.session_state.get(column_mode_key, _shared.DEFAULT_COLUMN_MODE))
-    current_page_size = _normalize_page_size(st.session_state.get(page_size_key, _shared.DEFAULT_PAGE_SIZE))
-    current_results_collapse = _normalize_results_collapse(st.session_state.get(results_collapse_key, _shared.DEFAULT_RESULTS_COLLAPSE))
-    column_mode = display_cols[0].selectbox(
-        "列显示方案",
-        options=list(_COLUMN_MODE_OPTIONS),
-        index=list(_COLUMN_MODE_OPTIONS).index(current_column_mode),
-        format_func=_column_mode_label,
-    )
-    page_size_options = sorted({* _PAGE_SIZE_OPTIONS, current_page_size})
-    page_size = int(
-        display_cols[1].selectbox(
-            "Page Size",
-            options=page_size_options,
-            index=page_size_options.index(current_page_size),
-            format_func=lambda value: f"{int(value)} 条",
+    with st.sidebar.expander("显示设置", expanded=False):
+        sort_cols = st.columns((1, 1))
+        current_sort_by = _normalize_sort_by(st.session_state.get(sort_by_key, _shared.DEFAULT_SORT_BY))
+        current_sort_dir = _normalize_sort_dir(st.session_state.get(sort_dir_key, _shared.DEFAULT_SORT_DIR))
+        sort_by = sort_cols[0].selectbox(
+            "结果排序",
+            options=list(_SORT_OPTIONS),
+            index=list(_SORT_OPTIONS).index(current_sort_by),
+            format_func=_sort_label,
+            key=_view_control_key(st, state_key=sort_by_key, value=current_sort_by),
+            on_change=_callback_view_control,
+            kwargs={"st": st, "state_key": sort_by_key, "parameter": "sort_by"},
         )
-    )
-    results_collapse = display_cols[2].radio(
-        "结果折叠",
-        options=list(_RESULTS_COLLAPSE_OPTIONS),
-        index=list(_RESULTS_COLLAPSE_OPTIONS).index(current_results_collapse),
-        horizontal=True,
-        format_func=_results_collapse_label,
-    )
-    display_cols[3].caption("Deep-link 会记住当前列方案、结果分页窗口和折叠状态。")
-    st.session_state[column_mode_key] = column_mode
-    st.session_state[page_size_key] = page_size
-    st.session_state[results_collapse_key] = results_collapse
+        sort_dir = sort_cols[1].radio(
+            "方向",
+            options=("asc", "desc"),
+            index=0 if current_sort_dir == "asc" else 1,
+            horizontal=True,
+            format_func=lambda value: "升序" if value == "asc" else "降序",
+            key=_view_control_key(st, state_key=sort_dir_key, value=current_sort_dir),
+            on_change=_callback_view_control,
+            kwargs={"st": st, "state_key": sort_dir_key, "parameter": "sort_dir"},
+        )
+        st.session_state[sort_by_key] = sort_by
+        st.session_state[sort_dir_key] = sort_dir
+
+        display_cols = st.columns((1, 1))
+        current_column_mode = _normalize_column_mode(st.session_state.get(column_mode_key, _shared.DEFAULT_COLUMN_MODE))
+        current_page_size = _normalize_page_size(st.session_state.get(page_size_key, _shared.DEFAULT_PAGE_SIZE))
+        current_results_collapse = _normalize_results_collapse(st.session_state.get(results_collapse_key, _shared.DEFAULT_RESULTS_COLLAPSE))
+        column_mode = display_cols[0].selectbox(
+            "浏览方式",
+            options=list(_COLUMN_MODE_OPTIONS),
+            index=list(_COLUMN_MODE_OPTIONS).index(current_column_mode),
+            format_func=_column_mode_label,
+            key=_view_control_key(st, state_key=column_mode_key, value=current_column_mode),
+            on_change=_callback_view_control,
+            kwargs={"st": st, "state_key": column_mode_key, "parameter": "column_mode"},
+        )
+        page_size_options = sorted({* _PAGE_SIZE_OPTIONS, current_page_size})
+        page_size = int(
+            display_cols[1].selectbox(
+                "显示数量",
+                options=page_size_options,
+                index=page_size_options.index(current_page_size),
+                format_func=lambda value: f"{int(value)} 条",
+                key=_view_control_key(st, state_key=page_size_key, value=current_page_size),
+                on_change=_callback_view_control,
+                kwargs={"st": st, "state_key": page_size_key, "parameter": "page_size"},
+            )
+        )
+        results_collapse = st.radio(
+            "结果折叠",
+            options=list(_RESULTS_COLLAPSE_OPTIONS),
+            index=list(_RESULTS_COLLAPSE_OPTIONS).index(current_results_collapse),
+            horizontal=True,
+            format_func=_results_collapse_label,
+            key=_view_control_key(st, state_key=results_collapse_key, value=current_results_collapse),
+            on_change=_callback_view_control,
+            kwargs={"st": st, "state_key": results_collapse_key, "parameter": "results_collapse"},
+        )
+        st.session_state[column_mode_key] = column_mode
+        st.session_state[page_size_key] = page_size
+        st.session_state[results_collapse_key] = results_collapse
 
     item_payloads = list(
         _cached_items(
@@ -2606,6 +2604,7 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
             current_kind=current_kind,
             db_path=current_db_path or None,
             source_mode=current_source_mode or None,
+            filters_key=_shell.freeze_filters(field_filters),
         )
         if (not item_payloads and str(st.session_state["catalog_ui_query"] or "").strip() and current_kind != _KIND_ALL)
         else {}
@@ -2649,7 +2648,7 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
             st.session_state[_PENDING_LOCATE_KEY] = False
         else:
             selected_kind = str((selected_entry or {}).get("kind", "") or "").strip().lower()
-            if current_kind not in {_KIND_ALL, selected_kind} and selected_kind:
+            if selected_kind and not _navigation.contains_kind(current_kind, selected_kind):
                 st.session_state["catalog_ui_kind"] = selected_kind
                 _write_locate_state_and_rerun(
                     st,
@@ -2735,35 +2734,25 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
                 st.session_state[_PENDING_LOCATE_KEY] = False
                 st.session_state[_PENDING_SCROLL_TARGET_KEY] = "catalog-results-anchor"
 
-    left, right = st.columns((1.28, 0.92), gap="large")
+    workspace = st.container(key="catalog_workspace")
+    left, right = workspace.columns((0.36, 1.0), gap="large")
+    left = left.container(key="catalog_results")
+    right = right.container(key="catalog_detail")
     with left:
-        _render_selection_float(
-            st,
-            selection=selection,
-            selected_entry=selected_entry,
-            visible_items=visible_item_payloads,
-            scope=current_scope,
-            kind=current_kind,
-        )
         if selection.get("hidden", False):
             st.markdown(
-                "<div class='catalog-warning'>当前选中项仍保留在右侧详情里，但它已经不在中间结果表格中。你可以点“显示它”清空搜索与字段筛选，让它重新出现。</div>",
+                "<div class='catalog-warning'>筛选隐藏了当前组件；右侧仍保留它的用法。</div>",
                 unsafe_allow_html=True,
             )
-        _page.render_section_header(
-            st,
-            _page.SectionHeaderSpec(
-                section_id=_page.RESULT_SECTION_ID,
-                label="Results",
-                title=f"结果表格 · {_kind_label(current_kind)}",
-                subtitle="当前结果支持单击切换选中项，deep-link 会记住排序、分页窗口与折叠状态。",
-                note=f"{len(visible_item_payloads)} / {len(item_payloads)}",
-            ),
+        st.markdown(
+            f"<div id='{_page.RESULT_SECTION_ID}' class='catalog-list-heading'>"
+            f"<strong>组件</strong><span>{len(visible_item_payloads)} / {len(item_payloads)}</span></div>",
+            unsafe_allow_html=True,
         )
         st.markdown("<div id='catalog-results-anchor'></div>", unsafe_allow_html=True)
-        results_title = f"结果表格 · {_kind_label(current_kind)}"
-        results_label = f"{results_title}（显示 {len(visible_item_payloads)} / {len(item_payloads)}）"
-        with st.expander(results_label, expanded=results_collapse == "expanded"):
+        results_label = f"组件列表 · {len(visible_item_payloads)} / {len(item_payloads)}"
+        results_container = st.expander(results_label, expanded=False) if results_collapse == "collapsed" else st.container()
+        with results_container:
             if other_kind_hits:
                 st.info("当前分类没有命中，但其他分类里有结果。可以直接切换过去，或者切到“全部 All”看全局结果。")
                 switch_cols = st.columns(min(4, len(other_kind_hits) + 1))
@@ -2784,10 +2773,6 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
                         on_click=_callback_switch_kind,
                         kwargs={"st": st, "target_kind": other_kind},
                     )
-            if len(item_payloads) > len(visible_item_payloads):
-                st.caption(f"当前命中 {len(item_payloads)} 条，当前展示前 {len(visible_item_payloads)} 条。")
-            else:
-                st.caption(f"当前命中 {len(item_payloads)} 条。")
             selected_key = _render_results_table(
                 st,
                 items=visible_item_payloads,
@@ -2795,8 +2780,17 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
                 kind=current_kind,
                 column_mode=column_mode,
             )
-        if selected_key and selected_key != _NO_SELECTION:
-            st.caption(f"当前选中：{selected_key}")
+            if len(item_payloads) > len(visible_item_payloads):
+                st.button("显示更多组件", width="stretch", on_click=_callback_show_more,
+                          kwargs={"st": st, "page_size_key": page_size_key, "total": len(item_payloads)})
+        _render_selection_float(
+            st,
+            selection=selection,
+            selected_entry=selected_entry,
+            visible_items=visible_item_payloads,
+            scope=current_scope,
+            kind=current_kind,
+        )
         pending_scroll_target = str(st.session_state.get(_PENDING_SCROLL_TARGET_KEY, "") or "").strip()
         if pending_scroll_target:
             _scroll_to_anchor(st, anchor_id=pending_scroll_target)
@@ -2816,28 +2810,9 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
             )
     else:
         selected_entry = None
-    floating_locate_target = "catalog-results-anchor" if selected_key and selected_key != _NO_SELECTION else None
-    floating_locate_tooltip = (
-        "定位当前选中项"
-        if selected_key and selected_key != _NO_SELECTION
-        else "当前没有选中项"
-    )
-    _render_floating_nav(
-        st,
-        locate_target=floating_locate_target,
-        locate_tooltip=floating_locate_tooltip,
-    )
 
     with right:
-        _page.render_section_header(
-            st,
-            _page.SectionHeaderSpec(
-                section_id=_page.DETAIL_SECTION_ID,
-                label="Detail",
-                title="详情与跳转",
-                subtitle="右侧统一承接条目详情、关系跳转、来源信息与 deep-link 回位。",
-            ),
-        )
+        _render_detail_header(st, selected_entry)
         current_detail_tab = _normalize_detail_tab(st.session_state.get(detail_tab_key, _shared.DEFAULT_DETAIL_TAB))
         neighbors = (
             _cached_neighbors(
@@ -2854,13 +2829,17 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
         )
         relation_labels = dict((neighbors or {}).get("relation_labels", {}) or {})
         relation_options = tuple(_relation_neighbor_groups(entry=selected_entry, neighbors=neighbors).keys())
-        detail_cols = st.columns((1.0, 1.3))
+        detail_cols = st.columns((1.0,))
         detail_tab = detail_cols[0].radio(
             "详情 Tab",
             options=list(_DETAIL_TABS),
             index=list(_DETAIL_TABS).index(current_detail_tab),
             horizontal=True,
             format_func=_detail_tab_label,
+            label_visibility="collapsed",
+            key=_view_control_key(st, state_key=detail_tab_key, value=current_detail_tab),
+            on_change=_callback_view_control,
+            kwargs={"st": st, "state_key": detail_tab_key, "parameter": "detail_tab"},
         )
         st.session_state[detail_tab_key] = detail_tab
         expanded_relation_groups = tuple(
@@ -2869,7 +2848,7 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
             if value in relation_options
         )
         if detail_tab == "relations" and relation_options:
-            chosen_groups = detail_cols[1].multiselect(
+            chosen_groups = st.multiselect(
                 "展开关系组",
                 options=list(relation_options),
                 default=list(expanded_relation_groups),
@@ -2877,10 +2856,8 @@ def run_dashboard(argv: Sequence[str] | None = None) -> None:
             )
             expanded_relation_groups = tuple(str(value).strip() for value in chosen_groups if str(value).strip())
         elif detail_tab == "relations":
-            detail_cols[1].caption("当前条目没有可展开的关系分组。")
+            st.caption("当前条目没有可展开的关系分组。")
             expanded_relation_groups = ()
-        else:
-            detail_cols[1].caption("Deep-link 会记住当前详情页签与展开状态。")
         st.session_state[open_relations_key] = expanded_relation_groups
         deep_link_query = _build_deep_link_query(
             profile=current_profile,

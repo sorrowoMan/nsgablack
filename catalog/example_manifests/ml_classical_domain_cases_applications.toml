@@ -1,0 +1,41 @@
+[[example]]
+id="ml-classical-etf-procedure-migration"
+title="ETF既有程序Case · 本地数据/WalkForward接线与验证边界"
+component_keys=["mlblack.example.etf_temporal_forecast"]
+kind="documentation"
+usage_status="migration_reference"
+working_directory="mlblack"
+summary="完整复用原Case的本地路径预检薄包装，明确walkforward参数位置、程序报告Artifact、目标可知时间/测试折权重/恢复闭包限制。"
+inputs=["完整etf_temporal_forecast副本、既有本地收益parquet与pandas/sklearn/parquet依赖。"]
+steps=["在副本保留原builder为assembly_original，新唯一builder显式配置本地文件/单ridge/最多两折。", "说明一送评多fit及五目标含义，迁移完成前不将程序报告称严格独立预测模型交付。"]
+dependencies=["本地依赖和已有业务数据；不下载、不读数据、不执行拟合。"]
+expected_outputs=["迁移参考，不把历史summary/程序Artifact或状态ok当已验收预测/恢复。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_CLASSICAL_DOMAIN_CASES_APPLICATIONS_CN.md",section="classical.example.etf"}]
+
+[[example]]
+id="ml-classical-traffic-arimax-migration"
+title="交通ARIMAX归因Case · 单Case装配与系数/报告迁移"
+component_keys=["mlblack.example.traffic_arimax_attribution"]
+kind="documentation"
+usage_status="migration_reference"
+working_directory="mlblack"
+summary="明确真实Project/data路径、全样本标准化/ARIMAX删除组AIC诊断，指出params尾切片与组列对齐、fallback和正式报告边界。"
+inputs=["完整traffic_congestion副本、原CSV、pandas/sklearn/statsmodels依赖；无本轮数据读取或拟合。"]
+steps=["追加单诊断Case组，保留原L0/DiagnosticProblem/FixedAdapter。", "逐项列出科学解释与结构化Artifact未闭合点，不把控制台打印或exit0称归因验收。"]
+dependencies=["真正分析需本地业务CSV及statsmodels；不运行数据库/模型/下载。"]
+expected_outputs=["迁移参考，明确当前只能有诊断状态，不能保证组系数含义、逐组完成或持久模型。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_CLASSICAL_DOMAIN_CASES_APPLICATIONS_CN.md",section="classical.example.traffic_arimax"}]
+
+[[example]]
+id="ml-classical-traffic-xgboost-migration"
+title="交通XGBoost既有Case · 随机验证/预算/booster交付边界"
+component_keys=["mlblack.example.traffic_xgboost_baseline"]
+kind="documentation"
+usage_status="migration_reference"
+working_directory="mlblack"
+summary="原Project单Case组/实际两个config参数与pipeline列选择，区分随机留出和时序验证，明确安全boosterArtifact/只读restore未闭合。"
+inputs=["完整traffic_congestion副本、同名Project/data CSV与本地XGBoost依赖。"]
+steps=["按真实装配入口追加单Case组，不虚构config.max_steps生效。", "说明活估计器/摘要不能充当安全完整booster，列出正式迁移验收与可用岭回归替代。"]
+dependencies=["本地依赖和业务数据，未读取/训练/下载。"]
+expected_outputs=["迁移参考，不宣称时间外预测/有限fit预算或安全模型交付已完成。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_CLASSICAL_DOMAIN_CASES_APPLICATIONS_CN.md",section="classical.example.traffic_xgb"}]

@@ -996,6 +996,7 @@ def test_checkpoint_non_strict_component_skip_is_reported_as_degraded(
                 "state": {"cursor": 7},
             }
         },
+        only=("evaluation_provider",),
     )
     reader._finish_resume_audit(status="degraded", current=True)
     audit = reader.get_report()["resume_audit"]
@@ -1077,12 +1078,15 @@ def test_checkpoint_roundtrip_restores_scalarizer_audit_and_validates_policy(
     assert mismatched.get_incumbent() is None
 
 
-def test_v1_checkpoint_migrates_explicitly_and_marks_scalarizer_audit_unknown(
+def test_v1_checkpoint_without_stateful_pipeline_migrates_and_marks_scalarizer_audit_unknown(
     sample_problem,
 ) -> None:
     from nsgablack.plugins import CheckpointResumePlugin
 
     solver = _build_composable_solver(sample_problem)
+    # Legacy files have no operator RNG state. This test concerns incumbent
+    # migration only; a live stateful pipeline must instead reject that file.
+    solver.set_representation_pipeline(None)
     plugin = CheckpointResumePlugin()
     plugin.attach(solver)
     payload_v1 = {

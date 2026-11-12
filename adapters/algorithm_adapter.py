@@ -24,6 +24,8 @@ from blackbase.context import RuntimeContextProjection
 from .runtime_projection import aggregate_adapter_runtime_projections
 from .proposal_repair import ProposalRepair
 from .empty_outcome import (
+    _decode_dispatch_stop_outcome,
+    _encode_dispatch_stop_outcome,
     aggregate_named_empty_outcomes,
     child_empty_proposal_outcome,
 )
@@ -190,7 +192,10 @@ def subset_adapter_feedback(feedback: Any, selector: Any) -> Any:
     return np.asarray(objectives)[selector], np.asarray(violations)[selector]
 
 
-class AlgorithmAdapter(AdapterBase):
+from .operations import AdapterOperationsMixin
+
+
+class AlgorithmAdapter(AdapterOperationsMixin, AdapterBase):
     """Base adapter for integrating arbitrary optimization logic.
 
     Inherits AdapterBase and adds nsgablack-specific:
@@ -258,9 +263,16 @@ class AlgorithmAdapter(AdapterBase):
             if (tuple(self.step_transaction_children()) or not hasattr(self, "algorithm_unit")
                     or not isinstance(getattr(self, "unit_binding", None), UnitBinding)):
                 raise TypeError("UnitRepair requires an explicit leaf algorithm_unit and UnitBinding")
-            self.unit_binding.validate(self.algorithm_unit)
+            if self.algorithm_unit is not None:
+                self.unit_binding.validate(self.algorithm_unit)
             validate_admission_fields(self)
         self.unit_repair = component
+        # A legacy explicit rebind replaces the same role, never leaves a
+        # checkpoint owner pointing to a different, no-longer-executed repair.
+        bindings = self._operator_bindings()
+        if "repair" in bindings and bindings["repair"].component is not component:
+            bindings.pop("repair")
+            self._operation_bindings = bindings
 
     def proposal_repair_targets(self, repair, context):
         """Map evidence to actual owners; composites must preserve local indices."""
@@ -312,16 +324,31 @@ class AlgorithmAdapter(AdapterBase):
         """Select a named operator at assembly time; None uses the default."""
         if name is not None and (not isinstance(name, str) or not name.strip()):
             raise ValueError("mutation operator name must be a nonempty string or None")
+        if name is not None and self.get_bound_mutator() is not None:
+            raise ValueError("direct mutator and named pipeline mutation cannot both be bound")
+        if name is not None and self.get_bound_change() is not None:
+            raise ValueError("complete change and named pipeline mutation cannot both be bound")
         if name is not None and not self.uses_pipeline_mutation:
             raise ValueError(f"{self.name}: this Adapter does not consume pipeline mutation")
         self.mutation_operator = name
 
+    def get_bound_mutator(self):
+        """Return an explicitly owned operator, when this Adapter supports one."""
+        return self.get_bound_operator("mutator")
+
     def get_mutation_operator(self, control):
         """Resolve this consumer's binding without modifying shared pipeline state."""
+        direct = self.get_bound_mutator()
+        if direct is not None:
+            if self.mutation_operator is not None:
+                raise ValueError("direct mutator and named pipeline mutation cannot both be bound")
+            return direct
         pipeline = getattr(control, "representation_pipeline", None)
         name = self.mutation_operator
         if name is None:
-            return getattr(pipeline, "mutator", None)
+            # A declared leaf pipeline may itself implement mutate without a
+            # separate mutator slot. An explicit empty slot stays empty.
+            return getattr(pipeline, "mutator", pipeline if callable(getattr(pipeline, "mutate", None)) else None)
         resolve = getattr(pipeline, "get_mutator", None)
         if not callable(resolve):
             raise ValueError(f"{self.name}: named mutation requires a pipeline with get_mutator(name)")
@@ -356,6 +383,9 @@ class AlgorithmAdapter(AdapterBase):
         if provenance is not None:
             control.bind_candidate_provenance([draft], [provenance], activate=False)
         kwargs = {} if self.mutation_operator is None else {"operator": self.mutation_operator}
+        direct = self.get_bound_mutator()
+        if direct is not None:
+            kwargs["mutator"] = direct
         if spec is not None:
             kwargs["unit"] = spec.capture(self.get_operator_unit())
         return control.mutate_candidate(draft, context, **kwargs)
@@ -500,6 +530,16 @@ class AlgorithmAdapter(AdapterBase):
 
         _ = (control, context)
         return None
+
+    def on_schedule_activation(self, control: Any, activation_id: str) -> None:
+        """Enter a host-local schedule position without replaying setup.
+
+        Ordinary algorithms retain their search state. Scheduling composites
+        may reopen a completed local cursor; an unfinished invocation resumes.
+        This notification never constructs a Unit or starts a Solver lifecycle.
+        """
+        if not isinstance(activation_id, str) or not activation_id:
+            raise ValueError("schedule activation identity must be a nonempty string")
 
     def __init__(self, name: str, priority: int = 0) -> None:
         self.name = name
@@ -842,7 +882,7 @@ class AlgorithmAdapter(AdapterBase):
                                   (phase_in, "phase_in"), (phase_out, "phase_out")):
                 values.extend(item for item in getattr(repair_contract, field) if item not in values)
 
-        return {
+        return self.merge_operator_context_contract({
             "requires": requires,
             "provides": provides,
             "mutates": mutates,
@@ -854,7 +894,7 @@ class AlgorithmAdapter(AdapterBase):
             "feedback_requires": feedback_requires,
             "method_ids": method_ids,
             "notes": " | ".join(notes_parts) if notes_parts else None,
-        }
+        })
 
 class CompositeAdapter(AlgorithmAdapter):
     """Combine multiple adapters and merge their proposals."""
@@ -873,19 +913,38 @@ class CompositeAdapter(AlgorithmAdapter):
         self.adapters = list(adapters)
         self._last_ranges: List[Tuple[AlgorithmAdapter, int, int]] = []
         self._last_projection_writers: Dict[str, str] = {}
+        self._dispatch_stop_outcome = None
 
     def setup(self, control: Any) -> None:
         self.validate_unit_bindings()
         self._last_projection_writers = {}
+        self._dispatch_stop_outcome = None
         for adapter in self.adapters:
             adapter.setup(control)
+
+    def on_schedule_activation(self, control, activation_id):
+        super().on_schedule_activation(control, activation_id)
+        for index, adapter in enumerate(self.adapters):
+            adapter.on_schedule_activation(control,
+                f"{activation_id}/{self._child_prefix(index, adapter)}")
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[Any]:
         candidates: List[np.ndarray] = []
         self._last_ranges = []
+        self._dispatch_stop_outcome = None
         for adapter in self.adapters:
             start = len(candidates)
             proposed = self.coerce_candidates(adapter.propose(control, context))
+            if not proposed:
+                outcome = child_empty_proposal_outcome(adapter, control, context)
+                if outcome is not None and (outcome.status == "cancelled" or outcome.stop_requested):
+                    if candidates:
+                        self.on_proposal_disposition(control, BatchDisposition.prefix(
+                            proposed_count=len(candidates), accepted_count=0,
+                            reason="sibling_cancelled"), context)
+                    self._dispatch_stop_outcome = outcome
+                    self._last_ranges = []
+                    return []
             candidates.extend(proposed)
             end = len(candidates)
             self._last_ranges.append((adapter, start, end))
@@ -896,6 +955,8 @@ class CompositeAdapter(AlgorithmAdapter):
         control: Any,
         context: Mapping[str, Any],
     ) -> Any | None:
+        if self._dispatch_stop_outcome is not None:
+            return self._dispatch_stop_outcome
         return aggregate_named_empty_outcomes(
             (
                 (
@@ -1047,6 +1108,7 @@ class CompositeAdapter(AlgorithmAdapter):
     def get_state(self) -> Dict[str, Any]:
         return {
             "schema": "nsgablack.composite_adapter_state/v2",
+            "dispatch_stop_outcome": _encode_dispatch_stop_outcome(self._dispatch_stop_outcome),
             "children": [
                 {
                     "index": int(index),
@@ -1065,6 +1127,7 @@ class CompositeAdapter(AlgorithmAdapter):
     def set_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
+        stop_outcome = _decode_dispatch_stop_outcome(state.get("dispatch_stop_outcome"))
         children = tuple(state.get("children", ()) or ())
         if children:
             if len(children) != len(self.adapters):
@@ -1080,6 +1143,7 @@ class CompositeAdapter(AlgorithmAdapter):
             self.set_population_partitions(
                 tuple(PopulationPartition.from_dict(item) for item in raw_partitions)
             )
+        self._dispatch_stop_outcome = stop_outcome
 
     def get_context_contract(self) -> Dict[str, Any]:
         contract = super().get_context_contract()
@@ -1131,6 +1195,7 @@ class CompositeAdapter(AlgorithmAdapter):
         child_index = {id(adapter): index for index, adapter in enumerate(self.adapters)}
         return {
             "schema": "nsgablack.composite_step_transaction/v1",
+            "dispatch_stop_outcome": _encode_dispatch_stop_outcome(self._dispatch_stop_outcome),
             "last_ranges": [
                 {
                     "child_index": int(child_index[id(adapter)]),
@@ -1145,6 +1210,7 @@ class CompositeAdapter(AlgorithmAdapter):
     def restore_step_state(self, state: Mapping[str, Any]) -> None:
         if str(state.get("schema", "")) != "nsgablack.composite_step_transaction/v1":
             raise ValueError("unsupported CompositeAdapter step transaction schema")
+        stop_outcome = _decode_dispatch_stop_outcome(state.get("dispatch_stop_outcome"))
         restored_ranges: list[tuple[AlgorithmAdapter, int, int]] = []
         for item in tuple(state.get("last_ranges", ()) or ()):
             index = int(item.get("child_index", -1))
@@ -1158,6 +1224,7 @@ class CompositeAdapter(AlgorithmAdapter):
                 )
             )
         self._last_ranges = restored_ranges
+        self._dispatch_stop_outcome = stop_outcome
         self._last_projection_writers = {
             str(key): str(value)
             for key, value in dict(state.get("projection_writers", {}) or {}).items()

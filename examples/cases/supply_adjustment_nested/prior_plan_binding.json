@@ -1,0 +1,71 @@
+{
+  "authority": {
+    "allow_unsafe_serializers": false,
+    "backend": "filesystem",
+    "namespace": "supplyjoint:20261028-015e378732",
+    "root": "/data/framework-supply-joint-20261028/project/.blackbase/artifacts",
+    "schema_version": 1
+  },
+  "binding": {
+    "ref": {
+      "uri": "/data/framework-supply-joint-20261028/project/.blackbase/artifacts/supplyjoint_20261028-015e378732--e59b590930/supply-joint-cloud-20261029-a1/case_supply-joint-cloud-20261029-a1_search_supply_adjustment_nested_atte--5ebcff0e14/joint_summary--352e879216713e1f--68b09d5fc48f.json",
+      "kind": "joint-supply-production",
+      "backend": "filesystem",
+      "media_type": "application/json",
+      "checksum": "sha256:352e879216713e1f1cb08feed72ae3e76c0acb061015458e0135bf778e0af207",
+      "size_bytes": 42864,
+      "metadata": {
+        "artifact_name": "joint_summary",
+        "case_run_id": "case:supply-joint-cloud-20261029-a1:search:supply_adjustment_nested:attempt:1",
+        "fencing_token": 4,
+        "lease_id": "lease-supply_adjustment_nested-search-861ee781cc9e",
+        "project_run_id": "supply-joint-cloud-20261029-a1",
+        "publication_transaction_id": "0d354e436c874a7989674001207755a1",
+        "publication_transaction_label": "case_finalization",
+        "scenario_digest": "sha256:fd8dc9ddf50de10a80cc6e1040edb61aa1fc399f9f143435564f746a7bea4db9",
+        "schema": "supply_adjustment_nested.joint_summary/v1",
+        "serializer": "json",
+        "serializer_unsafe": false
+      }
+    },
+    "publication": {
+      "schema_version": 1,
+      "publication_id": "publication-7e3d5b25717150c4c60e2be39205a716",
+      "artifact_name": "joint_summary",
+      "ref": {
+        "uri": "/data/framework-supply-joint-20261028/project/.blackbase/artifacts/supplyjoint_20261028-015e378732--e59b590930/supply-joint-cloud-20261029-a1/case_supply-joint-cloud-20261029-a1_search_supply_adjustment_nested_atte--5ebcff0e14/joint_summary--352e879216713e1f--68b09d5fc48f.json",
+        "kind": "joint-supply-production",
+        "backend": "filesystem",
+        "media_type": "application/json",
+        "checksum": "sha256:352e879216713e1f1cb08feed72ae3e76c0acb061015458e0135bf778e0af207",
+        "size_bytes": 42864,
+        "metadata": {
+          "artifact_name": "joint_summary",
+          "case_run_id": "case:supply-joint-cloud-20261029-a1:search:supply_adjustment_nested:attempt:1",
+          "fencing_token": 4,
+          "lease_id": "lease-supply_adjustment_nested-search-861ee781cc9e",
+          "project_run_id": "supply-joint-cloud-20261029-a1",
+          "publication_transaction_id": "0d354e436c874a7989674001207755a1",
+          "publication_transaction_label": "case_finalization",
+          "scenario_digest": "sha256:fd8dc9ddf50de10a80cc6e1040edb61aa1fc399f9f143435564f746a7bea4db9",
+          "schema": "supply_adjustment_nested.joint_summary/v1",
+          "serializer": "json",
+          "serializer_unsafe": false
+        }
+      },
+      "project_run_id": "supply-joint-cloud-20261029-a1",
+      "case_run_id": "case:supply-joint-cloud-20261029-a1:search:supply_adjustment_nested:attempt:1",
+      "transaction_id": "0d354e436c874a7989674001207755a1",
+      "authority_namespace": "supplyjoint:20261028-015e378732",
+      "lease_id": "lease-supply_adjustment_nested-search-861ee781cc9e",
+      "fencing_token": 4,
+      "committed_at": 1793236670.3344076,
+      "metadata": {
+        "case_finalization_sealed": true,
+        "case_run_schema_version": 3,
+        "transaction_label": "case_finalization"
+      },
+      "receipt_digest": "sha256:531033fb346481beabce882142a31f6b054baac7657d213097975b6f238cc5f9"
+    }
+  }
+}

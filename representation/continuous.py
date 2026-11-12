@@ -5,6 +5,8 @@ Continuous representation helpers.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import copy
+from collections.abc import Mapping
 from typing import Optional, Any, Tuple
 
 import numpy as np
@@ -69,8 +71,37 @@ def _resolve_bounds(
     return lo, hi
 
 
+def _random_operation_state(component):
+    return {"identity": component.checkpoint_identity(),
+            "rng": copy.deepcopy(component._rng.bit_generator.state)}
+
+
+def _restore_random_operation(component, state):
+    if not isinstance(state, Mapping) or set(state) != {"identity", "rng"}:
+        raise TypeError("random operation state requires identity and rng mappings")
+    if state["identity"] != component.checkpoint_identity():
+        raise ValueError("random operation checkpoint identity mismatch")
+    rng = state["rng"]
+    if not isinstance(rng, Mapping):
+        raise TypeError("random operation rng state must be a Mapping")
+    if (set(rng) != {"bit_generator", "state", "has_uint32", "uinteger"}
+            or rng["bit_generator"] != "PCG64" or not isinstance(rng["state"], Mapping)
+            or set(rng["state"]) != {"state", "inc"}):
+        raise ValueError("random operation requires explicit PCG64 state")
+    numbers = (rng["state"]["state"], rng["state"]["inc"], rng["has_uint32"], rng["uinteger"])
+    if any(type(value) is not int for value in numbers):
+        raise TypeError("random operation RNG state values must be integers")
+    restored = np.random.default_rng()
+    restored.bit_generator.state = {"bit_generator": "PCG64",
+        "state": {"state": numbers[0], "inc": numbers[1]},
+        "has_uint32": numbers[2], "uinteger": numbers[3]}
+    component._rng = restored
+
+
 @dataclass
 class UniformInitializer(RepresentationComponentContract):
+    state_recovery_level = "L1"
+    state_recovery_notes = "Restores initializer RNG with matching constructor bounds."
     low: float = 0.0
     high: float = 1.0
     context_requires = ()
@@ -85,9 +116,23 @@ class UniformInitializer(RepresentationComponentContract):
     def initialize(self, problem: Any, context: Optional[dict] = None) -> np.ndarray:
         return self._rng.uniform(self.low, self.high, problem.dimension)
 
+    def checkpoint_identity(self):
+        return {"schema": "nsgablack.uniform_initializer/v1", "low": float(self.low), "high": float(self.high)}
+
+    def set_random_seed(self, seed):
+        self._rng = np.random.default_rng(seed)
+
+    def get_state(self):
+        return _random_operation_state(self)
+
+    def set_state(self, state):
+        _restore_random_operation(self, state)
+
 
 @dataclass
 class GaussianMutation(RepresentationComponentContract):
+    state_recovery_level = "L1"
+    state_recovery_notes = "Restores local RNG with matching sigma and bounds; owns no population."
     sigma: float = 0.1
     low: Optional[float] = None
     high: Optional[float] = None
@@ -99,6 +144,20 @@ class GaussianMutation(RepresentationComponentContract):
 
     def __post_init__(self) -> None:
         self._rng = np.random.default_rng()
+
+    def checkpoint_identity(self):
+        return {"schema": "nsgablack.gaussian_mutation/v1", "sigma": float(self.sigma),
+                "low": None if self.low is None else float(self.low),
+                "high": None if self.high is None else float(self.high)}
+
+    def set_random_seed(self, seed: int | None) -> None:
+        self._rng = np.random.default_rng(seed)
+
+    def get_state(self):
+        return _random_operation_state(self)
+
+    def set_state(self, state):
+        _restore_random_operation(self, state)
 
     def mutate(self, x: np.ndarray, context: Optional[dict] = None) -> np.ndarray:
         mutated = x + self._rng.normal(0.0, self.sigma, size=x.shape)
@@ -159,6 +218,8 @@ class ContextGaussianMutation(RepresentationComponentContract):
     without hard-coding the operator logic inside the algorithm adapter.
     """
 
+    state_recovery_level = "L1"
+    state_recovery_notes = "Restores neighborhood operator RNG and explicit sigma-context configuration."
     base_sigma: float = 0.1
     sigma_key: str = KEY_MUTATION_SIGMA
     low: Optional[float] = None
@@ -173,6 +234,19 @@ class ContextGaussianMutation(RepresentationComponentContract):
 
     def __post_init__(self) -> None:
         self._rng = np.random.default_rng()
+
+    def checkpoint_identity(self):
+        return {"schema": "nsgablack.context_gaussian_mutation/v1", "base_sigma": float(self.base_sigma),
+                "sigma_key": self.sigma_key, "low": self.low, "high": self.high}
+
+    def set_random_seed(self, seed):
+        self._rng = np.random.default_rng(seed)
+
+    def get_state(self):
+        return _random_operation_state(self)
+
+    def set_state(self, state):
+        _restore_random_operation(self, state)
 
     def mutate(self, x: np.ndarray, context: Optional[dict] = None) -> np.ndarray:
         sigma = float(self.base_sigma)

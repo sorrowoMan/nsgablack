@@ -60,24 +60,40 @@ def mutation_issues(solver):
 
 def test_heterogeneous_nested_adapters_share_repair_and_select_compatible_mutations():
     repaired = []
+    mutated = []
     class Repair:
         def repair(self, candidate, context):
             repaired.append(context["role"])
             return candidate + 10
+    class TrackedTrajectoryMutation(TrajectoryMutation):
+        def mutate(self, candidate, context, *, unit):
+            mutated.append((context["role"], unit.fields["current"].copy()))
+            return super().mutate(candidate, context, unit=unit)
     left, right = population("population"), SimulatedAnnealingAdapter(name="trajectory")
     right.current_x = np.array([8.])
     left.set_mutation_operator("population")
     right.set_mutation_operator("trajectory")
     pipeline = RepresentationPipeline(repair=Repair(), mutation_operators={
-        "population": PopulationMutation(), "trajectory": TrajectoryMutation(),
+        "population": PopulationMutation(), "trajectory": TrackedTrajectoryMutation(),
     })
     root = CompositeAdapter([RoleAdapter("group", left), RoleAdapter("path", right)])
     problem = Problem()
     solver = ComposableSolver(problem, adapter=root, representation_pipeline=pipeline)
     assert not mutation_issues(solver)
     assert solver.step().committed
-    np.testing.assert_array_equal(problem.seen, [[12.], [17.]])
+    # An unscored trajectory first evaluates its repaired baseline, without mutation.
+    np.testing.assert_array_equal(problem.seen, [[12.], [18.]])
     assert repaired == ["group", "path"]
+    assert mutated == []
+    np.testing.assert_array_equal(right.current_x, [18.])
+    assert right.current_score == 18.
+    # The next proposal consumes that evaluated Unit, then shares problem repair.
+    assert solver.step().committed
+    np.testing.assert_array_equal(problem.seen, [[12.], [18.], [12.], [27.]])
+    assert repaired == ["group", "path", "group", "path"]
+    assert len(mutated) == 1
+    assert mutated[0][0] == "path"
+    np.testing.assert_array_equal(mutated[0][1], [18.])
     assert pipeline.mutator is None
     assert {value["mutation_operator"] for value in root.get_unit_contracts().values()
             if "mutation_operator" in value} == {"population", "trajectory"}

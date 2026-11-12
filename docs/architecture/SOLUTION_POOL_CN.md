@@ -1,6 +1,18 @@
 # 解池、运行时间与算法结构
 
-最后按代码核对：2026-10-14。实现：`core/state/solution_pool.py`、`adapters/pool_tasks.py`。本文是当前运行契约；全 Adapter 覆盖与接入要求见 [池与 Adapter 接入契约](SOLUTION_POOL_ADAPTER_READINESS_CN.md)。更广的编排讨论见 [增量 Unit 编排讨论](ORCHESTRATION_WITH_INCREMENTAL_UNITS_DISCUSSION_CN.md)。
+核心规则的压缩试写见 [Pool 的 9 条候选不变量](POOL_INVARIANTS_CN.md)。该稿区分可推导语义、算法前提与当前执行政策；它是讨论稿，不替代本文的正式支持范围。
+
+最后按代码核对：2026-10-20（本次补充变化函数的只读访问、输入范围与接纳后交付）。实现：`core/state/solution_pool.py`、`adapters/pool_tasks.py`。本文是当前运行契约；全 Adapter 覆盖与接入要求见 [池与 Adapter 接入契约](SOLUTION_POOL_ADAPTER_READINESS_CN.md)。更广的编排讨论见 [增量 Unit 编排讨论](ORCHESTRATION_WITH_INCREMENTAL_UNITS_DISCUSSION_CN.md)。
+
+VNS/MOEA-D 完整 change 现在可使用调用内只读 `request.pool` 选择、抽样、合并候选引用，
+通过 `ChangeResult`/`PoolOutput` 声明接纳后普通集合输出。任务内额外来源须声明
+`change_sources`（精确公开子池名）或 `change_allow_main`；默认保留原任务输入边界。
+输出与原始反馈、池 manifest、步骤事务统一提交，不能绕过算法最终比较或直接改其结果视图。
+冻结时点、目标 revision、身份与旧 checkpoint 迁移见[池驱动变化编排](POOL_CHANGE_ORCHESTRATION_CN.md)。
+
+只读集合查询与精确成员替换/移除/裁剪已补齐，普通函数通过 PoolEdit 返回计划，不直接改写共享池。
+保持 view_id，成员实际改变才推进 revision，复用输入声明、步骤事务与 checkpoint；详细 API 与一轮精英池例子见
+[Pool 集合操作](POOL_COLLECTION_OPERATIONS_CN.md)。
 
 ## 1. 解先有存放位置，再由算法使用
 
@@ -19,6 +31,28 @@
 框架不需要 NSGA-II→SA、SA→MOEA/D 等逐对转换器。接收算法取得候选后按自己已有的规则建立或更新结构。两个种群可以引用同一候选来源而拥有不同成员顺序、排名和参考方向。
 
 池是共享候选版本的所有者；PopulationAuthority 仍拥有**当前算法投影与发布游标**。二者不争夺同一个可写矩阵：池版本不可原位改写，Unit 的工作数组按已有成员操作和步骤事务更新。当前内置 Unit 保留数值数组以便高效运算，还没有全部迁移成只存 SolutionRef 的结构。
+
+### 1.1 私有阶段合批与读取边界（2026-10-30）
+
+同步提案、步骤内批量初始化和问题修复，先使用 CandidateBatch 已脱离且不可原位改写的调用内值，
+在本调用的数量、形状验收完成后、正式评估之前，按阶段合批写入原 SolutionPool。
+例如 200 个候选各经历 mutation_parent、mutation、repair_input、repair，仍保留四个阶段及各行 token/来源，
+但可写成四个批次，而非 800 个单行快照。repair 保持提案 token，阶段版本与来源不按数值相等合并。
+sequence 仍按实际池记录写入递增，不要求每个候选各占一个逻辑序号。
+
+这不是公开值缓存，也不延迟正式接纳或 Event/Authority 的持久核验。调用内值不能充当持久读取收据；
+跨调用读取仍实读并核验完整 SnapshotIdentity。队列只在所属 Solver 的同步线程内有效，
+即使 copy_context 传到另一线程也不共享；退出后清空，嵌套失败只丢弃内层新增项。
+算子/形状验收失败不刷新该作用域队列，写入失败由原步骤事务回滚，评估不启动。
+步骤外的初始化和直接候选调用保持即时登记，避免改变后续初始化器可见的已发布输入。
+
+完整成员交付在一次读取中联合核对候选、raw feedback 与 provenance；每个 backing record 只加载一次，
+后续调用仍重新核验。MOEA/D 的全部方向在同一私有索引操作中验证一次完整视图图，失败不留下已发布前缀。
+NSGA 家族和 MOEA/D 的步骤局部状态不再重复保存 Unit 已持有的成员矩阵；自定义显式状态协议保留保守路径。
+完整 manifest 生成、发布前恢复校验和 Unit codec 仍存在，尚未改为增量持久格式。
+
+验证：`tests/test_candidate_stage_write_batches.py`、`tests/test_pool_unit_work_reuse.py`，
+并结合 repair/disposition、成员字段、部分接纳、失败回滚及 checkpoint 恢复测试。
 
 ## 2. 时间属于运行，不用墙钟决定可见性
 
@@ -218,6 +252,14 @@ pool.drop_subpool("local_inputs")
 
 ### 10.2 给角色声明一个取解任务
 
+组合器的 `working_pool` 使用上述普通引用集合，名字必须已存在且已提交。
+StrategyRouterAdapter/StrategyChainAdapter 可显式绑定，子组合 None 继承最近上层区域；
+池任务省略 select 时从该区域冻结输入，没有绑定时保持根池行为。
+本批接纳候选自动归入最近工作区，不自动归入所有祖先，不改变孩子 Unit 的成员关系。
+记录进入已有成员计划收集器，和显式输出一起预检后随同一 Authority 提交；同名 replace/append 冲突拒绝。
+绑定和原提案描述符由 Adapter 恢复，作用域不改变持久视图的 parent/ancestors，也不复制候选。
+具体输入、结果与权限边界见 [接口手册 0.5](POOL_API_REFERENCE_CN.md)。
+
 已有 StrategyRouterAdapter 负责阶段、激活角色、候选预算和反馈路由。新增的任务绑定只描述该角色如何从池取解、何时完成、向哪交付：
 
 ```python
@@ -272,6 +314,14 @@ VNS 的默认 PoolTaskSpec() 则为每个实例分配一个起点；显式 count
 
 `steps` 只用于 refine，是每个起点的接纳更新数，包含起点基准求值；`steps=2` 即基准加一批邻域。零接纳不推进任务，失败回滚进度，已经发生的评估成本仍计入全局预算。它不是时间上限、总求值次数，也不会绕开 Solver deadline/预算。VNS 的基准通过正常 repair/评估/Bias/准入之后，才允许用它与后续邻域比较。
 
+VNS 的起点拒绝与停滞重启遵守以下边界（2026-10-29）：
+
+- 普通内部 initializer 生成的未评分起点，只有在本次 Evaluation Event 与该提案的准确 token 对齐、确认已经送评却零接纳后，才允许在下一次提案重新初始化。预算未覆盖、兄弟提案取消和旧事件不触发重抽，不制造已提交步骤或虚构分数；同一任务先前已评估的 selector 结果仍须保留。
+- 显式池输入、手工给定点、warm start，以及未声明起点来源的旧 checkpoint，保留其原起点重试；不能用随机候选代替调用方冻结的输入。长期不满足接纳条件时，由尝试次数、求值预算或 deadline 终止。
+- 停滞触发的重启推迟到下一次 `propose`。触发当步仍保留已评估的当前点与准确引用，任务若恰在此步完成，交回这个结果；不能交回尚未评分的重启点。待重启标记随步骤事务和 checkpoint 保存，下一次提案只初始化一次。
+
+推迟重启会改变 initializer 相对于步骤间共享 RNG 钩子的执行时点，因此不承诺与旧版本在这类交错下逐位一致；同一新版本的恢复和回滚必须保持自己的随机流与待重启状态一致。该调整不改变问题求值、硬接纳或原始反馈。
+
 `output` 收集任务期间送评且被准入的候选，包括起点和没有胜过当前点的试探解。需要精英集合时，由后续选择函数明确筛选，不能把整个结果子池叫作“全部精修最优解”。结果保留自身 token、来源引用与真实原始反馈，不改变源 x 的分数来冒充 y 的结果。
 
 SA/VNS 的当前点持久保存来源记录；Unit 投影和变异草稿复制通过控制面重新绑定该记录，复制本身不生成新身份。真正变异才派生新 token，parent_token 指向当前点，solution_source_ref 保留原始池来源。多实例反馈先按候选的实际绑定取记录，不能把子批次第 0 行当作根批次第 0 行。池任务要求根 Adapter 与池组件均成功恢复；配置不匹配或子状态恢复失败必须传播，即使 checkpoint 插件没有开启全局 strict。
@@ -296,6 +346,10 @@ initialize/compete 输入消费完成后，后续调度继续原算法的 propos
 子池名自动位于 Router 路径/名称作用域下，例如 `refinement/refined`；嵌套 Router 加入父 StrategyTask 路径。输入选择、当前结果、尚未消费来源均受保留策略保护。角色原有数值 seeds 对 pool_task 关闭，正式引用是唯一任务输入来源；没有 pool_task 的历史角色仍保留原有调用方式。
 
 返回候选依旧经过接收方正常求值与 Bias 投影；源算法的选择分数不自动复用。原始反馈查询 `pool.read_raw_feedback(refs)` 可供选择函数使用，但本身不代表已满足接收方的评估等价条件。
+
+`pool.read_raw_feedback_info(refs, allow_pending=False)` 按输入的精确引用顺序返回逐行原始反馈信息，包含重复引用；没有保存信息的历史记录返回空 Mapping。`put(..., feedback=...)` 将每项 `Feedback.info` 的脱离、可序列化值保存在同一候选 Snapshot 的 `raw_feedback.info` 中，不建立第二份索引或可写权威。步骤回滚、checkpoint、保留与行压缩沿用原 Snapshot 机制，读取返回脱离值，不能反向改写池内记录。
+
+该入口适合保存子 Case 的 ArtifactBinding、运行身份、预算结算等轻量证据。排程矩阵、模型和数据集应发布为 Artifact，不能因有 info 字段就复制进每项反馈。反馈信息不能替代发布收据验证，也不能按数值相等、局部行号或同 token 的最新版本反推最终结果。实际用法见供应调整 Project 的 `JointSupplyCase` 与 `test_solution_pool_feedback_info.py`。
 
 ### 10.4 支持范围与可运行入口
 
@@ -348,7 +402,7 @@ local = RoleSpec("local", vns_factory, n_units=4,
 
 ### 10.6 递归派生视图：MOEA/D → VNS → VNS
 
-投影任务声明了 output 后，每个起点完成时会发布一个派生视图，下一层仍用相同选择器。以下角色装入同一个 Router，并依次调度 coarse、fine、return 阶段：
+投影精修任务每个起点完成时会发布一个派生视图，output=None 也可交付最终选择；显式 output 额外聚合接纳历史。下一层仍用相同选择器。以下角色装入同一个 Router，并依次调度 coarse、fine、return 阶段：
 
 ```python
 coarse = VNSAdapter(name="coarse", base_sigma=0.2, restart_on_stagnation=False)
@@ -369,7 +423,7 @@ fine_role = RoleSpec("fine", fine,
 - `"coarse"` 聚合子池保留所有接纳过的提案，供种群竞争或显式筛选。
 - `subpools.all(coarse)` 选择 coarse 创建的派生视图。每个视图只装入 `get_pool_refinement_results(control)` 明确交付的最终结果；VNS 返回当前 incumbent 当时选中的精确候选引用，不按 token 追读未来版本。因此下一层从上一层选中的解继续，不从聚合集合的第一条旧基线重新开始。这不表示数学上的局部最优已被证明。
 
-投影消费者若要发布派生结果，须实现这个结果接口，不能拿保留用的 get_solution_pool_roots 当作选择策略。裸 VNS 支持投影计算，但没有声明投影池任务及 output 时不成为视图生产者。Doctor/装配检查拒绝缺失声明、未挂载创建者和循环生产依赖；运行时验证实际结果引用。
+投影消费者须实现这个结果接口，不能拿保留用的 get_solution_pool_roots 当作选择策略。裸 VNS 支持投影计算，但没有声明投影池精修任务时不成为视图生产者；output 不再是发布最终视图的前提。Doctor/装配检查拒绝缺失声明、未挂载创建者和循环生产依赖；运行时验证实际结果引用和原发布身份。
 
 视图身份与来源：
 

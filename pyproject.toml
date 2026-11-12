@@ -40,7 +40,7 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "blackbase>=0.3.26,<0.4.0",
+    "blackbase>=0.3.27,<0.4.0",
     "numpy>=1.20.0",
     "psutil>=5.9.0",
     "scipy>=1.7.0",
@@ -49,6 +49,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+benchmark = ["pymoo==0.6.2"]
 visualization = ["matplotlib>=3.5.0"]
 parallel = ["joblib>=1.1.0"]
 bayesian = ["skopt>=0.9.0"]
@@ -93,6 +94,8 @@ packages = [
     "nsgablack.adapters",
     "nsgablack.adapters.astar",
     "nsgablack.adapters.async_event_driven",
+    "nsgablack.adapters.bayesian_optimization",
+    "nsgablack.adapters.cmaes",
     "nsgablack.adapters.differential_evolution",
     "nsgablack.adapters.elite_retention",
     "nsgablack.adapters.fixed_candidate",
@@ -100,6 +103,7 @@ packages = [
     "nsgablack.adapters.gradient_descent",
     "nsgablack.adapters.gradient_optimizer",
     "nsgablack.adapters.mas",
+    "nsgablack.adapters.map_elites",
     "nsgablack.adapters.moa_star",
     "nsgablack.adapters.moead",
     "nsgablack.adapters.multi_strategy",
@@ -209,6 +213,33 @@ packages = [
     "DASHBOARD_PROTOCOL.md",
     "db.toml.example",
     "entries/*.toml",
+    "example_manifests/*.toml",
+    "skills/framework-experiment-guide/SKILL.md",
+    "assistant_training/*.json",
+    "assistant_training/*.md",
+    "workspace_editor_frontend/*.html",
+    "workspace_editor_frontend/*.css",
+    "workspace_editor_frontend/*.js",
+    "workspace_editor_frontend/*.json",
+    "workspace_editor_frontend/LICENSE*",
+    "workspace_editor_frontend/*.txt",
+    "workspace_editor_frontend/README.md",
+    "workspace_editor_frontend/build.mjs",
+    "workspace_editor_frontend/licenses/*",
+    "../AGENTS.md",
+    # catalog/ lives beside the source docs; wheels place these under nsgablack/.
+    "../README.md",
+    # Focused source guides must remain readable after a non-editable install.
+    # These are public Markdown only; Project data and execution assets stay out.
+    "../docs/catalog_usage/*.md",
+    "../docs/architecture/RUNTIME_CONTRACTS_CN.md",
+    "../docs/architecture/UNIT_MEMBER_OPERATIONS_CN.md",
+    "../docs/architecture/ADAPTER_OPERATION_BOUNDARIES_CN.md",
+    "../docs/architecture/SOLUTION_POOL_CN.md",
+    "../docs/architecture/POOL_API_REFERENCE_CN.md",
+    "../docs/architecture/JOINT_REPAIR_CN.md",
+    "../docs/architecture/NATURAL_SEARCH_PLANS_CN.md",
+    "../docs/standard_scaffold_tutorial/07_nested_orchestration_standard.md",
 ]
 "nsgablack.experiment" = ["db.toml.example"]
 "nsgablack.project.scaffold" = [

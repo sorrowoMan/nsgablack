@@ -39,6 +39,7 @@ class MASAdapter(UnitBackedAdapter):
 
     This adapter maintains an optional internal surrogate model for exploitation.
     """
+    operation_methods = {"initializer": "initialize", "repair": "repair"}
     unit_builder_methods = ("create_model",)
     accepts_proposal_replacement = True
     pool_input_modes = ("initialize",)
@@ -63,9 +64,14 @@ class MASAdapter(UnitBackedAdapter):
         config: Optional[MASConfig] = None,
         name: str = "mas",
         priority: int = 0,
+        *,
+        initializer=None,
+        repair=None,
         **config_kwargs,
     ) -> None:
         super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
+        self.set_initializer(initializer)
+        self.set_repair(repair)
         self.config = self.resolve_config(
             config=config,
             config_cls=MASConfig,
@@ -83,20 +89,22 @@ class MASAdapter(UnitBackedAdapter):
         self._history_refs = []
 
     def setup(self, control: Any) -> None:
+        self.reset_unit()
         self.solver = control
         self._center = None
         self._surrogate = None
-        self._X.clear()
-        self._Y.clear()
+        self._X = []
+        self._Y = []
         self._pool_results = PoolRefinementState()
         self._history_refs = []
         self._rng = self.create_local_rng(control, seed=self.cfg.random_seed)
+        self.seed_operator_bindings(self._rng)
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         from nsgablack.context_keys import KEY_SOLUTION_INPUT_REF
         self._validate_pool_candidate(control)
         if self._center is None or (self._pool_results.current is None and context.get(KEY_SOLUTION_INPUT_REF) is not None):
-            seed = control.init_candidate(context)
+            seed = self.init_candidate(control, context)
             self._center = candidate_array(seed).copy()
             self._pool_results.remember_seed(control, seed)
         if self._pool_results.current is None:
@@ -162,9 +170,10 @@ class MASAdapter(UnitBackedAdapter):
         return 1
 
     def restart_search(self, control, context=None):
+        self.reset_unit()
         self._center, self._surrogate = None, None
-        self._X.clear()
-        self._Y.clear()
+        self._X = []
+        self._Y = []
         self._history_refs = []
         self._pool_results = PoolRefinementState()
 
@@ -274,7 +283,7 @@ class MASAdapter(UnitBackedAdapter):
     def _restore_algorithm_step_state(self, state: Mapping[str, Any]) -> None:
         if str(state.get("schema", "")) != "nsgablack.mas_step_transaction/v1":
             raise ValueError("unsupported MASAdapter step transaction schema")
-        self._validate_saved_history(state)
+        self._validate_saved_history(state, step=True)
         self._pool_results = PoolRefinementState.from_dict(state.get("pool_results"))
         self._history_refs = [None if ref is None else SolutionRef.from_dict(ref) for ref in state.get("history_refs", ())]
         center = state.get("center")
@@ -302,17 +311,19 @@ class MASAdapter(UnitBackedAdapter):
             fitted=bool(state.get("surrogate_fitted", False)),
         )
 
-    def _validate_saved_history(self, state):
+    def _validate_saved_history(self, state, *, step=False):
         """Reject contradictory compatibility fields before fitting a model.
 
-        UnitBacked installs the codec Unit after strategy restoration. Its
-        history must agree with the compatibility payload used for model
+        The authoritative codec Unit's history must agree with the payload used for model
         reconstruction; neither copy may silently override the other.
         """
         payload = state.get("algorithm_unit")
         if payload is None:
             return  # Legacy numerical state without a Unit codec remains valid.
-        unit = self.unit_binding.restore(payload)
+        # Runtime snapshots may contain native arrays; portable checkpoints
+        # still require the persistent data codec and its original validation.
+        restore = self.unit_binding.restore_step if step else self.unit_binding.restore
+        unit = restore(payload)
         for field in ("history_x", "history_y"):
             raw = state.get(field)
             rows = [] if raw is None else list(raw)

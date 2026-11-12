@@ -1,0 +1,12 @@
+[Unit]
+Description=Check Catalog AI explanation backlog every fifteen minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=15min
+RandomizedDelaySec=30s
+AccuracySec=15s
+Unit=framework-catalog-curation.service
+
+[Install]
+WantedBy=timers.target

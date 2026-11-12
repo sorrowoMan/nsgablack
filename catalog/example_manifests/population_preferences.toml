@@ -1,0 +1,73 @@
+[[example]]
+id = "population-preference-application-unit-bridge"
+title = "显式参考种群的新颖性软评分 · 完整装配与纯观察变体"
+component_keys = ["bias.unit_preference", "bias.population_diversity"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "在现有 bias_gallery Project 的副本中绑定实际 NSGA2 实例，使用 PopulationDiversityPreference 与 UnitPreferenceBias 生成软选择奖励，并按最终成员引用读取 raw/selection 反馈。正文没有装配五个旧多样性类。"
+inputs = ["保留 bias_gallery 标准 Project、Case 包与二维 SphereProblem；资源由原 Project L0 提供。", "完整替换副本 build_solver.py，包含明确 Adapter、Unit 绑定、BiasModule 和本地报告观察器，不依赖其它章节。"]
+steps = ["构造 NSGA2、显式绑定参考实例、挂载 BiasModule，按原 Project 驱动候选修复与评估。", "用最终成员 SolutionRef 读取 raw/selection，整体 Unit 多样性只作为观察值。", "按正文执行装配检查和原运行入口；纯观察变体关闭软选择，但保留 Unit 距离报告。"]
+dependencies = ["当前 blackbase、nsgablack 与 NumPy；沿用现有 CPU Project，不使用外部模型或网络服务。"]
+parameters = [{name = "weight", value = "0.15", meaning = "最近邻距离转成最小化负增量后的单次外层权重。"}, {name = "owner_path", value = "bias_gallery/population_search", meaning = "明确参考 Adapter 的实例标签，不自动选择其它种群，也不限制候选来源范围。"}]
+expected_outputs = ["用户运行后在副本 results/population_preference.json 读取本轮 run_id、Unit 身份、成员引用、raw/selection 及整体距离。", "原始 Sphere 目标不被偏好覆盖；纯观察变体的 raw/selection 相同。这里只给可执行入口和检查办法，未新增运行收据。"]
+sources = [{path = "nsgablack/docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md", section = "bias.unit_preference"}]
+
+[[example]]
+id = "population-preference-migration-bias.diversity"
+title = "DiversityBias 当前边界与迁移说明 · 旧类未装配"
+component_keys = ["bias.diversity"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "说明旧最近距离增量、population_ref 依赖与数值身份限制；推荐使用明确 Unit 绑定的新路径，不把可导入误当作已适配新宿主。"
+inputs = ["先阅读该节旧类实际返回方向、快照依赖和欧氏迁移范围。"]
+steps = ["核对旧来源边界，再按本书新组件主例选择正式接线或纯观察。"]
+expected_outputs = ["得到迁移与限制说明；本条没有装配旧类，也不产生算法运行结果。"]
+sources = [{path = "nsgablack/docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md", section = "bias.diversity"}]
+
+[[example]]
+id = "population-preference-migration-bias.diversity_crowding"
+title = "CrowdingDistanceBias 当前边界与迁移说明 · 旧类未装配"
+component_keys = ["bias.diversity_crowding"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "明确旧候选空间近邻均值与 NSGA2 拥挤距离的差异，记录正方向、重复加权、非有限值与参考归属缺口，不提供伪装正常的稀疏奖励配方。"
+inputs = ["区分旧三近邻均值与正式欧氏最近邻新颖性；当前新评分器没有可调 k。"]
+steps = ["先阅读实际边界；需要正式软新颖性时转到新 Unit 主例，不代理修正旧返回值。"]
+expected_outputs = ["得到源码边界与待修说明；本条没有装配旧类或验证搜索效果。"]
+sources = [{path = "nsgablack/docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md", section = "bias.diversity_crowding"}]
+
+[[example]]
+id = "population-preference-migration-bias.diversity_sharing"
+title = "SharingFunctionBias 当前边界与迁移说明 · 旧类未装配"
+component_keys = ["bias.diversity_sharing"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "说明 sigma_share/alpha 所属共享核、当前倒数公式与最小化方向、双重加权和身份/缓存依赖；不把共享函数说成已自动惩罚拥挤。"
+inputs = ["先明确共享核不是最近邻距离，当前 PopulationDiversityPreference 不接受共享核参数。"]
+steps = ["核对当前返回公式与快照边界，再选择正式新颖性或另行修复共享语义。"]
+expected_outputs = ["得到当前实现与推荐路径说明；没有装配旧类，没有运行结果。"]
+sources = [{path = "nsgablack/docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md", section = "bias.diversity_sharing"}]
+
+[[example]]
+id = "population-preference-migration-bias.diversity_niche"
+title = "NicheDiversityBias 当前边界与迁移说明 · 旧类未装配"
+component_keys = ["bias.diversity_niche"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "说明旧坐标分格字典没有自动成员维护/提交恢复路径，满格公式也不能解释为正常最小化惩罚；不把手工 update_niches 当成已完成装配。"
+inputs = ["区分公式阈值、解池容量与硬接纳；当前旧类没有对应的 Unit 事件绑定。"]
+steps = ["阅读缺口；只需观察时使用正式 Unit 主例的纯观察变体，另行定义档案/成员选择需求。"]
+expected_outputs = ["得到成员维护和公式边界说明；本条未装配旧类，不生成生态位搜索结果。"]
+sources = [{path = "nsgablack/docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md", section = "bias.diversity_niche"}]
+
+[[example]]
+id = "population-preference-migration-bias.diversity_adaptive"
+title = "AdaptiveDiversityBias 当前边界与迁移说明 · 旧类未装配"
+component_keys = ["bias.diversity_adaptive"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "区分平均成对距离、单次局部系数与真正权重控制器；记录最小化方向、双重加权、参考绑定和恢复缺口，不声称已自动增强探索。"
+inputs = ["target_diversity 使用候选坐标的距离单位；当前新颖性主例是固定权重，不是该旧自适应公式。"]
+steps = ["先核对当前行为，再用正式 Unit 主例理解原始目标/选择反馈，另行定义提交指标与自适应时序。"]
+expected_outputs = ["得到实现限制与正式路径说明；本条没有装配旧类或提供性能结论。"]
+sources = [{path = "nsgablack/docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md", section = "bias.diversity_adaptive"}]

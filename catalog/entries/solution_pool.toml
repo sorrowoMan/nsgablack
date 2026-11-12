@@ -32,10 +32,12 @@ import_path = "nsgablack.adapters:PoolTaskSpec"
 tags = ["core", "solution-pool", "subpool", "role", "refinement"]
 summary = "明确母池或具名视图输入；按算法实例选择普通／投影结果视图，递归发布冻结来源与精确选择，沿用角色调度和恢复。"
 use_when = ["通过 RoleSpec/StrategySpec 在既有 Router 中装配池任务时。"]
-minimal_wiring = ["from nsgablack.adapters import PoolTaskSpec", "task = PoolTaskSpec(mode='initialize')", "local = PoolTaskSpec('elite', count='all', steps=5)"]
+minimal_wiring = ["from nsgablack.adapters import PoolTaskSpec", "task = PoolTaskSpec(mode='initialize')", "local = PoolTaskSpec('elite', count='all', steps=5)", "# Additional donors for a plain change function are explicit public names.", "task = PoolTaskSpec(mode='initialize', change_sources=('reference',), change_allow_main=True)"]
 required_companions = ["adapter.pool_task", "tool.solution_pool"]
-config_keys = ["select", "mode", "steps", "output", "request_key", "phases", "count", "distribution", "on_insufficient", "shuffle"]
+config_keys = ["select", "mode", "steps", "output", "request_key", "phases", "count", "distribution", "on_insufficient", "shuffle", "change_sources", "change_allow_main"]
 example_entry = "docs/architecture/SOLUTION_POOL_CN.md"
+companions = ["tool.solution_pool", "tool.subpools", "adapter.pool_task", "adapter.search_plan"]
+contract = { catalog = { role = "pool_task", concepts = ["GA停滞VNS精修", "GA加VNS", "MOEA/D精修", "池任务", "算法返回竞争"], operations = [], boundaries = ["select=None 使用最近工作区域；指定具名子池时要求其已存在。", "被消费 Adapter 必须声明对应池输入模式；不能仅换类名认定支持。", "返回候选由接收算法重新评估和竞争，不复制另一个算法的 Unit。"] } }
 
 [[entry]]
 key = "example.pool_refinement"
@@ -60,8 +62,10 @@ summary = "运行内具名候选区域与引用子池；不可原位改写版本
 use_when = ["需要显式存取、共享或按运行时点选择候选，且不传递其他算法的完整 Unit 时。"]
 minimal_wiring = ["pool = solver.solution_pool", "refs = pool.select(at=pool.timestamp, stage='accepted')", "batch = solver.read_solutions(refs)"]
 required_companions = ["SnapshotStore", "CandidateBatch"]
-config_keys = ["region", "stage", "source", "at", "limit", "subpool", "create_subpool", "add_to_subpool", "drop_subpool", "read_raw_feedback", "subpool_metadata", "projection_subpools", "subpools_created_by", "subpool_descriptor", "children_subpools", "publish_projection_subpool", "publish_subpool_view"]
-example_entry = "python -m nsgablack catalog show tool.solution_pool"
+config_keys = ["snapshots", "run_id"]
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+companions = ["tool.pool", "tool.solution_ref", "tool.solution_stamp", "tool.pool_task_spec"]
+contract = { catalog = { role = "pool_store", concepts = ["解池", "母池", "子池", "候选身份", "候选版本", "运行时点"], operations = ["select", "read", "read_raw_feedback", "create_subpool", "add_to_subpool", "drop_subpool", "replace_subpool_members", "update_subpool_members", "remove_from_subpool", "trim_subpool", "subpool_metadata", "projection_subpools", "subpools_created_by", "subpool_descriptor", "children_subpools", "publish_projection_subpool", "publish_subpool_view"], boundaries = ["SolutionPool 保存不可原位改写的候选版本与引用区域；Unit 保存算法结构与关系。", "解除子池成员不等于删除仍被其他消费者引用的候选。", "池容量不是 population_size；操作可见性服从原步骤提交事务。"] } }
 
 [[entry]]
 key = "tool.subpools"
@@ -73,8 +77,10 @@ summary = "按真实算法实例选择全部或随机 N 个普通／投影结果
 use_when = ["局部算法消费 NSGA／DE 种群、MOEA/D 方向，或继续消费上一层明确交付的结果时。"]
 minimal_wiring = ["from nsgablack.adapters import PoolTaskSpec, subpools", "task = PoolTaskSpec(subpools.random(20, adapter1), steps=3, output='refined')", "next_task = PoolTaskSpec(subpools.all(coarse_vns), steps=3, output='fine')"]
 required_companions = ["adapter.pool_task", "tool.pool_task_spec"]
-config_keys = ["all", "random", "creator", "count"]
+config_keys = []
 example_entry = "examples/cases/solution_pool/cases/moead_refinement/README.md"
+companions = ["tool.pool_task_spec", "adapter.pool_task", "adapter.moead", "adapter.search_plan"]
+contract = { catalog = { role = "view_selector", concepts = ["选择算法结果视图", "方向子池", "按来源选子池", "MOEA/D精修"], operations = ["all", "random"], boundaries = ["返回运行时选择计划；创建者是 Adapter 实例路径，不是类型名。", "all/random 不隐含等待屏障，不创建尚不存在的结果视图。"] } }
 
 [[entry]]
 key = "tool.objective_projection"
@@ -112,7 +118,7 @@ use_when = ["在多个算法间传递明确的候选来源版本时。"]
 minimal_wiring = ["refs = solver.store_solutions(candidate_batch)", "batch = solver.read_solutions(refs)"]
 required_companions = ["tool.solution_pool"]
 config_keys = ["pool_id", "record_id", "row", "candidate_token"]
-example_entry = "python -m nsgablack catalog show tool.solution_ref"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "tool.solution_stamp"
@@ -125,7 +131,7 @@ use_when = ["锁定串行、恢复或融合的候选来源时点时。"]
 minimal_wiring = ["stamp = solver.solution_pool.timestamp", "refs = solver.solution_pool.select(at=stamp)"]
 required_companions = ["tool.solution_pool"]
 config_keys = ["run_id", "sequence", "generation", "attempt"]
-example_entry = "python -m nsgablack catalog show tool.solution_stamp"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "tool.pool_retention_policy"
@@ -138,7 +144,7 @@ use_when = ["长期运行需要释放闲置候选存储，且 Adapter 已显式�
 minimal_wiring = ["from nsgablack.core import PoolRetentionPolicy", "solver.set_solution_pool_retention(PoolRetentionPolicy(idle_steps=20, retained_publications=2))"]
 required_companions = ["tool.solution_pool"]
 config_keys = ["idle_steps", "retained_publications"]
-example_entry = "python -m nsgablack catalog show tool.pool_retention_policy"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "doc.architecture.solution_pool"

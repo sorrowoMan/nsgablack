@@ -17,7 +17,10 @@ import threading
 import time
 import uuid
 import weakref
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple
 
 from .acceleration import AccelerationFacade, AccelerationRegistry, ExecutionResult
@@ -80,12 +83,14 @@ from blackbase.resources import (
     ArtifactBinding,
     BudgetAccount,
     BudgetClaim,
+    DataRef,
     ResourceContext,
     SharedBudgetExceeded,
     coerce_resource_context,
 )
 
 from .base import BlackBoxProblem
+from .state.representation_state import RepresentationStateParticipant
 from .interfaces import (
     BiasInterface,
     RepresentationInterface,
@@ -95,6 +100,7 @@ from .interfaces import (
 )
 from .solver_helpers import (
     AUTHORITY_BEFORE_REF_KEY,
+    EVALUATION_EVENT_KEY,
     EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1,
     LAST_EVALUATED_BATCH_KEY,
     LAST_EVALUATION_EVENT_KEY,
@@ -162,6 +168,17 @@ from ..utils.extension_contracts import (
 from ..plugins import PluginManager
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _CandidatePoolWriteBatch:
+    owner: Any
+    stages: dict
+    thread_id: int
+    active: bool = True
+
+
+_CANDIDATE_POOL_WRITES = ContextVar("nsgablack_candidate_pool_writes", default=None)
 
 _SEMANTIC_METADATA_KEY = "candidate.semantic_metadata"
 _CANDIDATE_BATCH_SNAPSHOT_KEY = "candidate_batch"
@@ -280,7 +297,8 @@ class SolverBase:
         self.run_session = RunSession()
         self.population_authority = PopulationAuthority()
         from .state.bias_state import BiasStateParticipant
-        self._state_participants = [self.population_authority, IncumbentParticipant(self), BiasStateParticipant(self)]
+        self._state_participants = [self.population_authority, IncumbentParticipant(self), BiasStateParticipant(self),
+                                    RepresentationStateParticipant(self)]
         self.authorities = AuthorityRegistry()
         self.authorities.register("population", self.population_authority)
         self.authorities.register("incumbent", self._state_participants[1])
@@ -333,6 +351,7 @@ class SolverBase:
             resource_context if resource_context is not None else {"scope": "optimization"}
         )
         self.case_runtime: Any | None = None
+        self._case_input_artifacts: Mapping[str, DataRef] = MappingProxyType({})
 
         self.problem = problem
         self.dimension = problem.dimension
@@ -840,6 +859,22 @@ class SolverBase:
     def get_resource_context(self) -> ResourceContext:
         return self.resource_context
 
+    @property
+    def input_artifacts(self) -> Mapping[str, DataRef]:
+        """Declared input locations; authority remains in Case runtime bindings."""
+        return self._case_input_artifacts
+
+    def set_input_artifacts(self, refs: Mapping[str, DataRef]) -> "SolverBase":
+        """Accept the standard Case input surface without loading any payload."""
+        if not isinstance(refs, Mapping):
+            raise TypeError("Case input artifacts must be a mapping of DataRef values")
+        values = dict(refs)
+        if any(not isinstance(name, str) or not name.strip() or not isinstance(ref, DataRef)
+               for name, ref in values.items()):
+            raise TypeError("Case input artifacts require non-empty names and DataRef values")
+        self._case_input_artifacts = MappingProxyType(values)
+        return self
+
     def set_case_runtime(self, runtime: Any) -> "SolverBase":
         """Accept the shared Case runtime without importing Project internals."""
 
@@ -865,7 +900,14 @@ class SolverBase:
         return build_solver_result(self, raw_output)
 
     def stage_evaluation_evidence_archives(self) -> dict[str, Any]:
-        """Stage canonical evidence archives into the Case finalization ledger."""
+        """Stage canonical archives, retaining only refs until authority seal."""
+
+        from blackbase.evaluation import (
+            EVALUATION_EVIDENCE_ARCHIVE_BUNDLE_SCHEMA_V1,
+            EVALUATION_EVIDENCE_ARCHIVE_SCHEMA_V2,
+            EvaluationEvidenceArchiveBundle,
+            iter_evaluation_evidence_archives,
+        )
 
         runtime = self.case_runtime
         publisher = getattr(runtime, "artifact_publisher", None)
@@ -885,10 +927,28 @@ class SolverBase:
         state = self._evaluation_evidence_archive_staging
         entries = state.setdefault("entries", {})
         staged: dict[str, Any] = {}
-        for record in self.evaluation_evidence_journal.list_records(
+        already_staged = {
+            event_id: entry["ref"]
+            for entry in entries.values()
+            for event_id in entry.get("event_ids", (entry.get("event_id"),))
+        }
+        pending_records = []
+        terminal_records = self.evaluation_evidence_journal.list_records(
             run_id=run_id,
             phases=("finalized", "abandoned"),
-        ):
+        )
+        # A prior process can have persisted only some members of a shared
+        # bundle. Recover those routes first, before deciding any earlier
+        # unbound member needs a new archive. Recovery fills the other routes.
+        for record in terminal_records:
+            if record.archive_binding is not None and not record.retention_released:
+                binding = ArtifactBinding.from_dict(record.archive_binding)
+                self.evaluation_evidence_coordinator.resume_archive_release(record.event_id, reader=publisher)
+                staged[record.event_id] = binding.ref
+        for previous in terminal_records:
+            record = self.evaluation_evidence_journal.get(previous.event_id)
+            if record is None:
+                raise RuntimeError("terminal evidence disappeared during archive staging")
             if record.retention_released:
                 continue
             if record.archive_binding is not None:
@@ -899,14 +959,18 @@ class SolverBase:
                 )
                 staged[record.event_id] = binding.ref
                 continue
-            artifact_name = f"evaluation-evidence-archive-{record.event_id}"
-            existing = entries.get(artifact_name)
-            if isinstance(existing, Mapping):
-                staged[record.event_id] = existing["ref"]
+            if record.event_id in already_staged:
+                staged[record.event_id] = already_staged[record.event_id]
                 continue
-            manifest = EvaluationEvidenceArchiveManifest.from_record(
-                record,
-                snapshots=self.snapshot_store,
+            pending_records.append(record)
+        for manifest in iter_evaluation_evidence_archives(
+            pending_records, snapshots=self.snapshot_store,
+            max_events=8, max_content_bytes=32 * 1024 * 1024,
+        ):
+            event_ids = manifest.event_ids if isinstance(manifest, EvaluationEvidenceArchiveBundle) else (manifest.event_id,)
+            artifact_name = (
+                f"evaluation-evidence-archive-{event_ids[0]}" if len(event_ids) == 1
+                else f"evaluation-evidence-archive-bundle-{manifest.content_digest[7:]}"
             )
             ref = publish_artifact(
                 artifact_name,
@@ -916,12 +980,11 @@ class SolverBase:
                 media_type="application/json",
                 metadata=manifest.artifact_metadata(),
             )
-            entries[artifact_name] = {
-                "event_id": record.event_id,
-                "manifest": manifest,
-                "ref": ref,
-            }
-            staged[record.event_id] = ref
+            entries[artifact_name] = (
+                {"event_id": event_ids[0], "ref": ref} if len(event_ids) == 1
+                else {"event_ids": event_ids, "ref": ref}
+            )
+            staged.update((event_id, ref) for event_id in event_ids)
 
         if entries and not bool(state.get("observer_registered")):
             def release_after_authority_seal(publications: Mapping[str, Any]) -> None:
@@ -935,13 +998,31 @@ class SolverBase:
                         ref=entry["ref"],
                         publication=receipt,
                     )
-                    entry["binding"] = binding
-                    self.evaluation_evidence_coordinator.archive_and_release(
-                        entry["event_id"],
-                        manifest=entry["manifest"],
-                        binding=binding,
+                    # Keep only refs while all archives await the Case seal.
+                    # Reload one verified body at a time; neither a staged ref
+                    # nor an unreadable/corrupt body permits releasing pins.
+                    payload = publisher.read_verified(binding)
+                    if not isinstance(payload, (bytes, bytearray, memoryview)):
+                        raise TypeError("verified evidence archive reader must return bytes")
+                    decoded = json.loads(bytes(payload).decode("utf-8"))
+                    if not isinstance(decoded, Mapping):
+                        raise TypeError("staged evidence archive must be a JSON object")
+                    manifest = (
+                        EvaluationEvidenceArchiveBundle.from_dict(decoded)
+                        if decoded.get("schema") == EVALUATION_EVIDENCE_ARCHIVE_BUNDLE_SCHEMA_V1
+                        else EvaluationEvidenceArchiveManifest.from_dict(decoded)
                     )
-                    entry["released"] = True
+                    if manifest.schema not in {EVALUATION_EVIDENCE_ARCHIVE_SCHEMA_V2, EVALUATION_EVIDENCE_ARCHIVE_BUNDLE_SCHEMA_V1}:
+                        raise ValueError("staged evidence archive must use a v2 manifest or v1 bundle")
+                    if isinstance(manifest, EvaluationEvidenceArchiveBundle):
+                        self.evaluation_evidence_coordinator.archive_bundle_and_release(
+                            manifest=manifest, binding=binding, event_order=entry["event_ids"],
+                        )
+                    else:
+                        self.evaluation_evidence_coordinator.archive_and_release(
+                            entry["event_id"], manifest=manifest, binding=binding,
+                        )
+                    del manifest, decoded, payload
 
             register_observer(
                 release_after_authority_seal,
@@ -2510,10 +2591,11 @@ class SolverBase:
         if missing:
             latest = {ref.candidate_token: ref for ref in self.solution_pool.refs_for_tokens(missing)}
             refs = tuple(latest[token] for token in missing)
-            values = self.solution_pool.read_provenance(refs, allow_pending=True)
+            pooled, values = self.solution_pool._read_selection(
+                refs, allow_pending=True, include_provenance=True,
+            )
             if any(value is None for value in values):
                 raise ValueError("population candidate pool source is missing provenance")
-            pooled = self.solution_pool.read(refs, allow_pending=True)
             for token, state, value in zip(missing, pooled.semantic_states, values):
                 record = CandidateProvenance.from_dict(value)
                 if record.candidate_token != token:
@@ -2845,8 +2927,9 @@ class SolverBase:
     def read_solutions(self, refs, *, allow_pending=False):
         """Resolve references and bind both candidate views to their stable tokens."""
         refs = tuple(refs)
-        batch = self.solution_pool.read(refs, allow_pending=allow_pending)
-        saved = self.solution_pool.read_provenance(refs, allow_pending=allow_pending)
+        batch, saved = self.solution_pool._read_selection(
+            refs, allow_pending=allow_pending, include_provenance=True,
+        )
         provenance = [self._with_candidate_semantics(
             CandidateProvenance.from_dict(value) if value is not None else
             CandidateProvenance(token, source_kind="pool_input"), state)
@@ -2882,19 +2965,92 @@ class SolverBase:
         self.bind_candidate_provenance(batch.numeric_rows(), records, activate=False)
         return batch
 
+    @contextmanager
+    def _batch_candidate_pool_writes(self):
+        """Persist private stage values once per stage before leaving the call.
+
+        CandidateBatch already supplies detached immutable semantic/numeric
+        values. During an attempt these records cannot be enumerated by another
+        consumer. The synchronous propose/repair boundary flushes them before
+        evaluation; write failures propagate into the existing step rollback.
+        Outside an attempt, keep immediate publication and logical-time order.
+        """
+        if not self.solution_pool._in_attempt:
+            yield
+            return
+        previous = _CANDIDATE_POOL_WRITES.get()
+        if (previous is not None and previous.owner is self and previous.active
+                and previous.thread_id == threading.get_ident()):
+            baseline = {stage: len(items) for stage, items in previous.stages.items()}
+            try:
+                yield
+            except BaseException:
+                for stage in tuple(previous.stages):
+                    if stage not in baseline:
+                        del previous.stages[stage]
+                    else:
+                        del previous.stages[stage][baseline[stage]:]
+                raise
+            return
+        pending = _CandidatePoolWriteBatch(self, {}, threading.get_ident())
+        token = _CANDIDATE_POOL_WRITES.set(pending)
+        try:
+            yield
+            pending.active = False
+            for stage, items in pending.stages.items():
+                batch = CandidateBatch(
+                    tuple(state for value, _ in items for state in value.semantic_states),
+                    np.concatenate([value.numeric_matrix for value, _ in items], axis=0),
+                    tuple(t for value, _ in items for t in value.candidate_tokens),
+                )
+                self.store_solutions(batch, stage=stage,
+                                     provenance=tuple(record for _, record in items))
+        finally:
+            pending.active = False
+            pending.stages.clear()
+            _CANDIDATE_POOL_WRITES.reset(token)
+
     def _register_solution_value(self, value, provenance, *, stage):
         semantic = value
         if not isinstance(value, UnknownState):
             semantic = self.semantic_candidate_state(value)
         batch = CandidateBatch.from_candidates((semantic,), candidate_tokens=(provenance.candidate_token,))
-        ref, = self.store_solutions(batch, stage=stage, provenance=(provenance,))
-        pooled = self.solution_pool.read((ref,), allow_pending=True)
-        row = pooled.numeric_matrix[0]
+        pending = _CANDIDATE_POOL_WRITES.get()
+        if (pending is not None and pending.owner is self and pending.active
+                and pending.thread_id == threading.get_ident()):
+            pending.stages.setdefault(stage, []).append((batch, provenance))
+        else:
+            self.store_solutions(batch, stage=stage, provenance=(provenance,))
+        # This is a local immutable draft, not a durable-read receipt. Public
+        # reads and accepted/Event/Authority publication still verify storage.
+        row = batch.numeric_matrix[0]
         self._register_candidate_provenance(row, provenance)
-        self._register_candidate_provenance(pooled.semantic_states[0], provenance)
-        return pooled.semantic_states[0] if isinstance(value, UnknownState) else row
+        self._register_candidate_provenance(batch.semantic_states[0], provenance)
+        return batch.semantic_states[0] if isinstance(value, UnknownState) else row
 
-    def init_candidate(self, context: Optional[Dict[str, Any]] = None) -> np.ndarray:
+    @staticmethod
+    def _copy_candidate_draft(value):
+        """Detach numeric drafts without expanding their values into Python lists.
+
+        Semantic and other closed protocol values still use the explicit Unit
+        codec. No ndarray subclass attributes are treated as candidate identity
+        or metadata; the caller binds the already known provenance separately.
+        """
+        if type(value) is np.ndarray and value.dtype.metadata is None:
+            if value.dtype.kind not in "biuf":
+                raise TypeError("Unit arrays must be real numeric")
+            return np.array(value, copy=True, order="C", subok=False)
+        from ..representation.structure_builders import encode_unit_value, decode_unit_value
+        return decode_unit_value(encode_unit_value(value))
+
+    def init_candidate(self, context: Optional[Dict[str, Any]] = None, *, initializer=None) -> np.ndarray:
+        initialize = None
+        if initializer is not None:
+            initialize = getattr(initializer, "initialize", None)
+            if not callable(initialize):
+                raise TypeError("direct initializer must implement initialize(problem, context)")
+            if getattr(initializer, "unit_inputs", None) is not None:
+                raise ValueError("initializers cannot require a not-yet-built algorithm Unit")
         from nsgablack.context_keys import KEY_SOLUTION_INPUT_REF
         input_ref = (context or {}).get(KEY_SOLUTION_INPUT_REF)
         if input_ref is not None:
@@ -2915,7 +3071,16 @@ class SolverBase:
             self._register_candidate_provenance(normalized, record)
             return self._register_solution_value(normalized, record, stage="initial")
         pipeline = self.representation_pipeline
-        if representation_capabilities(pipeline).supports("init"):
+        if initialize is not None:
+            from blackbase.call_binding import CallCandidate, invoke_bound_once
+            init_context = dict(context or self.build_context())
+            init_context[KEY_PROBLEM] = self.problem
+            cand = invoke_bound_once(initialize, (
+                CallCandidate(args=(self.problem, init_context), label="with_context"),
+                CallCandidate(args=(self.problem,), kwargs={"context": init_context}, label="keyword_context"),
+                CallCandidate(args=(self.problem,), label="without_context"),
+            ))
+        elif representation_capabilities(pipeline).supports("init"):
             init_fn = getattr(pipeline, "init", None)
             if not callable(init_fn):
                 raise TypeError("representation pipeline must expose init(context)")
@@ -2938,6 +3103,8 @@ class SolverBase:
         self,
         count: int,
         context: Optional[Dict[str, Any]] = None,
+        *,
+        initializer=None,
     ) -> tuple[Any, ...]:
         """Create an unevaluated proposal batch for Adapter consumption.
 
@@ -2958,9 +3125,24 @@ class SolverBase:
             records = [self.candidate_provenance_for(state) for state in batch.semantic_states]
             self.bind_candidate_provenance(rows, records, activate=False)
             return tuple(rows)
-        return tuple(self.init_candidate(context) for _ in range(size))
+        with self._batch_candidate_pool_writes():
+            if initializer is None:
+                return tuple(self.init_candidate(context) for _ in range(size))
+            return tuple(self.init_candidate(context, initializer=initializer) for _ in range(size))
 
-    def mutate_candidate(self, x: Any, context: Optional[Dict[str, Any]] = None, *, unit=None, operator=None) -> Any:
+    def mutate_candidate(self, x: Any, context: Optional[Dict[str, Any]] = None, *, unit=None, operator=None, mutator=None) -> Any:
+        if mutator is not None and operator is not None:
+            raise ValueError("direct mutator and named pipeline mutation are mutually exclusive")
+        if mutator is not None:
+            from ..units.operator_inputs import mutation_unit_spec
+            direct_mutate = getattr(mutator, "mutate", None)
+            if not callable(direct_mutate):
+                raise TypeError("direct mutator must implement mutate()")
+            spec = mutation_unit_spec(mutator)
+            if spec is not None:
+                spec.validate_input(unit)
+            elif unit is not None:
+                raise ValueError("Mutator did not declare Unit inputs")
         input_provenance = self._lookup_candidate_provenance(x)
         if input_provenance is None:
             input_provenance = self._new_candidate_provenance(
@@ -2975,11 +3157,21 @@ class SolverBase:
                 )
             self._register_candidate_provenance(x, input_provenance)
         x = self._register_solution_value(x, input_provenance, stage="mutation_parent")
-        from ..representation.structure_builders import encode_unit_value, decode_unit_value
-        x = decode_unit_value(encode_unit_value(x))
+        x = self._copy_candidate_draft(x)
         self._register_candidate_provenance(x, input_provenance)
         pipeline = self.representation_pipeline
-        if representation_capabilities(pipeline).supports("mutate"):
+        if mutator is not None:
+            from blackbase.call_binding import CallCandidate, invoke_bound_once
+            context_in = {} if context is None else context
+            if spec is not None:
+                out = direct_mutate(x, context_in, unit=unit)
+            else:
+                out = invoke_bound_once(direct_mutate, (
+                    CallCandidate(args=(x, context_in), label="with_context"),
+                    CallCandidate(args=(x,), kwargs={"context": context_in}, label="keyword_context"),
+                    CallCandidate(args=(x,), label="without_context"),
+                ))
+        elif representation_capabilities(pipeline).supports("mutate"):
             kwargs = {} if operator is None else {"operator": operator}
             if unit is not None:
                 kwargs["unit"] = unit
@@ -3013,8 +3205,7 @@ class SolverBase:
         input_provenance = self._lookup_candidate_provenance(x)
         if input_provenance is not None:
             x = self._register_solution_value(x, input_provenance, stage="repair_input")
-            from ..representation.structure_builders import encode_unit_value, decode_unit_value
-            x = decode_unit_value(encode_unit_value(x))
+            x = self._copy_candidate_draft(x)
             self._register_candidate_provenance(x, input_provenance)
         pipeline = self.representation_pipeline
         if representation_capabilities(pipeline).supports("repair"):
@@ -3106,7 +3297,7 @@ class SolverBase:
                 self._active_candidate_provenance,
             )
             if budget_truncated and int(self.population.shape[0]) == 0:
-                self.request_stop()
+                self.request_stop("initialization_evaluation_budget")
             self.plugin_manager.on_population_init(
                 self.population, self.objectives, self.constraint_violations
             )
@@ -3303,7 +3494,7 @@ class SolverBase:
                 "local population Snapshot has no fenced Authority edge"
             )
         if authority_edge is not None:
-            self.snapshot_store.read_verified(authority_edge.snapshot)
+            self.snapshot_store.read_verified_view(authority_edge.snapshot)
             if authority_handle is not None:
                 local_identity = self.snapshot_store.identity(authority_handle)
                 if local_identity != authority_edge.snapshot:
@@ -3559,7 +3750,7 @@ class SolverBase:
         # here so an eventually-consistent or faulty SnapshotStore cannot move
         # the record to ``pending`` while the Event evidence is still absent.
         try:
-            durable_record = self.snapshot_store.read_verified(
+            durable_record = self.snapshot_store.read_verified_view(
                 self.snapshot_store.identity(handle)
             )
             durable_envelope, durable_authority_before = (
@@ -3574,7 +3765,7 @@ class SolverBase:
             if durable_envelope.event_id != event_id:
                 raise ValueError("Evaluation Event payload disagrees with journal")
             if durable_authority_before is not None:
-                self.snapshot_store.read_verified(durable_authority_before)
+                self.snapshot_store.read_verified_view(durable_authority_before)
         except Exception as exc:
             raise RuntimeError(
                 "Evaluation Event snapshot is not durably readable or valid after write"
@@ -3717,8 +3908,8 @@ class SolverBase:
         )
         event_ref = self.snapshot_store.identity(event_record)
         destination_ref = self.snapshot_store.identity(destination)
-        self.snapshot_store.read_verified(event_ref)
-        self.snapshot_store.read_verified(destination_ref)
+        self.snapshot_store.read_verified_view(event_ref)
+        self.snapshot_store.read_verified_view(destination_ref)
 
         raw_before = getattr(record, "authority_before_ref", None)
         before = (
@@ -4097,6 +4288,63 @@ class SolverBase:
             )
         return meta
 
+    def _published_evaluation_event_payload(self) -> Mapping[str, Any] | None:
+        """Read the exact published Event without rebuilding its detached tree.
+
+        This remains a value dependency during construction only: the complete
+        Event is embedded in the v2 Authority payload, so deleting its source
+        key cannot leave an Authority Snapshot with a dangling reference.
+        """
+        event_id = str(self._last_evaluation_event_id or "")
+        event_key = str(self._last_evaluation_event_snapshot_key or "")
+        evidence = self._last_evaluation_evidence_record
+        matching_evidence = (
+            isinstance(evidence, Mapping)
+            and str(evidence.get("event_id", "")) == event_id
+        )
+        raw_ref = evidence.get("event_ref") if matching_evidence else None
+        identity = None if raw_ref is None else SnapshotIdentity.from_dict(raw_ref)
+        handle = self._latest_evaluation_snapshot_handle
+        if handle is not None and event_key and str(handle.key) == event_key:
+            handle_identity = self.snapshot_store.identity(handle)
+            if identity is not None and identity != handle_identity:
+                raise ValueError("published Evaluation Event identities disagree")
+            identity = handle_identity
+        if identity is None:
+            # A portable or legacy checkpoint may carry an Event key from
+            # another Store without an exact publication in this Store.
+            return None
+        if identity.key != event_key:
+            raise ValueError("published Evaluation Event key disagrees with its identity")
+        record = self.snapshot_store.read_verified_view(identity)
+        envelope, _ = validate_evaluation_event_snapshot(
+            record.data,
+            snapshot_schema=record.schema,
+            expected_event_id=event_id,
+            expected_run_id=(
+                str(evidence.get("run_id", ""))
+                if matching_evidence
+                else str(self._last_evaluation_event_identity.get("run_id", ""))
+            ),
+            expected_snapshot_key=event_key,
+        )
+        if not envelope.semantic_complete:
+            return None
+        if (
+            envelope.candidate_codec != "blackbase.candidate_batch/v1"
+            or envelope.feedback_codec != "nsgablack.optimization_feedback_batch/v1"
+        ):
+            raise ValueError("published Evaluation Event has unsupported optimization codecs")
+        if record.schema == EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1:
+            return record.data[EVALUATION_EVENT_KEY]
+        for key in (LAST_EVALUATION_EVENT_KEY, LAST_EVALUATED_BATCH_KEY):
+            slot = record.data.get(key)
+            if isinstance(slot, Mapping) and isinstance(
+                slot.get("evaluation_event_envelope"), Mapping
+            ):
+                return slot["evaluation_event_envelope"]
+        raise ValueError("published Evaluation Event has no complete envelope")
+
     def _prepare_snapshot_payload(
         self,
         population: Optional[np.ndarray],
@@ -4115,23 +4363,31 @@ class SolverBase:
             stored_event_batch is not None and stored_event_feedback is not None
         )
         has_stored_event = stored_event_arrays is not None
-        event_payload = build_snapshot_payload(
-            (
-                stored_event_arrays[0]
-                if has_stored_event
-                else population
-            ),
-            (
-                stored_event_arrays[1]
-                if has_stored_event
-                else objectives
-            ),
-            (
-                stored_event_arrays[2]
-                if has_stored_event
-                else violations
-            ),
-        )
+        published_event = self._published_evaluation_event_payload()
+        if published_event is not None and has_semantic_event:
+            # Event v1 keeps its public JSON value format.  These three dense
+            # projections still require one numeric materialization; the much
+            # larger semantic/feedback/provenance trees remain shared below.
+            event_arrays = [
+                np.asarray(published_event["candidate_payload"]["numeric_matrix"], dtype=float),
+                np.asarray(published_event["feedback_payload"]["objectives"], dtype=float),
+                np.asarray(published_event["feedback_payload"]["violations"], dtype=float).reshape(-1),
+            ]
+            if stored_event_arrays is not None:
+                # JSON [] cannot encode the column count of an empty matrix.
+                # Preserve that working projection's shape without supplying
+                # any values absent from the published Event.
+                event_arrays = [
+                    value.reshape(stored.shape) if value.size == 0 else value
+                    for value, stored in zip(event_arrays, stored_event_arrays)
+                ]
+            event_payload = build_snapshot_payload(*event_arrays)
+        else:
+            event_payload = build_snapshot_payload(
+                stored_event_arrays[0] if has_stored_event else population,
+                stored_event_arrays[1] if has_stored_event else objectives,
+                stored_event_arrays[2] if has_stored_event else violations,
+            )
         authority_mode = str(
             getattr(self, "population_authority_mode", "single") or "single"
         )
@@ -4178,22 +4434,29 @@ class SolverBase:
                 authority_batch.numeric_matrix,
                 equal_nan=True,
             ):
-                payload[_CANDIDATE_BATCH_SNAPSHOT_KEY] = authority_batch.as_dict()
+                from .state.candidate_batch_payload import candidate_batch_snapshot_payload
+                payload[_CANDIDATE_BATCH_SNAPSHOT_KEY] = candidate_batch_snapshot_payload(authority_batch)
                 payload[_CANDIDATE_PROVENANCE_SNAPSHOT_KEY] = [
                     item.as_dict()
                     for item in self._candidate_population_provenance
                 ]
         if has_semantic_event:
-            event_payload[_CANDIDATE_BATCH_SNAPSHOT_KEY] = (
-                stored_event_batch.as_dict()
-            )
-            event_payload[_CANDIDATE_PROVENANCE_SNAPSHOT_KEY] = [
-                item.as_dict()
-                for item in self._last_evaluated_event_provenance
-            ]
-            event_payload["evaluation_event_envelope"] = (
-                self.export_evaluation_event_checkpoint_state()
-            )
+            if published_event is not None:
+                event_payload[_CANDIDATE_BATCH_SNAPSHOT_KEY] = published_event["candidate_payload"]
+                event_payload[_CANDIDATE_PROVENANCE_SNAPSHOT_KEY] = published_event["provenance"]
+                event_payload["evaluation_event_envelope"] = published_event
+            else:
+                from .state.candidate_batch_payload import candidate_batch_snapshot_payload
+                event_payload[_CANDIDATE_BATCH_SNAPSHOT_KEY] = (
+                    candidate_batch_snapshot_payload(stored_event_batch)
+                )
+                event_payload[_CANDIDATE_PROVENANCE_SNAPSHOT_KEY] = [
+                    item.as_dict()
+                    for item in self._last_evaluated_event_provenance
+                ]
+                event_payload["evaluation_event_envelope"] = (
+                    self.export_evaluation_event_checkpoint_state()
+                )
         export_partitions = getattr(
             self,
             "export_candidate_population_partitions_checkpoint_state",
@@ -4416,7 +4679,7 @@ class SolverBase:
                 return None
             try:
                 snapshot_identity = store.identity(handle)
-                store.read_verified(snapshot_identity)
+                store.read_verified_view(snapshot_identity)
                 authority_identity = self.authority_store.commit(
                     str(plan.get("authority_key", "")),
                     snapshot_identity,
@@ -4550,7 +4813,14 @@ class SolverBase:
         allow_write: bool = True,
     ) -> None:
         handle = self._latest_snapshot_handle
-        if handle is None and allow_write:
+        # A step's authority writer prepares its final pending Snapshot.
+        # Context reads must not repeatedly stage the in-flight population,
+        # and pending values never become published references here.
+        if (
+            handle is None
+            and allow_write
+            and self._snapshot_step_transaction is None
+        ):
             pop = getattr(self, "population", None)
             obj = getattr(self, "objectives", None)
             vio = getattr(self, "constraint_violations", None)

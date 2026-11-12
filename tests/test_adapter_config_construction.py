@@ -4,8 +4,13 @@ from typing import Any, Dict, Sequence
 
 import numpy as np
 import pytest
+from blackbase.types import CandidateBatch
 
 from nsgablack.adapters.algorithm_adapter import AlgorithmAdapter
+
+
+def _candidate_values(candidates):
+    return CandidateBatch.from_candidates(candidates).numeric_matrix[:, 0].tolist()
 
 
 class _DummyAdapter(AlgorithmAdapter):
@@ -86,7 +91,7 @@ def test_multi_strategy_role_enable_policy_from_context():
     adapter.setup(None)
     cands = adapter.propose(None, {"generation": 0, "enabled_roles": ["b"]})
     assert len(cands) > 0
-    assert all(float(c[0]) == pytest.approx(2.0) for c in cands)
+    assert _candidate_values(cands) == pytest.approx([2.] * len(cands))
 
 
 def test_multi_strategy_role_weight_policy_from_context():
@@ -103,7 +108,7 @@ def test_multi_strategy_role_weight_policy_from_context():
     )
     adapter.setup(None)
     cands = adapter.propose(None, {"generation": 0, "focus_role": "b"})
-    values = [float(c[0]) for c in cands]
+    values = _candidate_values(cands)
     assert values.count(2.0) > values.count(1.0)
 
 
@@ -134,7 +139,7 @@ def test_multi_strategy_control_rules_enable_and_phase():
     cands = adapter.propose(None, {"generation": 0})
     assert adapter._current_phase_name == "exploit"
     assert len(cands) > 0
-    assert all(float(c[0]) == pytest.approx(2.0) for c in cands)
+    assert _candidate_values(cands) == pytest.approx([2.] * len(cands))
 
 
 def test_multi_strategy_control_rules_dsl_without_lambda():
@@ -171,7 +176,7 @@ def test_multi_strategy_control_rules_dsl_without_lambda():
     cands = adapter.propose(None, {"generation": 0, "trigger": "on"})
     assert adapter._current_phase_name == "exploit"
     assert len(cands) > 0
-    assert all(float(c[0]) == pytest.approx(2.0) for c in cands)
+    assert _candidate_values(cands) == pytest.approx([2.] * len(cands))
 
 
 def test_async_event_driven_event_case_routes_by_signal_priority():
@@ -202,7 +207,7 @@ def test_async_event_driven_event_case_routes_by_signal_priority():
     cands = adapter.propose(None, {"generation": 0, "signal.resource.gpu_pressure": True})
 
     assert len(cands) > 0
-    assert all(float(c[0]) == pytest.approx(2.0) for c in cands)
+    assert _candidate_values(cands) == pytest.approx([2.] * len(cands))
     projection = adapter.get_runtime_context_projection(None)
     decision = projection["event_shared"]["event_decision"]
     assert decision["active_case"] == "cheap_when_resource_pressure"

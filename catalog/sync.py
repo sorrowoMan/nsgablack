@@ -511,6 +511,8 @@ def _build_component(entry: CatalogEntry) -> CatalogComponentContract:
         companions=tuple(entry.companions or ()),
         source_scope="framework",
         source_hash=os.environ.get("NSGABLACK_CATALOG_SOURCE_HASH", "").strip(),
+        contract=entry.contract,
+        metadata=entry.metadata,
     )
 
 
@@ -533,11 +535,16 @@ def _build_usage_contract(entry: CatalogEntry) -> UsageContract:
     usage = build_usage_profile(entry)
     return UsageContract(
         component_key=entry.key,
-        use_when=tuple(usage.use_when),
-        minimal_wiring=tuple(usage.minimal_wiring),
-        required_companions=tuple(usage.required_companions),
-        config_keys=tuple(usage.config_keys),
-        example_entry=str(usage.example_entry),
+        # Semantic fields belong to the already enriched source entry. A
+        # second inference pass would reinsert profile-stripped examples and
+        # can normalize significant indentation in executable code snippets.
+        use_when=tuple(entry.use_when),
+        minimal_wiring=tuple(entry.minimal_wiring),
+        required_companions=tuple(entry.required_companions),
+        config_keys=tuple(entry.config_keys),
+        example_entry=str(entry.example_entry),
+        wiring_status=usage.wiring_status,
+        wiring_notes=tuple(usage.wiring_notes),
     )
 
 

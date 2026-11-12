@@ -17,6 +17,8 @@ from blackbase.contracts import BatchDisposition
 from blackbase.evaluation import EvaluationDispositionEnvelope
 from blackbase.types import CandidateBatch
 from ..adapters.proposal_repair import ProposalRepair
+from ..adapters.change_outputs import publish_change_outputs
+from ..adapters.pool_maintenance import collecting_pool_edits
 from ..representation.repair_contracts import JointRepairPolicy, JointRepairRejected
 from .joint_repair import (coordinate_joint_repair, repair_problem_batch, inspect_joint_repair_contracts,
                           RepairBaseline, PendingUnitAdmission, _targets)
@@ -170,7 +172,7 @@ class ComposableSolver(SolverBase):
             enable_companion_orchestrator=bool(enable_companion_orchestrator),
             companion_config=companion_config,
         )
-        validate_adapter_unit_bindings(adapter)
+        validate_adapter_unit_bindings(adapter, pipeline=self.representation_pipeline)
         self.adapter: Optional[AlgorithmAdapter] = adapter
         self.evaluation_acceptance_policy = None
         self.set_evaluation_acceptance_policy(evaluation_acceptance_policy)
@@ -309,7 +311,7 @@ class ComposableSolver(SolverBase):
             )
 
     def set_adapter(self, adapter: AlgorithmAdapter) -> None:
-        validate_adapter_unit_bindings(adapter)
+        validate_adapter_unit_bindings(adapter, pipeline=self.representation_pipeline)
         self.adapter = adapter
 
     def set_adapters(self, adapters: Sequence[AlgorithmAdapter]) -> None:
@@ -332,9 +334,9 @@ class ComposableSolver(SolverBase):
     def setup(self) -> None:
         super().setup()
         if self.adapter is not None:
-            validate_adapter_unit_bindings(self.adapter)
+            validate_adapter_unit_bindings(self.adapter, pipeline=self.representation_pipeline)
             self.adapter.setup(self)
-            validate_adapter_unit_bindings(self.adapter)
+            validate_adapter_unit_bindings(self.adapter, pipeline=self.representation_pipeline)
 
     def prepare_fresh_run(self) -> None:
         super().prepare_fresh_run()
@@ -399,7 +401,6 @@ class ComposableSolver(SolverBase):
         if self.adapter is None:
             return body()
         state_transaction = RuntimeTransaction(self._state_participants)
-        pool_baseline = self.solution_pool.snapshot_step_state()
         previous_event_id = self._last_evaluation_event_id
         adapter_transaction = self.adapter.begin_step_transaction()
         self.begin_snapshot_step_transaction()
@@ -428,7 +429,7 @@ class ComposableSolver(SolverBase):
                 outcome = self._settle_evaluation_disposition_best_effort(outcome)
             else:
                 self.rollback_snapshot_step_transaction()
-                self.solution_pool.reject_attempt(pool_baseline)
+                state_transaction.reconcile(self.solution_pool, self.solution_pool.reject_attempt)
         except BaseException as exc:
             self._record_failed_evaluation_disposition(
                 exc,
@@ -786,14 +787,15 @@ class ComposableSolver(SolverBase):
         propose_context = self.build_context()
         propose_context[KEY_STEP] = self.generation
 
-        proposed = self.adapter.coerce_candidates(self.adapter.propose(self, propose_context))
-        candidate_provenance = self.prepare_candidate_provenance(proposed)
-        candidate_batch = normalize_candidate_batch(
-            proposed,
-            dimension=self.dimension,
-            owner=getattr(self.adapter, "name", "adapter"),
-            candidate_tokens=[item.candidate_token for item in candidate_provenance],
-        )
+        with self._batch_candidate_pool_writes():
+            proposed = self.adapter.coerce_candidates(self.adapter.propose(self, propose_context))
+            candidate_provenance = self.prepare_candidate_provenance(proposed)
+            candidate_batch = normalize_candidate_batch(
+                proposed,
+                dimension=self.dimension,
+                owner=getattr(self.adapter, "name", "adapter"),
+                candidate_tokens=[item.candidate_token for item in candidate_provenance],
+            )
         candidates, candidate_provenance = self.bind_candidate_batch(
             candidate_batch,
             candidate_provenance,
@@ -840,7 +842,7 @@ class ComposableSolver(SolverBase):
                     "num_candidates": 0,
                     "budget_truncated": True,
                 }
-                self.request_stop()
+                self.request_stop("evaluation_budget_exhausted")
             return StepOutcome(
                 status="rejected" if requested_count > 0 else "idle",
                 proposals=requested_count,
@@ -932,7 +934,7 @@ class ComposableSolver(SolverBase):
                 "num_candidates": 0,
                 "budget_truncated": True,
             }
-            self.request_stop()
+            self.request_stop("evaluation_budget_race")
             return StepOutcome(
                 status="rejected",
                 proposals=requested_count,
@@ -1149,12 +1151,15 @@ class ComposableSolver(SolverBase):
              for item, ref in zip(accepted_feedback_batch.items, accepted_refs, strict=True)],
             violations=accepted_feedback_batch.violations,
             metadata=accepted_feedback_batch.metadata)
-        self.adapter.update(
-            self,
-            self.population,
-            accepted_feedback_batch,
-            update_context,
-        )
+        with collecting_pool_edits(self.solution_pool) as member_edits:
+            self.adapter.update(
+                self,
+                self.population,
+                accepted_feedback_batch,
+                update_context,
+            )
+        publish_change_outputs(self.solution_pool, accepted_refs, accepted_provenance,
+                               maintenance_edits=member_edits)
         record_accepted = getattr(self.bias_module, "record_accepted", None)
         if self.enable_bias and callable(record_accepted):
             record_accepted(accepted_update_batch)

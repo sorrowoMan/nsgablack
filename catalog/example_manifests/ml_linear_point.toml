@@ -1,0 +1,14 @@
+[[example]]
+id = "ml-linear-point"
+title = "ML线性回归：DataView、Codec、Head与梯度优化装配"
+component_keys = ["mlblack.codec.linear_point", "mlblack.representation.linear_point", "mlblack.head.point", "mlblack.model.linear_point", "mlblack.data_view.numeric", "mlblack.problem.supervised_regression", "mlblack.trainer.learning_solver", "mlblack.integration.learning_solver", "mlblack.integration.nsgablack_optimization", "adapter.gradient_optimizer"]
+kind = "project"
+working_directory = "mlblack"
+summary = "标准 catalog_codec_demo Project：合成公开数值数据，LinearPointRepresentation实际创建LinearPointCodec和PointHead；SupervisedRegressionProblem定义损失，原GradientOptimizerAdapter执行SGD。模型编码布局与算法Unit分别维护。"
+inputs = ["24行、2列公开合成特征；目标为1 + 2*x0 - 0.5*x1，随机种子17。", "纯NumPy CPU示例，不需要Torch、业务数据或外部Provider服务。"]
+steps = ["查看build_pipeline：生成NumericDataView。", "查看build_solver：装配问题、模型表示和梯度Adapter，由正式Project提供ResourceContext。", "在mlblack仓库根目录运行Project；读取linear_point Case结果和同版本执行收据。"]
+run_command = "python examples/cases/catalog_codec_demo/run_project.py"
+dependencies = ["统一的blackbase、nsgablack与mlblack运行环境", "NumPy；Project L0使用1个CPU线程"]
+parameters = [{ name = "n_samples", value = "24", meaning = "合成训练样本数。" }, { name = "max_steps", value = "3", meaning = "短小装配验证的逻辑步数，不承诺训练收敛。" }, { name = "learning_rate", value = "0.05", meaning = "通过build_optimization_adapter装配SGD步长。" }]
+expected_outputs = ["linear_point Case发布已评估模型与训练结果；语义候选经Codec解读，原始损失仍由ML Problem定义。", "执行收据记录实际步数、求值数与损失；仅运行3步不代表拟合收敛。", "此示例不使用NeuralGraphCodec，也不证明所有ML后端可用。"]
+sources = [{ path = "mlblack/examples/cases/catalog_codec_demo/cases/linear_point/build_solver.py", symbol = "build_solver" }, { path = "mlblack/examples/cases/catalog_codec_demo/cases/linear_point/pipeline/main.py", symbol = "build_pipeline" }, { path = "mlblack/examples/cases/catalog_codec_demo/cases/linear_point/adapter/__init__.py", symbol = "build_adapter" }, { path = "mlblack/examples/cases/catalog_codec_demo/cases/linear_point/problem/__init__.py", symbol = "build_problem" }]

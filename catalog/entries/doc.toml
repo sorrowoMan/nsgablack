@@ -607,3 +607,22 @@ minimal_wiring = ["Open docs/user_guide/DECISION_REPLAY_ENGINE.md."]
 required_companions = ["plugin.decision_trace"]
 config_keys = ["(none)"]
 example_entry = "docs/user_guide/DECISION_REPLAY_ENGINE.md"
+
+[[entry]]
+key = "doc.architecture.catalog_usage"
+title = "当前架构 Catalog 使用说明"
+kind = "doc"
+import_path = "nsgablack.docs_registry:doc_architecture_catalog_usage"
+tags = ["core", "documentation"]
+summary = "从概念定位装配角色、实际组件、方法、边界和标准 Case；不把索引声明当作数学证明。"
+companions = ["tool.unit_binding", "tool.solution_pool", "adapter.search_plan", "adapter.bayesian_optimization"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+use_when = ["Catalog使用", "概念到组件", "装配导航"]
+minimal_wiring = ["Open docs/architecture/CATALOG_USAGE_CN.md"]
+required_companions = ["tool.unit_binding", "tool.solution_pool", "adapter.search_plan", "adapter.bayesian_optimization"]
+config_keys = []
+example_entry = "docs/architecture/CATALOG_USAGE_CN.md"
+contract = { catalog = { role = "documentation", concepts = ["Catalog使用", "概念到组件", "装配导航"], operations = [], boundaries = ["Catalog 不能替代行为验收或数学证明。"] } }

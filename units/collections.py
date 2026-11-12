@@ -347,13 +347,23 @@ class PopulationUnit(FeatureUnit):
 @dataclass
 class ReferencePopulationUnit(PopulationUnit):
     reference_points: Any = field(default_factory=lambda: np.zeros((0, 0)))
-    schema: ClassVar = structure_schema("reference_population", *PopulationUnit.schema.required_fields, "reference_points")
+    normalization: dict = field(default_factory=dict)
+    schema: ClassVar = structure_schema("reference_population", *PopulationUnit.schema.required_fields,
+                                       "reference_points", "normalization", version=2)
 
     def validate(self):
         super().validate()
         refs = np.asarray(self.reference_points)
         if refs.ndim != 2 or (refs.size and self.objectives is not None and refs.shape[1] != np.shape(self.objectives)[1]):
             raise ValueError("Reference directions must match objective geometry")
+        if self.normalization:
+            if set(self.normalization) != {"ideal", "worst", "extremes", "nadir"}:
+                raise ValueError("Invalid NSGA-III normalization state")
+            m = refs.shape[1]
+            for name, value in self.normalization.items():
+                expected = (m, m) if name == "extremes" else (m,)
+                if np.shape(value) != expected or not np.isfinite(value).all():
+                    raise ValueError("Invalid NSGA-III normalization geometry")
 
 
 @dataclass

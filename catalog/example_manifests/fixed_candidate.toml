@@ -1,0 +1,26 @@
+[[example]]
+id = "fixed-candidate-project"
+title = "固定候选的一次完整问题评估"
+component_keys = ["adapter.fixed_candidate"]
+kind = "project"
+working_directory = "nsgablack"
+run_command = "python examples/cases/catalog_fixed_candidate/run_project.py"
+summary = "标准Project发放1线程CPU授权；二维FixedCandidate通过ClipRepair、Problem求值、接纳与提交，观察器从精确池引用打印原始反馈。"
+inputs = ["候选[0.25,0.75]、范围[0,1]的二维平方和问题；只装配固定初始化、问题修复与只读观察。"]
+steps = ["先运行check/build-check确认FixedCandidateAdapter、FixedPointProblem、ClipRepair与有效资源。", "运行本Project默认fixed Case；读取fixed-candidate-result行，不另调evaluate。"]
+dependencies = ["兼容blackbase和nsgablack；NumPy；1个CPU线程；不需要模型API或GPU。"]
+expected_outputs = ["steps=1，evaluations=1，accepted_refs=1；candidate=[0.25,0.75]，raw_objectives=[[0.625]]，raw_violations=[0.0]。"]
+parameters = [
+  {name="candidate", value="[0.25, 0.75]", meaning="Case config传入的固定候选；范围[0,1]，越界时先由ClipRepair修复。"},
+  {name="use_pipeline_initializer", value="False", meaning="True时不绑定直属initializer，改用问题Pipeline的随机初始化；不能再要求固定数值结果。"}
+]
+sources = [
+  {path="nsgablack/examples/cases/catalog_fixed_candidate/README.md"},
+  {path="nsgablack/examples/cases/catalog_fixed_candidate/cases/fixed/build_solver.py"},
+  {path="nsgablack/examples/cases/catalog_fixed_candidate/cases/fixed/adapter/main.py"},
+  {path="nsgablack/examples/cases/catalog_fixed_candidate/cases/fixed/pipeline/main.py"},
+  {path="nsgablack/examples/cases/catalog_fixed_candidate/cases/fixed/problem/__init__.py"},
+  {path="nsgablack/examples/cases/catalog_fixed_candidate/cases/fixed/plugins/trace.py"},
+  {path="nsgablack/examples/cases/catalog_fixed_candidate/project_config.py"},
+  {path="nsgablack/examples/cases/catalog_fixed_candidate/run_project.py"},
+]

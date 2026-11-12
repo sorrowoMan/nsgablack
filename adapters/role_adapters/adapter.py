@@ -27,6 +27,8 @@ from ..algorithm_adapter import (
 )
 from ..runtime_projection import aggregate_adapter_runtime_projections
 from ..empty_outcome import (
+    _decode_dispatch_stop_outcome,
+    _encode_dispatch_stop_outcome,
     aggregate_named_empty_outcomes,
     child_empty_proposal_outcome,
 )
@@ -155,6 +157,11 @@ class RoleAdapter(AlgorithmAdapter):
         self._inner_proposal_disposition = None
         if self.inner is not None:
             self.inner.setup(control)
+
+    def on_schedule_activation(self, control, activation_id):
+        super().on_schedule_activation(control, activation_id)
+        if self.inner is not None:
+            self.inner.on_schedule_activation(control, activation_id)
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self.inner is None:
@@ -574,6 +581,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
         self.last_candidate_roles: List[str] = []
         self._runtime_projection: Dict[str, Any] = {}
         self._last_projection_writers: Dict[str, str] = {}
+        self._dispatch_stop_outcome = None
 
     context_requires = ("generation",)
     context_provides = (KEY_ROLE, KEY_ROLE_INDEX, KEY_ROLE_REPORTS, KEY_CANDIDATE_ROLES)
@@ -590,13 +598,21 @@ class RoleRouterAdapter(AlgorithmAdapter):
     def setup(self, control: Any) -> None:
         self._runtime_projection = {}
         self._last_projection_writers = {}
+        self._dispatch_stop_outcome = None
         for role in self.roles:
             role.setup(control)
+
+    def on_schedule_activation(self, control, activation_id):
+        super().on_schedule_activation(control, activation_id)
+        for index, role in enumerate(self.roles):
+            role.on_schedule_activation(control,
+                f"{activation_id}/{self._role_prefix(index, role)}")
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         candidates: List[np.ndarray] = []
         self._last_ranges = []
         self.last_candidate_roles = []
+        self._dispatch_stop_outcome = None
 
         for idx, role in enumerate(self.roles):
             start = len(candidates)
@@ -604,6 +620,18 @@ class RoleRouterAdapter(AlgorithmAdapter):
             ctx[KEY_ROLE] = role.role
             ctx[KEY_ROLE_INDEX] = idx
             proposed = self.coerce_candidates(role.propose(control, ctx))
+            if not proposed:
+                outcome = child_empty_proposal_outcome(role, control, ctx)
+                if outcome is not None and (outcome.status == "cancelled" or outcome.stop_requested):
+                    if candidates:
+                        self.on_proposal_disposition(control, BatchDisposition.prefix(
+                            proposed_count=len(candidates), accepted_count=0,
+                            reason="sibling_cancelled"), context)
+                    self._dispatch_stop_outcome = outcome
+                    self._last_ranges = []
+                    self.last_candidate_roles = []
+                    self._runtime_projection[KEY_CANDIDATE_ROLES] = []
+                    return []
             candidates.extend(proposed)
             end = len(candidates)
             self._last_ranges.append((role, start, end))
@@ -618,6 +646,8 @@ class RoleRouterAdapter(AlgorithmAdapter):
         control: Any,
         context: Mapping[str, Any],
     ) -> Any | None:
+        if self._dispatch_stop_outcome is not None:
+            return self._dispatch_stop_outcome
         rows = []
         for index, role in enumerate(self.roles):
             ctx = dict(context)
@@ -719,6 +749,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
     def get_state(self) -> Dict[str, Any]:
         return {
             "schema": "nsgablack.role_router_state/v2",
+            "dispatch_stop_outcome": _encode_dispatch_stop_outcome(self._dispatch_stop_outcome),
             "role_order": [r.name for r in self.roles],
             "roles": {r.name: r.get_state() for r in self.roles},
             "population_partitions": [
@@ -730,6 +761,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
     def set_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
+        stop_outcome = _decode_dispatch_stop_outcome(state.get("dispatch_stop_outcome"))
         schema = str(state.get("schema", "nsgablack.role_router_state/v1"))
         if schema not in {
             "nsgablack.role_router_state/v1",
@@ -753,6 +785,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
             self.set_population_partitions(
                 tuple(PopulationPartition.from_dict(item) for item in raw_partitions)
             )
+        self._dispatch_stop_outcome = stop_outcome
 
     def step_transaction_children(self) -> Sequence[AlgorithmAdapter]:
         return tuple(self.roles)
@@ -761,6 +794,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
         role_index = {id(role): index for index, role in enumerate(self.roles)}
         return {
             "schema": "nsgablack.role_router_step_transaction/v1",
+            "dispatch_stop_outcome": _encode_dispatch_stop_outcome(self._dispatch_stop_outcome),
             "last_ranges": [
                 {
                     "role_index": int(role_index[id(role)]),
@@ -777,6 +811,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
     def restore_step_state(self, state: Mapping[str, Any]) -> None:
         if str(state.get("schema", "")) != "nsgablack.role_router_step_transaction/v1":
             raise ValueError("unsupported RoleRouterAdapter step transaction schema")
+        stop_outcome = _decode_dispatch_stop_outcome(state.get("dispatch_stop_outcome"))
         restored_ranges: list[tuple[RoleAdapter, int, int]] = []
         for item in tuple(state.get("last_ranges", ()) or ()):
             index = int(item.get("role_index", -1))
@@ -790,6 +825,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
                 )
             )
         self._last_ranges = restored_ranges
+        self._dispatch_stop_outcome = stop_outcome
         self.last_candidate_roles = [
             str(item) for item in tuple(state.get("last_candidate_roles", ()) or ())
         ]

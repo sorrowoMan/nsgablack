@@ -1,0 +1,53 @@
+[[example]]
+id = "bias-graph-edge-constraints"
+title = "树、完美匹配与组合验证的实际六位边Case"
+component_keys = ["bias.graph_constraint", "bias.graph_tree_constraint", "bias.graph_matching_constraint", "bias.graph_composite_constraint"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整正式Case实际装配Tree/Matching/Composite及GraphConstraintBias子类，固定六位无向编码，0/50软成本与raw硬门明确分开。"
+inputs = ["完整bias_gallery Project副本、四节点六边位、BinaryPipeline、NSGA2、GraphReport与L0；Case指标局部声明。"]
+steps = ["保存完整Problem/Pipeline/评分工厂/报告/薄builder。", "MODE独立切到完美匹配或树与最大度2组合，不混其它编码。"]
+dependencies = ["当前nsgablack、blackbase、NumPy；无需GraphStructure/NetworkX实例。"]
+expected_outputs = ["graph_scores.json的精确成员、raw边数、0/50软增量及delta_matches；有限罚不保证最终全部可行，Composite首失败不求和。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md", section = "bias.graph_tree_constraint" }, { path = "nsgablack/docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md", section = "graph.edge_scores" }, { path = "nsgablack/docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md", section = "graph.shared_host" }]
+
+[[example]]
+id = "bias-graph-coloring-constraint"
+title = "节点颜色布局与正冲突成本 · 完整Case及上限变体"
+component_keys = ["bias.graph_coloring_constraint"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "四节点固定环，整数颜色候选，真实GraphColoringConstraintBias配合Problem与Pipeline，区分标签数、标签域、raw目标和软冲突成本。"
+inputs = ["独立bias_gallery Project、四维0..2整数颜色、固定环邻接矩阵与max_colors=2。"]
+steps = ["保存完整三组件文件及共用正式host/report。", "变体只放宽max_colors=3，保留邻接冲突检查与最少标签目标。"]
+dependencies = ["当前nsgablack、blackbase、NumPy。"]
+expected_outputs = ["graph_scores.json的四维颜色、raw不同标签数、0/50成本和逐行检查；没有运行证明或硬可行性声明。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md", section = "bias.graph_coloring_constraint" }, { path = "nsgablack/docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md", section = "graph.shared_host" }]
+
+[[example]]
+id = "bias-graph-legacy-scores-migration"
+title = "七个旧图评分器未装配 · 编码、符号与节点范围边界"
+component_keys = ["bias.graph_connectivity", "bias.graph_sparsity", "bias.graph_degree_distribution", "bias.graph_shortest_path", "bias.graph_max_flow", "bias.graph_coloring", "bias.graph_community"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "nsgablack"
+summary = "逐key明确最小化符号、孤立节点、容量/有向编码与GraphStructure构造器缺口；提供当前可用结构成本Case，不声称等价于流/路径/社区算法。"
+inputs = ["当前源码与本书完整正成本图Case；保留真实业务图语义，不用Case补丁绕过旧类。"]
+steps = ["不add七旧类，先按精确边位或节点色选择实际替代组件。", "变体把明确边成本写进Problem raw，不在Bias中隐藏另一套算法。"]
+dependencies = ["当前框架栈、NumPy；未运行图网络库。"]
+expected_outputs = ["准确迁移边界与实际替代Case报告，七旧类不计active或已修复。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md", section = "migration.bias.graph_scores" }, { path = "nsgablack/docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md", section = "bias.graph_tree_constraint" }, { path = "nsgablack/docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md", section = "graph.edge_scores" }, { path = "nsgablack/docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md", section = "graph.shared_host" }]
+
+[[example]]
+id = "bias-graph-legacy-paths-migration"
+title = "三个旧路径验证器未装配 · 排列与Problem拓扑检查迁移"
+component_keys = ["bias.graph_tsp_constraint", "bias.graph_path_constraint", "bias.graph_hamiltonian_constraint"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "nsgablack"
+summary = "列出TSP域/闭合缺口、恒True邻接与虚构提取路径，使用完整排列Case及显式Problem允许边检查，不伪称旧验证器已完成。"
+inputs = ["配套catalog_recipes/composite的完整排列Project配方，六城市、有序候选、VNS、Problem/Pipeline/Report与L0。"]
+steps = ["按完整TourProblem和PermutationFix接线，旧三类不add。", "变体在Problem明确逐边约束，解释软罚与严格raw准入的差别。"]
+dependencies = ["当前nsgablack、blackbase、NumPy。"]
+expected_outputs = ["有序候选、raw闭合距离与真正拓扑违反量来源；有限搜索无可行性/最优性保证，旧类仍是迁移说明。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md", section = "migration.bias.graph_paths" }, { path = "nsgablack/docs/catalog_usage/CANDIDATE_LAYOUT_APPLICATIONS_CN.md", section = "repr.permutation" }, { path = "nsgablack/docs/catalog_usage/CANDIDATE_LAYOUT_APPLICATIONS_CN.md", section = "layout.shared_case" }]

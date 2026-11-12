@@ -1,0 +1,25 @@
+[[example]]
+id="ml-neural-text-classification-lm"
+title="训练专属词表与两种文本监督 · 正式小Transformer Case"
+component_keys=["mlblack.numericizer.vocabulary_tokenizer", "mlblack.pipeline.tokenized_text_dataset_builder", "mlblack.problem.tiny_transformer_classification", "mlblack.problem.tiny_transformer_language_model"]
+kind="documentation"
+working_directory="mlblack"
+summary="从独立训练文本fit词表、Builder只处理训练记录，再同词表变换验证；完整Head/Problem/Provider/Artifact接线，真实切换分类与下一token目标。"
+inputs=["完整tiny_transformer_smoke副本、原L0与单Case组；三仓、NumPy和CPU Torch。", "四条4-token训练句、两条独立验证；无padding/预训练/下载。"]
+steps=["保存完整数据、带tokenizer Artifact hook的Problem、薄builder与Project结果入口；验证不进入词表fit。", "变体切换LM Head/Problem及3token模型输入，数据y标签不再用于LM损失。"]
+dependencies=["三仓、NumPy、PyTorch；无需transformers或模型API。"]
+expected_outputs=["正式反馈分类valid.log_loss或LM valid.cross_entropy及对应指标、模型引用；完整词表随typed Artifact metadata保存。", "不把Builder描述当完整词表，也不假定padding mask、assistant-only监督或生成质量已支持/验证。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_NEURAL_TEXT_VISION_APPLICATIONS_CN.md",section="neural.text"},{path="nsgablack/docs/catalog_usage/ML_NEURAL_TEXT_VISION_APPLICATIONS_CN.md",section="neural.text.wiring"}]
+
+[[example]]
+id="ml-neural-image-contrastive"
+title="三元图像与检索embedding · 真正Triplet损失"
+component_keys=["mlblack.data_view.image_contrastive_pair", "mlblack.problem.tiny_cnn_image_contrastive"]
+kind="documentation"
+working_directory="mlblack"
+summary="完整benchmarks正式Case对齐NCHW anchor/positive/negative、CNN retrieval Head、Triplet Problem与Artifact，明确无验证/自动负挖掘边界。"
+inputs=["完整benchmarks副本、原L0与新增单Case组；三仓、NumPy、CPU PyTorch；三数组shape(4,1,4,4)。"]
+steps=["保存完整数据、margin配置、真实preset builder与Project结果薄入口；变体改变实际triplet margin。"]
+dependencies=["当前三仓、NumPy、PyTorch，无图像下载/外部模型账号。"]
+expected_outputs=["正式原始triplet目标、正负距离/retrieval_accuracy诊断、模型引用与本次JSON；accuracy只计正负排序，没有验证集时不宣称检索泛化。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_NEURAL_TEXT_VISION_APPLICATIONS_CN.md",section="neural.contrastive"}]

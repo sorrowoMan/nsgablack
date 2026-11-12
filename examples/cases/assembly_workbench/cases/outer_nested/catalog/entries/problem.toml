@@ -1,0 +1,17 @@
+[[entry]]
+key = "project.problem.outer_nested"
+title = "NestedResponseProblem"
+kind = "tool"
+import_path = "problem.nested:NestedResponseProblem"
+tags = ["project", "problem", "nested"]
+summary = "标准嵌套示例的问题语义；候选与反馈通过正式 Case 边界交换。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["不读写共享 context，不把不同 Case 的 Pool 合并。"]
+use_when = ["核对条件问题与嵌套结果的语义边界。"]
+minimal_wiring = ["from cases.outer_nested.problem import NestedResponseProblem", "problem = NestedResponseProblem()"]
+required_companions = []
+config_keys = []
+example_entry = "cases.outer_nested.build_solver:build_solver"

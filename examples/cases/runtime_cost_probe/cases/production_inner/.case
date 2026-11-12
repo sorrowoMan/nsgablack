@@ -1,0 +1,3 @@
+name = production_inner
+kind = solver
+framework = nsgablack

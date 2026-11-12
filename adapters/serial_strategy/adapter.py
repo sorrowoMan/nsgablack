@@ -9,6 +9,7 @@ Use cases:
 from __future__ import annotations
 from blackbase.plugin import report_soft_error as _report_optional_failure
 
+import copy
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
@@ -16,6 +17,7 @@ import numpy as np
 from blackbase.call_binding import CallCandidate, invoke_bound_once
 from blackbase.contracts import BatchDisposition
 from blackbase.context import RuntimeContextProjection
+from ...core.state.step_outcome import StepOutcome
 
 from ..algorithm_adapter import (
     AlgorithmAdapter,
@@ -24,7 +26,18 @@ from ..algorithm_adapter import (
     restore_prefixed_population_partitions,
 )
 from ..runtime_projection import aggregate_adapter_runtime_projections
-from ..empty_outcome import child_empty_proposal_outcome
+from ..empty_outcome import (
+    child_empty_proposal_outcome, _encode_dispatch_stop_outcome,
+    _decode_dispatch_stop_outcome,
+)
+from ..pool_scope import (
+    KEY_WORKING_POOL,
+    bind_working_pool,
+    restore_working_pool_context,
+    stage_working_pool_results,
+    validate_working_pool_name,
+    working_pool_descriptor,
+)
 from nsgablack.context_keys import KEY_PHASE, KEY_STRATEGY, KEY_STRATEGY_ID
 
 
@@ -58,7 +71,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
     unit_contract_mode = "delegated"
 
     context_requires = ("generation",)
-    context_provides = (KEY_PHASE, KEY_STRATEGY, KEY_STRATEGY_ID)
+    context_provides = (KEY_PHASE, KEY_STRATEGY, KEY_STRATEGY_ID, KEY_WORKING_POOL)
     context_mutates = ()
     context_cache = ()
     phase_out = (KEY_PHASE,)
@@ -78,6 +91,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
         config: Optional[SerialStrategyConfig] = None,
         name: str = "serial_strategy_controller",
         priority: int = 0,
+        working_pool: str | None = None,
         **config_kwargs,
     ) -> None:
         super().__init__(name=name, priority=priority)
@@ -88,6 +102,9 @@ class StrategyChainAdapter(AlgorithmAdapter):
             adapter_name="StrategyChainAdapter",
         )
         self.cfg = self.config
+        self._working_pool = validate_working_pool_name(working_pool)
+        self._working_pool_used = False
+        self._proposal_pool_context = None
         self.phases: List[SerialPhaseSpec] = list(phases or [])
         self._adapters: List[AlgorithmAdapter] = []
         self._phase_steps: List[int] = []
@@ -100,11 +117,71 @@ class StrategyChainAdapter(AlgorithmAdapter):
         # Process-local acknowledgements. setup recreates child resources, so
         # these must not be replayed from a checkpoint as if resources stayed closed.
         self._retired_in_process: set[int] = set()
+        self._schedule_completed = False
+        self._parent_activation = None
+        self._execution_scope = None
+        self._schedule_stop_outcome = None
+
+    @property
+    def working_pool(self):
+        return self._working_pool
+
+    @working_pool.setter
+    def working_pool(self, name):
+        self.set_working_pool(name)
+
+    def set_working_pool(self, name):
+        name = validate_working_pool_name(name)
+        if self._working_pool_used and name != self._working_pool:
+            raise RuntimeError("working_pool cannot change after strategy execution has started")
+        self._working_pool = name
+        return self
+
+    def _working_pool_state(self, state):
+        name = validate_working_pool_name(state.get("working_pool"))
+        if name != self.working_pool:
+            raise ValueError("StrategyChainAdapter working_pool binding mismatch")
+        original = state.get("working_pool_context")
+        if original is not None:
+            allowed = (KEY_WORKING_POOL, KEY_PHASE, KEY_STRATEGY, KEY_STRATEGY_ID)
+            if not isinstance(original, Mapping) or set(original).difference(allowed):
+                raise ValueError("StrategyChainAdapter working pool context is invalid")
+            descriptor = working_pool_descriptor(original)
+            if name is not None and descriptor is None:
+                raise ValueError("StrategyChainAdapter proposal is missing its working_pool binding")
+            if descriptor is not None and name is not None and descriptor["name"] != name:
+                raise ValueError("StrategyChainAdapter proposal working_pool disagrees with its binding")
+            if KEY_STRATEGY_ID in original:
+                index = original[KEY_STRATEGY_ID]
+                if type(index) is not int or not 0 <= index < len(self.phases):
+                    raise ValueError("StrategyChainAdapter proposal phase is out of range")
+                if (original.get(KEY_PHASE) != self.phases[index].name
+                        or original.get(KEY_STRATEGY) != self._adapters[index].name):
+                    raise ValueError("StrategyChainAdapter proposal phase identity mismatch")
+            original = copy.deepcopy(dict(original))
+        elif name is not None and (state.get("step_in_phase", 0) or state.get("current_idx", 0)):
+            raise ValueError("StrategyChainAdapter running state is missing its working_pool binding")
+        used = bool(state.get("step_in_phase", 0) or state.get("current_idx", 0)) or original is not None
+        return used, original
+
+    def _phase_context(self, current):
+        original = self._proposal_pool_context
+        ctx = (dict(current or {}) if original is None else
+               restore_working_pool_context(original, current))
+        adapter = self._current_adapter()
+        values = {KEY_PHASE: self._current_phase_name(),
+                  KEY_STRATEGY: None if adapter is None else adapter.name,
+                  KEY_STRATEGY_ID: int(self._current_idx)}
+        ctx.update(values if original is None else {
+            key: original.get(key, value) for key, value in values.items()})
+        return ctx
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
     def setup(self, control: Any) -> None:
+        self._working_pool_used = False
+        self._proposal_pool_context = None
         self._materialize_adapters()
         self._phase_steps = [int(p.steps) for p in self.phases]
         self._current_idx = 0
@@ -114,12 +191,30 @@ class StrategyChainAdapter(AlgorithmAdapter):
         self._pending_phase_retirements = []
         self._phase_cleanup_control = control
         self._retired_in_process = set()
+        self._schedule_completed = False
+        self._parent_activation = None
+        self._execution_scope = None
+        self._schedule_stop_outcome = None
         # Every child that can receive checkpoint state must first establish
         # its clean baseline.  Restore is applied to the chain only after this
         # method returns, so lazily setting up a later restored phase would
         # either skip setup or erase its restored state on phase activation.
         for adapter in self._adapters:
             adapter.setup(control)
+
+    def on_schedule_activation(self, control, activation_id):
+        super().on_schedule_activation(control, activation_id)
+        if activation_id == self._parent_activation:
+            return
+        if self._retired_in_process or self._pending_phase_retirements:
+            raise RuntimeError("cannot reuse a serial schedule after child retirement")
+        if self._parent_activation is None or self._schedule_completed:
+            self._execution_scope = activation_id
+            if self._schedule_completed:
+                self._current_idx = self._step_in_phase = 0
+                self._schedule_completed = False
+                self._schedule_stop_outcome = None
+        self._parent_activation = activation_id
 
     def teardown(self, control: Any) -> None:
         failures = []
@@ -146,27 +241,49 @@ class StrategyChainAdapter(AlgorithmAdapter):
     # Propose/Update
     # ------------------------------------------------------------------
     def propose(self, control: Any, context: Dict[str, Any]):
-        adapter = self._current_adapter()
-        if adapter is None:
-            return []
-        ctx = dict(context or {})
-        ctx[KEY_PHASE] = self._current_phase_name()
-        ctx[KEY_STRATEGY] = adapter.name
-        ctx[KEY_STRATEGY_ID] = int(self._current_idx)
-        return adapter.propose(control, ctx)
+        self._schedule_stop_outcome = None
+        # Only consume finite local control transitions here. They neither
+        # evaluate candidates nor manufacture a committed generation.
+        for _ in range(len(self._adapters) + 1):
+            adapter = self._current_adapter()
+            if adapter is None or self._schedule_completed:
+                return []
+            ctx = bind_working_pool(control, context, self.working_pool,
+                previous=working_pool_descriptor(self._proposal_pool_context))
+            ctx[KEY_PHASE] = self._current_phase_name()
+            ctx[KEY_STRATEGY] = adapter.name
+            ctx[KEY_STRATEGY_ID] = int(self._current_idx)
+            self._working_pool_used = True
+            self._proposal_pool_context = {key: copy.deepcopy(ctx[key])
+                for key in (KEY_WORKING_POOL, KEY_PHASE, KEY_STRATEGY, KEY_STRATEGY_ID) if key in ctx}
+            scope = self._execution_scope or f"serial:{self.name}"
+            adapter.on_schedule_activation(control, f"{scope}/phase:{self._current_idx}")
+            proposed = self.coerce_candidates(adapter.propose(control, ctx))
+            if proposed:
+                return proposed
+            outcome = child_empty_proposal_outcome(adapter, control, ctx)
+            if outcome is None or not outcome.terminal:
+                return []
+            if outcome.status == "cancelled" or outcome.stop_requested:
+                self._schedule_stop_outcome = outcome
+                return []
+            self._advance_phase(control, child_completed=True)
+        raise RuntimeError("serial schedule exceeded bounded control traversal")
 
     def get_empty_proposal_outcome(
         self,
         control: Any,
         context: Dict[str, Any],
     ) -> Any | None:
+        if self._schedule_stop_outcome is not None:
+            return self._schedule_stop_outcome
+        if self._schedule_completed:
+            return StepOutcome(status="terminal", reason="strategy_chain_completed",
+                               metadata={"completion": "completed"})
         adapter = self._current_adapter()
         if adapter is None:
             return None
-        ctx = dict(context)
-        ctx[KEY_PHASE] = self._current_phase_name()
-        ctx[KEY_STRATEGY] = adapter.name
-        ctx[KEY_STRATEGY_ID] = int(self._current_idx)
+        ctx = self._phase_context(context)
         return child_empty_proposal_outcome(adapter, control, ctx)
 
     def update(
@@ -180,7 +297,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
         adapter = self._current_adapter()
         if adapter is None:
             return
-        ctx = dict(context or {})
+        ctx = self._phase_context(context)
         # Provide commonly-needed runtime fields for advance_when.
         try:
             ctx.setdefault("generation", int(getattr(control, "generation", 0)))
@@ -205,11 +322,9 @@ class StrategyChainAdapter(AlgorithmAdapter):
         except Exception as _fallback_error:
             _report_optional_failure(component=__name__, event='StrategyChainAdapter.update.fallback_28', exc=_fallback_error)
             pass
-        ctx[KEY_PHASE] = self._current_phase_name()
-        ctx[KEY_STRATEGY] = adapter.name
-        ctx[KEY_STRATEGY_ID] = int(self._current_idx)
         owner_index = int(self._current_idx)
         adapter.update(control, candidates, feedback, ctx)
+        stage_working_pool_results(self, control, candidates, feedback, ctx)
         self._population_owner_idx = owner_index
 
         self._step_in_phase += 1
@@ -223,10 +338,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
         adapter = self._current_adapter()
         if adapter is None:
             raise RuntimeError("proposal repair requires an active serial phase")
-        ctx = dict(context)
-        ctx[KEY_PHASE] = self._current_phase_name()
-        ctx[KEY_STRATEGY] = adapter.name
-        ctx[KEY_STRATEGY_ID] = int(self._current_idx)
+        ctx = self._phase_context(context)
         return ((adapter, repair, ctx),)
 
     def plan_repair_rejection_advance(self, control, report, owner_path):
@@ -256,8 +368,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
         adapter = self._current_adapter()
         if adapter is None:
             raise RuntimeError("proposal contexts require an active serial phase")
-        ctx = dict(context)
-        ctx[KEY_PHASE], ctx[KEY_STRATEGY], ctx[KEY_STRATEGY_ID] = self._current_phase_name(), adapter.name, int(self._current_idx)
+        ctx = self._phase_context(context)
         return adapter.get_proposal_contexts(proposed_count, ctx)
 
     def on_proposal_disposition(
@@ -269,10 +380,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
         adapter = self._current_adapter()
         if adapter is None:
             raise RuntimeError("proposal disposition requires an active serial phase")
-        ctx = dict(context)
-        ctx[KEY_PHASE] = self._current_phase_name()
-        ctx[KEY_STRATEGY] = adapter.name
-        ctx[KEY_STRATEGY_ID] = int(self._current_idx)
+        ctx = self._phase_context(context)
         adapter.on_proposal_disposition(control, disposition, ctx)
 
     # ------------------------------------------------------------------
@@ -280,7 +388,10 @@ class StrategyChainAdapter(AlgorithmAdapter):
     # ------------------------------------------------------------------
     def get_state(self) -> Dict[str, Any]:
         state = {
-            "schema": "nsgablack.strategy_chain_state/v2",
+            "schema": "nsgablack.strategy_chain_state/v3",
+            "schedule": self._schedule_state(),
+            "working_pool": self.working_pool,
+            "working_pool_context": copy.deepcopy(self._proposal_pool_context),
             "current_idx": int(self._current_idx),
             "step_in_phase": int(self._step_in_phase),
             "phase_steps": list(self._phase_steps),
@@ -302,8 +413,12 @@ class StrategyChainAdapter(AlgorithmAdapter):
         if schema not in {
             "nsgablack.strategy_chain_state/v1",
             "nsgablack.strategy_chain_state/v2",
+            "nsgablack.strategy_chain_state/v3",
         }:
             raise ValueError(f"unsupported StrategyChainAdapter state schema: {schema}")
+        schedule = self._validated_schedule_state(state.get("schedule"),
+            required=schema == "nsgablack.strategy_chain_state/v3")
+        pool_used, pool_context = self._working_pool_state(state)
         saved_names = tuple(str(item) for item in state.get("phase_names", ()))
         current_names = tuple(str(phase.name) for phase in self.phases)
         if saved_names and saved_names != current_names:
@@ -311,11 +426,12 @@ class StrategyChainAdapter(AlgorithmAdapter):
         current_idx = int(state.get("current_idx", 0))
         if self._adapters and not 0 <= current_idx < len(self._adapters):
             raise ValueError("StrategyChainAdapter current phase is out of range")
+        phase_steps = list(state.get("phase_steps", self._phase_steps))
+        if (any(type(value) is not int for value in phase_steps)
+                or phase_steps != [int(phase.steps) for phase in self.phases]):
+            raise ValueError("StrategyChainAdapter phase step schedule mismatch")
         self._current_idx = current_idx
         self._step_in_phase = int(state.get("step_in_phase", 0))
-        phase_steps = list(state.get("phase_steps", self._phase_steps))
-        if len(phase_steps) != len(self.phases):
-            raise ValueError("StrategyChainAdapter phase step schedule mismatch")
         self._phase_steps = [int(value) for value in phase_steps]
         raw_owner = state.get("population_owner_idx")
         owner = None if raw_owner is None else int(raw_owner)
@@ -328,11 +444,14 @@ class StrategyChainAdapter(AlgorithmAdapter):
             raise ValueError("StrategyChainAdapter child state count mismatch")
         for adapter, astate in zip(self._adapters, adapter_states):
             adapter.set_state(dict(astate or {}))
+        self._working_pool_used = self._working_pool_used or pool_used
+        self._proposal_pool_context = pool_context
         raw_partitions = tuple(state.get("population_partitions", ()) or ())
         if raw_partitions:
             self.set_population_partitions(
                 tuple(PopulationPartition.from_dict(item) for item in raw_partitions)
             )
+        self._apply_schedule_state(schedule)
 
     def step_transaction_children(self) -> Sequence[AlgorithmAdapter]:
         self._materialize_adapters()
@@ -340,7 +459,10 @@ class StrategyChainAdapter(AlgorithmAdapter):
 
     def snapshot_step_state(self) -> Mapping[str, Any]:
         return {
-            "schema": "nsgablack.strategy_chain_step_transaction/v1",
+            "schema": "nsgablack.strategy_chain_step_transaction/v2",
+            "schedule": self._schedule_state(),
+            "working_pool": self.working_pool,
+            "working_pool_context": copy.deepcopy(self._proposal_pool_context),
             "current_idx": int(self._current_idx),
             "step_in_phase": int(self._step_in_phase),
             "phase_steps": list(self._phase_steps),
@@ -350,16 +472,20 @@ class StrategyChainAdapter(AlgorithmAdapter):
         }
 
     def restore_step_state(self, state: Mapping[str, Any]) -> None:
-        if str(state.get("schema", "")) != "nsgablack.strategy_chain_step_transaction/v1":
+        schema = str(state.get("schema", ""))
+        if schema not in {"nsgablack.strategy_chain_step_transaction/v1",
+                          "nsgablack.strategy_chain_step_transaction/v2"}:
             raise ValueError("unsupported StrategyChainAdapter step transaction schema")
+        schedule = self._validated_schedule_state(state.get("schedule"),
+            required=schema == "nsgablack.strategy_chain_step_transaction/v2")
         self._materialize_adapters()
+        pool_used, pool_context = self._working_pool_state(state)
         current_idx = int(state.get("current_idx", 0))
         if self._adapters and not 0 <= current_idx < len(self._adapters):
             raise ValueError("StrategyChainAdapter transaction phase is out of range")
-        phase_steps = [
-            int(value) for value in tuple(state.get("phase_steps", ()) or ())
-        ]
-        if len(phase_steps) != len(self.phases):
+        phase_steps = list(state.get("phase_steps", ()) or ())
+        if (any(type(value) is not int for value in phase_steps)
+                or phase_steps != [int(phase.steps) for phase in self.phases]):
             raise ValueError("StrategyChainAdapter transaction schedule mismatch")
         raw_owner = state.get("population_owner_idx")
         owner = None if raw_owner is None else int(raw_owner)
@@ -367,6 +493,8 @@ class StrategyChainAdapter(AlgorithmAdapter):
             raise ValueError("StrategyChainAdapter transaction owner is out of range")
         self._current_idx = current_idx
         self._step_in_phase = int(state.get("step_in_phase", 0))
+        self._working_pool_used = self._working_pool_used or pool_used
+        self._proposal_pool_context = pool_context
         self._phase_steps = phase_steps
         self._population_owner_idx = owner
         self._restore_phase_retirements(state)
@@ -374,6 +502,42 @@ class StrategyChainAdapter(AlgorithmAdapter):
             str(key): str(value)
             for key, value in dict(state.get("projection_writers", {}) or {}).items()
         }
+        self._apply_schedule_state(schedule)
+
+    def _schedule_state(self):
+        return {"completed": self._schedule_completed,
+                "identity": self._schedule_identity(),
+                "parent_activation": self._parent_activation,
+                "execution_scope": self._execution_scope,
+                "stop_outcome": _encode_dispatch_stop_outcome(self._schedule_stop_outcome)}
+
+    def _schedule_identity(self):
+        from ..multi_strategy.adapter import StrategyRouterAdapter
+        return StrategyRouterAdapter._policy_declaration({
+            "repeat_last": self.cfg.repeat_last,
+            "phases": [{"name": phase.name, "steps": phase.steps,
+                        "enabled": phase.enabled, "advance_when": phase.advance_when}
+                       for phase in self.phases]})
+
+    def _validated_schedule_state(self, state, *, required):
+        if state is None and not required:
+            return False, None, None, None
+        if (not isinstance(state, Mapping) or set(state) != {
+                "completed", "identity", "parent_activation", "execution_scope", "stop_outcome"}
+                or type(state["completed"]) is not bool):
+            raise ValueError("invalid serial schedule state")
+        if state["identity"] != self._schedule_identity():
+            raise ValueError("serial schedule configuration mismatch")
+        parent, scope = state["parent_activation"], state["execution_scope"]
+        if (any(value is not None and (not isinstance(value, str) or not value)
+                for value in (parent, scope)) or (parent is None) != (scope is None)):
+            raise ValueError("invalid serial activation scope")
+        outcome = _decode_dispatch_stop_outcome(state["stop_outcome"])
+        return state["completed"], parent, scope, outcome
+
+    def _apply_schedule_state(self, state):
+        (self._schedule_completed, self._parent_activation,
+         self._execution_scope, self._schedule_stop_outcome) = state
 
     def _population_owner(self) -> tuple[int, AlgorithmAdapter] | None:
         if not self._adapters:
@@ -591,13 +755,14 @@ class StrategyChainAdapter(AlgorithmAdapter):
             return False
         return self._step_in_phase >= steps
 
-    def _advance_phase(self, control: Any) -> None:
+    def _advance_phase(self, control: Any, *, child_completed=False) -> None:
         if not self.phases:
             return
         old_idx = int(self._current_idx)
         next_idx = old_idx + 1
         if next_idx >= len(self.phases):
-            if not self.cfg.repeat_last:
+            if child_completed or not self.cfg.repeat_last:
+                self._schedule_completed = True
                 return
             next_idx = len(self.phases) - 1
         if next_idx == old_idx:
@@ -606,7 +771,7 @@ class StrategyChainAdapter(AlgorithmAdapter):
         # Retirement is cleanup after the schedule decision commits. Rollback
         # must never pretend it can reopen a torn-down Provider/session.
         self._phase_cleanup_control = control
-        if old_idx not in self._pending_phase_retirements:
+        if self._parent_activation is None and old_idx not in self._pending_phase_retirements:
             self._pending_phase_retirements.append(old_idx)
         self._current_idx = next_idx
         self._step_in_phase = 0

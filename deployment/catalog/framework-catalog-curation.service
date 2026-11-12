@@ -1,0 +1,23 @@
+[Unit]
+Description=Incremental Catalog AI component explanations
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+Environment=DOCKER_CONFIG=/tmp/catalog-curation-docker
+ExecStart=/usr/bin/python3 /opt/framework-catalog/automation/auto_curate.py --once
+TimeoutStartSec=14min
+TimeoutStopSec=90s
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/framework-catalog/automation/state
+ReadWritePaths=/opt/framework-catalog/automation/progress
+StandardOutput=journal
+StandardError=journal

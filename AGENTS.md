@@ -1,20 +1,24 @@
 ﻿# AGENTS.md
 
-最后按代码核对：2026-10-14。实现契约见 `docs/architecture/RUNTIME_CONTRACTS_CN.md`；源码与文档冲突必须明确报告。
+最后按代码核对：2026-10-22（保留自然搜索编排、局部完成与当前轮结果交还；补齐 ML 语义初值、GA 默认变化的候选含义与池交接，复用原 Router 和提交事务）。实现契约见 `docs/architecture/RUNTIME_CONTRACTS_CN.md`；源码与文档冲突必须明确报告。
 
 ## 术语与必须保护的语义
 
-- `Problem` 定义评估含义；问题管线处理候选；算法管线构建 `Unit`；Adapter 操作 Unit 作搜索决策。
+- `Problem` 定义评估含义；问题管线处理候选；`UnitBinding` 提供算法结构构建规则；Adapter 按需创建、持有并操作 Unit 作搜索决策。
 - `SolutionPool` 在 Adapter 运行初始化与候选操作之前建立；Adapter 配置实例可以先构造。池通过共享 SnapshotStore 保存不可原位改写的候选版本。SolutionStamp 使用运行身份与逻辑时钟，SolutionRef 同时标识 token 和版本；读取保留身份，新提案派生身份并保留源引用，repair 保留提案 token。Unit 保留算法工作投影和关系，不共享可写排名。详见 `docs/architecture/SOLUTION_POOL_CN.md`。
 - 子池是 SolutionPool 内的具名引用集合，复用池索引事务/checkpoint/保留声明，不另复制候选值。RoleSpec/StrategySpec 的 `pool_task=PoolTaskSpec(...)` 通过现有 Router 分发；任务进度和子 Adapter 独立参与步骤事务。输出只在提交后可读，退出子池只解除成员关系。
+- Router/Chain 可绑定普通公共集合 working_pool；未绑定组合继承最近上层来源，无绑定时仍用根池。PoolTaskSpec(select=None) 使用该区域，显式select保持原规则；绑定不自动为裸Adapter添加池任务。新接纳候选归入最近区域，原提案绑定贯穿repair/disposition/update，不自动合并祖先池或改变Unit成员。
+- SearchPlanAdapter 用共享 ExecutionPlan/ExecutionCursor 表达有限 serial/multi/repeat；算法实例只装配一次，on_schedule_activation 只重开已完成局部游标，未完任务保留scope与冻结输入，不重放setup。孩子完成先由父级解释；取消须向已提案兄弟发送零接纳；等待/控制切换不制造generation。精修/竞争阶段等待PoolTask完成，running任务内层提前普通terminal明确拒绝。get_pool_task_results核对本请求最终视图身份/修订/解释/有序引用，output=None也可交付，显式output才保留累计接纳历史。Router实际运行权重与初始配置分开保存、回滚与恢复。独立无送评Pool编辑仍未开放，详见docs/architecture/NATURAL_SEARCH_PLANS_CN.md。
 - MOEA/D 按方向自动发布投影子池，created_by 是稳定的 Adapter 实例所有权路径，不是候选生产者或类型名。`subpools.all(adapter)` / `subpools.random(n, adapter)` 在请求开始时选择该实例的方向，任务冻结候选引用、权重和参考点；VNS 起点与新邻域都用同一投影。raw feedback 不改写，返回候选按 MOEA/D 当前比较规则竞争；禁止将标量写回母池原始目标。
 - NSGA-II／III、SPEA2、DE 每实例发布普通 population 视图，只引用准确成员版本；有精确成员后，数值 setter 只允许同成员反馈刷新。丢失成员引用时撤回自身旧视图并服从池事务，不能让下游误读过期种群。逐成员精修显式 count="all"；普通视图不隐含种群填满屏障。
 - 完整种群交付使用 set_population_state 与有序 get_population_solution_refs；保留根 get_solution_pool_roots 不能充当成员顺序。Evolution 初始化／环境选择完整保存候选、原始反馈、来源和收据；旧三数组外部导入须显式 external_evaluation=True，不猜身份或虚增求值次数。透明包装转发，池任务不允许绕过自己的输入声明。
 - Gaussian／MAS／信赖域／有限差分与已有单轨迹算法共用池精修；基准先送评。有限差分的下降点要单独评估，Provider 优化器结果不能交付未评估后继；仅变换目标不足以变换梯度。A*／MOA* 显式 new_root 只支持新根初始化，路径 g 与目标投影不可互换。
 - 投影池任务可递归发布派生视图，下一层用 `subpools.all(vns_instance)` 选择。视图保留稳定 view_id/revision 和冻结 parent/ancestors，不复制候选；get_pool_refinement_results 明确交付最终选择，聚合 output 仍保存接纳提案。继承投影只对本层新反馈应用一次。父级删除不级联删除后代；视图提交前不可枚举或读取。阶段屏障仍由 Router 指定，不由 all/random 隐含等待。
 - `Unit` 保留候选本体或候选集合，扩展算法特征、关系与必要状态；构建 Unit 不等于候选编码，取出候选不等于解码。`UnitBinding` 绑定 builder、持久状态 codec 和可选构建 runner；Unit 不拥有 Solver 生命周期或全局授权。
+- Unit 的运行实例归具体 Adapter 所有。装配 builder 不创建结构；`UnitBackedAdapter.algorithm_unit` 可为 `None`，实际使用时 `ensure_unit()` 创建一次并复用。setup/fresh reset 只使结构失效，首次使用再建；暂停继续不重建；checkpoint 与步骤快照保留未创建状态，恢复已有 Unit 走 codec，不调用 builder。Doctor、观察、字段读取与偏好绑定不得为了检查而构造 Unit。
 - 种群 Adapter 决定成员选择或槽位替换，PopulationUnit 统一维护 X/F/V/token 与扩展成员字段。新增行字段声明 member_fields，通过只读 on_members_changed(PopulationChange) 返回更新；change 携带对齐的只读 incoming 候选/反馈/token/metadata/provenance。禁止让 Adapter 猜未知字段的维护语义。详见 `docs/architecture/UNIT_MEMBER_OPERATIONS_CN.md`。
 - `CandidateBatch` 保留语义值、数值矩阵和 token；数值相等不能替代身份。`ProposalRepair` 表达评估前同一提案被修改；`BatchDisposition` 表达预算/接纳筛选。二者不可互相替代。
+- NSGA 家族遇到语义初值时，先通过正式 repair/evaluate/admission 再建立已评估成员；不把 UnknownState 列表当种群矩阵。默认数值变化保留模型 metadata 和精确父成员来源，数值算子仍接收数值草稿。ML Codec 的模型布局和 Adapter Unit 的搜索状态分别维护，具体交接验收见 mlblack 的 `docs/architecture/ML_POOL_UNIT_INTEGRATION_CN.md`。
 - `UnknownState` 是可传输候选；`StateRef` 是 Provider 管理的活状态引用，可寻址范围由 Provider 声明；`DataRef` 是 Artifact 引用，权威交付还须发布收据；Snapshot key 须结合 store scope、版本/摘要和 AuthorityIdentity 验证。
 - `PopulationAuthority` 拥有内存种群投影与发布游标；`AuthorityStore` 拥有持久围栏边。Solver 的旧字段是同一对象的视图，不得建立第二份可写副本。
 - `RunSession` 拥有运行身份、进度、恢复门闸与结果引用；`RunProgressState` 是可传输的进度值。
@@ -54,7 +58,7 @@
 理解与装配的主线是 **Problem → Pipeline → Unit → Adapter → Bias → Plugin**。这是职责关系，不是六个组件依次执行的线性流程：
 
 - `Problem`：定义求值含义、原始目标和约束。
-- `Pipeline`：问题管线处理候选及编解码；算法管线通过 `UnitBinding` 构造算法结构。
+- `Pipeline`：问题管线处理候选及编解码；独立 `UnitBinding` 提供算法结构构建能力，由所属 Adapter 按需调用。
 - `Unit`：保存节点、标签、种群、区域等算法结构及其操作；不持有全局资源授权或运行循环。
 - `Adapter`：拥有搜索决策与 Unit，提出候选、对账修复、消费反馈；组合须路由到原提案所有者。
 - `Bias`：产生可审计的选择偏好，保留原始求值；软化选择视图不能修改硬可行性接纳。
@@ -247,6 +251,7 @@ Collaboration rules:
 
 关键点：
 
+- 同步 propose、批量初始化和 ProblemRepair 调用可在原步骤事务内按阶段合批登记私有候选；调用内使用 CandidateBatch 已脱离的只读值，完成数量/形状验收后、评估前写入。单个 token、来源与 repair 版本保持；池外显式读取仍验证完整 SnapshotIdentity。批次队列不得跨线程共享或跨调用留存，异常丢弃本作用域队列，写失败进入原步骤回滚。步骤外初始化保留即时发布语义，不能将草稿当作持久读取收据。
 - mutate/mutate_batch 只生成提案，不隐含 repair；默认提案阶段的问题 repair 在预算裁剪后执行一次。显式 JointRepairPolicy 可按 max_rounds 协调多轮 ProblemRepair/UnitRepair，每轮验证最终版本。propose 不重复手工 repair；初始化与 update 内新状态是独立阶段。repair 错误必须传播。
 - get_proposal_contexts 按原始提案行返回局部上下文，复合层须沿 ranges/局部处置/StrategyTask 路由，不得把所有子提案改用顶层 context。
 - 插件可短路评估链，但返回 shape 必须合法
@@ -383,6 +388,59 @@ evidence 补结算或归档 abandoned，不得隐式重跑 Problem、AcceptanceP
 
 多个 Adapter 可以共享一份问题 Pipeline。不同搜索需求使用 `RepresentationPipeline(mutation_operators={...})` 注册具名算子，实际消费者通过 `set_mutation_operator(name)` 选择；未指定使用默认 mutator。选择不修改共享默认项，不按 Adapter 类型猜测，不自动广播到子 Adapter。UnitBinding 仍独立负责结构构建；禁止为了算子差异复制完整问题管线。共享算子对象也共享其状态，需隔离时显式创建不同实例。
 
+初始化、变化、选择、修复是 Adapter 拥有的行为类别，不是固定的四阶段循环。每个叶 Adapter 只用 `operation_methods` 声明实际消费的角色，通过 `set_initializer/set_mutator/set_parent_selector/set_selector/set_repair` 装配；未支持的非空绑定拒绝，包装层不自动广播。父代选择返回精确 SolutionRef；生存、替换、候选提名与考察次序用不同 purpose 的只读 SelectionRequest，返回本次请求局部索引，不能把它们混成一个无语义的 choose。需要参考 Unit 的 mutator/selector 声明 UnitInputSpec，由实际所有者捕获，只读参考 Unit 与请求内待选候选是两组输入。直接 mutator 与具名 Pipeline 绑定互斥。
+
+VNS/MOEA-D 与 NSGA-II/III、SPEA2 的 `set_change(function)` 装配完整变化，普通函数签名为 `(request, *, rng)`。
+GA 可返回 `ChangeBatchResult((ChangeResult(...), ...))`；request.max_outputs 是本次剩余后代许可，
+一次调用可共享计算与 RNG，逐孩子派生身份、来源与输出；超量拒绝，空批次不自动重试。
+VNS/MOEA-D 的标量位置只接受恰好一个结果，不把二维候选猜成批量。完整 change 不叠加旧交叉/变异。
+GA 的普通 `set_selector(choose)` 接收 Pool 并返回 Pool，复用原生 survivor 位置；
+已有 selector 对象仍返回局部索引。Pool 是调用内 ChangeSelection 的公开别名，all/concat/filter/sample/sort 等保留接口；
+选择必须来自同一请求根与原始位置，精确引用重数不能代替位置，旧数组模式不得猜身份。
+选择反馈与 raw_feedback 明确分开。任务中的 parent_selector 也服从实际成员与额外 donor 声明。
+GA survivor 还允许 `choose` 返回 `(members, {"name": selected_pool})`，一次计算交付主成员与命名副结果。
+主结果仍满足本次 count 与位置唯一性；副结果必须同一 offered root/scope，可保留普通集合的顺序和重数。
+副结果表示普通集合的精确成员：不存在则冻结 pool_id/name/absent 并创建，存在则冻结 descriptor 并替换；空结果可创建空池。
+所有结果先校验，副结果脱离成既有 PoolEdit，与 Unit 更新及逐提案输出在同一事务提交；目标漂移、同目标不同计划或 append/replace 冲突拒绝。
+不改算法结果/投影视图，不增加求值或独立维护提交；其他选择 purpose 不接受该副结果形式，普通单 Pool 与原索引组件接口继续有效。
+`partition(pool, by=choose, rng=...)` 在非空输入上调用规则一次，按本次输入位置返回选中/未选中 Pool；
+空输入不调用规则。临时局部坐标只用于校验，输出立即映回原输入，不能洗白外层重复生存位置。
+选中顺序服从规则，其余保持输入顺序；不以 difference 的引用差集代替位置补集，不自动写成员或求值。
+`source.chosen(rule, rng=...)` 只执行纯 Pool→Pool 规则，允许显式有放回选择，映回原位置；最终 survivor 仍拒绝重复原位置。
+`Pool(parent=source_or_scope, name=None)` 创建空调用期草稿；有 name 时，同 scope 同名共用一份草稿。
+`target.inject(source, replace=False)` 追加精确引用，新加入者去重；replace=True 精确保留源顺序和重数，包括空替换。
+构造不自动读取旧池或创建持久集合；首次追加到已有具名目标须有旧成员读取授权，精确替换不扩读权限。
+具名 inject 仅开放实际 survivor 与 pool_maintenance 回调，自动脱离为 PoolEdit；普通 change 仍显式返回 ChangeResult.edits。
+同草稿多次注入合为最终一个计划，不合并独立回调写者的冲突；all 返回冻结视图，chosen 规则内禁止 inject。
+parent 仅给出调用作用域与局部来源，不改持久 parent/ancestors、任务比较框架、返回地址或调度次序。
+仅同反馈 root 能保留调用期选择分数；普通集合提交只保存引用。该语法不支持装配期 Pool handle 或直接执行 Adapter。
+`request.pool` 是调用内只读候选访问，可按 main/subpool/read 取得精确引用，局部 take/random/merge 后读取值；
+操作顺序由函数编排，不限于 VNS 当前点或 MOEA/D 的 DE 后处理。PoolTask 内额外 donor 必须通过
+`change_sources`（精确公开子池名）/`change_allow_main` 声明，嵌套取交集，不绕过原输入。
+可返回 `ChangeResult(candidate, outputs=(PoolOutput(name, create=True),))`：只把已评估且接纳的精确版本
+加入普通集合，提交后可读；不直接改算法结果/投影视图，不代表最终成员选择。输出指令绑定本提案 token，
+派生交接不得重放。来源、输入范围配置、池与 RNG 复用现有事务/checkpoint；旧缺声明字段状态须显式迁移。
+完整边界见 `docs/architecture/POOL_CHANGE_ORCHESTRATION_CN.md`。
+
+只读选择支持 where/order_by/top/intersection/difference/groups；排序必须由调用者提供有限数值或词典序键，
+不猜多目标比较、不隐含求值。普通函数可用 request.pool.replace_members/update_members/remove_members/trim_members
+生成 PoolEdit，并通过 ChangeResult.edits 返回。replace_members(..., create=True) 可显式冻结缺失目标并创建普通集合，仍须声明目标权限；默认不创建。只对携带计划的接纳提案执行；同批相同计划去重，不同计划争用同目标拒绝，
+append/replace 同目标也拒绝。计划基于调用前已发布反馈，冻结目标 descriptor，和输出一起参与同一池事务。
+精确替换/裁剪保留引用顺序与重数，空更新不能折叠方向任务坐标；新增去重只针对新增引用，不按数值判断身份。
+数据层直接维护使用 replace_subpool_members/update_subpool_members/remove_from_subpool/trim_subpool；
+解除成员不删除候选，原有 Root/GC 规则继续有效。见 `docs/architecture/POOL_COLLECTION_OPERATIONS_CN.md`。
+
+NSGA-II/III、SPEA2、VNS、MOEA-D 支持 `set_pool_maintenance(function)`，
+普通 `(request, *, rng)` 返回有序 PoolEdit 计划。每个实际叶 update 在算法决策后调用一次，
+也可使用具名 Pool.inject 声明计划后返回 None；既无自动计划又返回 None 仍按错误处理。
+包括首次基准，不按候选/槽位次数重复；普通函数绑定沿用身份与 checkpoint 契约。
+request.accepted 是本消费者本批硬接纳 Pool，不等于最终成员；request.members 是所属种群按真实槽位顺序交付的最终成员，NSGA-II/III、SPEA2、MOEA/D 支持，VNS 为 None。二者保留各自选择反馈；历史档案与 members 在同一作用域归并，跨 root 合并须显式给 raw 或统一比较规则，不自动拼投影分数。MOEA/D members 是多目标槽位集合，不是一种统一方向评分。精确 accepted 和自有成员能力只贯穿该调用的读取与计划，
+main 仍只枚举旧公开记录，任务的 change_sources/change_allow_main 限制在 update 中继续生效。
+计划与既有 change 输出统一校验并进入原 Authority/Pool manifest 事务；冲突拒绝，失败回滚但求值成本保留。
+无提案/零接纳不单独提交维护，不添加新的维护循环或全局调度器。
+
+直接组件须提供 checkpoint_identity，显式声明 stateless 或实现数据 Mapping 状态 codec，随所属 Adapter 回滚/恢复；同一有状态对象不能被多个绑定重复拥有。UnitBackedAdapter 统一保存正式和专用步骤快照的绑定状态，图搜索/VNS/Fixed 的独立 codec 显式保存；恢复后续算法校验失败须补偿组件状态。Pool 输入与暖启动先于直属 initializer，初始化不等于 Unit 构建；依赖反馈的直属变异须在已有合法基准后调用。`set_repair` 对应 UnitRepair 并继续要求 JointRepairPolicy/ProblemRepair validator，不得在 propose 另跑问题修复。图搜索、多 Unit、Provider 及几何配对限制以实际声明为准。当前逐族支持、默认行为与验证见 `docs/architecture/ADAPTER_OPERATION_BOUNDARIES_CN.md`；首轮装配示例见 `docs/architecture/ADAPTER_OPERATOR_BINDINGS_CN.md`。旧 Pipeline 入口继续有效。
+
 ProblemRepair 修问题约束；UnitRepair 修算法结构，也可改候选。JointRepairPolicy 显式开启严格共同验收，要求问题组件提供只读 validate；UnitRepair 绑定有 algorithm_unit/UnitBinding 的实际叶所有者，只改 codec 草稿。最终版本须共同通过，对账后再次验证 Unit；不能由最后执行的 repair 宣布成功。循环/次数耗尽回滚后由根 Adapter.on_joint_repair_rejected 决策。组合通过 proposal_repair_children 共享索引/任务映射，不可广播或静默丢行。详见 `docs/architecture/JOINT_REPAIR_CN.md`。
 
 共同验收仅允许送评。默认 ProblemRepair 与共同修复均在修复前捕获活跃所有者及组合祖先的局部参与者快照；零接纳恢复该子树，再通知普通 disposition。部分接纳先由 Adapter disposition 整理坐标，再调用 UnitRepair.project_admission 并重验；baseline 保留原始 Unit，draft 已整理，evidence/disposition 仍是原始索引，不得重复裁剪。投影必须保留 admission_unit_fields 声明的字段。评估成本不回滚，不重跑 repair，也不猜测任意结构的裁剪。
@@ -416,7 +474,7 @@ ProblemRepair 修问题约束；UnitRepair 修算法结构，也可改候选。J
 
 - `store_solutions / read_solutions / propose_solutions`：登记版本、按引用读取、显式生成带源身份的新提案；`solution_pool.select(at=stamp, region=..., stage=...)` 锁定候选来源时点。context 仅传 pool manifest/time/input ID/mode。
 - `pool_input_modes` / `supports_pool_restart` / `restart_search`：Adapter 显式声明池初始化、竞争、搜索重启。不得因实现 Unit 就推断已支持任意交接；PoolSearchAdapter 的接收方须支持 initialize/compete，producer 的重启不重放生命周期。
-- `PoolTaskSpec(select=None, ...)` 默认读取母池 main 区域的已发布引用（包括初始化种子）。命名输入子池必须在实际取解时存在；不存在报错，不按空池等待。count 为每实例数量或 "all"；initialize 默认数量由 Adapter.default_pool_input_count 声明，NSGA-II/III 默认自身容量；refine 默认每实例一个起点，整批精修须显式 count="all"；compete 默认全部。
+- `PoolTaskSpec(select=None, ...)` 默认读取最近组合 working_pool 的已发布引用（包括初始化种子），没有绑定时读取根池 main。Router/Chain 的 working_pool 必须在首次提案前存在、已提交且为普通集合；None继承，不创建池、不复制根池。首次提案后禁止切换绑定。普通change/maintenance的main使用同一区域，仍要求任务main授权。命名输入子池必须在实际取解时存在；不存在报错，不按空池等待。count 为每实例数量或 "all"；initialize 默认数量由 Adapter.default_pool_input_count 声明，NSGA-II/III 默认自身容量；refine 默认每实例一个起点，整批精修须显式 count="all"；compete 默认全部。
 - PoolTaskSpec 的 distribution 默认 initialize=independent、refine/compete=partition，可显式选 shared。每实例内部按精确 SolutionRef 无放回，群间可共享；不按数值去重，不自动生成补足。shuffle 默认 True；on_insufficient 默认 error，可选 wait/available。随机分配在请求开始时确定，队列和独立 RNG 随事务/checkpoint 保存。initialize 完成后继续原算法，默认不因阶段变化重新初始化；再次取解需显式新 request_key。SA/VNS 支持普通 refine，NSGA-II/III 支持 initialize/compete，MOEA/D 支持返回 compete。
 - 母池与 manifest 使用 solution_pool/v2、solution_pool_manifest/v2；全部子池具有 view_id/revision/parent/created_by/published。candidate_collection 是普通引用集合，candidate_view 是算法最终选择，objective_projection 另带比较参数。父子表示派生来源，不要求集合包含。旧缺失视图身份或任务解释的 checkpoint 要显式迁移。
 - 投影任务由 VNS、SA、PatternSearch、SingleTrajectoryAdaptive、GaussianSearch、MAS、有限差分 GradientDescent 及四种信赖域消费，沿用 PoolTaskSpec。GradientOptimizer 仅支持普通精修，目标投影不能替代梯度变换；A*/MOA* 仅显式 new_root 初始化。按名称和按创建者选择同一投影视图必须应用相同投影与能力检查；不允许按名字绕过。subpools.all/random 也能选择已发布的普通最终结果视图，聚合 output 不等于最终选择。pool_result_owner 解析透明包装后的真实算法实例路径。
@@ -634,3 +692,11 @@ Doctor 的 `--format problem` 仅改变呈现，不筛选级别；未知位置�
 - [ ] 若示例声称演示组件 X，`--check` 输出是否确实包含 X（禁止挂羊头卖狗肉）
 - [ ] 是否运行 Doctor 严格检查，记录 scope/coverage/skipped，并区分既有发现与新增回归
 - [ ] 是否对受影响的 Project/Case 执行必要的 `--build`，以及显式选择 Catalog 审计口径
+
+Pool.member_field(name, default=...) 在 NSGA-II/III、SPEA2 的正式生存选择中读取已声明 member_fields。按 offered 位置绑定旧 Unit 槽位，新提案用显式 default；不按引用字典合并重复槽位，不捕获活 Solver，不新增 checkpoint 状态。take/chosen/partition 保留坐标；跨根集合不猜所有者。最终成员维护的 request.members 复用同一字段冻结/槽位映射；accepted、历史池和任意 change 入口不猜成员属性。
+
+普通 Pool 生存选择允许 choose(pool, *, count[, rng])，实际 count 由 SelectionRequest 注入；旧无 count 函数及显式 partial 固定 count 保留原调用，自动 count 绑定身份为 pool_selection/v2。member_field 对已有成员可省略 default，对新提案必须明确补值；封闭结构数据复用 Unit codec，整数精度不能被默认值静默改变。
+
+NSGA-II/III、SPEA2 的 ParentSelectionRequest.members 是按真实槽位排列的调用期 Pool；父代选择可返回其派生 Pool（允许重复抽同一槽位）。旧引用返回只在成员引用唯一时绑定槽位，重复成员歧义须拒绝；外部父代下标为 None。完整 ChangeRequest.parent_pool 只读交付相应成员属性，parent_member_indices 是提案时点位置，不能反向寻址后续 Unit。普通 mutator 不新增参数，来源权限、repair、接纳与事务沿用原路径。
+
+StrategyRouterAdapter可通过既有set_pool_maintenance或pool_maintenance参数拥有一次统一档案归并。子更新完成后以members_by_owner交付各自最终成员，members为无统一选择评分的引用聚合；仅收集本次非空接纳直属子树，不把异质种群拼成权威矩阵。计划复用原池事务和冲突检查，绑定状态进入Router原checkpoint/步骤快照。零接纳、等待、取消无独立维护提交；独立Case或多机异步汇合不在此语义内。

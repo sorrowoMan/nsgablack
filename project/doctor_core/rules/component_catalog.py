@@ -79,9 +79,7 @@ def collect_bias_instances(solver: object) -> List[tuple[str, object]]:
 
 
 def _component_import_path(obj: object) -> str:
-    cls = getattr(obj, "__class__", None)
-    if cls is None:
-        return ""
+    cls = type(obj)
     module = str(getattr(cls, "__module__", "") or "").strip()
     name = str(getattr(cls, "__name__", "") or "").strip()
     if not module or not name:
@@ -109,6 +107,23 @@ def _resolve_catalog_import_path(import_path: str) -> Any | None:
         return value
     except (ImportError, AttributeError):
         return None
+
+
+def _has_registered_catalog_owner(component_class: type, registered_ids: set[int]) -> bool:
+    """Recognize one explicitly owned implementation, never an inherited waiver.
+
+    Private wrappers can belong to an already registered public component. The
+    concrete class must itself name that real base class; merely inheriting a
+    registered type, inheriting this declaration, or naming a lookalike is not
+    registration.
+    """
+
+    owner = component_class.__dict__.get("catalog_owner_type")
+    return (
+        isinstance(owner, type)
+        and any(owner is base for base in component_class.__mro__[1:])
+        and id(owner) in registered_ids
+    )
 
 
 def check_process_like_bias_usage(
@@ -185,8 +200,10 @@ def check_component_catalog_registration(
         if not import_path:
             continue
         if import_path.startswith("nsgablack."):
-            component_class = getattr(comp_obj, "__class__", None)
-            if import_path not in framework_paths and id(component_class) not in resolved_framework_object_ids:
+            component_class = type(comp_obj)
+            if (import_path not in framework_paths
+                    and id(component_class) not in resolved_framework_object_ids
+                    and not _has_registered_catalog_owner(component_class, resolved_framework_object_ids)):
                 missing_framework.append(f"{comp_name} -> {import_path}")
         else:
             if import_path not in local_paths:

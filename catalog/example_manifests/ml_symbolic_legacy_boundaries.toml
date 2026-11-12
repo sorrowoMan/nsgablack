@@ -1,0 +1,27 @@
+[[example]]
+id = "ml-symbolic-nested-migration-reference"
+title = "迁移说明：旧两阶段符号内层Case与资源交接尚未闭合"
+component_keys = ["mlblack.nsgablack_symbolic.orthogonal_basis_outer", "mlblack.nsgablack_symbolic.basis_conditioned_symbolic_task", "mlblack.nsgablack_symbolic.symbolic_orthogonal_nested_suite"]
+usage_status = "migration_reference"
+kind = "documentation"
+working_directory = "mlblack"
+summary = "准确说明旧direct fit路径、未传递Project grant与Suite spec的边界；给出已存在正式固定符号/基集合Case替代，不宣称自动两阶段已接通。"
+inputs = ["当前三仓源码与旧symbolic_orthogonal_nested Project；只读机制审阅。"]
+steps = ["对照evaluate_detailed与Case problem工厂的实际调用，区分旧路径、可用正式组件与尚缺的Case交付。"]
+dependencies = ["只读源码；不运行模型、数据库或旧嵌套。"]
+expected_outputs = ["迁移原因、实际职责边界、可用替代及尚缺验收；不是active配方或运行证明。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_SYMBOLIC_LEGACY_BOUNDARIES_CN.md",section="mlblack.nsgablack_symbolic.orthogonal_basis_outer"}]
+
+[[example]]
+id = "ml-symbolic-traffic-migration-reference"
+title = "迁移说明：traffic symbolic名字下实际是线性SGD入口"
+component_keys = ["mlblack.example.traffic_symbolic_regression"]
+usage_status = "migration_reference"
+kind = "documentation"
+working_directory = "mlblack"
+summary = "源码明确数据、随机划分、线性系数和训练MSE，不把旧名称当符号结构搜索或验证指标；提供标准表格/符号Case替代。"
+inputs = ["traffic_congestion/symbolic_regression源码和具体CSV契约；未运行。"]
+steps = ["按真实工厂核对含义，说明layout/验证/Problem位置边界，再选明确的正式替代。"]
+dependencies = ["只读源码，不读取或执行生产数据。"]
+expected_outputs = ["准确迁移说明；不生成伪运行收据或假定valid指标。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_SYMBOLIC_LEGACY_BOUNDARIES_CN.md",section="mlblack.example.traffic_symbolic_regression"}]

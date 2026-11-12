@@ -1,0 +1,17 @@
+[[entry]]
+key = "project.plugin.outer_nested_trace"
+title = "NestedTracePlugin"
+kind = "plugin"
+import_path = "plugins.trace:NestedTracePlugin"
+tags = ["project", "plugin", "observe", "nested"]
+summary = "只读记录已提交逻辑步骤；不触发额外求值或改变候选。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["本地文件是观察副本；权威 Artifact 由 Case 发布事务提供。"]
+use_when = ["查看外层与内层实际提交计数。"]
+minimal_wiring = ["from cases.outer_nested.plugins import NestedTracePlugin", "solver.add_plugin(NestedTracePlugin('results'))"]
+required_companions = ["nsgablack.core:ComposableSolver"]
+config_keys = ["output_dir"]
+example_entry = "cases.outer_nested.build_solver:build_solver"

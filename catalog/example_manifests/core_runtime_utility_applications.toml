@@ -1,0 +1,77 @@
+[[example]]
+id = "core-context-utility-application"
+title = "调用级最小上下文、共享词汇与私有键作用域"
+component_keys = ["tool.context_schema", "tool.context_keys"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "独立完整脚本实际构造、校验并消费当前工作项上下文，展示Case键声明与局部注册的不同位置。"
+inputs = ["当前三仓环境与明确约束残差。"]
+steps = ["保存脚本并运行，检查violation与注册作用域退出；不构建全局候选身份。"]
+dependencies = ["当前blackbase/nsgablack。"]
+expected_outputs = ["违约1.5、局部行0、scope内注册且退出恢复；不执行求解。"]
+sources = [{path="nsgablack/docs/catalog_usage/RUNTIME_UTILITY_APPLICATIONS_CN.md", section="tool.context_schema"}]
+
+[[example]]
+id = "core-parallel-utility-application"
+title = "受控数值批求值与进程工厂变体"
+component_keys = ["tool.parallel_evaluator"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "明确输入、原始结果和错误检查，解释工程并行工具与正式Solver证据/预算/接纳的边界。"
+inputs = ["完整bias_gallery副本中的SphereProblem；三个已知二维输入。"]
+steps = ["主例单worker线程检查算术，进程变体使用顶层Problem工厂；不在Adapter绕过评估。"]
+dependencies = ["NumPy/当前框架。"]
+expected_outputs = ["3x1目标0/5/1，三行零违约和error_count=0；本轮未实际求值。"]
+sources = [{path="nsgablack/docs/catalog_usage/RUNTIME_UTILITY_APPLICATIONS_CN.md", section="tool.parallel_evaluator"}]
+
+[[example]]
+id = "core-redis-context-application"
+title = "正式Case的Redis轻量context构造与独立探针"
+component_keys = ["tool.context_store_redis"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "通过实际Solver构造参数启用RedisContextStore，给出独立前缀小值检查与Snapshot定位描述变体。"
+inputs = ["完整控制面Case主例；环境提供授权Redis地址，不能打印凭据。"]
+steps = ["保存选项工厂，在原完整builder构造前应用；独立探针仅删除自己唯一前缀内的键。"]
+dependencies = ["当前框架、redis驱动及授权Redis；本轮未连接。"]
+expected_outputs = ["真实RedisContextStore及小字典往返；不宣称Snapshot/Authority恢复已通过。"]
+sources = [{path="nsgablack/docs/catalog_usage/RUNTIME_UTILITY_APPLICATIONS_CN.md", section="tool.context_store_redis"}]
+
+[[example]]
+id = "core-cli-signal-application"
+title = "按需启动交互信号并在控制边界请求停止"
+component_keys = ["tool.dynamic_cli_signal"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整extension延迟到setup创建stdin读线程，消费布尔停止信号，明确无停止线程实现与并行Case争读限制。"
+inputs = ["完整控制面Case；可提供stdin的前台运行入口。"]
+steps = ["保存CLIStop并登记extension；变体通过环境显式启用交互。"]
+dependencies = ["当前框架与前台终端。"]
+expected_outputs = ["下一控制边界的停止请求与user_cli_stop原因，非强制撤销当前求值；本轮未启动线程。"]
+sources = [{path="nsgablack/docs/catalog_usage/RUNTIME_UTILITY_APPLICATIONS_CN.md", section="tool.dynamic_cli_signal"}]
+
+[[example]]
+id = "core-pareto-metrics-application"
+title = "已知目标矩阵的帕累托与固定参考HV"
+component_keys = ["tool.metrics"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整离线分析脚本，先按原始可行性筛选，解释目标行和候选引用不可互换；变体排除不可行点。"
+inputs = ["显式二维最小化目标及原始违反量。"]
+steps = ["调用pareto_filter与hypervolume_2d并检查几何数值；不回写Pool成员。"]
+dependencies = ["NumPy和当前nsgablack。"]
+expected_outputs = ["主例HV11、可行性变体HV8；没有生成优化结果。"]
+sources = [{path="nsgablack/docs/catalog_usage/RUNTIME_UTILITY_APPLICATIONS_CN.md", section="tool.metrics"}]
+
+[[example]]
+id = "core-curation-maintenance-application"
+title = "说明发布器的只读缓存接线与离线缺口规划"
+component_keys = ["tool.catalog_curate"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "实际调用curate_packets缓存分支，注入只读真实导出适配器和拒绝生成器；新摘要失配先停止，不伪造AI说明或审核。"
+inputs = ["已有来源packets/index、真实AI记录导出列表与模型身份；变体只需examples索引。"]
+steps = ["先核对真实缓存，再进行幂等统计；新资料通过源码文档/manifest维护并独立重建索引。"]
+dependencies = ["当前nsgablack，无模型API或数据库连接。"]
+expected_outputs = ["匹配时cached1/generated0，失配报错；离线变体生成资料缺口JSON，不增加AI审核计数。"]
+sources = [{path="nsgablack/docs/catalog_usage/RUNTIME_UTILITY_APPLICATIONS_CN.md", section="tool.catalog_curate"}]

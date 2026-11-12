@@ -16,7 +16,7 @@ minimal_wiring = [
 ]
 required_companions = ["(none)"]
 config_keys = ["db_path", "namespace", "tag", "project_root", "surface_key", "surface_label", "print_summary"]
-example_entry = "python -m nsgablack catalog show plugin.runtime_surface_tracker"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "plugin.checkpoint_resume"
@@ -48,7 +48,7 @@ config_keys = [
   "unsafe_allow_unsigned",
   "trusted_roots",
 ]
-example_entry = "build_solver.py:build_solver"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 context_provides = ["checkpoint.latest_path", "checkpoint.last_loaded_path"]
 context_mutates = ["checkpoint.latest_path"]
 context_cache = ["checkpoint.latest_path"]
@@ -61,26 +61,27 @@ key = "plugin.monte_carlo_eval"
 title = "MonteCarloEvaluationProviderPlugin"
 kind = "plugin"
 import_path = "nsgablack.plugins.evaluation.monte_carlo_evaluation:MonteCarloEvaluationProviderPlugin"
-tags = ["evaluation", "mc", "robustness", "plugin"]
-summary = "基于扰动的蒙特卡洛评估与指标统计。 / Plugin: perturbation-based Monte Carlo evaluation with metrics."
+tags = ["evaluation", "mc", "robustness", "risk", "plugin"]
+summary = "对同一候选重复调用场景 Problem，聚合真实目标并随候选反馈交付 mc_mean/std/min/max；可供风险或鲁棒性软偏好消费。"
 use_when = [
-  "需要超越单次幸运结果的鲁棒性对比时。 / Need robustness comparison beyond single lucky outcomes.",
-  "扰动/噪声下需要统计意义的评估时。 / Need statistically meaningful evaluation under perturbations/noise.",
+  "Problem.evaluate 本身表达随机场景或噪声，需要用重复求值的均值或损失上尾均值作为正式原始目标时。",
+  "需要为 RiskBias 或其它反馈消费者提供每候选的 mc_mean、mc_std、mc_min、mc_max，而不是复用全局上一候选的统计时。",
 ]
 minimal_wiring = [
   "from nsgablack.plugins import MonteCarloEvaluationProviderPlugin, MonteCarloEvaluationConfig",
-  "solver.register_evaluation_provider(MonteCarloEvaluationProviderPlugin(config=MonteCarloEvaluationConfig(n_samples=16)).build_provider())",
+  "config = MonteCarloEvaluationConfig(mc_samples=16, reduce='mean', cvar_alpha=0.2, random_seed=0)",
+  "solver.add_plugin(MonteCarloEvaluationProviderPlugin(config=config))",
+  "# attach auto-registers its Evaluation Provider; do not register it twice.",
 ]
-required_companions = ["bias.robustness"]
+required_companions = ["(none)"]
 config_keys = [
-  "n_samples",
-  "noise_std",
-  "aggregation",
-  "seed",
-  "parallel",
+  "mc_samples",
+  "reduce",
+  "cvar_alpha",
+  "random_seed",
 ]
-companions = ["bias.robustness"]
-example_entry = ""
+companions = ["bias.robustness", "bias.risk"]
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 context_provides = [
   "metrics.mc_samples",
   "metrics.mc_mean",
@@ -88,7 +89,14 @@ context_provides = [
   "metrics.mc_min",
   "metrics.mc_max",
 ]
-context_mutates = ["metrics"]
+context_requires = []
+context_mutates = []
+context_cache = []
+context_notes = [
+  "每个候选的 Feedback.metrics 携带 mc_samples 及各目标的 mc_mean/std/min/max，数组 shape 为 (目标数,)；共享求值边界为 Bias 投影这些局部指标。",
+  "reduce='mean' 保留场景均值，reduce='cvar' 聚合最小化损失中最坏 cvar_alpha 比例；不自动向确定性 Problem 注入噪声。",
+]
+contract = { catalog = { role = "evaluation_provider", concepts = ["蒙特卡洛求值", "场景统计", "候选风险指标"], operations = ["create_provider"], boundaries = ["config_keys 对应 MonteCarloEvaluationConfig；插件本体另接 name、config、priority。", "重复求值调用 Problem 定义的随机场景，不自行制造输入扰动；每候选统计随 Feedback 交付。", "RiskBias 与 RobustnessBias 是可选消费者，插件不要求挂载任何 Bias；原始聚合反馈与软偏好选择视图分开保留。"] } }
 
 [[entry]]
 key = "plugin.surrogate_eval"
@@ -96,21 +104,24 @@ title = "SurrogateEvaluationProviderPlugin"
 kind = "plugin"
 import_path = "nsgablack.plugins.evaluation.surrogate_evaluation:SurrogateEvaluationProviderPlugin"
 tags = ["evaluation", "surrogate", "plugin"]
-summary = "代理辅助评估并输出不确定性指标。 / Plugin: surrogate-assisted evaluation with uncertainty metrics."
+summary = "近似代理评估：暖启使用真实目标，再混合代理预测与真评估；返回原始反馈、逐行保真来源和不确定性，Bias只由Solver投影。"
 use_when = [
   "真实评估昂贵，需要代理预筛选时。 / True eval is expensive; need surrogate pre-screening.",
   "需要降低整体评估成本时。 / Need to reduce overall evaluation cost.",
 ]
 minimal_wiring = [
   "from nsgablack.plugins import SurrogateEvaluationProviderPlugin, SurrogateEvaluationConfig",
-  "solver.register_evaluation_provider(SurrogateEvaluationProviderPlugin(config=SurrogateEvaluationConfig()).build_provider())",
+  "solver.configure_evaluation_policy(allow_approximate=True)",
+  "solver.add_plugin(SurrogateEvaluationProviderPlugin(config=SurrogateEvaluationConfig()))",
 ]
 config_keys = [
-  "train_interval",
-  "warmup_evals",
-  "uncertainty_threshold",
-  "model_type",
-  "fallback_on_error",
+  "min_train_samples",
+  "min_true_evals",
+  "topk_exploit",
+  "topk_explore",
+  "retrain_every_call",
+  "objective_aggregation",
+  "random_seed",
 ]
 example_entry = "python examples\\cases\\surrogate_lab\\run_project.py"
 context_provides = ["metrics.surrogate_std"]
@@ -122,22 +133,24 @@ title = "MultiFidelityEvaluationProviderPlugin"
 kind = "plugin"
 import_path = "nsgablack.plugins.evaluation.multi_fidelity_evaluation:MultiFidelityEvaluationProviderPlugin"
 tags = ["evaluation", "multi_fidelity", "plugin"]
-summary = "多保真评估：低/高保真切换。 / Plugin: multi-fidelity evaluation switching between low/high fidelity."
+summary = "近似多保真评估：每批先低保真排序，再对选中子集高保真重评；逐行标记来源，原始约束独立于Bias，必须显式允许近似评估。"
 use_when = [
   "评估成本高且存在低保真代理可用时。 / Eval cost is high and low-fidelity proxies are available.",
   "需要粗到细的评估流程时。 / Need coarse-to-fine evaluation.",
 ]
 minimal_wiring = [
   "from nsgablack.plugins import MultiFidelityEvaluationProviderPlugin, MultiFidelityEvaluationConfig",
-  "solver.register_evaluation_provider(MultiFidelityEvaluationProviderPlugin(config=MultiFidelityEvaluationConfig()).build_provider())",
+  "solver.configure_evaluation_policy(allow_approximate=True)",
+  "solver.add_plugin(MultiFidelityEvaluationProviderPlugin(config=MultiFidelityEvaluationConfig(), low_fidelity=problem.evaluate_low_fidelity))",
 ]
 config_keys = [
-  "low_fidelity_ratio",
-  "switch_step",
-  "budget",
-  "fallback_to_high_fidelity",
+  "min_high_fidelity",
+  "topk_exploit",
+  "topk_explore",
+  "objective_aggregation",
+  "random_seed",
 ]
-example_entry = ""
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "plugin.newton_solver"
@@ -145,14 +158,14 @@ title = "NewtonSolverProviderPlugin"
 kind = "plugin"
 import_path = "nsgablack.plugins.evaluation.newton_solver_plugin:NewtonSolverProviderPlugin"
 tags = ["evaluation", "solver", "nonlinear", "newton", "plugin"]
-summary = "Newton 求解插件：评估阶段的非线性方程求解。 / Newton solver plugin: nonlinear equation solving during evaluation."
+summary = "Newton隐式评估：Problem声明方程、初值/可选Jacobian和目标转换；Provider返回原始目标、约束及残差指标，Solver独立投影Bias。"
 use_when = [
   "评估需要求解隐式非线性方程时。 / Use when evaluation requires solving implicit nonlinear equations.",
   "希望替换求解器插件而不改外层循环时。 / Use when you want solver-plugin replacement without touching outer loop.",
 ]
 minimal_wiring = [
   "from nsgablack.plugins import NewtonSolverProviderPlugin, NumericalSolverConfig",
-  "solver.register_evaluation_provider(NewtonSolverProviderPlugin(config=NumericalSolverConfig(tol=1e-8, max_iter=100)).build_provider())",
+  "solver.add_plugin(NewtonSolverProviderPlugin(config=NumericalSolverConfig(tol=1e-8, max_iter=100, fallback_to_problem_eval=False)))",
 ]
 required_companions = ["problem hook: build_implicit_system", "problem hook: evaluate_from_implicit_solution"]
 config_keys = [
@@ -162,7 +175,7 @@ config_keys = [
   "warn_on_failure",
 ]
 companions = ["plugin.broyden_solver"]
-example_entry = "python -m nsgablack catalog search newton_solver --kind plugin"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 context_requires = ["problem"]
 context_provides = [
   "metrics.implicit_residual",
@@ -180,14 +193,14 @@ title = "BroydenSolverProviderPlugin"
 kind = "plugin"
 import_path = "nsgablack.plugins.evaluation.broyden_solver_plugin:BroydenSolverProviderPlugin"
 tags = ["evaluation", "solver", "nonlinear", "broyden", "plugin"]
-summary = "Broyden 求解插件：评估阶段的无 Jacobian 非线性求解。 / Broyden solver plugin: Jacobian-free nonlinear solving in evaluation."
+summary = "Broyden隐式评估：与Newton消费相同Problem方程/转换钩子，但不使用Jacobian；返回原始约束与求解指标，不将数值失败伪装成软评分。"
 use_when = [
   "Jacobian 不可用或不稳定时。 / Use when Jacobian is unavailable or unstable.",
   "偏好无 Jacobian 的非线性后端时。 / Use when a Jacobian-free nonlinear backend is preferred.",
 ]
 minimal_wiring = [
   "from nsgablack.plugins import BroydenSolverProviderPlugin, NumericalSolverConfig",
-  "solver.register_evaluation_provider(BroydenSolverProviderPlugin(config=NumericalSolverConfig(tol=1e-7, max_iter=120)).build_provider())",
+  "solver.add_plugin(BroydenSolverProviderPlugin(config=NumericalSolverConfig(tol=1e-7, max_iter=120, fallback_to_problem_eval=False)))",
 ]
 required_companions = ["problem hook: build_implicit_system", "problem hook: evaluate_from_implicit_solution"]
 config_keys = [
@@ -197,7 +210,7 @@ config_keys = [
   "warn_on_failure",
 ]
 companions = ["plugin.newton_solver"]
-example_entry = "python -m nsgablack catalog search broyden_solver --kind plugin"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 context_requires = ["problem"]
 context_provides = [
   "metrics.implicit_residual",
@@ -227,7 +240,7 @@ minimal_wiring = [
 required_companions = ["runtime.inner_evaluator"]
 config_keys = ["rules", "allow_overwrite"]
 companions = ["plugin.inner_timeout_budget", "runtime.inner_evaluator"]
-example_entry = "python -m nsgablack catalog search contract_bridge --kind plugin"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 context_mutates = ["metadata.layers"]
 context_notes = [
   "Consumes on_inner_result packets and writes mapped keys into solver._layer_contexts.",
@@ -256,7 +269,7 @@ config_keys = [
   "fail_closed",
 ]
 companions = ["plugin.contract_bridge", "runtime.inner_evaluator"]
-example_entry = "python -m nsgablack catalog search inner_timeout_budget --kind plugin"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 context_notes = [
   "Provides on_inner_guard/on_inner_result for call/time budget control.",
 ]
@@ -287,7 +300,7 @@ config_keys = [
   "retry_backoff_ms",
 ]
 companions = ["plugin.contract_bridge", "plugin.inner_timeout_budget"]
-example_entry = "python -m nsgablack catalog search inner_runtime --kind plugin"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 context_requires = ["problem"]
 context_provides = [
   "metrics.inner_calls",
@@ -341,12 +354,13 @@ minimal_wiring = [
 config_keys = [
   "output_dir",
   "run_id",
+  "seed",
   "overwrite",
   "log_every",
-  "save_population",
+  "flush_every",
 ]
 companions = ["plugin.module_report"]
-example_entry = ""
+example_entry = "docs/catalog_usage/OBSERVABILITY_PLUGIN_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "plugin.module_report"
@@ -395,7 +409,7 @@ config_keys = [
   "enabled_events",
 ]
 companions = ["plugin.benchmark_harness"]
-example_entry = ""
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "plugin.dynamic_switch"
@@ -403,15 +417,9 @@ title = "DynamicSwitchPlugin"
 kind = "plugin"
 import_path = "nsgablack.plugins.runtime.dynamic_switch:DynamicSwitchPlugin"
 tags = ["runtime", "dynamic", "switch", "plugin"]
-summary = "信号驱动的运行模式/策略切换。 / Plugin: signal-driven runtime mode/strategy switching."
-use_when = [
-  "需要根据收敛状态调整策略权重时。 / Need to adjust strategy weights based on convergence state.",
-  "需要显式阶段切换（探索/利用）时。 / Need explicit phase switching (explore/exploit).",
-]
-minimal_wiring = [
-  "from nsgablack.plugins import DynamicSwitchPlugin",
-  "solver.add_plugin(DynamicSwitchPlugin(should_switch_fn=..., soft_switch_fn=...))",
-]
+summary = "接线迁移说明；尝试回调任意副作用与phase状态未闭合，不能视作可回滚的正式阶段编排。"
+use_when = ["审阅旧工程与迁移边界时；新Case采用文档所示正式Adapter、Project或评估路径。"]
+minimal_wiring = ["# 迁移参考：尝试回调任意副作用与phase状态未闭合，不能视作可回滚的正式阶段编排。", "# 先读 docs/catalog_usage/LIFECYCLE_LEGACY_MIGRATIONS_CN.md 的 migration.plugin.dynamic_switch；按正文选择当前正式接缝，不直接复制旧attach。"]
 config_keys = [
   "should_switch_fn",
   "soft_switch_fn",
@@ -419,7 +427,7 @@ config_keys = [
   "signal_provider",
   "config",
 ]
-example_entry = "python examples\\cases\\dynamic_strategy\\run_project.py"
+example_entry = "docs/catalog_usage/LIFECYCLE_LEGACY_MIGRATIONS_CN.md"
 context_provides = ["dynamic", "phase_id"]
 context_mutates = ["dynamic", "phase_id"]
 
@@ -475,8 +483,9 @@ config_keys = [
   "database",
   "table",
   "connect_timeout",
+  "print_latest_summary",
 ]
-example_entry = "python -m nsgablack catalog show plugin.mysql_run_logger"
+example_entry = "docs/catalog_usage/EXTERNAL_OBSERVABILITY_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "plugin.diversity_init"
@@ -484,14 +493,11 @@ title = "DiversityInitPlugin"
 kind = "plugin"
 import_path = "nsgablack.plugins.runtime.diversity_init:DiversityInitPlugin"
 tags = ["runtime", "diversity", "initializer", "plugin"]
-summary = "通过重复/相似性控制提升初始多样性。 / Plugin: improve initial population diversity by duplicate/similarity control."
-use_when = [
-  "初始种群重复或覆盖不足时。 / Initial population is repetitive/insufficient coverage.",
-  "需要更广的早期探索时。 / Need broader early exploration.",
-]
-minimal_wiring = ["from nsgablack.plugins import DiversityInitPlugin", "solver.add_plugin(DiversityInitPlugin())"]
+summary = "接线迁移说明；should_accept没有正式调用点，旧插件不会自动拒绝相似初始候选。"
+use_when = ["审阅旧工程与迁移边界时；新Case采用文档所示正式Adapter、Project或评估路径。"]
+minimal_wiring = ["# 迁移参考：should_accept没有正式调用点，旧插件不会自动拒绝相似初始候选。", "# 先读 docs/catalog_usage/LIFECYCLE_LEGACY_MIGRATIONS_CN.md 的 migration.plugin.diversity_init；按正文选择当前正式接缝，不直接复制旧attach。"]
 config_keys = ["similarity_threshold", "rejection_prob"]
-example_entry = ""
+example_entry = "docs/catalog_usage/LIFECYCLE_LEGACY_MIGRATIONS_CN.md"
 
 [[entry]]
 key = "plugin.elite"
@@ -499,17 +505,12 @@ title = "BasicElitePlugin (deprecated compatibility bridge)"
 kind = "plugin"
 import_path = "nsgablack.plugins.runtime.elite_retention:BasicElitePlugin"
 tags = ["compat", "deprecated", "elite", "migration", "plugin", "retention"]
-summary = "旧精英 Plugin 的迁移桥；attach 时将现有 Adapter 包装为事务型 EliteRetentionAdapter，不直接写 population authority。"
-use_when = [
-  "迁移仍调用 BasicElitePlugin 的旧装配代码时；新代码直接使用 adapter.elite_retention。",
-]
-minimal_wiring = [
-  "from nsgablack.plugins import BasicElitePlugin  # deprecated; remove_in=1.0.0",
-  "solver.add_plugin(BasicElitePlugin())  # migrates to EliteRetentionAdapter",
-]
+summary = "接线迁移说明；旧精英兼容装配桥保留用于迁移；新Case应显式装配EliteRetentionAdapter，避免双层重复包装。"
+use_when = ["审阅旧工程与迁移边界时；新Case采用文档所示正式Adapter、Project或评估路径。"]
+minimal_wiring = ["# 迁移参考：旧精英兼容装配桥保留用于迁移；新Case应显式装配EliteRetentionAdapter，避免双层重复包装。", "# 先读 docs/catalog_usage/ORCHESTRATION_ADAPTER_APPLICATIONS_CN.md 的 migration.plugin.elite；按正文选择当前正式接缝，不直接复制旧attach。"]
 required_companions = ["adapter.elite_retention"]
 config_keys = ["retention_prob", "retention_ratio"]
-example_entry = "python examples\\cases\\nsga2_basic\\run_project.py"
+example_entry = "docs/catalog_usage/ORCHESTRATION_ADAPTER_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "plugin.memory"
@@ -524,7 +525,7 @@ use_when = [
 ]
 minimal_wiring = ["from nsgablack.plugins import MemoryPlugin", "solver.add_plugin(MemoryPlugin())"]
 config_keys = ["cleanup_interval", "enable_auto_gc"]
-example_entry = ""
+example_entry = "docs/catalog_usage/OBSERVABILITY_PLUGIN_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "plugin.gpu_eval_template"
@@ -532,14 +533,9 @@ title = "GpuEvaluationTemplateProviderPlugin"
 kind = "plugin"
 import_path = "nsgablack.plugins.evaluation.gpu_evaluation_template:GpuEvaluationTemplateProviderPlugin"
 tags = ["plugin", "evaluation", "gpu", "template", "short_circuit"]
-summary = "最小 GPU 评估短路模板插件。 / Minimal GPU evaluation short-circuit template plugin."
-use_when = [
-  "需要最小 GPU 批量评估短路插件并具备安全回退时。 / Need a minimal GPU batch-evaluation short-circuit plugin with safe fallback.",
-]
-minimal_wiring = [
-  "from nsgablack.plugins import GpuEvaluationTemplateProviderPlugin",
-  "solver.register_evaluation_provider(GpuEvaluationTemplateProviderPlugin().build_provider())",
-]
+summary = "接线迁移说明；全局CUDA可用不等于Case授权；被选中后返回None不会自动降级CPU。"
+use_when = ["审阅旧工程与迁移边界时；新Case采用文档所示正式Adapter、Project或评估路径。"]
+minimal_wiring = ["# 迁移参考：全局CUDA可用不等于Case授权；被选中后返回None不会自动降级CPU。", "# 先读 docs/catalog_usage/LIFECYCLE_LEGACY_MIGRATIONS_CN.md 的 migration.plugin.gpu_eval_template；按正文选择当前正式接缝，不直接复制旧attach。"]
 required_companions = ["(none)"]
 config_keys = [
   "preferred_backend",
@@ -548,7 +544,7 @@ config_keys = [
   "warn_on_fallback",
 ]
 companions = ["plugin.mysql_run_logger"]
-example_entry = "python -m nsgablack catalog search gpu_eval_template --kind plugin"
+example_entry = "docs/catalog_usage/LIFECYCLE_LEGACY_MIGRATIONS_CN.md"
 context_requires = ["problem"]
 context_provides = [
   "metrics.gpu_backend",
@@ -586,7 +582,7 @@ config_keys = [
   "trace_plugin_events",
 ]
 companions = ["plugin.profiler", "plugin.module_report"]
-example_entry = ""
+example_entry = "docs/catalog_usage/EXTERNAL_OBSERVABILITY_APPLICATIONS_CN.md"
 context_requires = ["generation"]
 context_notes = [
   "Emit spans for evaluate calls, adapter propose/update, and plugin event dispatch.",
@@ -622,7 +618,7 @@ companions = [
   "plugin.profiler",
   "plugin.otel_tracing",
 ]
-example_entry = ""
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 context_requires = ["generation"]
 context_provides = ["decision_trace_ref"]
 context_mutates = ["decision_trace_ref"]
@@ -664,7 +660,7 @@ config_keys = [
   "trace_seed",
 ]
 companions = ["plugin.decision_trace", "plugin.module_report"]
-example_entry = ""
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 context_provides = ["sequence_graph_ref"]
 context_mutates = ["sequence_graph_ref"]
 context_notes = [
@@ -676,10 +672,10 @@ title = "SensitivityAnalysisPlugin"
 kind = "plugin"
 import_path = "nsgablack.plugins.ops.sensitivity_analysis:SensitivityAnalysisPlugin"
 tags = ["analysis", "plugin", "sensitivity", "study", "sweep"]
-summary = "敏感性分析插件：批量执行参数 sweep 并产出聚合 study artifact。 / Run parameter sweeps and publish aggregated study artifacts."
+summary = "接线迁移说明；旧run_study绕过正式多Case编排且配置路径可能落到frozen对象，不提供当前规范参数试验接线。"
 companions = ["plugin.benchmark_harness", "plugin.module_report"]
-use_when = ["需要比较参数变化对结果与稳定性的影响时", "需要把批量实验收敛为统一 study artifact 时"]
-minimal_wiring = ["from nsgablack.plugins.ops.sensitivity_analysis import SensitivityAnalysisPlugin, SensitivityAnalysisConfig, SensitivityParam", "solver.add_plugin(SensitivityAnalysisPlugin(config=SensitivityAnalysisConfig(...)))"]
+use_when = ["审阅旧工程与迁移边界时；新Case采用文档所示正式Adapter、Project或评估路径。"]
+minimal_wiring = ["# 迁移参考：旧run_study绕过正式多Case编排且配置路径可能落到frozen对象，不提供当前规范参数试验接线。", "# 先读 docs/catalog_usage/LIFECYCLE_LEGACY_MIGRATIONS_CN.md 的 migration.plugin.sensitivity_analysis；按正文选择当前正式接缝，不直接复制旧attach。"]
 required_companions = ["plugin.benchmark_harness"]
 config_keys = ["output_dir", "run_id", "seed", "params", "patch_benchmark_run_id", "overwrite_benchmark", "metric_fn"]
-example_entry = "python -m nsgablack catalog search sensitivity_analysis --kind example"
+example_entry = "docs/catalog_usage/LIFECYCLE_LEGACY_MIGRATIONS_CN.md"

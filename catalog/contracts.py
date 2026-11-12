@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Sequence, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Mapping, Sequence, Tuple
 
 
 @dataclass(frozen=True)
@@ -15,6 +15,8 @@ class CatalogComponentContract:
     companions: Tuple[str, ...]
     source_scope: str
     source_hash: str
+    contract: Mapping[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,8 @@ class UsageContract:
     required_companions: Tuple[str, ...]
     config_keys: Tuple[str, ...]
     example_entry: str
+    wiring_status: str = "unverified"
+    wiring_notes: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

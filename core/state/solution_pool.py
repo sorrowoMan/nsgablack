@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, replace
+from functools import cached_property
 from typing import Any, Mapping, Sequence
 from uuid import uuid4
 
 import numpy as np
 from blackbase.context import SnapshotIdentity
-from blackbase.types import CandidateBatch
+from blackbase.types import CandidateBatch, decode_shared_value, encode_shared_value
 from blackbase.wire import freeze_wire_mapping, thaw_wire_mapping
+from .candidate_batch_payload import candidate_batch_snapshot_payload
 from .pool_retention import PoolRetentionPolicy
 from .pool_views import ObjectiveProjection
 
@@ -87,6 +89,22 @@ class _Record:
     def available_rows(self):
         return tuple(range(len(self.tokens))) if self.rows is None else self.rows
 
+    @cached_property
+    def _row_positions(self):
+        # Derived from this frozen record only; replacing/compacting a record
+        # creates a fresh index. It is never portable or writable pool state.
+        return {row: position for position, row in enumerate(self.rows or ())}
+
+    def row_position(self, row):
+        if self.rows is None:
+            if 0 <= row < len(self.tokens):
+                return row
+        else:
+            position = self._row_positions.get(row)
+            if position is not None:
+                return position
+        raise ValueError("solution reference row was retired")
+
     def as_dict(self):
         return dict(record_id=self.record_id, stamp=self.stamp.as_dict(),
                     region=self.region, stage=self.stage, source=self.source,
@@ -137,6 +155,7 @@ class SolutionPool:
         self._publications: list[dict] = []
         self._garbage: dict[str, SnapshotIdentity] = {}
         self._prepared_index = None
+        self._prepared_projection = None
         self._retention_staged = False
 
     @property
@@ -160,6 +179,7 @@ class SolutionPool:
         self._subpool_metadata = {}
         self._publications = []
         self._prepared_index = None
+        self._prepared_projection = None
         self._retention_staged = False
 
     def begin_attempt(self):
@@ -195,10 +215,12 @@ class SolutionPool:
         record_id = uuid4().hex
         raw = None if feedback is None else dict(
             objectives=feedback.raw_objectives.tolist(),
-            violations=feedback.raw_violations.tolist())
+            violations=feedback.raw_violations.tolist(),
+            info=[encode_shared_value(item.info, path="solution_pool.raw_feedback.info")
+                  for item in feedback.items])
         data = dict(pool_id=self.pool_id, record_id=record_id, stamp=stamp.as_dict(),
                     region=region, stage=stage, source=source,
-                    batch=batch.as_dict(), raw_feedback=raw, provenance=lineage)
+                    batch=candidate_batch_snapshot_payload(batch), raw_feedback=raw, provenance=lineage)
         handle = self.snapshots.write(data, key=f"solution-pool/{self.pool_id}/{record_id}",
                                       schema=BATCH_SCHEMA, write_once=True)
         self._records[record_id] = _Record(record_id, stamp, region, stage, source,
@@ -212,16 +234,21 @@ class SolutionPool:
         record = self._records.get(ref.record_id)
         if record is None or (not record.published and not allow_pending):
             raise ValueError("solution reference is unavailable or uncommitted")
-        if ref.row not in record.available_rows:
-            raise ValueError("solution reference row was retired")
-        if record.tokens[record.available_rows.index(ref.row)] != ref.candidate_token:
+        position = record.row_position(ref.row)
+        if record.tokens[position] != ref.candidate_token:
             raise ValueError("solution reference token does not match its row")
         return record
 
     def _payload(self, record):
         if record.snapshot.schema != BATCH_SCHEMA:
             raise ValueError("unsupported solution pool batch snapshot")
-        data = self.snapshots.read_verified(record.snapshot).data
+        # Verify the snapshot identity through the store's certified fast path
+        # (in-memory stores reuse the write-time certificate instead of
+        # re-hashing the whole payload; custom/durable stores keep their full
+        # content verification), then take a detached mutable copy through the
+        # ordinary read so the stored object is never exposed.
+        self.snapshots.read_verified_view(record.snapshot)
+        data = self.snapshots.read(record.snapshot.key).data
         for name, expected in (("pool_id", self.pool_id), ("record_id", record.record_id),
                                ("stamp", record.stamp.as_dict()), ("region", record.region),
                                ("stage", record.stage), ("source", record.source)):
@@ -235,22 +262,54 @@ class SolutionPool:
         if lineage is not None and (len(lineage) != len(rows) or
                 any(v.get("candidate_token") != t for v, t in zip(lineage, batch.candidate_tokens))):
             raise ValueError("solution snapshot provenance disagrees with its index")
+        raw = data.get("raw_feedback")
+        if raw is not None and "info" in raw:
+            info = raw["info"]
+            if not isinstance(info, (list, tuple)) or len(info) != len(rows) or any(
+                    not isinstance(item, Mapping) for item in info):
+                raise ValueError("solution snapshot feedback info must align with candidate rows")
         return data, batch
 
     def read(self, refs: Sequence[SolutionRef], *, allow_pending=False):
-        states, tokens, rows, loaded = [], [], [], {}
+        return self._read_selection(refs, allow_pending=allow_pending)[0]
+
+    def _read_selection(self, refs, *, allow_pending=False, include_provenance=False,
+                        include_raw_feedback=False):
+        """Project values and optional lineage from one verified load per record.
+
+        The load map exists for this call only. Every later call revalidates
+        the complete SnapshotIdentity, so neither corruption nor retired rows
+        can be hidden by a long-lived materialization cache.
+        """
+        states, tokens, rows, lineage, loaded = [], [], [], [], {}
+        objectives, violations = [], []
         for ref in tuple(refs):
             record = self._record(ref, allow_pending=allow_pending)
             if record.record_id not in loaded:
-                loaded[record.record_id] = self._payload(record)[1]
-            batch = loaded[record.record_id]
-            position = record.available_rows.index(ref.row)
+                data, batch = self._payload(record)
+                loaded[record.record_id] = (
+                    batch, data.get("provenance") if include_provenance else None,
+                    data.get("raw_feedback") if include_raw_feedback else None,
+                )
+                del data
+            batch, saved, raw = loaded[record.record_id]
+            position = record.row_position(ref.row)
             states.append(batch.semantic_states[position])
             tokens.append(ref.candidate_token)
             rows.append(batch.numeric_matrix[position])
+            if include_provenance:
+                lineage.append(None if saved is None else dict(saved[position]))
+            if include_raw_feedback:
+                if raw is None:
+                    raise ValueError("selected candidate has no raw evaluation")
+                objectives.append(raw["objectives"][position])
+                violations.append(raw["violations"][position])
         if not rows:
             raise ValueError("reading an empty solution selection has no candidate dimension")
-        return CandidateBatch(tuple(states), np.stack(rows), tuple(tokens))
+        result = CandidateBatch(tuple(states), np.stack(rows), tuple(tokens)), tuple(lineage)
+        if include_raw_feedback:
+            return (*result, (np.asarray(objectives, dtype=float), np.asarray(violations, dtype=float)))
+        return result
 
     def read_provenance(self, refs, *, allow_pending=False):
         loaded, result = {}, []
@@ -259,7 +318,7 @@ class SolutionPool:
             if record.record_id not in loaded:
                 loaded[record.record_id] = self._payload(record)[0].get("provenance")
             values = loaded[record.record_id]
-            result.append(None if values is None else dict(values[record.available_rows.index(ref.row)]))
+            result.append(None if values is None else dict(values[record.row_position(ref.row)]))
         return tuple(result)
 
     def select(self, *, at: SolutionStamp | None = None, region="main", stage="accepted",
@@ -445,7 +504,29 @@ class SolutionPool:
         The supplied projection always evaluates the normal feedback directly;
         ancestry never composes scalarizations implicitly.
         """
+        self._publish_projection_subpools((dict(name=name, refs=refs, created_by=created_by,
+            slot=slot, projection=projection, parent=parent),))
+
+    def _publish_projection_subpools(self, publications):
+        """Validate one owner's staged direction changes before publishing any.
+
+        This is the same index operation as the single-view API, with one final
+        graph check. Candidate values, clocks and commit visibility are unchanged.
+        """
         self._assert_unprepared()
+        metadata, owners = dict(self._subpool_metadata), dict(self._owners)
+        seen = set()
+        for publication in publications:
+            name = publication["name"]
+            if name in seen:
+                raise ValueError("projection publication contains duplicate subpool names")
+            seen.add(name)
+            owner, refs, data = self._projection_subpool_update(**publication)
+            metadata[name], owners[owner] = data, refs
+        self._validate_view_graph(metadata, self.pool_id)
+        self._subpool_metadata, self._owners = metadata, owners
+
+    def _projection_subpool_update(self, name, refs, *, created_by, slot, projection, parent=None):
         if not isinstance(projection, ObjectiveProjection):
             raise TypeError("expected ObjectiveProjection")
         owner = self._subpool_owner(name)
@@ -471,9 +552,7 @@ class SolutionPool:
             data["revision"] += int(changed)
             if not changed:
                 data["published"] = old["published"]
-        self._validate_view_graph({**self._subpool_metadata, name: data}, self.pool_id)
-        self._retain(owner, refs)
-        self._subpool_metadata[name] = data
+        return owner, refs, data
 
     def publish_subpool_view(self, name, refs, *, created_by, parent=None):
         """Publish a selected result view without changing its feedback meaning."""
@@ -541,6 +620,25 @@ class SolutionPool:
     def has_subpool(self, name):
         return self._subpool_owner(name) in self._owners
 
+    def published_subpool_names(self):
+        """Enumerate committed view names without copying values or state codecs."""
+        return tuple(name for name, data in self._subpool_metadata.items()
+                     if data["published"] and self.has_subpool(name))
+
+    def published_record_ids(self):
+        """Freeze visible record identities; share the immutable set per index.
+
+        This is a transient read cache, never a second writable authority or a
+        checkpoint field. Pending puts do not invalidate committed membership.
+        """
+        key = (self.pool_id, self.run_id, self._manifest,
+               None if self._in_attempt else self._sequence)
+        cached = getattr(self, "_published_records_cache", None)
+        if cached is None or cached[0] != key:
+            cached = key, frozenset(r.record_id for r in self._records.values() if r.published)
+            self._published_records_cache = cached
+        return cached[1]
+
     def subpool_refs(self, name, *, allow_pending=False):
         """Read committed members; pending outputs become visible on commit."""
         values = self._owners[self._subpool_owner(name)]
@@ -552,13 +650,16 @@ class SolutionPool:
     def add_to_subpool(self, name, refs):
         owner = self._subpool_owner(name)
         previous = self._owners[owner]
+        data = self._subpool_metadata.get(name, {})
+        if data.get("kind") == "candidate_collection":
+            self.update_subpool_members(name, add=refs)
+            return
         values = tuple(refs)
         for ref in values:
             record = self._record(ref, allow_pending=True)
             if not record.published and record.stage != "accepted":
                 raise ValueError("subpool outputs must be published or accepted candidates")
         combined = tuple(dict.fromkeys((*previous, *values)))
-        data = self._subpool_metadata.get(name, {})
         if data.get("kind") == "objective_projection":
             self.publish_projection_subpool(name, combined, created_by=data["created_by"],
                 slot=data["slot"], projection=ObjectiveProjection.from_dict(data["projection"]),
@@ -566,11 +667,88 @@ class SolutionPool:
         elif data.get("kind") == "candidate_view":
             self.publish_subpool_view(name, combined, created_by=data["created_by"], parent=data["parent"])
         else:
-            changed = combined != previous
-            self._retain(owner, combined)
-            data["revision"] += int(changed)
-            if changed and self._in_attempt:
-                data["published"] = False
+            self.update_subpool_members(name, add=values)
+
+    def _collection_for_update(self, name, expected):
+        """Validate one ordinary collection and an optional frozen write guard."""
+        self._assert_unprepared()
+        owner = self._subpool_owner(name)
+        previous = self._owners[owner]
+        data = self._subpool_metadata[name]
+        if data["kind"] != "candidate_collection":
+            raise ValueError("member updates require an ordinary candidate_collection")
+        if expected is not None:
+            descriptor = self.validate_subpool_descriptor(expected, pool_id=self.pool_id)
+            current = dict(pool_id=self.pool_id, name=name, view_id=data["view_id"],
+                           revision=data["revision"], ancestors=self._view_ancestors(data))
+            if descriptor != current:
+                raise ValueError("subpool descriptor is stale or refers to another view")
+        return owner, previous, data
+
+    def _collection_refs(self, refs):
+        """Detach ordered refs, rejecting private unevaluated drafts."""
+        values = tuple(refs)
+        for ref in values:
+            record = self._record(ref, allow_pending=True)
+            if not record.published and (not self._in_attempt or record.stage != "accepted"):
+                raise ValueError("subpool members must be published or accepted candidates")
+        return values
+
+    def _write_collection_members(self, name, owner, previous, data, values):
+        if values != previous:
+            metadata = dict(data, revision=data["revision"] + 1,
+                            published=not self._in_attempt)
+            # All inputs and the descriptor have been validated before either
+            # field changes. Membership reuses the existing retention owner and
+            # therefore the pool's step rollback, publication and checkpoint.
+            self._retain(owner, values)
+            self._subpool_metadata[name] = metadata
+        return values
+
+    def replace_subpool_members(self, name, refs, *, expected=None):
+        """Replace ordinary collection members without replacing its identity.
+
+        ``expected`` is a complete frozen subpool descriptor, used to reject
+        stale revisions and same-name recreation. Removing membership never
+        deletes candidate values or another consumer's roots. Return the exact
+        new ordered references, preserving repeated coordinates explicitly
+        supplied by the caller, including accepted refs staged in this attempt.
+        """
+        owner, previous, data = self._collection_for_update(name, expected)
+        values = self._collection_refs(refs)
+        return self._write_collection_members(name, owner, previous, data, values)
+
+    def update_subpool_members(self, name, *, add=(), remove=(), expected=None):
+        """Atomically remove exact members, then append distinct new additions.
+
+        Unknown removals and overlapping add/remove requests are rejected.
+        Removing a reference removes all its occurrences. Existing repeated
+        coordinates are preserved; additions do not duplicate existing members.
+        Equality of numerical candidate values never determines membership.
+        """
+        owner, previous, data = self._collection_for_update(name, expected)
+        additions, removals = self._collection_refs(add), self._collection_refs(remove)
+        removed = set(removals)
+        if removed.intersection(additions):
+            raise ValueError("subpool add and remove references must not overlap")
+        if removed.difference(previous):
+            raise ValueError("cannot remove a reference that is not a subpool member")
+        survivors = tuple(ref for ref in previous if ref not in removed)
+        existing = set(survivors)
+        appended = tuple(ref for ref in dict.fromkeys(additions) if ref not in existing)
+        values = survivors + appended
+        return self._write_collection_members(name, owner, previous, data, values)
+
+    def remove_from_subpool(self, name, refs, *, expected=None):
+        """Release only the specified ordinary collection memberships."""
+        return self.update_subpool_members(name, remove=refs, expected=expected)
+
+    def trim_subpool(self, name, limit, *, expected=None):
+        """Keep the first ``limit`` members in current order; no implicit ranking."""
+        owner, previous, data = self._collection_for_update(name, expected)
+        if type(limit) is not int or limit < 0:
+            raise ValueError("subpool trim limit must be a nonnegative integer")
+        return self._write_collection_members(name, owner, previous, data, previous[:limit])
 
     def drop_subpool(self, name):
         self.release(self._subpool_owner(name))
@@ -599,10 +777,30 @@ class SolutionPool:
             raw = loaded[record.record_id]
             if raw is None:
                 raise ValueError("selected candidate has no raw evaluation")
-            i = record.available_rows.index(ref.row)
+            i = record.row_position(ref.row)
             objectives.append(raw["objectives"][i])
             violations.append(raw["violations"][i])
         return np.asarray(objectives, dtype=float), np.asarray(violations, dtype=float)
+
+    def read_raw_feedback_info(
+            self, refs: Sequence[SolutionRef], *, allow_pending: bool = False,
+    ) -> tuple[Mapping[str, Any], ...]:
+        """Read detached per-candidate evaluation info in exact reference order.
+
+        Older snapshots and candidates without feedback return an empty mapping.
+        Values remain in the same immutable batch snapshot as the raw F/V rows;
+        this read neither changes pool membership nor advances input cursors.
+        """
+        result, loaded = [], {}
+        for ref in tuple(refs):
+            record = self._record(ref, allow_pending=allow_pending)
+            if record.record_id not in loaded:
+                loaded[record.record_id] = self._payload(record)[0].get("raw_feedback")
+            raw = loaded[record.record_id]
+            values = None if raw is None else raw.get("info")
+            position = record.row_position(ref.row)
+            result.append({} if values is None else decode_shared_value(values[position]))
+        return tuple(result)
 
     def bind_input(self, refs):
         self._assert_unprepared()
@@ -746,9 +944,9 @@ class SolutionPool:
                 del self._last_used[record.record_id]
                 continue
             data, batch = self._payload(record)
-            positions = tuple(record.available_rows.index(i) for i in keep)
+            positions = tuple(record.row_position(i) for i in keep)
             compact = batch.subset(positions)
-            payload = {**data, "rows": list(keep), "batch": compact.as_dict()}
+            payload = {**data, "rows": list(keep), "batch": candidate_batch_snapshot_payload(compact)}
             if data.get("provenance") is not None:
                 payload["provenance"] = [data["provenance"][i] for i in positions]
             if data.get("raw_feedback") is not None:
@@ -884,21 +1082,40 @@ class SolutionPool:
         state = self._index_state(records)
         for data in state["subpool_metadata"].values():
             data["published"] = True
-        SolutionPool(self.snapshots)._restore_index(state)
+        temporary = SolutionPool(self.snapshots)
+        temporary._restore_index(state)
         handle = self.snapshots.write(state, key=f"solution-pool/{self.pool_id}/manifest/{uuid4().hex}",
                                       schema=MANIFEST_SCHEMA, write_once=True)
         self.snapshots.read_verified(handle.identity())
         self._prepared_manifest = handle.identity()
         self._prepared_index = state
+        # Transfer only validated data, never the temporary pool or its store.
+        # Writes are frozen until commit; this projection has one future owner.
+        self._prepared_projection = self._prepared_manifest, temporary._index_projection()
         return self._prepared_manifest.as_dict()
 
     def commit_publication(self):
         if self._prepared_manifest is None:
             raise RuntimeError("solution pool publication was not prepared")
-        self._restore_index(self._prepared_index)
+        prepared = self._prepared_projection
+        if prepared is None or prepared[0] != self._prepared_manifest:
+            # Step snapshots carry portable wire data, not this transient cache.
+            # Rebuild against the durable manifest after restore, so a modified
+            # prepared_index cannot publish a different in-memory projection.
+            self._prepared_projection = None
+            if self._prepared_manifest.schema != MANIFEST_SCHEMA:
+                raise ValueError("unsupported solution pool manifest")
+            state = self.snapshots.read_verified(self._prepared_manifest).data
+            if state != self._prepared_index:
+                raise ValueError("prepared solution pool index disagrees with its manifest")
+            temporary = SolutionPool(self.snapshots)
+            temporary._restore_index(state)
+            prepared = self._prepared_manifest, temporary._index_projection()
+        self._apply_index_projection(prepared[1])
         self._manifest, self._prepared_manifest = self._prepared_manifest, None
         self._remember_publication(self._manifest)
         self._prepared_index = None
+        self._prepared_projection = None
         self._in_attempt = False
 
     def publication_ref(self):
@@ -921,6 +1138,7 @@ class SolutionPool:
         self._remember_publication(identity)
         self._prepared_manifest = None
         self._prepared_index = None
+        self._prepared_projection = None
         self._in_attempt = False
 
     def _index_state(self, records=None):
@@ -941,7 +1159,20 @@ class SolutionPool:
                                       for p in self._publications],
                         garbage=[s.as_dict() for s in self._garbage.values()]))
 
+    def _index_projection(self):
+        """Owned, validated data only; no services or candidate payloads."""
+        return (self.pool_id, self.run_id, self._sequence, self._records, self._inputs,
+                self.retention_policy, self._retention_step, self._last_used,
+                self._owners, self._publications, self._garbage, self._subpool_metadata)
+
+    def _apply_index_projection(self, projection):
+        self._published_records_cache = None
+        (self.pool_id, self.run_id, self._sequence, self._records, self._inputs,
+         self.retention_policy, self._retention_step, self._last_used,
+         self._owners, self._publications, self._garbage, self._subpool_metadata) = projection
+
     def _restore_index(self, state):
+        self._prepared_projection = None
         if state.get("schema") != POOL_SCHEMA:
             raise ValueError("unsupported solution pool state")
         SolutionStamp(state["run_id"], state["sequence"])
@@ -965,7 +1196,9 @@ class SolutionPool:
         clock = retention.get("step", 0)
         if type(clock) is not int or clock < 0:
             raise ValueError("invalid pool retention step")
-        ages = retention.get("last_used", {r.record_id: {str(i): clock for i in r.available_rows} for r in records})
+        ages = retention.get("last_used")
+        if ages is None:
+            ages = {r.record_id: {str(i): clock for i in r.available_rows} for r in records}
         if set(ages) != {r.record_id for r in records}:
             raise ValueError("pool retention ages must align with records")
         last_used = {}
@@ -998,17 +1231,11 @@ class SolutionPool:
         garbage = [SnapshotIdentity.from_dict(v) for v in retention.get("garbage", ())]
         if any(v.schema not in {BATCH_SCHEMA, MANIFEST_SCHEMA} or v.store_scope != self.snapshots.store_scope for v in garbage):
             raise ValueError("pool garbage scope/schema mismatch")
-        old = (self.pool_id, self.run_id, self._sequence, self._records, self._inputs,
-               self.retention_policy, self._retention_step, self._last_used, self._owners, self._publications, self._garbage, self._subpool_metadata)
+        old = self._index_projection()
         try:
-            self.pool_id, self.run_id = state["pool_id"], state["run_id"]
-            self._sequence = state["sequence"]
-            self._records = {r.record_id: r for r in records}
-            self._inputs = inputs
-            self.retention_policy, self._retention_step = policy, clock
-            self._last_used, self._owners, self._publications = last_used, owners, publications
-            self._garbage = {v.key: v for v in garbage}
-            self._subpool_metadata = subpool_metadata
+            self._apply_index_projection((state["pool_id"], state["run_id"], state["sequence"],
+                {r.record_id: r for r in records}, inputs, policy, clock, last_used,
+                owners, publications, {v.key: v for v in garbage}, subpool_metadata))
             for refs, _ in inputs.values():
                 for ref in refs:
                     self._record(ref)
@@ -1016,8 +1243,7 @@ class SolutionPool:
                 for ref in refs:
                     self._record(ref, allow_pending=True)
         except BaseException:
-            (self.pool_id, self.run_id, self._sequence, self._records, self._inputs,
-             self.retention_policy, self._retention_step, self._last_used, self._owners, self._publications, self._garbage, self._subpool_metadata) = old
+            self._apply_index_projection(old)
             raise
 
     def snapshot_step_state(self):

@@ -1,0 +1,17 @@
+[[entry]]
+key = "project.bias.nonnegative_x0"
+title = "NegativeHalfPlaneBias"
+kind = "bias"
+import_path = "bias.preference:NegativeHalfPlaneBias"
+tags = ["project", "example", "bias", "candidate", "soft_preference"]
+summary = "x0 < 0 时为选择目标增加 weight * (-x0)；保留原始目标与约束。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["只读当前候选并返回软评分，不改写候选、Unit 或共享 context。"]
+use_when = ["观察原始求值与选择偏好如何分开记录时。"]
+minimal_wiring = ["from cases.hybrid_search.bias import NegativeHalfPlaneBias", "module = BiasModule()", "module.add(NegativeHalfPlaneBias(weight=0.1))"]
+required_companions = ["nsgablack.bias:BiasModule"]
+config_keys = ["weight"]
+example_entry = "cases.hybrid_search.build_solver:build_solver"

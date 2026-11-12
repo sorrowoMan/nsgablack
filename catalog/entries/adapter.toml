@@ -1,17 +1,45 @@
 # Canonical adapter catalog shard.
 
 [[entry]]
+key = "adapter.search_plan"
+title = "SearchPlanAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:SearchPlanAdapter"
+tags = ["adapter", "core", "composition", "orchestration", "serial", "multi", "repeat", "pool"]
+summary = "自然搜索编排：共享可恢复游标表达串行、并行和有限循环；复用唯一算法实例、Router评估与池任务，不手算全局代数。"
+config_keys = ["plan", "strategies", "config", "working_pool", "until", "metrics", "name", "priority"]
+use_when = ["重复GA→精修→同GA返回竞争，或需要任意层级serial/multi/repeat与局部额度时。"]
+minimal_wiring = [
+  "from nsgablack.adapters import SearchPlanAdapter, StrategySpec, stage, serial, repeat",
+  "plan = repeat(times=100, body=serial(stage('ga', steps=100), stage('vns', steps=30)))",
+  "solver.set_adapter(SearchPlanAdapter(plan, strategies=[StrategySpec(ga, 'ga'), StrategySpec(vns, 'vns')]))",
+  "# Pool精修叶省略steps，使用PoolTaskSpec.steps指定每起点额度，等待本次任务全部完成。",
+]
+example_entry = "docs/architecture/NATURAL_SEARCH_PLANS_CN.md"
+companions = ["tool.pool_task_spec", "tool.subpools", "adapter.serial_strategy", "adapter.multi_strategy"]
+contract = { catalog = { role = "orchestration", concepts = ["GA停滞VNS精修", "GA加VNS", "串行并行", "多重嵌套", "编排", "有限循环"], operations = ["stage", "serial", "multi", "repeat"], boundaries = ["复用共享 ExecutionPlan/ExecutionCursor 与 Router，不再建立资源授权者。", "停滞触发须显式 until/metrics 或既有阶段策略，serial 顺序本身不推断停滞。", "精修阶段等待 PoolTask 本请求完成；控制切换不制造逻辑 generation。"] } }
+
+[[entry]]
 key = "adapter.fixed_candidate"
 title = "FixedCandidateAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.fixed_candidate:FixedCandidateAdapter"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 tags = ["adapter", "core", "one-shot", "evaluation", "provider-neutral"]
 summary = "固定候选评估策略：把 Representation 生成的单个候选送入标准 Solver 生命周期，不创建第二套控制循环。 / One-shot fixed-candidate evaluation through the canonical Solver lifecycle."
+config_keys = ["initializer"]
 use_when = [
   "诊断、验证或闭式任务仍需统一 cancellation、resource、plugin、result 与 lineage 语义时。",
 ]
 minimal_wiring = [
-  "Representation.init -> Problem.evaluate -> FixedCandidateAdapter",
+  "import numpy as np",
+  "from nsgablack.adapters import FixedCandidateAdapter",
+  "class FixedSeed:",
+  "    stateless = True",
+  "    def checkpoint_identity(self): return {'name': 'fixed_seed', 'version': 1}",
+  "    def initialize(self, problem, context): return np.array([0.25, 0.75])",
+  "adapter = FixedCandidateAdapter(initializer=FixedSeed())",
+  "solver.set_adapter(adapter)",
 ]
 
 [[entry]]
@@ -19,6 +47,7 @@ key = "adapter.gradient_optimizer"
 title = "GradientOptimizerAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.gradient_optimizer:GradientOptimizerAdapter"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 tags = ["adapter", "core", "gradient", "sgd", "adam", "adamw", "provider-neutral", "state-transition"]
 summary = "通用一阶优化：SGD/Adam/AdamW 消费 Provider 梯度，支持普通池精修并交付已评估任务最佳；目标单独投影不冒充梯度变换。Provider slot 事务与资源授权保留原边界。"
 use_when = [
@@ -26,8 +55,9 @@ use_when = [
   "需要让同一个 SGD/Adam/AdamW 策略跨 NumPy、Torch、JAX 或解析梯度 Provider 复用时。",
 ]
 minimal_wiring = [
-  "GradientOptimizerConfig.from_method('gradient.adam')",
-  "Problem -> EvaluationProvider -> Feedback.gradients/gradient_ref -> GradientOptimizerAdapter.update",
+  "from nsgablack.adapters.gradient_optimizer import GradientOptimizerAdapter",
+  "adapter = GradientOptimizerAdapter()",
+  "solver.set_adapter(adapter)",
 ]
 context_provides = ["mutation_sigma", "adapter_best_score"]
 context_notes = [
@@ -39,15 +69,18 @@ key = "adapter.gaussian_search"
 title = "GaussianSearchAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.gaussian_search:GaussianSearchAdapter"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 tags = ["adapter", "core", "black-box", "stochastic", "gaussian", "provider-neutral"]
-summary = "高斯随机搜索：支持池初始化、普通／投影精修与精确任务最佳交付；模型、数据、Codec 和指标仍由 Problem/Provider 负责。"
+summary = "高斯随机搜索：支持直接 initializer/结构 repair 与池精修；高斯采样分布仍由算法维护，不声称消费通用 mutator 或 selector。"
+config_keys = ["population_size", "mutation_scale", "initializer", "repair"]
 use_when = [
   "Problem 只能返回目标/约束，无法提供梯度时。",
   "需要在模型参数、结构编码或外部 estimator spec 上复用同一种轻量黑盒搜索时。",
 ]
 minimal_wiring = [
-  "GaussianSearchConfig(population_size=16, mutation_scale=0.25)",
-  "Representation.init/decode -> Problem.evaluate -> GaussianSearchAdapter.update",
+  "from nsgablack.adapters import GaussianSearchAdapter, GaussianSearchConfig",
+  "adapter = GaussianSearchAdapter(GaussianSearchConfig(population_size=8, mutation_scale=0.1))",
+  "solver.set_adapter(adapter)",
 ]
 context_provides = ["mutation_sigma", "adapter_best_score"]
 context_notes = [
@@ -59,6 +92,12 @@ key = "adapter.role"
 title = "RoleAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.role_adapters:RoleAdapter"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+minimal_wiring = [
+  "from nsgablack.adapters import RoleAdapter, NSGA2Adapter",
+  "role = RoleAdapter('explorer', NSGA2Adapter(), name='coarse')",
+  "solver.set_adapter(role)",
+]
 tags = ["adapter", "composition", "core", "roles", "strategy"]
 summary = "角色包装器：元数据与候选配额协作。 / Adapter: role wrapper with metadata and candidate quotas for cooperation."
 
@@ -67,6 +106,13 @@ key = "adapter.multi_role_controller"
 title = "MultiRoleControllerAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.role_adapters:MultiRoleControllerAdapter"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+minimal_wiring = [
+  "from nsgablack.adapters import RoleAdapter, NSGA2Adapter, VNSAdapter",
+  "from nsgablack.adapters.role_adapters import MultiRoleControllerAdapter",
+  "roles = [RoleAdapter('population', NSGA2Adapter()), RoleAdapter('local', VNSAdapter())]",
+  "solver.set_adapter(MultiRoleControllerAdapter(roles))",
+]
 tags = ["adapter", "composition", "controller", "core", "roles", "strategy"]
 summary = "多角色控制器：共享上下文与预算调度。 / Adapter: multi-role controller with shared context and budget scheduling."
 
@@ -75,14 +121,33 @@ key = "adapter.composite"
 title = "CompositeAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.algorithm_adapter:CompositeAdapter"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+minimal_wiring = [
+  "from nsgablack.adapters import CompositeAdapter, NSGA2Adapter",
+  "from nsgablack.representation import GaussianMutation",
+  "wide = NSGA2Adapter(name='wide', population_size=4, offspring_size=4, mutator=GaussianMutation(sigma=0.4))",
+  "narrow = NSGA2Adapter(name='narrow', population_size=4, offspring_size=4, mutator=GaussianMutation(sigma=0.05))",
+  "solver.set_adapter(CompositeAdapter([wide, narrow]))",
+]
 tags = ["adapter", "composition", "core", "strategy"]
-summary = "组合适配器：合并提案并处理冲突。 / Adapter: composite adapter merging proposals and resolving conflicts."
+summary = "同一轮收集多个子 Adapter 的候选，统一送评后分别回传反馈；孩子各自维护搜索结构，不自动交接种群或执行精修。"
 
 [[entry]]
 key = "adapter.astar"
 title = "AStarAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.astar:AStarAdapter"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+minimal_wiring = [
+  "import numpy as np",
+  "from nsgablack.adapters import AStarAdapter",
+  "def neighbors(state, context):",
+  "    return [np.asarray(state) + 1.0]",
+  "adapter = AStarAdapter(neighbors=neighbors, start_state=np.array([0.0]),",
+  "    goal_test=lambda state, context: state[0] >= 3,",
+  "    edge_cost=lambda parent, child, context: 1.0)",
+  "solver.set_adapter(adapter)",
+]
 tags = ["adapter", "astar", "core", "graph", "heuristic", "pathfinding", "strategy"]
 summary = "A* 搜索内核：UnitBinding 构建节点，Adapter 决定扩展与优先级；显式 pool_start_policy='new_root' 从池初始化并保留节点精确版本，不继承旧路径代价。"
 config_keys = ["pool_start_policy", "cost_mode", "repair_policy"]
@@ -92,6 +157,17 @@ key = "adapter.moa_star"
 title = "MOAStarAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.moa_star:MOAStarAdapter"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+minimal_wiring = [
+  "import numpy as np",
+  "from nsgablack.adapters import MOAStarAdapter",
+  "def neighbors(state, context):",
+  "    return [np.asarray(state) + 1.0]",
+  "adapter = MOAStarAdapter(neighbors=neighbors, start_state=np.array([0.0]),",
+  "    goal_test=lambda state, context: state[0] >= 3,",
+  "    edge_cost=lambda parent, child, context: np.array([1.0, 0.5]))",
+  "solver.set_adapter(adapter)",
+]
 tags = ["adapter", "astar", "core", "graph", "heuristic", "multiobjective", "pareto", "strategy"]
 summary = "多目标 A*：Pareto 标签与支配剪枝；显式 pool_start_policy='new_root' 接入单个池种子，保留精确路径引用，不接受通用标量投影。"
 config_keys = ["pool_start_policy", "cost_mode", "repair_policy"]
@@ -108,8 +184,9 @@ use_when = [
   "需要多策略协同且可审计事件历史时。 / Need multi-strategy coordination with auditable event history.",
 ]
 minimal_wiring = [
-  "from nsgablack.adapters import AsyncEventDrivenAdapter, AsyncEventDrivenConfig, EventStrategySpec",
-  "solver.set_adapter(AsyncEventDrivenAdapter(strategies=[...], config=AsyncEventDrivenConfig()))",
+  "from nsgablack.adapters import AsyncEventDrivenAdapter, EventStrategySpec, NSGA2Adapter, VNSAdapter",
+  "strategies = [EventStrategySpec(NSGA2Adapter(), 'global'), EventStrategySpec(VNSAdapter(), 'local')]",
+  "solver.set_adapter(AsyncEventDrivenAdapter(strategies))",
 ]
 required_companions = ["plugin.async_event_hub (recommended)", "plugin.pareto_archive (recommended)"]
 config_keys = [
@@ -147,7 +224,7 @@ title = "SingleTrajectoryAdaptiveAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters.single_trajectory_adaptive:SingleTrajectoryAdaptiveAdapter"
 tags = ["adapter", "adaptive", "local_search", "single_trajectory", "strategy"]
-summary = "单轨迹搜索：在线邻域自适应。 / Adapter: single-trajectory search with online neighborhood adaptation."
+summary = "单轨迹自适应搜索：可直接装配初始化、变化、结构修复；selector 的 candidate 选择只选本批候选，接受与步长适应仍由 Adapter 决定。"
 use_when = [
   "需要比种群方法更轻量的单轨迹搜索时。 / Need a lighter single-trajectory search than population-based methods.",
   "需要快速迭代并自动调整局部步长时。 / Need fast iteration with automatic local step-size adjustment.",
@@ -163,6 +240,7 @@ config_keys = [
   "target_success_rate",
   "restart_patience",
   "accept_worse_prob",
+  "initializer", "mutator", "selector", "repair",
 ]
 companions = ["repr.context_gaussian"]
 example_entry = "python examples\\cases\\single_trajectory\\run_project.py"
@@ -179,17 +257,18 @@ title = "DifferentialEvolutionAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:DifferentialEvolutionAdapter"
 tags = ["adapter", "core", "de", "differential_evolution", "evolutionary", "strategy"]
-summary = "差分进化：贪婪替换策略。 / Adapter: Differential Evolution with greedy replacement."
+summary = "差分进化：保留差分供体与交叉，直属 mutator 只处理 trial；selector 在 replacement 位置比较 trial 与提案时冻结目标，不做全局种群选择。"
 use_when = ["连续变量优化且希望简单稳定的差分变异时", "需要快速基线而非复杂控制逻辑时"]
-minimal_wiring = ["from nsgablack.adapters import DifferentialEvolutionAdapter", "solver.set_adapter(DifferentialEvolutionAdapter())"]
+minimal_wiring = ["from nsgablack.adapters import DifferentialEvolutionAdapter", "from nsgablack.representation import UniformInitializer, GaussianMutation", "solver.set_adapter(DifferentialEvolutionAdapter(initializer=UniformInitializer(), mutator=GaussianMutation(sigma=0.05)))", "# selector is optional: select one row from [proposal-time target, evaluated trial]."]
 config_keys = [
+  "population_size",
   "batch_size",
-  "f",
-  "cr",
+  "differential_weight",
+  "crossover_rate",
   "strategy",
-  "seed",
+  "objective_aggregation", "initializer", "mutator", "selector", "repair",
 ]
-example_entry = ""
+example_entry = "docs/architecture/ADAPTER_OPERATION_BOUNDARIES_CN.md"
 
 [[entry]]
 key = "adapter.gradient_descent"
@@ -209,8 +288,9 @@ config_keys = [
   "min_lr",
   "objective_aggregation",
   "repair_policy",
+  "initializer", "repair",
 ]
-example_entry = ""
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "adapter.mas"
@@ -239,18 +319,21 @@ title = "MOEADAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:MOEADAdapter"
 tags = ["adapter", "core", "decomposition", "moead", "multiobjective", "strategy"]
-summary = "MOEA/D 分解搜索：权重与邻域替换，自动发布带实例来源的方向投影子池，支持精修返回竞争。"
+summary = "MOEA/D：方向与邻域仍归 Adapter，自动发布投影子池；change=普通函数可替换完整变化并组合交叉/变异，或独立装配 initializer/mutator/repair；replacement selector 保留目标方向权重、ideal 与 nr 限制。"
 use_when = ["多目标问题希望用分解子问题并行推进时", "需要稳定的邻域协同更新而非全局排序时"]
-minimal_wiring = ["from nsgablack.adapters import MOEADAdapter", "solver.set_adapter(MOEADAdapter())"]
+minimal_wiring = ["from nsgablack.adapters import MOEADAdapter", "from nsgablack.representation import GaussianMutation", "solver.set_adapter(MOEADAdapter(mutator=GaussianMutation(sigma=0.1)))", "# Omit selector to retain feasibility-first directional replacement and nr."]
 required_companions = ["plugin.pareto_archive"]
 config_keys = [
   "population_size",
   "neighborhood_size",
-  "decomposition",
+  "batch_size", "delta", "nr",
+    "decomposition", "objective_scales",
+  "variation", "de_F", "de_CR",
   "random_seed",
+  "initializer", "mutator", "selector", "repair", "change", "pool_maintenance",
 ]
 companions = ["plugin.pareto_archive"]
-example_entry = ""
+example_entry = "docs/architecture/ADAPTER_OPERATION_BOUNDARIES_CN.md"
 
 [[entry]]
 key = "adapter.multi_strategy"
@@ -258,12 +341,17 @@ title = "StrategyRouterAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:StrategyRouterAdapter"
 tags = ["adapter", "controller", "cooperation", "core", "multi_strategy", "parallel", "roles", "strategy"]
-summary = "多策略控制器：StrategyTask 隔离子任务，StrategyOrigin 记录候选来源；观测按实例组织。"
+summary = "可绑定pool_maintenance在子更新汇合后维护一次共享档案；多策略控制器：StrategyTask 隔离子任务，StrategyOrigin 记录来源；working_pool 绑定普通工作区，未指定输入的池任务继承最近组合来源，新接纳候选进入最近工作区。"
 use_when = ["需要编排多策略单元并共享状态时", "需要支持自适应权重的协同控制时"]
-minimal_wiring = ["from nsgablack.adapters import StrategyRouterAdapter", "solver.set_adapter(StrategyRouterAdapter(...))"]
+minimal_wiring = [
+  "from nsgablack.adapters import StrategyRouterAdapter, StrategySpec, NSGA2Adapter, VNSAdapter",
+  "strategies = [StrategySpec(NSGA2Adapter(), 'global'), StrategySpec(VNSAdapter(), 'local')]",
+  "solver.set_adapter(StrategyRouterAdapter(strategies))",
+]
 required_companions = ["plugin.pareto_archive"]
 config_keys = [
   "roles",
+  "working_pool",
   "total_batch_size",
   "phase_schedule",
   "seed",
@@ -277,14 +365,17 @@ title = "NSGA2Adapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:NSGA2Adapter"
 tags = ["adapter", "core", "evolutionary", "multiobjective", "nsga2", "strategy"]
-summary = "NSGA-II：非支配排序与拥挤度选择。 / Adapter: NSGA-II with non-dominated sorting and crowding selection."
-use_when = ["标准多目标演化基线，需要稳健 Pareto 前沿维护时", "希望在收敛与多样性之间取得平衡时"]
+summary = "NSGA-II：独立装配初始化、变化、父代来源与结构修复；parent_selector 返回精确引用，selector 的 survivor 位置返回合并种群行号，省略时保留非支配排序与拥挤度。"
+use_when = ["标准多目标演化基线，需要稳健 Pareto 前沿维护时", "希望在收敛与多样性之间取得平衡时", "需要混合已发布子池父代或直接装配变异组件，而不重写整个 Adapter 时"]
 minimal_wiring = ["from nsgablack.adapters import NSGA2Adapter", "solver.set_adapter(NSGA2Adapter())"]
 config_keys = [
-  "batch_size",
+  "population_size", "offspring_size",
   "crossover_rate",
-  "mutation_rate",
+  "objective_aggregation", "initializer", "selector", "repair",
+  "parent_selector",
+  "mutator", "change", "pool_maintenance",
 ]
+companions = ["tool.mixed_pool_parent_selector", "repr.gaussian_mutation"]
 example_entry = "python examples\\cases\\nsga2_basic\\run_project.py"
 
 [[entry]]
@@ -293,16 +384,15 @@ title = "NSGA3Adapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:NSGA3Adapter"
 tags = ["adapter", "core", "evolutionary", "multiobjective", "nsga3", "strategy"]
-summary = "NSGA-III：参考点分区/分配机制。 / Adapter: NSGA-III with reference-point niching."
+summary = "NSGA-III：累计理想点、ASF 极端点与截距归一化，按参考线垂距关联并计入已保留成员的生态位占用；默认 CV/随机配对。归一化状态归 Unit 所有，显式 selector 可覆盖生存选择。"
 use_when = ["高维多目标（>=3 目标）需要参考点引导覆盖时", "希望提升前沿分布均匀性时"]
 minimal_wiring = ["from nsgablack.adapters import NSGA3Adapter", "solver.set_adapter(NSGA3Adapter())"]
 config_keys = [
-  "batch_size",
-  "n_reference_points",
+  "population_size", "offspring_size", "divisions",
   "crossover_rate",
-  "mutation_rate",
+  "objective_aggregation", "initializer", "mutator", "parent_selector", "selector", "repair", "change", "pool_maintenance",
 ]
-example_entry = ""
+example_entry = "docs/architecture/ADAPTER_OPERATION_BOUNDARIES_CN.md"
 
 [[entry]]
 key = "adapter.pattern_search"
@@ -310,16 +400,14 @@ title = "PatternSearchAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:PatternSearchAdapter"
 tags = ["adapter", "core", "local_search", "pattern_search", "strategy"]
-summary = "坐标模式搜索：自适应步长。 / Adapter: coordinate pattern search with adaptive step size."
+summary = "坐标模式搜索：初始化与结构修复可独立装配，candidate selector 选已评估轮询点；坐标几何、实际位移与步长更新仍属于算法。"
 use_when = ["目标不可导或噪声较大，梯度不可用时", "需要轻量坐标方向搜索作为局部改进器时"]
 minimal_wiring = ["from nsgablack.adapters import PatternSearchAdapter", "solver.set_adapter(PatternSearchAdapter())"]
 config_keys = [
-  "batch_size",
-  "initial_step",
-  "expand_factor",
-  "shrink_factor",
+  "max_directions", "step_size", "expansion", "contraction", "min_step",
+  "objective_aggregation", "initializer", "selector", "repair",
 ]
-example_entry = ""
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "adapter.sa"
@@ -327,15 +415,17 @@ title = "SimulatedAnnealingAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:SimulatedAnnealingAdapter"
 tags = ["adapter", "core", "local_search", "sa", "simulated_annealing", "strategy"]
-summary = "先通过正常提案路径评分初始点，再执行邻域 Metropolis 接受与温度调度；初始化提交不降温。 / SA evaluates its baseline before neighbor acceptance."
+summary = "模拟退火：独立装配初始化、变化与结构修复；selector 仅通过 proposal_order 重排本批邻域，Metropolis 接受与温度调度仍由 Adapter 执行。"
 use_when = ["需要允许小概率接受劣解以跳出局部最优时", "希望通过温度控制探索-收敛节奏时"]
-minimal_wiring = ["from nsgablack.adapters import SimulatedAnnealingAdapter", "solver.set_adapter(SimulatedAnnealingAdapter())"]
+minimal_wiring = ["from nsgablack.adapters import SimulatedAnnealingAdapter", "from nsgablack.representation import ContextGaussianMutation", "solver.set_adapter(SimulatedAnnealingAdapter(mutator=ContextGaussianMutation()))", "# Omit selector to retain the native proposal order and Metropolis rule."]
 required_companions = ["repr.context_gaussian"]
 config_keys = [
   "batch_size",
   "initial_temperature",
   "cooling_rate",
   "min_temperature",
+  "base_sigma", "sigma_temperature_scale", "objective_aggregation", "random_seed",
+  "initializer", "mutator", "selector", "repair",
 ]
 companions = ["repr.context_gaussian"]
 example_entry = "python examples\\cases\\tsp_vrp\\run_project.py"
@@ -346,15 +436,15 @@ title = "SPEA2Adapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:SPEA2Adapter"
 tags = ["adapter", "core", "evolutionary", "multiobjective", "spea2", "strategy"]
-summary = "SPEA2：强度/密度适应度。 / Adapter: SPEA2 with strength and density fitness."
+summary = "SPEA2：强度与密度生存选择；继承独立初始化、变化、精确父代与结构修复，selector 明确覆盖 survivor 而非父代来源。"
 use_when = ["需要精英保留 + 强度密度联合选择时", "希望作为 NSGA 系列的对照方法时"]
 minimal_wiring = ["from nsgablack.adapters import SPEA2Adapter", "solver.set_adapter(SPEA2Adapter())"]
 config_keys = [
-  "batch_size",
+  "population_size", "offspring_size", "crossover_rate", "objective_aggregation",
   "archive_size",
-  "k_neighbor",
+  "k_nearest", "initializer", "mutator", "parent_selector", "selector", "repair", "change", "pool_maintenance",
 ]
-example_entry = ""
+example_entry = "docs/architecture/ADAPTER_OPERATION_BOUNDARIES_CN.md"
 
 [[entry]]
 key = "adapter.trust_region_dfo"
@@ -380,16 +470,17 @@ kind = "adapter"
 import_path = "nsgablack.adapters:TrustRegionMODFOAdapter"
 tags = ["adapter", "core", "dfo", "multiobjective", "strategy", "trust_region"]
 summary = "多目标信赖域 DFO：原生任务冻结权重，外部投影采用冻结任务规则；普通换方向先重评分历史向量，支持精确池结果。"
-use_when = ["多目标问题需要局部信赖域精修并保持 Pareto 导向时", "希望把多目标优化与局部 DFO 结合时"]
-minimal_wiring = ["from nsgablack.adapters import TrustRegionMODFOAdapter", "solver.set_adapter(TrustRegionMODFOAdapter())"]
-required_companions = ["plugin.pareto_archive"]
+use_when = ["多目标问题需要按显式权重进行局部信赖域精修时", "希望冻结池任务比较规则并保留多目标原始反馈时"]
+minimal_wiring = ["from nsgablack.adapters import TrustRegionMODFOAdapter, TrustRegionMODFOConfig", "solver.set_adapter(TrustRegionMODFOAdapter(config=TrustRegionMODFOConfig(weight_method='fixed', fixed_weights=[0.5, 0.5])))", "# This wiring requires exactly two raw objectives; ParetoArchivePlugin is optional."]
+required_companions = ["(none)"]
+companions = ["plugin.pareto_archive"]
 config_keys = [
   "batch_size",
   "initial_radius",
-  "scalarization",
-  "weights",
+  "weight_method",
+  "fixed_weights",
 ]
-example_entry = "python examples\\cases\\trust_region_mo\\run_project.py"
+example_entry = "docs/catalog_usage/STRUCTURED_LOCAL_SEARCH_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "adapter.trust_region_nonsmooth"
@@ -397,16 +488,16 @@ title = "TrustRegionNonSmoothAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:TrustRegionNonSmoothAdapter"
 tags = ["adapter", "core", "local_search", "nonsmooth", "strategy", "trust_region"]
-summary = "非光滑信赖域：原生 Linf 聚合；投影池任务采用明确比较坐标，保留原始反馈与精确结果。"
+summary = "非光滑信赖域：score_mode 默认 l1，可显式选择 linf；投影池任务采用冻结比较坐标，保留原始反馈与精确结果。"
 use_when = ["目标非光滑或带 max/Linf 类聚合项时", "需要比纯随机局部扰动更稳的非光滑精修时"]
 minimal_wiring = ["from nsgablack.adapters import TrustRegionNonSmoothAdapter", "solver.set_adapter(TrustRegionNonSmoothAdapter())"]
 config_keys = [
   "batch_size",
   "initial_radius",
   "min_radius",
-  "aggregation",
+  "score_mode",
 ]
-example_entry = "python examples\\cases\\trust_region_nonsmooth\\run_project.py"
+example_entry = "docs/catalog_usage/STRUCTURED_LOCAL_SEARCH_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "adapter.trust_region_subspace"
@@ -434,31 +525,36 @@ title = "VNSAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:VNSAdapter"
 tags = ["adapter", "core", "local_search", "refinement", "stage", "strategy", "vns"]
-summary = "VNS局部搜索内核：多邻域精修。 / Adapter: VNS local search core with multi-neighborhood refinement."
+summary = "VNS 多邻域精修：change=普通函数可组合完整邻域变化；或独立 initializer/mutator 与 candidate selector。改进判断和邻域切换仍归 VNS；未声明通用结构 repair 角色。"
 use_when = ["需要以局部精修为主，并可逐步扩大/切换邻域时", "希望用少量评估预算做稳定改进时"]
-minimal_wiring = ["from nsgablack.adapters import VNSAdapter", "solver.set_adapter(VNSAdapter())"]
-required_companions = ["repr.context_gaussian"]
+minimal_wiring = ["from nsgablack.adapters import VNSAdapter", "from nsgablack.representation import ContextGaussianMutation", "solver.set_adapter(VNSAdapter(mutator=ContextGaussianMutation()))", "# Omit selector to retain the native candidate comparison; the problem pipeline repairs proposals."]
+required_companions = ["(none)"]
 config_keys = [
   "batch_size",
-  "sigma",
+  "base_sigma", "scale", "max_sigma",
   "k_max",
-  "n_iter",
+  "accept_tolerance", "restart_on_stagnation", "objective_aggregation",
+  "initializer", "mutator", "selector", "change", "pool_maintenance",
 ]
 companions = ["repr.context_gaussian", "repr.context_switch"]
-example_entry = ""
+example_entry = "docs/architecture/POOL_WORKFLOW_PILOT_CN.md"
 [[entry]]
 key = "adapter.serial_strategy"
 title = "StrategyChainAdapter"
 kind = "adapter"
 import_path = "nsgablack.adapters:StrategyChainAdapter"
 tags = ["adapter", "controller", "core", "phase", "serial", "strategy"]
-summary = "串行策略控制器：按 phase 顺序切换子 Adapter。 / Serial strategy controller that advances child adapters by phase."
+summary = "串行策略控制器：按 phase 顺序切换子 Adapter；working_pool 绑定公共普通集合，子组合可继承或显式覆盖，输入来源与精选输出仍分别声明。"
 companions = ["adapter.multi_strategy"]
 use_when = ["需要把探索、开发等多段策略按阶段顺序串联时", "需要让 phase 成为可审计运行语义时"]
-minimal_wiring = ["from nsgablack.adapters import StrategyChainAdapter", "solver.set_adapter(StrategyChainAdapter(...))"]
+minimal_wiring = [
+  "from nsgablack.adapters import StrategyChainAdapter, SerialPhaseSpec, NSGA2Adapter, VNSAdapter",
+  "phases = [SerialPhaseSpec('global', NSGA2Adapter(), steps=5), SerialPhaseSpec('local', VNSAdapter(), steps=3)]",
+  "solver.set_adapter(StrategyChainAdapter(phases))",
+]
 required_companions = ["adapter.multi_strategy"]
-config_keys = ["phases", "phase_schedule", "repeat_last"]
-example_entry = "python -m nsgablack catalog search serial_strategy --kind example"
+config_keys = ["phases", "phase_schedule", "repeat_last", "working_pool"]
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 [[entry]]
 key = "adapter.elite_retention"
 title = "EliteRetentionAdapter"

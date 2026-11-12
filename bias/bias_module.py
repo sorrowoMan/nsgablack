@@ -201,10 +201,14 @@ class BiasModule:
             return added
 
         if callable(bias):
-            from .domain import RuleBasedBias
+            from .domain.callable_bias import CallableBias
+            from .surrogate.base import SurrogateControlBias
 
-            rule_bias = RuleBasedBias(
-                rule_func=bias,
+            if isinstance(bias, SurrogateControlBias):
+                raise TypeError("SurrogateControlBias returns control updates, not a scalar scoring bias")
+
+            rule_bias = CallableBias(
+                func=bias,
                 weight=weight,
                 name=name or "functional_bias",
             )

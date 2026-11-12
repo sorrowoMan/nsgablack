@@ -5,20 +5,30 @@ key = "repr.unit_candidate"
 title = "CandidateUnitBuilder"
 kind = "representation"
 import_path = "nsgablack.representation:CandidateUnitBuilder"
-tags = ["core", "pipeline", "unit", "candidate", "construction"]
-summary = "构建保留候选语义的轻量 Unit；构建与恢复不执行搜索或评价。"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+tags = ["core", "unit", "candidate", "construction", "codec"]
+summary = "保留候选语义的轻量 Unit 构建器；由 Adapter 经独立 UnitBinding 使用，构建与恢复不执行搜索或求值。"
 use_when = ["VNS 等轨迹算法需要独立的操作结构构建绑定时。"]
 minimal_wiring = ["VNSAdapter(unit_binding=UnitBinding(CandidateUnitBuilder()))"]
+config_keys = []
+companions = ["tool.unit_binding"]
+required_companions = ["tool.unit_binding"]
+contract = { catalog = { role = "unit_builder", concepts = ["Unit结构构建", "自定义Unit", "UnitBinding", "算法结构恢复"], operations = ["build", "dump", "restore"], boundaries = ["装配 builder 不创建运行 Unit；恢复走 codec，不重新随机构建。", "不初始化候选、不执行问题 repair、不计算目标或决定成员选择。"] } }
 
 [[entry]]
 key = "repr.unit_search_node"
 title = "SearchNodeBuilder"
 kind = "representation"
 import_path = "nsgablack.representation:SearchNodeBuilder"
-tags = ["core", "pipeline", "unit", "astar", "graph", "construction"]
-summary = "构建 A* 节点、父关联和代价存储；扩展、代价计算与优先级策略仍由 Adapter 执行。"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+tags = ["core", "unit", "astar", "graph", "construction", "codec"]
+summary = "A* 节点、父关联和代价存储的独立 Unit 构建器；边代价计算、扩展与优先级仍归 Adapter，不进入问题 Pipeline。"
 use_when = ["需要替换 A* 节点结构，而保留搜索策略时。"]
 minimal_wiring = ["AStarAdapter(neighbors=neighbors, unit_binding=UnitBinding(SearchNodeBuilder()))"]
+config_keys = []
+companions = ["tool.unit_binding"]
+required_companions = ["tool.unit_binding"]
+contract = { catalog = { role = "unit_builder", concepts = ["Unit结构构建", "自定义Unit", "UnitBinding", "算法结构恢复"], operations = ["build", "dump", "restore"], boundaries = ["装配 builder 不创建运行 Unit；恢复走 codec，不重新随机构建。", "不初始化候选、不执行问题 repair、不计算目标或决定成员选择。"] } }
 
 [[entry]]
 key = "representation.parallel_repair"
@@ -31,12 +41,14 @@ use_when = [
   "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
 ]
 minimal_wiring = [
-  "from nsgablack.representation import ParallelRepair",
-  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+  "from nsgablack.representation import RepresentationPipeline, ParallelRepair",
+  "from nsgablack.representation.continuous import ProjectionRepair",
+  "repair = ParallelRepair(ProjectionRepair(low=0.0, high=1.0), backend='thread', max_workers=1)",
+  "pipeline = RepresentationPipeline(repair=repair)",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search parallel_repair --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "representation.sbx_crossover"
@@ -49,8 +61,9 @@ use_when = [
   "需要在表示管线中使用连续变量的 SBX 交叉时。 / Need SBX crossover for continuous variables in representation pipeline.",
 ]
 minimal_wiring = [
-  "from nsgablack.representation import SBXCrossover",
-  "Attach this component into RepresentationPipeline as crossover.",
+  "from nsgablack.representation import RepresentationPipeline",
+  "from nsgablack.representation.continuous import SBXCrossover",
+  "pipeline = RepresentationPipeline(crossover=SBXCrossover(eta_c=15.0, low=0., high=1.))",
 ]
 required_companions = ["(none)"]
 config_keys = [
@@ -58,7 +71,7 @@ config_keys = [
   "low",
   "high",
 ]
-example_entry = "python -m nsgablack catalog search sbx_crossover --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "representation.polynomial_mutation"
@@ -71,8 +84,9 @@ use_when = [
   "需要在表示管线中使用连续变量多项式变异时。 / Need polynomial mutation for continuous variables in representation pipeline.",
 ]
 minimal_wiring = [
-  "from nsgablack.representation import PolynomialMutation",
-  "Attach this component into RepresentationPipeline as mutator.",
+  "from nsgablack.representation import RepresentationPipeline",
+  "from nsgablack.representation.continuous import PolynomialMutation",
+  "pipeline = RepresentationPipeline(mutator=PolynomialMutation(eta_m=20.0, low=0., high=1.))",
 ]
 required_companions = ["(none)"]
 config_keys = [
@@ -81,7 +95,7 @@ config_keys = [
   "low",
   "high",
 ]
-example_entry = "python -m nsgablack catalog search polynomial_mutation --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "repr.binary"
@@ -94,31 +108,34 @@ use_when = [
   "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
 ]
 minimal_wiring = [
+  "from nsgablack.representation import RepresentationPipeline",
   "from nsgablack.representation.binary import BinaryInitializer",
-  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+  "pipeline = RepresentationPipeline(initializer=BinaryInitializer(probability=0.5))",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search binary --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "repr.context_gaussian"
 title = "ContextGaussianMutation"
 kind = "representation"
 import_path = "nsgablack.representation.continuous:ContextGaussianMutation"
-tags = ["context", "continuous", "mutation", "vns"]
-summary = "表示组件：ContextGaussianMutation。 / Representation: ContextGaussianMutation."
+tags = ["context", "continuous", "mutation", "vns", "operator", "checkpoint"]
+summary = "读取声明的 sigma_key 的可恢复高斯变异；可直接装配到 VNS/SA 等实际变化消费者，读取调用局部邻域参数并随所属 Adapter 回滚。"
 use_when = [
-  "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
+  "需要 VNS 邻域或 SA 温度调度真正作用于变化尺度，而非固定高斯扰动时。",
 ]
 minimal_wiring = [
   "from nsgablack.representation.continuous import ContextGaussianMutation",
-  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+  "from nsgablack.adapters import VNSAdapter",
+  "adapter = VNSAdapter(mutator=ContextGaussianMutation(base_sigma=0.1))",
+  "# Keep this stateful instance owned by one Adapter or one Pipeline slot.",
 ]
 required_companions = ["adapter.vns"]
-config_keys = ["(none)"]
+config_keys = ["base_sigma", "sigma_key", "low", "high"]
 companions = ["adapter.vns"]
-example_entry = "python -m nsgablack catalog search context_gaussian --kind example"
+example_entry = "docs/architecture/ADAPTER_OPERATION_BOUNDARIES_CN.md"
 
 [[entry]]
 key = "repr.context_switch"
@@ -131,31 +148,35 @@ use_when = [
   "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
 ]
 minimal_wiring = [
-  "from nsgablack.representation import ContextSelectMutator",
-  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+  "from nsgablack.representation import RepresentationPipeline, ContextSelectMutator",
+  "from nsgablack.representation.continuous import GaussianMutation",
+  "operator = ContextSelectMutator([GaussianMutation(sigma=0.05), GaussianMutation(sigma=0.2)])",
+  "pipeline = RepresentationPipeline(mutator=operator)",
 ]
 required_companions = ["adapter.vns"]
 config_keys = ["(none)"]
 companions = ["adapter.vns"]
-example_entry = "python -m nsgablack catalog search context_switch --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "repr.continuous"
 title = "UniformInitializer"
 kind = "representation"
 import_path = "nsgablack.representation.continuous:UniformInitializer"
-tags = ["continuous", "initializer", "real"]
-summary = "表示组件：UniformInitializer。 / Representation: UniformInitializer."
+tags = ["continuous", "initializer", "real", "operator", "checkpoint"]
+summary = "连续均匀候选生成器：可直接绑定 Adapter 的 initializer 或放入既有 Pipeline，显式 RNG codec 支持恢复；池输入与暖启动优先。"
 use_when = [
-  "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
+  "希望独立配置算法初始候选来源，同时保留问题管线编解码和硬约束修复时。",
 ]
 minimal_wiring = [
   "from nsgablack.representation.continuous import UniformInitializer",
-  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+  "from nsgablack.adapters import NSGA2Adapter",
+  "adapter = NSGA2Adapter(initializer=UniformInitializer(low=-1.0, high=1.0))",
+  "# PoolTask intake and warm starts retain priority; initialization is not Unit construction.",
 ]
 required_companions = ["(none)"]
-config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search continuous --kind example"
+config_keys = ["low", "high"]
+example_entry = "docs/architecture/ADAPTER_OPERATION_BOUNDARIES_CN.md"
 
 [[entry]]
 key = "repr.dynamic_repair"
@@ -168,12 +189,14 @@ use_when = [
   "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
 ]
 minimal_wiring = [
+  "from nsgablack.representation import RepresentationPipeline",
   "from nsgablack.representation.dynamic import DynamicRepair",
-  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+  "from nsgablack.representation.continuous import ProjectionRepair",
+  "pipeline = RepresentationPipeline(repair=DynamicRepair([(0, ProjectionRepair(low=0., high=1.)), (20, ProjectionRepair(low=0.2, high=0.8))]))",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search dynamic_repair --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "repr.graph"
@@ -186,12 +209,13 @@ use_when = [
   "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
 ]
 minimal_wiring = [
+  "from nsgablack.representation import RepresentationPipeline",
   "from nsgablack.representation.graph import GraphEdgeInitializer",
-  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+  "pipeline = RepresentationPipeline(initializer=GraphEdgeInitializer(num_nodes=4, density=0.3))",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search graph --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "repr.integer"
@@ -204,12 +228,13 @@ use_when = [
   "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
 ]
 minimal_wiring = [
+  "from nsgablack.representation import RepresentationPipeline",
   "from nsgablack.representation.integer import IntegerInitializer",
-  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+  "pipeline = RepresentationPipeline(initializer=IntegerInitializer(low=0, high=10))",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search integer --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "repr.matrix"
@@ -222,12 +247,13 @@ use_when = [
   "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
 ]
 minimal_wiring = [
+  "from nsgablack.representation import RepresentationPipeline",
   "from nsgablack.representation.matrix import IntegerMatrixInitializer",
-  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+  "pipeline = RepresentationPipeline(initializer=IntegerMatrixInitializer(rows=2, cols=3, low=0, high=5))",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search matrix --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "repr.permutation"
@@ -240,12 +266,13 @@ use_when = [
   "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
 ]
 minimal_wiring = [
+  "from nsgablack.representation import RepresentationPipeline",
   "from nsgablack.representation.permutation import PermutationInitializer",
-  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+  "pipeline = RepresentationPipeline(initializer=PermutationInitializer())",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search permutation --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "repr.pipeline"
@@ -264,7 +291,7 @@ minimal_wiring = [
 ]
 required_companions = ["(none)"]
 config_keys = ["initializer", "mutator", "mutation_operators", "repair", "encoder", "decoder"]
-example_entry = "python -m nsgablack catalog search pipeline --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "repr.projection_repair"
@@ -277,12 +304,13 @@ use_when = [
   "需要接入表示层的初始化/变异/修复行为时。 / Need to wire representation initializer/mutator/repair behavior.",
 ]
 minimal_wiring = [
+  "from nsgablack.representation import RepresentationPipeline",
   "from nsgablack.representation.continuous import ProjectionRepair",
-  "Attach this component into RepresentationPipeline as initializer/mutator/repair as appropriate.",
+  "pipeline = RepresentationPipeline(repair=ProjectionRepair(low=0., high=1., sum_target=1.0))",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search projection_repair --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 [[entry]]
 key = "repr.context_dispatch"
 title = "ContextDispatchMutator"
@@ -292,10 +320,15 @@ tags = ["context", "dispatch", "mutation", "phase", "representation", "strategy"
 summary = "表示组件：按 strategy/phase 路由不同 mutator。 / Dispatch mutators by strategy or phase context."
 companions = ["adapter.multi_strategy", "adapter.serial_strategy"]
 use_when = ["需要让表示层依据 phase 或 strategy_id 自动切换算子时"]
-minimal_wiring = ["from nsgablack.representation import ContextDispatchMutator", "Attach ContextDispatchMutator as the pipeline mutator."]
+minimal_wiring = [
+  "from nsgablack.representation import RepresentationPipeline, ContextDispatchMutator",
+  "from nsgablack.representation.continuous import GaussianMutation",
+  "operator = ContextDispatchMutator(routes={'local': GaussianMutation(sigma=0.05)}, default_mutator=GaussianMutation(sigma=0.2))",
+  "pipeline = RepresentationPipeline(mutator=operator)",
+]
 required_companions = ["adapter.multi_strategy"]
 config_keys = ["routes", "selector_key", "default_mutator", "strict"]
-example_entry = "python -m nsgablack catalog search context_dispatch --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "repr.pipeline_orchestrator"
@@ -306,151 +339,192 @@ tags = ["context", "controller", "orchestrator", "phase", "pipeline", "represent
 summary = "表示层编排控制器：统一 mutate/repair 的串行、路由与动态 phase 策略。 / Phase-aware mutate and repair orchestration controller."
 companions = ["repr.pipeline", "adapter.multi_strategy", "adapter.serial_strategy"]
 use_when = ["需要把 phase-aware 算子路由放在表示层正式协议中时"]
-minimal_wiring = ["from nsgablack.representation import PipelineOrchestrator", "Mount PipelineOrchestrator inside RepresentationPipeline."]
+minimal_wiring = [
+  "from nsgablack.representation import RepresentationPipeline, PipelineOrchestrator",
+  "from nsgablack.representation.continuous import GaussianMutation",
+  "operator = PipelineOrchestrator(mutator=GaussianMutation(sigma=0.1))",
+  "pipeline = RepresentationPipeline(mutator=operator)",
+]
 required_companions = ["repr.pipeline"]
 config_keys = ["mutate_policy", "repair_policy", "mutator", "repair_operator", "strict"]
-example_entry = "python -m nsgablack catalog search pipeline_orchestrator --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "repr.unit_pareto_label"
 title = "ParetoLabelBuilder"
 kind = "representation"
 import_path = "nsgablack.representation:ParetoLabelBuilder"
-tags = ["unit", "algorithm-pipeline", "structure", "core"]
-summary = "算法管线结构构建器：ParetoLabelBuilder；Adapter 保留搜索与更新策略。"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+tags = ["core", "unit", "structure", "construction", "codec"]
+summary = "ParetoLabelBuilder：独立算法结构与显式状态 codec 的构建器，由所属 Adapter 通过 UnitBinding 按需使用；不属于问题候选管线。"
 use_when = ["为对应 Adapter 定制操作结构或恢复 codec"]
 minimal_wiring = ["from nsgablack.units import UnitBinding", "from nsgablack.representation import ParetoLabelBuilder", "binding = UnitBinding(ParetoLabelBuilder())"]
-required_companions = ["(none)"]
-config_keys = ["unit_binding"]
+required_companions = ["tool.unit_binding"]
+config_keys = []
+companions = ["tool.unit_binding"]
+contract = { catalog = { role = "unit_builder", concepts = ["Unit结构构建", "自定义Unit", "UnitBinding", "算法结构恢复"], operations = ["build", "dump", "restore"], boundaries = ["装配 builder 不创建运行 Unit；恢复走 codec，不重新随机构建。", "不初始化候选、不执行问题 repair、不计算目标或决定成员选择。"] } }
 
 [[entry]]
 key = "repr.unit_trajectory"
 title = "TrajectoryUnitBuilder"
 kind = "representation"
 import_path = "nsgablack.representation:TrajectoryUnitBuilder"
-tags = ["unit", "algorithm-pipeline", "structure", "core"]
-summary = "轨迹结构构建器：Unit schema v2，保存候选关联反馈与依赖版本；旧 v1 不自动恢复。Adapter 保留搜索策略。"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+tags = ["core", "unit", "structure", "construction", "codec"]
+summary = "独立轨迹结构构建器：schema v2 保存候选关联反馈与依赖版本，旧 v1 不自动恢复；Adapter 通过 UnitBinding 按需创建。"
 use_when = ["为对应 Adapter 定制操作结构或恢复 codec"]
 minimal_wiring = ["from nsgablack.units import UnitBinding", "from nsgablack.representation import TrajectoryUnitBuilder", "binding = UnitBinding(TrajectoryUnitBuilder())"]
-required_companions = ["(none)"]
-config_keys = ["unit_binding"]
+required_companions = ["tool.unit_binding"]
+config_keys = []
+companions = ["tool.unit_binding"]
+contract = { catalog = { role = "unit_builder", concepts = ["Unit结构构建", "自定义Unit", "UnitBinding", "算法结构恢复"], operations = ["build", "dump", "restore"], boundaries = ["装配 builder 不创建运行 Unit；恢复走 codec，不重新随机构建。", "不初始化候选、不执行问题 repair、不计算目标或决定成员选择。"] } }
 
 [[entry]]
 key = "repr.unit_poll"
 title = "PollUnitBuilder"
 kind = "representation"
 import_path = "nsgablack.representation:PollUnitBuilder"
-tags = ["unit", "algorithm-pipeline", "structure", "core"]
-summary = "探测结构构建器：Unit schema v2，保存候选关联反馈与依赖版本；旧 v1 不自动恢复。Adapter 保留搜索策略。"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+tags = ["core", "unit", "structure", "construction", "codec"]
+summary = "PollUnitBuilder：独立算法结构与显式状态 codec 的构建器，由所属 Adapter 通过 UnitBinding 按需使用；不属于问题候选管线。"
 use_when = ["为对应 Adapter 定制操作结构或恢复 codec"]
 minimal_wiring = ["from nsgablack.units import UnitBinding", "from nsgablack.representation import PollUnitBuilder", "binding = UnitBinding(PollUnitBuilder())"]
-required_companions = ["(none)"]
-config_keys = ["unit_binding"]
+required_companions = ["tool.unit_binding"]
+config_keys = []
+companions = ["tool.unit_binding"]
+contract = { catalog = { role = "unit_builder", concepts = ["Unit结构构建", "自定义Unit", "UnitBinding", "算法结构恢复"], operations = ["build", "dump", "restore"], boundaries = ["装配 builder 不创建运行 Unit；恢复走 codec，不重新随机构建。", "不初始化候选、不执行问题 repair、不计算目标或决定成员选择。"] } }
 
 [[entry]]
 key = "repr.unit_parameters"
 title = "ParameterUnitBuilder"
 kind = "representation"
 import_path = "nsgablack.representation:ParameterUnitBuilder"
-tags = ["unit", "algorithm-pipeline", "structure", "core"]
-summary = "参数结构构建器：Unit schema v2，保存显式候选反馈与梯度矩；旧 v1 不自动恢复，历史指标不冒充当前反馈。"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+tags = ["core", "unit", "structure", "construction", "codec"]
+summary = "ParameterUnitBuilder：独立算法结构与显式状态 codec 的构建器，由所属 Adapter 通过 UnitBinding 按需使用；不属于问题候选管线。"
 use_when = ["为对应 Adapter 定制操作结构或恢复 codec"]
 minimal_wiring = ["from nsgablack.units import UnitBinding", "from nsgablack.representation import ParameterUnitBuilder", "binding = UnitBinding(ParameterUnitBuilder())"]
-required_companions = ["(none)"]
-config_keys = ["unit_binding"]
+required_companions = ["tool.unit_binding"]
+config_keys = []
+companions = ["tool.unit_binding"]
+contract = { catalog = { role = "unit_builder", concepts = ["Unit结构构建", "自定义Unit", "UnitBinding", "算法结构恢复"], operations = ["build", "dump", "restore"], boundaries = ["装配 builder 不创建运行 Unit；恢复走 codec，不重新随机构建。", "不初始化候选、不执行问题 repair、不计算目标或决定成员选择。"] } }
 
 [[entry]]
 key = "repr.unit_population"
 title = "PopulationUnitBuilder"
 kind = "representation"
 import_path = "nsgablack.representation:PopulationUnitBuilder"
-tags = ["unit", "algorithm-pipeline", "structure", "core"]
-summary = "算法管线结构构建器：PopulationUnitBuilder；Adapter 保留搜索与更新策略。"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+tags = ["core", "unit", "structure", "construction", "codec"]
+summary = "PopulationUnitBuilder：独立算法结构与显式状态 codec 的构建器，由所属 Adapter 通过 UnitBinding 按需使用；不属于问题候选管线。"
 use_when = ["为对应 Adapter 定制操作结构或恢复 codec"]
 minimal_wiring = ["from nsgablack.units import UnitBinding", "from nsgablack.representation import PopulationUnitBuilder", "binding = UnitBinding(PopulationUnitBuilder())"]
-required_companions = ["(none)"]
-config_keys = ["unit_binding"]
+required_companions = ["tool.unit_binding"]
+config_keys = []
+companions = ["tool.unit_binding"]
+contract = { catalog = { role = "unit_builder", concepts = ["Unit结构构建", "自定义Unit", "UnitBinding", "算法结构恢复"], operations = ["build", "dump", "restore"], boundaries = ["装配 builder 不创建运行 Unit；恢复走 codec，不重新随机构建。", "不初始化候选、不执行问题 repair、不计算目标或决定成员选择。"] } }
 
 [[entry]]
 key = "repr.unit_reference_population"
 title = "ReferencePopulationBuilder"
 kind = "representation"
 import_path = "nsgablack.representation:ReferencePopulationBuilder"
-tags = ["unit", "algorithm-pipeline", "structure", "core"]
-summary = "参考种群构建器，显式兼容基础 Population 契约，可用于 NSGA2/SPEA2/NSGA3；Adapter 保留搜索策略。"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+tags = ["core", "unit", "structure", "construction", "codec"]
+summary = "参考种群结构构建器，显式兼容基础 Population 契约，可由 NSGA2/SPEA2/NSGA3 经独立 UnitBinding 使用；不承担搜索策略。"
 use_when = ["为对应 Adapter 定制操作结构或恢复 codec"]
 minimal_wiring = ["from nsgablack.units import UnitBinding", "from nsgablack.representation import ReferencePopulationBuilder", "binding = UnitBinding(ReferencePopulationBuilder())"]
-required_companions = ["(none)"]
-config_keys = ["unit_binding"]
+required_companions = ["tool.unit_binding"]
+config_keys = []
+companions = ["tool.unit_binding"]
+contract = { catalog = { role = "unit_builder", concepts = ["Unit结构构建", "自定义Unit", "UnitBinding", "算法结构恢复"], operations = ["build", "dump", "restore"], boundaries = ["装配 builder 不创建运行 Unit；恢复走 codec，不重新随机构建。", "不初始化候选、不执行问题 repair、不计算目标或决定成员选择。"] } }
 
 [[entry]]
 key = "repr.unit_differential_population"
 title = "DifferentialPopulationBuilder"
 kind = "representation"
 import_path = "nsgablack.representation:DifferentialPopulationBuilder"
-tags = ["unit", "algorithm-pipeline", "structure", "core"]
-summary = "算法管线结构构建器：DifferentialPopulationBuilder；Adapter 保留搜索与更新策略。"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+tags = ["core", "unit", "structure", "construction", "codec"]
+summary = "DifferentialPopulationBuilder：独立算法结构与显式状态 codec 的构建器，由所属 Adapter 通过 UnitBinding 按需使用；不属于问题候选管线。"
 use_when = ["为对应 Adapter 定制操作结构或恢复 codec"]
 minimal_wiring = ["from nsgablack.units import UnitBinding", "from nsgablack.representation import DifferentialPopulationBuilder", "binding = UnitBinding(DifferentialPopulationBuilder())"]
-required_companions = ["(none)"]
-config_keys = ["unit_binding"]
+required_companions = ["tool.unit_binding"]
+config_keys = []
+companions = ["tool.unit_binding"]
+contract = { catalog = { role = "unit_builder", concepts = ["Unit结构构建", "自定义Unit", "UnitBinding", "算法结构恢复"], operations = ["build", "dump", "restore"], boundaries = ["装配 builder 不创建运行 Unit；恢复走 codec，不重新随机构建。", "不初始化候选、不执行问题 repair、不计算目标或决定成员选择。"] } }
 
 [[entry]]
 key = "repr.unit_decomposition"
 title = "DecompositionUnitBuilder"
 kind = "representation"
 import_path = "nsgablack.representation:DecompositionUnitBuilder"
-tags = ["unit", "algorithm-pipeline", "structure", "core"]
-summary = "算法管线结构构建器：DecompositionUnitBuilder；Adapter 保留搜索与更新策略。"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+tags = ["core", "unit", "structure", "construction", "codec"]
+summary = "DecompositionUnitBuilder：独立算法结构与显式状态 codec 的构建器，由所属 Adapter 通过 UnitBinding 按需使用；不属于问题候选管线。"
 use_when = ["为对应 Adapter 定制操作结构或恢复 codec"]
 minimal_wiring = ["from nsgablack.units import UnitBinding", "from nsgablack.representation import DecompositionUnitBuilder", "binding = UnitBinding(DecompositionUnitBuilder())"]
-required_companions = ["(none)"]
-config_keys = ["unit_binding"]
+required_companions = ["tool.unit_binding"]
+config_keys = []
+companions = ["tool.unit_binding"]
+contract = { catalog = { role = "unit_builder", concepts = ["Unit结构构建", "自定义Unit", "UnitBinding", "算法结构恢复"], operations = ["build", "dump", "restore"], boundaries = ["装配 builder 不创建运行 Unit；恢复走 codec，不重新随机构建。", "不初始化候选、不执行问题 repair、不计算目标或决定成员选择。"] } }
 
 [[entry]]
 key = "repr.unit_region"
 title = "RegionUnitBuilder"
 kind = "representation"
 import_path = "nsgablack.representation:RegionUnitBuilder"
-tags = ["unit", "algorithm-pipeline", "structure", "core"]
-summary = "区域结构构建器：Unit schema v2，关联中心反馈与依赖版本；旧 v1 不自动恢复。Adapter 保留半径与搜索策略。"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+tags = ["core", "unit", "structure", "construction", "codec"]
+summary = "独立区域结构构建器：schema v2 关联中心反馈与依赖版本，旧 v1 不自动恢复；半径与搜索决策仍归 Adapter。"
 use_when = ["为对应 Adapter 定制操作结构或恢复 codec"]
 minimal_wiring = ["from nsgablack.units import UnitBinding", "from nsgablack.representation import RegionUnitBuilder", "binding = UnitBinding(RegionUnitBuilder())"]
-required_companions = ["(none)"]
-config_keys = ["unit_binding"]
+required_companions = ["tool.unit_binding"]
+config_keys = []
+companions = ["tool.unit_binding"]
+contract = { catalog = { role = "unit_builder", concepts = ["Unit结构构建", "自定义Unit", "UnitBinding", "算法结构恢复"], operations = ["build", "dump", "restore"], boundaries = ["装配 builder 不创建运行 Unit；恢复走 codec，不重新随机构建。", "不初始化候选、不执行问题 repair、不计算目标或决定成员选择。"] } }
 
 [[entry]]
 key = "repr.unit_model_search"
 title = "ModelSearchUnitBuilder"
 kind = "representation"
 import_path = "nsgablack.representation:ModelSearchUnitBuilder"
-tags = ["unit", "algorithm-pipeline", "structure", "core"]
-summary = "算法管线结构构建器：ModelSearchUnitBuilder；Adapter 保留搜索与更新策略。"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+tags = ["core", "unit", "structure", "construction", "codec"]
+summary = "ModelSearchUnitBuilder：独立算法结构与显式状态 codec 的构建器，由所属 Adapter 通过 UnitBinding 按需使用；不属于问题候选管线。"
 use_when = ["为对应 Adapter 定制操作结构或恢复 codec"]
 minimal_wiring = ["from nsgablack.units import UnitBinding", "from nsgablack.representation import ModelSearchUnitBuilder", "binding = UnitBinding(ModelSearchUnitBuilder())"]
-required_companions = ["(none)"]
-config_keys = ["unit_binding"]
+required_companions = ["tool.unit_binding"]
+config_keys = []
+companions = ["tool.unit_binding"]
+contract = { catalog = { role = "unit_builder", concepts = ["Unit结构构建", "自定义Unit", "UnitBinding", "算法结构恢复"], operations = ["build", "dump", "restore"], boundaries = ["装配 builder 不创建运行 Unit；恢复走 codec，不重新随机构建。", "不初始化候选、不执行问题 repair、不计算目标或决定成员选择。"] } }
 
 [[entry]]
 key = "repr.unit_archive"
 title = "ArchiveUnitBuilder"
 kind = "representation"
 import_path = "nsgablack.representation:ArchiveUnitBuilder"
-tags = ["unit", "algorithm-pipeline", "structure", "core"]
-summary = "算法管线结构构建器：ArchiveUnitBuilder；Adapter 保留搜索与更新策略。"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+tags = ["core", "unit", "structure", "construction", "codec"]
+summary = "ArchiveUnitBuilder：独立算法结构与显式状态 codec 的构建器，由所属 Adapter 通过 UnitBinding 按需使用；不属于问题候选管线。"
 use_when = ["为对应 Adapter 定制操作结构或恢复 codec"]
 minimal_wiring = ["from nsgablack.units import UnitBinding", "from nsgablack.representation import ArchiveUnitBuilder", "binding = UnitBinding(ArchiveUnitBuilder())"]
-required_companions = ["(none)"]
-config_keys = ["unit_binding"]
+required_companions = ["tool.unit_binding"]
+config_keys = []
+companions = ["tool.unit_binding"]
+contract = { catalog = { role = "unit_builder", concepts = ["Unit结构构建", "自定义Unit", "UnitBinding", "算法结构恢复"], operations = ["build", "dump", "restore"], boundaries = ["装配 builder 不创建运行 Unit；恢复走 codec，不重新随机构建。", "不初始化候选、不执行问题 repair、不计算目标或决定成员选择。"] } }
 
 [[entry]]
 key = "repr.unit_neighborhood"
 title = "NeighborhoodUnitBuilder"
 kind = "representation"
 import_path = "nsgablack.representation:NeighborhoodUnitBuilder"
-tags = ["unit", "algorithm-pipeline", "structure", "core"]
-summary = "算法管线结构构建器：NeighborhoodUnitBuilder；Adapter 保留搜索与更新策略。"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+tags = ["core", "unit", "structure", "construction", "codec"]
+summary = "NeighborhoodUnitBuilder：独立算法结构与显式状态 codec 的构建器，由所属 Adapter 通过 UnitBinding 按需使用；不属于问题候选管线。"
 use_when = ["为对应 Adapter 定制操作结构或恢复 codec"]
 minimal_wiring = ["from nsgablack.units import UnitBinding", "from nsgablack.representation import NeighborhoodUnitBuilder", "binding = UnitBinding(NeighborhoodUnitBuilder())"]
-required_companions = ["(none)"]
-config_keys = ["unit_binding"]
+required_companions = ["tool.unit_binding"]
+config_keys = []
+companions = ["tool.unit_binding"]
+contract = { catalog = { role = "unit_builder", concepts = ["Unit结构构建", "自定义Unit", "UnitBinding", "算法结构恢复"], operations = ["build", "dump", "restore"], boundaries = ["装配 builder 不创建运行 Unit；恢复走 codec，不重新随机构建。", "不初始化候选、不执行问题 repair、不计算目标或决定成员选择。"] } }

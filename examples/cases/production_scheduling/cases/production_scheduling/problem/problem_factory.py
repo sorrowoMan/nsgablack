@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from copy import deepcopy
+from typing import Mapping
 from typing import Optional
 
 from refactor_data import load_production_data
+from .data_scenario import build_scenario_data, scenario_cache_key
 
 from .production_problem import (
     ProductionConstraints,
@@ -36,6 +39,7 @@ class ProductionProblemFactory:
         penalty_objective: bool,
         penalty_scale: float,
         single_objective: bool = False,
+        scenario: Mapping | None = None,
     ) -> None:
         self.base_dir = str(base_dir)
         self.bom = bom
@@ -51,6 +55,7 @@ class ProductionProblemFactory:
         self.penalty_objective = bool(penalty_objective)
         self.penalty_scale = float(penalty_scale)
         self.single_objective = bool(single_objective)
+        self.scenario = None if scenario is None else deepcopy(dict(scenario))
         self._cache_key = (
             self.base_dir,
             self.bom,
@@ -66,6 +71,7 @@ class ProductionProblemFactory:
             self.penalty_objective,
             self.penalty_scale,
             self.single_objective,
+            scenario_cache_key(self.scenario),
         )
 
     def __call__(self) -> ProductionSchedulingProblem:
@@ -74,14 +80,16 @@ class ProductionProblemFactory:
             return cached
 
         base_dir = Path(self.base_dir)
-        data = load_production_data(
+        data = build_scenario_data(
+            self.scenario, machines=self.machines, materials=self.materials, days=self.days,
+        ) if self.scenario is not None else load_production_data(
             base_dir=base_dir,
             bom_path=Path(self.bom) if self.bom else None,
             supply_path=Path(self.supply) if self.supply else None,
             machines=self.machines,
             materials=self.materials,
             days=self.days,
-            fallback=True,
+            fallback=False,
         )
         constraints = ProductionConstraints(
             max_machines_per_day=self.max_machines,
@@ -116,6 +124,7 @@ def build_problem_factory(args, *, base_dir: Path) -> ProductionProblemFactory:
         penalty_objective=args.penalty_objective,
         penalty_scale=args.penalty_scale,
         single_objective=bool(getattr(args, "single_objective", False)),
+        scenario=getattr(args, "_production_scenario", None),
     )
 
 
@@ -124,15 +133,18 @@ def build_problem(
     *,
     base_dir: Path,
     print_paths: bool = True,
+    scenario: Mapping | None = None,
 ) -> ProductionSchedulingProblem:
-    data = load_production_data(
+    data = build_scenario_data(
+        scenario, machines=int(args.machines), materials=int(args.materials), days=int(args.days),
+    ) if scenario is not None else load_production_data(
         base_dir=base_dir,
         bom_path=Path(args.bom) if args.bom else None,
         supply_path=Path(args.supply) if args.supply else None,
         machines=args.machines,
         materials=args.materials,
         days=args.days,
-        fallback=True,
+        fallback=False,
     )
     if print_paths:
         if getattr(data, "bom_path", None) is not None:

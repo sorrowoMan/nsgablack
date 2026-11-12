@@ -163,8 +163,12 @@ def test_unreadable_evidence_keeps_explicit_deferred_classification(missing, mon
         key = record.event_snapshot_key if missing == "event" else record.verification["destination_snapshot_key"]
         monkeypatch.setattr(solver.snapshot_store, "read", lambda candidate: None if candidate == key else read(candidate))
     elif missing == "predecessor":
-        def unreadable(*args, **kwargs):
-            raise KeyError("predecessor temporarily unavailable")
+        verified = solver.snapshot_store.read_verified
+        predecessor_key = record.authority_before_ref["snapshot"]["key"]
+        def unreadable(identity):
+            if identity.key == predecessor_key:
+                raise KeyError("predecessor temporarily unavailable")
+            return verified(identity)
         monkeypatch.setattr(solver.snapshot_store, "read_verified", unreadable)
     else:
         monkeypatch.setattr(solver.evaluation_evidence_semantics.authority_store, "current", lambda key: None)

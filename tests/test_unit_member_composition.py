@@ -212,7 +212,7 @@ def test_joint_repair_nonprefix_admission_preserves_members_identity_and_destina
             assert state.metadata["proposal_row"] in {1, 3}
     destination = control.snapshot_store.read(control.population_authority.snapshot_handle.key)
     np.testing.assert_array_equal(destination.data["population"], owner.algorithm_unit.population)
-    assert destination.data["candidate_batch"] == batch.as_dict()
+    assert CandidateBatch.from_dict(destination.data["candidate_batch"]).as_dict() == batch.as_dict()
     record = control.evaluation_evidence_journal.get(outcome.metadata["evaluation_disposition"]["event_id"])
     assert record.terminal_verified and record.outcome == "accepted"
 

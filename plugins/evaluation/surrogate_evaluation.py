@@ -1,18 +1,18 @@
 from __future__ import annotations
-from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import numpy as np
+from blackbase.types import Feedback
 
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
+from ...core.evaluation_feedback import OptimizationFeedbackBatch
 from .provider_plugin_base import EvaluationProviderPluginBase
 from ...utils.extension_contracts import (
     ContractError,
     normalize_candidate,
     normalize_objectives,
-    normalize_violation,
 )
 from nsgablack.context_keys import (
     KEY_METRICS,
@@ -98,7 +98,7 @@ class SurrogateEvaluationProviderPlugin(EvaluationProviderPluginBase):
         }
 
     # ---- L4 provider implementation ----
-    def evaluate_population_runtime(self, solver, population: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def evaluate_population_runtime(self, solver, population: np.ndarray) -> OptimizationFeedbackBatch:
         if self._surrogate is None:
             # Lazy import to avoid hard sklearn binding on core path.
             from ...utils.surrogate.vector_surrogate import VectorSurrogate
@@ -112,7 +112,9 @@ class SurrogateEvaluationProviderPlugin(EvaluationProviderPluginBase):
 
         n = int(pop.shape[0])
         if n == 0:
-            return np.zeros((0, int(getattr(solver, "num_objectives", 1) or 1))), np.zeros((0,), dtype=float)
+            return OptimizationFeedbackBatch.from_arrays(
+                np.zeros((0, int(getattr(solver, "num_objectives", 1) or 1))),
+                np.zeros((0,), dtype=float))
 
         # 标准化候选解（形状 + 维度）
         xs = [normalize_candidate(pop[i], dimension=int(solver.dimension), name=f"population[{i}]") for i in range(n)]
@@ -133,7 +135,11 @@ class SurrogateEvaluationProviderPlugin(EvaluationProviderPluginBase):
             objectives = self._true_evaluate(solver, X, cons_list, violations)
             self._append_training(X, objectives)
             self._maybe_retrain()
-            return objectives, violations
+            return OptimizationFeedbackBatch.from_feedback(tuple(
+                Feedback(objectives=objectives[i], constraints=cons_list[i],
+                         info={"constraint_violation": float(violations[i]),
+                               "evaluation_fidelity": "true"})
+                for i in range(n)))
 
         # 1) surrogate 预测全体
         self.stats["surrogate_calls"] += 1
@@ -153,6 +159,7 @@ class SurrogateEvaluationProviderPlugin(EvaluationProviderPluginBase):
             true_vio = violations[selected]
             true_obj = self._true_evaluate(solver, true_X, true_cons, true_vio)
             pred[selected] = true_obj
+            violations[selected] = true_vio
 
             # 4) 用真实评估结果更新训练集，并按配置重训
             if self.online_training:
@@ -170,22 +177,19 @@ class SurrogateEvaluationProviderPlugin(EvaluationProviderPluginBase):
         except Exception:
             unc_score = None
 
-        # 5) 应用偏置（对预测值/真值统一处理，保持与 Adapter/update 语义一致）
-        out_obj = np.zeros_like(pred, dtype=float)
+        # The control plane owns the only Bias projection. Preserve raw rows
+        # and metrics so that its projection can consume uncertainty too.
+        items = []
+        true_indices = set(selected)
         for i in range(n):
             obj_i = normalize_objectives(pred[i], num_objectives=int(solver.num_objectives), name="surrogate.objectives")
-            ctx = solver.build_context(individual_id=i, constraints=cons_list[i], violation=float(violations[i]))
+            metrics = {}
             if unc_score is not None and i < len(unc_score):
-                metrics = ctx.get(KEY_METRICS)
-                if not isinstance(metrics, dict):
-                    metrics = {}
-                    ctx[KEY_METRICS] = metrics
                 metrics[KEY_METRICS_SURROGATE_STD.split(".", 1)[1]] = float(unc_score[i])
-            if getattr(solver, "enable_bias", False) and getattr(solver, "bias_module", None) is not None:
-                obj_i = solver._apply_bias(obj_i, X[i], i, ctx)
-            out_obj[i] = obj_i
-
-        return out_obj, violations
+            items.append(Feedback(objectives=obj_i, constraints=cons_list[i], metrics=metrics,
+                                  info={"constraint_violation": float(violations[i]),
+                                        "evaluation_fidelity": "true" if i in true_indices else "surrogate"}))
+        return OptimizationFeedbackBatch.from_feedback(tuple(items))
 
     def create_provider(self):
         owner = self
@@ -203,13 +207,15 @@ class SurrogateEvaluationProviderPlugin(EvaluationProviderPluginBase):
             def evaluate_individual(self, solver, x, context, individual_id=None):
                 _ = context
                 pop = np.asarray(x, dtype=float).reshape(1, -1)
-                objs, vios = owner.evaluate_population_runtime(solver, pop)
-                return np.asarray(objs[0], dtype=float).reshape(-1), float(vios[0])
+                return owner.evaluate_population_runtime(solver, pop).items[0]
 
             def can_handle_population(self, solver, population, context):
                 _ = solver
                 _ = context
-                return owner._surrogate is not None and population is not None and int(np.asarray(population).shape[0]) > 0
+                if population is None:
+                    return False
+                values = np.asarray(population)
+                return values.ndim in (1, 2) and values.size > 0
 
             def evaluate_population(self, solver, population, context):
                 _ = context
@@ -255,7 +261,7 @@ class SurrogateEvaluationProviderPlugin(EvaluationProviderPluginBase):
         else:
             unc_score = np.asarray(unc, dtype=float).reshape(-1)
         explore_k = min(int(self.cfg.topk_explore), n)
-        explore = list(np.argsort(unc_score)[-explore_k:])
+        explore = list(np.argsort(unc_score)[-explore_k:]) if explore_k > 0 else []
 
         selected = set(int(i) for i in exploit + explore)
 
@@ -285,27 +291,20 @@ class SurrogateEvaluationProviderPlugin(EvaluationProviderPluginBase):
     ) -> np.ndarray:
         # 可选并行：由能力层主动调用，并保持 Bias/constraints 对齐
         if self.parallel_evaluator is not None and getattr(X, "shape", (0,))[0] > 0:
-            try:
-                # NOTE: bias is disabled here. _true_evaluate returns raw objectives;
-                # bias is applied once in evaluate_population Step 5.
-                objs, vios = self.parallel_evaluator.evaluate_population(
-                    np.asarray(X, dtype=float),
-                    problem=getattr(solver, "problem", None),
-                    enable_bias=False,
-                    bias_module=None,
-                    num_objectives=int(getattr(solver, "num_objectives", 1) or 1),
-                    extra_context={"generation": int(getattr(solver, "generation", 0) or 0)},
-                    **self.parallel_kwargs,
-                )
-                # 并行评估返回的 violation 更权威（可能来自 context_builder）
-                violations[:] = np.asarray(vios, dtype=float).reshape(-1)
-                self.stats["true_evals"] += int(np.asarray(X).shape[0])
-                self._increment_evaluation_count(solver, int(np.asarray(X).shape[0]))
-                return np.asarray(objs, dtype=float)
-            except Exception as _fallback_error:
-                # 并行失败时回退串行
-                _report_optional_failure(component=__name__, event='SurrogateEvaluationProviderPlugin._true_evaluate.fallback_240', exc=_fallback_error)
-                pass
+            # Failure may follow real side effects. Propagate it rather than
+            # replaying the same evaluation work through a serial fallback.
+            objs, vios = self.parallel_evaluator.evaluate_population(
+                np.asarray(X, dtype=float),
+                problem=getattr(solver, "problem", None),
+                enable_bias=False,
+                bias_module=None,
+                num_objectives=int(getattr(solver, "num_objectives", 1) or 1),
+                extra_context={"generation": int(getattr(solver, "generation", 0) or 0)},
+                **self.parallel_kwargs,
+            )
+            violations[:] = np.asarray(vios, dtype=float).reshape(-1)
+            self.stats["true_evals"] += int(np.asarray(X).shape[0])
+            return np.asarray(objs, dtype=float)
 
         n = int(np.asarray(X).shape[0])
         out = np.zeros((n, int(getattr(solver, "num_objectives", 1) or 1)), dtype=float)
@@ -314,24 +313,8 @@ class SurrogateEvaluationProviderPlugin(EvaluationProviderPluginBase):
             obj = normalize_objectives(val, num_objectives=int(solver.num_objectives), name="problem.evaluate")
             # NOTE: bias is NOT applied here. _true_evaluate returns raw objective
             # values so that (1) training data stays unbiased (N-02) and (2) bias
-            # is applied exactly once in evaluate_population Step 5 (N-01).
+            # is applied exactly once by the Solver control plane.
             out[i] = obj
 
         self.stats["true_evals"] += n
-        self._increment_evaluation_count(solver, n)
         return out
-
-    @staticmethod
-    def _increment_evaluation_count(solver, delta: int) -> None:
-        direct = getattr(solver, "increment_evaluation_count", None)
-        if callable(direct):
-            try:
-                direct(int(delta))
-                return
-            except Exception:
-                raise
-        try:
-            key = "evaluation_count"
-            setattr(solver, key, int(getattr(solver, key, 0) or 0) + int(delta))
-        except Exception:
-            raise

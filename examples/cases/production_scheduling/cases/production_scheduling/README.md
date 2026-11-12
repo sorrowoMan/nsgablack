@@ -34,20 +34,20 @@ python examples\cases\production_scheduling\run_project.py --check
 python examples\cases\production_scheduling\run_project.py
 ```
 
-Baseline 对比：
+默认 Project 运行的是 4 机种、10 物料槽位、1 代的接线检查，不是完整数据求解。
+完整数据有 156 个物料 ID，最大 ID 为 157，必须保留 157 个槽位；生产候选为 22×31。
+正式 builder 遇到数据缺失或解析失败会报错，不会改用随机数据。
+
+完整原数据的先导与 Greedy 对照（保存正式 Project 收据、CSV 与复核报告）：
 
 ```powershell
-python examples\cases\production_scheduling\solver\run_case.py --solver baseline-greedy --single-objective
-python examples\cases\production_scheduling\solver\run_case.py --solver baseline-aco --single-objective --aco-ants 48
+python examples/cases/production_scheduling/run_quality_benchmark.py --groups pilot greedy --seeds 42 --run-id my_acceptance
 ```
 
-较大的 multi-agent run：
+先查看更大的配置，确认预算后再去掉 `--plan` 执行：
 
 ```powershell
-python examples\cases\production_scheduling\solver\run_case.py --solver multi-agent --pop-size 160 --generations 36 `
-  --moead-pop-size 80 --vns-batch-size 64 `
-  --parallel --parallel-backend process --parallel-workers 8 `
-  --pareto-export 12 --sanity-check-export
+python examples/cases/production_scheduling/run_quality_benchmark.py --groups directional --seeds 42 --run-id my_directional --plan
 ```
 
 ## 预期产物
@@ -58,3 +58,18 @@ python examples\cases\production_scheduling\solver\run_case.py --solver multi-ag
 - `*.audit.json`：feasibility、stock-flow、utilization、switching、stability 报告
 
 具体 scenario 见 `SCENARIO_MATRIX.md`。
+
+`results/quality/<run-id>/comparison.csv` 比较各组的原始四目标；`recommendations/`
+分别给产量、稳定和折中方案。Greedy 自身搜索单目标，报告在同一四目标 Problem 下重评，
+不是等预算的算法优劣证明。`*.audit.json` 审计实际交付的整数 CSV。
+
+需要单独调试 Case 时使用本目录的 `run_solver.py --check`。正式并行评估目前使用
+`--parallel-backend thread`；旧 process 示例不代表该评估链受支持。
+更改问题看 `problem/`，更改领域变化看 `pipeline/neighborhood_search.py`，
+更改探索/精修/返回顺序看 `adapter/directional.py`，更改资源与运行组看 Project 的 `project_config.py`。
+
+保存检查点可在原命令追加 `--checkpoint-dir DIR --checkpoint-every 10`；
+沿用同一配置并追加 `--checkpoint-dir DIR --resume` 可恢复最新文件，或以 `--resume PATH` 指定。
+签名密钥由首次运行在目录内创建，恢复时必须保留，检查模式不创建文件。
+更简单的完整 Project 续算与预算原因说明见
+[checkpoint 用法](../../../../../docs/user_guide/PRODUCTION_CHECKPOINT_AND_LARGE_RUN_CN.md)。

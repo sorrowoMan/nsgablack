@@ -1,0 +1,4 @@
+# Official numeric reference files have byte identities in their manifest.
+# Preserve their canonical bytes across Windows and Unix checkouts.
+benchmarks/reference_sets/*.pf -text whitespace=cr-at-eol
+benchmarks/reference_sets/manifest.json text eol=lf

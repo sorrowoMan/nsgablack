@@ -1,0 +1,12 @@
+[[example]]
+id="ml-classical-frozen-lag-estimator"
+title="冻结滞后估计器 · 训练前缀fit/递归验证/只读系数恢复"
+component_keys=["mlblack.model.lag_estimator_forecast"]
+kind="documentation"
+working_directory="mlblack"
+summary="完整Case显式前40点拟合RidgeEstimator，LagEstimatorForecastModel对8步验证递归且不refit，保存四系数反馈与JSON模型Artifact。"
+inputs=["完整catalog_codec_demo副本、三仓NumPy，复用同书完整RidgeEstimator实现及正式报告入口。"]
+steps=["准备40点训练前缀和33个lag窗口，FixedAdapter送评一次。", "持久系数只读restore，发布同一冻结拟合模型；变体只增大ridge。"]
+dependencies=["三仓与NumPy，无sklearn/网络/DB，本轮未执行计算或训练。"]
+expected_outputs=["valid.rmse、40/8历史/验证大小、四系数安全Artifact与ModelRef；不宣称已执行checkpoint往返。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_CLASSICAL_LAG_ESTIMATOR_APPLICATIONS_CN.md",section="classical.lag_estimator"}, {path="nsgablack/docs/catalog_usage/ML_CLASSICAL_LAG_ESTIMATOR_APPLICATIONS_CN.md",section="classical.lag_estimator.ridge"}, {path="nsgablack/docs/catalog_usage/ML_CLASSICAL_ESTIMATOR_APPLICATIONS_CN.md",section="classical.estimator.run"}]

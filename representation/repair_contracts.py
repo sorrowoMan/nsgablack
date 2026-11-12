@@ -78,8 +78,20 @@ def validate_repair_component(component, *, unit=False):
 def validate_admission_fields(owner):
     names = getattr(owner, "admission_unit_fields", ())
     if (not isinstance(names, (tuple, list)) or any(not isinstance(name, str) for name in names)
-            or len(set(names)) != len(names)
-            or any(not hasattr(owner.algorithm_unit, name) for name in names)):
+            or len(set(names)) != len(names)):
+        raise TypeError("admission_unit_fields must name unique fields of the owned Unit")
+    unit = owner.algorithm_unit
+    if unit is None:
+        # Inspect declared data fields without calling a builder or codec.
+        from dataclasses import fields, is_dataclass
+        binding = getattr(owner, "unit_binding", None)
+        unit_type = getattr(getattr(binding, "builder", None), "unit_type", None)
+        declared = ({field.name for field in fields(unit_type)} if is_dataclass(unit_type)
+                    else set(getattr(getattr(binding, "schema", None), "required_fields", ())))
+        missing = any(name not in declared for name in names)
+    else:
+        missing = any(not hasattr(unit, name) for name in names)
+    if missing:
         raise TypeError("admission_unit_fields must name unique fields of the owned Unit")
 
 

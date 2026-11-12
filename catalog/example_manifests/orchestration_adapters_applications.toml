@@ -1,0 +1,65 @@
+[[example]]
+id = "orchestration-roles-events"
+title = "角色与事件组合 · 完整Case、配额和真实事件审计"
+component_keys = ["adapter.role", "adapter.multi_role_controller", "adapter.async_event_driven", "plugin.async_event_hub"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "实际RoleAdapter/Controller与Async事件队列两种装配，含规则路由变体，明确Hub仅观察副本、无隐式GA到VNS池交接。"
+inputs = ["完整catalog_recipes Project，Plateau二维Problem、Pipeline、Gaussian叶变化、NSGA/VNS与正式L0。"]
+steps = ["保存完整host与adapter/composition.py，root/owner/extras实际装配。", "独立切换本地cap或event_cases规则，核对语义差异。"]
+dependencies = ["当前nsgablack、blackbase与NumPy；无后台线程或外部服务。"]
+expected_outputs = ["orchestration.json真实owner成员、运行切片、Hub提交/非提交事件计数；没有执行证明。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ORCHESTRATION_ADAPTER_APPLICATIONS_CN.md", section = "orchestration.roles_events" }, { path = "nsgablack/docs/catalog_usage/ORCHESTRATION_ADAPTER_APPLICATIONS_CN.md", section = "orchestration.host" }]
+
+[[example]]
+id = "orchestration-elite-injection"
+title = "精英派生Adapter · archive与真实成员分开观察"
+component_keys = ["adapter.elite_retention"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整NSGA Case在正式送评前替换精英派生候选，说明actual mutation来源、有限archive、身份和事务。"
+inputs = ["完整host、可替换普通提案的NSGA2、精确成员引用、Archive wrapper和真实mutator。"]
+steps = ["实际构造EliteRetentionAdapter作为root，保留inner对象给报告。", "ratio=0隔离替换效果，archive仍可观察。"]
+dependencies = ["当前nsgablack、blackbase与NumPy。"]
+expected_outputs = ["orchestration.json的archive和owner成员；新派生走repair/evaluate/admission，没有复制父分数或发布未评估点。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ORCHESTRATION_ADAPTER_APPLICATIONS_CN.md", section = "orchestration.elite" }, { path = "nsgablack/docs/catalog_usage/ORCHESTRATION_ADAPTER_APPLICATIONS_CN.md", section = "orchestration.host" }]
+
+[[example]]
+id = "orchestration-elite-plugin-migration"
+title = "旧精英Plugin未装配 · 迁移到事务型Adapter"
+component_keys = ["plugin.elite"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "nsgablack"
+summary = "旧Basic/Historical只是兼容装配桥；实际新Case仅挂EliteRetentionAdapter，逐字段说明迁移且防止双wrapper。"
+inputs = ["原工程旧elite挂载与本书完整替代Case。"]
+steps = ["撤下旧Plugin，按对应Config参数显式包住inner。", "历史条数变体仍使用同一个正式Adapter。"]
+dependencies = ["当前框架栈。"]
+expected_outputs = ["迁移边界与替代Case报告；不计为旧Plugin active运行用法。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ORCHESTRATION_ADAPTER_APPLICATIONS_CN.md", section = "migration.plugin.elite" }, { path = "nsgablack/docs/catalog_usage/ORCHESTRATION_ADAPTER_APPLICATIONS_CN.md", section = "orchestration.elite" }, { path = "nsgablack/docs/catalog_usage/ORCHESTRATION_ADAPTER_APPLICATIONS_CN.md", section = "orchestration.host" }]
+
+[[example]]
+id = "orchestration-pool-prepare-recovery"
+title = "PoolSearch · SA准备、独立种群与恢复返回竞争"
+component_keys = ["adapter.pool_search"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整正式Case区分initial_count与种群容量，按接纳提交准备候选，停滞唤醒SA再重新评估竞争。"
+inputs = ["完整catalog_recipes host、SA producer、NSGA2/SPEA2独立owner、Plateau和L0。"]
+steps = ["保存完整host与PoolSearch factory。", "增大输入配额但不改容量，核对准备时间与成员变化。"]
+dependencies = ["当前框架与NumPy。"]
+expected_outputs = ["orchestration.json各提交阶段与精确成员引用；默认恢复seed是最新候选，不伪称最优。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ORCHESTRATION_POOL_TASK_APPLICATIONS_CN.md", section = "orchestration.pool_search" }, { path = "nsgablack/docs/catalog_usage/ORCHESTRATION_ADAPTER_APPLICATIONS_CN.md", section = "orchestration.host" }]
+
+[[example]]
+id = "orchestration-pool-task-workers"
+title = "PoolTask · 两独立VNS逐起点、实际Task与来源"
+component_keys = ["adapter.pool_task", "tool.strategy_task", "tool.strategy_origin"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整Source/Router/PoolTask/Mutation/Report，实际消费StrategyTask并读取最终版本StrategyOrigin，区分累计接纳历史与任务最终交付。"
+inputs = ["完整host、4个正式初始引用reference、两个独立VNS与明确partition任务。"]
+steps = ["保存恢复安全TaskSource与完整factory，沿host extras挂载一次。", "基准一步变体与output=None变体各自核对，不隐含额外变化或删除解。"]
+dependencies = ["当前框架与NumPy，无额外并行后端或Case嵌套。"]
+expected_outputs = ["orchestration.json两worker任务进度、完成final_refs和同序final_origins；本轮仅静态核对。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ORCHESTRATION_POOL_TASK_APPLICATIONS_CN.md", section = "orchestration.pool_task" }, { path = "nsgablack/docs/catalog_usage/ORCHESTRATION_ADAPTER_APPLICATIONS_CN.md", section = "orchestration.host" }]

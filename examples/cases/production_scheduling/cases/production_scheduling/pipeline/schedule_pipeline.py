@@ -207,6 +207,7 @@ class ProductionScheduleMutation:
     min_per_gene_rate: float = 0.01
     max_per_gene_rate: float = 0.35
     context_requires = ()
+    context_optional = (KEY_MUTATION_SIGMA, KEY_VNS_K)
     context_provides = ()
     context_mutates = ()
     context_cache = ()
@@ -768,6 +769,21 @@ class SupplyAwareScheduleRepair:
 
         return schedule
 
+    def _selection_availability(self, stock, req_indices):
+        """Read each machine's unchanged pre-allocation stock at most once.
+
+        This closure belongs to one day's selection only. Allocation and later
+        refill paths keep reading their newly updated stock directly.
+        """
+        cache = {}
+        cap = float(self.base_repair.max_production_per_machine)
+        def available(machine):
+            if machine not in cache:
+                req = req_indices[machine]
+                cache[machine] = cap if req.size == 0 else float(np.min(stock[req]))
+            return cache[machine]
+        return available
+
     def repair(self, x: np.ndarray, context=None) -> np.ndarray:
         schedule_pref = np.array(x, dtype=float, copy=True).reshape(self.machines, self.days)
         schedule_pref = np.clip(schedule_pref, 0, self.base_repair.max_production_per_machine)
@@ -819,6 +835,7 @@ class SupplyAwareScheduleRepair:
 
             soft_min = base_soft_min
             active = []
+            selection_availability = self._selection_availability(budget_stock, req_indices)
 
             while True:
                 active.clear()
@@ -828,8 +845,7 @@ class SupplyAwareScheduleRepair:
                         continue
                     if len(active) >= self.base_repair.max_machines_per_day:
                         break
-                    req = req_indices[m]
-                    avail = float(self.base_repair.max_production_per_machine) if req.size == 0 else float(np.min(budget_stock[req]))
+                    avail = selection_availability(m)
                     if avail >= soft_min:
                         active.append(m)
 
@@ -838,11 +854,7 @@ class SupplyAwareScheduleRepair:
                         break
                     if m in active:
                         continue
-                    req = req_indices[m]
-                    if req.size == 0:
-                        avail = float(self.base_repair.max_production_per_machine)
-                    else:
-                        avail = float(np.min(budget_stock[req]))
+                    avail = selection_availability(m)
                     if avail < soft_min:
                         continue
                     active.append(m)

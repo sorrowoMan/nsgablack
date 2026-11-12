@@ -177,6 +177,7 @@ class GradientOptimizerAdapter(UnitBackedAdapter):
         self._next_is_proposal = False
 
     def setup(self, control: Any) -> None:
+        self.reset_unit()
         _ = control
         self.current_x = None
         self.current_score = None
@@ -556,6 +557,7 @@ class GradientOptimizerAdapter(UnitBackedAdapter):
     def restart_search(self, control, context=None):
         if self._step_transaction_slot_refs or self._step_transaction_state_ref is not None:
             raise RuntimeError("Cannot restart gradient optimizer with uncommitted Provider effects")
+        self.reset_unit()
         # Old slot refs stay alive in the participant's captured baseline until
         # commit cleanup, so rollback can restore the previous task exactly.
         self._provider_state_ref = None

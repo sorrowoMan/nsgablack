@@ -1,0 +1,12 @@
+[[example]]
+id="ml-external-numeric-source-case"
+title="数据Source到正式ML Case · 本地默认/显式Hive JDBC S3分支"
+component_keys=["mlblack.pipeline.hive_query_source", "mlblack.pipeline.jdbc_query_source", "mlblack.pipeline.row_dataset_stream", "mlblack.pipeline.s3_parquet_source", "mlblack.pipeline.source.hive_query", "mlblack.pipeline.source.jdbc_query", "mlblack.pipeline.source.s3_parquet"]
+kind="documentation"
+working_directory="mlblack"
+summary="完整数据工厂/来源选择/字段与有限行检查/切分/正交训练/Artifact/Project报告，远程分支需显式开关及真实本地依赖。"
+inputs=["完整catalog_codec_demo副本与三仓NumPy；默认20行本地数据，外部表需x1/x2/target唯一数值列。"]
+steps=["默认RowDatasetStream有限分批核对20行后切16/4；Source读取不被伪称训练调度。", "Hive/JDBC/S3实质变体提供完整构造参数与客户端要求，显式授权后才允许真实连接。"]
+dependencies=["远程分支分别需pyhive认证、JayDeBeApi/JVM/JAR、pyarrow/s3fs；本轮未安装/连接/训练。"]
+expected_outputs=["正式模型指标/JSON ModelRef；远程兼容性/连接/数据快照本轮未验证，明确timeout未传递与全量物化限制。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_EXTERNAL_SOURCE_APPLICATIONS_CN.md",section="source.case"}, {path="nsgablack/docs/catalog_usage/ML_EXTERNAL_SOURCE_APPLICATIONS_CN.md",section="source.case.wiring"}, {path="nsgablack/docs/catalog_usage/ML_CLASSICAL_ESTIMATOR_APPLICATIONS_CN.md",section="classical.estimator.run"}]

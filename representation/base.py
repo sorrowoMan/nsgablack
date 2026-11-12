@@ -27,9 +27,10 @@ from blackbase.kernel import (
     get_method_for_slot,
     is_pipeline_slot,
 )
+from .state import PipelineStateMixin
 
 
-class RepresentationPipeline(RepresentationBase):
+class RepresentationPipeline(PipelineStateMixin, RepresentationBase):
     """
     Representation pipeline with ordinary blackbase slots and explicit Unit inputs.
 

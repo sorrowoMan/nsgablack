@@ -52,11 +52,11 @@ def _import_case_modules():
     return SupplyEventShiftProblem, compute_supply_adjustment_audit, InnerProductionSolverConfig, ResourceRequirement
 
 
-def test_supply_shift_cap_prefers_small_day_gap_moves():
+def test_supply_shift_cap_is_a_pure_cardinality_projection():
     SupplyEventShiftProblem, _, _, _ = _import_case_modules()
     supply = np.zeros((1, 31), dtype=float)
-    supply[0, 1] = 100.0
     supply[0, 2] = 100.0
+    supply[0, 3] = 100.0
     supply[0, 10] = 10000.0
 
     problem = SupplyEventShiftProblem(
@@ -68,13 +68,15 @@ def test_supply_shift_cap_prefers_small_day_gap_moves():
 
     shifts = problem.decode_shifts(np.array([1.0, 2.0, 10.0], dtype=float))
 
-    assert shifts.tolist() == [1, 2, 0]
+    assert np.count_nonzero(shifts) == 2
+    assert np.all((shifts == 0) | (shifts == [1, 2, 9]))
+    np.testing.assert_array_equal(problem.decode_shifts(shifts), shifts)
 
 
 def test_supply_adjustment_audit_reports_step_gap_metrics():
     SupplyEventShiftProblem, compute_audit, _, _ = _import_case_modules()
     supply = np.zeros((1, 31), dtype=float)
-    supply[0, 3] = 50.0
+    supply[0, 4] = 50.0
     supply[0, 10] = 70.0
 
     problem = SupplyEventShiftProblem(

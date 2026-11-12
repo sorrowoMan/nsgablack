@@ -93,6 +93,7 @@ class EliteRetentionAdapter(UnitBackedAdapter):
     def _setup_local_state(self, control: Any) -> None:
         """Initialize wrapper-owned state without reinitializing the inner Adapter."""
         self._validate_injection()
+        self.reset_unit()
         self._archive = []
         self._rng = self.create_local_rng(solver=control)
 
@@ -195,6 +196,9 @@ class EliteRetentionAdapter(UnitBackedAdapter):
         vio = np.asarray(violations, dtype=float).reshape(-1)
         if len(candidates) != obj.shape[0] or obj.shape[0] != vio.shape[0]:
             raise ValueError("elite archive update is cardinality-inconsistent")
+        if not len(candidates):
+            return
+        self.ensure_unit()
         for index, candidate in enumerate(candidates):
             objective = np.asarray(obj[index], dtype=float).reshape(-1).copy()
             violation = float(vio[index])

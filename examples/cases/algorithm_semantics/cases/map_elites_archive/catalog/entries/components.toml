@@ -1,0 +1,31 @@
+[[entry]]
+key = "project.problem.archive_cost"
+title = "ArchiveProblem"
+kind = "tool"
+import_path = "problem:ArchiveProblem"
+tags = ["project", "example", "problem", "quality-diversity"]
+summary = "二维真实成本；行为描述符由独立组件定义。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["不在 Problem 中维护格子或冠军。"]
+use_when = ["验证行为格子与原始质量目标分别定义时。"]
+minimal_wiring = ["from problem import ArchiveProblem", "problem = ArchiveProblem()"]
+example_entry = "cases.map_elites_archive.build_solver:build_solver"
+
+[[entry]]
+key = "project.plugin.archive_summary"
+title = "ArchiveSummary"
+kind = "plugin"
+import_path = "plugins:ArchiveSummary"
+tags = ["project", "example", "report", "quality-diversity"]
+summary = "校验已提交档案与 Pool 引用并正式发布摘要。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["只读观察格子冠军，不作算法选择。"]
+use_when = ["需要正式发布和审查最终格子冠军时。"]
+minimal_wiring = ["from plugins import ArchiveSummary", "solver.add_plugin(ArchiveSummary(output_dir='results/map_elites_archive'))"]
+example_entry = "cases.map_elites_archive.build_solver:build_solver"

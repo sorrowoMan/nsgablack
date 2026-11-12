@@ -2,7 +2,7 @@
 Simulated Annealing (SA) as an AlgorithmAdapter.
 
 This is the "algorithm-core" decomposition of SA:
-- propose(): generate neighbor candidates (via RepresentationPipeline mutator)
+- propose(): generate neighbor candidates through its bound mutation role
 - update(): accept/reject via Metropolis rule + temperature schedule
 
 Notes:
@@ -14,8 +14,6 @@ Notes:
 """
 
 from __future__ import annotations
-from blackbase.representation import representation_capabilities
-
 import copy
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Sequence, Tuple
@@ -28,6 +26,7 @@ from ..unit_backed import UnitBackedAdapter, UnitField, UnitFeedbackField
 from ...representation.structure_builders import TrajectoryUnitBuilder
 from ..algorithm_adapter import AlgorithmAdapter
 from ..pool_results import PoolRefinementState
+from ..selection import SelectionRequest
 from nsgablack.context_keys import KEY_MUTATION_SIGMA, KEY_TEMPERATURE
 
 
@@ -58,6 +57,8 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
     pool_input_modes = ("initialize",)
     supports_pool_restart = True
     supports_objective_projection = True
+    operation_methods = {"initializer": "initialize", "mutator": "mutate",
+                         "selector": "select", "repair": "repair"}
 
     def default_pool_input_count(self):
         return 1
@@ -108,6 +109,10 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
         config: Optional[SAConfig] = None,
         name: str = "sa",
         priority: int = 0,
+        initializer=None,
+        mutator=None,
+        selector=None,
+        repair=None,
         **config_kwargs,
     ) -> None:
         super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
@@ -126,6 +131,10 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
         self._last_runtime_projection: Dict[str, Any] = {}
         self._rng = self._build_rng()
         self._pool_results = PoolRefinementState()
+        for role, component in (("initializer", initializer), ("mutator", mutator),
+                                ("selector", selector), ("repair", repair)):
+            if component is not None:
+                self.set_operation(role, component)
 
     def _build_rng(self) -> np.random.Generator:
         if self.cfg.random_seed is not None:
@@ -134,13 +143,14 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
         return np.random.default_rng(int(np.random.randint(0, 2**31 - 1)))
 
     def setup(self, control: Any) -> None:
+        self.reset_unit()
         self.t0 = float(self.cfg.initial_temperature)
         self.temperature = float(self.cfg.initial_temperature)
         self.current_x = None
         self.current_score = None
-        self.algorithm_unit.candidate_metadata = {}
         self._pool_results = PoolRefinementState()
         self._rng = self.create_local_rng(control, seed=self.cfg.random_seed)
+        self.seed_operator_bindings(self._rng)
         self._warn_if_pipeline_has_no_mutator(control)
         self._last_runtime_projection = {}
 
@@ -148,10 +158,9 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
         if self._warned_missing_operator:
             return
 
-        pipeline = getattr(control, "representation_pipeline", None)
-        if not representation_capabilities(pipeline).supports("mutate"):
+        if self.get_mutation_operator(control) is None:
             warnings.warn(
-                "SimulatedAnnealingAdapter 的管线未声明 mutate 能力；"
+                "SimulatedAnnealingAdapter 未装配可用的 mutate 算子；"
                 "SA 将无法产生邻域候选（会退化为几乎不移动）。"
                 "建议：连续变量用 GaussianMutation/ContextGaussianMutation；"
                 "离散/多邻域用 ContextSelectMutator 或自定义 mutator。",
@@ -182,7 +191,7 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self.current_x is None:
-            seed = control.init_candidate(context)
+            seed = self.init_candidate(control, context)
             self.current_x = np.asarray(seed)
             self._pool_results.remember_seed(control, seed)
 
@@ -196,6 +205,8 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
         out = []
         for _ in range(max(1, int(self.cfg.batch_size))):
             cand = self.mutate_candidate(control, self._project_current(control), ctx)
+            if self.get_bound_mutator() is not None:
+                cand = self.semantic_proposal(control, cand)
             out.append(cand)
         return out
 
@@ -235,7 +246,14 @@ class SimulatedAnnealingAdapter(UnitBackedAdapter):
 
         # process batch sequentially; accept the first accepted move
         accepted_any = False
-        for idx, cand in enumerate(candidates):
+        order = range(len(candidates))
+        if self.get_bound_operator("selector") is not None:
+            request = SelectionRequest("proposal_order", candidates, objectives, violations,
+                len(candidates), scores=scores, parameters={"temperature": float(self.temperature)},
+                context=context)
+            order = self.select_indices(request, rng=self._rng)
+        for idx in order:
+            cand = candidates[idx]
             vio = float(violations[idx]) if violations is not None else 0.0
             cand_score = float(scores[idx])
 

@@ -11,7 +11,7 @@ from typing import Any, Mapping
 from blackbase.context import AuthorityIdentity
 from blackbase.evaluation import EvaluationDispositionEnvelope, EvaluationDispositionVerificationReceipt, EvaluationEvidenceInspection, EvaluationEvidenceRecord, EvaluationEventEnvelope, evaluation_disposition_digest
 from .solver_helpers import EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1, LAST_EVALUATION_DISPOSITION_KEY, evaluation_event_envelope_from_snapshot, validate_evaluation_event_snapshot, validate_population_snapshot_v2
-from blackbase.context import SnapshotStore
+from blackbase.context import SnapshotIdentity, SnapshotRecord, SnapshotStore
 
 
 class EvidenceReason(Enum):
@@ -31,6 +31,7 @@ class EvidenceReason(Enum):
     DISPOSITION_PREDECESSOR_MISMATCH = ("disposition_predecessor_mismatch", "invalid")
     DESTINATION_SNAPSHOT_KEY_MISSING = ("destination_snapshot_key_missing", "invalid")
     DESTINATION_SNAPSHOT_UNREADABLE = ("destination_snapshot_unreadable", "deferred")
+    DESTINATION_SNAPSHOT_INVALID = ("destination_snapshot_invalid", "invalid")
     DESTINATION_DISPOSITION_MISSING = ("destination_disposition_missing", "invalid")
     DESTINATION_DISPOSITION_MISMATCH = ("destination_disposition_mismatch", "invalid")
     AUTHORITY_MODE_MISSING = ("authority_mode_missing", "invalid")
@@ -118,7 +119,14 @@ class PopulationEvidenceSemantics:
 
         if snapshots is not self.snapshot_store:
             return EvidenceReason.SNAPSHOT_STORE_MISMATCH.inspection()
-        event_record = snapshots.read(record.event_snapshot_key)
+        try:
+            event_record, expected_event_ref = self._read_event_record(record)
+        except (KeyError, OSError):
+            return EvidenceReason.EVENT_SNAPSHOT_UNREADABLE.inspection()
+        except Exception as exc:
+            return EvidenceReason.EVENT_SNAPSHOT_INVALID.inspection(
+                diagnostics={"error_type": type(exc).__name__, "message": str(exc)},
+            )
         if event_record is None:
             return EvidenceReason.EVENT_SNAPSHOT_UNREADABLE.inspection()
         try:
@@ -130,7 +138,10 @@ class PopulationEvidenceSemantics:
                 expected_snapshot_key=record.event_snapshot_key,
             )
             event_ref = snapshots.identity(event_record)
-            snapshots.read_verified(event_ref)
+            if expected_event_ref is None:
+                snapshots.read_verified(event_ref)
+            elif event_ref != expected_event_ref:
+                raise ValueError("Verified Event view disagrees with its journal identity")
             raw_before = getattr(record, "authority_before_ref", None)
             before_edge = (
                 None
@@ -143,11 +154,11 @@ class PopulationEvidenceSemantics:
                     raise ValueError(
                         "Event predecessor disagrees with reserved Authority edge"
                     )
-                snapshots.read_verified(before_edge.snapshot)
+                snapshots.read_verified_view(before_edge.snapshot)
             elif predecessor is not None:
                 # v1/v2 journals did not carry an Authority edge.  Keep them
                 # readable, but do not invent an epoch during migration.
-                snapshots.read_verified(predecessor)
+                snapshots.read_verified_view(predecessor)
         except KeyError:
             return EvidenceReason.EVENT_PREDECESSOR_UNREADABLE.inspection()
         except Exception as exc:
@@ -158,6 +169,22 @@ class PopulationEvidenceSemantics:
             event_ref=event_ref,
             authority_before_ref=before_edge,
         )
+
+    def _read_event_record(
+        self, record: EvaluationEvidenceRecord,
+    ) -> tuple[SnapshotRecord | None, SnapshotIdentity | None]:
+        """Resolve one exact Event version without a preceding detached read."""
+        if record.event_ref is None:
+            # Preparing/legacy records may only know their reserved key. This
+            # discovery never replaces a known but unreadable exact reference.
+            return self.snapshot_store.read(record.event_snapshot_key), None
+        identity = SnapshotIdentity.from_dict(record.event_ref)
+        if identity.key != record.event_snapshot_key:
+            raise ValueError("Event reference disagrees with its journal key")
+        loaded = self.snapshot_store.read_verified_view(identity)
+        if self.snapshot_store.identity(loaded) != identity:
+            raise ValueError("Verified Event view disagrees with its journal identity")
+        return loaded, identity
 
     def inspect_decision(
         self,
@@ -196,7 +223,12 @@ class PopulationEvidenceSemantics:
             return result(EvidenceReason.EVENT_SNAPSHOT_KEY_MISSING)
         if intent.event_snapshot_key != record.event_snapshot_key:
             return result(EvidenceReason.EVENT_SNAPSHOT_KEY_MISMATCH)
-        event_record = self.snapshot_store.read(intent.event_snapshot_key)
+        try:
+            event_record, _ = self._read_event_record(record)
+        except (KeyError, OSError):
+            return result(EvidenceReason.EVENT_SNAPSHOT_UNREADABLE)
+        except Exception as exc:
+            return result(EvidenceReason.EVENT_SNAPSHOT_INVALID, error=exc)
         if event_record is None:
             return result(EvidenceReason.EVENT_SNAPSHOT_UNREADABLE)
         try:
@@ -211,7 +243,7 @@ class PopulationEvidenceSemantics:
             return result(EvidenceReason.EVENT_SNAPSHOT_INVALID, error=exc)
         if authority_before is not None:
             try:
-                self.snapshot_store.read_verified(authority_before)
+                self.snapshot_store.read_verified_view(authority_before)
             except Exception as exc:
                 return result(EvidenceReason.EVENT_PREDECESSOR_UNREADABLE, error=exc)
         journal_before_raw = getattr(record, "authority_before_ref", None)
@@ -242,7 +274,31 @@ class PopulationEvidenceSemantics:
         )
         if not destination_key:
             return result(EvidenceReason.DESTINATION_SNAPSHOT_KEY_MISSING)
-        destination = self.snapshot_store.read(destination_key)
+        destination_ref = None
+        if intent.status == "committed":
+            # A first settlement has no carrier identity in its Journal yet.
+            # The published Authority supplies it. Recheck the current fence
+            # below after inspecting the value: this lookup is not a cached
+            # claim that the edge will remain current throughout inspection.
+            published = self.authority_store.current(
+                self._population_authority_key(record.run_id)
+            )
+            if published is not None and published.snapshot.key == destination_key:
+                destination_ref = published.snapshot
+        elif record.decision_carrier_ref is not None:
+            destination_ref = SnapshotIdentity.from_dict(record.decision_carrier_ref)
+            if destination_ref.key != destination_key:
+                return result(EvidenceReason.DESTINATION_SNAPSHOT_INVALID)
+        try:
+            destination = (
+                self.snapshot_store.read(destination_key)
+                if destination_ref is None
+                else self.snapshot_store.read_verified_view(destination_ref)
+            )
+        except (KeyError, OSError):
+            return result(EvidenceReason.DESTINATION_SNAPSHOT_UNREADABLE)
+        except Exception as exc:
+            return result(EvidenceReason.DESTINATION_SNAPSHOT_INVALID, error=exc)
         if destination is None:
             return result(EvidenceReason.DESTINATION_SNAPSHOT_UNREADABLE)
         observed = self._snapshot_disposition(destination.data)
@@ -252,6 +308,8 @@ class PopulationEvidenceSemantics:
             return result(EvidenceReason.DESTINATION_DISPOSITION_MISMATCH)
         event_identity = self.snapshot_store.identity(event_record)
         destination_identity = self.snapshot_store.identity(destination)
+        if destination_ref is not None and destination_identity != destination_ref:
+            return result(EvidenceReason.DESTINATION_SNAPSHOT_INVALID)
         authority_after: AuthorityIdentity | None = journal_before
         if intent.status == "committed":
             expected_mode = str(

@@ -40,7 +40,10 @@ POPULATION_DISTANCES = UnitFeature(
 
 
 def _selection_ranking(inputs):
-    from ..utils.performance.fast_non_dominated_sort import FastNonDominatedSort
+    from ..utils.performance.fast_non_dominated_sort import (
+        FastNonDominatedSort,
+        fast_non_dominated_sort_optimized,
+    )
     population, objectives, violations = (inputs[n] for n in ("population", "objectives", "violations"))
     count = 0 if population is None else len(population)
     if count == 0:
@@ -50,7 +53,7 @@ def _selection_ranking(inputs):
     objectives, violations = np.asarray(objectives), np.asarray(violations)
     if objectives.ndim != 2 or violations.shape != (count,) or len(objectives) != count:
         raise FeatureContractError("Selection ranking feedback must align with population")
-    fronts, rank = FastNonDominatedSort.sort(objectives, violations)
+    fronts, rank = fast_non_dominated_sort_optimized(objectives, violations)
     crowding = np.zeros(count)
     for front in fronts:
         crowding += FastNonDominatedSort.calculate_crowding_distance(objectives, list(front))

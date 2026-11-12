@@ -11,7 +11,13 @@
 返回种群角色使用 PoolTaskSpec("refined", mode="compete", phases=("return",))。
 阶段切换仍由 MultiStrategyConfig.phase_policy/phase_roles 决定。
 完整可运行示例见 examples/cases/solution_pool/cases/pool_refinement。
-省略 select 默认读母池；种群用 PoolTaskSpec(mode="initialize") 即按声明大小独立抽样。
+省略 select 默认读最近组合的 working_pool；没有组合绑定时读 Solver 根池。
+可在 StrategyRouterAdapter/StrategyChainAdapter 指定 working_pool="workspace"，
+或通过脚手架 multi/serial(..., working_pool="workspace") 绑定同一公共名；子组合默认继承。
+workspace 必须在首次运行前已创建且已提交，框架不复制根池或自动新建。
+该绑定不自动插入初始化任务；种群用 PoolTaskSpec(mode="initialize") 按声明大小抽样。
+接纳候选加入最近工作区，显式精英输入池不因此成为全部试探的输出池。
+同批自动追加工作区与显式精确替换该工作区冲突；精选另行写入elite等集合。
 指定子池必须存在。VNS 默认一个起点；count="all" 用于整批精修。
 SA、PatternSearch、SingleTrajectoryAdaptive、GaussianSearch、MAS、有限差分及四种信赖域
 同样支持普通/投影 refine；output要求明确结果接口。

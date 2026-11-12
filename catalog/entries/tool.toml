@@ -1,10 +1,30 @@
 # Canonical tool catalog shard.
 
 [[entry]]
+key = "tool.case_inner_runtime_evaluator"
+title = "CaseInnerRuntimeEvaluator"
+kind = "tool"
+import_path = "nsgablack.core:CaseInnerRuntimeEvaluator"
+tags = ["core", "nested", "case", "parallel", "distributed", "evaluation"]
+summary = "将外层候选交给完整标准内层 Case；显式投影返回反馈，可请求整批并发并复用 Project 外部 Worker 授权。"
+use_when = ["一个供应方案需要运行独立排程 Case 后才能评价时。", "一批候选要并发运行完整 Solver/Trainer Case，且保留预算、取消和 Artifact 收据时。"]
+minimal_wiring = [
+  "from nsgablack.core import CaseInnerRuntimeEvaluator",
+  "# project_result(solver, candidate, result) 显式核验并解释子 Case 结果。",
+  "problem.inner_runtime_evaluator = CaseInnerRuntimeEvaluator(case_name='inner', projector=project_result, max_workers=2, resource_request={'workers': 1, 'threads': 1}, budget_request={'evaluations': 2})",
+  "# Project 的 L0.nested_execution 选择远端 Case 和目标；未配置时仍走本机授权。",
+]
+required_companions = ["standard Project/Case runtime", "explicit result projector"]
+config_keys = ["case_name", "projector", "max_workers", "artifact_bindings", "resource_request", "budget_request", "component_overrides_factory", "timeout_seconds", "termination"]
+example_entry = "docs/architecture/STATE_COST_AND_NESTED_EXECUTION_CN.md"
+contract = { catalog = { role = "case_evaluator", concepts = ["完整内层Case", "候选批次", "多机排程", "资源授权"], operations = ["evaluate", "evaluate_batch"], boundaries = ["Pool/Unit 活对象不跨机器传输。", "并发执行后按原输入顺序投影，不自动改变外层算法。", "Provider 存在时保持原仲裁，max_workers 不构成物理资源授权。"] } }
+
+[[entry]]
 key = "tool.strategy_task"
 title = "StrategyTask"
 kind = "tool"
 import_path = "nsgablack.adapters:StrategyTask"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 tags = ["composition", "contract", "strategy", "tool"]
 summary = "多策略子任务：实例路径、阶段、原提案预算和局部区域/种子。"
 use_when = ["子 Adapter 需要读取组合器分配的任务时。"]
@@ -17,6 +37,7 @@ key = "tool.strategy_origin"
 title = "StrategyOrigin"
 kind = "tool"
 import_path = "nsgablack.adapters:StrategyOrigin"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 tags = ["composition", "contract", "provenance", "tool"]
 summary = "候选从外到内的策略来源，与 CandidateBatch/token 一起保存和筛选。"
 use_when = ["查询数值相同候选各自的角色、实例和提案行来源时。"]
@@ -29,6 +50,7 @@ key = "tool.runtime_participant"
 title = "RuntimeParticipant"
 kind = "tool"
 import_path = "blackbase.runtime:RuntimeParticipant"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 tags = ["runtime-contract", "authority", "tool"]
 summary = "通用步骤事务参与者；局部快照、恢复、子参与者与提交后清理。"
 use_when = ["新增有状态运行组件时。"]
@@ -41,6 +63,7 @@ key = "tool.representation_capabilities"
 title = "RepresentationCapabilities"
 kind = "tool"
 import_path = "blackbase.representation:RepresentationCapabilities"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 tags = ["runtime-contract", "authority", "tool"]
 summary = "候选管线显式操作能力声明。"
 use_when = ["组装 codec、搜索或 repair 的任意子集时。"]
@@ -53,6 +76,7 @@ key = "tool.participation_contract"
 title = "ParticipationContract"
 kind = "tool"
 import_path = "blackbase.participation:ParticipationContract"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 tags = ["runtime-contract", "authority", "tool"]
 summary = "Plugin 与 Controller 的建议、决定和否决域。"
 use_when = ["组件接管评估或参与严格结果发布时。"]
@@ -65,6 +89,7 @@ key = "tool.preference_delta"
 title = "PreferenceDelta"
 kind = "tool"
 import_path = "blackbase.preferences:PreferenceDelta"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 tags = ["runtime-contract", "authority", "tool"]
 summary = "保留原始反馈的偏好增量值。"
 use_when = ["Bias 需要解释选择目标投影时。"]
@@ -77,6 +102,7 @@ key = "tool.population_authority"
 title = "PopulationAuthority"
 kind = "tool"
 import_path = "nsgablack.core.state.population_authority:PopulationAuthority"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 tags = ["runtime-contract", "authority", "tool"]
 summary = "运行内 population、身份、分区与发布游标所有者。"
 use_when = ["扩展权威状态或检查回滚边界时。"]
@@ -89,6 +115,7 @@ key = "tool.run_session"
 title = "RunSession"
 kind = "tool"
 import_path = "nsgablack.core.state.run:RunSession"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 tags = ["runtime-contract", "authority", "tool"]
 summary = "运行身份、进度、预算、恢复队列与结果所有者。"
 use_when = ["语义扩展需要恢复或读取运行进度时。"]
@@ -101,6 +128,7 @@ key = "tool.finalization_hooks"
 title = "FinalizationHooks"
 kind = "tool"
 import_path = "blackbase.runtime:FinalizationHooks"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 tags = ["runtime-contract", "authority", "tool"]
 summary = "结果准备和事务发布的显式注册入口。"
 use_when = ["结果或 Artifact 需要在 teardown 后发布时。"]
@@ -113,6 +141,7 @@ key = "tool.semantic_extension"
 title = "SolverSemanticExtension"
 kind = "tool"
 import_path = "nsgablack.core.semantic_extension:SolverSemanticExtension"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 tags = ["runtime-contract", "authority", "tool"]
 summary = "提交前语义准备与提交后投影扩展。"
 use_when = ["扩展 ML 等语义但复用共享 step 事务时。"]
@@ -133,7 +162,7 @@ use_when = [
 minimal_wiring = ["from nsgablack.utils.dynamic import CLISignalProvider", "CLISignalProvider()"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search dynamic_cli_signal --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "tool.context_store_redis"
@@ -156,7 +185,7 @@ config_keys = [
   "context_store_key_prefix",
   "context_store_ttl_seconds",
 ]
-example_entry = "python -m nsgablack catalog search context_store_redis --kind doc"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "solver.blank"
@@ -168,10 +197,13 @@ summary = "工具：SolverBase。 / Tool: SolverBase."
 use_when = [
   "需要在流程装配或诊断中使用该工具时。 / Need this utility/tool in workflow assembly or diagnostics.",
 ]
-minimal_wiring = ["from nsgablack.core.blank_solver import SolverBase", "SolverBase()"]
+minimal_wiring = [
+  "from nsgablack.core.blank_solver import SolverBase",
+  "solver = SolverBase(problem=problem, representation_pipeline=pipeline)",
+]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search blank --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "solver.composable"
@@ -185,11 +217,11 @@ use_when = [
 ]
 minimal_wiring = [
   "from nsgablack.core.composable_solver import ComposableSolver",
-  "ComposableSolver()",
+  "solver = ComposableSolver(problem=problem, representation_pipeline=pipeline, adapter=adapter)",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search composable --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "solver.nsga2"
@@ -201,10 +233,13 @@ summary = "工具：EvolutionSolver。 / Tool: EvolutionSolver."
 use_when = [
   "需要在流程装配或诊断中使用该工具时。 / Need this utility/tool in workflow assembly or diagnostics.",
 ]
-minimal_wiring = ["from nsgablack.core.evolution_solver import EvolutionSolver", "EvolutionSolver()"]
+minimal_wiring = [
+  "from nsgablack.core.evolution_solver import EvolutionSolver",
+  "solver = EvolutionSolver(problem=problem, representation_pipeline=pipeline)",
+]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search nsga2 --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "tool.context_keys"
@@ -216,10 +251,15 @@ summary = "工具：Context Keys。 / Tool: Context Keys."
 use_when = [
   "需要在流程装配或诊断中使用该工具时。 / Need this utility/tool in workflow assembly or diagnostics.",
 ]
-minimal_wiring = ["from blackbase.context import context_keys", "Use constants from context_keys."]
+minimal_wiring = [
+  "from blackbase.context import context_keys",
+  "from nsgablack.context_keys import KEY_GENERATION",
+  "def read_generation(context):",
+  "    return context.get(KEY_GENERATION, 0)",
+]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search context_keys --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "tool.context_schema"
@@ -231,11 +271,16 @@ summary = "工具：MinimalEvaluationContext。 / Tool: MinimalEvaluationContext
 use_when = [
   "需要在流程装配或诊断中使用该工具时。 / Need this utility/tool in workflow assembly or diagnostics.",
 ]
-minimal_wiring = ["from nsgablack.core.state import MinimalEvaluationContext", "MinimalEvaluationContext()"]
+minimal_wiring = [
+  "from nsgablack.core.state import MinimalEvaluationContext",
+  "local = MinimalEvaluationContext(generation=0, individual_id=0,",
+  "    constraints=[], constraint_violation=0.0)",
+  "print(local.individual_id)",
+]
 required_companions = ["tool.context_keys"]
 config_keys = ["(none)"]
 companions = ["tool.context_keys"]
-example_entry = "python -m nsgablack catalog search context_schema --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "tool.logging"
@@ -250,7 +295,7 @@ use_when = [
 minimal_wiring = ["from nsgablack.utils.engineering import configure_logging", "configure_logging()"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search logging --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "tool.metrics"
@@ -262,10 +307,14 @@ summary = "工具：pareto_filter。 / Tool: pareto_filter."
 use_when = [
   "需要在流程装配或诊断中使用该工具时。 / Need this utility/tool in workflow assembly or diagnostics.",
 ]
-minimal_wiring = ["from nsgablack.utils.analysis import pareto_filter", "pareto_filter()"]
+minimal_wiring = [
+  "from nsgablack.utils.analysis import pareto_filter",
+  "front = pareto_filter([[1.0, 2.0], [2.0, 1.0], [3.0, 3.0]])",
+  "print(front)",
+]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search metrics --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "tool.parallel_evaluator"
@@ -280,4 +329,4 @@ use_when = [
 minimal_wiring = ["from nsgablack.utils.parallel import ParallelEvaluator", "ParallelEvaluator()"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search parallel_evaluator --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"

@@ -1,0 +1,125 @@
+# Current algorithm structure and binding surfaces.
+
+[[entry]]
+key = "tool.unit_binding"
+title = "UnitBinding"
+kind = "tool"
+import_path = "nsgablack.units:UnitBinding"
+tags = ["core", "unit-binding"]
+summary = "无状态 builder、显式 codec 与可选 runner 的装配绑定；运行结构由 Adapter 按需创建。"
+companions = ["tool.population_unit", "tool.population_change", "tool.bo_unit", "tool.cma_unit", "tool.map_elites_unit", "repr.unit_candidate", "repr.unit_search_node", "repr.unit_pareto_label", "repr.unit_trajectory", "repr.unit_poll", "repr.unit_parameters", "repr.unit_population", "repr.unit_reference_population", "repr.unit_differential_population", "repr.unit_decomposition", "repr.unit_region", "repr.unit_model_search", "repr.unit_archive", "repr.unit_neighborhood"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+use_when = ["UnitBinding", "Unit结构构建", "自定义Unit", "种群扩展字段"]
+minimal_wiring = ["from nsgablack.units import UnitBinding", "from nsgablack.representation import PopulationUnitBuilder", "binding = UnitBinding(PopulationUnitBuilder())"]
+required_companions = []
+config_keys = ["builder", "runner", "name", "operations"]
+example_entry = "examples/cases/assembly_workbench/cases/hybrid_search/run_solver.py"
+contract = { catalog = { role = "unit_binding", concepts = ["UnitBinding", "Unit结构构建", "自定义Unit", "种群扩展字段"], operations = ["build", "dump", "restore", "require", "validate"], boundaries = ["build 不是候选 encode；恢复不调用随机 builder。", "绑定不拥有运行循环、全局授权或可变算法状态。"] } }
+
+[[entry]]
+key = "tool.population_unit"
+title = "PopulationUnit"
+kind = "tool"
+import_path = "nsgablack.units:PopulationUnit"
+tags = ["core", "unit"]
+summary = "种群候选、反馈、token 与扩展成员字段的单一结构；Adapter 选择成员，Unit 原子维护对齐。"
+companions = ["tool.unit_binding", "tool.population_change", "tool.unit_feature", "repr.unit_population"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+use_when = ["种群扩展字段", "PopulationUnit", "自定义种群", "成员对齐"]
+minimal_wiring = [
+  "import numpy as np",
+  "from nsgablack.units import PopulationUnit, UnitFeature, FeatureUnit",
+  "unit = PopulationUnit('demo', population=np.array([[0., 1.], [1., 0.]]))",
+  "center = UnitFeature('center', ('population',), lambda data: data['population'].mean(axis=0))",
+  "assert isinstance(unit, FeatureUnit)",
+  "value = unit.feature(center)",
+  "print(value)",
+]
+required_companions = []
+config_keys = ["unit_id", "population", "objectives", "violations", "candidate_tokens", "feedback_population_revision", "feedback_field_revisions"]
+example_entry = "examples/cases/assembly_workbench/cases/hybrid_search/run_solver.py"
+contract = { catalog = { role = "unit", concepts = ["种群扩展字段", "PopulationUnit", "自定义种群", "成员对齐"], operations = ["initialize_population", "apply_selection", "clear_population", "attach_feedback", "replace_evaluated_rows", "require_current_feedback", "on_members_changed"], boundaries = ["apply_selection 执行 Adapter 给出的索引，不定义生存策略。", "新增行字段须声明 member_fields 并维护；Adapter 不猜测未知字段。"] } }
+
+[[entry]]
+key = "tool.bo_unit"
+title = "BayesianOptimizationUnit"
+kind = "tool"
+import_path = "nsgablack.units:BayesianOptimizationUnit"
+tags = ["core", "unit"]
+summary = "由实际 Adapter 按需持有的算法结构，经显式 codec 回滚与恢复。"
+companions = ["adapter.bayesian_optimization", "tool.unit_binding"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+use_when = ["真实观测与成员分离", "BO观测状态"]
+minimal_wiring = [
+  "import numpy as np",
+  "from nsgablack.units import BayesianOptimizationUnit, UnitBinding, StructureBuildRequest",
+  "from nsgablack.representation.bayesian_builder import BayesianUnitBuilder",
+  "binding = UnitBinding(BayesianUnitBuilder())",
+  "unit = binding.build(StructureBuildRequest('demo', parameters={'values': {}}))",
+  "assert isinstance(unit, BayesianOptimizationUnit)",
+]
+required_companions = []
+config_keys = ["unit_id"]
+example_entry = "examples/cases/algorithm_semantics/cases/synchronous_bo/run_solver.py"
+contract = { catalog = { role = "unit", concepts = ["真实观测与成员分离", "BO观测状态"], operations = [], boundaries = ["训练证据闭包不能仅从最后接受成员重建。"] } }
+
+[[entry]]
+key = "tool.cma_unit"
+title = "CMAUnit"
+kind = "tool"
+import_path = "nsgablack.units:CMAUnit"
+tags = ["core", "unit"]
+summary = "由实际 Adapter 按需持有的算法结构，经显式 codec 回滚与恢复。"
+companions = ["adapter.cmaes", "tool.unit_binding"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+use_when = ["CMA-ES", "搜索分布", "整批更新"]
+minimal_wiring = [
+  "import numpy as np",
+  "from nsgablack.units import CMAUnit, UnitBinding, StructureBuildRequest",
+  "from nsgablack.representation.cmaes_builder import CMAUnitBuilder",
+  "binding = UnitBinding(CMAUnitBuilder())",
+  "unit = binding.build(StructureBuildRequest('demo', parameters={'values': {'mean': np.zeros(2), 'covariance': np.eye(2), 'path_c': np.zeros(2), 'path_sigma': np.zeros(2)}}))",
+  "assert isinstance(unit, CMAUnit)",
+]
+required_companions = []
+config_keys = ["unit_id"]
+example_entry = "examples/cases/algorithm_semantics/cases/cmaes_distribution/run_solver.py"
+contract = { catalog = { role = "unit", concepts = ["CMA-ES", "搜索分布", "整批更新"], operations = [], boundaries = ["分布参数不是逐成员字段；未评估均值不能当作已评估候选。"] } }
+
+[[entry]]
+key = "tool.map_elites_unit"
+title = "MapElitesUnit"
+kind = "tool"
+import_path = "nsgablack.units:MapElitesUnit"
+tags = ["core", "unit"]
+summary = "由实际 Adapter 按需持有的算法结构，经显式 codec 回滚与恢复。"
+companions = ["adapter.map_elites", "tool.unit_binding"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+use_when = ["MAP-Elites", "格子档案", "按行为保留精英"]
+minimal_wiring = [
+  "import numpy as np",
+  "from nsgablack.units import MapElitesUnit, UnitBinding, StructureBuildRequest",
+  "from nsgablack.representation.map_elites_builder import MapElitesUnitBuilder",
+  "binding = UnitBinding(MapElitesUnitBuilder())",
+  "unit = binding.build(StructureBuildRequest('demo', parameters={'values': {}}))",
+  "assert isinstance(unit, MapElitesUnit)",
+]
+required_companions = []
+config_keys = ["unit_id"]
+example_entry = "examples/cases/algorithm_semantics/cases/map_elites_archive/run_solver.py"
+contract = { catalog = { role = "unit", concepts = ["MAP-Elites", "格子档案", "按行为保留精英"], operations = [], boundaries = ["Unit 唯一维护冠军；Pool archive 仅是精确引用视图。"] } }

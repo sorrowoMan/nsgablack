@@ -1,0 +1,25 @@
+[[example]]
+id = "ml-neural-seven-temporal-routes"
+title = "七种时序结构的真实预设 · 点目标与DeepAR NLL"
+component_keys = ["mlblack.codec.neural_temporal_lstm_spec", "mlblack.codec.neural_temporal_tcn_spec", "mlblack.codec.neural_temporal_transformer_spec", "mlblack.codec.neural_temporal_nbeats_spec", "mlblack.codec.neural_temporal_deepar_spec", "mlblack.codec.neural_temporal_patchtst_spec", "mlblack.codec.neural_temporal_tft_spec", "mlblack.preset.temporal_lstm_forecast", "mlblack.preset.temporal_tcn_forecast", "mlblack.preset.temporal_transformer_forecast", "mlblack.preset.temporal_nbeats_forecast", "mlblack.preset.temporal_deepar_forecast", "mlblack.preset.temporal_patchtst_forecast", "mlblack.preset.temporal_tft_forecast", "mlblack.problem.temporal_neural_forecasting", "mlblack.problem.temporal_neural_probabilistic_forecasting"]
+kind="documentation"
+working_directory="mlblack"
+summary="以完整正式Case配套七种Spec/preset的真实参数，使用相同一步窗口、单Case组和正式结果入口；DeepAR显式切换概率Head/Problem而不是Bias。"
+inputs=["temporal_neural_compare完整副本与原Project L0；只改temporal_lstm宿主并新增catalog_one组。", "三仓、NumPy、CPU Torch，DeepAR指标还用SciPy；16训练/4验证，4步历史。"]
+steps=["保存完整数据/配置/路由工厂/builder与Project结果入口；六变体各切换一个真实预设。", "分别解释Spec/Codec/Problem/Provider、valid MSE或valid NLL、训练loss及模型NPZ/Artifact差异。"]
+dependencies=["当前三仓、NumPy、PyTorch、概率指标所用SciPy；无模型下载或外部服务。"]
+expected_outputs=["本次temporal.json有原始单目标、loss、训练/验证指标、signals及best_model_ref；不把模型族名当论文级复现或两步效果保证。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_NEURAL_TEMPORAL_APPLICATIONS_CN.md",section="neural.temporal"},{path="nsgablack/docs/catalog_usage/ML_NEURAL_TEMPORAL_APPLICATIONS_CN.md",section="neural.temporal.run"}]
+
+[[example]]
+id="ml-neural-rolling-origin"
+title="同一参数模型的滚动起点评估 · 非梯度搜索与正式模型发布"
+component_keys=["mlblack.problem.temporal_neural_rolling_origin"]
+kind="documentation"
+working_directory="mlblack"
+summary="完整替换正式Case为20观测的滚动origin评估，显式历史长度/单目标/四起点抽样，配Gaussian参数搜索而不在origin内重训。"
+inputs=["独立temporal_neural_compare副本、catalog_one组和正式报告入口；三仓/NumPy/CPU Torch。"]
+steps=["保存完整TimeSeriesDataView数据、RollingProblem/Artifact hook与LSTM Spec/共享Solver装配。", "变体max_origins=None评估全部起点，仍不启动内部训练循环。"]
+dependencies=["三仓、NumPy、PyTorch；没有外部账号或模型下载。"]
+expected_outputs=["正式最佳反馈rolling.rmse、origins/horizon/min_train_size及模型引用；仅源码核对，不声称搜索效果或独立最终测试已完成。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_NEURAL_TEMPORAL_APPLICATIONS_CN.md",section="neural.temporal.rolling"},{path="nsgablack/docs/catalog_usage/ML_NEURAL_TEMPORAL_APPLICATIONS_CN.md",section="neural.temporal.run"}]

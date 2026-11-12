@@ -1,5 +1,5 @@
 """
-NSGA-III style adapter.
+NSGA-III with hyperplane normalization and reference-direction niching.
 """
 
 from __future__ import annotations
@@ -26,17 +26,18 @@ class NSGA3Adapter(NSGA2Adapter):
     unit_builder_type = ReferencePopulationBuilder
     unit_schema = ReferencePopulationBuilder.unit_type.schema
     reference_points = UnitField("reference_points")
+    normalization = UnitField("normalization")
 
     context_requires = ()
     context_provides = NSGA2Adapter.context_provides + (KEY_MO_WEIGHTS,)
     context_mutates = ()
     context_cache = ()
-    context_notes = "NSGA-III style adapter with reference-point niching in environmental selection."
+    context_notes = "NSGA-III with persistent ideal/extreme points, hyperplane normalization and perpendicular reference-line niching."
     state_recovery_level = "L2"
     state_recovery_notes = (
         "Inherits NSGA-II population snapshot roundtrip "
         "(get_state/set_state + get_population_snapshot/set_population_snapshot). "
-        "Reference directions are restored through the configured Unit codec."
+        "Reference directions and hyperplane normalization history are restored through the Unit v2 codec; v1 checkpoints require explicit migration."
     )
 
     def __init__(
@@ -44,6 +45,14 @@ class NSGA3Adapter(NSGA2Adapter):
         config: Optional[NSGA3Config] = None,
         name: str = "nsga3",
         priority: int = 0,
+        *,
+        initializer=None,
+        parent_selector=None,
+        mutator=None,
+        change=None,
+        selector=None,
+        pool_maintenance=None,
+        repair=None,
         **config_kwargs,
     ) -> None:
         unit_binding = config_kwargs.pop("unit_binding", None)
@@ -53,21 +62,53 @@ class NSGA3Adapter(NSGA2Adapter):
             config_kwargs=config_kwargs,
             adapter_name="NSGA3Adapter",
         )
-        super().__init__(config=resolved, name=name, priority=priority, unit_binding=unit_binding)
+        super().__init__(config=resolved, name=name, priority=priority, unit_binding=unit_binding,
+                         initializer=initializer, parent_selector=parent_selector, mutator=mutator,
+                         selector=selector, repair=repair, change=change, pool_maintenance=pool_maintenance)
         self.config = self.cfg
         self.cfg: NSGA3Config = resolved
         self.reference_points: np.ndarray = np.zeros((0, 0), dtype=float)
 
     def setup(self, control: Any) -> None:
         super().setup(control)
-        problem = getattr(control, "problem", None)
-        counter = getattr(problem, "get_num_objectives", None)
-        n_obj = int(counter() if callable(counter) else getattr(problem, "num_objectives", 2))
-        self.reference_points = self._generate_reference_points(n_obj, max(1, int(self.cfg.divisions)))
+
+    def _ensure_population(self, control, context):
+        # Initial candidates must be evaluated before any CV-based mating.
+        # Preserve the original proposal objects and their provenance instead
+        # of taking unbound array views out of an unevaluated Unit.
+        if self.population is None or not len(self.population):
+            return [self.init_candidate(control, context) for _ in range(max(2, int(self.cfg.population_size)))]
+        return None
+
+    def _tournament_pick(self):
+        n = len(self.population)
+        a, b = self._rng.integers(0, n, size=2)
+        va, vb = self.violations[a], self.violations[b]
+        if (va > 0 or vb > 0) and va != vb:
+            return int(a if va < vb else b)
+        return int(self._rng.choice((a, b)))
+
+    def propose(self, control: Any, context: Dict[str, Any]):
+        if not self.reference_points.size:
+            problem = getattr(control, "problem", None)
+            counter = getattr(problem, "get_num_objectives", None)
+            n_obj = int(counter() if callable(counter) else getattr(problem, "num_objectives", 2))
+            self._generate_reference_points(n_obj, max(1, int(self.cfg.divisions)))
+        return super().propose(control, context)
 
     def _environmental_select(self, objectives: np.ndarray, violations: np.ndarray, n_keep: int) -> np.ndarray:
-        # Base NSGA-II front fill first.
-        fronts, _ = self._sort_fronts(objectives, violations)
+        from .normalization import update_normalization, associate, niche_select
+        from ...utils.performance.fast_non_dominated_sort import FEASIBILITY_THRESHOLD
+        feasible = np.flatnonzero(np.asarray(violations) <= FEASIBILITY_THRESHOLD)
+        infeasible = np.flatnonzero(np.asarray(violations) > FEASIBILITY_THRESHOLD)
+        infeasible = infeasible[np.argsort(np.asarray(violations)[infeasible], kind="stable")]
+        if not len(feasible):
+            return infeasible[:n_keep]
+        f = np.asarray(objectives)[feasible]
+        fronts, _ = self._sort_fronts(f, np.zeros(len(f)))
+        self.normalization = update_normalization(self.normalization, f, fronts[0])
+        if self.reference_points.size == 0 or self.reference_points.shape[1] != f.shape[1]:
+            self._generate_reference_points(f.shape[1], max(1, int(self.cfg.divisions)))
         keep: List[int] = []
         for front in fronts:
             if len(keep) + len(front) <= n_keep:
@@ -77,61 +118,37 @@ class NSGA3Adapter(NSGA2Adapter):
             remain = max(0, n_keep - len(keep))
             if remain <= 0:
                 break
-            selected = self._niching_pick(objectives, np.asarray(front, dtype=int), remain)
+            considered = np.asarray(keep + list(front), dtype=int)
+            assignment, distances = associate(f[considered], self.reference_points, self.normalization)
+            counts = np.bincount(assignment[:len(keep)], minlength=len(self.reference_points))
+            selected = niche_select(np.asarray(front), remain, counts, assignment[len(keep):], distances[len(keep):], self._rng)
             keep.extend(selected.tolist())
             break
-        return np.asarray(keep, dtype=int)
+        selected = feasible[np.asarray(keep, dtype=int)]
+        return np.concatenate((selected, infeasible[:max(0, n_keep-len(selected))]))
+
+    def update(self, control, candidates, feedback, context):
+        super().update(control, candidates, feedback, context)
+        if not self.normalization and self.objectives is not None and len(self.objectives):
+            from ...utils.performance.fast_non_dominated_sort import FEASIBILITY_THRESHOLD
+            from .normalization import update_normalization
+            feasible = np.flatnonzero(np.asarray(self.violations) <= FEASIBILITY_THRESHOLD)
+            if len(feasible):
+                f = self.objectives[feasible]
+                fronts, _ = self._sort_fronts(f, np.zeros(len(f)))
+                self.normalization = update_normalization({}, f, fronts[0])
 
     def _sort_fronts(self, objectives: np.ndarray, violations: np.ndarray):
-        from ...utils.performance.fast_non_dominated_sort import FastNonDominatedSort
+        from ...utils.performance.fast_non_dominated_sort import fast_non_dominated_sort_optimized
 
-        return FastNonDominatedSort.sort(objectives, violations)
-
-    def _niching_pick(self, objectives: np.ndarray, front_indices: np.ndarray, remain: int) -> np.ndarray:
-        if front_indices.size <= remain:
-            return front_indices
-
-        obj = np.asarray(objectives[front_indices], dtype=float)
-        if obj.ndim == 1:
-            obj = obj.reshape(-1, 1)
-        zmin = np.min(obj, axis=0)
-        zmax = np.max(obj, axis=0)
-        scale = np.where((zmax - zmin) > 1e-12, (zmax - zmin), 1.0)
-        norm_obj = (obj - zmin) / scale
-
-        if self.reference_points.size == 0 or self.reference_points.shape[1] != norm_obj.shape[1]:
-            self.reference_points = self._generate_reference_points(norm_obj.shape[1], max(1, int(self.cfg.divisions)))
-        refs = self.reference_points
-
-        assoc = np.argmin(self._pairwise_dist(norm_obj, refs), axis=1)
-        selected_local: List[int] = []
-        niche_count = np.zeros(refs.shape[0], dtype=int)
-        available = set(range(front_indices.size))
-        while len(selected_local) < remain and available:
-            niche = int(np.argmin(niche_count))
-            candidates = [i for i in available if assoc[i] == niche]
-            if len(candidates) == 0:
-                niche_count[niche] = np.iinfo(np.int32).max
-                continue
-            if niche_count[niche] == 0:
-                d = self._pairwise_dist(norm_obj[np.asarray(candidates, dtype=int)], refs[[niche]])[:, 0]
-                pick = candidates[int(np.argmin(d))]
-            else:
-                pick = int(self._rng.choice(candidates))
-            available.remove(pick)
-            selected_local.append(pick)
-            niche_count[niche] += 1
-        return front_indices[np.asarray(selected_local, dtype=int)]
+        fronts, rank = fast_non_dominated_sort_optimized(objectives, violations)
+        # Stable row order within an unordered front makes randomized niching
+        # independent of the dominance graph traversal order.
+        return [sorted(front) for front in fronts], rank
 
     def _generate_reference_points(self, n_obj: int, divisions: int) -> np.ndarray:
         self.rebuild_unit("reference_directions", objectives=n_obj, divisions=divisions)
-        return self.algorithm_unit.reference_points
-
-    def _pairwise_dist(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
-        aa = np.sum(a * a, axis=1, keepdims=True)
-        bb = np.sum(b * b, axis=1, keepdims=True).T
-        sq = np.maximum(aa + bb - (2.0 * (a @ b.T)), 0.0)
-        return np.sqrt(sq)
+        return self.ensure_unit().reference_points
 
     def _sync_runtime_projection(self) -> None:
         super()._sync_runtime_projection()

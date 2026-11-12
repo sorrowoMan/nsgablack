@@ -1,0 +1,38 @@
+[[example]]
+id = "ml-data-pipeline-mixed-rows-application"
+title = "混合行到数值准备链 · 训练词表、标签、选列和缩放"
+component_keys = ["mlblack.numericizer.default", "mlblack.numericizer.default_numericizer", "mlblack.numericizer.target", "mlblack.pipeline.data_pipeline", "mlblack.pipeline.data_pipeline_chain", "mlblack.pipeline.identity", "mlblack.pipeline.select_columns", "mlblack.pipeline.z_score_normalize"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "完整正式Case接通训练行词表、显式TargetCodec、有限性组件、Identity/选列/ZScore，再交给概率模型与分类Problem，安全Artifact保存真实准备蓝图。"
+inputs = ["catalog_codec_demo独立完整副本，保留原Project L0和默认单Case；当前三仓与NumPy。", "12条训练/6条独立验证混合记录，off/on固定标签词表，设备A/B训练词表；先划分再拟合。"]
+steps = ["保存完整配置/管线/Problem/Adapter/builder与正式execute_project报告入口，标签必须显式编码，未知类别显式拒绝。", "变体移除ZScore而保留数值化和选列；解释DataPipeline组件名称与拟合状态归属。"]
+dependencies = ["blackbase、nsgablack、mlblack、NumPy；无数据库、Torch、网络或模型API。"]
+expected_outputs = ["本次results/prepared.json的四个准备后列、12行训练、训练log_loss/独立验证指标和正式模型引用。", "Artifact含训练NumericizationPlan/TargetCodec、选列规则、真实mean/std和logit；源代码检查不是运行收据，没有自动通用加载器承诺。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_DATA_PIPELINE_APPLICATIONS_CN.md", section = "mlblack.pipeline.data_pipeline_chain" }, { path = "nsgablack/docs/catalog_usage/ML_DATA_PIPELINE_APPLICATIONS_CN.md", section = "prepared_pipeline_wiring" }]
+
+[[example]]
+id = "ml-data-pipeline-lag-window-application"
+title = "已观测历史的一步窗口回归 · flat lag与真实时间坐标"
+component_keys = ["mlblack.pipeline.time_series_window", "mlblack.pipeline.time_series_windowing"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "用正式Case把按时序观测转换为flat/horizon1数值回归行，完整接线模型/Problem/搜索/Artifact蓝图/Project报告，区分一步滚动与开放多步。"
+inputs = ["catalog_codec_demo独立完整副本，原Project L0与规范入口；当前三仓、NumPy。", "24个有序观测，lag(1,2)，最后6窗口验证；不随机打乱、不将未来值当当前已知输入。"]
+steps = ["保存完整六个文件，以origin=t的y[t]/y[t-1]预测y[t+1]，训练16/验证6；蓝图保存窗口配置与origin/target坐标。", "变体lag(1,2,4)实际改变模型维度和窗口行数，仍保持一步目标；不声称多步矩阵已支持普通NumericDataView。"]
+dependencies = ["当前三仓与NumPy，无statsmodels、Torch、数据库或模型账号。"]
+expected_outputs = ["本次results/window.json有lag名称、真实训练/验证行数、[train.mse,0]与验证指标、正式模型引用。", "当前模型是LinearPointModel，不自动具有forecast接口；静态用法不等于时序泛化或运行证明。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_DATA_PIPELINE_APPLICATIONS_CN.md", section = "mlblack.pipeline.time_series_windowing" }]
+
+[[example]]
+id = "ml-data-pipeline-batch-consumer-application"
+title = "有限Loader与可恢复Schedule · 真正绑定Torch Provider"
+component_keys = ["mlblack.pipeline.numeric_batch_loader", "mlblack.pipeline.numeric_batch_schedule"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "完整正式Case先核对有限切片，再让独立NumericBatchSchedule进入Torch Evaluation Provider；解释训练小批与完整验证、模型引用和checkpoint边界。"
+inputs = ["catalog_codec_demo独立完整副本，原CPU/1线程L0；当前三仓、NumPy与可用CPU torch>=2.0。", "八行训练、四行验证、一个特征，Loader切片3/3/2，真实Schedule不被预览提前消费。"]
+steps = ["按完整配置/数据/Problem/builder和正式报告入口接线，build_gradient_trainer实际传入data_schedule，Provider消费下一批。", "变体BATCH_SIZE=8切换整批，明确repeat不是Schedule停止预算，NumPy路由不接受此数据调度绑定。"]
+dependencies = ["三仓、NumPy、PyTorch可选依赖；无预训练下载、GPU或模型API。"]
+expected_outputs = ["本次results/batch.json有单项valid MSE、当次小批train MSE、provider.batch_size、batch_indices/epoch元数据与正式Torch模型引用。", "读取最佳已评估模型对应批次，非最后游标；没有本轮训练或恢复收据，不将四步预算当四epoch。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_DATA_PIPELINE_APPLICATIONS_CN.md", section = "mlblack.pipeline.numeric_batch_schedule" }]

@@ -1,0 +1,25 @@
+[[example]]
+id = "core-unit-member-input-application"
+title = "成员age、派生中心与只读Unit输入 · 完整GA接线"
+component_keys = ["repr.unit_population", "tool.population_change", "tool.unit_feature", "tool.feature_unit", "tool.unit_input_spec", "tool.unit_inputs", "tool.preference_query"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "在bias_gallery正式Project扩展PopulationUnit成员字段，经实际NSGA2维护；Pipeline叶变化读取所属Unit的脱离输入，最后报告age/center/引用与整体偏好观察。"
+inputs = ["完整bias_gallery Project独立副本，原二维Sphere/L0/规范入口；当前nsgablack、blackbase、NumPy。"]
+steps = ["保存完整Unit、算子、Adapter/Pipeline工厂、观察器与薄builder；不提前构造Unit、不重复问题repair。", "两个变体分别实际读取age和移除Unit变化，仍保持正式求值和提交路径。"]
+dependencies = ["当前框架栈与NumPy，无模型、数据库或外部服务。"]
+expected_outputs = ["用户实际求解后读取results/members.json的同序refs/tokens/population/age、真实中心、只读捕获、缓存与完整重算一致值；主例仅通过正式装配检查，未运行算法，不声称回滚/恢复已验证。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/UNIT_MEMBER_INPUT_APPLICATIONS_CN.md", section = "tool.population_change" }, { path = "nsgablack/docs/catalog_usage/UNIT_MEMBER_INPUT_APPLICATIONS_CN.md", section = "unit.member_inputs_wiring" }]
+
+[[example]]
+id = "core-model-distribution-application"
+title = "分布模型怎样被Head构造并由NLL消费者实际使用"
+component_keys = ["mlblack.model.normal_distribution", "mlblack.model.poisson_distribution", "mlblack.model.negative_binomial_distribution"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "复用已逐源码核对的完整分布Head Case，实际解码Normal/Poisson/NegativeBinomial模型并调用log_prob，保留模型蓝图与正式结果引用，不另造一份模型循环。"
+inputs = ["完整catalog_codec_demo Project副本，按来源替换config/数据/Head/Problem/Adapter/builder与报告；当前三仓和NumPy。"]
+steps = ["FAMILY联动数据、模型构造和NLL消费者；Normal主例与两种计数变体实际使用不同模型参数块。"]
+dependencies = ["当前三仓与NumPy，无外部模型或训练服务。"]
+expected_outputs = ["distribution.json中本轮模型族、raw NLL与参数布局；计数似然的现有近似、蓝图无通用加载器等边界由来源明确说明。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_FORECASTING_APPLICATIONS_CN.md", section = "mlblack.head.normal" }]

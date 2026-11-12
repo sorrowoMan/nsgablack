@@ -117,7 +117,7 @@ def test_bad_member_inputs_are_rejected_before_hook_or_publication(extra):
 ])
 def test_real_adapter_passes_provenance_to_unknown_member_fields_and_codec_rolls_it_back(kind, builder):
     adapter = kind(population_size=2, unit_binding=UnitBinding(builder()))
-    unit = adapter.algorithm_unit
+    unit = adapter.ensure_unit()
     unit.initialize_population([[5.], [6.]], [[25., 25.], [36., 36.]], [0., 0.],
         candidate_tokens=("old-a", "old-b"), candidate_metadata=({"label": "a"}, {"label": "b"}))
     if kind is NSGA2Adapter:
@@ -174,7 +174,7 @@ def test_initial_environmental_selection_keeps_unknown_member_inputs_aligned(mon
     candidates = [state.as_array() for state in states]
     control.bind_candidate_provenance(candidates, records)
     changes = []
-    ordinary = adapter.algorithm_unit.on_members_changed
+    ordinary = adapter.ensure_unit().on_members_changed
     def capture(change):
         changes.append(change)
         return ordinary(change)
@@ -192,7 +192,7 @@ def test_initial_environmental_selection_keeps_unknown_member_inputs_aligned(mon
 
 def reference():
     adapter = NSGA2Adapter()
-    adapter.algorithm_unit.initialize_population([[0.], [10.]], [[10., 20.]] * 2, [0., 0.],
+    adapter.ensure_unit().initialize_population([[0.], [10.]], [[10., 20.]] * 2, [0., 0.],
                                                   candidate_tokens=("old", "far"))
     return adapter
 

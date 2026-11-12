@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from typing import Iterable
 
 
-CATALOG_SOURCE_SCHEMA = "nsgablack.catalog.source.v1"
+CATALOG_SOURCE_SCHEMA = "nsgablack.catalog.source.v3"
 
 _SOURCE_FIELDS = (
     "key",
@@ -29,6 +30,8 @@ _SOURCE_FIELDS = (
     "required_companions",
     "config_keys",
     "example_entry",
+    "contract",
+    "metadata",
 )
 
 
@@ -37,15 +40,17 @@ def _json_value(value: object) -> object:
         return value
     if isinstance(value, (list, tuple)):
         return [_json_value(item) for item in value]
+    if isinstance(value, Mapping):
+        return {str(key): _json_value(item) for key, item in value.items()}
     return str(value)
 
 
 def catalog_entries_digest(entries: Iterable[object]) -> str:
     """Return the stable semantic identity of one materialized Catalog source.
 
-    Runtime-only metadata and database timestamps are deliberately excluded.  A
-    cache remains valid only while every public Catalog field still matches the
-    source registry used to build it.
+    Public semantic metadata is included alongside the component contract.
+    Database transport metadata and timestamps are not CatalogEntry fields and
+    remain excluded. A cache is valid only while its published source matches.
     """
 
     records = []

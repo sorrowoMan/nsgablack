@@ -8,10 +8,20 @@ import_path = "nsgablack.units:UnitView"
 tags = ["unit", "preference", "identity", "readonly"]
 summary = "按实例路径、Unit 身份和 revision 交付脱离只读视图；PopulationView 提供成员能力。"
 use_when = ["比较结构或让偏好读取明确的算法结构时。"]
-minimal_wiring = ["view = adapter.preference_view(owner_path=('search',))"]
+minimal_wiring = [
+  "import numpy as np",
+  "from nsgablack.units import PopulationUnit, UnitBinding",
+  "from nsgablack.representation import PopulationUnitBuilder",
+  "from nsgablack.units.views import PopulationView",
+  "from nsgablack.bias import PreferenceQuery, PopulationDiversityPreference",
+  "unit = PopulationUnit('reference', population=np.array([[0., 0.], [1., 1.]]))",
+  "view = PopulationView.capture(unit, UnitBinding(PopulationUnitBuilder()), owner_path=('reference',))",
+  "score = PopulationDiversityPreference().evaluate(PreferenceQuery('unit', unit=view))",
+  "print(score.value, score.direction)",
+]
 required_companions = ["Adapter-owned Unit and UnitBinding"]
 config_keys = ["owner_path", "unit_id", "schema", "revision"]
-example_entry = "python -m nsgablack catalog show tool.unit_view"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "tool.preference_query"
@@ -24,7 +34,7 @@ use_when = ["由 Adapter 明确消费候选、结构或结构变化的偏好时�
 minimal_wiring = ["from nsgablack.bias import PreferenceQuery", "query = PreferenceQuery('unit', unit=view)"]
 required_companions = ["UnitView for Unit scopes"]
 config_keys = ["scope", "candidate", "candidate_token", "unit", "proposed_unit"]
-example_entry = "python -m nsgablack catalog show tool.preference_query"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.population_diversity"
@@ -37,7 +47,7 @@ use_when = ["需要明确群体实例、成员身份和偏好方向时。"]
 minimal_wiring = ["from nsgablack.bias import PopulationDiversityPreference", "score = PopulationDiversityPreference().evaluate(query)"]
 required_companions = ["PopulationView", "PreferenceQuery"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog show bias.population_diversity"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.unit_preference"
@@ -50,7 +60,7 @@ use_when = ["在标准 Case 中装配依赖 Unit 的可选选择偏好时。"]
 minimal_wiring = ["from nsgablack.bias import UnitPreferenceBias, PopulationDiversityPreference", "bias_module.add(UnitPreferenceBias.from_adapter(PopulationDiversityPreference(), adapter, owner_path=('search',)))"]
 required_companions = ["BiasModule", "UnitBackedAdapter", "candidate_in_unit preference"]
 config_keys = ["name", "weight", "owner_path", "apply_to_paths"]
-example_entry = "python -m nsgablack catalog show bias.unit_preference"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.module"
@@ -68,7 +78,7 @@ minimal_wiring = [
 ]
 required_companions = ["(none)"]
 config_keys = ["cache_backend", "cache_ttl_seconds", "cache_key_prefix", "cache_context_keys", "cache_include_generation"]
-example_entry = "python -m nsgablack catalog show bias.module"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.diversity_adaptive"
@@ -76,17 +86,15 @@ title = "AdaptiveDiversityBias"
 kind = "bias"
 import_path = "nsgablack.bias.algorithmic.diversity:AdaptiveDiversityBias"
 tags = ["adaptive", "algorithmic", "bias", "diversity"]
-summary = "自适应调整多样性压力。 / Algorithmic bias: adaptively adjust diversity pressure."
+summary = "旧全局种群自适应距离实现；当前正权重方向与重复加权待迁移，不能当作已支持的 Unit 多样性偏好。"
 use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
+  "审阅或迁移旧配置时；新装配先看显式 UnitPreferenceBias 与 PopulationDiversityPreference，后者不等价于自适应公式。",
 ]
-minimal_wiring = [
-  "from nsgablack.bias.algorithmic.diversity import AdaptiveDiversityBias",
-  "bias_module.add(AdaptiveDiversityBias())",
-]
-required_companions = ["(none)"]
-config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search diversity_adaptive --kind example"
+minimal_wiring = []
+required_companions = ["Legacy single-population authority (population_ref)"]
+companions = ["bias.unit_preference", "bias.population_diversity"]
+config_keys = ["weight", "target_diversity", "adaptation_rate"]
+example_entry = "docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.diversity_niche"
@@ -94,17 +102,15 @@ title = "NicheDiversityBias"
 kind = "bias"
 import_path = "nsgablack.bias.algorithmic.diversity:NicheDiversityBias"
 tags = ["algorithmic", "bias", "diversity", "niching"]
-summary = "基于小生境的多样性保持。 / Algorithmic bias: niche-based diversity preservation."
+summary = "旧有状态小生境偏好；尚无自动 niche 更新与正式状态交接，不代表接入即能维护种群多样性。"
 use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
+  "审阅旧 niche 逻辑与迁移设计时；新近邻偏好有显式 Unit 绑定，但不替代 niche 分配与容量维护。",
 ]
-minimal_wiring = [
-  "from nsgablack.bias.algorithmic.diversity import NicheDiversityBias",
-  "bias_module.add(NicheDiversityBias())",
-]
-required_companions = ["(none)"]
-config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search diversity_niche --kind example"
+minimal_wiring = []
+required_companions = ["Explicit niche membership update and state ownership"]
+companions = ["bias.unit_preference", "bias.population_diversity"]
+config_keys = ["weight", "niche_radius", "max_niche_size"]
+example_entry = "docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.diversity_crowding"
@@ -112,17 +118,15 @@ title = "CrowdingDistanceBias"
 kind = "bias"
 import_path = "nsgablack.bias.algorithmic.diversity:CrowdingDistanceBias"
 tags = ["algorithmic", "bias", "crowding", "diversity"]
-summary = "基于拥挤距离偏好稀疏/前沿解。 / Algorithmic bias: favor sparse/frontier solutions via crowding distance."
+summary = "旧决策空间近邻距离实现；默认正权重方向与重复加权待迁移，不是 NSGA-II 的目标空间拥挤度选择。"
 use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
+  "区分旧距离公式与当前正式偏好时；不能以此条目宣称已支持对指定 Unit 的拥挤度奖励。",
 ]
-minimal_wiring = [
-  "from nsgablack.bias.algorithmic.diversity import CrowdingDistanceBias",
-  "bias_module.add(CrowdingDistanceBias())",
-]
-required_companions = ["(none)"]
-config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search diversity_crowding --kind example"
+minimal_wiring = []
+required_companions = ["Legacy single-population authority (population_ref)"]
+companions = ["bias.unit_preference", "bias.population_diversity"]
+config_keys = ["weight"]
+example_entry = "docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.diversity_sharing"
@@ -130,17 +134,15 @@ title = "SharingFunctionBias"
 kind = "bias"
 import_path = "nsgablack.bias.algorithmic.diversity:SharingFunctionBias"
 tags = ["algorithmic", "bias", "diversity", "sharing"]
-summary = "适应度共享以降低拥挤。 / Algorithmic bias: fitness sharing to reduce crowding."
+summary = "旧共享函数实现；当前密度增量方向与重复加权待迁移，不保证降低拥挤。"
 use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
+  "审阅旧共享公式与迁移范围时；正式近邻 Unit 偏好不是适应度共享的逐公式替代。",
 ]
-minimal_wiring = [
-  "from nsgablack.bias.algorithmic.diversity import SharingFunctionBias",
-  "bias_module.add(SharingFunctionBias())",
-]
-required_companions = ["(none)"]
-config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search diversity_sharing --kind example"
+minimal_wiring = []
+required_companions = ["Legacy single-population authority (population_ref)"]
+companions = ["bias.unit_preference", "bias.population_diversity"]
+config_keys = ["weight", "sigma_share", "alpha"]
+example_entry = "docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.convergence_adaptive"
@@ -148,17 +150,12 @@ title = "AdaptiveConvergenceBias"
 kind = "bias"
 import_path = "nsgablack.bias.algorithmic.convergence:AdaptiveConvergenceBias"
 tags = ["adaptive", "algorithmic", "bias", "convergence"]
-summary = "自适应平衡探索与收敛。 / Algorithmic bias: adaptively balance exploration vs convergence."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.algorithmic.convergence import AdaptiveConvergenceBias",
-  "bias_module.add(AdaptiveConvergenceBias())",
-]
+summary = "旧组件接线待迁移；逐候选历史及精英状态缺少正式所有权和事务维护。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：逐候选历史及精英状态缺少正式所有权和事务维护。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.convergence；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search convergence_adaptive --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
 
 [[entry]]
 key = "bias.convergence_precision"
@@ -166,17 +163,12 @@ title = "PrecisionBias"
 kind = "bias"
 import_path = "nsgablack.bias.algorithmic.convergence:PrecisionBias"
 tags = ["algorithmic", "bias", "convergence", "precision"]
-summary = "强调精度与局部精修。 / Algorithmic bias: emphasize precision and local refinement."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.algorithmic.convergence import PrecisionBias",
-  "bias_module.add(PrecisionBias())",
-]
+summary = "旧组件接线待迁移；返回偏好常量，precision_radius没有执行真实局部变化。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：返回偏好常量，precision_radius没有执行真实局部变化。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.convergence；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search convergence_precision --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
 
 [[entry]]
 key = "bias.convergence_late_stage"
@@ -184,17 +176,12 @@ title = "LateStageConvergenceBias"
 kind = "bias"
 import_path = "nsgablack.bias.algorithmic.convergence:LateStageConvergenceBias"
 tags = ["algorithmic", "bias", "convergence", "late_stage"]
-summary = "加速后期收敛。 / Algorithmic bias: accelerate late-stage convergence."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.algorithmic.convergence import LateStageConvergenceBias",
-  "bias_module.add(LateStageConvergenceBias())",
-]
+summary = "旧组件接线待迁移；同代常量平移不能代替后期精修或变化调度。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：同代常量平移不能代替后期精修或变化调度。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.convergence；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search convergence_late_stage --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
 
 [[entry]]
 key = "bias.convergence_multi_stage"
@@ -202,17 +189,12 @@ title = "MultiStageConvergenceBias"
 kind = "bias"
 import_path = "nsgablack.bias.algorithmic.convergence:MultiStageConvergenceBias"
 tags = ["algorithmic", "bias", "convergence", "multi_stage"]
-summary = "多阶段收敛调度。 / Algorithmic bias: multi-stage convergence scheduling."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.algorithmic.convergence import MultiStageConvergenceBias",
-  "bias_module.add(MultiStageConvergenceBias())",
-]
+summary = "旧组件接线待迁移；阶段常量不能代替多阶段搜索，跨代分数不可混读。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：阶段常量不能代替多阶段搜索，跨代分数不可混读。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.convergence；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search convergence_multi_stage --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
 
 [[entry]]
 key = "bias.pso_adaptive"
@@ -227,7 +209,7 @@ use_when = [
 minimal_wiring = ["from nsgablack.bias.algorithmic.pso import AdaptivePSOBias", "bias_module.add(AdaptivePSOBias())"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search pso_adaptive --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.cmaes_adaptive"
@@ -235,7 +217,7 @@ title = "AdaptiveCMAESBias"
 kind = "bias"
 import_path = "nsgablack.bias.algorithmic.cma_es:AdaptiveCMAESBias"
 tags = ["adaptive", "algorithmic", "bias", "cmaes"]
-summary = "自适应 CMA-ES 参数调节。 / Algorithmic bias: adaptive CMA-ES tuning."
+summary = "按代数调节已有分布距离偏好的强度；不执行 CMA-ES 的分布更新。 / Scheduled distribution-distance preference; not a CMA-ES optimizer."
 use_when = [
   "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
 ]
@@ -245,7 +227,7 @@ minimal_wiring = [
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search cmaes_adaptive --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.constraint"
@@ -253,14 +235,22 @@ title = "ConstraintBias"
 kind = "bias"
 import_path = "nsgablack.bias.domain.constraint:ConstraintBias"
 tags = ["bias", "constraint", "domain"]
-summary = "将约束显式注入评分。 / Domain bias: inject constraints into scoring."
+summary = "把显式非负违反函数汇总成软成本；hard 标签只放大惩罚，不替代 Problem 硬约束或准入。"
 use_when = [
   "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
 ]
-minimal_wiring = ["from nsgablack.bias.domain.constraint import ConstraintBias", "bias_module.add(ConstraintBias())"]
-required_companions = ["(none)"]
-config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search constraint --kind example"
+minimal_wiring = [
+  "from nsgablack.bias import BiasModule, ConstraintBias",
+  "bias_module = BiasModule()",
+  "constraint = ConstraintBias(weight=1.0, penalty_factor=3.0)",
+  "constraint.add_constraint(lambda x: max(0.0, float(x[0]) - 0.5), constraint_type='hard')",
+  "bias_module.add(constraint)",
+  "solver.set_bias_module(bias_module, enable=True)",
+]
+required_companions = ["bias.module"]
+config_keys = ["weight", "penalty_factor"]
+example_entry = "docs/catalog_usage/DOMAIN_SOFT_SCORE_APPLICATIONS_CN.md"
+contract = { catalog = { role = "soft_preference", concepts = ["软约束成本", "非负违反函数"], operations = ["add_constraint", "compute"], boundaries = ["constraint_type='hard' 只乘 penalty_factor，不改 raw_violations 或硬接纳。", "当前 compute 与 compute_with_tracking 都乘 weight；示例用 weight=1，在违反函数或 penalty_factor 中设置系数。"] } }
 
 [[entry]]
 key = "bias.feasibility"
@@ -278,7 +268,7 @@ minimal_wiring = [
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search feasibility --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.preference"
@@ -286,14 +276,21 @@ title = "PreferenceBias"
 kind = "bias"
 import_path = "nsgablack.bias.domain.constraint:PreferenceBias"
 tags = ["bias", "domain", "preference"]
-summary = "编码偏好/权重。 / Domain bias: encode preferences/weights."
+summary = "将偏好函数返回值加到最小化选择目标；正值是成本，奖励须显式返回负值。"
 use_when = [
   "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
 ]
-minimal_wiring = ["from nsgablack.bias.domain.constraint import PreferenceBias", "bias_module.add(PreferenceBias())"]
-required_companions = ["(none)"]
-config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search preference --kind example"
+minimal_wiring = [
+  "from nsgablack.bias import BiasModule, PreferenceBias",
+  "bias_module = BiasModule()",
+  "preference = PreferenceBias(weight=1.0, preference_functions=[lambda x: 0.25 * float(((x - 1.0) ** 2).sum())])",
+  "bias_module.add(preference)",
+  "solver.set_bias_module(bias_module, enable=True)",
+]
+required_companions = ["bias.module"]
+config_keys = ["weight", "aspiration_levels", "preference_functions"]
+example_entry = "docs/catalog_usage/DOMAIN_SOFT_SCORE_APPLICATIONS_CN.md"
+contract = { catalog = { role = "soft_preference", concepts = ["显式偏好成本", "愿望水平"], operations = ["add_preference_function", "compute"], boundaries = ["返回值直接加到最小化目标；正值是成本，奖励须返回负值。", "当前 compute 与 compute_with_tracking 都乘 weight；示例用 weight=1，把强度写在函数中。", "aspiration_levels 读取 metrics.obj_<name>，缺失使用0；不会自动按 Problem 目标名称填入这些指标。"] } }
 
 [[entry]]
 key = "bias.rule_based"
@@ -301,14 +298,22 @@ title = "RuleBasedBias"
 kind = "bias"
 import_path = "nsgablack.bias.domain.constraint:RuleBasedBias"
 tags = ["bias", "domain", "rule"]
-summary = "规则驱动的加权/惩罚。 / Domain bias: rule-based weighting/penalty."
+summary = "条件命中后累加显式规则成本；priority 只规定执行顺序，不是首个命中即返回。"
 use_when = [
   "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
 ]
-minimal_wiring = ["from nsgablack.bias.domain.constraint import RuleBasedBias", "bias_module.add(RuleBasedBias())"]
-required_companions = ["(none)"]
-config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search rule_based --kind example"
+minimal_wiring = [
+  "from nsgablack.bias import BiasModule, RuleBasedBias",
+  "bias_module = BiasModule()",
+  "rules = RuleBasedBias(weight=1.0)",
+  "rules.add_rule(lambda x, ctx: float(x[0]) < 0.0, lambda x: 0.3 * abs(float(x[0])), priority=10, description='negative-coordinate cost')",
+  "bias_module.add(rules)",
+  "solver.set_bias_module(bias_module, enable=True)",
+]
+required_companions = ["bias.module"]
+config_keys = ["weight", "rules"]
+example_entry = "docs/catalog_usage/DOMAIN_SOFT_SCORE_APPLICATIONS_CN.md"
+contract = { catalog = { role = "soft_preference", concepts = ["条件规则", "累加成本"], operations = ["add_rule", "compute"], boundaries = ["按 priority 降序遍历，所有命中规则累加；没有首个命中即返回。", "当前 compute 与 compute_with_tracking 都乘 weight；示例用 weight=1，在 action 中设置系数。", "规则只返回分数，不修改候选、解池成员或 Unit。"] } }
 
 [[entry]]
 key = "bias.callable"
@@ -321,12 +326,15 @@ use_when = [
   "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
 ]
 minimal_wiring = [
+  "from nsgablack.bias import BiasModule",
   "from nsgablack.bias.domain.callable_bias import CallableBias",
-  "bias_module.add(CallableBias())",
+  "bias_module = BiasModule()",
+  "bias_module.add(CallableBias('near_zero', lambda x: float((x*x).sum()), weight=0.1))",
+  "solver.set_bias_module(bias_module)",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search callable --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.engineering_design"
@@ -334,17 +342,12 @@ title = "EngineeringDesignBias"
 kind = "bias"
 import_path = "nsgablack.bias.domain.engineering:EngineeringDesignBias"
 tags = ["bias", "domain", "engineering"]
-summary = "工程设计约束/先验。 / Domain bias: engineering design constraints/priors."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.domain.engineering import EngineeringDesignBias",
-  "bias_module.add(EngineeringDesignBias())",
-]
+summary = "旧组件接线待迁移；依赖未自动接通的OptimizationContext应力属性，制造公差未参与compute。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：依赖未自动接通的OptimizationContext应力属性，制造公差未参与compute。", "# 先读 docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md 的 migration.bias.domain_placeholders；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search engineering_design --kind example"
+example_entry = "docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.safety"
@@ -352,14 +355,12 @@ title = "SafetyBias"
 kind = "bias"
 import_path = "nsgablack.bias.domain.engineering:SafetyBias"
 tags = ["bias", "domain", "safety"]
-summary = "安全/风险优先。 / Domain bias: safety/risk prioritization."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = ["from nsgablack.bias.domain.engineering import SafetyBias", "bias_module.add(SafetyBias())"]
+summary = "旧组件接线待迁移；当前compute为零占位，不能据此宣称业务安全或硬准入生效。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：当前compute为零占位，不能据此宣称业务安全或硬准入生效。", "# 先读 docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md 的 migration.bias.domain_placeholders；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search safety --kind example"
+example_entry = "docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.manufacturing"
@@ -367,17 +368,12 @@ title = "ManufacturingBias"
 kind = "bias"
 import_path = "nsgablack.bias.domain.engineering:ManufacturingBias"
 tags = ["bias", "domain", "manufacturing"]
-summary = "制造可行性约束。 / Domain bias: manufacturing feasibility."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.domain.engineering import ManufacturingBias",
-  "bias_module.add(ManufacturingBias())",
-]
+summary = "旧组件接线待迁移；当前compute为零占位，不实现制造规则或候选修复。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：当前compute为零占位，不实现制造规则或候选修复。", "# 先读 docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md 的 migration.bias.domain_placeholders；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search manufacturing --kind example"
+example_entry = "docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.scheduling"
@@ -385,14 +381,12 @@ title = "SchedulingBias"
 kind = "bias"
 import_path = "nsgablack.bias.domain.scheduling:SchedulingBias"
 tags = ["bias", "domain", "scheduling"]
-summary = "调度偏好。 / Domain bias: scheduling preference."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = ["from nsgablack.bias.domain.scheduling import SchedulingBias", "bias_module.add(SchedulingBias())"]
+summary = "旧组件接线待迁移；当前compute为零占位，不实现排程语义或阶段搜索。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：当前compute为零占位，不实现排程语义或阶段搜索。", "# 先读 docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md 的 migration.bias.domain_placeholders；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search scheduling --kind example"
+example_entry = "docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.resource_constraint"
@@ -400,17 +394,12 @@ title = "ResourceConstraintBias"
 kind = "bias"
 import_path = "nsgablack.bias.domain.scheduling:ResourceConstraintBias"
 tags = ["bias", "domain", "resource"]
-summary = "资源容量约束。 / Domain bias: resource capacity constraints."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.domain.scheduling import ResourceConstraintBias",
-  "bias_module.add(ResourceConstraintBias())",
-]
+summary = "旧组件接线待迁移；当前compute为零占位，不能替代Problem硬约束或Project资源授权。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：当前compute为零占位，不能替代Problem硬约束或Project资源授权。", "# 先读 docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md 的 migration.bias.domain_placeholders；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search resource_constraint --kind example"
+example_entry = "docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.time_window"
@@ -418,14 +407,12 @@ title = "TimeWindowBias"
 kind = "bias"
 import_path = "nsgablack.bias.domain.scheduling:TimeWindowBias"
 tags = ["bias", "domain", "time_window"]
-summary = "时间窗约束。 / Domain bias: time window constraints."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = ["from nsgablack.bias.domain.scheduling import TimeWindowBias", "bias_module.add(TimeWindowBias())"]
+summary = "旧组件接线待迁移；当前compute为零占位，不自动落实时间窗规则。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：当前compute为零占位，不自动落实时间窗规则。", "# 先读 docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md 的 migration.bias.domain_placeholders；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search time_window --kind example"
+example_entry = "docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.bayesian_guidance"
@@ -433,17 +420,14 @@ title = "BayesianGuidanceBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.bayesian_biases:BayesianGuidanceBias"
 tags = ["bayesian", "bias", "guidance", "specialized"]
-summary = "贝叶斯引导探索。 / Specialized bias: Bayesian-guided exploration."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.bayesian_biases import BayesianGuidanceBias",
-  "bias_module.add(BayesianGuidanceBias())",
-]
+summary = "旧组件接线待迁移；简单模型更新为占位，观测来源和正式BO提案链未接通。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：简单模型更新为占位，观测来源和正式BO提案链未接通。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.bayesian；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search bayesian_guidance --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
+companions = ["adapter.bayesian_optimization", "tool.bo_model", "tool.bo_acquisition"]
+contract = { catalog = { role = "soft_preference", concepts = ["贝叶斯引导", "历史引导", "贝叶斯偏好"], operations = ["compute"], boundaries = ["这是历史/距离类软评分；内置辅助模型是占位，不是 GP posterior 或完整贝叶斯优化。", "不会替代模型、采集函数与真实评估事件；真实 BO 使用 adapter.bayesian_optimization。"] } }
 
 [[entry]]
 key = "bias.bayesian_exploration"
@@ -451,17 +435,14 @@ title = "BayesianExplorationBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.bayesian_biases:BayesianExplorationBias"
 tags = ["bayesian", "bias", "exploration", "specialized"]
-summary = "偏好高不确定区域。 / Specialized bias: favor uncertain regions."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.bayesian_biases import BayesianExplorationBias",
-  "bias_module.add(BayesianExplorationBias())",
-]
+summary = "旧组件接线待迁移；未训练GP与顺序伪标签不能提供可信不确定性探索。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：未训练GP与顺序伪标签不能提供可信不确定性探索。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.bayesian；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search bayesian_exploration --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
+companions = ["adapter.bayesian_optimization", "tool.bo_model", "tool.bo_acquisition"]
+contract = { catalog = { role = "soft_preference", concepts = ["贝叶斯引导", "历史引导", "贝叶斯偏好"], operations = ["compute"], boundaries = ["这是历史/距离类软评分；内置辅助模型是占位，不是 GP posterior 或完整贝叶斯优化。", "不会替代模型、采集函数与真实评估事件；真实 BO 使用 adapter.bayesian_optimization。"] } }
 
 [[entry]]
 key = "bias.bayesian_convergence"
@@ -469,17 +450,14 @@ title = "BayesianConvergenceBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.bayesian_biases:BayesianConvergenceBias"
 tags = ["bayesian", "bias", "convergence", "specialized"]
-summary = "在后验置信区间内收敛。 / Specialized bias: converge within posterior confidence."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.bayesian_biases import BayesianConvergenceBias",
-  "bias_module.add(BayesianConvergenceBias())",
-]
+summary = "旧组件接线待迁移；仅有apply且历史生产者未闭合，不能作为已装配BO策略。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：仅有apply且历史生产者未闭合，不能作为已装配BO策略。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.bayesian；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search bayesian_convergence --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
+companions = ["adapter.bayesian_optimization", "tool.bo_model", "tool.bo_acquisition"]
+contract = { catalog = { role = "soft_preference", concepts = ["贝叶斯引导", "历史引导", "贝叶斯偏好"], operations = ["compute"], boundaries = ["这是历史/距离类软评分；内置辅助模型是占位，不是 GP posterior 或完整贝叶斯优化。", "不会替代模型、采集函数与真实评估事件；真实 BO 使用 adapter.bayesian_optimization。"] } }
 
 [[entry]]
 key = "bias.engineering_precision"
@@ -487,17 +465,12 @@ title = "EngineeringPrecisionBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.engineering:EngineeringPrecisionBias"
 tags = ["bias", "domain", "engineering", "precision"]
-summary = "精度/公差偏置。 / Domain bias: precision/tolerance bias."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.engineering import EngineeringPrecisionBias",
-  "bias_module.add(EngineeringPrecisionBias())",
-]
+summary = "旧组件接线待迁移；坐标微扰自差不是目标精度测量，历史与分数方向尚待迁移。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：坐标微扰自差不是目标精度测量，历史与分数方向尚待迁移。", "# 先读 docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md 的 migration.bias.engineering_history；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search engineering_precision --kind example"
+example_entry = "docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.engineering_constraint"
@@ -515,7 +488,7 @@ minimal_wiring = [
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search engineering_constraint --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.engineering_robustness"
@@ -523,17 +496,12 @@ title = "EngineeringRobustnessBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.engineering:EngineeringRobustnessBias"
 tags = ["bias", "domain", "engineering", "robustness"]
-summary = "对扰动的鲁棒性。 / Domain bias: robustness to perturbations."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.engineering import EngineeringRobustnessBias",
-  "bias_module.add(EngineeringRobustnessBias())",
-]
+summary = "旧组件接线待迁移；隐藏扰动求值与重复加权未接正式场景预算，稳健成本方向不正确。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：隐藏扰动求值与重复加权未接正式场景预算，稳健成本方向不正确。", "# 先读 docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md 的 migration.bias.engineering_history；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search engineering_robustness --kind example"
+example_entry = "docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.local_gd"
@@ -541,17 +509,12 @@ title = "GradientDescentBias (LocalSearch)"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.local_search:GradientDescentBias"
 tags = ["bias", "gradient_descent", "local_search", "specialized"]
-summary = "局部梯度精修。 / Specialized bias: local gradient refinement."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.local_search import GradientDescentBias",
-  "bias_module.add(GradientDescentBias())",
-]
+summary = "旧组件接线待迁移；compute内直接求值与动量不经过正式精修送评及预算证据链。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：compute内直接求值与动量不经过正式精修送评及预算证据链。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.local_search；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search local_gd --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
 
 [[entry]]
 key = "bias.local_newton"
@@ -559,17 +522,12 @@ title = "NewtonMethodBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.local_search:NewtonMethodBias"
 tags = ["bias", "local_search", "newton", "specialized"]
-summary = "牛顿式精修。 / Specialized bias: Newton-style refinement."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.local_search import NewtonMethodBias",
-  "bias_module.add(NewtonMethodBias())",
-]
+summary = "旧组件接线待迁移；仅有apply局部搜索入口，BiasModule不会将compute自动转派到它。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：仅有apply局部搜索入口，BiasModule不会将compute自动转派到它。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.local_search；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search local_newton --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
 
 [[entry]]
 key = "bias.local_line_search"
@@ -577,17 +535,12 @@ title = "LineSearchBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.local_search:LineSearchBias"
 tags = ["bias", "line_search", "local_search", "specialized"]
-summary = "线搜索步长控制。 / Specialized bias: line-search step control."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.local_search import LineSearchBias",
-  "bias_module.add(LineSearchBias())",
-]
+summary = "旧组件接线待迁移；仅有apply入口，直接add不会自动执行受预算的线搜索。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：仅有apply入口，直接add不会自动执行受预算的线搜索。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.local_search；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search local_line_search --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
 
 [[entry]]
 key = "bias.local_trust_region"
@@ -595,17 +548,12 @@ title = "TrustRegionBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.local_search:TrustRegionBias"
 tags = ["bias", "local_search", "specialized", "trust_region"]
-summary = "信赖域精修。 / Specialized bias: trust-region refinement."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.local_search import TrustRegionBias",
-  "bias_module.add(TrustRegionBias())",
-]
+summary = "旧组件接线待迁移；仅有apply入口，直接add不会建立正式信赖域Unit和提案流程。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：仅有apply入口，直接add不会建立正式信赖域Unit和提案流程。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.local_search；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search local_trust_region --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
 
 [[entry]]
 key = "bias.local_nelder_mead"
@@ -613,17 +561,12 @@ title = "NelderMeadBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.local_search:NelderMeadBias"
 tags = ["bias", "local_search", "nelder_mead", "specialized"]
-summary = "Nelder-Mead 单纯形精修。 / Specialized bias: Nelder-Mead simplex refinement."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.local_search import NelderMeadBias",
-  "bias_module.add(NelderMeadBias())",
-]
+summary = "旧组件接线待迁移；仅有apply入口，直接add不会建立或更新正式单纯形搜索。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：仅有apply入口，直接add不会建立或更新正式单纯形搜索。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.local_search；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search local_nelder_mead --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
 
 [[entry]]
 key = "bias.local_quasi_newton"
@@ -631,17 +574,12 @@ title = "QuasiNewtonBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.local_search:QuasiNewtonBias"
 tags = ["bias", "local_search", "quasi_newton", "specialized"]
-summary = "拟牛顿精修。 / Specialized bias: quasi-Newton refinement."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.local_search import QuasiNewtonBias",
-  "bias_module.add(QuasiNewtonBias())",
-]
+summary = "旧组件接线待迁移；仅有apply入口，直接add不会建立正式BFGS状态和送评生命周期。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：仅有apply入口，直接add不会建立正式BFGS状态和送评生命周期。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.local_search；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search local_quasi_newton --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
 
 [[entry]]
 key = "bias.graph_connectivity"
@@ -649,17 +587,12 @@ title = "ConnectivityBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.base:ConnectivityBias"
 tags = ["bias", "connectivity", "graph", "specialized"]
-summary = "图连通性约束。 / Specialized bias: graph connectivity."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.graph.base import ConnectivityBias",
-  "bias_module.add(ConnectivityBias())",
-]
+summary = "旧组件接线待迁移；旧图构造及孤立节点语义未闭合，连通评分的最小化方向相反。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：旧图构造及孤立节点语义未闭合，连通评分的最小化方向相反。", "# 先读 docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md 的 migration.bias.graph_scores；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search graph_connectivity --kind example"
+example_entry = "docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.graph_sparsity"
@@ -667,17 +600,12 @@ title = "SparsityBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.base:SparsityBias"
 tags = ["bias", "graph", "sparsity", "specialized"]
-summary = "图稀疏性偏置。 / Specialized bias: graph sparsity."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.graph.base import SparsityBias",
-  "bias_module.add(SparsityBias())",
-]
+summary = "旧组件接线待迁移；旧图构造未闭合，负指数成本会奖励偏离目标边数。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：旧图构造未闭合，负指数成本会奖励偏离目标边数。", "# 先读 docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md 的 migration.bias.graph_scores；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search graph_sparsity --kind example"
+example_entry = "docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.graph_degree_distribution"
@@ -685,17 +613,12 @@ title = "DegreeDistributionBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.base:DegreeDistributionBias"
 tags = ["bias", "degree", "graph", "specialized"]
-summary = "目标度分布约束。 / Specialized bias: target degree distribution."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.graph.base import DegreeDistributionBias",
-  "bias_module.add(DegreeDistributionBias())",
-]
+summary = "旧组件接线待迁移；旧图构造和不同分布的评分方向未形成统一正确偏好。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：旧图构造和不同分布的评分方向未形成统一正确偏好。", "# 先读 docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md 的 migration.bias.graph_scores；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search graph_degree_distribution --kind example"
+example_entry = "docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.graph_shortest_path"
@@ -703,17 +626,12 @@ title = "ShortestPathBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.base:ShortestPathBias"
 tags = ["bias", "graph", "shortest_path", "specialized"]
-summary = "最短路径偏好。 / Specialized bias: shortest path preference."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.graph.base import ShortestPathBias",
-  "bias_module.add(ShortestPathBias())",
-]
+summary = "旧组件接线待迁移；旧图构造、孤立节点和断开负罚不能承担正确路径成本。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：旧图构造、孤立节点和断开负罚不能承担正确路径成本。", "# 先读 docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md 的 migration.bias.graph_scores；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search graph_shortest_path --kind example"
+example_entry = "docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.graph_max_flow"
@@ -721,17 +639,12 @@ title = "MaxFlowBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.base:MaxFlowBias"
 tags = ["bias", "graph", "max_flow", "specialized"]
-summary = "最大流偏好。 / Specialized bias: max-flow preference."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.graph.base import MaxFlowBias",
-  "bias_module.add(MaxFlowBias())",
-]
+summary = "旧组件接线待迁移；旧图构造及容量变换未闭合，正流量增量不是最小化奖励。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：旧图构造及容量变换未闭合，正流量增量不是最小化奖励。", "# 先读 docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md 的 migration.bias.graph_scores；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search graph_max_flow --kind example"
+example_entry = "docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.graph_coloring"
@@ -739,17 +652,12 @@ title = "GraphColoringBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.base:GraphColoringBias"
 tags = ["bias", "coloring", "graph", "specialized"]
-summary = "图着色偏置。 / Specialized bias: graph coloring bias."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.graph.base import GraphColoringBias",
-  "bias_module.add(GraphColoringBias())",
-]
+summary = "旧组件接线待迁移；旧图构造与冲突负罚方向不正确，不能作为可靠着色验证。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：旧图构造与冲突负罚方向不正确，不能作为可靠着色验证。", "# 先读 docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md 的 migration.bias.graph_scores；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search graph_coloring --kind example"
+example_entry = "docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.graph_community"
@@ -757,17 +665,12 @@ title = "CommunityDetectionBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.base:CommunityDetectionBias"
 tags = ["bias", "community", "graph", "specialized"]
-summary = "社区结构偏置。 / Specialized bias: community structure bias."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.graph.base import CommunityDetectionBias",
-  "bias_module.add(CommunityDetectionBias())",
-]
+summary = "旧组件接线待迁移；旧图构造及模块度方向未闭合，不能作为已支持的社区搜索目标。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：旧图构造及模块度方向未闭合，不能作为已支持的社区搜索目标。", "# 先读 docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md 的 migration.bias.graph_scores；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search graph_community --kind example"
+example_entry = "docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.graph_constraint"
@@ -780,12 +683,19 @@ use_when = [
   "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
 ]
 minimal_wiring = [
-  "from nsgablack.bias.specialized.graph.constraints import GraphConstraintBias",
-  "bias_module.add(GraphConstraintBias())",
+  "from nsgablack.bias import BiasModule",
+  "from nsgablack.bias.specialized.graph.constraints import GraphConstraintBias, ValidationResult",
+  "class NonnegativeGraphValues(GraphConstraintBias):",
+  "    def validate_constraints(self, x, context):",
+  "        valid = bool((x >= 0.).all())",
+  "        return ValidationResult(is_valid=valid)",
+  "bias_module = BiasModule()",
+  "bias_module.add(NonnegativeGraphValues(name='nonnegative_graph_values'))",
+  "solver.set_bias_module(bias_module)",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search graph_constraint --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.graph_tsp_constraint"
@@ -793,17 +703,12 @@ title = "TSPConstraintBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.constraints:TSPConstraintBias"
 tags = ["bias", "constraint", "graph", "specialized", "tsp"]
-summary = "TSP 约束。 / Specialized bias: TSP constraints."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.graph.constraints import TSPConstraintBias",
-  "bias_module.add(TSPConstraintBias())",
-]
+summary = "旧组件接线待迁移；覆盖域与闭合检查不完整，不能据名字认定TSP路径合法。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：覆盖域与闭合检查不完整，不能据名字认定TSP路径合法。", "# 先读 docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md 的 migration.bias.graph_paths；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search graph_tsp_constraint --kind example"
+example_entry = "docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.graph_path_constraint"
@@ -811,17 +716,12 @@ title = "PathConstraintBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.constraints:PathConstraintBias"
 tags = ["bias", "constraint", "graph", "path", "specialized"]
-summary = "路径约束。 / Specialized bias: path constraints."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.graph.constraints import PathConstraintBias",
-  "bias_module.add(PathConstraintBias())",
-]
+summary = "旧组件接线待迁移；相邻连接检查为恒True，不能验证业务图上的真实路径。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：相邻连接检查为恒True，不能验证业务图上的真实路径。", "# 先读 docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md 的 migration.bias.graph_paths；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search graph_path_constraint --kind example"
+example_entry = "docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.graph_tree_constraint"
@@ -834,12 +734,16 @@ use_when = [
   "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
 ]
 minimal_wiring = [
+  "import numpy as np",
   "from nsgablack.bias.specialized.graph.constraints import TreeConstraintBias",
-  "bias_module.add(TreeConstraintBias())",
+  "from nsgablack.bias import BiasModule",
+  "bias_module = BiasModule()",
+  "bias_module.add(TreeConstraintBias(num_nodes=3))",
+  "solver.set_bias_module(bias_module)",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search graph_tree_constraint --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.graph_coloring_constraint"
@@ -852,12 +756,16 @@ use_when = [
   "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
 ]
 minimal_wiring = [
+  "import numpy as np",
   "from nsgablack.bias.specialized.graph.constraints import GraphColoringConstraintBias",
-  "bias_module.add(GraphColoringConstraintBias())",
+  "from nsgablack.bias import BiasModule",
+  "bias_module = BiasModule()",
+  "bias_module.add(GraphColoringConstraintBias(adjacency_matrix=np.array([[0,1,0],[1,0,1],[0,1,0]])))",
+  "solver.set_bias_module(bias_module)",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search graph_coloring_constraint --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.graph_matching_constraint"
@@ -870,12 +778,16 @@ use_when = [
   "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
 ]
 minimal_wiring = [
+  "import numpy as np",
   "from nsgablack.bias.specialized.graph.constraints import MatchingConstraintBias",
-  "bias_module.add(MatchingConstraintBias())",
+  "from nsgablack.bias import BiasModule",
+  "bias_module = BiasModule()",
+  "bias_module.add(MatchingConstraintBias(num_nodes=4))",
+  "solver.set_bias_module(bias_module)",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search graph_matching_constraint --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.graph_hamiltonian_constraint"
@@ -883,17 +795,12 @@ title = "HamiltonianPathConstraintBias"
 kind = "bias"
 import_path = "nsgablack.bias.specialized.graph.constraints:HamiltonianPathConstraintBias"
 tags = ["bias", "constraint", "graph", "hamiltonian", "specialized"]
-summary = "哈密顿路径约束。 / Specialized bias: Hamiltonian path constraints."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.specialized.graph.constraints import HamiltonianPathConstraintBias",
-  "bias_module.add(HamiltonianPathConstraintBias())",
-]
+summary = "旧组件接线待迁移；邻接检查为恒True，不能承担Hamiltonian路径合法性验证。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：邻接检查为恒True，不能承担Hamiltonian路径合法性验证。", "# 先读 docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md 的 migration.bias.graph_paths；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search graph_hamiltonian_constraint --kind example"
+example_entry = "docs/catalog_usage/BIAS_GRAPH_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.graph_composite_constraint"
@@ -906,66 +813,56 @@ use_when = [
   "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
 ]
 minimal_wiring = [
+  "import numpy as np",
+  "from nsgablack.bias.specialized.graph.constraints import TSPConstraintBias",
   "from nsgablack.bias.specialized.graph.constraints import CompositeGraphConstraintBias",
-  "bias_module.add(CompositeGraphConstraintBias())",
+  "from nsgablack.bias import BiasModule",
+  "bias_module = BiasModule()",
+  "bias_module.add(CompositeGraphConstraintBias(constraints=[TSPConstraintBias(num_cities=3)]))",
+  "solver.set_bias_module(bias_module)",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search graph_composite_constraint --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.surrogate_control"
 title = "SurrogateControlBias"
-kind = "bias"
+kind = "tool"
 import_path = "nsgablack.bias.surrogate.base:SurrogateControlBias"
 tags = ["bias", "control", "specialized", "surrogate"]
-summary = "代理引导控制。 / Specialized bias: surrogate-guided control."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.surrogate.base import SurrogateControlBias",
-  "bias_module.add(SurrogateControlBias())",
-]
+summary = "旧组件接线待迁移；只返回控制建议，当前运行面没有自动消费该建议的正式接线。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：只返回控制建议，当前运行面没有自动消费该建议的正式接线。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.surrogate_control；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search surrogate_control --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
 
 [[entry]]
 key = "bias.surrogate_phase_schedule"
 title = "PhaseScheduleBias"
-kind = "bias"
+kind = "tool"
 import_path = "nsgablack.bias.surrogate.phase_schedule:PhaseScheduleBias"
 tags = ["bias", "schedule", "specialized", "surrogate"]
-summary = "代理/真实评估的阶段调度。 / Specialized bias: phase scheduling for surrogate/true eval."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.surrogate.phase_schedule import PhaseScheduleBias",
-  "bias_module.add(PhaseScheduleBias())",
-]
+summary = "旧组件接线待迁移；阶段建议没有自动变更Provider配置、任务冻结与恢复接线。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：阶段建议没有自动变更Provider配置、任务冻结与恢复接线。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.surrogate_control；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search surrogate_phase_schedule --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
 
 [[entry]]
 key = "bias.surrogate_uncertainty_budget"
 title = "UncertaintyBudgetBias"
-kind = "bias"
+kind = "tool"
 import_path = "nsgablack.bias.surrogate.uncertainty_budget:UncertaintyBudgetBias"
 tags = ["bias", "specialized", "surrogate", "uncertainty"]
-summary = "不确定性感知评估预算。 / Specialized bias: uncertainty-aware evaluation budget."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.surrogate.uncertainty_budget import UncertaintyBudgetBias",
-  "bias_module.add(UncertaintyBudgetBias())",
-]
+summary = "旧组件接线待迁移；预算建议没有正式消费者，不能替代L0授权或真实求值配额。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：预算建议没有正式消费者，不能替代L0授权或真实求值配额。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.surrogate_control；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search surrogate_uncertainty_budget --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
 
 [[entry]]
 key = "bias.production_constraint"
@@ -979,11 +876,14 @@ use_when = [
 ]
 minimal_wiring = [
   "from nsgablack.bias.specialized.production.scheduling import ProductionConstraintBias",
-  "bias_module.add(ProductionConstraintBias())",
+  "from nsgablack.bias import BiasModule",
+  "bias_module = BiasModule()",
+  "bias_module.add(ProductionConstraintBias(machine_bom={'A':['material']}, inventory_data={'material':100.}, machine_ids=['A'], days=2))",
+  "solver.set_bias_module(bias_module)",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search production_constraint --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.production_diversity"
@@ -1001,7 +901,7 @@ minimal_wiring = [
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search production_diversity --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.production_continuity"
@@ -1015,11 +915,14 @@ use_when = [
 ]
 minimal_wiring = [
   "from nsgablack.bias.specialized.production.scheduling import ProductionContinuityBias",
-  "bias_module.add(ProductionContinuityBias())",
+  "from nsgablack.bias import BiasModule",
+  "bias_module = BiasModule()",
+  "bias_module.add(ProductionContinuityBias(machine_ids=['A','B'], days=2))",
+  "solver.set_bias_module(bias_module)",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search production_continuity --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.cmaes"
@@ -1027,14 +930,14 @@ title = "CMAESBias"
 kind = "bias"
 import_path = "nsgablack.bias.algorithmic.cma_es:CMAESBias"
 tags = ["algorithmic", "bias", "cma-es", "cmaes", "covariance", "strategy"]
-summary = "CMA-ES 协方差自适应。 / Algorithmic bias: CMA-ES covariance adaptation."
+summary = "读取已有 mean/cov/sigma 计算分布距离软偏好；不执行协方差自适应。 / Distribution-distance preference using supplied state; no CMA-ES covariance update."
 use_when = [
   "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
 ]
 minimal_wiring = ["from nsgablack.bias.algorithmic.cma_es import CMAESBias", "bias_module.add(CMAESBias())"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search cmaes --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.convergence"
@@ -1042,17 +945,12 @@ title = "ConvergenceBias"
 kind = "bias"
 import_path = "nsgablack.bias.algorithmic.convergence:ConvergenceBias"
 tags = ["algorithmic", "bias", "convergence", "exploitation", "schedule"]
-summary = "收敛加速。 / Algorithmic bias: convergence acceleration."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.algorithmic.convergence import ConvergenceBias",
-  "bias_module.add(ConvergenceBias())",
-]
+summary = "旧组件接线待迁移；旧中心距离符号与重复加权不适合直接作为当前最小化偏好。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：旧中心距离符号与重复加权不适合直接作为当前最小化偏好。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.convergence；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search convergence --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
 
 [[entry]]
 key = "bias.diversity"
@@ -1062,15 +960,13 @@ import_path = "nsgablack.bias.algorithmic.diversity:DiversityBias"
 tags = ["algorithmic", "bias", "diversity", "exploration", "niching"]
 summary = "旧单种群距离奖励（最小化负增量）；新装配推荐显式 UnitPreferenceBias。"
 use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
+  "已有明确单种群 population_ref 的旧配置迁移；多实例与 partitioned authority 使用显式 Unit 绑定。",
 ]
-minimal_wiring = [
-  "from nsgablack.bias.algorithmic.diversity import DiversityBias",
-  "bias_module.add(DiversityBias())",
-]
-required_companions = ["(none)"]
-config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search diversity --kind example"
+minimal_wiring = []
+required_companions = ["Legacy single-population authority (population_ref)"]
+companions = ["bias.unit_preference", "bias.population_diversity"]
+config_keys = ["weight", "metric"]
+example_entry = "docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md"
 
 [[entry]]
 key = "bias.dynamic_penalty"
@@ -1083,12 +979,15 @@ use_when = [
   "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
 ]
 minimal_wiring = [
+  "from nsgablack.bias import BiasModule",
   "from nsgablack.bias.domain.dynamic_penalty import DynamicPenaltyBias",
-  "bias_module.add(DynamicPenaltyBias())",
+  "bias_module = BiasModule()",
+  "bias_module.add(DynamicPenaltyBias(penalty_func=lambda x: max(0.0, float(x.sum())-1.0), weight=0.1))",
+  "solver.set_bias_module(bias_module)",
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search dynamic_penalty --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.levy"
@@ -1096,17 +995,12 @@ title = "LevyFlightBias"
 kind = "bias"
 import_path = "nsgablack.bias.algorithmic.levy_flight:LevyFlightBias"
 tags = ["algorithmic", "bias", "exploration", "levy", "random_walk"]
-summary = "Levy 飞行探索。 / Algorithmic bias: Levy-flight exploration."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.algorithmic.levy_flight import LevyFlightBias",
-  "bias_module.add(LevyFlightBias())",
-]
+summary = "旧组件接线待迁移；只对旧种群中心距离评分，不生成Levy随机提案。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：只对旧种群中心距离评分，不生成Levy随机提案。", "# 先读 docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md 的 migration.bias.convergence；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search levy --kind example"
+example_entry = "docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md"
 
 [[entry]]
 key = "bias.pso"
@@ -1114,7 +1008,7 @@ title = "ParticleSwarmBias"
 kind = "bias"
 import_path = "nsgablack.bias.algorithmic.pso:ParticleSwarmBias"
 tags = ["algorithmic", "bias", "particle_swarm", "pso", "strategy", "swarm"]
-summary = "PSO 惯性/群体引导。 / Algorithmic bias: PSO inertia/social guidance."
+summary = "相对给定最好位置的距离软偏好；不维护粒子速度或执行完整 PSO。 / Distance preference to supplied best positions; no particle dynamics."
 use_when = [
   "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
 ]
@@ -1124,22 +1018,40 @@ minimal_wiring = [
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search pso --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.risk"
 title = "RiskBias"
 kind = "bias"
 import_path = "nsgablack.bias.domain.risk_bias:RiskBias"
-tags = ["bias", "cvar", "domain", "risk", "worst_case"]
-summary = "风险感知评分（CVaR/最坏情况）。 / Domain bias: risk-aware scoring (CVaR/worst-case)."
+tags = ["bias", "cvar", "domain", "risk", "worst_case", "soft-preference"]
+summary = "消费每候选场景统计的风险软评分：均值加波动的 CVaR 近似或最坏观测；保留原始反馈与硬约束接纳语义。"
 use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
+  "每候选反馈已有 mc_mean/mc_std 等场景统计，希望在原始目标之外加入风险软偏好时。",
+  "希望用 mean+sqrt(1/alpha)*std_scale*std 的近似评分或 mc_max 最坏观测引导选择，并能分别核对原始评价与偏好增量时。",
 ]
-minimal_wiring = ["from nsgablack.bias.domain.risk_bias import RiskBias", "bias_module.add(RiskBias())"]
+minimal_wiring = [
+  "from nsgablack.bias import BiasModule, RiskBias",
+  "bias_module = BiasModule()",
+  "bias_module.add(RiskBias(weight=0.2, mode='cvar', alpha=0.2, std_scale=1.0, metric_prefix='mc'))",
+  "solver.set_bias_module(bias_module)",
+  "# The evaluation provider must supply this candidate's mc_mean/std/min/max metrics.",
+]
 required_companions = ["(none)"]
-config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search risk --kind example"
+config_keys = ["name", "weight", "mode", "alpha", "std_scale", "metric_prefix", "mandatory"]
+companions = ["plugin.monte_carlo_eval"]
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
+context_requires = ["problem_data", "metrics.mc_mean", "metrics.mc_std", "metrics.mc_min", "metrics.mc_max"]
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = [
+  "运行类声明 requires_metrics=(mc_mean, mc_std, mc_min, mc_max)，由当前候选 Feedback.metrics 进入 OptimizationContext.metrics；默认 metric_prefix='mc'。",
+  "metrics_fallback='safe_zero'；cvar 模式缺少可解释 mean/std 时 compute 返回 0，不能据无异常声称风险引导生效。",
+  "其它正式 Evaluation Provider 也可供给这些候选局部统计，plugin.monte_carlo_eval 只是可选配套。",
+]
+contract = { catalog = { role = "soft_preference", concepts = ["风险软偏好", "场景统计", "CVaR近似", "最坏观测"], operations = ["compute"], boundaries = ["cvar 模式是 mean+sqrt(1/alpha)*std_scale*std 的近似评分，不等于样本尾部均值；worst_case 优先读取 mc_max，须核对损失方向。", "依赖每候选指标而非某个固定 Provider；safe_zero 回退不证明风险评分已生效，改变 metric_prefix 时须同步实际指标名。", "仅形成加权软偏好，不替代原始场景评价、不擦除 raw feedback，也不能绕过原始硬约束接纳。"] } }
 
 [[entry]]
 key = "bias.robustness"
@@ -1158,7 +1070,7 @@ minimal_wiring = [
 required_companions = ["plugin.monte_carlo_eval"]
 config_keys = ["(none)"]
 companions = ["plugin.monte_carlo_eval"]
-example_entry = "python -m nsgablack catalog search robustness --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.structure_prior"
@@ -1166,17 +1078,20 @@ title = "StructurePriorBias"
 kind = "bias"
 import_path = "nsgablack.bias.domain.structure_prior:StructurePriorBias"
 tags = ["bias", "domain", "prior", "structure", "symmetry"]
-summary = "结构/对称先验。 / Domain bias: structure/symmetry prior."
+summary = "对明确坐标对计算差值、对坐标分组计算方差，形成软结构成本；不修改候选。"
 use_when = [
   "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
 ]
 minimal_wiring = [
-  "from nsgablack.bias.domain.structure_prior import StructurePriorBias",
-  "bias_module.add(StructurePriorBias())",
+  "from nsgablack.bias import BiasModule, StructurePriorBias",
+  "bias_module = BiasModule()",
+  "bias_module.add(StructurePriorBias(pairs=[(0, 1)], mode='pair', weight=0.1))",
+  "solver.set_bias_module(bias_module, enable=True)",
 ]
-required_companions = ["(none)"]
-config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search structure_prior --kind example"
+required_companions = ["bias.module"]
+config_keys = ["name", "pairs", "groups", "weight", "mode", "custom_penalty", "mandatory"]
+example_entry = "docs/catalog_usage/DOMAIN_SOFT_SCORE_APPLICATIONS_CN.md"
+contract = { catalog = { role = "soft_preference", concepts = ["坐标对称偏好", "分组方差成本"], operations = ["compute"], boundaries = ["pair 使用绝对差之和，group 使用各组方差之和；不保证候选满足结构。", "无有效 pairs/groups 时返回0；越界坐标会被跳过，必须核对候选布局。", "内置 pair/group 模式由共同基类乘一次 weight，不能套用旧 Constraint/Preference 的重复加权公式。"] } }
 
 [[entry]]
 key = "bias.tabu"
@@ -1194,7 +1109,7 @@ minimal_wiring = [
 ]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search tabu --kind example"
+example_entry = "docs/catalog_usage/NSGABLACK_COMPONENT_USAGE_CN.md"
 
 [[entry]]
 key = "bias.uncertainty_exploration"
@@ -1202,14 +1117,9 @@ title = "UncertaintyExplorationBias"
 kind = "bias"
 import_path = "nsgablack.bias.algorithmic.signal_driven.uncertainty_exploration:UncertaintyExplorationBias"
 tags = ["bias", "exploration", "signal_driven", "uncertainty", "algorithmic"]
-summary = "优先探索高不确定区域。 / Algorithmic bias: explore high-uncertainty regions."
-use_when = [
-  "需要在不改动硬约束的前提下注入软偏好引导时。 / Need to inject soft preference guidance without changing hard constraints.",
-]
-minimal_wiring = [
-  "from nsgablack.bias.algorithmic.signal_driven.uncertainty_exploration import UncertaintyExplorationBias",
-  "bias_module.add(UncertaintyExplorationBias())",
-]
+summary = "旧组件接线待迁移；dataclass缺少基类初始化字段，不能把直接add当正常不确定性偏好接线。"
+use_when = ["仅审阅旧实现和迁移范围时；当前不提供直接装配的正常运行保证。", "需要新Case接线时先读迁移文档，按实际职责选择Problem、Unit偏好、正式Adapter或Provider。"]
+minimal_wiring = ["# 迁移参考：dataclass缺少基类初始化字段，不能把直接add当正常不确定性偏好接线。", "# 先读 docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md 的 migration.bias.uncertainty_exploration；按正文选择正式替代，不承诺与旧实现数学等价。"]
 required_companions = ["(none)"]
 config_keys = ["(none)"]
-example_entry = "python -m nsgablack catalog search uncertainty_exploration --kind example"
+example_entry = "docs/catalog_usage/BIAS_DOMAIN_AND_PRODUCTION_APPLICATIONS_CN.md"

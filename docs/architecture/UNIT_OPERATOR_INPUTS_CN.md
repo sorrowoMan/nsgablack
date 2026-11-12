@@ -55,7 +55,9 @@ UnitInputs 只包含声明的 fields/features，以及 unit_id、schema 和依�
 
 手动调用 `pipeline.mutate` 须传入 `unit=spec.capture(owner_unit)`；批量调用须传入与行数对齐的 `units`。批量 Unit 变异按行调用正式单点接口，目前没有专用向量化 Unit 变异协议。算子内部 TypeError 不会导致丢掉 Unit 参数重试。
 
-当前显式 Unit 输入接在 `RepresentationPipeline(mutator=...)` 的叶组件与 Adapter 辅助入口。通用 BlackBase slot runner 和任意第三方 mutator wrapper 不会自动转发 UnitInputs；不要把它偷偷塞进 context。自定义 Adapter 若使用该入口，应声明 `uses_pipeline_mutation=True`，必要时覆盖 `get_operator_unit()`。
+显式 Unit 输入支持 `RepresentationPipeline(mutator=...)` 的叶组件，也支持实际声明 `mutator` 的 Adapter 直接绑定；两者均经 Adapter 辅助入口取得实际所有者的只读 UnitInputs。NSGA-II/III、SPEA2、DE、MOEA/D、SA、VNS 与单轨迹的实际接缝见 [行为装配边界](ADAPTER_OPERATION_BOUNDARIES_CN.md)。直接组件另须声明配置身份与状态 codec。通用 BlackBase slot runner 和任意第三方 mutator wrapper 不会自动转发 UnitInputs；不要把它偷偷塞进 context。旧 Pipeline 消费者仍声明 uses_pipeline_mutation，直接绑定须有实际消费角色与恢复集成，不能仅靠这个标记获得。
+
+offer-row selector 也可声明 `unit_inputs=UnitInputSpec(...)`，实现 `select(request, *, rng, unit)`。`request` 是本次待选候选/反馈，`unit` 是实际叶所有者的只读参考结构；二者不是同一集合。首次成员建立前参考 Unit 可以为空，组件应使用 request 中已存在的候选与反馈，或明确声明并满足自己的参考依赖。Doctor 不执行初始化或特征以补齐依赖；真实调用捕获时仍严格验证。NSGA 的直属变异若声明反馈依赖，先通过正常基准送评，再开始变化。
 
 ## 多个 Adapter 是否需要各自一套 Pipeline
 

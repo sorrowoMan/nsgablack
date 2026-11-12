@@ -16,10 +16,12 @@ catalog dashboard 不是示例脚本，而是正式查询页。
 最小产品语义：
 
 - 左侧：facet filters
-- 中间：可点击结果表格
-- 右侧：detail / relations / source 三段详情
-- 顶部：scope / profile / kind / query 主控件
-- 顶部控件区：统一拆成 `primary` / `secondary` 两排 control row
+- 中间：可点击的组件索引，默认显示名称和简短用途；完整表格为高级浏览方式
+- 右侧：用法 / 接口 / 关系 / 来源四个详情页签
+- 顶部：紧凑标题、query 与搜索范围，常用意图快捷入口；首屏即可看到结果和详情。
+- 侧栏：profile、kind 与字段筛选；排序、列方案、显示数量及折叠偏好收进“显示设置”。
+- 本地 scope / Project / DB 控件收进“数据源与项目”；hosted 模式不渲染不可用控件。
+- `primary` / `secondary` 保留稳定 DOM 标识与状态语义，不要求占用两排顶层表单。
 - URL：可 deep-link 到当前页面状态
 
 ## 2. 查询层契约
@@ -37,6 +39,28 @@ UI 层只依赖下列统一查询面：
 - `catalog_ui_snapshot(...)`
 
 不应把 registry / DB / project loader 细节散落进页面代码。
+
+### 2.1 当前架构的装配说明字段
+
+条目通过既有 `CatalogEntry.contract.catalog` 声明 `role/concepts/operations/boundaries`。
+`role` 为非空字符串，后三项为非空字符串组成的列表；不增建独立目录或运行时协议。
+查询/详情/导出应使用同一个 guidance 解释，未声明 role 的条目回退原 kind。
+
+- kind 保留兼容分类；例如 Unit builder 仍可为 representation，但 role 为 unit_builder。
+- concepts 表达用户意图；operations 表达已有方法、属性或装配操作，不混入 config_keys。
+- boundaries 必须显示当前不支持的组合，不能把占位偏好当成完整算法。
+- companions 可导航到所属 Adapter 与可替换部件；它不表示必须同时启用所有相关实现。
+- wiring_status/wiring_notes 必须区分说明、模板、签名检查和不可核对；签名检查不是运行验收。
+- 用法页先说明装配位置、输入前提和外部对象来源，再展示可复制代码与具体接入/检查步骤；详细参数、来源与验证记录默认折叠。专门教学段优先展示，完整Project收据仍可展开。泛化语句不能当成操作说明，缺少具体前提/结果检查时须明确显示缺口。接口页保留方法、配置、契约、整理说明及原始声明。
+- 教学验收不能只检查字段非空：必须有具体使用目的、装入后实际发生的流程、调用者/输入来源、与正式Case一致的代码和结果读法。组合器要明确提案归属、反馈回传、状态是否共享，以及它与串行精修的差别；仅有构造与挂载两行代码仍是片段。
+- 不渲染空列表标记、空详情面板；已有Markdown列表不二次包编号。已有有效专属章节时，不再附加同版本整本文档开头的通用引用；不同Project、版本与运行收据仍保留。
+- 数据库AI教程包含具体场景、准备、文件落点、代码、执行过程、结果读法和有代码的变化用法，绑定源码、生成及独立源码复核版本；实际接线、消费者和变体被另一次复核否决时不得发布。没有完整人工基础教程时优先展示有效AI教程；已有完整人工教程时保留基础示例，AI提供变化用法。过期/无效说明不能遮住现有来源。代码仅展示，浏览不调用模型、不执行代码。文档基础用法有多个代码块时必须全部显示，变体独立折叠，不把第二步挂载代码藏进源码。
+- 关系页优先显示显式配套与真实用法调用，支持双向跳转至目标用法并返回。用法关系须有源码位置证据；同现不代表强制依赖或兼容承诺。共享context/artifact/phase契约只按已发布声明匹配，不按名字猜边。ML声明由所属registry规范投影，保留原始contract；default/core及数据库/源码两路使用同一解释。
+- 快捷意图查询清空旧字段筛选及对应 URL；上一项/下一项保持当前分类，关系跳转仍允许跨分类。
+- 列表查询不截断为固定 250 条；显示窗口由 page_size 控制，并可用“显示更多组件”扩大。列表和高级表格只在真实选择事件更新 selected，不能用旧位置覆盖导航。空结果保留已有详情；显式清除后不自动重新选中首项。
+
+default/framework-core 继续使用既有统一过滤，不因说明字段改变主干口径。
+完整中文说明见 `docs/architecture/CATALOG_USAGE_CN.md`。上述字段是可发现性说明，不授予池写入、全局资源或算法决策权限。
 
 ## 3. URL 契约
 
@@ -87,7 +111,7 @@ facet filters 统一序列化为：
 
 - `sort_by`: `default | title | key | kind`
 - `sort_dir`: `asc | desc`
-- `detail_tab`: `overview | relations | source`
+- `detail_tab`: `overview | interface | relations | source`；原 `overview` 深链继续表示“用法”
 - `open_relations`: 逗号分隔的 relation group 名称
 - `column_mode`: `compact | standard | full`
 - `page_size`: 正整数
@@ -153,13 +177,13 @@ facet filters 使用：
 
 ## 5. 交互语义契约
 
-### 5.1 结果表格
+### 5.1 组件索引
 
-结果区必须是主表格，而不是按钮列表。
+默认使用原生单选列表，支持键盘与长名称折行。`standard` 显示名称和最多两行用途，`compact` 仅显示名称，`full` 保留完整字段表格。宽屏索引约310px，详情使用剩余宽度；窄屏堆叠并限制列表高度。
 
 要求：
 
-- 单击行即可选中
+- 单击组件行即可选中
 - 选中项联动右侧 detail
 - deep-link 能恢复当前选中项
 - 当前列显示方案必须是正式状态
@@ -190,9 +214,10 @@ facet filters 使用：
 
 ### 5.4 Detail Tabs
 
-右侧 detail 至少拆成三段稳定语义：
+右侧 detail 拆成四段稳定语义：
 
-- `overview`
+- `overview`：用法
+- `interface`：接口与装配声明
 - `relations`
 - `source`
 
@@ -200,6 +225,7 @@ facet filters 使用：
 
 - 当前 tab 必须进入 URL
 - 当前 tab 必须能从 URL 恢复
+- 页签及显示设置使用稳定控件身份；交互回调须在下一次URL恢复前同步新选择，支持反复切回原值，不能由旧查询参数覆盖本次操作。
 
 ### 5.5 Relation Groups
 

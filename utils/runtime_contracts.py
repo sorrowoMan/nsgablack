@@ -7,13 +7,28 @@ from blackbase.plugin import PluginManager
 from blackbase.preferences import PreferenceProvider
 
 
+def _inspection_unit(owner):
+    """Use existing values or an explicit data type; never build for inspection."""
+    unit = owner.get_operator_unit()
+    if unit is not None:
+        return unit
+    binding = getattr(owner, "unit_binding", None)
+    declared = getattr(getattr(binding, "builder", None), "unit_type", None)
+    return declared if isinstance(declared, type) else None
+
+
 def inspect_runtime_contracts(solver):
     from ..adapters.algorithm_adapter import AlgorithmAdapter
     from ..adapters.multi_strategy import StrategyRouterAdapter
+    from ..adapters.serial_strategy import StrategyChainAdapter
+    from ..adapters.search_plan import SearchPlanAdapter
+    from ..adapters.pool_scope import validate_working_pool_name
     from ..units.features import UnitFeature, FeatureUnit
-    from ..units.operator_inputs import mutation_unit_spec
+    from ..units.operator_inputs import mutation_unit_spec, selection_unit_spec
+    from .extension_contracts import inspect_adapter_operator_bindings
     issues = []
     pipeline = solver.representation_pipeline
+    issues.extend(inspect_adapter_operator_bindings(getattr(solver, "adapter", None), pipeline=pipeline))
     operators = [("default", getattr(pipeline, "mutator", None)),
                  *getattr(pipeline, "mutation_operators", {}).items()]
     for label, operator in operators:
@@ -77,6 +92,11 @@ def inspect_runtime_contracts(solver):
         issues.extend(inspect_joint_repair_contracts(solver, resolved))
         for participant in resolved:
             if isinstance(participant, AlgorithmAdapter):
+                if isinstance(participant, SearchPlanAdapter):
+                    try:
+                        participant.validate_search_plan_contract()
+                    except (TypeError, ValueError, KeyError) as exc:
+                        issues.append(("search-plan-contract-invalid", f"{participant.name}: {exc}"))
                 from ..adapters.pool_tasks import PoolTaskAdapter
                 if isinstance(participant, PoolTaskAdapter):
                     try:
@@ -107,31 +127,58 @@ def inspect_runtime_contracts(solver):
                 except (TypeError, ValueError, AttributeError) as exc:
                     issues.append(("population-identity-contract-invalid", f"{participant.name}: {exc}"))
                 try:
+                    bound = getattr(participant, "get_bound_mutator", None)
+                    direct = bound() if callable(bound) else None
+                    if direct is not None and participant.mutation_operator is not None:
+                        raise ValueError("direct mutation and named pipeline mutation cannot both be selected")
                     if participant.mutation_operator is not None and not participant.uses_pipeline_mutation:
                         raise ValueError("Adapter does not consume pipeline mutation")
-                    if participant.uses_pipeline_mutation:
-                        mutator = participant.get_mutation_operator(solver)
-                        if mutator is None and getattr(pipeline, "mutation_operators", {}):
+                    if direct is not None or participant.uses_pipeline_mutation:
+                        mutator = direct if direct is not None else participant.get_mutation_operator(solver)
+                        if direct is None and mutator is None and getattr(pipeline, "mutation_operators", {}):
                             raise ValueError("pipeline has named mutations but consumer selected no default or name")
                         mutation_spec = mutation_unit_spec(mutator)
-                        unit = participant.get_operator_unit()
+                        unit = _inspection_unit(participant)
                         if mutation_spec is not None and unit is not None:
                             mutation_spec.validate_for(unit)
                 except (TypeError, ValueError) as exc:
                     issues.append(("unit-operator-contract-invalid", f"{participant.name}: {exc}"))
+                try:
+                    selector = participant.get_bound_selector()
+                    selection_spec = selection_unit_spec(selector)
+                    if selection_spec is not None:
+                        # Validate declared dependencies, never capture values
+                        # or initialize a lazy Unit to fill inspection gaps.
+                        # Actual capture validates again before selection.
+                        unit = _inspection_unit(participant)
+                        if unit is not None:
+                            selection_spec.validate_for(unit)
+                except (TypeError, ValueError, AttributeError) as exc:
+                    issues.append(("unit-operator-contract-invalid", f"{participant.name}.selector: {exc}"))
             declarations = getattr(participant, "unit_features", ())
             try:
                 names = set()
                 for spec in declarations:
-                    unit = getattr(participant, "algorithm_unit", None)
-                    if not isinstance(spec, UnitFeature) or not isinstance(unit, FeatureUnit):
-                        raise TypeError("Unit features require a UnitFeature and a FeatureUnit owner")
+                    if not isinstance(spec, UnitFeature):
+                        raise TypeError("Unit features require a UnitFeature declaration")
                     if spec.name in names:
                         raise ValueError(f"duplicate Unit feature: {spec.name}")
                     names.add(spec.name)
-                    spec.validate_for(unit)
+                    unit = getattr(participant, "algorithm_unit", None)
+                    if unit is None and isinstance(participant, AlgorithmAdapter):
+                        unit = _inspection_unit(participant)
+                    if unit is not None:
+                        if not (isinstance(unit, FeatureUnit) or
+                                isinstance(unit, type) and issubclass(unit, FeatureUnit)):
+                            raise TypeError("Unit features require a FeatureUnit owner")
+                        spec.validate_for(unit)
             except (TypeError, ValueError) as exc:
                 issues.append(("unit-feature-contract-invalid", f"{participant.name}: {exc}"))
+            if isinstance(participant, (StrategyRouterAdapter, StrategyChainAdapter)):
+                try:
+                    validate_working_pool_name(participant.working_pool)
+                except (TypeError, ValueError) as exc:
+                    issues.append(("solution-pool-working-binding-invalid", f"{participant.name}: {exc}"))
             if isinstance(participant, StrategyRouterAdapter):
                 try:
                     participant.validate_composition_contract()

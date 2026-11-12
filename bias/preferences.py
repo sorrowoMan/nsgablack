@@ -159,11 +159,20 @@ class UnitPreferenceBias(AlgorithmicBias):
     def from_adapter(cls, preference, adapter, *, owner_path, **kwargs):
         if isinstance(owner_path, str):
             raise PreferenceContractError("owner_path must contain instance segments, not a flat string")
-        path = tuple(owner_path)
-        # Validate assembly before the first evaluation.
-        view = adapter.preference_view(owner_path=path)
+        from ..adapters.strategy_task import _path
+        from ..units.contracts import UnitBinding
+        path = _path(tuple(owner_path))
+        binding = getattr(adapter, "unit_binding", None)
+        identity = getattr(adapter, "get_unit_id", None)
+        if not isinstance(binding, UnitBinding) or not callable(identity):
+            raise PreferenceContractError("Unit preference requires an explicit Unit binding and identity")
+        unit_id = identity()
+        if not isinstance(unit_id, str) or not unit_id:
+            raise PreferenceContractError("Unit preference requires a stable Unit identity")
+        # Bind declarations without allocating an inactive Adapter's Unit.
         bias = cls(preference, lambda context: adapter.preference_view(owner_path=path), **kwargs)
-        bias._binding_identity = {"owner_path": list(path), "unit_id": view.unit_id, "schema": view.schema.as_dict()}
+        bias._binding_identity = {"owner_path": list(path), "unit_id": unit_id,
+                                  "schema": binding.schema.as_dict()}
         return bias
 
     def validate_contract(self):
@@ -191,6 +200,8 @@ class UnitPreferenceBias(AlgorithmicBias):
                            for origin in origins for path in self.apply_to_paths):
                     return 0.0
             view = self.view_provider(context)
+            if view is None:
+                raise PreferenceContractError("Unit preference requires an active Unit; activate its Adapter first")
             if self._binding_identity is not None:
                 observed = {"owner_path": list(view.owner_path), "unit_id": view.unit_id,
                             "schema": view.schema.as_dict()}

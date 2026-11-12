@@ -1,0 +1,25 @@
+[[example]]
+id = "ml-conditional-feature-application"
+title = "条件原语真实进入特征管线，再交给点预测模型"
+component_keys = ["mlblack.conditional.binary_gate", "mlblack.conditional.composer", "mlblack.conditional.conditional", "mlblack.conditional.conditional_primitive", "mlblack.conditional.hinge_feature", "mlblack.conditional.one_hot_gate", "mlblack.conditional.primitive_feature_composer", "mlblack.conditional.primitives", "mlblack.conditional.soft_gate", "mlblack.pipeline.conditional_primitive_feature", "mlblack.pipeline.feature_space"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "实际使用固定门、软门、折线、onehot与自定义ConditionalPrimitive扩展模型输入，显式区分Spec/类/组件及特征列顺序。"
+inputs = ["完整catalog_codec_demo独立Project副本和共用正式入口；两原始特征32训练/12验证，当前三仓与NumPy。"]
+steps = ["完整替换配置、Pipeline和Problem，装配真实DataPipeline组件和线性模型；复用正式薄builder和Project结果入口。"]
+dependencies = ["当前blackbase/nsgablack/mlblack/NumPy；无外部模型。"]
+expected_outputs = ["正式TrainerResult训练/验证MSE与模型引用；Artifact保存条件定义、实际列序和模型块；没有运行收据。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_CONDITIONAL_APPLICATIONS_CN.md",section="mlblack.pipeline.conditional_primitive_feature"}, {path="nsgablack/docs/catalog_usage/ML_MODEL_COMPOSITION_APPLICATIONS_CN.md",section="composition.shared_case"}]
+
+[[example]]
+id = "ml-conditional-residual-application"
+title = "共享模型与区域残差的真实预测组合"
+component_keys = ["mlblack.conditional.route_then_formula_composer", "mlblack.conditional.shared_backbone_residual_composer"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "九参数表示实际解码为基础线性模型加路由残差；说明RouteThenFormula只分派、不执行描述字符串，变体明确全局叠加。"
+inputs = ["完整catalog_codec_demo独立Project副本和共用正式入口；两特征32训练/12验证，三个线性参数块。"]
+steps = ["保存完整表示、数据、Problem和配置；按正式Project/L0运行并从TrainerResult读取反馈和JSON模型蓝图引用。"]
+dependencies = ["当前blackbase/nsgablack/mlblack/NumPy。"]
+expected_outputs = ["真实组合预测MSE及正式模型引用；基础/残差/路由蓝图，不声称独立训练或系数可识别。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_CONDITIONAL_APPLICATIONS_CN.md",section="mlblack.conditional.shared_backbone_residual_composer"}, {path="nsgablack/docs/catalog_usage/ML_MODEL_COMPOSITION_APPLICATIONS_CN.md",section="composition.shared_case"}]

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import inspect
+import operator
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Mapping, Optional
+from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
 import numpy as np
 
@@ -17,6 +18,8 @@ from blackbase.project import (
     CaseStageRunner,
     ChildCaseCall,
 )
+from blackbase.resources import TerminationPolicy
+from blackbase.types import Feedback
 
 
 @dataclass(frozen=True)
@@ -43,7 +46,8 @@ InnerResultProjector = Callable[[Any, np.ndarray, InnerSolveResult], tuple[np.nd
 InnerProblemFactory = Callable[[np.ndarray, Dict[str, Any]], Any]
 InnerBackendFactory = Callable[[Any, Dict[str, Any]], Any]
 InnerRunner = Callable[[Any, Any, Dict[str, Any]], Mapping[str, Any]]
-CaseResultProjector = Callable[[Any, np.ndarray, CaseRunResult], tuple[np.ndarray, float]]
+CaseResultProjector = Callable[[Any, np.ndarray, CaseRunResult], tuple[np.ndarray, float] | Feedback]
+CaseOverridesFactory = Callable[[Any, np.ndarray, Mapping[str, Any]], Mapping[str, Any]]
 
 
 class ChildCaseExecutionError(CaseInvocationError):
@@ -72,13 +76,33 @@ class CaseInnerRuntimeEvaluator:
         resource_request: Mapping[str, Any] | None = None,
         budget_request: Mapping[str, int] | None = None,
         component_overrides: Mapping[str, Any] | None = None,
+        component_overrides_factory: CaseOverridesFactory | None = None,
         timeout_seconds: float | None = None,
+        termination: TerminationPolicy | Mapping[str, Any] | None = None,
         metadata: Mapping[str, Any] | None = None,
+        max_workers: int = 1,
+        artifact_bindings: Mapping[str, str] | None = None,
     ) -> None:
         if not str(case_name or "").strip():
             raise ValueError("CaseInnerRuntimeEvaluator case_name must be non-empty")
         if not callable(projector):
             raise TypeError("CaseInnerRuntimeEvaluator requires an explicit projector")
+        if component_overrides_factory is not None and not callable(component_overrides_factory):
+            raise TypeError("component_overrides_factory must be callable")
+        if artifact_bindings is not None and not isinstance(artifact_bindings, Mapping):
+            raise TypeError("artifact_bindings must map child input names to parent input names")
+        bindings = dict(artifact_bindings or {})
+        if any(not isinstance(value, str) or not value.strip()
+               for pair in bindings.items() for value in pair):
+            raise ValueError("artifact_bindings requires non-empty string input names")
+        if isinstance(max_workers, bool):
+            raise ValueError("max_workers must be a positive integer")
+        try:
+            workers = operator.index(max_workers)
+        except TypeError as exc:
+            raise ValueError("max_workers must be a positive integer") from exc
+        if workers < 1:
+            raise ValueError("max_workers must be a positive integer")
         self.case_name = str(case_name)
         self.projector = projector
         self.case_kind = str(case_kind or "solver")
@@ -87,8 +111,16 @@ class CaseInnerRuntimeEvaluator:
         self.resource_request = dict(resource_request or {})
         self.budget_request = {str(key): int(value) for key, value in dict(budget_request or {}).items()}
         self.component_overrides = dict(component_overrides or {})
+        self.component_overrides_factory = component_overrides_factory
         self.timeout_seconds = timeout_seconds
+        self.termination = (
+            None if termination is None else termination
+            if isinstance(termination, TerminationPolicy)
+            else TerminationPolicy.from_dict(termination)
+        )
         self.metadata = dict(metadata or {})
+        self.max_workers = workers
+        self.artifact_bindings = bindings
         self.stats: Dict[str, Any] = {
             "calls": 0,
             "success": 0,
@@ -96,6 +128,7 @@ class CaseInnerRuntimeEvaluator:
             "last_case_run_id": "",
         }
         self.last_result: CaseRunResult | None = None
+        self.last_batch_results: tuple[CaseRunResult, ...] = ()
 
     def can_handle(self, *, solver: Any, x: np.ndarray) -> bool:
         del x
@@ -111,8 +144,84 @@ class CaseInnerRuntimeEvaluator:
         x: np.ndarray,
         individual_id: int,
         context: Mapping[str, Any] | None = None,
-    ) -> tuple[np.ndarray, float]:
+    ) -> tuple[np.ndarray, float] | Feedback:
         runtime = getattr(solver, "case_runtime", None)
+        candidate, call = self._prepare_call(solver, x, individual_id, context)
+        stage_result = CaseStageRunner(
+            runtime,
+            (CaseStage(self.stage_name, (call,)),),
+            artifact_bindings=runtime.request.input_artifact_bindings,
+        ).run()[0]
+        result = stage_result.results[call.name]
+        self.last_batch_results = (result,)
+        return self._project_case_result(solver, candidate, result)
+
+    def evaluate_batch(
+        self,
+        *,
+        solver: Any,
+        population: np.ndarray,
+        contexts: Sequence[Mapping[str, Any]] | None = None,
+    ) -> tuple[tuple[np.ndarray, float] | Feedback, ...]:
+        """Dispatch standard child Cases together and project in input order.
+
+        Project L0 owns effective concurrency and local/external placement. Only
+        child execution is concurrent; configuration factories and projectors
+        run on the caller thread. No partial batch is delivered on failure.
+        """
+        values = np.asarray(population, dtype=float)
+        if values.ndim != 2:
+            raise ValueError("inner Case batch population must be a 2-D array")
+        if contexts is not None and len(contexts) != len(values):
+            raise ValueError("inner Case batch contexts must align with population")
+        self.last_batch_results = ()
+        if not len(values):
+            return ()
+        prepared = tuple(
+            self._prepare_call(
+                solver, row, index, None if contexts is None else contexts[index]
+            )
+            for index, row in enumerate(values)
+        )
+        runtime = getattr(solver, "case_runtime", None)
+        stage = CaseStage(
+            self.stage_name,
+            tuple(call for _candidate, call in prepared),
+            policy="parallel" if self.max_workers > 1 else "serial",
+            max_workers=self.max_workers,
+        )
+        stage_result = CaseStageRunner(
+            runtime, (stage,), artifact_bindings=runtime.request.input_artifact_bindings,
+        ).run()[0]
+        self.last_batch_results = tuple(
+            stage_result.results[call.name]
+            for _candidate, call in prepared if call.name in stage_result.results
+        )
+        # Validate the complete execution barrier before invoking user
+        # projectors, which may themselves record observations.
+        for result in self.last_batch_results:
+            if not result.ok:
+                self.last_result = result
+                self.stats["calls"] += len(self.last_batch_results)
+                self.stats["failures"] += sum(
+                    not item.ok for item in self.last_batch_results
+                )
+                self.stats["last_case_run_id"] = result.identity.case_run_id
+                raise ChildCaseExecutionError(result)
+        if len(self.last_batch_results) != len(prepared):
+            raise RuntimeError("inner Case batch did not return every requested result")
+        return tuple(
+            self._project_case_result(solver, candidate, result)
+            for (candidate, _call), result in zip(prepared, self.last_batch_results)
+        )
+
+    def _prepare_call(
+        self,
+        solver: Any,
+        x: np.ndarray,
+        individual_id: int,
+        context: Mapping[str, Any] | None,
+    ) -> tuple[np.ndarray, ChildCaseCall]:
         if not self.can_handle(solver=solver, x=x):
             raise RuntimeError(
                 "CaseInnerRuntimeEvaluator requires a Solver executed through the "
@@ -120,30 +229,48 @@ class CaseInnerRuntimeEvaluator:
             )
         candidate = np.asarray(x, dtype=float).reshape(-1)
         ctx = dict(context or {})
+        inputs = {
+            self.candidate_input: candidate.tolist(),
+            "outer_generation": int(getattr(solver, "generation", 0)),
+            "outer_individual_id": int(individual_id),
+            "context": ctx,
+        }
+        # Preserve an already-bound identity; a row index or equal values must
+        # never be used to infer which proposal is being evaluated.
+        provenance_getter = getattr(solver, "candidate_provenance_for", None)
+        provenance = provenance_getter(x) if callable(provenance_getter) else None
+        factory_context = dict(ctx)
+        if provenance is not None:
+            inputs["candidate_provenance"] = provenance.as_dict()
+            factory_context["_candidate_provenance"] = provenance.as_dict()
+        overrides = dict(self.component_overrides)
+        if self.component_overrides_factory is not None:
+            readonly = np.frombuffer(candidate.tobytes(), dtype=candidate.dtype).reshape(candidate.shape)
+            dynamic = self.component_overrides_factory(solver, readonly, factory_context)
+            if not isinstance(dynamic, Mapping):
+                raise TypeError("component_overrides_factory must return a Mapping")
+            overrides.update(dict(dynamic))
         call = ChildCaseCall(
             name=f"candidate_{int(individual_id)}",
             case_name=self.case_name,
             case_kind=self.case_kind,
             resource_request=self.resource_request,
             budget_request=self.budget_request,
-            component_overrides=self.component_overrides,
-            inputs={
-                self.candidate_input: candidate.tolist(),
-                "outer_generation": int(getattr(solver, "generation", 0)),
-                "outer_individual_id": int(individual_id),
-                "context": ctx,
-            },
+            component_overrides=overrides,
+            artifact_bindings=self.artifact_bindings,
+            inputs=inputs,
             timeout_seconds=self.timeout_seconds,
+            termination=self.termination,
             metadata={
                 **self.metadata,
                 "source": "nsgablack.CaseInnerRuntimeEvaluator",
             },
         )
-        stage_result = CaseStageRunner(
-            runtime,
-            (CaseStage(self.stage_name, (call,)),),
-        ).run()[0]
-        result = stage_result.results[call.name]
+        return candidate, call
+
+    def _project_case_result(
+        self, solver: Any, candidate: np.ndarray, result: CaseRunResult
+    ) -> tuple[np.ndarray, float] | Feedback:
         self.last_result = result
         self.stats["calls"] = int(self.stats["calls"]) + 1
         self.stats["last_case_run_id"] = result.identity.case_run_id
@@ -151,8 +278,11 @@ class CaseInnerRuntimeEvaluator:
             self.stats["failures"] = int(self.stats["failures"]) + 1
             raise ChildCaseExecutionError(result)
         projected = self.projector(solver, candidate, result)
+        if isinstance(projected, Feedback):
+            self.stats["success"] = int(self.stats["success"]) + 1
+            return projected
         if not isinstance(projected, tuple) or len(projected) != 2:
-            raise TypeError("CaseInnerRuntimeEvaluator projector must return (objectives, violation)")
+            raise TypeError("CaseInnerRuntimeEvaluator projector must return (objectives, violation) or Feedback")
         objectives = np.asarray(projected[0], dtype=float).reshape(-1)
         violation = float(projected[1])
         self.stats["success"] = int(self.stats["success"]) + 1

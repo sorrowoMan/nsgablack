@@ -2,6 +2,8 @@
 from pathlib import Path
 from urllib.parse import parse_qs
 
+import pytest
+
 import nsgablack.catalog.facade as facade_mod
 from nsgablack.catalog import (
     catalog_facets,
@@ -23,6 +25,7 @@ from nsgablack.catalog.dashboard import (
     _deep_link_with_nav_action,
     _floating_nav_markup,
     _normalize_navigation_stack,
+    _normalize_detail_tab,
     _other_kind_hits,
     _ordered_kinds,
     _pick_default_kind,
@@ -363,6 +366,9 @@ def test_build_streamlit_command_includes_catalog_ui_arguments():
     assert "--server.address" in command
     assert "--server.port" in command
     assert "--server.headless" in command
+    assert command[command.index("--theme.base") + 1] == "light"
+    assert command[command.index("--theme.primaryColor") + 1] == "#4f46e5"
+    assert command.index("--theme.base") < command.index("--")
     assert "--profile" in command
     assert "--scope" in command
     assert "--kind" in command
@@ -400,6 +406,23 @@ def test_selection_state_marks_hidden_selected_entry():
     assert missing["hidden"] is False
 
 
+@pytest.mark.parametrize("tab", ("overview", "interface", "relations", "source"))
+def test_detail_sections_have_stable_url_values(tab):
+    assert _normalize_detail_tab(tab) == tab
+    query = _build_deep_link_query(
+        profile="framework-core", scope="framework", kind="adapter", query="ns",
+        field="all", selected="adapter.nsga2", project_path="", include_global=False,
+        db_path="", source_mode="off", sort_by="default", sort_dir="asc",
+        detail_tab=tab, open_relations="", column_mode="standard", page_size=50,
+        results_collapse="expanded", field_filters={},
+    )
+    assert parse_qs(query.lstrip("?"))["detail_tab"] == [tab]
+
+
+def test_unknown_detail_section_returns_the_usage_default():
+    assert _normalize_detail_tab("unknown") == "overview"
+
+
 def test_dashboard_script_can_be_loaded_as_plain_script():
     module_path = Path(__file__).resolve().parents[1] / "catalog" / "dashboard.py"
     namespace = runpy.run_path(str(module_path))
@@ -411,7 +434,7 @@ def test_dashboard_script_can_be_loaded_as_plain_script():
 def test_current_selection_surface_contract_contains_prev_next_controls():
     source = (Path(__file__).resolve().parents[1] / "catalog" / "dashboard.py").read_text(encoding="utf-8")
 
-    assert "Current Selection" in source
+    assert "def _render_selection_float(" in source
     assert "上一项" in source
     assert "下一项" in source
     assert "定位到结果区" in source

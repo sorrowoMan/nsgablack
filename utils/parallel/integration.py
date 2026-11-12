@@ -67,6 +67,7 @@ def with_parallel_evaluation(
             self.enable_parallel_evaluation = bool(enabled)
             self.parallel_evaluator: Optional[ParallelEvaluator] = None
             self._parallel_requested_max_workers = parallel_max_workers
+            self._parallel_has_custom_context = bool(parallel_extra_context) or parallel_context_builder is not None
             self._parallel_cfg = {
                 "backend": parallel_backend,
                 "max_workers": parallel_max_workers,
@@ -143,30 +144,52 @@ def with_parallel_evaluation(
         def evaluate_population(self, population: np.ndarray, *args: Any, **kwargs: Any):
             if _has_problem_inner_runtime_evaluator(self):
                 return super().evaluate_population(population, *args, **kwargs)
-            evaluator = self._ensure_parallel_evaluator()
-            if evaluator is None:
+            if not self.enable_parallel_evaluation:
                 return super().evaluate_population(population, *args, **kwargs)
-
-            pop = np.asarray(population)
-            if pop.ndim == 1:
-                pop = pop.reshape(1, -1)
-            if pop.shape[0] < int(min_population_for_parallel):
-                return super().evaluate_population(pop, *args, **kwargs)
-
-            # Match solver contracts as much as possible.
-            problem = getattr(self, "problem", None)
-            if problem is None:
-                return super().evaluate_population(pop, *args, **kwargs)
-
-            enable_bias = bool(getattr(self, "enable_bias", False))
-            bias_module = getattr(self, "bias_module", None)
-            return evaluator.evaluate_population(
-                population=pop,
-                problem=problem,
-                enable_bias=enable_bias,
-                bias_module=bias_module,
-                return_detailed=False,
+            if args or kwargs:
+                return super().evaluate_population(population, *args, **kwargs)
+            from ...core.solver_helpers.evaluation_helpers import (
+                evaluate_external_population_with_contract,
+                evaluate_population_with_plugins_and_bias,
             )
+            try:
+                mediator = getattr(self, "evaluation_mediator", None)
+                providers = getattr(mediator, "list_providers", lambda: ())()
+                if providers:
+                    # Provider ownership/decline/priority remain the mediator's
+                    # decision; never bypass it with direct Problem workers.
+                    return evaluate_population_with_plugins_and_bias(self, population)
+                backend = str(self._parallel_cfg["backend"] or "process").lower()
+                if backend != "thread":
+                    raise ValueError(
+                        "with_parallel_evaluation formal Problem dispatch currently supports "
+                        "backend='thread' only; process/ray/joblib require a verified "
+                        "Feedback and Case-import boundary"
+                    )
+                if self._parallel_has_custom_context:
+                    raise ValueError(
+                        "formal parallel Problem contexts come from Solver binding/hooks; "
+                        "legacy parallel_context_builder/parallel_extra_context are not supported"
+                    )
+                evaluator = self._ensure_parallel_evaluator()
+
+                def evaluate_raw(limited, *, contexts):
+                    return evaluator.evaluate_raw_population(
+                        limited, self.problem, contexts=contexts,
+                        parallel=len(limited) >= int(min_population_for_parallel),
+                        requested_workers=self._parallel_requested_max_workers,
+                    )
+
+                return evaluate_external_population_with_contract(
+                    self, population, evaluate_raw,
+                    context_name="parallel.problem", bias_already_applied=False,
+                    pass_contexts=True,
+                )
+            except BaseException as exc:
+                dispatch = getattr(self, "_dispatch_error_once", None)
+                if callable(dispatch):
+                    dispatch(exc, phase="evaluate_population")
+                raise
 
     ParallelizedSolver.__name__ = f"Parallel{solver_class.__name__}"
     ParallelizedSolver.__qualname__ = ParallelizedSolver.__name__

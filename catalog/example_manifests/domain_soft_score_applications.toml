@@ -1,0 +1,15 @@
+[[example]]
+id = "domain-soft-score-application"
+title = "四种领域软评分：完整装配、原始反馈与硬准入的区别"
+component_keys = ["bias.preference", "bias.rule_based", "bias.constraint", "bias.structure_prior"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "复用 bias_gallery 正式 Project，同时接入偏好成本、规则、非负违反惩罚和坐标结构先验，核对精确成员的 raw/selection 差值，明确当前权重与硬标签的实现限制。"
+inputs = ["完整 bias_gallery Project 副本；二维 SphereProblem、当前 nsgablack/blackbase/NumPy，以及原 Project L0。"]
+steps = ["按本节新增 Bias/Adapter/Pipeline/观察器文件并替换薄 builder；四个组件都实际挂载。分别使用有界奖励和 Problem 硬条件变体，不在 Bias 中重评或修改候选。"]
+dependencies = ["当前 nsgablack、blackbase、NumPy；无付费模型、数据库或外部服务。"]
+expected_outputs = ["results/soft_scores.json 中本轮 run_id、对齐成员 refs/candidates、raw/selection 目标与违反量、四项预期成本和 delta_matches；本地观察文件不代替正式结果收据。"]
+sources = [
+  { path = "nsgablack/docs/catalog_usage/DOMAIN_SOFT_SCORE_APPLICATIONS_CN.md", section = "bias.preference" },
+  { path = "nsgablack/docs/catalog_usage/DOMAIN_SOFT_SCORE_APPLICATIONS_CN.md", section = "bias.preference_installation" },
+]

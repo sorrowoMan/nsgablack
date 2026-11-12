@@ -270,7 +270,7 @@ def test_restore_rejects_different_unit_instance_binding():
     second = UnitPreferenceBias.from_adapter(p, b, owner_path=("second",))
     with pytest.raises(PreferenceContractError, match="binding"):
         second.set_state(first.get_state())
-    a.algorithm_unit.unit_id = "changed"
+    a.ensure_unit().unit_id = "changed"
     with pytest.raises(PreferenceContractError, match="bound identity"):
         first.compute(np.array([0.]), OptimizationContext(0, np.array([0.])))
 

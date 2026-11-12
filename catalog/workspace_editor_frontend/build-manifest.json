@@ -1,0 +1,55 @@
+{
+  "schema": "nsgablack.workspace-editor-assets/v1",
+  "bundle": "editor.bundle.js",
+  "bytes": 476581,
+  "sha256": "8947f99fd60e86947bdc0055881c0a3069b1385e02d31bd27f6167d13d4dc341",
+  "build": {
+    "esbuild": "0.28.2",
+    "target": "es2020",
+    "minified": true
+  },
+  "packages": {
+    "@codemirror/autocomplete": "6.20.4",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-json": "6.0.2",
+    "@codemirror/lang-python": "6.2.1",
+    "@codemirror/language": "6.13.1",
+    "@codemirror/lint": "6.9.7",
+    "@codemirror/search": "6.7.2",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/streamparser": "6.0.0",
+    "@codemirror/view": "6.43.15",
+    "@lezer/common": "1.5.4",
+    "@lezer/highlight": "1.2.5",
+    "@lezer/json": "1.0.3",
+    "@lezer/lr": "1.4.11",
+    "@lezer/python": "1.1.19",
+    "@marijn/find-cluster-break": "1.0.4",
+    "codemirror": "6.0.2",
+    "crelt": "1.0.7",
+    "style-mod": "4.1.4",
+    "w3c-keyname": "2.2.8"
+  },
+  "assets": {
+    "index.html": {
+      "bytes": 1441,
+      "sha256": "e44c1599cfb9342ac4739e226304cd4b8fac97a3dd556ba09e411c736f199eaa"
+    },
+    "editor.css": {
+      "bytes": 4356,
+      "sha256": "9187de4dec514ac14076bcc3f129bfa3e2a18503dd743d6c005991d2b773c824"
+    },
+    "editor.js": {
+      "bytes": 12727,
+      "sha256": "29d76513a24e6765c3968e8e50385b1f2561b46c9c65157577d6d6e9cf76ef20"
+    }
+  },
+  "presentation": {
+    "themes": [
+      "dark",
+      "light",
+      "system"
+    ],
+    "default": "dark"
+  }
+}

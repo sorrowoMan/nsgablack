@@ -7,6 +7,7 @@ import hmac
 import os
 import pickle
 import random
+import secrets
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,6 +39,9 @@ class CheckpointResumeConfig:
     restore_rng_state: bool = True
     strict: bool = False
     hmac_env_var: str = "NSGABLACK_CHECKPOINT_HMAC_KEY"
+    hmac_key_file: str | None = None
+    create_key_file: bool = False
+    mirror_final_to_directory: bool = False
     unsafe_allow_unsigned: bool = False
     trusted_roots: tuple[str, ...] = ()
 
@@ -105,6 +109,7 @@ class CheckpointResumePlugin(Plugin):
     # Lifecycle hooks
     # ------------------------------------------------------------------
     def prepare_restore(self, solver):
+        self._prepare_key_file(for_restore=bool(self.cfg.auto_resume))
         if not bool(self.cfg.auto_resume):
             return None
         try:
@@ -183,7 +188,7 @@ class CheckpointResumePlugin(Plugin):
         frozen = self._frozen_final_checkpoint
         if frozen is None:
             return None
-        target, payload, _ = frozen
+        target, payload, encoded = frozen
         solver = self.solver
         runtime = getattr(solver, "case_runtime", None)
         try:
@@ -206,9 +211,15 @@ class CheckpointResumePlugin(Plugin):
                 if isinstance(result, dict):
                     result["checkpoint_latest"] = str(ref.uri)
                     result["checkpoint_latest_ref"] = ref.as_dict()
+                if self.cfg.mirror_final_to_directory:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    self._atomic_write_bytes(target, encoded)
+                    self._apply_retention(target.parent)
+                    if isinstance(result, dict):
+                        result["checkpoint_local_path"] = str(target)
             else:
                 target.parent.mkdir(parents=True, exist_ok=True)
-                self._atomic_write_pickle(target, payload)
+                self._atomic_write_bytes(target, encoded)
                 self.latest_checkpoint_path = str(target)
                 self._apply_retention(target.parent)
                 if isinstance(result, dict):
@@ -228,6 +239,7 @@ class CheckpointResumePlugin(Plugin):
         solver = self.solver
         if solver is None:
             return None
+        self._prepare_key_file(for_restore=False)
         self._assert_strict_security_ready()
 
         target = self._next_checkpoint_path(solver)
@@ -258,6 +270,7 @@ class CheckpointResumePlugin(Plugin):
             self._finish_resume_audit(status="unavailable", current=False)
             return False
         try:
+            self._prepare_key_file(for_restore=True)
             self._assert_strict_security_ready()
             path = self._get_checkpoint_path(checkpoint)
             if path is None:
@@ -442,10 +455,13 @@ class CheckpointResumePlugin(Plugin):
         return candidates[0]
 
     def _atomic_write_pickle(self, path: Path, payload: Dict[str, Any]) -> None:
-        tmp = path.with_suffix(path.suffix + ".tmp")
         envelope = self._wrap_payload(payload)
+        self._atomic_write_bytes(path, pickle.dumps(envelope, protocol=pickle.HIGHEST_PROTOCOL))
+
+    def _atomic_write_bytes(self, path: Path, encoded: bytes) -> None:
+        tmp = path.with_suffix(path.suffix + ".tmp")
         with tmp.open("wb") as f:
-            pickle.dump(envelope, f, protocol=pickle.HIGHEST_PROTOCOL)
+            f.write(encoded)
         os.replace(tmp, path)
 
     def _apply_retention(self, checkpoint_dir: Path) -> None:
@@ -470,7 +486,31 @@ class CheckpointResumePlugin(Plugin):
         except Exception:
             raise
 
+    def _prepare_key_file(self, *, for_restore: bool) -> None:
+        raw_path = self.cfg.hmac_key_file
+        if not raw_path:
+            return
+        path = Path(raw_path).expanduser().resolve()
+        if path.exists():
+            return
+        if for_restore or not self.cfg.create_key_file:
+            raise FileNotFoundError(f"checkpoint signing key file not found: {path}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            return
+        with os.fdopen(descriptor, "w", encoding="ascii") as stream:
+            stream.write(secrets.token_hex(32))
+            stream.flush()
+            os.fsync(stream.fileno())
+
     def _get_hmac_key(self) -> Optional[bytes]:
+        if self.cfg.hmac_key_file:
+            key = Path(self.cfg.hmac_key_file).expanduser().read_bytes().strip()
+            if len(key) < 32:
+                raise ValueError("checkpoint signing key file must contain at least 32 bytes")
+            return key
         env_var = str(getattr(self.cfg, "hmac_env_var", "") or "").strip()
         if not env_var:
             return None
@@ -487,7 +527,7 @@ class CheckpointResumePlugin(Plugin):
         if key is None:
             env_var = str(getattr(self.cfg, "hmac_env_var", "NSGABLACK_CHECKPOINT_HMAC_KEY") or "").strip()
             raise ValueError(
-                f"strict checkpoint mode requires HMAC key in environment variable: {env_var}"
+                f"strict checkpoint mode requires HMAC key in a key file or environment variable: {env_var}"
             )
         if bool(getattr(self.cfg, "unsafe_allow_unsigned", False)):
             raise ValueError("strict checkpoint mode forbids unsafe_allow_unsigned=True")
@@ -1967,6 +2007,9 @@ class CheckpointResumePlugin(Plugin):
             "save_every": int(self.cfg.save_every),
             "auto_resume": bool(self.cfg.auto_resume),
             "hmac_env_var": str(self.cfg.hmac_env_var),
+            "hmac_key_file": self.cfg.hmac_key_file,
+            "create_key_file": bool(self.cfg.create_key_file),
+            "mirror_final_to_directory": bool(self.cfg.mirror_final_to_directory),
             "unsafe_allow_unsigned": bool(self.cfg.unsafe_allow_unsigned),
             "trusted_roots": list(self.cfg.trusted_roots or ()),
             "latest_checkpoint_path": self.latest_checkpoint_path,

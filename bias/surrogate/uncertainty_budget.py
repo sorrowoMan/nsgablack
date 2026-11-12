@@ -14,7 +14,7 @@ class UncertaintyBudgetBias(SurrogateControlBias):
     context_provides = ()
     context_mutates = ()
     context_cache = ()
-    context_notes = "No explicit context dependency; outputs scalar bias only."
+    context_notes = "Reads surrogate readiness/uncertainty and returns budget suggestions; no automatic Solver consumer."
 
 
 

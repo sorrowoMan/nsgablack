@@ -1,6 +1,7 @@
 """Nested ML semantics projected through the formal LearningSolver lifecycle."""
 
 from mlblack.integrations import LearningSolver
+from ..._pool_audit import describe_pool
 
 from ..plugins.artifacts import NestedTrainingArtifacts
 
@@ -35,6 +36,7 @@ class NestedTrainerCase(LearningSolver):
             "control_plane": self.control_plane,
             "committed_steps": int(self.generation),
             "evaluation_count": int(self.evaluation_count),
+            "solution_pool": describe_pool(self),
         }
 
     def build_report(self, raw_result=None):

@@ -16,11 +16,12 @@ from blackbase.plugin import report_soft_error as _report_optional_failure
 import copy
 import os
 import pickle
+import threading
 import time
 import warnings
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from multiprocessing import cpu_count
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Literal, MutableMapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -196,6 +197,25 @@ class ParallelEvaluator:
         self._pool = pool  # L0 PoolScheduler (shared thread pool)
         self._executor: Optional[Any] = None
         self._pool_ctx: Optional[Any] = None  # _PoolExecutor context manager if using pool
+        self._last_dispatch_stats: Dict[str, Any] = {}
+        self._raw_dispatch_stats: Dict[str, Any] = {
+            "batches": 0, "thread_batches": 0, "inline_batches": 0,
+            "started_count": 0, "completed_count": 0,
+            "thread_started_count": 0, "thread_completed_count": 0,
+            "inline_started_count": 0, "inline_completed_count": 0,
+            "max_distinct_threads": 0, "process_ids": (),
+            "total_raw_wall_seconds": 0., "total_raw_cpu_seconds": 0.,
+        }
+
+    @property
+    def last_dispatch_stats(self) -> Dict[str, Any]:
+        """Detached, small telemetry from the last strict raw dispatch."""
+        return dict(self._last_dispatch_stats)
+
+    @property
+    def raw_dispatch_stats(self) -> Dict[str, Any]:
+        """Cumulative strict raw scheduling telemetry; no candidate state."""
+        return dict(self._raw_dispatch_stats)
 
     def _get_default_workers(self, backend: Backend) -> int:
         if backend == "process":
@@ -272,6 +292,129 @@ class ParallelEvaluator:
                 warnings.warn(msg)
                 self.backend = self.fallback_backend
                 self._executor = None
+
+    def evaluate_raw_population(
+        self, population, problem, *, contexts: Sequence[MutableMapping[str, Any]],
+        parallel=True, requested_workers=None,
+    ):
+        """Strict thread-only raw Feedback dispatch for Solver contract closure.
+
+        Workers receive detached per-row inputs, never Solver or Bias. Only
+        raw constraints are returned to the owning invocation contexts after
+        all workers join; other communication belongs in Feedback.info.
+        This entry never retries, changes backend, or falls back to serial.
+        """
+        from blackbase.call_binding import CallCandidate, invoke_bound_once
+        from blackbase.context import detach_context_value
+        from dataclasses import replace
+        from ...core.evaluation_feedback import (
+            OptimizationFeedbackBatch, coerce_individual_feedback, copy_feedback_with_result,
+        )
+
+        if self.backend != "thread":
+            raise ValueError("raw Feedback dispatch supports the thread backend only")
+        if self.context_builder is not None or self.problem_factory is not None:
+            raise ValueError("raw thread dispatch uses the bound Problem and Solver contexts, not legacy factories/builders")
+        pop = np.asarray(population, dtype=float)
+        if pop.ndim != 2 or len(contexts) != len(pop):
+            raise ValueError("raw population and invocation contexts must align")
+        rows = []
+        for index, (candidate, context) in enumerate(zip(pop, contexts)):
+            if not isinstance(context, MutableMapping):
+                raise TypeError("raw invocation contexts must be locally owned mutable mappings")
+            detached = detach_context_value(context, path=f"parallel.context[{index}]")
+            values = np.array(candidate, dtype=float, copy=True)
+            values.setflags(write=False)
+            rows.append((values, detached))
+
+        worker_pids, worker_tids = set(), set()
+        telemetry_lock = threading.Lock()
+        started_count = completed_count = 0
+
+        def evaluate_row(row):
+            nonlocal started_count, completed_count
+            candidate, context = row
+            with telemetry_lock:
+                worker_pids.add(os.getpid())
+                worker_tids.add(threading.get_ident())
+                started_count += 1
+            try:
+                raw = invoke_bound_once(problem.evaluate, (
+                    CallCandidate(args=(candidate,), kwargs={"context": context}, label="with_context"),
+                    CallCandidate(args=(candidate,), label="candidate_only"),
+                ))
+                feedback, supplied_violation = coerce_individual_feedback(raw)
+                feedback = replace(feedback,
+                    info=detach_context_value(dict(feedback.info or {}), path="parallel.feedback.info"),
+                    metrics=detach_context_value(dict(feedback.metrics or {}), path="parallel.feedback.metrics"),
+                    signals=detach_context_value(dict(feedback.signals or {}), path="parallel.feedback.signals"))
+                constraint_fn = getattr(problem, "evaluate_constraints", None)
+                constraints = np.asarray(constraint_fn(candidate), dtype=float).reshape(-1) if callable(constraint_fn) else np.empty(0)
+                violation = float(np.maximum(constraints, 0).sum())
+                merged = float(np.maximum(supplied_violation, violation))
+                feedback = copy_feedback_with_result(feedback, objectives=feedback.objectives, violation=merged)
+                return feedback, np.array(constraints, dtype=float, copy=True), violation
+            finally:
+                with telemetry_lock:
+                    completed_count += 1
+
+        started, cpu_started = time.perf_counter(), time.process_time()
+        futures = []
+        try:
+            if parallel and rows:
+                executor = self._create_executor()
+                futures = [executor.submit(evaluate_row, row) for row in rows]
+                results = [future.result(timeout=self.task_timeout_seconds) for future in futures]
+            else:
+                results = [evaluate_row(row) for row in rows]
+            feedback = []
+            for context, (item, constraints, violation) in zip(contexts, results):
+                context["constraints"] = constraints
+                context["constraint_violation"] = violation
+                feedback.append(item)
+            return OptimizationFeedbackBatch.from_feedback(feedback, metadata={
+                "raw_executor": "thread" if parallel else "inline",
+                "raw_executor_workers": self.max_workers if parallel else 1,
+            })
+        except BaseException:
+            self.stats["error_count"] += 1
+            for future in futures:
+                future.cancel()
+            raise
+        finally:
+            if self._pool_ctx is not None:
+                self._pool_ctx.__exit__(None, None, None)
+                self._pool_ctx, self._executor = None, None
+            elif self._executor is not None:
+                self._executor.shutdown(wait=True, cancel_futures=True)
+                self._executor = None
+            elapsed = time.perf_counter() - started
+            self.stats["total_evaluations"] += len(rows)
+            self.stats["total_time"] += elapsed
+            self.stats["last_execution_mode"] = "thread" if parallel else "inline"
+            self.stats["last_batch_size"] = len(rows)
+            self.stats["avg_evaluation_time"] = elapsed / max(1, len(rows))
+            self._last_dispatch_stats = {
+                "backend": "thread", "execution_mode": "thread" if parallel else "inline",
+                "requested_workers": self.max_workers if requested_workers is None else int(requested_workers),
+                "effective_workers": self.max_workers if parallel else 1,
+                "input_count": len(rows), "started_count": started_count, "completed_count": completed_count,
+                "process_ids": tuple(sorted(worker_pids)), "thread_ids": tuple(sorted(worker_tids)),
+                "distinct_processes": len(worker_pids), "distinct_threads": len(worker_tids),
+                "wall_seconds": elapsed, "process_cpu_seconds": time.process_time() - cpu_started,
+            }
+            mode = self._last_dispatch_stats["execution_mode"]
+            cumulative = self._raw_dispatch_stats
+            cumulative["batches"] += 1
+            cumulative[mode + "_batches"] += 1
+            cumulative["started_count"] += started_count
+            cumulative["completed_count"] += completed_count
+            cumulative[mode + "_started_count"] += started_count
+            cumulative[mode + "_completed_count"] += completed_count
+            cumulative["max_distinct_threads"] = max(cumulative["max_distinct_threads"], len(worker_tids))
+            cumulative["process_ids"] = tuple(sorted(set(cumulative["process_ids"]) | worker_pids))
+            cumulative["total_raw_wall_seconds"] += elapsed
+            cumulative["total_raw_cpu_seconds"] += self._last_dispatch_stats["process_cpu_seconds"]
 
     def evaluate_population(
         self,

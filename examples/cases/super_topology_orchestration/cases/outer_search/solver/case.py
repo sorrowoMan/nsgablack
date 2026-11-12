@@ -6,6 +6,7 @@ from dataclasses import replace
 from typing import Any, Mapping
 
 from blackbase.resources import FilesystemArtifactPublicationLedger
+from ..._pool_audit import describe_pool
 
 from ..adapter import describe_topology
 from ..reporting.audit import evaluate_invariants
@@ -85,6 +86,7 @@ class OuterSearchCase:
             "adapter_topology": describe_topology(),
             "candidate_trainer_calls": len(nested_records),
             "nested_calls": nested_records,
+            "solution_pool": describe_pool(self.solver),
         }
         topology_audit["invariants"] = evaluate_invariants(topology_audit)
         report_ref = self.case_runtime.publish_artifact(

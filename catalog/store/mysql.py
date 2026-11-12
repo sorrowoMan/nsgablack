@@ -5,7 +5,7 @@ import json
 import os
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 from pathlib import Path
 
 try:  # py>=3.11
@@ -29,7 +29,10 @@ from ..contracts import (
     ParamContract,
     UsageContract,
 )
-from ..contract_relations import build_contract_neighbor_sections, enrich_entry_relation_fields
+from ..contract_relations import build_contract_neighbor_sections
+from ..fingerprint import _json_value
+from ..guidance import GUIDANCE_FIELDS, guidance_payload
+from ..usage import build_usage_profile
 from ..registry import (
     CatalogEntry, _expand_token_groups, _normalize_catalog_profile,
     apply_catalog_profile_entry as _apply_profile_to_entry,
@@ -61,6 +64,9 @@ _USAGE_FIELD_NAMES = (
     "required_companions",
     "config_keys",
     "example_entry",
+    "wiring_status",
+    "wiring_notes",
+    *GUIDANCE_FIELDS,
 )
 _SEARCHABLE_FIELD_NAMES = (
     "tags",
@@ -245,6 +251,26 @@ def _trim_field_value(value: object) -> str:
     return text[: _FIELD_VALUE_LIMIT]
 
 
+def _load_contract(value: object) -> dict[str, object]:
+    """Accept old empty rows, but never silently discard malformed contracts."""
+    if value is None or value == "":
+        return {}
+    parsed = json.loads(value) if isinstance(value, str) else value
+    if not isinstance(parsed, Mapping):
+        raise ValueError("catalog component contract_json must contain a Mapping")
+    return _json_value(parsed)
+
+
+def _load_metadata(value: object) -> dict[str, object]:
+    """Old rows may be empty; malformed semantic metadata must fail visibly."""
+    if value is None or value == "":
+        return {}
+    parsed = json.loads(value) if isinstance(value, str) else value
+    if not isinstance(parsed, Mapping):
+        raise ValueError("catalog component metadata_json must contain a Mapping")
+    return _json_value(parsed)
+
+
 def _profile_sql_filters(profile: str) -> tuple[str, List[object]]:
     profile_key = _normalize_catalog_profile(profile)
     if profile_key != "framework-core":
@@ -300,9 +326,9 @@ def parse_mysql_url(url: str) -> MySQLCatalogConfig:
         raise ValueError(f"Unsupported MySQL URL scheme: {parsed.scheme}")
     host = parsed.hostname or "127.0.0.1"
     port = int(parsed.port or 3306)
-    user = parsed.username or "root"
-    password = parsed.password or ""
-    database = (parsed.path or "").lstrip("/") or "nsgablack"
+    user = unquote(parsed.username or "root")
+    password = unquote(parsed.password or "")
+    database = unquote((parsed.path or "").lstrip("/")) or "nsgablack"
     return MySQLCatalogConfig(
         host=host,
         port=port,
@@ -385,8 +411,41 @@ class MySQLCatalogStore:
         return self._readonly
 
     def _ensure_schema(self, conn) -> None:
+        if self._readonly:
+            self._validate_read_schema(conn)
+            return
         self._apply_migrations(conn)
         self._ensure_field_value_index(conn)
+
+    def _validate_read_schema(self, conn) -> None:
+        """A reader checks the published schema; only a writer may migrate it."""
+        probes = (
+            ("catalog_schema_migrations", "version"),
+            ("catalog_component", "id, key, kind, title, import_path, summary, tags, companions_json, source_scope, source_hash, contract_json, metadata_json"),
+            ("catalog_context_contract", "component_id, requires_json, provides_json, mutates_json, cache_json, notes_json, artifact_requires_json, artifact_provides_json, phase_in_json, phase_out_json"),
+            ("catalog_usage_contract", "component_id, use_when_json, minimal_wiring_json, required_companions_json, config_keys_json, example_entry"),
+            ("catalog_param_contract", "component_id, name, type, default_value, required, description, source, order_index"),
+            ("catalog_method_contract", "component_id, name, required, implemented, signature, origin"),
+            ("catalog_health", "component_id, import_ok, context_ok, methods_ok, params_ok, issues_json, last_checked_at"),
+            ("catalog_api_index", "profile, module_path, class_name, method_name, purpose, usage, lineno"),
+            ("catalog_api_index_meta", "profile, file_count, component_count, method_count, updated_at"),
+            ("catalog_api_doc", "profile, module_path, class_name, method_name, params_json, boundaries, side_effects, lifecycle, auto_fields_json, notes"),
+            ("catalog_field_value", "component_id, field_scope, field_name, field_value, field_value_norm"),
+        )
+        cur = conn.cursor()
+        try:
+            for table, columns in probes:
+                quoted = ", ".join(f"`{name.strip()}`" for name in columns.split(","))
+                try:
+                    cur.execute(f"SELECT {quoted} FROM `{table}` WHERE 1 = 0")
+                    cur.fetchall()  # Drain even an empty result for unbuffered drivers.
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Read-only Catalog schema unavailable or outdated at {table}; "
+                        "materialize the Catalog with a writable account before serving reads."
+                    ) from exc
+        finally:
+            cur.close()
 
     def _apply_migrations(self, conn) -> None:
         cur = conn.cursor()
@@ -599,6 +658,9 @@ CREATE TABLE IF NOT EXISTS catalog_field_value (
                     "ALTER TABLE catalog_context_contract ADD COLUMN phase_out_json TEXT",
                 ),
             ),
+            (9, ("ALTER TABLE catalog_component ADD COLUMN contract_json TEXT",)),
+            (10, ("ALTER TABLE catalog_component ADD COLUMN metadata_json LONGTEXT",)),
+            (11, ("ALTER TABLE catalog_component MODIFY COLUMN contract_json LONGTEXT",)),
         ]
 
         for version, statements in migrations:
@@ -632,7 +694,7 @@ CREATE TABLE IF NOT EXISTS catalog_field_value (
         cur = conn.cursor()
         cur.execute(
             """
-SELECT c.id, c.`key`, c.kind, c.title, c.import_path, c.summary, c.tags, c.companions_json,
+SELECT c.id, c.`key`, c.kind, c.title, c.import_path, c.summary, c.tags, c.companions_json, c.contract_json, c.metadata_json,
        ctx.requires_json AS context_requires, ctx.provides_json AS context_provides,
        ctx.mutates_json AS context_mutates, ctx.cache_json AS context_cache, ctx.notes_json AS context_notes,
        ctx.artifact_requires_json AS artifact_requires, ctx.artifact_provides_json AS artifact_provides,
@@ -675,6 +737,8 @@ LEFT JOIN catalog_usage_contract AS usage_tbl ON c.id = usage_tbl.component_id
                     summary,
                     tags_json,
                     companions_json,
+                    contract_json,
+                    metadata_json,
                     req_json,
                     prov_json,
                     mut_json,
@@ -699,6 +763,8 @@ LEFT JOIN catalog_usage_contract AS usage_tbl ON c.id = usage_tbl.component_id
                     "summary": summary,
                     "tags": tags_json,
                     "companions": companions_json,
+                    "contract_json": contract_json,
+                    "metadata_json": metadata_json,
                     "context_requires": req_json,
                     "context_provides": prov_json,
                     "context_mutates": mut_json,
@@ -726,6 +792,13 @@ LEFT JOIN catalog_usage_contract AS usage_tbl ON c.id = usage_tbl.component_id
             add_rows(component_id, "base", "summary", rec.get("summary"))
             add_rows(component_id, "base", "tags", self._load_json_tuple(rec.get("tags")))
             add_rows(component_id, "base", "companions", self._load_json_tuple(rec.get("companions")))
+            guidance_entry = self._catalog_entry_from_record(rec, profile="default")
+            if guidance_entry is not None:
+                for field, values in guidance_payload(guidance_entry).items():
+                    add_rows(component_id, "guidance", field, values)
+                usage = build_usage_profile(guidance_entry)
+                add_rows(component_id, "usage", "wiring_status", usage.wiring_status)
+                add_rows(component_id, "usage", "wiring_notes", usage.wiring_notes)
             add_rows(component_id, "context", "context_requires", self._load_json_tuple(rec.get("context_requires")))
             add_rows(component_id, "context", "context_provides", self._load_json_tuple(rec.get("context_provides")))
             add_rows(component_id, "context", "context_mutates", self._load_json_tuple(rec.get("context_mutates")))
@@ -812,8 +885,8 @@ VALUES (%s, %s, %s, %s, %s)
             cur.execute(
                 """
 INSERT INTO catalog_component
-(`key`, kind, title, import_path, summary, tags, companions_json, source_scope, source_hash)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+(`key`, kind, title, import_path, summary, tags, companions_json, source_scope, source_hash, contract_json, metadata_json)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON DUPLICATE KEY UPDATE
   kind=VALUES(kind),
   title=VALUES(title),
@@ -822,7 +895,9 @@ ON DUPLICATE KEY UPDATE
   tags=VALUES(tags),
   companions_json=VALUES(companions_json),
   source_scope=VALUES(source_scope),
-  source_hash=VALUES(source_hash)
+  source_hash=VALUES(source_hash),
+  contract_json=VALUES(contract_json),
+  metadata_json=VALUES(metadata_json)
 """,
                 (
                     comp.key,
@@ -834,6 +909,8 @@ ON DUPLICATE KEY UPDATE
                     json.dumps(list(comp.companions), ensure_ascii=False),
                     comp.source_scope,
                     comp.source_hash,
+                    json.dumps(_json_value(comp.contract), ensure_ascii=False),
+                    json.dumps(_json_value(comp.metadata), ensure_ascii=False),
                 ),
             )
         conn.commit()
@@ -977,6 +1054,8 @@ ON DUPLICATE KEY UPDATE
             add_values(component_id, "base", "tags", component.tags)
             add_values(component_id, "base", "companions", component.companions)
             add_values(component_id, "base", "summary", component.summary)
+            for field, values in guidance_payload(component).items():
+                add_values(component_id, "guidance", field, values)
 
             context = context_by_key.get(component.key)
             if context is not None:
@@ -997,6 +1076,8 @@ ON DUPLICATE KEY UPDATE
                 add_values(component_id, "usage", "required_companions", usage.required_companions)
                 add_values(component_id, "usage", "config_keys", usage.config_keys)
                 add_values(component_id, "usage", "example_entry", usage.example_entry)
+                add_values(component_id, "usage", "wiring_status", usage.wiring_status)
+                add_values(component_id, "usage", "wiring_notes", usage.wiring_notes)
 
         if rows:
             cur.executemany(
@@ -1144,19 +1225,23 @@ ON DUPLICATE KEY UPDATE
         conn.commit()
         cur.close()
 
-    def _load_json_tuple(self, value: object) -> Tuple[str, ...]:
+    def _load_json_tuple(self, value: object, *, preserve_whitespace: bool = False) -> Tuple[str, ...]:
         if not value:
             return ()
         if isinstance(value, (list, tuple)):
+            if preserve_whitespace:
+                return tuple(str(item) for item in value)
             return tuple(str(item).strip() for item in value if str(item).strip())
         if isinstance(value, str):
             try:
                 parsed = json.loads(value)
                 if isinstance(parsed, list):
+                    if preserve_whitespace:
+                        return tuple(str(item) for item in parsed)
                     return tuple(str(item).strip() for item in parsed if str(item).strip())
             except (ValueError, TypeError):
                 pass
-            text = value.strip()
+            text = value if preserve_whitespace else value.strip()
             return (text,) if text else ()
         return ()
 
@@ -1179,14 +1264,18 @@ ON DUPLICATE KEY UPDATE
             phase_in=self._load_json_tuple(rec.get("phase_in")),
             phase_out=self._load_json_tuple(rec.get("phase_out")),
             use_when=self._load_json_tuple(rec.get("use_when")),
-            minimal_wiring=self._load_json_tuple(rec.get("minimal_wiring")),
+            minimal_wiring=self._load_json_tuple(rec.get("minimal_wiring"), preserve_whitespace=True),
             required_companions=self._load_json_tuple(rec.get("required_companions")),
             config_keys=self._load_json_tuple(rec.get("config_keys")),
             example_entry=str(rec.get("example_entry", "") or "").strip(),
+            contract=_load_contract(rec.get("contract_json")),
+            metadata=_load_metadata(rec.get("metadata_json")),
         )
         if not entry.key or not entry.kind or not entry.import_path:
             return None
-        return _apply_profile_to_entry(enrich_entry_relation_fields(entry), profile=profile)
+        # Source enrichment happened before publication. Re-inferring relations
+        # here would change the declared order and the source fingerprint.
+        return _apply_profile_to_entry(entry, profile=profile)
 
     def _catalog_row_records(
         self,
@@ -1288,6 +1377,14 @@ ON DUPLICATE KEY UPDATE
                         "AND fv_search.field_value_norm LIKE %s)",
                     ]
                     params.extend([pattern] * 5)
+                    guidance_placeholders = ", ".join(["%s"] * len(GUIDANCE_FIELDS))
+                    all_clauses.append(
+                        "EXISTS (SELECT 1 FROM catalog_field_value fv_search "
+                        "WHERE fv_search.component_id = c.id "
+                        f"AND fv_search.field_name IN ({guidance_placeholders}) "
+                        "AND fv_search.field_value_norm LIKE %s)"
+                    )
+                    params.extend([*GUIDANCE_FIELDS, pattern])
                     if use_context_in_all:
                         placeholders = ", ".join(["%s"] * len(_CONTEXT_FIELD_NAMES))
                         all_clauses.append(
@@ -1313,7 +1410,7 @@ ON DUPLICATE KEY UPDATE
         cur = conn.cursor()
         cur.execute(
             """
-SELECT c.id, c.`key`, c.kind, c.title, c.import_path, c.summary, c.tags, c.companions_json,
+SELECT c.id, c.`key`, c.kind, c.title, c.import_path, c.summary, c.tags, c.companions_json, c.contract_json, c.metadata_json,
        ctx.requires_json AS context_requires, ctx.provides_json AS context_provides,
        ctx.mutates_json AS context_mutates, ctx.cache_json AS context_cache, ctx.notes_json AS context_notes,
        ctx.artifact_requires_json AS artifact_requires, ctx.artifact_provides_json AS artifact_provides,
@@ -1344,6 +1441,8 @@ WHERE """
                 summary,
                 tags_json,
                 companions_json,
+                contract_json,
+                metadata_json,
                 req_json,
                 prov_json,
                 mut_json,
@@ -1369,6 +1468,8 @@ WHERE """
                     "summary": summary,
                     "tags": tags_json,
                     "companions": companions_json,
+                    "contract_json": contract_json,
+                    "metadata_json": metadata_json,
                     "context_requires": req_json,
                     "context_provides": prov_json,
                     "context_mutates": mut_json,
@@ -1550,6 +1651,10 @@ WHERE """
                     values = (symbol_name,) if symbol_name else ()
                 elif target_field == "summary":
                     values = (entry.summary,) if entry.summary else ()
+                elif target_field in GUIDANCE_FIELDS:
+                    values = _normalize_strings(guidance_payload(entry)[target_field])
+                elif target_field in {"wiring_status", "wiring_notes"}:
+                    values = _normalize_strings(getattr(build_usage_profile(entry), target_field))
                 else:
                     values = tuple(getattr(entry, target_field, ()) or ())
                 for value in values:
@@ -1656,6 +1761,7 @@ WHERE """
                 "required_companions": tuple(entry.required_companions),
                 "config_keys": tuple(entry.config_keys),
                 "example_entry": str(entry.example_entry or ""),
+                "contract": _json_value(entry.contract),
             }
             for entry in entries
         ]

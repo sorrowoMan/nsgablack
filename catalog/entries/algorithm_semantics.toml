@@ -1,0 +1,255 @@
+# Full algorithms and their precise limits; algorithm-inspired biases are separate.
+
+[[entry]]
+key = "adapter.bayesian_optimization"
+title = "BayesianOptimizationAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:BayesianOptimizationAdapter"
+tags = ["adapter", "core", "bayesian", "surrogate", "observations"]
+summary = "同步单目标贝叶斯优化：固定RBF后验、LCB与网格提案组件；消费真实完整Event，模型观测与成员分离，支持可传输证据闭包恢复。首版不承诺异步或联合q-batch。"
+config_keys = ["config", "model", "acquisition", "optimizer", "unit_binding", "name", "priority"]
+use_when = ["需要明确区分真实观测、预测与评估价值，并以模型提出昂贵真实评估的候选时。"]
+minimal_wiring = ["from nsgablack.adapters import BayesianOptimizationAdapter", "solver.set_adapter(BayesianOptimizationAdapter())"]
+example_entry = "examples/cases/algorithm_semantics/cases/synchronous_bo/run_solver.py"
+companions = ["tool.bo_unit", "tool.bo_model", "tool.bo_acquisition", "tool.bo_acquisition_optimizer", "tool.unit_binding"]
+contract = { catalog = { role = "adapter", concepts = ["贝叶斯引导", "贝叶斯优化", "替换采集函数", "真实观测与成员分离"], operations = ["synchronize_observations"], boundaries = ["仅同步单目标；首版仅无 EvaluationProvider/评估决定插件的真实 Problem 路径。", "固定参数模型从证据重建；采集/优化器首版须 stateless。", "不支持真实异步 pending、联合 q-batch、随机超参数训练或完整约束 BO。"] } }
+
+[[entry]]
+key = "adapter.cmaes"
+title = "CMAESAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:CMAESAdapter"
+tags = ["adapter", "core", "cma-es", "covariance", "cohort"]
+summary = "正权重完整协方差CMA-ES：采样、排名、分布更新分别装配；保存演化路径和完整cohort，严格拒绝改变候选的repair及残缺更新。"
+config_keys = ["mean", "sigma", "covariance", "parameters", "sampler", "ranking", "updater", "seed", "name", "unit_binding"]
+use_when = ["连续单目标无约束搜索，需要按整批排名自适应搜索分布时。"]
+minimal_wiring = ["from nsgablack.adapters import CMAESAdapter", "solver.set_adapter(CMAESAdapter([0.0, 0.0], sigma=0.5))"]
+example_entry = "examples/cases/algorithm_semantics/cases/cmaes_distribution/run_solver.py"
+companions = ["tool.cma_unit", "tool.cma_sampler", "tool.cma_ranking", "tool.cma_update", "tool.unit_binding"]
+contract = { catalog = { role = "adapter", concepts = ["CMA-ES", "搜索分布", "替换采样器", "整批更新"], operations = [], boundaries = ["正权重无约束单目标完整协方差；不得静默缩小 lambda。", "改变候选的 repair 在送评前拒绝；残缺 cohort 保留成本后报错。", "未声明 PoolTask initialize/refine/compete；运行提案仍走统一解池。"] } }
+
+[[entry]]
+key = "adapter.map_elites"
+title = "MapElitesAdapter"
+kind = "adapter"
+import_path = "nsgablack.adapters:MapElitesAdapter"
+tags = ["adapter", "core", "quality-diversity", "archive", "descriptor"]
+summary = "MAP-Elites：描述符、格子映射、冠军竞争与生成器分别装配；Unit唯一维护格子冠军，Pool发布精确成员视图，支持逐条竞争与事务恢复。"
+config_keys = ["config", "descriptor", "cells", "competition", "emitter", "unit_binding", "name", "priority"]
+use_when = ["希望保留行为区域内各自的高质量解，而非将描述符当目标或软偏好时。"]
+minimal_wiring = ["from nsgablack.adapters import MapElitesAdapter", "solver.set_adapter(MapElitesAdapter())"]
+example_entry = "examples/cases/algorithm_semantics/cases/map_elites_archive/run_solver.py"
+
+companions = ["tool.map_elites_unit", "tool.map_descriptor", "tool.map_cells", "tool.map_competition", "tool.map_sequence_emitter", "tool.map_gaussian_emitter", "tool.unit_binding"]
+contract = { catalog = { role = "adapter", concepts = ["MAP-Elites", "质量多样性", "按行为保留精英", "替换描述符", "格子档案"], operations = [], boundaries = ["Unit 唯一拥有冠军；Pool 仅发布精确引用视图。", "描述符来自最终送评候选；硬接纳和档案留存分开。", "首版 emitter 无完整 cohort 反馈接口，不宣称支持 CMA emitter。"] } }
+
+# Individually replaceable public components.
+
+[[entry]]
+key = "tool.bo_model"
+title = "FixedRBFPosterior"
+kind = "tool"
+import_path = "nsgablack.adapters.bayesian_optimization:FixedRBFPosterior"
+tags = ["core", "model"]
+summary = "可独立装配的 FixedRBFPosterior；职责、限制和已有标准 Case 见下列契约。"
+companions = ["adapter.bayesian_optimization"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+use_when = ["贝叶斯引导", "贝叶斯优化", "替换后验模型"]
+minimal_wiring = ["from nsgablack.adapters.bayesian_optimization import BayesianOptimizationAdapter, FixedRBFPosterior", "adapter = BayesianOptimizationAdapter(model=FixedRBFPosterior())"]
+required_companions = ["adapter.bayesian_optimization"]
+config_keys = ["config"]
+example_entry = "examples/cases/algorithm_semantics/cases/synchronous_bo/run_solver.py"
+contract = { catalog = { role = "model", concepts = ["贝叶斯引导", "贝叶斯优化", "替换后验模型"], operations = ["fit", "posterior", "spawn", "describe"], boundaries = ["零均值固定参数 RBF GP；不执行超参数训练。", "预测不是真实目标；component_state_mode=rebuild 从核对后的观测重建缓存。"] } }
+
+[[entry]]
+key = "tool.bo_acquisition"
+title = "LowerConfidenceBound"
+kind = "tool"
+import_path = "nsgablack.adapters.bayesian_optimization:LowerConfidenceBound"
+tags = ["core", "acquisition"]
+summary = "可独立装配的 LowerConfidenceBound；职责、限制和已有标准 Case 见下列契约。"
+companions = ["adapter.bayesian_optimization"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+use_when = ["替换采集函数", "贝叶斯引导", "LCB", "探索与开发"]
+minimal_wiring = ["from nsgablack.adapters.bayesian_optimization import BayesianOptimizationAdapter, LowerConfidenceBound", "adapter = BayesianOptimizationAdapter(acquisition=LowerConfidenceBound(beta=2.0))"]
+required_companions = ["adapter.bayesian_optimization"]
+config_keys = ["beta"]
+example_entry = "examples/cases/algorithm_semantics/cases/synchronous_bo/run_solver.py"
+contract = { catalog = { role = "acquisition", concepts = ["替换采集函数", "贝叶斯引导", "LCB", "探索与开发"], operations = ["__call__", "describe"], boundaries = ["LCB=mean-beta*std，当前最小化采集值。", "求值前提案价值不是 Bias 或原目标；首版 stateless。"] } }
+
+[[entry]]
+key = "tool.bo_acquisition_optimizer"
+title = "GridAcquisitionOptimizer"
+kind = "tool"
+import_path = "nsgablack.adapters.bayesian_optimization:GridAcquisitionOptimizer"
+tags = ["core", "acquisition-optimizer"]
+summary = "可独立装配的 GridAcquisitionOptimizer；职责、限制和已有标准 Case 见下列契约。"
+companions = ["adapter.bayesian_optimization"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+use_when = ["替换采集搜索", "网格提案", "贝叶斯优化"]
+minimal_wiring = ["from nsgablack.adapters.bayesian_optimization import BayesianOptimizationAdapter, GridAcquisitionOptimizer", "adapter = BayesianOptimizationAdapter(optimizer=GridAcquisitionOptimizer(grid=((0.25,), (0.5,), (0.75,))))"]
+required_companions = ["adapter.bayesian_optimization"]
+config_keys = ["grid"]
+example_entry = "examples/cases/algorithm_semantics/cases/synchronous_bo/run_solver.py"
+contract = { catalog = { role = "acquisition_optimizer", concepts = ["替换采集搜索", "网格提案", "贝叶斯优化"], operations = ["minimize", "describe"], boundaries = ["有限网格稳定 argmin，不是连续全局最优证明。", "不调用真实 Problem、不消耗真实评估预算；首版 stateless。"] } }
+
+[[entry]]
+key = "tool.cma_sampler"
+title = "GaussianCohortSampler"
+kind = "tool"
+import_path = "nsgablack.adapters.cmaes:GaussianCohortSampler"
+tags = ["core", "sampler"]
+summary = "可独立装配的 GaussianCohortSampler；职责、限制和已有标准 Case 见下列契约。"
+companions = ["adapter.cmaes"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+use_when = ["替换采样器", "CMA-ES", "搜索分布"]
+minimal_wiring = ["from nsgablack.adapters.cmaes import CMAESAdapter, GaussianCohortSampler", "adapter = CMAESAdapter([0.0, 0.0], sampler=GaussianCohortSampler(seed=19))"]
+required_companions = ["adapter.cmaes"]
+config_keys = ["seed", "fixed_batches"]
+example_entry = "examples/cases/algorithm_semantics/cases/cmaes_distribution/run_solver.py"
+contract = { catalog = { role = "sampler", concepts = ["替换采样器", "CMA-ES", "搜索分布"], operations = ["sample", "get_state", "set_state", "reset"], boundaries = ["fixed_batches 仅是显式夹具前缀，不是默认性能配置。", "RNG/游标由唯一 Adapter 保存和回滚。"] } }
+
+[[entry]]
+key = "tool.cma_ranking"
+title = "StableObjectiveRanking"
+kind = "tool"
+import_path = "nsgablack.adapters.cmaes:StableObjectiveRanking"
+tags = ["core", "ranking"]
+summary = "可独立装配的 StableObjectiveRanking；职责、限制和已有标准 Case 见下列契约。"
+companions = ["adapter.cmaes"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+use_when = ["替换排名", "CMA-ES", "稳定并列"]
+minimal_wiring = ["from nsgablack.adapters.cmaes import CMAESAdapter, StableObjectiveRanking", "adapter = CMAESAdapter([0.0, 0.0], ranking=StableObjectiveRanking())"]
+required_companions = ["adapter.cmaes"]
+config_keys = []
+example_entry = "examples/cases/algorithm_semantics/cases/cmaes_distribution/run_solver.py"
+contract = { catalog = { role = "ranking", concepts = ["替换排名", "CMA-ES", "稳定并列"], operations = ["rank"], boundaries = ["完整 cohort 的无约束单目标 raw 排名；同分保留提案顺序。", "不把硬接纳裁剪当作 mu 重组选择；组件 stateless。"] } }
+
+[[entry]]
+key = "tool.cma_update"
+title = "PositiveCMAUpdate"
+kind = "tool"
+import_path = "nsgablack.adapters.cmaes:PositiveCMAUpdate"
+tags = ["core", "distribution-update"]
+summary = "可独立装配的 PositiveCMAUpdate；职责、限制和已有标准 Case 见下列契约。"
+companions = ["adapter.cmaes"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+use_when = ["CMA-ES", "整批更新", "替换分布更新"]
+minimal_wiring = ["from nsgablack.adapters.cmaes import CMAESAdapter, PositiveCMAUpdate", "from nsgablack.adapters.cmaes import CMAParameters", "parameters = CMAParameters(population_size=4, parents=2)", "adapter = CMAESAdapter([0.0, 0.0], parameters=parameters, updater=PositiveCMAUpdate(parameters))"]
+required_companions = ["adapter.cmaes"]
+config_keys = ["parameters"]
+example_entry = "examples/cases/algorithm_semantics/cases/cmaes_distribution/run_solver.py"
+contract = { catalog = { role = "distribution_update", concepts = ["CMA-ES", "整批更新", "替换分布更新"], operations = ["update"], boundaries = ["正权重 rank-one+rank-mu 更新，包含演化路径和步长。", "必须与 Adapter 共享同一 CMAParameters 解释和完整 cohort。"] } }
+
+[[entry]]
+key = "tool.map_descriptor"
+title = "IdentityDescriptor"
+kind = "tool"
+import_path = "nsgablack.adapters.map_elites:IdentityDescriptor"
+tags = ["core", "descriptor"]
+summary = "可独立装配的 IdentityDescriptor；职责、限制和已有标准 Case 见下列契约。"
+companions = ["adapter.map_elites"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+use_when = ["替换描述符", "MAP-Elites", "行为区域"]
+minimal_wiring = ["from nsgablack.adapters.map_elites import MapElitesAdapter, IdentityDescriptor", "adapter = MapElitesAdapter(descriptor=IdentityDescriptor(indices=(0, 1)))"]
+required_companions = ["adapter.map_elites"]
+config_keys = ["indices"]
+example_entry = "examples/cases/algorithm_semantics/cases/map_elites_archive/run_solver.py"
+contract = { catalog = { role = "descriptor", concepts = ["替换描述符", "MAP-Elites", "行为区域"], operations = ["describe"], boundaries = ["描述符不是目标，也不是普通多样性 Bias。", "使用 repair 后实际候选；首版描述符须 stateless。"] } }
+
+[[entry]]
+key = "tool.map_cells"
+title = "GridCells"
+kind = "tool"
+import_path = "nsgablack.adapters.map_elites:GridCells"
+tags = ["core", "cell-mapping"]
+summary = "可独立装配的 GridCells；职责、限制和已有标准 Case 见下列契约。"
+companions = ["adapter.map_elites"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+use_when = ["替换格子划分", "MAP-Elites", "行为区域"]
+minimal_wiring = ["from nsgablack.adapters.map_elites import MapElitesAdapter, GridCells", "adapter = MapElitesAdapter(cells=GridCells(lower=(0.0, 0.0), upper=(1.0, 1.0), bins=(2, 2)))"]
+required_companions = ["adapter.map_elites"]
+config_keys = ["lower", "upper", "bins"]
+example_entry = "examples/cases/algorithm_semantics/cases/map_elites_archive/run_solver.py"
+contract = { catalog = { role = "cell_mapping", concepts = ["替换格子划分", "MAP-Elites", "行为区域"], operations = ["locate"], boundaries = ["内格半开；上边界归最后一格，越界拒绝。", "不同格子配置不能直接解释旧 checkpoint。"] } }
+
+[[entry]]
+key = "tool.map_competition"
+title = "MinimizeObjective"
+kind = "tool"
+import_path = "nsgablack.adapters.map_elites:MinimizeObjective"
+tags = ["core", "archive-competition"]
+summary = "可独立装配的 MinimizeObjective；职责、限制和已有标准 Case 见下列契约。"
+companions = ["adapter.map_elites"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+use_when = ["替换档案竞争", "MAP-Elites", "保留精英"]
+minimal_wiring = ["from nsgablack.adapters.map_elites import MapElitesAdapter, MinimizeObjective", "adapter = MapElitesAdapter(competition=MinimizeObjective(objective=0, tolerance=0.0))"]
+required_companions = ["adapter.map_elites"]
+config_keys = ["objective", "tolerance"]
+example_entry = "examples/cases/algorithm_semantics/cases/map_elites_archive/run_solver.py"
+contract = { catalog = { role = "archive_competition", concepts = ["替换档案竞争", "MAP-Elites", "保留精英"], operations = ["quality", "prefer"], boundaries = ["先可行性，再同格指定 raw 目标；并列保留已有冠军。", "这是硬接纳之后的档案留存，不是 EvaluationAcceptancePolicy。"] } }
+
+[[entry]]
+key = "tool.map_sequence_emitter"
+title = "SequenceEmitter"
+kind = "tool"
+import_path = "nsgablack.adapters.map_elites:SequenceEmitter"
+tags = ["core", "emitter"]
+summary = "可独立装配的 SequenceEmitter；职责、限制和已有标准 Case 见下列契约。"
+companions = ["adapter.map_elites"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+use_when = ["替换生成器", "确定性候选序列", "MAP-Elites"]
+minimal_wiring = ["from nsgablack.adapters.map_elites import MapElitesAdapter, SequenceEmitter", "adapter = MapElitesAdapter(emitter=SequenceEmitter(((0.1, 0.1), (0.4, 0.4), (0.6, 0.4), (0.6, 0.8), (0.8, 0.2))))"]
+required_companions = ["adapter.map_elites"]
+config_keys = ["points"]
+example_entry = "examples/cases/algorithm_semantics/cases/map_elites_archive/run_solver.py"
+contract = { catalog = { role = "emitter", concepts = ["替换生成器", "确定性候选序列", "MAP-Elites"], operations = ["emit", "get_state", "set_state"], boundaries = ["有限序列用于可检查示例，耗尽后局部完成。", "游标由唯一 Adapter 保存/回滚，不是随机优化策略。"] } }
+
+[[entry]]
+key = "tool.map_gaussian_emitter"
+title = "GaussianArchiveEmitter"
+kind = "tool"
+import_path = "nsgablack.adapters.map_elites:GaussianArchiveEmitter"
+tags = ["core", "emitter"]
+summary = "可独立装配的 GaussianArchiveEmitter；职责、限制和已有标准 Case 见下列契约。"
+companions = ["adapter.map_elites"]
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+use_when = ["替换生成器", "档案变异", "MAP-Elites"]
+minimal_wiring = ["from nsgablack.adapters.map_elites import MapElitesAdapter, GaussianArchiveEmitter", "adapter = MapElitesAdapter(emitter=GaussianArchiveEmitter(sigma=0.1))", "# Also provide solver RepresentationPipeline(initializer=UniformInitializer(...)) for an empty archive."]
+required_companions = ["adapter.map_elites"]
+config_keys = ["sigma"]
+example_entry = "examples/cases/algorithm_semantics/cases/map_elites_archive/run_solver.py"
+contract = { catalog = { role = "emitter", concepts = ["替换生成器", "档案变异", "MAP-Elites"], operations = ["emit"], boundaries = ["从档案冠军派生候选；空档案要求问题管线 initializer。", "RNG由 Adapter 提供；未实现 CMA emitter 的完整批次反馈。"] } }

@@ -1,0 +1,181 @@
+[[example]]
+id = "capability-application-tool.unit_view"
+title = "在真实搜索实例上观察只读结构 · 实际装配与扩展"
+component_keys = ["tool.unit_view"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "想知道 NSGA2 当前到底持有哪些成员、视图来自哪个实例和版本，而不把 Adapter 的可写内部数组交给观察代码。UnitView 是脱离的结构快照；这里实际得到具有成员能力的 PopulationView。"
+inputs = ["当前 nsgablack、blackbase 和 NumPy；复制现有 `examples/cases/bias_gallery` Project 到自己的工作目录，保留 `project_config.py`、`run_project.py` 和完整 `cases/bias_gallery/`。该 Project 的 `default` 组只有 `main` 阶段，会调用 `bias_gallery` Case，Project L0 提供 ResourceContext。本章不使用策略参数或组件覆盖；要换 Adapter/Bias，须同步修改绑定和报告，不能让旧观察器读取已被替换的实例。"]
+steps = ["按下面逐个文件接入，各文件完整且不依赖别章。显式 initializer 和 mutator 归 Adapter；ClipRepair 归问题管线。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["打开 `results/unit_view.json`。detail.view_type 应为 PopulationView、readonly 为 true、完整送评后 identity_complete 为 true。比较 revision 时同时比较 identity；相同数值或相同 revision 不能跨实例冒充同一 Unit。所有章节的 refs、tokens、candidates、raw 与 selection 行序应对应；二维 Sphere 的 raw_objectives 每行应为坐标平方和，raw_violations 应为零。selection 是成员当次送评时的选择反馈，不是用最终参考群体重新评分所得；不要在报告阶段重算它来“校正”历史。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/UNIT_AND_BIAS_APPLICATIONS_CN.md", section = "tool.unit_view" }]
+
+[[example]]
+id = "capability-application-bias.population_diversity"
+title = "度量成员分散程度，先不改变搜索 · 实际装配与扩展"
+component_keys = ["bias.population_diversity"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "需要解释搜索是否挤在同一区域，先记录群体平均最近邻距离，避免把一个评分对象误当成会自动选父代、填种群或拒绝重复点的算法。"
+inputs = ["当前 nsgablack、blackbase 和 NumPy；复制现有 `examples/cases/bias_gallery` Project 到自己的工作目录，保留 `project_config.py`、`run_project.py` 和完整 `cases/bias_gallery/`。该 Project 的 `default` 组只有 `main` 阶段，会调用 `bias_gallery` Case，Project L0 提供 ResourceContext。本章不使用策略参数或组件覆盖；要换 Adapter/Bias，须同步修改绑定和报告，不能让旧观察器读取已被替换的实例。"]
+steps = ["按下面逐个文件接入，各文件完整且不依赖别章。显式 initializer 和 mutator 归 Adapter；ClipRepair 归问题管线。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["打开 `results/population_diversity.json`。detail 应有 scope=unit、direction=maximize、reason=mean_nearest_member_distance，value 非负。值为零可能来自重合成员或不足两个槽位，不等于运行失败；大值也不证明目标更优、可行或覆盖前沿。所有章节的 refs、tokens、candidates、raw 与 selection 行序应对应；二维 Sphere 的 raw_objectives 每行应为坐标平方和，raw_violations 应为零。selection 是成员当次送评时的选择反馈，不是用最终参考群体重新评分所得；不要在报告阶段重算它来“校正”历史。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/UNIT_AND_BIAS_APPLICATIONS_CN.md", section = "bias.population_diversity" }]
+
+[[example]]
+id = "capability-application-bias.unit_preference"
+title = "把实例绑定的新颖性接入选择目标 · 实际装配与扩展"
+component_keys = ["bias.unit_preference"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "同一 Sphere 搜索容易聚在少数位置，希望给远离当前成员的新提案一点软奖励，同时保留平方和原始目标、候选身份与正常接纳过程。"
+inputs = ["当前 nsgablack、blackbase 和 NumPy；复制现有 `examples/cases/bias_gallery` Project 到自己的工作目录，保留 `project_config.py`、`run_project.py` 和完整 `cases/bias_gallery/`。该 Project 的 `default` 组只有 `main` 阶段，会调用 `bias_gallery` Case，Project L0 提供 ResourceContext。本章不使用策略参数或组件覆盖；要换 Adapter/Bias，须同步修改绑定和报告，不能让旧观察器读取已被替换的实例。"]
+steps = ["按下面逐个文件接入，各文件完整且不依赖别章。显式 initializer 和 mutator 归 Adapter；ClipRepair 归问题管线。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["打开 `results/unit_preference.json`。detail.binding.binding 应包含 OWNER、此 Adapter 的 unit_id/schema，active_names 包含 population_novelty。raw 仍是平方和；selection 可因当时的新颖性奖励而低于 raw，不要求每行一定不同，也不能拿最终群体距离倒推每次历史奖励。所有章节的 refs、tokens、candidates、raw 与 selection 行序应对应；二维 Sphere 的 raw_objectives 每行应为坐标平方和，raw_violations 应为零。selection 是成员当次送评时的选择反馈，不是用最终参考群体重新评分所得；不要在报告阶段重算它来“校正”历史。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/UNIT_AND_BIAS_APPLICATIONS_CN.md", section = "bias.unit_preference" }]
+
+[[example]]
+id = "capability-application-bias.module"
+title = "把两类软引导放进一个运行门面 · 实际装配与扩展"
+component_keys = ["bias.module"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "需要同时使用依赖当前结构的新颖性奖励和带记忆的重复访问惩罚，统一进入 Solver 的评分、回滚和恢复生命周期，而不是在 Problem.evaluate 内临时改写目标。"
+inputs = ["当前 nsgablack、blackbase 和 NumPy；复制现有 `examples/cases/bias_gallery` Project 到自己的工作目录，保留 `project_config.py`、`run_project.py` 和完整 `cases/bias_gallery/`。该 Project 的 `default` 组只有 `main` 阶段，会调用 `bias_gallery` Case，Project L0 提供 ResourceContext。本章不使用策略参数或组件覆盖；要换 Adapter/Bias，须同步修改绑定和报告，不能让旧观察器读取已被替换的实例。"]
+steps = ["按下面逐个文件接入，各文件完整且不依赖别章。显式 initializer 和 mutator 归 Adapter；ClipRepair 归问题管线。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["打开 `results/bias_module.json`。detail.names 包含 population_novelty、tabu_search_bias，tabu.policy 是 committed_admitted_proposals；raw 仍可独立核对平方和。两种增量可互相抵消，所以 selection 恰好等于 raw 不能单独证明未启用。所有章节的 refs、tokens、candidates、raw 与 selection 行序应对应；二维 Sphere 的 raw_objectives 每行应为坐标平方和，raw_violations 应为零。selection 是成员当次送评时的选择反馈，不是用最终参考群体重新评分所得；不要在报告阶段重算它来“校正”历史。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/UNIT_AND_BIAS_APPLICATIONS_CN.md", section = "bias.module" }]
+
+[[example]]
+id = "capability-application-bias.tabu"
+title = "对已提交接纳提案附近的位置施加软记忆惩罚 · 实际装配与扩展"
+component_keys = ["bias.tabu"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "想减少连续试探同一区域，同时允许 NSGA2 继续按自己的种群策略选择成员；需要能解释“记住了什么”，而非只看当前 survivor 就猜禁忌表。"
+inputs = ["当前 nsgablack、blackbase 和 NumPy；复制现有 `examples/cases/bias_gallery` Project 到自己的工作目录，保留 `project_config.py`、`run_project.py` 和完整 `cases/bias_gallery/`。该 Project 的 `default` 组只有 `main` 阶段，会调用 `bias_gallery` Case，Project L0 提供 ResourceContext。本章不使用策略参数或组件覆盖；要换 Adapter/Bias，须同步修改绑定和报告，不能让旧观察器读取已被替换的实例。"]
+steps = ["按下面逐个文件接入，各文件完整且不依赖别章。显式 initializer 和 mutator 归 Adapter；ClipRepair 归问题管线。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["打开 `results/tabu.json`。detail.memory 的 schema、policy、config 与本节策略对应，tokens/candidates 对齐且长度不超过30。memory_tokens_also_members 只显示交集，不要求等于全部最终成员。正常运行最早尚无历史时惩罚为零；某次评估触发但步骤未提交，不能据此要求出现记忆。所有章节的 refs、tokens、candidates、raw 与 selection 行序应对应；二维 Sphere 的 raw_objectives 每行应为坐标平方和，raw_violations 应为零。selection 是成员当次送评时的选择反馈，不是用最终参考群体重新评分所得；不要在报告阶段重算它来“校正”历史。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/UNIT_AND_BIAS_APPLICATIONS_CN.md", section = "bias.tabu" }]
+
+[[example]]
+id = "capability-application-bias.dynamic_penalty"
+title = "随逻辑代数提高区域软偏好的压力 · 实际装配与扩展"
+component_keys = ["bias.dynamic_penalty"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "希望先按平方和广泛探索，再逐渐偏向第一坐标不小于1的区域，并能分清原目标、软罚和真实硬约束。该条件在本章是领域偏好，允许付出偏好代价。"
+inputs = ["当前 nsgablack、blackbase 和 NumPy；复制现有 `examples/cases/bias_gallery` Project 到自己的工作目录，保留 `project_config.py`、`run_project.py` 和完整 `cases/bias_gallery/`。该 Project 的 `default` 组只有 `main` 阶段，会调用 `bias_gallery` Case，Project L0 提供 ResourceContext。本章不使用策略参数或组件覆盖；要换 Adapter/Bias，须同步修改绑定和报告，不能让旧观察器读取已被替换的实例。"]
+steps = ["按下面逐个文件接入，各文件完整且不依赖别章。显式 initializer 和 mutator 归 Adapter；ClipRepair 归问题管线。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["打开 `results/dynamic_penalty.json`。detail 显示实际调度配置，region_costs 是最终坐标的未加权代价，raw 仍为平方和；它不记录各行送评时的 generation，所以不能用最终 generation 反算每个成员的历史 selection。观察新提案反馈/求值事件才能逐次对账，不能声称所有最终行都使用了最终 scale。所有章节的 refs、tokens、candidates、raw 与 selection 行序应对应；二维 Sphere 的 raw_objectives 每行应为坐标平方和，raw_violations 应为零。selection 是成员当次送评时的选择反馈，不是用最终参考群体重新评分所得；不要在报告阶段重算它来“校正”历史。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/UNIT_AND_BIAS_APPLICATIONS_CN.md", section = "bias.dynamic_penalty" }]
+
+[[example]]
+id = "capability-application-plugin.checkpoint_resume"
+title = "保存可恢复状态，并从已有提交点继续 · 实际装配与扩展"
+component_keys = ["plugin.checkpoint_resume"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "长任务需要从已提交逻辑步继续，或要保存正式 Case 的最终状态。它恢复 Solver、Adapter、池、声明的组件与 RNG 状态；不是只重新填一个种群数组。周期检查点和最终权威检查点的发布方式不同，必须分别读取。"
+inputs = ["使用 `assembly_workbench/cases/hybrid_search`；其 `build_solver.py` 已有一个 `CheckpointResumePlugin`，本例替换该注册，不再追加第二个。现有 `output` 来自 `HybridConfig.output_dir`，默认是 Project 下 `results/hybrid_search`；`settings.checkpoint_every` 来自同一配置。候选、反馈、Unit 都由原宿主管理，不传给本工厂。准备一个仅供本应用保管、恢复时仍能取得的非空 `NSGABLACK_CHECKPOINT_HMAC_KEY`；只恢复本应用受控目录内自生成、未被替换的文件。`trusted_roots` 限定路径，HMAC 与 `strict=True` 校验载荷来源和完整性；外层 pickle 在 HMAC 校验前就会反序列化，不能让任意外来 `.pkl` 变得安全。"]
+steps = ["新文件完整内容如下。`resume` 是装配配置，不在运行中修改它。新的 `checkpoint_recipe` 目录避免混用原示例目录中的旧组件配置。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["先看标准 Project 是否成功结束，再读取 `results/hybrid_search/checkpoint_recipe/resume_report.json`：`last_saved_generation` 是保存的代数标记；恢复时看 `last_loaded_path`、`last_loaded_generation` 和 `resume_audit.status/current/issue_count/trajectory_equivalent`。`queued` 只表示排队，尚未应用；无问题的已应用恢复应是 `restored`、`current=True`、`issue_count=0`。首次新运行的 `not_attempted` 正常。不要仅看目录里有文件。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/RUNTIME_PLUGIN_APPLICATIONS_CN.md", section = "plugin.checkpoint_resume" }]
+
+[[example]]
+id = "capability-application-plugin.module_report"
+title = "记录实际装配清单与 Bias 统计 · 实际装配与扩展"
+component_keys = ["plugin.module_report"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "改装配后想核对实际绑定了什么 Solver、根 Adapter、Pipeline 和 Plugin；或要把已有 Bias 的累计统计交给报告消费者。它不负责证明算法更好，也不会由一个配置标签自动还原全部嵌套组件图。"
+inputs = ["使用正式 `assembly_workbench/cases/hybrid_search`。原 builder 已建立 `solver`、输出目录 `output` 和 `settings`；仍保留原 checkpoint 与 `WorkbenchTrace`。不需要提供种群矩阵或自行构造 Unit。报告默认覆盖同名文件，本例用 `hybrid` 作为人工文件标签，不把它叫作 Solver 权威运行身份。"]
+steps = ["新文件完整内容如下。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["在默认 `results/hybrid_search/module_report` 下读取 `hybrid.modules.json`、`hybrid.bias.json`、`hybrid.bias.md`。前者的 `plugins` 应包含本次实际挂载的 `module_report`，`adapter.class` 是根组合 Adapter，而非承诺列出每个叶算法。更完整的本宿主树见原有 `trace.json` 的 `components`。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/RUNTIME_PLUGIN_APPLICATIONS_CN.md", section = "plugin.module_report" }]
+
+[[example]]
+id = "capability-application-plugin.profiler"
+title = "分清逻辑提交耗时与失败、空闲尝试 · 实际装配与扩展"
+component_keys = ["plugin.profiler"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "需要知道每个已提交步骤的墙钟耗时、消耗的求值行数，以及未提交尝试是否占用时间。它适合解释标准 Case 的运行节奏；不是 CPU/GPU 采样器，不会自动分离出纯 Problem 数值计算时间。"
+inputs = ["使用 `assembly_workbench/cases/hybrid_search`，保留其标准 builder、预算、`WorkbenchTrace` 与 checkpoint。工厂接收该 builder 的 `solver/output`，没有隐含候选或 feedback 参数。基线固定文件标签为 `hybrid`，显式 `overwrite=True` 表示重复运行会替换旧 profile；默认配置实际是 `overwrite=False`，同名文件存在会在初始化时报错。"]
+steps = ["新文件完整内容如下。`flush_every=2` 启用每两条已提交记录的中间刷新，便于观察长任务；它不是每两次物理尝试刷新。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["默认文件为 `results/hybrid_search/profile/hybrid.profile.json`。先读取 `summary.attempts`、`attempt_status_counts`、`generations`，再把 `per_attempt[].status/committed/eval_delta` 与 `per_generation` 对照；不要假设两张列表一样长。`wall_s` 是该尝试的墙钟时间，`eval_per_s` 按它与求值差值计算；`phase` 是已有 Adapter 运行投影的可用阶段标签，允许为空。顶层 `eval_count` 是 Solver 累计计数，恢复运行时也不能只用本次记录推算它。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/RUNTIME_PLUGIN_APPLICATIONS_CN.md", section = "plugin.profiler" }]
+
+[[example]]
+id = "capability-application-plugin.decision_trace"
+title = "读调用事件，再为应用补充明确的观察理由 · 实际装配与扩展"
+component_keys = ["plugin.decision_trace"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "排查提案、评估、更新和插件通知的先后，或需要应用显式记录一条有 reason/evidence 的事件。默认 trace 记录方法调用边界，不会自动解释 NSGA 的每次选择理由，也不保存重新执行算法所需的完整候选、反馈和 RNG 状态。"
+inputs = ["使用正式 `assembly_workbench/cases/hybrid_search`；沿用原 `solver/output`、Problem、Adapter 和正式提交过程。基线打开真实的 `capture_evaluate/capture_adapter/capture_plugin_events` 分支。输出会包含调用异常的消息，作为应用诊断文件管理，不将它当作候选仓库或凭据存储。"]
+steps = ["新文件完整内容如下。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["默认读取 `results/hybrid_search/decision_trace/hybrid.decision_trace.jsonl` 与 `hybrid.decision_trace.summary.json`。summary 的 `count/event_type_counts/component_counts/first_seq/last_seq` 是事件统计；逐条看 `seq/component/decision/reason_code/evidence.duration_ms`。一条 `completed` 只说明那个调用正常返回，`update` 返回也不自动等于整个步骤已提交。包装内嵌调用在内层返回时先记录，因此 `seq` 是记录顺序，不是调用开始顺序。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/RUNTIME_PLUGIN_APPLICATIONS_CN.md", section = "plugin.decision_trace" }]
+
+[[example]]
+id = "capability-application-plugin.surrogate_eval"
+title = "用真实数据暖启，再混合代理预测与真评估 · 实际装配与扩展"
+component_keys = ["plugin.surrogate_eval"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "原 Problem 的目标很贵，接受在搜索过程中使用近似目标，并持续用少量真实调用纠正代理。它接管求值方式，不负责 DE 的供体、交叉或替换，也不是一个加分 Bias。"
+inputs = ["使用现有 `examples/cases/assembled_parallel_cases/cases/de_bowl/`。保留 `problem/` 的二维 BowlProblem，目标为 `(x0-1)^2+(x1+2)^2`，边界 `[-4,4]`；保留 DE 工厂（12 名成员、12 行批次）、ClipRepair、配置和规范运行入口。需要 NumPy、scikit-learn 与当前框架。本例问题很便宜，只用来观察接线，不能据此宣称代理加速。"]
+steps = ["能力查询只判断非空候选，不构造模型；第一次实际评估时才懒建 VectorSurrogate，并让整批进入暖启分支，而不是逐点重训。此时仍整批调用 Problem，再拟合一次。达到 min_train_samples 后才预测全体，再把预测最优、不确定性最高与最低真评估配额的并集重评。模型训练只收真实目标。Provider 返回原始约束和逐行 `evaluation_fidelity=true/surrogate`，不自己加 Bias；Solver 再统一投影一次，原始证据保留。`surrogate_std` 随 Feedback.metrics 传给偏好消费者，不塞整批对象进共享 context。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["查看该 Case 的 `results/surrogate.json`，核对本轮 run_id。provider_stats 的 true_evals/train_samples 是真实调用与训练行数，surrogate_calls 是预测批次数；dispatched_candidates 是控制面送评行数，两种成本不能混称。last_fidelity 明确哪些最后一批值是真值，哪些是预测；raw 并不抹掉 approximate 身份。仅打开 Catalog 不会拟合模型。本工厂没有声明可恢复代理缓存的状态 codec，不能把额外挂 checkpoint 称为模型续训已得到保证。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/EVALUATION_PROVIDER_APPLICATIONS_CN.md", section = "plugin.surrogate_eval" }]
+
+[[example]]
+id = "capability-application-plugin.multi_fidelity_eval"
+title = "每批粗评全部，再精评一个明确子集 · 实际装配与扩展"
+component_keys = ["plugin.multi_fidelity_eval"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "已有同一问题的低成本近似与高成本版本，希望用粗评安排高保真机会，并清楚记录每个值来自哪一级。当前实现每批都粗评，不是达到某代后永久切换。"
+inputs = ["独立使用 `assembled_parallel_cases/cases/de_bowl/`，保留原二维 Problem、12 行 DE 工厂与管线。本节低保真只保留第一坐标的代价，真实 Problem 还包含第二坐标；这故意不是等价函数，因此必须显式允许 approximate。不要与上一章同时启用两个 Provider。"]
+steps = ["低保真目标 shape 与 Problem 的目标数一致。topk_exploit 取粗评分数最小者；topk_explore 是无放回随机探索，不是按模型不确定性排序；二者去重并补到 min_high_fidelity。选中行被真实 Problem.evaluate 覆盖，其余保留低保真值。所有行的约束都由 Problem 求得，Bias 统一在返回后由控制面投影，不能把近似低违反量用作真实硬门。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["读取 `de_bowl/results/fidelity.json` 的当前 run_id，low_calls 应反映粗评行数，high_calls 与 problem_calls 反映实际高保真调用；它们不是同一个计数。last_fidelity 的 high/low 与 last_raw 按行对齐，不能把混合数组统称全真值。Solver 的 dispatched_candidates 仍只统计送评候选，而不是再加 low/high 内部调用。config 的 min_train_samples 当前没有训练消费者，不要用它推断模型暖启；当前没有 low_fidelity_ratio、switch_step 或 fallback_to_high_fidelity 这些配置。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/EVALUATION_PROVIDER_APPLICATIONS_CN.md", section = "plugin.multi_fidelity_eval" }]
+
+[[example]]
+id = "capability-application-plugin.newton_solver"
+title = "在一次候选评估内求隐式状态 · 实际装配与扩展"
+component_keys = ["plugin.newton_solver"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "外层候选是设计变量 x，但目标依赖内层方程解 y；希望替换数值后端而不把 y 当成外层 Adapter 的另一个搜索 Unit。本例方程为 `y²=x+1`，限定正根，外层原始目标为 `(y-1.5)²+0.02x`。"
+inputs = ["在仓库根用正式 CLI 创建新 Project，安装当前框架、NumPy、SciPy。以下每个文件路径相对新 Project；保留生成的 Project L0、运行入口与包标记。"]
+steps = ["Adapter 仍只提出 x；Provider 用 SciPy root(method=\"hybr\") 求 y，Problem 转换钩子再给原始目标。Newton 当前只声明单点能力，批量由正式 individual_fallback 逐行调用，不必另写批量循环。控制面只投影一次 Bias，并保留 raw 目标与违反量。这里明确验残差和正根：后端 success=False 的统计标志本身不是领域验收，不能省掉转换钩子的正确性判断。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["查看 `cases/search/results/implicit.json`，按本轮 run_id 核对 stats.calls/success/failure/fallback、last_raw 与逐行 implicit_residual/implicit_iters/implicit_success。last_raw 是最后送评批次，不一定是 SA 当前点或最终 incumbent。Newton 的 last_iterations 来自 nfev，不能当成外层代数。报告是提交后的本地观察副本，不是独立权威 Artifact；方程解 y 也不会被自动写成外层候选。若 Provider 接受后返回 None 或抛错，仲裁器不会轮试 Broyden。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/EVALUATION_PROVIDER_APPLICATIONS_CN.md", section = "plugin.newton_solver" }]
+
+[[example]]
+id = "capability-application-plugin.broyden_solver"
+title = "保留同一隐式问题，改用无 Jacobian 后端 · 实际装配与扩展"
+component_keys = ["plugin.broyden_solver"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "目标仍依赖方程解，但没有可用 Jacobian，或希望比较另一种数值求解路线。Broyden 使用相同 Problem 钩子，忽略给出的 Jacobian；它不替代外层 SA 或 VNS。"
+inputs = ["这是独立章节。创建新标准 Project，准备 NumPy、SciPy 与当前框架，保留生成的 L0、规范入口和包标记，不要求先执行 Newton 章。"]
+steps = ["现实现使用 scipy.optimize.broyden1，max_iter 传给其 iter，tol 传给 f_tol；stats.last_iterations 来自 callback 次数，与 Newton 的 nfev 不是同一尺度。Provider 返回原始目标、原始违反量与 Feedback.metrics，Bias 由 Solver 统一处理。Problem 的转换钩子仍负责核对正根与领域残差；改变数值后端并不免除它。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["查看 `cases/search/results/implicit.json` 的当前 run_id、stats.calls/success/failure/fallback 与逐行 implicit_residual/implicit_iters/implicit_success。raw 目标按公式核对，但不要把最后一批当最终最佳；Solver incumbent 与 SA 接受的当前点也须分开。纯隐式路径不调用 Problem.evaluate，故其计数不能代表候选送评数；control.evaluation_count 记录控制面送评。原始约束可以由 evaluate_constraints_from_implicit_solution 提供，没有该钩子才使用 Problem.evaluate_constraints。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/EVALUATION_PROVIDER_APPLICATIONS_CN.md", section = "plugin.broyden_solver" }]

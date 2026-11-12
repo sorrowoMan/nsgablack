@@ -11,7 +11,8 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Sequence, Tuple
+from typing import Any, List, Mapping, Sequence, Tuple
+import inspect
 import math
 
 import numpy as np
@@ -23,7 +24,7 @@ class ContractError(ValueError):
     """扩展点契约违反（输入/输出/shape/语义不符合）。"""
 
 
-def validate_adapter_unit_bindings(adapter: Any) -> None:
+def validate_adapter_unit_bindings(adapter: Any, *, pipeline: Any = None) -> None:
     """Check opted-in Unit contracts, including materialized child Adapters."""
     validate = getattr(adapter, "validate_unit_bindings", None)
     if callable(validate):
@@ -31,6 +32,132 @@ def validate_adapter_unit_bindings(adapter: Any) -> None:
             validate()
         except (TypeError, ValueError) as exc:
             raise ContractError(f"Adapter Unit binding: {exc}") from exc
+    issues = inspect_adapter_operator_bindings(adapter, pipeline=pipeline)
+    if issues:
+        raise ContractError("; ".join(f"{code}: {message}" for code, message in issues))
+
+
+def inspect_adapter_operator_bindings(adapter: Any, *, pipeline: Any = None):
+    """Inspect explicit local checkpoint owners, without walking object graphs.
+
+    Transparent wrappers expose children, not copies of their bindings. A
+    stateless component may be reused; a stateful component has exactly one
+    binding whose Adapter serializes it. Legacy pipeline sharing is unchanged,
+    but the same state cannot also acquire an independent direct owner while
+    being seeded or executed through any configured pipeline component slot.
+    """
+    from ..adapters.operator_binding import OperatorBinding
+
+    from ..adapters.operations import OPERATION_METHODS
+    operation_methods = OPERATION_METHODS
+
+    def validate_signature(role, component, method):
+        # Mirror supported call shapes without invoking the operator, its
+        # identity hook, or its state codec. A matching shape is chosen before
+        # execution; a TypeError raised by a method is never retried.
+        function = getattr(component, method, None)
+        if not callable(function):
+            raise TypeError(f"{role} requires callable {method}()")
+        if role == "repair":
+            from ..representation.repair_contracts import validate_repair_component
+            validate_repair_component(component, unit=True)
+            return
+        if role == "mutator":
+            from ..units.operator_inputs import mutation_unit_spec
+            if mutation_unit_spec(component) is not None:
+                return
+        elif role == "selector":
+            from ..units.operator_inputs import selection_unit_spec
+            if selection_unit_spec(component) is not None:
+                return
+        elif getattr(component, "unit_inputs", None) is not None:
+            raise ValueError(f"{role} does not receive implicit Unit inputs")
+        signature = inspect.signature(function)
+        if role in {"initializer", "mutator"}:
+            calls = (((object(), {}), {}), ((object(),), {"context": {}}), ((object(),), {}))
+        elif role == "parent_selector":
+            calls = (((object(),), {"pool": object(), "rng": object()}),)
+        else:
+            # Complete changes and pool maintenance receive a detached request
+            # and the owning RNG. Neither acquires implicit Unit input access.
+            calls = (((object(),), {"rng": object()}),)
+        for args, kwargs in calls:
+            try:
+                signature.bind(*args, **kwargs)
+            except TypeError:
+                continue
+            return
+        raise TypeError(f"{role}.{method} signature does not accept its declared operation request")
+
+    issues = []
+    visited = set()
+    owners = {}
+    pipeline_components = {}
+    if pipeline is not None:
+        slots = [(label, getattr(pipeline, attribute, None)) for label, attribute in (
+            ("initializer", "initializer"), ("mutator", "mutator"),
+            ("repair", "problem_repair"), ("encoder", "encoder"),
+            ("decoder", "decoder"), ("crossover", "crossover"),
+        )]
+        slots.extend((f"mutation_operators.{name}", component)
+                     for name, component in getattr(pipeline, "mutation_operators", {}).items())
+        slots.extend((f"initializers[{index}]", component)
+                     for index, (component, _) in enumerate(getattr(pipeline, "initializers", ())))
+        pipeline_components = {id(component): label for label, component in slots
+                               if component is not None}
+
+    def visit(current, path):
+        if id(current) in visited:
+            return
+        visited.add(id(current))
+        getter = getattr(current, "get_local_operator_bindings", None)
+        try:
+            declaration = getattr(current, "operation_methods", {})
+            if not isinstance(declaration, Mapping):
+                raise TypeError("operation_methods must be a Mapping of supported roles to methods")
+            for role, method in declaration.items():
+                if role not in operation_methods or method != operation_methods[role]:
+                    raise ValueError(f"unsupported operation declaration {role!r}: {method!r}")
+            bindings = {} if getter is None else getter()
+            if not isinstance(bindings, Mapping):
+                raise TypeError("get_local_operator_bindings must return a Mapping")
+            for role, binding in bindings.items():
+                if not isinstance(role, str) or not role.strip():
+                    raise TypeError("operator binding role must be a nonempty string")
+                location = f"{path}.{role}"
+                if not isinstance(binding, OperatorBinding):
+                    raise TypeError(f"{location}: local binding must be OperatorBinding")
+                if role not in declaration:
+                    raise ValueError(f"{location}: binding role is not declared by its consumer")
+                method = binding.method
+                if method != declaration[role]:
+                    raise ValueError(f"{location}: binding method differs from operation_methods")
+                validate_signature(role, binding.component, method)
+                if role == "repair" and binding.component is not getattr(current, "unit_repair", None):
+                    raise ValueError(f"{location}: repair binding differs from the active UnitRepair")
+                if type(binding.stateless) is not bool:
+                    raise TypeError(f"{location}: binding.stateless must be boolean")
+                if binding.stateless:
+                    continue
+                identity = id(binding.component)
+                if identity in owners:
+                    issues.append(("operator-binding-owner-conflict",
+                        f"{location} and {owners[identity]} checkpoint the same stateful component"))
+                else:
+                    owners[identity] = location
+                if identity in pipeline_components:
+                    issues.append(("operator-binding-owner-conflict",
+                        f"{location} also belongs to pipeline component {pipeline_components[identity]!r}"))
+        except (TypeError, ValueError, AttributeError) as exc:
+            issues.append(("operator-binding-contract-invalid", f"{path}: {exc}"))
+        children = getattr(current, "step_transaction_children", None)
+        if callable(children):
+            for index, child in enumerate(children()):
+                visit(child, f"{path}/{index}:{getattr(child, 'name', type(child).__name__)}")
+
+    if adapter is not None:
+        visit(adapter, str(getattr(adapter, "name", type(adapter).__name__)))
+    return tuple(issues)
 
 
 def _as_1d_array(x: Any, *, name: str) -> np.ndarray:

@@ -25,7 +25,7 @@ class UnitInputs:
 
 @dataclass(frozen=True)
 class UnitInputSpec:
-    """A mutator declares only the fields/features it actually consumes.
+    """An operator declares only the fields/features it actually consumes.
 
     schema is an optional exact requirement; field-only declarations can be
     reused across richer Unit types. Feedback fields require an explicit view.
@@ -57,7 +57,7 @@ class UnitInputSpec:
 
     def validate_for(self, unit):
         if unit is None:
-            raise FeatureContractError("Unit-aware mutation requires an explicit owning Unit")
+            raise FeatureContractError("Unit-aware operator requires an explicit owning Unit")
         if self.schema is not None and unit.schema != self.schema:
             raise FeatureContractError("Unit operator schema does not match its owner")
         if self.fields:
@@ -82,7 +82,7 @@ class UnitInputSpec:
 
     def validate_input(self, value):
         if not isinstance(value, UnitInputs):
-            raise FeatureContractError("Unit-aware mutation requires UnitInputs")
+            raise FeatureContractError("Unit-aware operator requires UnitInputs")
         if (set(value.fields) != set(self.fields) or set(value.features) != {f.name for f in self.features}
                 or (self.schema is not None and value.schema != self.schema)):
             raise FeatureContractError("UnitInputs do not match the operator's declared dependencies")
@@ -101,6 +101,22 @@ def mutation_unit_spec(operator):
             inspect.signature(method).bind(object(), {}, unit=object())
         except (TypeError, ValueError) as exc:
             raise TypeError("Unit-aware mutate must accept (candidate, context, *, unit)") from exc
+    return spec
+
+
+def selection_unit_spec(operator):
+    """Check a selector's explicit Unit input without computing any feature."""
+    spec = getattr(operator, "unit_inputs", None)
+    if spec is not None:
+        if not isinstance(spec, UnitInputSpec):
+            raise TypeError("selector.unit_inputs must be UnitInputSpec")
+        method = getattr(operator, "select", None)
+        if not callable(method):
+            raise TypeError("Unit-aware selector must implement select(request, *, rng, unit)")
+        try:
+            inspect.signature(method).bind(object(), rng=object(), unit=object())
+        except (TypeError, ValueError) as exc:
+            raise TypeError("Unit-aware select must accept (request, *, rng, unit)") from exc
     return spec
 
 

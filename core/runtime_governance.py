@@ -979,7 +979,7 @@ class CompanionOrchestrator:
             task.budget_used = int(task.budget_max)
             request_stop = getattr(solver, "request_stop", None)
             if callable(request_stop):
-                request_stop()
+                request_stop("evaluation_budget_exhausted")
             return None
 
         ctx = solver.build_context()

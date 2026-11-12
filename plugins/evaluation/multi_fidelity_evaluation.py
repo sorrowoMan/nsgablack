@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional
 
 import numpy as np
+from blackbase.types import Feedback
 
 from ...utils.constraints.constraint_utils import evaluate_constraints_safe
+from ...core.evaluation_feedback import OptimizationFeedbackBatch
 from ...utils.extension_contracts import ContractError, normalize_candidate, normalize_objectives
 from .provider_plugin_base import EvaluationProviderPluginBase
 
@@ -49,7 +51,7 @@ class MultiFidelityEvaluationProviderPlugin(EvaluationProviderPluginBase):
         self._rng = np.random.default_rng(self.cfg.random_seed)
         self.stats = {"low_calls": 0, "high_calls": 0}
 
-    def evaluate_population_runtime(self, solver, population: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def evaluate_population_runtime(self, solver, population: np.ndarray) -> OptimizationFeedbackBatch:
         if self.low_fidelity is None:
             lf = getattr(getattr(solver, "problem", None), "evaluate_low_fidelity", None)
             if callable(lf):
@@ -66,7 +68,8 @@ class MultiFidelityEvaluationProviderPlugin(EvaluationProviderPluginBase):
         n = int(pop.shape[0])
         m = int(getattr(solver, "num_objectives", 1) or 1)
         if n == 0:
-            return np.zeros((0, m), dtype=float), np.zeros((0,), dtype=float)
+            return OptimizationFeedbackBatch.from_arrays(
+                np.zeros((0, m), dtype=float), np.zeros((0,), dtype=float))
 
         xs = [normalize_candidate(pop[i], dimension=int(solver.dimension), name=f"population[{i}]") for i in range(n)]
         X = np.stack(xs, axis=0)
@@ -84,7 +87,6 @@ class MultiFidelityEvaluationProviderPlugin(EvaluationProviderPluginBase):
             val = self.low_fidelity(X[i])
             low_obj[i] = normalize_objectives(val, num_objectives=m, name="low_fidelity.objectives")
         self.stats["low_calls"] += n
-        self._increment_evaluation_count(solver, n)
 
         # select high-fidelity subset
         selected = self._select_indices_for_high_fidelity(low_obj)
@@ -97,30 +99,15 @@ class MultiFidelityEvaluationProviderPlugin(EvaluationProviderPluginBase):
                 val = solver.problem.evaluate(X[idx])
                 out_obj[idx] = normalize_objectives(val, num_objectives=m, name="high_fidelity.objectives")
             self.stats["high_calls"] += len(selected)
-            self._increment_evaluation_count(solver, len(selected))
 
-        # apply bias with proper context (shared for both fidelity levels)
-        for i in range(n):
-            ctx = solver.build_context(individual_id=i, constraints=cons_list[i], violation=float(violations[i]))
-            if getattr(solver, "enable_bias", False) and getattr(solver, "bias_module", None) is not None:
-                out_obj[i] = solver._apply_bias(out_obj[i], X[i], i, ctx)
-
-        return out_obj, violations
-
-    @staticmethod
-    def _increment_evaluation_count(solver, delta: int) -> None:
-        direct = getattr(solver, "increment_evaluation_count", None)
-        if callable(direct):
-            try:
-                direct(int(delta))
-                return
-            except Exception:
-                raise
-        try:
-            key = "evaluation_count"
-            setattr(solver, key, int(getattr(solver, key, 0) or 0) + int(delta))
-        except Exception:
-            raise
+        # Fidelity describes measurements, never selection Bias. The Solver
+        # charges dispatched candidates and owns the sole Bias projection.
+        high_indices = set(selected)
+        return OptimizationFeedbackBatch.from_feedback(tuple(
+            Feedback(objectives=out_obj[i], constraints=cons_list[i],
+                     info={"constraint_violation": float(violations[i]),
+                           "evaluation_fidelity": "high" if i in high_indices else "low"})
+            for i in range(n)))
 
     def _select_indices_for_high_fidelity(self, objectives: np.ndarray) -> list[int]:
         n = int(objectives.shape[0])
@@ -154,7 +141,7 @@ class MultiFidelityEvaluationProviderPlugin(EvaluationProviderPluginBase):
 
         class _Provider:
             name = owner.name
-            semantic_mode = "equivalent"
+            semantic_mode = "approximate"
             priority = int(getattr(owner, "priority", 0) or 0)
 
             def can_handle_individual(self, solver, x, context):
@@ -168,8 +155,7 @@ class MultiFidelityEvaluationProviderPlugin(EvaluationProviderPluginBase):
             def evaluate_individual(self, solver, x, context, individual_id=None):
                 _ = context
                 pop = np.asarray(x, dtype=float).reshape(1, -1)
-                objs, vios = owner.evaluate_population_runtime(solver, pop)
-                return np.asarray(objs[0], dtype=float).reshape(-1), float(vios[0])
+                return owner.evaluate_population_runtime(solver, pop).items[0]
 
             def can_handle_population(self, solver, population, context):
                 _ = solver
