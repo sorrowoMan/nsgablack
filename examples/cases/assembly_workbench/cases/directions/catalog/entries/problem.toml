@@ -1,0 +1,17 @@
+[[entry]]
+key = "project.problem.workbench_directions"
+title = "DirectionProblem"
+kind = "tool"
+import_path = "problem.two_targets:DirectionProblem"
+tags = ["project", "example", "problem", "multi_objective"]
+summary = "双目标 f=[(x-1)^2,(x+1)^2]，供方向投影与精修结果对账。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["只定义原始目标与边界约束。"]
+use_when = ["展示 MOEA/D、VNS、Pattern Search 的同池装配时。"]
+minimal_wiring = ["from cases.directions.problem import DirectionProblem", "problem = DirectionProblem()"]
+required_companions = []
+config_keys = []
+example_entry = "cases.directions.build_solver:build_solver"

@@ -39,7 +39,9 @@ def build_solver(run_id: str | None = None, *, strategy: str | None = None, quic
         bias_key="none",
     )
     from nsgablack.core.composable_solver import ComposableSolver
-    solver = ComposableSolver(problem=problem, representation_pipeline=pipeline)
+    from .problem.noisy_sphere import NoisySphere
+    solver = ComposableSolver(problem=NoisySphere(), representation_pipeline=pipeline,
+                              resource_context=resource_context)
 
     # --- Core ---------------------------------------------------------
     apply_solver_profile(solver, cfg, "default")
@@ -56,7 +58,8 @@ def build_solver(run_id: str | None = None, *, strategy: str | None = None, quic
     attach_runtime(solver, cfg, "local_cpu")
 
     # --- L4 -----------------------------------------------------------
-    attach_evaluation(solver, cfg, ())
+    from .evaluation.risk_evaluation import attach_scenario_evaluation
+    attach_scenario_evaluation(solver)
 
     # --- L3 Governance ------------------------------------------------
     attach_governance(solver, cfg, ())

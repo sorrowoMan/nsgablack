@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Tuple
 
+from blackbase.participation import ParticipationContract, require_participation
+
 from blackbase.plugin import (
     ATTEMPT_START,
     GENERATION_END,
@@ -53,6 +55,7 @@ class ControlDecision:
 class BaseController(ABC):
     """Abstract controller for L3 runtime control decisions."""
 
+    participation = ParticipationContract(decides=("control",))
     domain: str = "generic"
     slots: Tuple[str, ...] = (GENERATION_END,)
     owns_domains: Tuple[str, ...] = ()
@@ -134,15 +137,21 @@ class ControlArbiter:
             # Budget can be merged conservatively by min if key exists.
             if domain == "budget":
                 mins: Dict[str, float] = {}
+                stop_reasons = []
                 slot = rows_sorted[0].slot
                 for row in rows_sorted:
                     payload = dict(row.payload or {})
+                    if bool(payload.get("stop", False)):
+                        stop_reasons.append(row.reason)
                     for k, v in payload.items():
                         try:
                             fv = float(v)
-                        except Exception:
+                        except (TypeError, ValueError, OverflowError):
                             continue
-                        mins[k] = fv if k not in mins else min(mins[k], fv)
+                        if k == "stop":
+                            mins[k] = max(mins.get(k, 0.0), fv)
+                        else:
+                            mins[k] = fv if k not in mins else min(mins[k], fv)
                 if mins:
                     out[domain] = ControlDecision(
                         domain=domain,
@@ -150,7 +159,8 @@ class ControlArbiter:
                         controller="arbiter",
                         payload=mins,
                         priority=min(r.priority for r in rows_sorted),
-                        reason="budget-min-merge",
+                        reason=(stop_reasons[0] if stop_reasons and len(set(stop_reasons)) == 1
+                                else "budget_exhausted" if stop_reasons else "budget-min-merge"),
                     )
                     continue
 
@@ -169,6 +179,7 @@ class RuntimeController:
         self._arbiter = arbiter or ControlArbiter(strict=True)
 
     def register_controller(self, controller: BaseController) -> None:
+        require_participation(controller, "control", "decide")
         if any(c.name == controller.name for c in self._controllers):
             raise ValueError(f"Controller '{controller.name}' already registered")
         controller.slots = tuple(
@@ -200,7 +211,10 @@ class RuntimeController:
             if slot not in set(str(s) for s in c.slots):
                 continue
             try:
+                require_participation(c, "control", "decide")
                 d = c.propose(solver, slot, context)
+                if d is not None and str(d.domain) not in set(c.owns_domains):
+                    raise ValueError(f"Controller {c.name} wrote undeclared domain {d.domain}")
             except BaseException as exc:
                 errors.append((str(c.name), exc))
                 continue
@@ -338,10 +352,12 @@ class BudgetController(BaseController):
 
     def propose(self, solver: Any, slot: str, context: Mapping[str, Any]) -> Optional[ControlDecision]:
         payload: Dict[str, float] = {}
+        stop_reason = ""
         if self.max_generations is not None and str(slot) == GENERATION_END:
             gen = int(context.get("generation", 0))
             if gen + 1 >= self.max_generations:
                 payload["stop"] = 1.0
+                stop_reason = "generation_budget_exhausted"
         if self.max_evaluations is not None:
             evals = int(context.get("evaluation_count", context.get("total_evaluations", 0)))
             payload["max_evaluations"] = float(self.max_evaluations)
@@ -350,9 +366,10 @@ class BudgetController(BaseController):
             )
             if evals >= self.max_evaluations:
                 payload["stop"] = 1.0
+                stop_reason = "evaluation_budget_exhausted"
         if not payload:
             return None
-        reason = "budget exhausted" if bool(payload.get("stop", False)) else "budget active"
+        reason = stop_reason or "budget active"
         return ControlDecision(
             domain="budget",
             slot=slot,

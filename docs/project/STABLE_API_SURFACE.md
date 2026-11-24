@@ -36,6 +36,7 @@
 - `adapter.vns` -> `nsgablack.adapters:VNSAdapter`
 - `adapter.sa` -> `nsgablack.adapters:SimulatedAnnealingAdapter`
 - `adapter.moead` -> `nsgablack.adapters:MOEADAdapter`
+- `adapter.elite_retention` -> `nsgablack.adapters:EliteRetentionAdapter`
 - `adapter.multi_strategy` -> `nsgablack.adapters:StrategyRouterAdapter`
 
 ## 5) 工程工具（Tools）

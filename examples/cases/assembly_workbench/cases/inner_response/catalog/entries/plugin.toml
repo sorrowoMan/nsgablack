@@ -1,0 +1,17 @@
+[[entry]]
+key = "project.plugin.inner_response_trace"
+title = "ResponseTracePlugin"
+kind = "plugin"
+import_path = "plugins.trace:ResponseTracePlugin"
+tags = ["project", "plugin", "observe", "nested"]
+summary = "只读记录已提交逻辑步骤；不触发额外求值或改变候选。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["本地文件是观察副本；权威 Artifact 由 Case 发布事务提供。"]
+use_when = ["查看外层与内层实际提交计数。"]
+minimal_wiring = ["from cases.inner_response.plugins import ResponseTracePlugin", "solver.add_plugin(ResponseTracePlugin('results'))"]
+required_companions = ["nsgablack.core:ComposableSolver"]
+config_keys = ["output_dir"]
+example_entry = "cases.inner_response.build_solver:build_solver"

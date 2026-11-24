@@ -11,11 +11,14 @@ is frozen for history and a new one is created.
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
+from blackbase.types import CandidateBatch, PopulationSnapshot
 
 from ..base import Plugin
 
@@ -43,6 +46,7 @@ class _Segment:
     X: Optional[np.ndarray] = None
     F: Optional[np.ndarray] = None
     V: Optional[np.ndarray] = None
+    candidates: Optional[CandidateBatch] = None
 
     @property
     def active(self) -> bool:
@@ -53,13 +57,16 @@ class _Segment:
 
 
 class ParetoArchivePlugin(Plugin):
+    state_recovery_level = "L2"
+    state_recovery_notes = "Restores objective segments, aligned semantic candidates and stable tokens."
     is_algorithmic = True
     context_requires = ()
     context_provides = ()
     context_mutates = ()
     context_cache = ()
     context_notes = (
-        "Reads solver population/objectives/violations or adapter population; "
+        "Reads solver population/objectives/violations or compatible committed "
+        "Adapter population partitions; "
         "updates runtime pareto snapshot (pareto_solutions/pareto_objectives). "
         "Objective-space labelling creates isolated segments; dominance is "
         "only compared within a segment."
@@ -128,8 +135,14 @@ class ParetoArchivePlugin(Plugin):
         X, F, V = self._get_population(solver)
         if X.size == 0:
             return
+        candidates = self._get_candidates(solver, X)
 
         labels = self._read_objective_labels(solver)
+        if len(labels) != int(F.shape[1]):
+            raise ValueError(
+                "ParetoArchive objective labels must align with objective columns: "
+                f"{len(labels)} != {int(F.shape[1])}"
+            )
         lk = _label_key(labels)
 
         # ---- segment housekeeping -----------------------------------------
@@ -162,35 +175,49 @@ class ParetoArchivePlugin(Plugin):
             active.X = np.asarray(X, dtype=float)
             active.F = np.asarray(F, dtype=float)
             active.V = np.asarray(V, dtype=float).reshape(-1)
+            active.candidates = candidates
         else:
+            previous = active.candidates
             active.X = np.vstack([active.X, np.asarray(X, dtype=float)])
             active.F = np.vstack([active.F, np.asarray(F, dtype=float)])
             active.V = np.concatenate([active.V, np.asarray(V, dtype=float).reshape(-1)])
+            if previous is not None and candidates is not None:
+                active.candidates = CandidateBatch(
+                    (*previous.semantic_states, *candidates.semantic_states),
+                    active.X,
+                    (*previous.candidate_tokens, *candidates.candidate_tokens),
+                )
+            else:
+                active.candidates = None
+
+        # A surviving candidate may appear in several committed generations.
+        # Replace repeated identities, never collapse equal numeric values.
+        if active.candidates is not None:
+            tokens = active.candidates.candidate_tokens
+            latest = {token: i for i, token in enumerate(tokens) if token is not None}
+            keep = [i for i, token in enumerate(tokens) if token is None or latest[token] == i]
+            self._select_rows(active, keep)
 
         # ---- filter infeasible --------------------------------------------
         if not self.cfg.keep_infeasible and active.V is not None:
             feas = (active.V <= 0.0)
-            active.X = active.X[feas]
-            active.F = active.F[feas]
-            active.V = active.V[feas]
+            self._select_rows(active, np.flatnonzero(feas))
 
         if active.F is None or active.F.size == 0:
+            self._write_pareto_snapshot(solver)
+            self._last_update_generation = int(generation)
             return
 
         # ---- non-dominated filter (within segment) ------------------------
         nd = self._nondominated_mask(active.F)
-        active.X = active.X[nd]
-        active.F = active.F[nd]
-        active.V = active.V[nd]
+        self._select_rows(active, np.flatnonzero(nd))
 
         # ---- truncate per-segment -----------------------------------------
         max_size = self.cfg.max_size
         if max_size is not None and active.F.shape[0] > int(max_size):
             k = int(max_size)
             idx = self._select_by_crowding(active.F, k)
-            active.X = active.X[idx]
-            active.F = active.F[idx]
-            active.V = active.V[idx]
+            self._select_rows(active, idx)
 
         # ---- cap frozen segments ------------------------------------------
         self._trim_frozen_segments()
@@ -199,6 +226,79 @@ class ParetoArchivePlugin(Plugin):
         self._last_update_generation = int(generation)
 
     # ---- objective label resolution ---------------------------------------
+
+    @staticmethod
+    def _select_rows(segment, indices):
+        indices = np.asarray(indices, dtype=int)
+        segment.X = segment.X[indices]
+        segment.F = segment.F[indices]
+        segment.V = segment.V[indices]
+        if segment.candidates is not None:
+            segment.candidates = segment.candidates.subset(indices)
+
+    def _get_candidates(self, solver, population):
+        if getattr(solver, "population_authority_mode", "single") == "partitioned":
+            from nsgablack.core.runtime_governance import resolve_population_partitions
+            committed = solver.get_candidate_population_partitions()
+            batches = [committed[str(p.partition_id)] for p in resolve_population_partitions(solver)]
+            batch = CandidateBatch(
+                tuple(s for b in batches for s in b.semantic_states), population,
+                tuple(t for b in batches for t in b.candidate_tokens),
+            )
+        else:
+            getter = getattr(solver, "get_candidate_population_batch", None)
+            if not callable(getter):
+                # Numeric-only protocol clients can still inspect this archive,
+                # but receive no fabricated authoritative semantic Snapshot.
+                return None
+            batch = getter()
+        if not isinstance(batch, CandidateBatch) or not np.array_equal(
+            batch.numeric_matrix, population, equal_nan=True
+        ):
+            raise ValueError("ParetoArchive requires the aligned committed CandidateBatch")
+        if any(token is None for token in batch.candidate_tokens):
+            raise ValueError("ParetoArchive requires committed candidate tokens")
+        return batch
+
+    def get_state(self):
+        return {"last_update_generation": self._last_update_generation, "segments": [
+            {"label_key": s.label_key, "labels": list(s.labels),
+             "generation_first": s.generation_first, "generation_last": s.generation_last,
+             "X": None if s.X is None else s.X.tolist(),
+             "F": None if s.F is None else s.F.tolist(),
+             "V": None if s.V is None else s.V.tolist(),
+             "decision_width": None if s.X is None else s.X.shape[1],
+             "candidates": None if s.candidates is None else s.candidates.as_dict()}
+            for s in self._segments.values()
+        ]}
+
+    def set_state(self, state):
+        segments = {}
+        for item in state.get("segments", ()):
+            payload = dict(item)
+            width = payload.pop("decision_width", None)
+            payload["labels"] = tuple(payload["labels"])
+            for key in ("X", "F", "V"):
+                if payload[key] is not None:
+                    payload[key] = np.asarray(payload[key], dtype=float)
+            if payload["X"] is not None:
+                if width is not None:
+                    payload["X"] = payload["X"].reshape(-1, int(width))
+                payload["F"] = payload["F"].reshape(-1, len(payload["labels"]))
+                if len(payload["X"]) != len(payload["F"]) or len(payload["X"]) != len(payload["V"]):
+                    raise ValueError("Saved Pareto X/F/V rows are not aligned")
+            if payload.get("candidates") is not None:
+                payload["candidates"] = CandidateBatch.from_dict(payload["candidates"])
+                if len(payload["X"]) == 0:
+                    payload["candidates"] = CandidateBatch((), payload["X"], ())
+                if not np.array_equal(payload["candidates"].numeric_matrix, payload["X"], equal_nan=True):
+                    raise ValueError("Saved Pareto candidate identity is not row-aligned")
+                if any(t is None for t in payload["candidates"].candidate_tokens):
+                    raise ValueError("Saved Pareto candidates require tokens")
+            segment = _Segment(**payload)
+            segments[segment.label_key] = segment
+        self._segments = segments
+        self._last_update_generation = state.get("last_update_generation")
 
     def _read_objective_labels(self, solver: Any) -> List[str]:
         source = str(getattr(self.cfg, "label_source", "objective_names") or "objective_names")
@@ -213,22 +313,17 @@ class ParetoArchivePlugin(Plugin):
         # 2) from problem
         problem = getattr(solver, "problem", None)
         if problem is not None:
-            for attr in ("objective_names", "objective_labels", "obj_names"):
+            for attr in (
+                "objective_names",
+                "objective_labels",
+                "obj_names",
+                "objectives",
+            ):
                 value = getattr(problem, attr, None)
                 if isinstance(value, (list, tuple)):
                     return [str(x) for x in value]
 
-        # 3) from adapter population dimension
-        adapter = getattr(solver, "adapter", None)
-        pop = getattr(adapter, "population", None)
-        if pop is not None:
-            try:
-                dim = int(pop.shape[1])
-                return [f"obj_{i}" for i in range(dim)]
-            except Exception:
-                pass
-
-        # 4) last resort — use dimension of current F
+        # 3) last resort — use dimension of current F
         population = self._get_population(solver)
         if population[1].size > 0:
             dim = int(population[1].shape[1])
@@ -251,7 +346,142 @@ class ParetoArchivePlugin(Plugin):
     # ---- solver I/O -------------------------------------------------------
 
     def _get_population(self, solver: Any) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        return self.get_population_snapshot(solver)
+        authority_mode = str(
+            getattr(solver, "population_authority_mode", "single") or "single"
+        )
+        if authority_mode != "partitioned":
+            return self.get_population_snapshot(solver)
+
+        from nsgablack.core.runtime_governance import resolve_population_partitions
+
+        partitions = tuple(resolve_population_partitions(solver))
+        if not partitions:
+            return (
+                np.zeros((0, 0), dtype=float),
+                np.zeros((0, 0), dtype=float),
+                np.zeros((0,), dtype=float),
+            )
+
+        committed_getter = getattr(
+            solver,
+            "get_candidate_population_partitions",
+            None,
+        )
+        if not callable(committed_getter):
+            raise TypeError(
+                "ParetoArchive requires Solver committed CandidateBatch partitions "
+                "before consuming partitioned Adapter state"
+            )
+        committed = committed_getter()
+        if not isinstance(committed, Mapping):
+            raise TypeError(
+                "get_candidate_population_partitions() must return a mapping"
+            )
+
+        partition_ids = tuple(str(item.partition_id) for item in partitions)
+        if len(set(partition_ids)) != len(partition_ids):
+            raise ValueError("ParetoArchive population partition IDs must be unique")
+        committed_ids = {str(key) for key in committed}
+        if committed_ids != set(partition_ids):
+            missing = sorted(set(partition_ids) - committed_ids)
+            extra = sorted(committed_ids - set(partition_ids))
+            raise ValueError(
+                "ParetoArchive Adapter/Solver committed partition IDs are not aligned; "
+                f"missing={missing}, extra={extra}"
+            )
+
+        populations: list[np.ndarray] = []
+        objectives: list[np.ndarray] = []
+        violations: list[np.ndarray] = []
+        decision_width: int | None = None
+        objective_width: int | None = None
+        inherited_labels: tuple[str, ...] | None = None
+
+        for partition in partitions:
+            partition_id = str(partition.partition_id)
+            population = np.asarray(partition.population, dtype=float)
+            objective_values = np.asarray(partition.objectives, dtype=float)
+            violation_values = np.asarray(
+                partition.violations,
+                dtype=float,
+            ).reshape(-1)
+            if population.ndim != 2 or objective_values.ndim != 2:
+                raise ValueError(
+                    f"ParetoArchive partition {partition_id!r} must expose 2D X/F"
+                )
+            row_count = int(population.shape[0])
+            if (
+                int(objective_values.shape[0]) != row_count
+                or int(violation_values.shape[0]) != row_count
+            ):
+                raise ValueError(
+                    f"ParetoArchive partition {partition_id!r} has unaligned X/F/V rows"
+                )
+
+            batch = committed[partition_id]
+            batch_population = np.asarray(batch.numeric_matrix, dtype=float)
+            if batch_population.shape != population.shape or not np.array_equal(
+                batch_population,
+                population,
+                equal_nan=True,
+            ):
+                raise ValueError(
+                    f"ParetoArchive partition {partition_id!r} differs from the "
+                    "Solver committed CandidateBatch"
+                )
+            if tuple(batch.candidate_tokens) != tuple(partition.candidate_tokens):
+                raise ValueError(
+                    f"ParetoArchive partition {partition_id!r} candidate tokens "
+                    "differ from the Solver committed CandidateBatch"
+                )
+
+            current_decision_width = int(population.shape[1])
+            current_objective_width = int(objective_values.shape[1])
+            if decision_width is None:
+                decision_width = current_decision_width
+                objective_width = current_objective_width
+            elif (
+                current_decision_width != decision_width
+                or current_objective_width != objective_width
+            ):
+                raise ValueError(
+                    "ParetoArchive cannot aggregate population partitions with "
+                    "different decision or objective dimensions"
+                )
+
+            metadata = getattr(partition, "metadata", {})
+            declared_labels = None
+            if isinstance(metadata, Mapping):
+                declared_labels = metadata.get("objective_labels")
+            if declared_labels is not None:
+                if not isinstance(declared_labels, (list, tuple)):
+                    raise TypeError(
+                        f"ParetoArchive partition {partition_id!r} objective_labels "
+                        "must be a sequence"
+                    )
+                normalized_labels = tuple(str(value) for value in declared_labels)
+                if len(normalized_labels) != current_objective_width:
+                    raise ValueError(
+                        f"ParetoArchive partition {partition_id!r} objective_labels "
+                        "do not align with objective columns"
+                    )
+                if inherited_labels is None:
+                    inherited_labels = normalized_labels
+                elif normalized_labels != inherited_labels:
+                    raise ValueError(
+                        "ParetoArchive cannot aggregate partitions with different "
+                        "objective labels"
+                    )
+
+            populations.append(population)
+            objectives.append(objective_values)
+            violations.append(violation_values)
+
+        return (
+            np.vstack(populations),
+            np.vstack(objectives),
+            np.concatenate(violations),
+        )
 
     def _write_pareto_snapshot(self, solver: Any) -> None:
         setter = getattr(solver, "set_pareto_snapshot", None)
@@ -260,10 +490,18 @@ class ParetoArchivePlugin(Plugin):
                 active = self.active_segment
                 X = None if active is None else active.X
                 F = None if active is None else active.F
+                batch = None if active is None else active.candidates
+                formal = None if batch is None else PopulationSnapshot(
+                    candidates=batch.semantic_states, candidate_tokens=batch.candidate_tokens,
+                    objectives=F, constraints=active.V,
+                    generation=int(getattr(solver, "generation", 0)),
+                    metadata={"source": "nsgablack.pareto_archive", "objective_labels": list(active.labels)},
+                )
                 setter(X, F)
+                solver.pareto_population_snapshot = formal
                 return
             except Exception:
-                return
+                raise
 
         # fallback: write via solver write_snapshot (preferred) or log
         active = self.active_segment
@@ -275,7 +513,7 @@ class ParetoArchivePlugin(Plugin):
                     pareto_objectives=None if active is None else np.asarray(active.F),
                 )
             except Exception:
-                pass
+                raise
         elif not callable(getattr(solver, "set_pareto_snapshot", None)):
             import warnings
             warnings.warn(
@@ -295,7 +533,8 @@ class ParetoArchivePlugin(Plugin):
                 for seg in self._segments.values()
             ]
             setattr(solver, "pareto_segments", segments_meta)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='ParetoArchivePlugin._write_pareto_snapshot.fallback_262', exc=_fallback_error)
             pass
 
     @property

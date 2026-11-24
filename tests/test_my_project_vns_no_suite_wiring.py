@@ -15,6 +15,7 @@ def _run_build_solver_check(*extra: str) -> str:
     if str(_REPO_ROOT) not in paths:
         paths.insert(0, str(_REPO_ROOT))
     env["PYTHONPATH"] = os.pathsep.join(paths)
+    env["PYTHONWARNINGS"] = "error::RuntimeWarning"
     cmd = [sys.executable, str(script), "--check", *extra]
     out = subprocess.run(
         cmd,

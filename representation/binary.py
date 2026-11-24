@@ -11,7 +11,7 @@ from typing import Optional, Any
 import numpy as np
 
 from .base import RepresentationComponentContract
-from blackbase.context.context_keys import KEY_CAPACITY
+from nsgablack.context_keys import KEY_CAPACITY
 
 
 @dataclass

@@ -1,0 +1,12 @@
+[[example]]
+id = "adaptive-trajectory-application"
+title = "单轨迹步长适应真正进入变异 · 完整装配与贪心变体"
+component_keys = ["adapter.single_trajectory_adaptive", "repr.context_gaussian"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "把现有 composite Case 改为单轨迹搜索，按当次 mutation_sigma 变化并分别读取当前点与历史最好交付。"
+inputs = ["现有 catalog_recipes 标准 Project 副本、当前 blackbase/nsgablack/NumPy；保留二维 QuadraticProblem 与 Project L0。"]
+steps = ["替换明确的 Adapter 工厂、Pipeline 函数和薄 builder，按文中完整代码添加观察器。", "原 default 组运行同一 Case，运行后按本轮 run_id 读取 trajectory.json。"]
+dependencies = ["本地 CPU 与当前框架；不使用模型下载、GPU 或外部 API。"]
+expected_outputs = ["Case results/trajectory.json 含有限提交历史、sigma、当前分数及精确的历史最好候选引用与 raw feedback。", "静态源码核对不能当作运行成功；观察文件也不是权威 Artifact 或运行收据。"]
+sources = [{path = "nsgablack/docs/catalog_usage/ADAPTIVE_TRAJECTORY_APPLICATION_CN.md", section = "adapter.single_trajectory_adaptive"}]

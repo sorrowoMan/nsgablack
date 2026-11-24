@@ -1,0 +1,38 @@
+[[example]]
+id = "core-ml-catalog-db-application"
+title = "ML目录事实同步、SQLite/PostgreSQL与两种公开查询"
+component_keys = ["mlblack.catalog.materialize_db", "mlblack.catalog.query", "mlblack.catalog.query_db", "mlblack.catalog.resolve_store", "mlblack.catalog.store_sqlite", "mlblack.catalog.store_postgresql"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "给出完整本地目录维护脚本、真实数据库同步和查询消费者，另有显式PostgreSQL变体；目录事实、AI说明与实验结果不混存。"
+inputs = ["完整catalog_codec_demo副本根；三仓/NumPy；主例显式SQLite路径，PostgreSQL变体额外需要授权数据库与驱动。"]
+steps = ["先源目录同步，再只读查询与整库统计；profile是此存储面的命名空间，不暗指范围过滤。"]
+dependencies = ["三仓/NumPy；PostgreSQL变体另需MLBlack的postgres可选依赖，无模型API。"]
+expected_outputs = ["本次源/写入/整库数量、最多10条key和查询一致性；不打印带凭据连接串或含连接串的整份query。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_CATALOG_SERVICE_APPLICATIONS_CN.md", section = "mlblack.catalog.query" }]
+
+[[example]]
+id = "core-ml-catalog-web-application"
+title = "已有目录库的HTTP服务与自定义Streamlit页完整启动"
+component_keys = ["mlblack.dashboard.catalog_web", "mlblack.dashboard.catalog_streamlit"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "完整轻量服务脚本与launcher真实消费的Streamlit页面，明确显式库、端口、参数、查询结果和本地权限边界。"
+inputs = ["上节已真实同步的tutorial.sqlite；完整Project副本与框架环境；Streamlit变体需web依赖。"]
+steps = ["启动只读查询服务；摘要路由使用已校正的真实DB facade。", "变体完整给出页面脚本的profile/db-path/no-refresh解析和公共query调用，再交给launcher。"]
+dependencies = ["HTTP使用标准库；Streamlit变体额外需web依赖。"]
+expected_outputs = ["8651的查询/摘要JSON，或8652的Streamlit只读行；没有运行组件/自动补说明。未启动本页服务。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_CATALOG_SERVICE_APPLICATIONS_CN.md", section = "mlblack.dashboard.catalog_web" }]
+
+[[example]]
+id = "core-ml-catalog-export-application"
+title = "目录与能力矩阵离线导出，以及已有Artifact JSON查看"
+component_keys = ["mlblack.dashboard.catalog_html", "mlblack.dashboard.backend_matrix_html", "mlblack.dashboard.artifact_html"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "显式读取DB Catalog和后端声明，实际调用三个HTML exporter；Artifact文件来自已给出的正式Case观察器，而非虚构训练结果。"
+inputs = ["已同步目录库、当前后端契约；Artifact变体先按现有完整BundleObserver Case取得真实summary.json。"]
+steps = ["完整导出脚本传入明确Catalog/matrix，不默默切换源；变体只读取已生成的JSON元数据。"]
+dependencies = ["当前三仓/NumPy，无在线模型；Artifact变体使用正式现有Case结果。"]
+expected_outputs = ["components.html/backends.html/可选artifact-description.html；只是静态查看，不证明运行、设备授权、内容签名或模型恢复。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_CATALOG_SERVICE_APPLICATIONS_CN.md", section = "mlblack.dashboard.catalog_html" }]

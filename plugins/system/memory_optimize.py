@@ -5,8 +5,6 @@ from __future__ import annotations
 import gc
 from typing import Any, Dict
 
-import numpy as np
-
 from ..base import Plugin
 
 
@@ -18,8 +16,9 @@ class MemoryPlugin(Plugin):
     context_mutates = ()
     context_cache = ()
     context_notes = (
-        "Optimizes solver memory usage and snapshots memory metrics; "
-        "mutates solver temp_data/population arrays in-place for cleanup."
+        "Samples process memory when psutil is available; automatic cleanup "
+        "runs garbage collection and clears optional solver.temp_data. "
+        "Does not edit population arrays or SolutionPool membership."
     )
 
     def __init__(self, cleanup_interval: int = 10, enable_auto_gc: bool = True) -> None:
@@ -33,7 +32,8 @@ class MemoryPlugin(Plugin):
         self._take_memory_snapshot(0)
 
     def on_population_init(self, population, objectives, violations) -> None:
-        self._optimize_arrays(population, objectives, violations)
+        _ = (population, objectives, violations)
+        return None
 
     def on_generation_start(self, generation: int) -> None:
         return None
@@ -58,23 +58,7 @@ class MemoryPlugin(Plugin):
             if hasattr(self.solver, "temp_data"):
                 self.solver.temp_data.clear()
 
-            pop, obj, vio = self.get_population_snapshot(self.solver)
-            if pop is not None and len(pop) > 0:
-                self._optimize_arrays(pop, obj, vio)
-                self.commit_population_snapshot(pop, obj, vio, self.solver)
-
         self._take_memory_snapshot(generation)
-        return None
-
-    def _optimize_arrays(self, population: np.ndarray, objectives: np.ndarray, violations: np.ndarray | None) -> None:
-        if np.any(~np.isfinite(population)):
-            population[~np.isfinite(population)] = 0
-
-        if np.any(~np.isfinite(objectives)):
-            objectives[~np.isfinite(objectives)] = 1e10
-
-        if violations is not None and np.any(~np.isfinite(violations)):
-            violations[~np.isfinite(violations)] = 1e10
         return None
 
     def _take_memory_snapshot(self, generation: Any) -> None:

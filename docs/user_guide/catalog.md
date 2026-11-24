@@ -1,5 +1,11 @@
 # Catalog And Wiring Guide
 
+当前架构的中文主说明见 [Catalog：从想法到可检查装配](../architecture/CATALOG_USAGE_CN.md)，包含 Pool／Unit、按用途搜索、可替换算法部件与本地网页。本页保留基础 CLI 和 Wiring 用法。
+
+组件的输入、装配代码、依赖与预期输出见[逐组件使用示例说明](CATALOG_COMPONENT_EXAMPLES_CN.md)。目录中的“用法示例”和“已运行示例”分别表示源码绑定的使用说明、具有正式运行收据的示例；不要将导航链接或构造成功当成完整算法已经运行。
+
+框架 AI 的认知资料、可追溯训练语料、独立评测与微调模型接入见[框架助手训练与验收](../development/FRAMEWORK_ASSISTANT_TRAINING_CN.md)。认知试验与完整在线装配任务分别验证。
+
 Use Catalog when you need to answer:
 
 - where is a component?

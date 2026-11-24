@@ -1,0 +1,53 @@
+[[entry]]
+key = "project.pipeline.box_repair"
+title = "BoxRepair"
+kind = "representation"
+import_path = "pipeline.operators:BoxRepair"
+tags = ["project", "example", "pipeline", "repair", "box"]
+summary = "将候选投影到问题盒约束；只读 validate 不求值、不构建 Unit。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["仅处理候选值，不直接写共享 context；修复由正式控制路径调用。"]
+use_when = ["为本例两个 Adapter 共享同一问题可行性修复时。"]
+minimal_wiring = ["from cases.hybrid_search.pipeline import BoxRepair", "pipeline = RepresentationPipeline(repair=BoxRepair())"]
+required_companions = ["nsgablack.representation:RepresentationPipeline"]
+config_keys = ["low", "high"]
+example_entry = "cases.hybrid_search.build_solver:build_solver"
+
+[[entry]]
+key = "project.unit.age_population_builder"
+title = "AgePopulationBuilder"
+kind = "representation"
+import_path = "pipeline.population:AgePopulationBuilder"
+tags = ["project", "example", "unit", "population", "builder", "codec"]
+summary = "构建带成员年龄的兼容种群 Unit；复用标准数据 codec，构建按 Adapter 需要发生。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["无状态构建规则；不持有运行 Unit，不从 context 猜测算法所有者。"]
+use_when = ["在不修改 NSGA-II 选择代码的情况下扩展成员字段时。"]
+minimal_wiring = ["from cases.hybrid_search.pipeline import AgePopulationBuilder", "ga = NSGA2Adapter(unit_binding=UnitBinding(AgePopulationBuilder()))"]
+required_companions = ["nsgablack.units:UnitBinding", "nsgablack.adapters:NSGA2Adapter"]
+config_keys = []
+example_entry = "cases.hybrid_search.build_solver:build_solver"
+
+[[entry]]
+key = "project.unit.age_population"
+title = "AgePopulationUnit"
+kind = "tool"
+import_path = "pipeline.population:AgePopulationUnit"
+tags = ["project", "example", "unit", "population", "members"]
+summary = "member_age 表示成员连续存活的环境选择次数，按显式来源索引维护。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["维护所属 Adapter 的结构与行字段，不拥有 Solver 生命周期或共享 context。"]
+use_when = ["阅读成员扩展字段如何随初始化、选择、替换和恢复对齐时。"]
+minimal_wiring = ["from cases.hybrid_search.pipeline import AgePopulationBuilder", "binding = UnitBinding(AgePopulationBuilder())", "# Adapter calls the binding when its Unit is first needed."]
+required_companions = ["project.unit.age_population_builder"]
+config_keys = ["unit_id", "member_age"]
+example_entry = "cases.hybrid_search.build_solver:build_solver"

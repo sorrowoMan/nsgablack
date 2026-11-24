@@ -1,0 +1,38 @@
+[[example]]
+id = "ml-core-contract-affine-application"
+title = "真实自定义模型契约 · 参数块、Head、Problem及正式交付"
+component_keys = ["mlblack.core.head_block", "mlblack.core.output", "mlblack.core.model", "mlblack.core.representation_pipeline", "mlblack.core.learning", "mlblack.core.model_artifact", "mlblack.core.typed_model_artifact", "mlblack.core.run_report", "mlblack.core.trainer_state_artifact"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "正式Case以w0/w1/b三坐标实现自定义Head/表示/Problem，实际消费HeadBlock切片，按原生JSON发布基础或typed模型，finalized后分别整理报告与可选状态摘要。"
+inputs = ["完整catalog_codec_demo独立副本、当前三仓与NumPy；24训练/8验证、两特征、完整正式Project/L0。"]
+steps = ["保存全部配置、模型Head/Representation、数据、Problem、观察器、薄builder及Project结果入口。", "变体明确切换ModelArtifact与TypedModelArtifact，并可关闭状态捕获；不从抽象类另起训练循环。"]
+dependencies = ["当前blackbase/nsgablack/mlblack与NumPy，无Torch/模型API/数据库。"]
+expected_outputs = ["本次core.json含已评估三参数、唯一train MSE、valid观测与正式模型引用；本地core_observation仅为已完成结果的报告。", "TrainerStateArtifact.describe不导出完整payload，Artifact标签与本地摘要不替代checkpoint或Run权威收据。未执行本配方。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_CORE_CONTRACT_APPLICATIONS_CN.md",section="core.contract.model"}, {path="nsgablack/docs/catalog_usage/ML_CORE_CONTRACT_APPLICATIONS_CN.md",section="core.contract.host"}, {path="nsgablack/docs/catalog_usage/ML_CORE_CONTRACT_APPLICATIONS_CN.md",section="core.contract.run"}]
+
+[[example]]
+id = "ml-core-functional-gradient-application"
+title = "JAX函数梯度 · 保留语义Problem和正式优化控制"
+component_keys = ["mlblack.core.functional_gradient_learning"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "真实自定义函数模型同时提供NumPy预测与JAX参数函数，经build_gradient_trainer的functional包装器产生同坐标梯度，再由SGD/Adam消费。"
+inputs = ["完整catalog_codec_demo独立副本、原24条两特征数据、现有可选JAX安装；原Project CPU L0。"]
+steps = ["保存完整函数表示、Problem、薄builder及正式core结果入口，l2固定0，解码顺序明确b/w0/w1。", "真实变体仅把gradient.sgd换成gradient.adam，不更换语义目标，也不把Torch数据调度传给JAX。"]
+dependencies = ["当前三仓、NumPy、可选JAX；本轮不安装、不运行。"]
+expected_outputs = ["原始[train.mse,0]、has_gradient/gradient_owner/backend、3坐标与正式模型蓝图引用。", "梯度维度由包装器校验，不声称完成数值梯度/收敛/恢复验收。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_CORE_CONTRACT_APPLICATIONS_CN.md",section="core.functional.gradient"}, {path="nsgablack/docs/catalog_usage/ML_CORE_CONTRACT_APPLICATIONS_CN.md",section="core.contract.run"}]
+
+[[example]]
+id = "ml-core-provider-problem-application"
+title = "ProviderBackedLearningProblem · 由正式Torch工厂实际接通"
+component_keys = ["mlblack.core.provider_backed_learning"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "沿用完整八行小批Case，明确build_gradient_trainer如何创建Provider/网关/Problem包装器，模式和L0沿原授权路径传递。"
+inputs = ["完整catalog_codec_demo独立副本、8训练/4验证、CPU Torch与正式Project/L0。"]
+steps = ["按真实batch配方保存配置、Loader/独立Schedule、Problem、builder及正式结果入口。", "按本页解释核对Provider.from_provider实际路径；变体batch_size=8，不手造第二个网关或训练循环。"]
+dependencies = ["当前三仓、NumPy、可选CPU PyTorch，无网络模型服务。"]
+expected_outputs = ["Provider批索引/大小、固定完整valid目标、正式已评估模型引用；状态引用不冒充候选数组。", "本轮只静态核对，没有训练、Provider调用或恢复收据。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_CORE_CONTRACT_APPLICATIONS_CN.md",section="core.provider.problem"}, {path="nsgablack/docs/catalog_usage/ML_DATA_PIPELINE_APPLICATIONS_CN.md",section="mlblack.pipeline.numeric_batch_schedule"}]

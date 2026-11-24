@@ -6,6 +6,7 @@ This module exposes two entrypoints:
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass
 from typing import Literal
@@ -100,7 +101,8 @@ def _plugin_exists(solver: Any, name: str) -> bool:
         return False
     try:
         return pm.get(str(name)) is not None
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_plugin_exists.fallback_363', exc=_fallback_error)
         return False
 
 

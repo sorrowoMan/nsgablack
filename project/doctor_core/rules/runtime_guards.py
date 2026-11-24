@@ -7,9 +7,12 @@ from pathlib import Path
 from typing import Callable, List, Sequence, Set
 
 from ..model import DoctorDiagnostic
+from ..ast_support import mark_references
 
 
 def _is_solver_ref(node: ast.AST) -> bool:
+    if hasattr(node, "_doctor_solver_ref"):
+        return node._doctor_solver_ref
     if isinstance(node, ast.Name) and node.id == "solver":
         return True
     return (
@@ -39,7 +42,7 @@ class _SolverMirrorWriteVisitor(ast.NodeVisitor):
         if isinstance(func, ast.Name) and func.id == "setattr" and len(node.args) >= 2:
             obj = node.args[0]
             key = node.args[1]
-            if isinstance(obj, ast.Name) and obj.id == "solver":
+            if _is_solver_ref(obj):
                 if isinstance(key, ast.Constant) and isinstance(key.value, str):
                     attr = key.value.strip()
                     if attr in self._forbidden_solver_mirror_attrs:
@@ -47,7 +50,7 @@ class _SolverMirrorWriteVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _check_target(self, target: ast.expr) -> None:
-        if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id == "solver":
+        if isinstance(target, ast.Attribute) and _is_solver_ref(target.value):
             attr = str(target.attr)
             if attr in self._forbidden_solver_mirror_attrs:
                 self.hits.append((int(getattr(target, "lineno", 0) or 0), attr))
@@ -62,6 +65,7 @@ def check_forbidden_solver_mirror_writes(
     add: Callable[[List[DoctorDiagnostic], str, str, str, Path | None], None],
     forbidden_solver_mirror_attrs: Set[str],
 ) -> None:
+    mark_references(tree)
     visitor = _SolverMirrorWriteVisitor(forbidden_solver_mirror_attrs=forbidden_solver_mirror_attrs)
     visitor.visit(tree)
     if not visitor.hits:
@@ -82,6 +86,7 @@ def check_forbidden_solver_mirror_writes(
         + ", ".join(uniq[:8])
         + (" ..." if len(uniq) > 8 else ""),
         path,
+        line=min(line for line, _ in visitor.hits),
     )
 
 
@@ -120,6 +125,7 @@ def check_runtime_private_calls(
     strict: bool,
     add: Callable[[List[DoctorDiagnostic], str, str, str, Path | None], None],
 ) -> None:
+    mark_references(tree)
     hits: List[tuple[int, str]] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -148,6 +154,7 @@ def check_runtime_private_calls(
             + (" ..." if len(uniq) > 10 else "")
         ),
         path,
+        line=min(line for line, _ in hits),
     )
 
 
@@ -162,6 +169,7 @@ def check_runtime_bypass_writes(
 ) -> None:
     if not strict:
         return
+    mark_references(tree)
     hits: List[tuple[int, str]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
@@ -201,6 +209,7 @@ def check_runtime_bypass_writes(
         + ", ".join(uniq[:10])
         + (" ..." if len(uniq) > 10 else ""),
         path,
+        line=min(line for line, _ in hits),
     )
 
 
@@ -226,6 +235,7 @@ def check_plugin_solver_state_access(
     add: Callable[[List[DoctorDiagnostic], str, str, str, Path | None], None],
     plugin_state_fields: Set[str],
 ) -> None:
+    mark_references(tree)
     reads: List[tuple[int, str]] = []
     writes: List[tuple[int, str]] = []
 
@@ -291,6 +301,7 @@ def check_plugin_solver_state_access(
         "use get_population_snapshot()/commit_population_snapshot(). "
         + " | ".join(parts),
         path,
+        line=min(line for line, _ in reads + writes),
     )
 
 

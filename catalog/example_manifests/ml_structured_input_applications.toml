@@ -1,0 +1,38 @@
+[[example]]
+id = "ml-structured-input-image"
+title = "NCHW 图像分类与真实验证集 · 正式 CNN Case"
+component_keys = ["mlblack.data_view.image", "mlblack.problem.tiny_cnn_image_classification"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "用合成 NCHW 小图闭合 ImageDataView、tiny CNN preset 与真实交叉熵 Problem，明确 Torch Provider、正式 Project 预算和最佳反馈来源。"
+inputs = ["当前 blackbase、nsgablack、mlblack、NumPy 与 PyTorch 可选依赖；使用现有 benchmarks/benchmark_tiny_cnn_classification Case 的独立副本。", "保留 Project L0/Case 导出与运行结构，只按正文替换工厂、追加单 Case 组与正式 execute_project 结果薄入口。"]
+steps = ["构造六张 1×4×4 图及一维类别标签，调用原 tiny CNN trainer preset；不下载图像或预训练权重。", "变体完整提供独立验证图；对应 Problem 默认以验证交叉熵作目标、训练梯度仍来自训练集。"]
+dependencies = ["三仓、NumPy、torch>=2.0；CPU 授权，不需要 torchvision、模型 API 或 GPU。"]
+expected_outputs = ["本次 results/structured_image.json 含 run_id、单项目标、train.log_loss/accuracy/error_rate、Artifact 名称与模型引用；变体另有 valid 指标。", "指标来自正式 TrainerResult.best_feedback；不假定 report inline、不重训恢复、不预填准确率；静态核对不是执行收据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_STRUCTURED_INPUT_APPLICATIONS_CN.md", section = "mlblack.data_view.image" }]
+
+[[example]]
+id = "ml-structured-input-graph"
+title = "固定节点数的稠密图分类 · 节点编号对齐变体"
+component_keys = ["mlblack.data_view.graph", "mlblack.problem.tiny_gnn_graph_classification"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "在现有 tiny GNN Case 显式构造样本/节点/特征三维数组及稠密邻接，闭合图级标签、分类 Head、Problem 和正式训练入口。"
+inputs = ["三仓、NumPy、PyTorch；现有 benchmarks/benchmark_tiny_gnn_classification Case 独立副本。", "节点特征 (6,4,3)、邻接 (6,4,4)、图级标签 (6,)；不把 sparse edge_index 或 padding mask 假称已支持。"]
+steps = ["原 trainer preset 从 DataView 建 tiny_gnn/NeuralGraphCodec，Torch Provider 计算图级交叉熵并提供梯度。", "变体同时重排特征与邻接两个节点轴，给同一图重新编号的验证输入；不把它当独立泛化集。"]
+dependencies = ["blackbase、nsgablack、mlblack、NumPy 与 torch>=2.0；无 PyG、图数据库或预训练模型下载。"]
+expected_outputs = ["本次 results/structured_graph.json 有单个交叉熵目标与 train 分类指标，变体新增 valid 指标和验证目标。", "通过已评估 incumbent 的 best_feedback 读值，核对新 run_id/正式 Case 收据；不承诺两步训练效果。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_STRUCTURED_INPUT_APPLICATIONS_CN.md", section = "mlblack.data_view.graph" }]
+
+[[example]]
+id = "ml-structured-input-preference-pair"
+title = "成对 token 序列的 DPO 风格目标 · 独立验证偏好"
+component_keys = ["mlblack.data_view.preference_pair", "mlblack.problem.tiny_transformer_dpo_preference"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "在现有 tiny_transformer_preference Case 用已对齐 chosen/rejected token 数组训练本地 tiny Transformer，明确整序列概率、零参考 margin 和正式结果来源。"
+inputs = ["三仓、NumPy、PyTorch；使用 tiny_transformer_smoke/tiny_transformer_preference Case 独立副本，保留 Project L0。", "三对长度四的整数含义 token 序列，vocab_size=10；不隐含 tokenizer、padding/response mask、预训练模型或冻结 reference 模型。"]
+steps = ["原 preset 组装 NeuralGraphRepresentation/Codec、lm Head、对应 DPO Problem 与 Torch Evaluation Provider；gradient.adamw/LearningSolver 复用原控制面。", "变体提供完整独立 valid 偏好对，目标切换为 valid.dpo_loss，梯度仍使用 train；报告入口只包装正式 execute_project 一次。"]
+dependencies = ["三仓、NumPy 与 torch>=2.0；本例省略 QLoRA 配置，无 transformers/PEFT/bitsandbytes、网络模型或预训练下载。"]
+expected_outputs = ["本次 results/structured_preference.json 含 objectives、train.dpo_loss/preference_accuracy/policy_margin/reference_margin，基础例参考 margin 为零；变体有 valid 四指标。", "单步预算只演示真实路径，不证明偏好效果；正式反馈/Artifact 引用与本地 JSON、旧 summary 分开。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_STRUCTURED_INPUT_APPLICATIONS_CN.md", section = "mlblack.data_view.preference_pair" }]

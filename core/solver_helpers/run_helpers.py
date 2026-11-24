@@ -1,6 +1,7 @@
 """Run helper utilities for SolverBase."""
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import logging
 import sys
@@ -21,6 +22,8 @@ from blackbase.plugin import report_soft_error
 from blackbase.project import attach_failure_evidence
 from .result_helpers import format_run_result
 from ..state.step_outcome import StepOutcome
+from ..semantic_extension import CommittedStepError
+from blackbase.runtime import FinalizationHooks
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +65,8 @@ def _finish_lifecycle_participants(
     )
     try:
         setattr(active_error, "lifecycle_cleanup_errors", evidence)
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_finish_lifecycle_participants.fallback_180', exc=_fallback_error)
         pass
     try:
         attach_failure_evidence(
@@ -70,7 +74,8 @@ def _finish_lifecycle_participants(
             "nsgablack_lifecycle_cleanup",
             evidence,
         )
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_finish_lifecycle_participants.fallback_181', exc=_fallback_error)
         pass
     add_note = getattr(active_error, "add_note", None)
     if callable(add_note):
@@ -93,16 +98,21 @@ def _control_context(solver: Any, context: Any) -> dict[str, Any]:
         try:
             return dict(getter() or {})
         except Exception:
-            continue
+            raise
     return {}
 
 
-def _request_stop(solver: Any) -> None:
+def _request_stop(solver: Any, reason: str | None = None) -> None:
     request = getattr(solver, "request_stop", None)
     if callable(request):
-        request()
+        if reason and not getattr(solver, "stop_reason", None):
+            request(reason)
+        else:
+            request()
     else:
         setattr(solver, "stop_requested", True)
+        if reason and not getattr(solver, "stop_reason", None):
+            setattr(solver, "stop_reason", reason)
 
 
 def _apply_resolved_decisions(solver: Any, resolved: Any, context: Mapping[str, Any]) -> None:
@@ -121,7 +131,7 @@ def _apply_resolved_decisions(solver: Any, resolved: Any, context: Mapping[str, 
         # A stop request has the same meaning regardless of the arbitration
         # domain that produced it (for example budget or stopping).
         if bool(payload.get("stop", False)):
-            _request_stop(solver)
+            _request_stop(solver, str(getattr(decision, "reason", "") or f"{domain}_stop"))
 
 def apply_runtime_control_slot(solver: Any, *, slot: str, value: Any = None, context: Any = None) -> Any:
     """Apply a runtime control slot through the solver runtime controller."""
@@ -355,7 +365,12 @@ def run_solver_loop(
                             ),
                         )
                     else:
-                        raw_step_outcome = solver.step()
+                        post_commit_error = None
+                        try:
+                            raw_step_outcome = solver.step()
+                        except CommittedStepError as exc:
+                            post_commit_error = exc
+                            raw_step_outcome = exc.outcome
                         step_outcome = StepOutcome.from_value(
                             raw_step_outcome,
                             allow_legacy=bool(
@@ -426,6 +441,8 @@ def run_solver_loop(
                     "_runtime_governance_on_generation_end",
                     generation,
                 )
+                if post_commit_error is not None:
+                    raise post_commit_error
                 if callback is not None and bool(callback(solver)):
                     termination_reason = "callback"
                     break
@@ -534,7 +551,7 @@ def run_solver_loop(
                 base_result=result,
                 return_dict=True,
             )
-        finalizer = getattr(solver, "finalize_run_result", None)
+        finalizer = solver.finalization_hooks.prepare_result
         if callable(finalizer):
             finalized = finalizer(result)
             if finalized is not None:
@@ -634,7 +651,8 @@ def run_solver_loop(
                         "nsgablack_teardown",
                         cleanup_evidence,
                     )
-                except Exception:
+                except Exception as _fallback_error:
+                    _report_optional_failure(component=__name__, event='run_solver_loop.fallback_183', exc=_fallback_error)
                     pass
                 add_note = getattr(primary_error, "add_note", None)
                 if callable(add_note):
@@ -652,21 +670,12 @@ def run_solver_loop(
 
     if completed_result is None:  # pragma: no cover - guarded by lifecycle flow
         raise RuntimeError("solver lifecycle completed without a result")
-    transactional_prepare = getattr(
-        solver,
-        "prepare_finalization_after_teardown",
-        None,
-    )
-    transactional_freeze = getattr(
-        solver,
-        "freeze_finalization_after_prepare",
-        None,
-    )
-    transactional_abort = getattr(
-        solver,
-        "abort_finalization_after_teardown",
-        None,
-    )
+    hooks = solver.finalization_hooks
+    if not isinstance(hooks, FinalizationHooks):
+        raise TypeError("Solver.finalization_hooks must be FinalizationHooks")
+    transactional_prepare = hooks.prepare
+    transactional_freeze = hooks.freeze
+    transactional_abort = hooks.abort
     uses_transactional_finalization = callable(transactional_prepare)
     semantic_finalization_frozen = False
     case_runtime = getattr(solver, "case_runtime", None)
@@ -687,7 +696,7 @@ def run_solver_loop(
             if prepared is not None:
                 completed_result = prepared
         else:
-            post_teardown = getattr(solver, "finalize_after_teardown", None)
+            post_teardown = hooks.publish
             if callable(post_teardown):
                 finalized = post_teardown(completed_result)
                 if finalized is not None:
@@ -708,6 +717,28 @@ def run_solver_loop(
         setattr(solver, "last_result", completed_result)
         if run_plugin_receipt.participants:
             def notify_finalized(_publications=None) -> None:
+                if isinstance(completed_result, dict):
+                    publications = dict(_publications or {})
+                    committed_at = max(
+                        (
+                            float(getattr(receipt, "committed_at", 0.0) or 0.0)
+                            for receipt in publications.values()
+                        ),
+                        default=time.time(),
+                    )
+                    completed_result["artifact_publications"] = {
+                        str(name): (
+                            receipt.as_dict()
+                            if callable(getattr(receipt, "as_dict", None))
+                            else dict(receipt)
+                        )
+                        for name, receipt in publications.items()
+                    }
+                    completed_result["finalization"] = {
+                        "status": "sealed",
+                        "sealed_at": committed_at,
+                        "publication_count": len(publications),
+                    }
                 solver.plugin_manager.finish_lifecycle(
                     run_plugin_receipt,
                     "on_solver_finalized",
@@ -767,7 +798,8 @@ def run_solver_loop(
                             "message": str(abort_error),
                         },
                     )
-                except Exception:
+                except Exception as _fallback_error:
+                    _report_optional_failure(component=__name__, event='run_solver_loop.fallback_184', exc=_fallback_error)
                     pass
         if not semantic_finalization_frozen and callable(runtime_finalization_abort):
             try:
@@ -784,7 +816,8 @@ def run_solver_loop(
                             "message": str(abort_error),
                         },
                     )
-                except Exception:
+                except Exception as _fallback_error:
+                    _report_optional_failure(component=__name__, event='run_solver_loop.fallback_185', exc=_fallback_error)
                     pass
         dispatcher = getattr(solver, "_dispatch_error_once", None)
         if callable(dispatcher):

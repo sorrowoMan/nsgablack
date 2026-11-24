@@ -27,7 +27,7 @@ def check_adapter_layer_purity(
                 continue
             try:
                 tree = ast.parse(py_file.read_text(encoding="utf-8", errors="ignore"))
-            except Exception:
+            except (OSError, UnicodeError, ValueError, SyntaxError):
                 continue
 
             imported_algorithmic_bias = False

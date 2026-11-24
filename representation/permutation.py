@@ -10,7 +10,7 @@ from typing import Optional, Any
 import numpy as np
 
 from .base import RepresentationComponentContract
-from blackbase.context.context_keys import KEY_DISTANCE_MATRIX
+from nsgablack.context_keys import KEY_DISTANCE_MATRIX
 
 
 class RandomKeyPermutationDecoder(RepresentationComponentContract):

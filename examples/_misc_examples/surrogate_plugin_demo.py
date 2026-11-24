@@ -1,4 +1,4 @@
-﻿"""
+"""
 Surrogate evaluation provider demo.
 
 Goal:
@@ -26,7 +26,7 @@ def _ensure_importable() -> None:
     try:
         import nsgablack  # noqa: F401
         return
-    except Exception:
+    except ImportError:
         pass
     here = Path(__file__).resolve()
     repo_parent = str(here.parent.parent.parent)

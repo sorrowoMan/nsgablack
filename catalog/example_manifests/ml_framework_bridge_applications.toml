@@ -1,0 +1,39 @@
+[[example]]
+id="ml-framework-bridges"
+title="两层ML Bridge的真实工厂消费者 · 完整线性Case与方法路由"
+component_keys=["mlblack.integration.ml_learning_problem_bridge", "mlblack.integration.ml_representation_bridge", "mlblack.integration.nsgablack_optimization"]
+kind="documentation"
+working_directory="mlblack"
+summary="完整数据/Problem/表示/Adapter/薄builder，由build_learning_solver创建并bind两桥，类型/所有权只读检查，固定评估变体与原生JSON模型交付。"
+inputs=["完整catalog_codec_demo副本、原24行数据工厂与三仓NumPy。"]
+steps=["只在正式工厂接模型布局和评价语义，不手工调用裸Bridge.evaluate。", "Gaussian与Fixed路由参数显式区分，正式Project报告已评估模型。"]
+dependencies=["三仓、NumPy；本轮未运行算法或模型。"]
+expected_outputs=["[train.mse,0]与三参数state/正式ModelRef；不把桥或模型Codec称Adapter Unit。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_FRAMEWORK_BRIDGE_APPLICATIONS_CN.md",section="bridge.learning"}, {path="nsgablack/docs/catalog_usage/ML_CLASSICAL_ESTIMATOR_APPLICATIONS_CN.md",section="classical.estimator.run"}]
+
+[[example]]
+id="ml-complete-child-case-evaluator"
+title="完整子训练Case · 正式Provider适配/父子grant/模型引用回传"
+component_keys=["mlblack.integration.nsgablack_learning_case_evaluator"]
+kind="documentation"
+working_directory="mlblack"
+summary="完整双Case外层装配、正式Evaluator到EvaluationProvider协议小适配、学习率覆盖、子TrainerResult投影和runtime_audit读取，保留原内层/L0。"
+inputs=["完整cross_framework副本、原40行数据inner_training Case、三仓NumPy。"]
+steps=["外层Gaussian候选经正式Evaluator调用内Case，父CaseRuntime注入grant而非私自fit。", "保留子模型/Feedback并显式取valid.mse，变体只更改inner builder实际消费的步数覆盖。"]
+dependencies=["三仓、NumPy；原生正交模型安全JSON，本例关闭原Project历史unsafe许可；未实际运行子Case。"]
+expected_outputs=["nested.json子identity/parent/grant/ModelRef与目标；没有新运行或checkpoint收据。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_FRAMEWORK_BRIDGE_APPLICATIONS_CN.md",section="bridge.nested.case"}, {path="nsgablack/docs/catalog_usage/ML_FRAMEWORK_BRIDGE_APPLICATIONS_CN.md",section="bridge.nested.run"}]
+
+[[example]]
+id="ml-training-proxy-migration"
+title="旧TrainingProxy任务值 · 直接fit与正式嵌套的迁移边界"
+component_keys=["mlblack.problem.training_proxy", "mlblack.problem_bridge.ml_black_training"]
+kind="documentation"
+usage_status="migration_reference"
+working_directory="mlblack"
+summary="准确展示纯make_task值接口，明确run_task直接trainer.fit、字符串artifact_refs不是权威引用，完整替代使用正式子Case Evaluator。"
+inputs=["现有NumericDataView、候选与资源描述；只构造任务不拟合。"]
+steps=["核对mapper/trainer_spec/max_steps与任务值，不调用旧run_task来绕过共享子Case运行边界。"]
+dependencies=["三仓；本轮不拟合/调用API/DB/下载。"]
+expected_outputs=["迁移参考/任务描述，不伪称已获得子grant、Artifact、取消或checkpoint语义。"]
+sources=[{path="nsgablack/docs/catalog_usage/ML_FRAMEWORK_BRIDGE_APPLICATIONS_CN.md",section="bridge.training_proxy.boundary"}]

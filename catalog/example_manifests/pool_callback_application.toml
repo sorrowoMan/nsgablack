@@ -1,0 +1,12 @@
+[[example]]
+id = "pool-callback-application-ga-chain"
+title = "GA 两孩子提案、接纳输出与最终成员档案 · 共享完整用法"
+component_keys = ["tool.change_request", "tool.change_result", "tool.change_batch_result", "tool.pool_output", "tool.pool_edit", "tool.pool_maintenance_request"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "在现有 pool_workflow_pilot/ga_search 正式 Case，用普通 paired change 返回独立孩子、用 PoolOutput 交付已接纳版本，再以 PoolMaintenanceRequest.members 和 PoolEdit 维护历史精英。"
+inputs = ["完整 pool_workflow_pilot Project、当前 nsgablack/blackbase/NumPy；沿用 TwoCenters、原 Pipeline、PipelineSource、WorkflowTrace 和 Project L0。二维父代矩阵与精确 source_refs 由 NSGA2 提供，不手工伪造候选身份。"]
+steps = ["按本节新增 adapter/pool_callbacks.py，完整薄 builder 只改 adapter 导入；原 workflow.choose_survivors/elite_key 继续复用。保留 Router PoolTaskSpec change_sources=('elite',)，在原 Project 配置末尾追加 ga 单 Case 分组。"]
+dependencies = ["当前 nsgablack、blackbase 与 NumPy；无需模型、外部账号或额外运行器。"]
+expected_outputs = ["原 results/ga_search.json 中 result 是最终成员，change_output 是 ga_trials，final.elite 是最终成员来源的历史 raw 前20档案，accepted 是运行接纳历史；四者不能混称种群。两个真实变体分别改为本批 accepted 归档和每次配对交付一个孩子；正文解释真实生效位置、来源身份与报告读法。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/POOL_CALLBACK_APPLICATION_CN.md", section = "tool.change_request" }]

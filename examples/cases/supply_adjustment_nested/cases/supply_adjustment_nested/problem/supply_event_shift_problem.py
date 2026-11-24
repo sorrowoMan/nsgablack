@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from pathlib import Path
 from typing import List, Tuple
 
@@ -10,7 +11,7 @@ import pandas as pd
 from nsgablack.core.base import BlackBoxProblem
 from blackbase.resources import ResourceRequirement
 
-from inner_solver import InnerProductionSolverConfig, build_inner_production_solver, extract_total_output
+from inner_solver import InnerProductionSolverConfig
 
 
 @dataclass(frozen=True)
@@ -24,12 +25,14 @@ class SupplyEventShiftProblem(BlackBoxProblem):
     """Outer problem: shift whole supply events earlier to improve production metrics.
 
     Rules:
-    - day0 events are fixed (not adjustable)
+    - day0 is today: its inventory is fixed, with no inbound or outbound moves
+    - day1 events retain their positions in the candidate vector but cannot move
     - each event can only move earlier, never later
     - each move is whole-event (no split)
     """
 
     context_requires = ()
+    cap_projection_policy = "supply_event_cap/sha256-index-v1"
     context_provides = ("inner_metrics",)
     context_mutates = ()
     context_cache = ()
@@ -109,7 +112,9 @@ class SupplyEventShiftProblem(BlackBoxProblem):
                 if qty <= 0.0:
                     continue
                 self.events.append(SupplyEvent(material_idx=m, day=d, quantity=qty))
-                bounds[f"x{idx}"] = [0, d]
+                # Keep every original event position, including zero-width day1
+                # variables, so tightening today's boundary does not renumber events.
+                bounds[f"x{idx}"] = [0, d - 1]
                 idx += 1
 
         super().__init__(
@@ -123,37 +128,42 @@ class SupplyEventShiftProblem(BlackBoxProblem):
         arr = np.asarray(x, dtype=float).reshape(self.dimension)
         if arr.size == 0:
             return np.zeros(0, dtype=int)
-        shifts = np.rint(arr).astype(int)
+        if not np.all(np.isfinite(arr)):
+            raise ValueError("supply shift candidate must contain finite values")
+        rounded = np.rint(arr)
         for i, ev in enumerate(self.events):
-            if shifts[i] < 0:
-                shifts[i] = 0
-            if shifts[i] > ev.day:
-                shifts[i] = ev.day
+            rounded[i] = np.clip(rounded[i], 0, ev.day - 1)
+        shifts = rounded.astype(int)
         # Hard cap moved event count at decode stage so export/runtime always respects it,
         # even when the outer solver temporarily keeps infeasible candidates.
         if self.max_moved_events is not None and self.max_moved_events >= 0:
             moved_idx = np.flatnonzero(shifts > 0)
             k = int(self.max_moved_events)
             if moved_idx.size > k:
-                # Keep lower-disruption moves first. The previous strategy kept
-                # high quantity*days moves, which systematically favored large
-                # pull-forward gaps. Ties still prefer larger quantity so small
-                # day shifts can retain useful production impact.
-                shift_days = np.array([float(shifts[i]) for i in moved_idx], dtype=float)
-                quantity_days = np.array(
-                    [float(self.events[i].quantity) * float(shifts[i]) for i in moved_idx],
-                    dtype=float,
-                )
-                quantities = np.array([float(self.events[i].quantity) for i in moved_idx], dtype=float)
-                order = np.lexsort((-quantities, quantity_days, shift_days))
-                keep_local = order[:k]
-                keep_idx = set(int(moved_idx[i]) for i in keep_local)
+                # A cardinality repair must not decide that short, long or
+                # large-quantity moves are better. Use a versioned pure hash
+                # projection, with no mutable or process-global RNG state.
+                canonical = np.asarray(shifts, dtype="<i8").tobytes()
+                salt = hashlib.sha256(
+                    self.cap_projection_policy.encode("ascii") + b"\0"
+                    + k.to_bytes(8, "little") + canonical
+                ).digest()
+
+                def projection_key(index):
+                    event = self.events[int(index)]
+                    identity = np.asarray(
+                        [int(index), event.material_idx, event.day], dtype="<i8"
+                    ).tobytes()
+                    return hashlib.sha256(salt + identity).digest()
+
+                keep_idx = set(int(i) for i in sorted(moved_idx, key=projection_key)[:k])
                 for i in moved_idx:
                     if int(i) not in keep_idx:
                         shifts[int(i)] = 0
         return shifts
 
     def apply_shifts(self, shifts: np.ndarray) -> np.ndarray:
+        shifts = self._validated_shifts(shifts)
         out = np.asarray(self.base_supply, dtype=float).copy()
         for i, ev in enumerate(self.events):
             shift = int(shifts[i])
@@ -166,16 +176,26 @@ class SupplyEventShiftProblem(BlackBoxProblem):
             out[ev.material_idx, dst_day] += qty
         return out
 
+    def _validated_shifts(self, shifts: np.ndarray) -> np.ndarray:
+        """Validate an already decoded move vector before applying or exporting it."""
+        values = np.asarray(shifts, dtype=float)
+        if values.shape != (self.dimension,):
+            raise ValueError(f"decoded supply shifts must have shape ({self.dimension},)")
+        if not np.all(np.isfinite(values)) or not np.array_equal(values, np.rint(values)):
+            raise ValueError("decoded supply shifts must contain finite integers")
+        for i, ev in enumerate(self.events):
+            if not 0 <= values[i] <= ev.day - 1:
+                raise ValueError(
+                    f"supply event {i} shift must be in [0, {ev.day - 1}]; "
+                    "day0 is today and cannot receive or release supply"
+                )
+        return values.astype(int)
+
     def evaluate(self, candidate: np.ndarray) -> np.ndarray:
-        # Fallback path: if nested runtime is disabled, use a cheap proxy.
-        shifts = self.decode_shifts(candidate)
-        adjusted = self.apply_shifts(shifts)
-
-        moved_events = int(np.count_nonzero(shifts > 0))
-        moved_days = int(np.sum(shifts))
-        total_output = float(np.sum(adjusted))
-
-        return np.array([-total_output, float(moved_events), float(moved_days)], dtype=float)
+        raise RuntimeError(
+            "SupplyEventShiftProblem requires its formal production_inner Case evaluator; "
+            "supply totals are not a production-output proxy"
+        )
 
     def evaluate_constraints(self, candidate: np.ndarray) -> np.ndarray:
         # Shift rules are enforced by decode_shifts/apply_shifts.
@@ -185,53 +205,6 @@ class SupplyEventShiftProblem(BlackBoxProblem):
         shifts = self.decode_shifts(candidate)
         moved_events = int(np.count_nonzero(shifts > 0))
         return np.array([float(moved_events - self.max_moved_events)], dtype=float)
-
-    def build_inner_task(self, x: np.ndarray, eval_context: dict) -> dict:
-        shifts = self.decode_shifts(x)
-        adjusted = self.apply_shifts(shifts)
-
-        def _run_inner(_problem, _solver, _ctx):
-            solver, inner_problem = build_inner_production_solver(
-                bom_matrix=self.bom_matrix,
-                supply_matrix=adjusted,
-                production_case_dir=self.production_case_dir,
-                cfg=self.inner_solver_cfg,
-            )
-            solver.run()
-            total_output, _schedule = extract_total_output(solver, inner_problem)
-            return {
-                "status": "ok",
-                "objective": float(-total_output),
-                "objectives": np.array([-total_output], dtype=float),
-                "total_output": float(total_output),
-                "resource_context": dict(_ctx.get("resource_context", {})),
-                "inner_resource_requirement": self.inner_resource_requirement.as_dict(),
-            }
-
-        return {
-            "run_inner": _run_inner,
-            "resource_requirement": self.inner_resource_requirement.as_dict(),
-        }
-
-    def evaluate_from_inner_result(self, x: np.ndarray, inner_result: dict, eval_context: dict):
-        _ = eval_context
-        shifts = self.decode_shifts(x)
-        moved_events = int(np.count_nonzero(shifts > 0))
-        moved_days = int(np.sum(shifts))
-
-        total_output = inner_result.get("total_output", None)
-        if total_output is None:
-            obj = inner_result.get("objectives", inner_result.get("objective", None))
-            if isinstance(obj, (list, tuple, np.ndarray)) and len(obj) > 0:
-                total_output = float(-np.asarray(obj, dtype=float).reshape(-1)[0])
-            elif obj is not None:
-                total_output = float(-float(obj))
-            else:
-                total_output = 0.0
-
-        objectives = np.array([-float(total_output), float(moved_events), float(moved_days)], dtype=float)
-        violation = float(inner_result.get("violation", 0.0))
-        return objectives, violation
 
     def export_adjusted_supply(self, x: np.ndarray, path: Path) -> Tuple[np.ndarray, pd.DataFrame]:
         shifts = self.decode_shifts(x)
@@ -250,6 +223,7 @@ class SupplyEventShiftProblem(BlackBoxProblem):
         return shifts, df
 
     def export_move_log(self, shifts: np.ndarray, path: Path) -> pd.DataFrame:
+        shifts = self._validated_shifts(shifts)
         rows = []
         for i, ev in enumerate(self.events):
             s = int(shifts[i])

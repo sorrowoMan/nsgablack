@@ -1,0 +1,17 @@
+[[entry]]
+key = "project.problem.cma_quadratic"
+title = "QuadraticProblem"
+kind = "tool"
+import_path = "problem:QuadraticProblem"
+tags = ["project", "example", "problem", "cmaes"]
+summary = "显式一维/二维二次目标，供完整分布更新核对。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["只定义真实目标，不计算采样分布或软偏好。"]
+use_when = ["验证完整 CMA cohort 的求值与分布更新时。"]
+minimal_wiring = ["from cases.cmaes_distribution.problem import QuadraticProblem", "problem = QuadraticProblem()"]
+required_companions = []
+config_keys = ["dimension"]
+example_entry = "cases.cmaes_distribution.build_solver:build_solver"

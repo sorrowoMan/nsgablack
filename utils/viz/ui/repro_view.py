@@ -1,4 +1,5 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import json
 import time
@@ -221,7 +222,8 @@ class ReproView:
         replay_run_id = f"{base_run_id}_replay_{time.strftime('%H%M%S')}"
         try:
             self.app.run_id_var.set(replay_run_id)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='ReproView.run_by_bundle.fallback_355', exc=_fallback_error)
             pass
         run_view = getattr(self.app, "run_view", None)
         if run_view is None:

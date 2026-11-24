@@ -209,7 +209,7 @@ def load_production_data(
     supply_path: Optional[Path] = None,
     machine_weights: Optional[Sequence[float]] = None,
     machines: int = 22,
-    materials: int = 156,
+    materials: int = 157,
     days: int = 31,
     fallback: bool = True,
 ) -> ProductionData:

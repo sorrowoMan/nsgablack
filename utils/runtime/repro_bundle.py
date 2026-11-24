@@ -26,7 +26,7 @@ def _json_safe(value: Any) -> Any:
             return value.tolist()
         if isinstance(value, (np.integer, np.floating)):
             return value.item()
-    except Exception:
+    except ImportError:
         pass
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
@@ -62,7 +62,7 @@ def _sha256_file(path: Path) -> Optional[str]:
                 if not chunk:
                     break
                 h.update(chunk)
-    except Exception:
+    except (OSError, UnicodeError):
         return None
     return h.hexdigest()
 
@@ -90,7 +90,7 @@ def _run_cmd(args: List[str], *, cwd: Path, timeout_s: float = 2.0) -> Optional[
             seen.add(key)
             try:
                 return bytes(raw).decode(enc)
-            except Exception:
+            except UnicodeError:
                 continue
         return bytes(raw).decode("utf-8", errors="replace")
 
@@ -104,7 +104,7 @@ def _run_cmd(args: List[str], *, cwd: Path, timeout_s: float = 2.0) -> Optional[
             timeout=float(timeout_s),
             check=False,
         )
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         return None
     if proc.returncode != 0:
         return None
@@ -187,7 +187,7 @@ def _load_json_dict(path: Path) -> Dict[str, Any]:
         return {}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, UnicodeError, ValueError, SyntaxError):
         return {}
     return payload if isinstance(payload, dict) else {}
 
@@ -204,7 +204,7 @@ def _load_jsonl(path: Path, *, max_rows: int = 200000) -> List[Dict[str, Any]]:
             continue
         try:
             obj = json.loads(text)
-        except Exception:
+        except (ValueError, TypeError):
             continue
         if isinstance(obj, dict):
             rows.append(obj)
@@ -631,13 +631,13 @@ def apply_bundle_to_solver(solver: Any, bundle: Mapping[str, Any]) -> List[str]:
                 setter(int(seed))
                 applied.append(f"seed={int(seed)}")
             except Exception:
-                pass
+                raise
         else:
             try:
                 setattr(solver, "random_seed", int(seed))
                 applied.append(f"seed={int(seed)}")
             except Exception:
-                pass
+                raise
 
     for key in ("max_generations", "max_steps"):
         if key not in runtime_section:
@@ -651,7 +651,7 @@ def apply_bundle_to_solver(solver: Any, bundle: Mapping[str, Any]) -> List[str]:
             setattr(solver, key, int(value))
             applied.append(f"{key}={int(value)}")
         except Exception:
-            continue
+            raise
     return applied
 
 

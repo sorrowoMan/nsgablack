@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Callable, List, Sequence, Set
 
 from ..model import DoctorDiagnostic
-from blackbase.context.context_keys import (
+from ..contract_resolver import SourceContractResolver
+from blackbase.project.doctor_scope import source_files
+from nsgablack.context_keys import (
     CANONICAL_CONTEXT_KEYS,
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_DECISION_TRACE,
@@ -124,7 +126,7 @@ def _class_missing_core_contract_fields(class_node: ast.ClassDef, *, core_contra
 def _extract_literal_string_values(node: ast.expr) -> List[str]:
     try:
         value = ast.literal_eval(node)
-    except Exception:
+    except (TypeError, ValueError, AttributeError):
         return []
     if isinstance(value, str):
         text = value.strip()
@@ -206,8 +208,6 @@ def _is_known_context_key(key: str) -> bool:
     if not normalized:
         return False
     if normalized in CANONICAL_CONTEXT_KEYS:
-        return True
-    if normalized.startswith("metrics."):
         return True
     return False
 
@@ -504,6 +504,8 @@ def _check_class_template_not_implemented(
         + ", ".join(hits[:8])
         + (" ..." if len(hits) > 8 else ""),
         path,
+        line=class_node.lineno,
+        column=class_node.col_offset + 1,
     )
 
 
@@ -533,7 +535,7 @@ def _check_class_contract_key_known(
             f"Class {class_node.name} declares non-canonical context keys: "
             + ", ".join(uniq[:12])
             + (" ..." if len(uniq) > 12 else "")
-            + " (add to context_keys.py or use metrics.* namespace)."
+            + " (declare package vocabulary or add Project/Case context_keys.json)."
         ),
         path,
     )
@@ -545,8 +547,9 @@ def _check_class_contract_impl_alignment(
     diags: List[DoctorDiagnostic],
     *,
     add: Callable[[List[DoctorDiagnostic], str, str, str, Path | None], None],
+    contract_node: ast.ClassDef | None = None,
 ) -> None:
-    declared = _collect_declared_contract_keys(class_node)
+    declared = _collect_declared_contract_keys(contract_node or class_node)
     reads, writes = _extract_context_reads_writes(class_node)
     if not reads and not writes:
         return
@@ -585,20 +588,6 @@ def _check_class_contract_impl_alignment(
             path,
         )
 
-    large_writes = sorted(k for k in writes if k in _CONTEXT_LARGE_OBJECT_KEYS)
-    if large_writes:
-        add(
-            diags,
-            "warn",
-            "context-large-object-write",
-            (
-                f"Class {class_node.name} writes large objects into context directly: "
-                + ", ".join(large_writes[:8])
-                + (" ..." if len(large_writes) > 8 else "")
-                + ". Use SnapshotStore refs instead."
-            ),
-            path,
-        )
 
 
 def _class_defines_method(class_node: ast.ClassDef, name: str) -> bool:
@@ -616,9 +605,16 @@ def _check_class_state_recovery_declaration(
     strict: bool,
     add: Callable[[List[DoctorDiagnostic], str, str, str, Path | None], None],
     state_recovery_levels: Set[str],
+    enforce_population_authority: bool = True,
+    contract_node: ast.ClassDef | None = None,
 ) -> None:
-    has_get_state = _class_defines_method(class_node, "get_state")
-    has_set_state = _class_defines_method(class_node, "set_state")
+    # A local override starts this check; inherited methods and declarations
+    # are then resolved with the same static C3 rules as context contracts.
+    if not (_class_defines_method(class_node, "get_state") or _class_defines_method(class_node, "set_state")):
+        return
+    effective = class_node if contract_node is None else contract_node
+    has_get_state = _class_defines_method(effective, "get_state")
+    has_set_state = _class_defines_method(effective, "set_state")
     if not (has_get_state or has_set_state):
         return
 
@@ -634,7 +630,7 @@ def _check_class_state_recovery_declaration(
             path,
         )
 
-    values = _iter_class_attr_values(class_node, "state_recovery_level")
+    values = _iter_class_attr_values(effective, "state_recovery_level")
     if not values:
         add(
             diags,
@@ -675,10 +671,10 @@ def _check_class_state_recovery_declaration(
                 path,
             )
             continue
-        if level != "L2" or not has_get_state:
+        if level != "L2" or not has_get_state or not enforce_population_authority:
             continue
         population_modes = _iter_class_attr_values(
-            class_node,
+            effective,
             "population_state_mode",
         )
         if not population_modes:
@@ -718,7 +714,7 @@ def _check_class_state_recovery_declaration(
         missing = sorted(
             method
             for method in required
-            if not _class_defines_method(class_node, method)
+            if not _class_defines_method(effective, method)
         )
         if missing:
             add(
@@ -747,11 +743,12 @@ def check_contract_source(
     forbidden_solver_mirror_attrs: Set[str],
     state_recovery_levels: Set[str],
 ) -> None:
+    resolver = SourceContractResolver()
     for folder_name in contract_check_dirs:
         folder = root / folder_name
         if not folder.is_dir():
             continue
-        py_files = [path for path in folder.rglob("*.py") if path.name != "__init__.py"]
+        py_files = [path for path in source_files(folder) if path.name != "__init__.py"]
         for py_file in py_files:
             try:
                 content = py_file.read_text(encoding="utf-8-sig")
@@ -799,10 +796,19 @@ def check_contract_source(
             for class_node in class_nodes:
                 if not _is_component_class(class_node):
                     continue
+                recovery_keys = {"state_recovery_level", "population_state_mode", "get_state", "set_state",
+                                 "get_population_partitions", "set_population_partitions",
+                                 "get_population_snapshot", "set_population_snapshot",
+                                 "get_population_candidate_tokens", "set_population_candidate_tokens"}
+                inherited = resolver.declarations(py_file, class_node, _CONTRACT_KEYS | recovery_keys)
+                declared_names = {name for name in inherited if name in _CONTRACT_KEYS or name == "get_context_contract"}
+                effective = ast.ClassDef(name=class_node.name, bases=class_node.bases,
+                    keywords=class_node.keywords, body=list(inherited.values()), decorator_list=[])
                 _check_class_metrics_fallback_literal(class_node, py_file, diags, strict=bool(strict), add=add)
                 _check_class_template_not_implemented(class_node, py_file, diags, strict=bool(strict), add=add)
                 _check_class_contract_key_known(class_node, py_file, diags, add=add)
-                _check_class_contract_impl_alignment(class_node, py_file, diags, add=add)
+                _check_class_contract_impl_alignment(class_node, py_file, diags, add=add,
+                                                     contract_node=effective)
                 _check_class_state_recovery_declaration(
                     class_node,
                     py_file,
@@ -810,8 +816,10 @@ def check_contract_source(
                     strict=bool(strict),
                     add=add,
                     state_recovery_levels=state_recovery_levels,
+                    enforce_population_authority=folder_name in {"adapter", "adapters"},
+                    contract_node=effective,
                 )
-                if not _class_has_contract(class_node):
+                if not declared_names:
                     add(
                         diags,
                         "error" if strict else "warn",
@@ -820,7 +828,7 @@ def check_contract_source(
                         py_file,
                     )
                 else:
-                    missing_core = _class_missing_core_contract_fields(class_node, core_contract_keys=core_contract_keys)
+                    missing_core = _class_missing_core_contract_fields(effective, core_contract_keys=core_contract_keys)
                     if missing_core:
                         add(
                             diags,

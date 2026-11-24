@@ -2,9 +2,33 @@
 
 from __future__ import annotations
 
+from dataclasses import fields
 from typing import Any, Iterable, Mapping
 
+from blackbase.wire import thaw_wire_mapping
+
 from ..core.state import StepOutcome
+
+
+def _encode_dispatch_stop_outcome(outcome: StepOutcome | None) -> dict[str, Any] | None:
+    """Encode the explicit global stop observed during an empty child call."""
+    if outcome is None:
+        return None
+    if (not isinstance(outcome, StepOutcome) or outcome.committed
+            or not (outcome.status == "cancelled" or outcome.stop_requested)):
+        raise ValueError("dispatch stop requires a noncommitted cancellation or explicit stop")
+    return {field.name: (thaw_wire_mapping(outcome.metadata) if field.name == "metadata"
+                        else getattr(outcome, field.name)) for field in fields(StepOutcome)}
+
+
+def _decode_dispatch_stop_outcome(payload: Mapping[str, Any] | None) -> StepOutcome | None:
+    if payload is None:
+        return None
+    if not isinstance(payload, Mapping) or set(payload) != {field.name for field in fields(StepOutcome)}:
+        raise ValueError("dispatch stop outcome fields mismatch")
+    outcome = StepOutcome(**dict(payload))
+    _encode_dispatch_stop_outcome(outcome)
+    return outcome
 
 
 def child_empty_proposal_outcome(

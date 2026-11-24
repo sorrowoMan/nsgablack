@@ -1,6 +1,8 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import copy
+import inspect
 import json
 import os
 import subprocess
@@ -9,6 +11,8 @@ import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
+
+from .ui_theme import STREAMLIT_THEME
 
 DEFAULT_PROFILE = "framework-core"
 DEFAULT_SCOPE = "framework"
@@ -62,7 +66,8 @@ def _append_query_trace_event(
                 )
             )
             handle.write("\n")
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_append_query_trace_event.fallback_100', exc=_fallback_error)
         return
 
 
@@ -92,6 +97,8 @@ def build_streamlit_command(
         command.extend(["--server.port", str(int(port))])
     if headless:
         command.extend(["--server.headless", "true"])
+    for name, value in STREAMLIT_THEME.items():
+        command.extend(["--theme." + name, value])
     command.extend(
         [
             "--",
@@ -213,6 +220,11 @@ def thaw_filters(filters_key: tuple[tuple[str, tuple[str, ...]], ...]) -> dict[s
 
 
 def memoize_loader(loader: Callable[..., Any], *, maxsize: int = 128, clone_result: bool = True) -> Callable[..., Any]:
+    """Cache equivalent calls while refreshing loaders across Streamlit reruns."""
+    try:
+        signature = inspect.signature(loader)
+    except (TypeError, ValueError):
+        signature = None
     registry_key = (
         str(getattr(loader, "__module__", "")),
         str(getattr(loader, "__qualname__", getattr(loader, "__name__", "loader"))),
@@ -221,17 +233,23 @@ def memoize_loader(loader: Callable[..., Any], *, maxsize: int = 128, clone_resu
     )
     entry = _MEMOIZED_LOADER_REGISTRY.get(registry_key)
     if entry is None:
-        holder: dict[str, Any] = {"loader": loader}
+        holder: dict[str, Any] = {"loader": loader, "signature": signature}
 
         @lru_cache(maxsize=maxsize)
-        def _cached(*args):
-            result = holder["loader"](*args)
+        def _cached(args, keyword_items):
+            result = holder["loader"](*args, **dict(keyword_items))
             return clone_value(result) if clone_result else result
 
-        def _wrapped(*args):
+        def _wrapped(*args, **kwargs):
             started = time.perf_counter()
+            current_signature = holder["signature"]
+            if current_signature is not None:
+                bound = current_signature.bind(*args, **kwargs)
+                bound.apply_defaults()
+                args, kwargs = bound.args, bound.kwargs
+            keyword_items = tuple(sorted(kwargs.items()))
             before = _cached.cache_info()
-            result = _cached(*args)
+            result = _cached(args, keyword_items)
             after = _cached.cache_info()
             duration_ms = (time.perf_counter() - started) * 1000.0
             if after.hits > before.hits:
@@ -255,5 +273,8 @@ def memoize_loader(loader: Callable[..., Any], *, maxsize: int = 128, clone_resu
         entry = {"holder": holder, "wrapped": _wrapped}
         _MEMOIZED_LOADER_REGISTRY[registry_key] = entry
     else:
+        if entry["holder"]["signature"] != signature:
+            entry["wrapped"].cache_clear()
         entry["holder"]["loader"] = loader
+        entry["holder"]["signature"] = signature
     return entry["wrapped"]

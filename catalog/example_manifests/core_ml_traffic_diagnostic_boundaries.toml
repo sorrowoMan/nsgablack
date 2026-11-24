@@ -1,0 +1,41 @@
+[[example]]
+id = "core-ml-traffic-gam-boundary"
+title = "旧GAM探索Case入口、配置与验证迁移"
+component_keys = ["mlblack.example.traffic_gam_linearity"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "mlblack"
+summary = "准确说明训练集样条诊断的实际计算、Project选择和输出；不把训练拟合/反向结论文案当泛化验证。"
+inputs = ["完整traffic_congestion副本与真实CSV，可选科学依赖。"]
+steps = ["只选目标Case，核对全数据预处理和训练RMSE；升级前补分割/结果/Artifact证据。"]
+dependencies = ["NumPy/pandas/scikit-learn；未执行拟合。"]
+expected_outputs = ["旧Case输出范围与缺口，不能当原Case科学验收已通过。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_TRAFFIC_DIAGNOSTIC_BOUNDARIES_CN.md", section="mlblack.example.traffic_gam_linearity"}]
+
+[[example]]
+id = "core-ml-traffic-granger-boundary"
+title = "旧Granger探索Case入口、检验类型与迁移"
+component_keys = ["mlblack.example.traffic_granger_causality"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "mlblack"
+summary = "准确说明输入次序、实际因子和lag选择、异常/fallback路径，以及多重检验与平稳化未闭合。"
+inputs = ["完整traffic_congestion副本及时间顺序明确的真实CSV。"]
+steps = ["只选本Case，核对真正参与的检验类型；升级前显式处理频率/失败/多重检验并发布证据。"]
+dependencies = ["NumPy/pandas/statsmodels；旧fallback涉及SciPy。"]
+expected_outputs = ["可追踪旧实现与明确科学边界；无已验证因果或检验收据。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_TRAFFIC_DIAGNOSTIC_BOUNDARIES_CN.md", section="mlblack.example.traffic_granger_causality"}]
+
+[[example]]
+id = "core-ml-traffic-shap-boundary"
+title = "旧SHAP贡献对照Case与资源/结果迁移"
+component_keys = ["mlblack.example.traffic_shap_consistency"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "mlblack"
+summary = "说明真实方法集合、训练样本置换、显示分母与固定n_jobs缺口；不因目录补齐就推荐未遵守授权的运行。"
+inputs = ["完整traffic_congestion副本与真实CSV。"]
+steps = ["定位Case与检查构造；实际使用前先收敛线程授权/方法集合/数据分割/一致性与Artifact。"]
+dependencies = ["NumPy/pandas/scikit-learn及可选xgboost/shap/scipy；未运行。"]
+expected_outputs = ["旧实现范围及精确迁移步骤，不能当原Case可合规直接运行或科学验收通过。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_TRAFFIC_DIAGNOSTIC_BOUNDARIES_CN.md", section="mlblack.example.traffic_shap_consistency"}]

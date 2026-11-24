@@ -1,4 +1,4 @@
-﻿"""Examples/suites static guard rules used by project doctor."""
+"""Examples/suites static guard rules used by project doctor."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def check_examples_suites_solver_control_writes(
                 continue
             try:
                 tree = ast.parse(py_file.read_text(encoding="utf-8", errors="ignore"), filename=str(py_file))
-            except Exception:
+            except (OSError, UnicodeError, ValueError, SyntaxError):
                 continue
 
             hits: List[tuple[int, str, str]] = []
@@ -108,5 +108,6 @@ def check_examples_suites_solver_control_writes(
                     + (" ..." if len(uniq) > 10 else "")
                 ),
                 py_file,
+                line=min(line for line, _, _ in hits),
             )
 

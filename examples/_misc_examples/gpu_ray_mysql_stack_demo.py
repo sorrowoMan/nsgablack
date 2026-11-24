@@ -1,4 +1,4 @@
-﻿"""Integrated demo: GPU evaluation template + Ray distributed + MySQL run logger.
+"""Integrated demo: GPU evaluation template + Ray distributed + MySQL run logger.
 
 This is a minimal wiring example. It demonstrates one stack, not a production recipe:
 - GPU evaluation provider (L4 path when GPU batch interface is available)
@@ -57,24 +57,8 @@ class DemoGpuProblem(BlackBoxProblem):
         return np.sum(pop * pop, axis=1, keepdims=True)
 
 
-class RandomSearchAdapter(AlgorithmAdapter):
-    def __init__(self, name: str = "random_search_adapter", seed: int = 7) -> None:
-        super().__init__(name=name)
-        self.rng = np.random.default_rng(int(seed))
-
-    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
-        _ = context
-        out = []
-        lows = np.array([control.var_bounds[f"x{i}"][0] for i in range(control.dimension)], dtype=float)
-        highs = np.array([control.var_bounds[f"x{i}"][1] for i in range(control.dimension)], dtype=float)
-        for _ in range(int(getattr(control, "pop_size", 32))):
-            out.append(self.rng.uniform(lows, highs).astype(float))
-        return out
-
-    def update(self, control: Any, candidates, feedback, context: Dict[str, Any]) -> None:
-        objectives, violations = feedback
-        _ = (control, candidates, objectives, violations, context)
-        return None
+# Compatibility import: the implementation lives in the standard Unit Case.
+from nsgablack.examples.cases.algorithm_units.cases.candidate_search.adapter.gpu_ray_mysql_stack_demo import RandomSearchAdapter
 
 
 def build_solver(args: argparse.Namespace):

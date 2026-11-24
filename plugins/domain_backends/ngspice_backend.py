@@ -35,7 +35,7 @@ def _decode_subprocess_bytes(data: bytes | bytearray | None) -> str:
         seen.add(key)
         try:
             return raw.decode(enc)
-        except Exception:
+        except UnicodeError:
             continue
     return raw.decode("utf-8", errors="replace")
 
@@ -92,7 +92,7 @@ class NgspiceBackend:
                 continue
             try:
                 out[m.group(1)] = float(m.group(2))
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 continue
         return out
 

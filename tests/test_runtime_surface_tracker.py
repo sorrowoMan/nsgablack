@@ -1,8 +1,34 @@
 import json
 from pathlib import Path
+import pytest
 
 
-def test_runtime_surface_tracker_materializes_solver_run_surface(sample_problem, sample_bias, tmp_path: Path):
+def test_direct_operator_bindings_are_recorded_without_rng_and_change_assembly_signature(sample_problem, tmp_path):
+    from nsgablack.adapters import NSGA2Adapter, MixedPoolParentSelector
+    from nsgablack.core import ComposableSolver
+    from nsgablack.plugins import RuntimeSurfaceTrackerConfig, RuntimeSurfaceTrackerPlugin
+    from nsgablack.representation import GaussianMutation, RepresentationPipeline
+
+    tracker = RuntimeSurfaceTrackerPlugin(config=RuntimeSurfaceTrackerConfig(db_path=str(tmp_path / "operators.sqlite3")))
+
+    def record(pool_name):
+        solver = ComposableSolver(sample_problem, adapter=NSGA2Adapter(
+            parent_selector=MixedPoolParentSelector(pool_name), mutator=GaussianMutation(sigma=0.2)),
+            representation_pipeline=RepresentationPipeline())
+        return tracker._build_contract_records(solver=solver, result={}, run_id="operator-test")[1].to_dict()
+
+    first, second = record("elite_a"), record("elite_b")
+    operators = first["component_slots_json"]["operator_bindings"]["nsga2"]
+    assert set(operators) == {"parent_selector", "mutator"}
+    assert operators["parent_selector"]["contract"]["identity"]["pool_name"] == "elite_a"
+    assert operators["mutator"]["contract"]["identity"]["sigma"] == 0.2
+    assert all("state" not in binding["contract"] for binding in operators.values())
+    assert all(binding["ref"] in first["component_refs"] for binding in operators.values())
+    assert first["assembly_signature"] != second["assembly_signature"]
+
+
+@pytest.mark.parametrize("named", [False, True])
+def test_runtime_surface_tracker_materializes_solver_run_surface(sample_problem, sample_bias, tmp_path: Path, named):
     from nsgablack.adapters import SAConfig, SimulatedAnnealingAdapter
     from nsgablack.core.composable_solver import ComposableSolver
     from nsgablack.plugins import (
@@ -20,6 +46,7 @@ def test_runtime_surface_tracker_materializes_solver_run_surface(sample_problem,
         initializer=UniformInitializer(low=-10.0, high=10.0),
         mutator=ContextGaussianMutation(base_sigma=0.5, sigma_key="mutation_sigma"),
         repair=ClipRepair(low=-10.0, high=10.0),
+        mutation_operators={"local": ContextGaussianMutation(base_sigma=0.1)} if named else None,
     )
     solver = ComposableSolver(
         problem=sample_problem,
@@ -27,6 +54,22 @@ def test_runtime_surface_tracker_materializes_solver_run_surface(sample_problem,
         representation_pipeline=pipeline,
         bias_module=sample_bias,
     )
+    if named:
+        solver.adapter.set_mutation_operator("local")
+        from nsgablack.representation import JointRepairPolicy
+        import numpy as np
+        class VerifiedClip(ClipRepair):
+            def validate(self, candidate, context):
+                return bool(np.all(np.abs(candidate.values) <= 10.))
+        class TrajectoryRepair:
+            def repair(self, unit, evidence, context):
+                return evidence.after
+            def validate(self, unit, evidence, context):
+                return bool(np.all(np.isfinite(evidence.after.numeric_matrix))
+                            and unit.current.shape == evidence.after.numeric_matrix[0].shape)
+        pipeline.set_repair(VerifiedClip(low=-10., high=10.))
+        solver.joint_repair_policy = JointRepairPolicy()
+        solver.adapter.set_unit_repair(TrajectoryRepair())
 
     db_path = tmp_path / "runtime_surface.sqlite3"
     solver.add_plugin(
@@ -69,6 +112,13 @@ def test_runtime_surface_tracker_materializes_solver_run_surface(sample_problem,
     assert str(run_record["driver_ref"]).startswith("adapter:")
     assert str(assembly_record["assembly_signature"]).strip()
     assert "representation_slots" in dict(assembly_record.get("component_slots_json", {}))
+    if named:
+        slots = assembly_record["component_slots_json"]
+        assert slots["representation_slots"]["mutation_operators"]["local"]
+        assert slots["mutation_bindings"] == {solver.adapter.name: "local"}
+        assert slots["joint_repair"]["max_rounds"] == 1
+        assert slots["joint_repair"]["unit_repairs"][solver.adapter.name].endswith("TrajectoryRepair")
+        assert slots["joint_repair"]["problem_repair"].endswith("VerifiedClip")
 
     artifact_ids = {str(row.get("artifact_id")) for row in artifact_records}
     assert "modules_report_json" in artifact_ids

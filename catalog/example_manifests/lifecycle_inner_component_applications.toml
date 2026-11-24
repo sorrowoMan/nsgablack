@@ -1,0 +1,12 @@
+[[example]]
+id = "lifecycle-inner-response-component"
+title = "内层解析组件 · 正式Case、显式目标映射与观察桥"
+component_keys = ["runtime.inner_evaluator", "plugin.contract_bridge", "plugin.inner_timeout_budget"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "TaskInnerRuntimeEvaluator实际接进Problem，解析响应与外层x分离，真实桥和guard报告完整；明确它不是完整子Case/持久硬预算。"
+inputs = ["完整catalog_recipes Project副本、二维Plateau替换为ResponseProblem、Gaussian、Pipeline、Bridge/Budget与正式L0。"]
+steps = ["保存完整Problem/Pipeline/Adapter/Plugin/薄builder，在problem挂runtime并只add桥插件。", "独立变体验证桥只写第一次与一次结果包守卫，说明被拒行和物理尝试边界。"]
+dependencies = ["当前nsgablack、blackbase、NumPy；纯解析组件，无模型、线程超时或服务。"]
+expected_outputs = ["inner_component.json实际runtime/bridge/budget计数、观察层与incumbent解析公式；未运行算法，不声明持久预算或恢复已验证。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/LIFECYCLE_INNER_COMPONENT_APPLICATIONS_CN.md", section = "lifecycle.inner_component" }, { path = "nsgablack/docs/catalog_usage/LIFECYCLE_INNER_COMPONENT_APPLICATIONS_CN.md", section = "lifecycle.inner_contract" }]

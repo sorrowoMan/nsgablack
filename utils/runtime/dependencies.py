@@ -16,7 +16,7 @@ def _get_version(pkg: str) -> Optional[str]:
         return metadata.version(pkg)
     except metadata.PackageNotFoundError:
         return None
-    except Exception:
+    except ImportError:
         return None
 
 

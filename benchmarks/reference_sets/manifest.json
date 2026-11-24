@@ -1,0 +1,69 @@
+{
+  "schema": "nsgablack.official_reference_sets/v1",
+  "pymoo_version": "0.6.2",
+  "generation": "official pymoo Problem.pareto_front; no handwritten front equations",
+  "sets": {
+    "zdt1": {
+      "file": "zdt1.pf",
+      "sha256": "cd88994b7076d7b40567a7e06601320dbe56dfe932de123e21b5c7f45f5b5324",
+      "shape": [
+        1000,
+        2
+      ],
+      "origin": "official_generator_persisted_as_file",
+      "serialization": {
+        "encoding": "ascii",
+        "line_ending": "CRLF",
+        "float_format": "%.17g"
+      },
+      "problem_arguments": {
+        "n_var": 8
+      },
+      "front_arguments": {
+        "n_pareto_points": 1000
+      },
+      "generator_class": "pymoo.problems.multi.zdt.ZDT1",
+      "generator_source_sha256": "4de8590090b8ee1b73412b7c611dca6c6172f607a32f5e28209bdb9fd94a3643",
+      "source_url": "https://github.com/anyoptimization/pymoo/tree/0.6.2/pymoo/problems",
+      "hv_reference_point": [
+        1.1,
+        11.0
+      ],
+      "hv_reference_policy": "fixed before solving from fixture objective bounds; not fitted to either output"
+    },
+    "dtlz2": {
+      "file": "dtlz2.pf",
+      "sha256": "40773caae776a55f1ade75415165a0f9397938314b364cc3e72c4c5462f120d7",
+      "shape": [
+        561,
+        3
+      ],
+      "origin": "official_generator_persisted_as_file",
+      "serialization": {
+        "encoding": "ascii",
+        "line_ending": "CRLF",
+        "float_format": "%.17g"
+      },
+      "problem_arguments": {
+        "n_var": 8,
+        "n_obj": 3
+      },
+      "front_arguments": {
+        "reference_directions": {
+          "method": "das-dennis",
+          "n_dim": 3,
+          "n_partitions": 32
+        }
+      },
+      "generator_class": "pymoo.problems.many.dtlz.DTLZ2",
+      "generator_source_sha256": "5221d09f2448b0e52d9215e7e353caa90c18e14f633937964f3a4ead8e3f3a89",
+      "source_url": "https://github.com/anyoptimization/pymoo/tree/0.6.2/pymoo/problems",
+      "hv_reference_point": [
+        3.0,
+        3.0,
+        3.0
+      ],
+      "hv_reference_policy": "fixed before solving from fixture objective bounds; not fitted to either output"
+    }
+  }
+}

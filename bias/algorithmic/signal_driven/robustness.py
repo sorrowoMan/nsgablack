@@ -88,7 +88,7 @@ class RobustnessBias(AlgorithmicBias):
     def _to_1d_float(value: Any) -> np.ndarray:
         try:
             arr = np.asarray(value, dtype=float).reshape(-1)
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return np.asarray([], dtype=float)
         return arr
 

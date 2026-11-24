@@ -1,6 +1,7 @@
 """Optional framework-operator indexer over public Catalog surfaces."""
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import logging
 import inspect
@@ -197,7 +198,7 @@ def _index_docs(root: Path, framework: str, store: RagStore, embedder: Embedder)
 
         try:
             text = md_path.read_text(encoding="utf-8")
-        except Exception:
+        except (OSError, UnicodeError):
             continue
 
         rel = str(md_path.relative_to(root))
@@ -314,7 +315,8 @@ def _resolve_module_path(module: str, root: Path, framework: str) -> str | None:
             except ValueError:
                 # origin is outside root — try path-based fallback
                 pass
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_resolve_module_path.fallback_211', exc=_fallback_error)
         pass
 
     # Path-based fallback

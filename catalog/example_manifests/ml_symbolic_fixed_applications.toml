@@ -1,0 +1,25 @@
+[[example]]
+id = "ml-symbolic-fixed-expression-application"
+title = "固定多项式参数、点/区间Head及typed Artifact"
+component_keys = ["mlblack.codec.symbolic_expression", "mlblack.model.symbolic_expression", "mlblack.representation.symbolic_expression", "mlblack.problem.fixed_symbolic_regression", "mlblack.core.symbolic_model_artifact", "mlblack.core.symbolic_interval_artifact"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "正式Case实际消费三参数符号Codec与点回归；区间变体两块六参数，用真实区间Problem和SymbolicIntervalArtifact发布蓝图。"
+inputs = ["完整catalog_codec_demo独立副本；一特征32训练/12验证，固定多项式表达式。"]
+steps = ["保存完整数据/表达式/Problem/配置和共享薄builder/report，按正式Project/L0执行；不把固定参数搜索当结构发现。"]
+dependencies = ["当前三仓与NumPy；无外部模型。"]
+expected_outputs = ["正式TrainerResult目标/梯度信号/表达式或区间指标及typed模型引用；无运行收据。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_SYMBOLIC_FIXED_APPLICATIONS_CN.md",section="mlblack.representation.symbolic_expression"}, {path="nsgablack/docs/catalog_usage/ML_SYMBOLIC_FIXED_APPLICATIONS_CN.md",section="symbolic.fixed.host"}]
+
+[[example]]
+id = "ml-symbolic-basis-application"
+title = "多表达式Codec、显式Head和基集合质量评估"
+component_keys = ["mlblack.codec.symbolic_multi_expression", "mlblack.model.symbolic_basis_set", "mlblack.head.symbolic_basis_set", "mlblack.representation.symbolic_basis_set", "mlblack.problem.orthogonal_basis_evaluation"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "两个真实表达式块构成(n,2)基集合；完整训练基相关/秩/条件数目标与模型蓝图发布，不冒充直接标签预测。"
+inputs = ["完整catalog_codec_demo独立副本；相关两输入，两个trainable槽位；零y只满足DataView类型。"]
+steps = ["保存完整数据/genome/Head/Problem/配置，使用共享正式builder/report；变体真实移除条件数目标权重。"]
+dependencies = ["当前三仓与NumPy。"]
+expected_outputs = ["正式基指标、三原始目标和表达式蓝图引用；不声称自动正交、监督预测或运行通过。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_SYMBOLIC_FIXED_APPLICATIONS_CN.md",section="mlblack.representation.symbolic_basis_set"}, {path="nsgablack/docs/catalog_usage/ML_SYMBOLIC_FIXED_APPLICATIONS_CN.md",section="symbolic.fixed.host"}]

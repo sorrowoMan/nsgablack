@@ -5,13 +5,24 @@ This solver delegates the optimization logic to AlgorithmAdapter instances.
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
+from dataclasses import replace
+from contextvars import ContextVar
 
 from blackbase.resources import ResourceContext
+from blackbase.runtime import RuntimeTransaction
+from blackbase.representation import representation_capabilities
 from blackbase.contracts import BatchDisposition
 from blackbase.evaluation import EvaluationDispositionEnvelope
 from blackbase.types import CandidateBatch
+from ..adapters.proposal_repair import ProposalRepair
+from ..adapters.change_outputs import publish_change_outputs
+from ..adapters.pool_maintenance import collecting_pool_edits
+from ..representation.repair_contracts import JointRepairPolicy, JointRepairRejected
+from .joint_repair import (coordinate_joint_repair, repair_problem_batch, inspect_joint_repair_contracts,
+                          RepairBaseline, PendingUnitAdmission, _targets)
 from blackbase.context import StateStoreConfig, make_snapshot_key
 from blackbase.project import attach_failure_evidence
 
@@ -25,7 +36,7 @@ from ..adapters import (
 )
 from .blank_solver import SolverBase
 from .evaluation_feedback import OptimizationFeedbackBatch
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_ADAPTER_COMMIT_REPORT_REF,
     KEY_METADATA,
     KEY_SNAPSHOT_KEY,
@@ -39,7 +50,10 @@ from .state.incumbent import (
 )
 from .state.step_outcome import StepOutcome
 from .runtime_governance import commit_population_snapshot
-from ..utils.extension_contracts import normalize_candidate_batch, stack_population
+from ..utils.extension_contracts import normalize_candidate_batch, stack_population, validate_adapter_unit_bindings
+
+
+_authority_phase = ContextVar("nsgablack_authority_phase", default=None)
 
 
 def _rollback_step_failure(
@@ -66,7 +80,8 @@ def _rollback_step_failure(
     )
     try:
         setattr(primary_error, "step_rollback_errors", evidence)
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_rollback_step_failure.fallback_158', exc=_fallback_error)
         pass
     try:
         attach_failure_evidence(
@@ -74,7 +89,8 @@ def _rollback_step_failure(
             "nsgablack_step_rollback",
             evidence,
         )
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_rollback_step_failure.fallback_159', exc=_fallback_error)
         pass
     add_note = getattr(primary_error, "add_note", None)
     if callable(add_note):
@@ -109,6 +125,7 @@ class ComposableSolver(SolverBase):
         snapshot_store_redis_url: str = "redis://localhost:6379/0",
         snapshot_store_key_prefix: str = "nsgablack:snapshot",
         snapshot_store_dir: Optional[str] = None,
+        snapshot_store_scope: Optional[str] = None,
         snapshot_store_serializer: str = "safe",
         snapshot_store_hmac_env_var: str = "NSGABLACK_SNAPSHOT_HMAC_KEY",
         snapshot_store_unsafe_allow_unsigned: bool = False,
@@ -121,6 +138,7 @@ class ComposableSolver(SolverBase):
         adaptive_config: Optional[object] = None,
         enable_companion_orchestrator: bool = False,
         companion_config: Optional[object] = None,
+        joint_repair_policy: JointRepairPolicy | None = None,
     ) -> None:
         super().__init__(
             problem=problem,
@@ -144,6 +162,7 @@ class ComposableSolver(SolverBase):
             snapshot_store_redis_url=snapshot_store_redis_url,
             snapshot_store_key_prefix=snapshot_store_key_prefix,
             snapshot_store_dir=snapshot_store_dir,
+            snapshot_store_scope=snapshot_store_scope,
             snapshot_store_serializer=snapshot_store_serializer,
             snapshot_store_hmac_env_var=snapshot_store_hmac_env_var,
             snapshot_store_unsafe_allow_unsigned=snapshot_store_unsafe_allow_unsigned,
@@ -157,9 +176,13 @@ class ComposableSolver(SolverBase):
             enable_companion_orchestrator=bool(enable_companion_orchestrator),
             companion_config=companion_config,
         )
+        validate_adapter_unit_bindings(adapter, pipeline=self.representation_pipeline)
         self.adapter: Optional[AlgorithmAdapter] = adapter
         self.evaluation_acceptance_policy = None
         self.set_evaluation_acceptance_policy(evaluation_acceptance_policy)
+        if joint_repair_policy is not None and not isinstance(joint_repair_policy, JointRepairPolicy):
+            raise TypeError("joint_repair_policy must be JointRepairPolicy")
+        self.joint_repair_policy = joint_repair_policy
         self.last_step_summary: Dict[str, Any] = {}
         self._last_adapter_commit_report: Dict[str, Any] = {}
         self._objective_scalarizer = None
@@ -292,10 +315,11 @@ class ComposableSolver(SolverBase):
             )
 
     def set_adapter(self, adapter: AlgorithmAdapter) -> None:
+        validate_adapter_unit_bindings(adapter, pipeline=self.representation_pipeline)
         self.adapter = adapter
 
     def set_adapters(self, adapters: Sequence[AlgorithmAdapter]) -> None:
-        self.adapter = CompositeAdapter(list(adapters))
+        self.set_adapter(CompositeAdapter(list(adapters)))
 
     def set_evaluation_acceptance_policy(self, policy: Any) -> None:
         """Install a post-evaluation admission policy.
@@ -312,8 +336,11 @@ class ComposableSolver(SolverBase):
         self.evaluation_acceptance_policy = policy
 
     def setup(self) -> None:
+        super().setup()
         if self.adapter is not None:
+            validate_adapter_unit_bindings(self.adapter, pipeline=self.representation_pipeline)
             self.adapter.setup(self)
+            validate_adapter_unit_bindings(self.adapter, pipeline=self.representation_pipeline)
 
     def prepare_fresh_run(self) -> None:
         super().prepare_fresh_run()
@@ -322,8 +349,9 @@ class ComposableSolver(SolverBase):
         self.population_authority_mode = "step_batch"
 
     def teardown(self) -> None:
-        if self.adapter is not None:
-            self.adapter.teardown(self)
+        operations = (() if self.adapter is None else
+                      (("adapter", lambda: self.adapter.teardown(self)),))
+        self._teardown_runtime(operations)
 
     def _notify_proposal_disposition(
         self,
@@ -345,129 +373,163 @@ class ComposableSolver(SolverBase):
         )
         if self.adapter is None:
             raise RuntimeError("proposal disposition requires an attached adapter")
-        self.adapter.on_proposal_disposition(
-            self,
-            disposition,
-            context,
-        )
+        self._dispatch_proposal_disposition(disposition, context)
+
+    def _reconcile_authority_phase(self):
+        phase = _authority_phase.get()
+        if phase is not None and phase[0] is self:
+            state = phase[1]
+            if state["projection"] is not None and not state["reconciled"]:
+                self._restore_authority_projection(state["projection"])
+                state["reconciled"] = True
+
+    def _dispatch_proposal_disposition(self, disposition, context, repair_admission=None):
+        # A rejected batch must not expose its temporary evaluation projection
+        # to the owner hook. Reconcile once, before repair/disposition observers.
+        if not disposition.accepted_indices:
+            self._reconcile_authority_phase()
+        if repair_admission is not None:
+            repair_admission.settle(disposition)
+        self.adapter.on_proposal_disposition(self, disposition, context)
+        if repair_admission is not None:
+            repair_admission.validate_after_disposition()
 
     @staticmethod
     def _copy_optional_array(value: Any) -> np.ndarray | None:
         return None if value is None else np.array(value, copy=True)
 
-    def _capture_authority_projection(self) -> dict[str, Any]:
-        """Capture only population authority, excluding evaluation-event state."""
-
-        return {
-            "population": self._copy_optional_array(self.population),
-            "objectives": self._copy_optional_array(self.objectives),
-            "violations": self._copy_optional_array(self.constraint_violations),
-            "candidate_batch": self.get_candidate_population_batch(),
-            "candidate_provenance": self.get_candidate_population_provenance(),
-            "active_provenance": tuple(self._active_candidate_provenance),
-            "partitions": dict(self._candidate_population_partitions),
-            "authority_mode": str(self.population_authority_mode),
-        }
+    def _capture_authority_projection(self, *, stage: bool = False) -> dict[str, Any]:
+        projection = self.population_authority.snapshot_step_state()
+        if stage:
+            phase = _authority_phase.get()
+            if phase is None or phase[0] is not self or phase[1]["projection"] is not None:
+                raise RuntimeError("authority staging requires one active step phase")
+            phase[1]["projection"] = projection
+        return projection
 
     def _restore_authority_projection(self, projection: Mapping[str, Any]) -> None:
-        """Restore authority after a rejected or failed acceptance decision."""
-
-        self.population = self._copy_optional_array(projection.get("population"))
-        self.objectives = self._copy_optional_array(projection.get("objectives"))
-        self.constraint_violations = self._copy_optional_array(
-            projection.get("violations")
-        )
-        self._candidate_population_batch = projection.get("candidate_batch")
-        self._candidate_population_provenance = tuple(
-            projection.get("candidate_provenance", ()) or ()
-        )
-        self._active_candidate_provenance = list(
-            projection.get("active_provenance", ()) or ()
-        )
-        self._candidate_population_partitions = dict(
-            projection.get("partitions", {}) or {}
-        )
-        self.population_authority_mode = str(
-            projection.get("authority_mode", "step_batch") or "step_batch"
-        )
-        self._active_candidate_population_ref = None
+        self.population_authority.restore_step_state(dict(projection))
         if self.population is not None and self._active_candidate_provenance:
-            self.activate_candidate_provenance(
-                self.population,
-                self._active_candidate_provenance,
-            )
+            self.activate_candidate_provenance(self.population, self._active_candidate_provenance)
 
     def step(self) -> StepOutcome:
-        if self.adapter is None:
-            return self._step_transaction_body()
-        previous_projection = self._capture_authority_projection()
-        previous_incumbent = self._capture_incumbent_transaction_state()
-        previous_snapshot_handle = self._latest_snapshot_handle
-        previous_snapshot_generation = self._snapshot_generation
-        previous_event_id = self._last_evaluation_event_id
-        adapter_transaction = self.adapter.begin_step_transaction()
-        self.begin_snapshot_step_transaction()
+        return self._execute_step_transaction(self._step_transaction_body)
+
+    def _capture_step_transactions(self):
+        # One graph/capture, with separate reports and cleanup scopes. Shared
+        # owners belong to the Adapter scope and are never captured twice.
+        state = RuntimeTransaction((*self._state_participants, self.adapter))
+        return state, self.adapter.begin_step_transaction(transaction=state)
+
+    def _execute_step_body(self, body):
+        phase = {"projection": None, "reconciled": False}
+        token = _authority_phase.set((self, phase))
         try:
-            outcome = self._step_transaction_body()
+            outcome = body()
+            if not outcome.committed:
+                self._reconcile_authority_phase()
+            return outcome
+        finally:
+            _authority_phase.reset(token)
+
+    def _execute_step_transaction(self, body: Callable[[], StepOutcome], *, step_extensions: bool = True) -> StepOutcome:
+        self.ensure_evaluation_evidence_ready_for_next_step()
+        previous_authority = self.get_population_authority_identity()
+        previous_authority_key = (
+            None
+            if previous_authority is None
+            else str(previous_authority.snapshot.key)
+        )
+        if self.adapter is None:
+            return body()
+        state_transaction, adapter_transaction = self._capture_step_transactions()
+        previous_event_id = self._last_evaluation_event_id
+        try:
+            self.begin_snapshot_step_transaction()
+            self.solution_pool.begin_attempt()
+            if step_extensions:
+                self.prepare_step_extensions()
+            outcome = self._execute_step_body(body)
+            if outcome.committed:
+                # Fallible pool staging must precede the durable disposition
+                # intent; otherwise a failed compaction leaves a commit intent
+                # whose destination can never be reconstructed.
+                self.prepare_solution_pool_retention()
+                self.solution_pool.prepare_publication()
+                self.solution_pool.protect_prepared_publication()
+                pending = self._snapshot_step_transaction.get("pending")
+                if pending is not None:
+                    pending["data"]["solution_pool_ref"] = self.solution_pool.publication_ref()
             outcome = self._finalize_evaluation_disposition(
                 outcome,
-                previous_authority_key=(
-                    None
-                    if previous_snapshot_handle is None
-                    else str(previous_snapshot_handle.key)
-                ),
+                previous_authority_key=previous_authority_key,
             )
             if outcome.committed:
                 self.commit_snapshot_step_transaction()
+                self.solution_pool.commit_publication()
                 outcome = self._settle_evaluation_disposition_best_effort(outcome)
             else:
                 self.rollback_snapshot_step_transaction()
+                state_transaction.reconcile(self.solution_pool, self.solution_pool.reject_attempt)
         except BaseException as exc:
             self._record_failed_evaluation_disposition(
                 exc,
                 previous_event_id=previous_event_id,
-                previous_authority_key=(
-                    None
-                    if previous_snapshot_handle is None
-                    else str(previous_snapshot_handle.key)
-                ),
+                previous_authority_key=previous_authority_key,
             )
+            def release_uncommitted_pool_lease():
+                if self.solution_pool.retention_policy is None:
+                    return
+                decision = self.evaluation_evidence_journal.get(str(self._last_evaluation_event_id or ""))
+                if decision is None or decision.phase != "decision_ready":
+                    self.solution_pool.release_prepared_publication()
             _rollback_step_failure(
                 exc,
                 (
-                    ("snapshot", self.rollback_snapshot_step_transaction),
+                    ("solution_pool.publication_lease", release_uncommitted_pool_lease),
                     ("adapter", adapter_transaction.rollback),
-                    (
-                        "solver.authority",
-                        lambda: self._restore_authority_projection(previous_projection),
-                    ),
-                    (
-                        "solver.incumbent",
-                        lambda: self._restore_incumbent_transaction_state(
-                            previous_incumbent
-                        ),
-                    ),
-                    (
-                        "solver.snapshot_handle",
-                        lambda: setattr(
-                            self,
-                            "_latest_snapshot_handle",
-                            previous_snapshot_handle,
-                        ),
-                    ),
-                    (
-                        "solver.snapshot_generation",
-                        lambda: setattr(
-                            self,
-                            "_snapshot_generation",
-                            previous_snapshot_generation,
-                        ),
-                    ),
+                    ("solver.state", state_transaction.rollback),
                 ),
             )
+            if isinstance(exc, JointRepairRejected) and not getattr(exc, "step_rollback_errors", ()):
+                return self._decide_after_repair_rejection(exc)
             raise
+        names, failures, evidence = state_transaction.commit()
+        if failures or evidence:
+            outcome = outcome.with_metadata(runtime_commit_report={
+                "participants": list(names),
+                "issues": [{"participant": item.participant, "error_type": type(item.error).__name__,
+                            "message": str(item.error)} for item in failures],
+                "evidence": [{"participant": name, "payload": dict(payload)} for name, payload in evidence],
+            })
         report = adapter_transaction.commit()
-        return self._attach_adapter_commit_report(outcome, report)
+        outcome = self._attach_adapter_commit_report(outcome, report)
+        return self.notify_step_committed(outcome) if step_extensions else outcome
+
+    def _decide_after_repair_rejection(self, rejected):
+        """A scheduling decision has its own rollback and post-decision cleanup."""
+        state_transaction, adapter_transaction = self._capture_step_transactions()
+        try:
+            self.checkpoint_case_runtime()
+            outcome = self.adapter.on_joint_repair_rejected(self, dict(rejected.report))
+            if (not isinstance(outcome, StepOutcome) or outcome.status not in {"rejected", "cancelled"}
+                    or outcome.evaluations != 0 or outcome.proposals != rejected.report["proposed_count"]):
+                raise TypeError("on_joint_repair_rejected must return a rejected/cancelled zero-evaluation StepOutcome")
+            self.checkpoint_case_runtime()
+        except BaseException as exc:
+            _rollback_step_failure(exc, (("adapter.repair_decision", adapter_transaction.rollback),
+                                         ("solver.repair_decision", state_transaction.rollback)))
+            raise
+        outcome = outcome.with_metadata(joint_repair=dict(rejected.report))
+        names, failures, evidence = state_transaction.commit()
+        if failures or evidence:
+            outcome = outcome.with_metadata(runtime_commit_report={
+                "participants": list(names),
+                "issues": [{"participant": item.participant, "error_type": type(item.error).__name__,
+                            "message": str(item.error)} for item in failures],
+                "evidence": [{"participant": name, "payload": dict(payload)} for name, payload in evidence],
+            })
+        return self._attach_adapter_commit_report(outcome, adapter_transaction.commit())
 
     def _finalize_evaluation_disposition(
         self,
@@ -488,6 +550,7 @@ class ComposableSolver(SolverBase):
             else previous_authority_key
         )
         disposition_payload = {
+            **({"joint_repair": dict(outcome.metadata["joint_repair"])} if "joint_repair" in outcome.metadata else {}),
             "evaluation_acceptance": dict(
                 outcome.metadata.get("evaluation_acceptance", {}) or {}
             ),
@@ -579,6 +642,22 @@ class ComposableSolver(SolverBase):
         event_id = str(self._last_evaluation_event_id or "")
         if not event_id or event_id == str(previous_event_id or ""):
             return
+        existing = self.evaluation_evidence_journal.get(event_id)
+        if existing is not None and existing.phase == "decision_ready":
+            context = dict(getattr(error, "_nsgablack_error_context", {}) or {})
+            context["evaluation_disposition"] = {
+                "status": "decision_ready",
+                "outcome": existing.outcome,
+                "journal_record": existing.as_dict(),
+                "authority_commit_deferred": True,
+            }
+            try:
+                setattr(error, "_nsgablack_error_context", context)
+                attach_failure_evidence(error, "nsgablack", context)
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='ComposableSolver._record_failed_evaluation_disposition.fallback_160', exc=_fallback_error)
+                pass
+            return
         try:
             envelope = EvaluationDispositionEnvelope(
                 event_id=event_id,
@@ -635,7 +714,8 @@ class ComposableSolver(SolverBase):
             try:
                 setattr(error, "_nsgablack_error_context", context)
                 attach_failure_evidence(error, "nsgablack", context)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='ComposableSolver._record_failed_evaluation_disposition.fallback_161', exc=_fallback_error)
                 pass
             add_note = getattr(error, "add_note", None)
             if callable(add_note):
@@ -716,6 +796,11 @@ class ComposableSolver(SolverBase):
                 reason=str(getattr(self, "stop_reason", None) or "stop_requested"),
             )
 
+        from blackbase.runtime import runtime_participants
+        repair_issues = inspect_joint_repair_contracts(self, runtime_participants([self.adapter]))
+        if repair_issues:
+            raise TypeError("; ".join(f"{code}: {message}" for code, message in repair_issues))
+
         authority_resolver = getattr(
             self.adapter,
             "resolve_population_state_mode",
@@ -736,20 +821,21 @@ class ComposableSolver(SolverBase):
                 f"{resolved_authority!r}"
             )
 
-        previous_projection = self._capture_authority_projection()
+        previous_projection = self._capture_authority_projection(stage=True)
         previous_population_batch = previous_projection["candidate_batch"]
         previous_population_provenance = previous_projection["candidate_provenance"]
         propose_context = self.build_context()
         propose_context[KEY_STEP] = self.generation
 
-        proposed = self.adapter.coerce_candidates(self.adapter.propose(self, propose_context))
-        candidate_provenance = self.prepare_candidate_provenance(proposed)
-        candidate_batch = normalize_candidate_batch(
-            proposed,
-            dimension=self.dimension,
-            owner=getattr(self.adapter, "name", "adapter"),
-            candidate_tokens=[item.candidate_token for item in candidate_provenance],
-        )
+        with self._batch_candidate_pool_writes():
+            proposed = self.adapter.coerce_candidates(self.adapter.propose(self, propose_context))
+            candidate_provenance = self.prepare_candidate_provenance(proposed)
+            candidate_batch = normalize_candidate_batch(
+                proposed,
+                dimension=self.dimension,
+                owner=getattr(self.adapter, "name", "adapter"),
+                candidate_tokens=[item.candidate_token for item in candidate_provenance],
+            )
         candidates, candidate_provenance = self.bind_candidate_batch(
             candidate_batch,
             candidate_provenance,
@@ -783,7 +869,6 @@ class ComposableSolver(SolverBase):
             context=propose_context,
         )
         if approved_count <= 0:
-            self._restore_authority_projection(previous_projection)
             if requested_count > 0:
                 self._notify_proposal_disposition(
                     proposed_count=requested_count,
@@ -796,7 +881,7 @@ class ComposableSolver(SolverBase):
                     "num_candidates": 0,
                     "budget_truncated": True,
                 }
-                self.request_stop()
+                self.request_stop("evaluation_budget_exhausted")
             return StepOutcome(
                 status="rejected" if requested_count > 0 else "idle",
                 proposals=requested_count,
@@ -810,34 +895,28 @@ class ComposableSolver(SolverBase):
         if approved_count < requested_count:
             candidates = candidates[:approved_count]
             candidate_provenance = candidate_provenance[:approved_count]
-        # If a representation pipeline is attached, enforce a repair pass so
-        # all adapter-produced candidates go through the main pipeline.
-        if len(candidates) > 0 and self.representation_pipeline is not None:
-            repair = getattr(self.representation_pipeline, "repair", None)
-            if repair is not None:
-                if hasattr(self.representation_pipeline, "repair_batch"):
-                    repaired = self.representation_pipeline.repair_batch(
-                        candidates,
-                        context=propose_context,
-                    )
-                else:
-                    repaired = [
-                        self.repair_candidate(cand, propose_context)
-                        for cand in candidates
-                    ]
-                candidate_batch = normalize_candidate_batch(
-                    repaired,
-                    dimension=self.dimension,
-                    owner=f"{getattr(self.adapter, 'name', 'adapter')}.repair",
-                    candidate_tokens=[
-                        item.candidate_token for item in candidate_provenance
-                    ],
-                )
-                candidates, candidate_provenance = self.bind_candidate_batch(
-                    candidate_batch,
-                    candidate_provenance,
-                    activate=False,
-                )
+        before_repair = candidate_batch.subset(slice(0, approved_count))
+        repair_report = None
+        repair_admission = None
+        repair_baseline = None
+        if candidates and (self.joint_repair_policy is not None
+                           or representation_capabilities(self.representation_pipeline).supports("repair")):
+            repair_baseline = RepairBaseline(self, before_repair, requested_count, propose_context)
+        if candidates and self.joint_repair_policy is not None:
+            contexts = self.adapter.get_proposal_contexts(requested_count, propose_context)[:approved_count]
+            candidate_batch, repair_report, repair_admission = coordinate_joint_repair(
+                self, before_repair, requested_count, propose_context, contexts, candidate_provenance, repair_baseline)
+        elif candidates and representation_capabilities(self.representation_pipeline).supports("repair"):
+            contexts = self.adapter.get_proposal_contexts(requested_count, propose_context)[:approved_count]
+            candidate_batch = repair_problem_batch(self, before_repair, contexts, candidate_provenance)
+            evidence = ProposalRepair(requested_count, tuple(range(approved_count)), before_repair, candidate_batch)
+            self.adapter.on_proposal_repair(self, evidence, propose_context)
+            repair_admission = PendingUnitAdmission(self, evidence, _targets(self.adapter, evidence, propose_context),
+                                                    repair_baseline, {})
+        else:
+            candidate_batch = before_repair
+        candidates, candidate_provenance = self.bind_candidate_batch(
+            candidate_batch, candidate_provenance, activate=False)
         candidate_count = len(candidates)
         if candidate_count != approved_count:
             raise ValueError(
@@ -879,23 +958,19 @@ class ComposableSolver(SolverBase):
             metadata={"control": type(self).__name__},
         )
         if evaluated_count == 0:
-            self._restore_authority_projection(previous_projection)
-            self.adapter.on_proposal_disposition(
-                self,
-                budget_disposition,
-                propose_context,
-            )
+            self._dispatch_proposal_disposition(budget_disposition, propose_context, repair_admission)
             self.last_step_summary = {
                 "num_proposed": int(requested_count),
                 "num_candidates": 0,
                 "budget_truncated": True,
             }
-            self.request_stop()
+            self.request_stop("evaluation_budget_race")
             return StepOutcome(
                 status="rejected",
                 proposals=requested_count,
                 stop_requested=True,
                 reason="evaluation_budget_race",
+                metadata={"joint_repair": repair_report} if repair_report is not None else {},
             )
 
         feedback_batch = self.get_last_feedback_batch()
@@ -931,34 +1006,7 @@ class ComposableSolver(SolverBase):
                 full_feedback_batch,
                 full_evaluated_provenance,
             )
-            previous_mode = str(previous_projection["authority_mode"])
-            previous_complete = (
-                bool(previous_projection["partitions"])
-                if previous_mode == "partitioned"
-                else (
-                    previous_projection["population"] is not None
-                    and previous_projection["objectives"] is not None
-                    and previous_projection["violations"] is not None
-                )
-            )
-            event_snapshot_key = self.write_evaluation_event_snapshot(
-                authority_population=(
-                    None
-                    if previous_mode == "partitioned"
-                    else previous_projection["population"]
-                ),
-                authority_objectives=(
-                    None
-                    if previous_mode == "partitioned"
-                    else previous_projection["objectives"]
-                ),
-                authority_violations=(
-                    None
-                    if previous_mode == "partitioned"
-                    else previous_projection["violations"]
-                ),
-                authority_complete=previous_complete,
-            )
+            event_snapshot_key = self.write_evaluation_event_snapshot()
             acceptance_context = self.build_context()
             if event_snapshot_key is not None:
                 acceptance_context[KEY_SNAPSHOT_KEY] = event_snapshot_key
@@ -1026,13 +1074,8 @@ class ComposableSolver(SolverBase):
             # Identity dispositions are still significant to transparent and
             # composite wrappers because they may need to reconcile an earlier
             # local allocation without publishing an intermediate callback.
-            self.adapter.on_proposal_disposition(
-                self,
-                final_disposition,
-                acceptance_context,
-            )
+            self._dispatch_proposal_disposition(final_disposition, acceptance_context, repair_admission)
         except BaseException:
-            self._restore_authority_projection(previous_projection)
             raise
 
         accepted_indices = np.asarray(
@@ -1050,7 +1093,6 @@ class ComposableSolver(SolverBase):
         acceptance_audit = acceptance_disposition.as_dict()
         proposal_disposition_audit = final_disposition.as_dict()
         if accepted_count == 0:
-            self._restore_authority_projection(previous_projection)
             self.last_step_summary = {
                 "num_proposed": int(requested_count),
                 "num_evaluated": int(evaluated_count),
@@ -1067,6 +1109,7 @@ class ComposableSolver(SolverBase):
                 evaluations=evaluated_count,
                 reason=acceptance_disposition.reason,
                 metadata={
+                    **({"joint_repair": repair_report} if repair_report is not None else {}),
                     "evaluation_acceptance": acceptance_audit,
                     "proposal_disposition": proposal_disposition_audit,
                     "evaluation_event": {
@@ -1118,12 +1161,28 @@ class ComposableSolver(SolverBase):
 
         update_context = self.build_context()
         update_context[KEY_STEP] = self.generation
-        self.adapter.update(
-            self,
-            self.population,
-            accepted_feedback_batch,
-            update_context,
-        )
+        accepted_refs = self.store_solutions(
+            accepted_update_batch, stage="accepted", feedback=accepted_feedback_batch,
+            provenance=accepted_provenance)
+        # Per-item references follow subset/reorder routing together with the
+        # feedback. Token-only lookups cannot identify a selected pool version.
+        accepted_feedback_batch = OptimizationFeedbackBatch.from_feedback(
+            [replace(item, info={**dict(item.info), "accepted_solution_ref": ref.as_dict()})
+             for item, ref in zip(accepted_feedback_batch.items, accepted_refs, strict=True)],
+            violations=accepted_feedback_batch.violations,
+            metadata=accepted_feedback_batch.metadata)
+        with collecting_pool_edits(self.solution_pool) as member_edits:
+            self.adapter.update(
+                self,
+                self.population,
+                accepted_feedback_batch,
+                update_context,
+            )
+        publish_change_outputs(self.solution_pool, accepted_refs, accepted_provenance,
+                               maintenance_edits=member_edits)
+        record_accepted = getattr(self.bias_module, "record_accepted", None)
+        if self.enable_bias and callable(record_accepted):
+            record_accepted(accepted_update_batch)
         snapshot_getter = getattr(self.adapter, "get_population_snapshot", None)
         authoritative = snapshot_getter() if callable(snapshot_getter) else None
         partition_getter = getattr(self.adapter, "get_population_partitions", None)
@@ -1245,6 +1304,7 @@ class ComposableSolver(SolverBase):
             reason=str(getattr(self, "stop_reason", None) or ""),
             metadata={
                 "authority_mode": self.population_authority_mode,
+                **({"joint_repair": repair_report} if repair_report is not None else {}),
                 "budget_truncated": bool(
                     approved_count < requested_count or reservation_truncated
                 ),
@@ -1307,6 +1367,18 @@ class ComposableSolver(SolverBase):
                 normalized_partition,
                 batch,
                 provenance,
+            )
+        normalized_partitions = tuple(
+            partition for partition, _batch, _provenance in committed.values()
+        )
+        partition_setter = getattr(self.adapter, "set_population_partitions", None)
+        if not callable(partition_setter):
+            raise TypeError(
+                "partitioned Adapter must implement set_population_partitions()"
+            )
+        if partition_setter(normalized_partitions) is not True:
+            raise RuntimeError(
+                "partitioned Adapter rejected normalized population partitions"
             )
         self._candidate_population_partitions = committed
 

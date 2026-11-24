@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 import copy
+from blackbase.runtime import OwnedField
+from blackbase.representation import representation_capabilities
+from .state.evolution_state import EvolutionState
 import logging
 import random
 from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple
 import numpy as np
 from blackbase.call_binding import CallCandidate, invoke_bound_once
 from blackbase.context import StateStoreConfig
-from blackbase.types import PopulationSnapshot
+from blackbase.types import CandidateBatch, Feedback, PopulationSnapshot
+from blackbase.contracts import BatchDisposition
+from .evaluation_feedback import OptimizationFeedbackBatch
+from .nested_solver import CaseInnerRuntimeEvaluator
+from .state.incumbent import CandidateProvenance
+from nsgablack.context_keys import KEY_SNAPSHOT_KEY, KEY_SOLUTION_INPUT_REF
 from ..adapters import NSGA2Adapter, NSGA2Config
 from .composable_solver import ComposableSolver, _rollback_step_failure
 from blackbase.resources import RedisTaskRuntimeBackend
@@ -37,6 +45,12 @@ def _has_problem_inner_runtime_evaluator(solver: Any) -> bool:
 class EvolutionSolver(ComposableSolver):
     """Canonical evolutionary solver with adapter-driven NSGA-II flow."""
 
+    history = OwnedField("evolution_state", "history")
+    pareto_solutions = OwnedField("evolution_state", "pareto_solutions")
+    pareto_objectives = OwnedField("evolution_state", "pareto_objectives")
+    pareto_population_snapshot = OwnedField("evolution_state", "pareto_population_snapshot")
+    mutation_range = OwnedField("evolution_state", "mutation_range")
+
     def __init__(
         self,
         problem: Any,
@@ -61,6 +75,7 @@ class EvolutionSolver(ComposableSolver):
         snapshot_store_redis_url: str = "redis://localhost:6379/0",
         snapshot_store_key_prefix: str = "nsgablack:snapshot",
         snapshot_store_dir: Optional[str] = None,
+        snapshot_store_scope: Optional[str] = None,
         snapshot_store_serializer: str = "safe",
         snapshot_store_hmac_env_var: str = "NSGABLACK_SNAPSHOT_HMAC_KEY",
         snapshot_store_unsafe_allow_unsigned: bool = False,
@@ -103,8 +118,10 @@ class EvolutionSolver(ComposableSolver):
         enable_companion_orchestrator: bool = False,
         companion_config: Optional[CompanionOrchestratorConfig] = None,
         adapter: Optional[Any] = None,
+        joint_repair_policy: Any = None,
         **_: Any,
     ) -> None:
+        self.evolution_state = EvolutionState()
         self.pop_size = int(pop_size)
         self.max_generations = int(max_generations)
         self.max_steps = int(max_generations)
@@ -130,6 +147,7 @@ class EvolutionSolver(ComposableSolver):
             adapter=adapter if adapter is not None else self._build_default_adapter(),
             bias_module=bias_module,
             representation_pipeline=representation_pipeline,
+            joint_repair_policy=joint_repair_policy,
             ignore_constraint_violation_when_bias=ignore_constraint_violation_when_bias,
             plugin_strict=bool(plugin_strict),
             snapshot_strict=bool(snapshot_strict),
@@ -148,6 +166,7 @@ class EvolutionSolver(ComposableSolver):
             snapshot_store_redis_url=snapshot_store_redis_url,
             snapshot_store_key_prefix=snapshot_store_key_prefix,
             snapshot_store_dir=snapshot_store_dir,
+            snapshot_store_scope=snapshot_store_scope,
             snapshot_store_serializer=snapshot_store_serializer,
             snapshot_store_hmac_env_var=snapshot_store_hmac_env_var,
             snapshot_store_unsafe_allow_unsigned=snapshot_store_unsafe_allow_unsigned,
@@ -161,6 +180,7 @@ class EvolutionSolver(ComposableSolver):
             enable_companion_orchestrator=bool(enable_companion_orchestrator),
             companion_config=companion_config,
         )
+        self.register_state_participant(self.evolution_state)
         # SolverBase.__init__ resets max_steps; restore generation semantics here.
         self.max_generations = int(max_generations)
         self.max_steps = int(max_generations)
@@ -263,10 +283,12 @@ class EvolutionSolver(ComposableSolver):
         store: Any,
         *,
         evaluation_evidence_journal: Any = None,
+        authority_store: Any = None,
     ) -> None:
         super().set_snapshot_store(
             store,
             evaluation_evidence_journal=evaluation_evidence_journal,
+            authority_store=authority_store,
         )
 
     def set_context_store_backend(
@@ -300,6 +322,7 @@ class EvolutionSolver(ComposableSolver):
         redis_url: Optional[str] = None,
         key_prefix: Optional[str] = None,
         base_dir: Optional[str] = None,
+        store_scope: Optional[str] = None,
         serializer: Optional[str] = None,
         hmac_env_var: Optional[str] = None,
         unsafe_allow_unsigned: Optional[bool] = None,
@@ -311,6 +334,7 @@ class EvolutionSolver(ComposableSolver):
             redis_url=redis_url,
             key_prefix=key_prefix,
             base_dir=base_dir,
+            store_scope=store_scope,
             serializer=serializer,
             hmac_env_var=hmac_env_var,
             unsafe_allow_unsigned=unsafe_allow_unsigned,
@@ -320,12 +344,9 @@ class EvolutionSolver(ComposableSolver):
     @staticmethod
     def _detect_l0_pool(solver) -> Optional[Any]:
         """Return a PoolScheduler if one is attached, else None."""
-        try:
-            pool = getattr(solver, "l0_pool", None)
-            if pool is not None and hasattr(pool, "as_executor"):
-                return pool
-        except Exception:
-            pass
+        pool = getattr(solver, "l0_pool", None)
+        if pool is not None and hasattr(pool, "as_executor"):
+            return pool
         return None
 
     def _ensure_parallel_evaluator(self) -> Optional[ParallelEvaluator]:
@@ -453,6 +474,12 @@ class EvolutionSolver(ComposableSolver):
 
     def evaluate_population(self, population: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         try:
+            if isinstance(
+                getattr(self.problem, "inner_runtime_evaluator", None), CaseInnerRuntimeEvaluator
+            ):
+                # Complete Cases use Project L0/CaseStage dispatch. The legacy
+                # numerical thread/Redis evaluator owns a different task type.
+                return super().evaluate_population(population)
             if _has_problem_inner_runtime_evaluator(self):
                 nested = self._ensure_nested_parallel_evaluator()
                 if nested is not None:
@@ -495,15 +522,120 @@ class EvolutionSolver(ComposableSolver):
         if pop_size is not None:
             self.pop_size = int(pop_size)
         self._sync_nsga2_adapter_config()
-        population = super().initialize_population(pop_size=self.pop_size, evaluate=evaluate, context=context)
-        if evaluate:
-            self._sync_adapter_from_solver()
-            self.update_pareto_solutions()
-            if not self.history:
-                self.record_history()
-            self._refresh_best()
-            self._commit_evolution_runtime_state()
-        return population
+        self._require_single_population_topology(require_delivery=bool(evaluate))
+        if not evaluate:
+            if self.objectives is not None:
+                raise ValueError("Unevaluated initialization cannot replace an evaluated population")
+            return super().initialize_population(pop_size=self.pop_size, evaluate=False, context=context)
+        result = [np.empty((0, int(self.dimension)), dtype=float)]
+        def initialize():
+            self._capture_authority_projection(stage=True)
+            requested = int(self.pop_size)
+            size = self.evaluation_batch_allowance(requested, context=context)
+            input_ref = (context or {}).get(KEY_SOLUTION_INPUT_REF)
+            input_before = None if input_ref is None else self.solution_pool.input_remaining(input_ref)
+            candidates = self.init_population(size, context)
+            consumed = 0 if input_ref is None else input_before - self.solution_pool.input_remaining(input_ref)
+            if input_ref is not None and consumed != len(candidates):
+                raise ValueError("Population initialization must preserve its original pool intake count")
+            if input_ref is not None:
+                # Fresh init_candidate already applies Problem repair. Pool
+                # intake derives an identity only, so repair this path once.
+                candidates = tuple(self.repair_candidate(candidate, context) for candidate in candidates)
+            records = tuple(self.prepare_candidate_provenance(candidates))
+            batch = CandidateBatch.from_candidates(tuple(self.semantic_candidate_state(candidate)
+                for candidate in candidates), candidate_tokens=tuple(record.candidate_token for record in records))
+            if not size:
+                self.request_stop("initialization_evaluation_budget")
+                return StepOutcome(status="rejected", proposals=requested, stop_requested=True,
+                                   reason="initialization_evaluation_budget")
+            self.population = np.array(batch.numeric_matrix, copy=True)
+            self.activate_candidate_provenance(self.population, records)
+            self.population, self.objectives, self.constraint_violations, _ = self._evaluate_population_with_budget_retry(self.population)
+            count = len(self.population)
+            batch, records = batch.subset(slice(0, count)), records[:count]
+            if not count:
+                self.request_stop("initialization_evaluation_budget")
+                return StepOutcome(status="rejected", proposals=requested, stop_requested=True,
+                                   reason="initialization_evaluation_budget")
+            feedback = self.get_last_feedback_batch()
+            if feedback is None or feedback.candidate_count != count:
+                feedback = OptimizationFeedbackBatch.from_arrays(self.objectives, self.constraint_violations,
+                    metadata={"evaluation_path": "legacy_solver_initialization"})
+            else:
+                feedback = feedback.with_arrays(self.objectives, self.constraint_violations)
+            self.record_evaluation_event(batch, feedback, records)
+            event_key = self.write_evaluation_event_snapshot()
+            acceptance_context = self.build_context()
+            acceptance_context[KEY_SNAPSHOT_KEY] = event_key
+            disposition = BatchDisposition.prefix(proposed_count=count, accepted_count=count, reason="initial_population")
+            if self.evaluation_acceptance_policy is not None:
+                disposition = self.evaluation_acceptance_policy.select(batch, feedback, acceptance_context)
+                if not isinstance(disposition, BatchDisposition) or disposition.proposed_count != count:
+                    raise ValueError("Initialization acceptance must return a disposition aligned with the evaluated batch")
+            indices = tuple(disposition.accepted_indices)
+            metadata = {"lifecycle": "initialization", "evaluation_acceptance": disposition.as_dict(),
+                "proposal_disposition": BatchDisposition.prefix(proposed_count=requested, accepted_count=count).compose(disposition).as_dict(),
+                "evaluation_event": {"event_id": self._last_evaluation_event_id, "snapshot_key": event_key}}
+            if not indices:
+                self.request_stop("initial_population_rejected")
+                return StepOutcome(status="rejected", proposals=requested, evaluations=count,
+                                   stop_requested=True, reason="initial_population_rejected", metadata=metadata)
+            selected_batch, selected_feedback = batch.subset(indices), feedback.subset(indices)
+            if input_ref is not None:
+                # The evaluator may have shrunk the consumed prefix after a
+                # budget race. Settle against that original intake, not count.
+                self.solution_pool.settle_input(input_ref, consumed, indices)
+            selected_records = tuple(records[i] for i in indices)
+            refs = self.store_solutions(selected_batch, stage="accepted", feedback=selected_feedback,
+                                        provenance=selected_records)
+            self._install_population_state(selected_batch, selected_feedback, refs, provenance=selected_records)
+            self.plugin_manager.on_population_init(self.population, self.objectives, self.constraint_violations)
+            try:
+                self._runtime_governance_on_population_init(self.population, self.objectives, self.constraint_violations)
+            except Exception:
+                if self.plugin_strict:
+                    raise
+            self._finish_population_publication(record_history=not self.history)
+            result[0] = self.population
+            return StepOutcome(status="committed", proposals=requested, evaluations=count, metadata=metadata)
+        self._execute_step_transaction(initialize, step_extensions=False)
+        return result[0]
+
+    def _install_population_state(self, batch, feedback, solution_refs, *, provenance=None):
+        """Deliver existing versions to the Adapter and its authority projection."""
+        refs = tuple(solution_refs)
+        if provenance is None:
+            saved = self.solution_pool.read_provenance(refs, allow_pending=True)
+            if any(record is None for record in saved):
+                raise ValueError("Population state requires exact pool provenance")
+            records = tuple(CandidateProvenance.from_dict(record) for record in saved)
+        else:
+            # store_solutions freezes the candidate's semantic metadata into
+            # lineage; use that same projection for already-known records.
+            records = tuple(self._with_candidate_semantics(record, state)
+                for record, state in zip(provenance, batch.semantic_states, strict=True))
+        mode = self.adapter.resolve_population_state_mode()
+        if mode == "none":
+            # L1 search owns its own trajectory/beam, not this evaluated batch.
+            # Preserve the Solver authority without inventing Adapter members.
+            from ..adapters.population_pool_refs import validate_population_state
+            validate_population_state(self, batch, feedback, solution_refs=refs, provenance=records)
+        elif self.adapter.set_population_state(self, batch, feedback, solution_refs=refs, provenance=records) is not True:
+            raise TypeError(f"{type(self.adapter).__name__} does not support complete population identity delivery")
+        self.population = np.array(batch.numeric_matrix, copy=True)
+        self.objectives = np.array(feedback.objectives, copy=True)
+        self.constraint_violations = np.array(feedback.violations, copy=True)
+        self.commit_candidate_population(self.population, batch.candidate_tokens, sources=((batch, records),))
+        self.activate_candidate_provenance(self.population, records)
+        self.population_authority_mode = "step_batch" if mode == "none" else "single"
+
+    def _finish_population_publication(self, *, record_history=True):
+        self.update_pareto_solutions()
+        if record_history:
+            self.record_history()
+        self._refresh_best()
+        self._commit_evolution_runtime_state()
 
     def setup(self) -> None:
         self._sync_nsga2_adapter_config()
@@ -525,9 +657,9 @@ class EvolutionSolver(ComposableSolver):
         self.mutation_range = float(self.initial_mutation_range)
 
         super().setup()
-        self._require_single_population_topology()
+        self._require_single_population_topology(require_delivery=True)
 
-    def _require_single_population_topology(self) -> None:
+    def _require_single_population_topology(self, *, require_delivery=False) -> None:
         """Reject partitioned authority until an explicit aggregation exists."""
 
         adapter = getattr(self, "adapter", None)
@@ -545,6 +677,9 @@ class EvolutionSolver(ComposableSolver):
                 f"Adapter {type(adapter).__name__} may expose partitioned authority. "
                 "Use ComposableSolver or provide a formal population aggregation policy."
             )
+        if (require_delivery and adapter.resolve_population_state_mode() != "none"
+                and not adapter.supports_population_state_delivery()):
+            raise TypeError(f"{type(adapter).__name__} does not support complete population identity delivery")
 
     def _initialize_run_state(self) -> None:
         """Initialize fresh population state after run-start plugins have fired."""
@@ -560,126 +695,7 @@ class EvolutionSolver(ComposableSolver):
             self._commit_evolution_runtime_state()
 
     def step(self) -> StepOutcome:
-        previous_projection = self._capture_authority_projection()
-        previous_incumbent = self._capture_incumbent_transaction_state()
-        previous_snapshot_handle = self._latest_snapshot_handle
-        previous_snapshot_generation = self._snapshot_generation
-        previous_event_id = self._last_evaluation_event_id
-        previous_history = copy.deepcopy(self.history)
-        previous_pareto_solutions = copy.deepcopy(self.pareto_solutions)
-        previous_pareto_objectives = (
-            None
-            if self.pareto_objectives is None
-            else np.array(self.pareto_objectives, copy=True)
-        )
-        previous_pareto_population_snapshot = self.pareto_population_snapshot
-        previous_mutation_range = float(self.mutation_range)
-        adapter_transaction = (
-            self.adapter.begin_step_transaction()
-            if self.adapter is not None
-            else None
-        )
-        self.begin_snapshot_step_transaction()
-        try:
-            outcome = self._step_transaction_body_evolution()
-            outcome = self._finalize_evaluation_disposition(
-                outcome,
-                previous_authority_key=(
-                    None
-                    if previous_snapshot_handle is None
-                    else str(previous_snapshot_handle.key)
-                ),
-            )
-            if outcome.committed:
-                self.commit_snapshot_step_transaction()
-                outcome = self._settle_evaluation_disposition_best_effort(outcome)
-            else:
-                self.rollback_snapshot_step_transaction()
-        except BaseException as exc:
-            self._record_failed_evaluation_disposition(
-                exc,
-                previous_event_id=previous_event_id,
-                previous_authority_key=(
-                    None
-                    if previous_snapshot_handle is None
-                    else str(previous_snapshot_handle.key)
-                ),
-            )
-            callbacks = [("snapshot", self.rollback_snapshot_step_transaction)]
-            if adapter_transaction is not None:
-                callbacks.append(("adapter", adapter_transaction.rollback))
-            callbacks.extend(
-                (
-                    (
-                        "solver.authority",
-                        lambda: self._restore_authority_projection(previous_projection),
-                    ),
-                    (
-                        "solver.incumbent",
-                        lambda: self._restore_incumbent_transaction_state(
-                            previous_incumbent
-                        ),
-                    ),
-                    (
-                        "solver.snapshot_handle",
-                        lambda: setattr(
-                            self,
-                            "_latest_snapshot_handle",
-                            previous_snapshot_handle,
-                        ),
-                    ),
-                    (
-                        "solver.snapshot_generation",
-                        lambda: setattr(
-                            self,
-                            "_snapshot_generation",
-                            previous_snapshot_generation,
-                        ),
-                    ),
-                    (
-                        "solver.history",
-                        lambda: setattr(self, "history", previous_history),
-                    ),
-                    (
-                        "solver.pareto_solutions",
-                        lambda: setattr(
-                            self,
-                            "pareto_solutions",
-                            previous_pareto_solutions,
-                        ),
-                    ),
-                    (
-                        "solver.pareto_objectives",
-                        lambda: setattr(
-                            self,
-                            "pareto_objectives",
-                            previous_pareto_objectives,
-                        ),
-                    ),
-                    (
-                        "solver.pareto_population_snapshot",
-                        lambda: setattr(
-                            self,
-                            "pareto_population_snapshot",
-                            previous_pareto_population_snapshot,
-                        ),
-                    ),
-                    (
-                        "solver.mutation_range",
-                        lambda: setattr(
-                            self,
-                            "mutation_range",
-                            previous_mutation_range,
-                        ),
-                    ),
-                )
-            )
-            _rollback_step_failure(exc, callbacks)
-            raise
-        if adapter_transaction is not None:
-            report = adapter_transaction.commit()
-            outcome = self._attach_adapter_commit_report(outcome, report)
-        return outcome
+        return self._execute_step_transaction(self._step_transaction_body_evolution)
 
     def _step_transaction_body_evolution(self) -> StepOutcome:
         self._require_single_population_topology()
@@ -723,12 +739,24 @@ class EvolutionSolver(ComposableSolver):
         adapter = getattr(self, "adapter", None)
         if adapter is None:
             return
-        setter = getattr(adapter, "set_population_snapshot", None)
-        if not callable(setter):
+        if adapter.resolve_population_state_mode() == "none":
             return
         if self.population is None or self.objectives is None or self.constraint_violations is None:
             return
-        setter(self.population, self.objectives, self.constraint_violations)
+        batch = self.get_candidate_population_batch()
+        if batch is None or not np.array_equal(batch.numeric_matrix, self.population, equal_nan=True):
+            raise ValueError("Population synchronization requires its authoritative CandidateBatch")
+        refs = adapter.get_population_solution_refs(self)
+        if refs is None:
+            raise ValueError("Population synchronization requires exact member references")
+        raw_f, raw_v = self.solution_pool.read_raw_feedback(refs)
+        feedback = OptimizationFeedbackBatch.from_arrays(self.objectives, self.constraint_violations,
+            items=tuple(Feedback(objectives=self.objectives[i], info={
+                "constraint_violation": float(self.constraint_violations[i]),
+                "raw_evaluation": {"objectives": raw_f[i].tolist(), "constraint_violation": float(raw_v[i])}})
+                for i in range(len(refs))))
+        self._install_population_state(batch, feedback, refs,
+            provenance=self.get_candidate_population_provenance())
 
     def _sync_solver_from_adapter(self) -> None:
         adapter = getattr(self, "adapter", None)
@@ -850,7 +878,7 @@ class EvolutionSolver(ComposableSolver):
         if pop.ndim != 2 or pop.shape[0] == 0:
             return pop
 
-        if self.representation_pipeline is not None and getattr(self.representation_pipeline, "mutator", None) is not None:
+        if representation_capabilities(self.representation_pipeline).supports("mutate"):
             out = np.zeros_like(pop)
             for i in range(pop.shape[0]):
                 out[i] = np.asarray(
@@ -880,49 +908,79 @@ class EvolutionSolver(ComposableSolver):
 
     def environmental_selection(
         self,
-        combined_pop: np.ndarray,
-        combined_obj: np.ndarray,
-        combined_violations: np.ndarray,
+        combined_pop: np.ndarray | CandidateBatch,
+        combined_obj: np.ndarray | OptimizationFeedbackBatch,
+        combined_violations: np.ndarray | None = None,
+        *,
+        solution_refs=None,
+        external_evaluation: bool = False,
     ) -> None:
-        pop = np.asarray(combined_pop, dtype=float)
-        obj = np.asarray(combined_obj, dtype=float)
-        vio = np.asarray(combined_violations, dtype=float).reshape(-1)
-        if obj.ndim == 1:
-            obj = obj.reshape(-1, 1)
-        if pop.shape[0] == 0:
-            self.population = pop
-            self.objectives = obj
-            self.constraint_violations = vio
-            return
-        if vio.shape[0] != pop.shape[0]:
-            vio = np.zeros((pop.shape[0],), dtype=float)
+        """Select an identified evaluated batch, or explicitly import external data.
 
-        fronts, _ = FastNonDominatedSort.sort(obj, vio)
-        selected: List[int] = []
-        for front in fronts:
-            front_list = list(front)
-            if len(selected) + len(front_list) <= int(self.pop_size):
-                selected.extend(front_list)
-                continue
-            dist = FastNonDominatedSort.calculate_crowding_distance(obj, front_list)
-            ranked = sorted(front_list, key=lambda idx: float(dist[idx]), reverse=True)
-            remain = max(0, int(self.pop_size) - len(selected))
-            selected.extend(ranked[:remain])
-            break
+        Pool input requires CandidateBatch, rich feedback and aligned exact refs.
+        The legacy three-array form requires ``external_evaluation=True``: the
+        caller asserts those raw evaluations and receives fresh identities.
+        Neither form recovers identities by comparing numeric rows or tokens.
+        """
+        if type(external_evaluation) is not bool:
+            raise TypeError("external_evaluation must be an explicit boolean")
+        self._require_single_population_topology(require_delivery=True)
+        from ..adapters.population_pool_refs import validate_population_state
+        if isinstance(combined_pop, CandidateBatch):
+            if external_evaluation or not isinstance(combined_obj, OptimizationFeedbackBatch) or solution_refs is None:
+                raise ValueError("Identified environmental selection requires rich feedback and exact solution_refs")
+            if combined_violations is not None:
+                raise ValueError("Rich environmental feedback already owns its violations")
+            batch, feedback, refs = combined_pop, combined_obj, tuple(solution_refs)
+            saved = self.solution_pool.read_provenance(refs)
+            if any(record is None for record in saved):
+                raise ValueError("Environmental selection requires exact pool provenance")
+            records = tuple(CandidateProvenance.from_dict(record) for record in saved)
+            validate_population_state(self, batch, feedback, solution_refs=refs, provenance=records)
+        else:
+            if not external_evaluation or solution_refs is not None:
+                raise ValueError("Numeric environmental selection requires external_evaluation=True; "
+                                 "otherwise supply CandidateBatch, rich feedback and exact solution_refs")
+            pop = np.asarray(combined_pop, dtype=float)
+            if pop.ndim != 2 or pop.shape[1] != self.dimension:
+                raise ValueError("External population must have shape (N, problem.dimension)")
+            feedback = OptimizationFeedbackBatch.from_arrays(combined_obj, combined_violations,
+                metadata={"evaluation_path": "external_assertion"})
+            if feedback.candidate_count != len(pop):
+                raise ValueError("External candidate and evaluation rows must align")
+            records = tuple(self._new_candidate_provenance(source_kind="external_evaluation",
+                source_run_id=self._active_run_id, metadata={"external_evaluation_asserted": True}) for _ in pop)
+            batch = CandidateBatch.from_candidates(pop, candidate_tokens=tuple(record.candidate_token for record in records))
+            records = tuple(self._with_candidate_semantics(record, state)
+                            for record, state in zip(records, batch.semantic_states))
+            refs = None
 
-        keep = np.asarray(selected, dtype=int)
-        self.population = pop[keep]
-        self.objectives = obj[keep]
-        self.constraint_violations = vio[keep]
-        # This ndarray-only helper has no semantic input surface.  Establish a
-        # fresh numeric CandidateBatch for the selected rows instead of letting
-        # the result boundary recover identity by value.  Semantic callers must
-        # use the Adapter update path, which supplies aligned candidate tokens.
-        self.commit_candidate_population(self.population, None)
-        self._sync_adapter_from_solver()
-        self.update_pareto_solutions()
-        self.record_history()
-        self._refresh_best()
+        def select():
+            self.record_evaluation_event(batch, feedback, records)
+            event_key = self.write_evaluation_event_snapshot()
+            fronts, _ = FastNonDominatedSort.sort(feedback.objectives, feedback.violations)
+            selected: List[int] = []
+            for front in fronts:
+                front_list = list(front)
+                if len(selected) + len(front_list) <= int(self.pop_size):
+                    selected.extend(front_list)
+                    continue
+                dist = FastNonDominatedSort.calculate_crowding_distance(feedback.objectives, front_list)
+                ranked = sorted(front_list, key=lambda idx: float(dist[idx]), reverse=True)
+                selected.extend(ranked[:max(0, int(self.pop_size) - len(selected))])
+                break
+            chosen, chosen_feedback = batch.subset(selected), feedback.subset(selected)
+            chosen_refs = (self.store_solutions(chosen, stage="accepted", feedback=chosen_feedback,
+                provenance=tuple(records[i] for i in selected)) if refs is None else tuple(refs[i] for i in selected))
+            self._install_population_state(chosen, chosen_feedback, chosen_refs,
+                provenance=tuple(records[i] for i in selected))
+            self._finish_population_publication()
+            disposition = BatchDisposition(len(batch.semantic_states), tuple(selected), reason="environmental_selection")
+            return StepOutcome(status="committed", proposals=len(batch.semantic_states), metadata={
+                "lifecycle": "environmental_selection", "external_evaluation": external_evaluation,
+                "evaluation_acceptance": disposition.as_dict(), "proposal_disposition": disposition.as_dict(),
+                "evaluation_event": {"event_id": self._last_evaluation_event_id, "snapshot_key": event_key}})
+        self._execute_step_transaction(select, step_extensions=False)
 
     def update_pareto_solutions(self) -> None:
         if self.population is None or self.objectives is None:

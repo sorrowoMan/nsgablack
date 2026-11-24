@@ -8,8 +8,27 @@ from pathlib import Path
 from typing import Callable, List
 
 from blackbase.project import build_case, load_case_builder
+from blackbase.project.runtime import close_case_after_build_check
 
 from ..model import DoctorDiagnostic
+
+
+def check_unit_bindings(*, solver, build_file, diags, add) -> None:
+    from nsgablack.utils.extension_contracts import validate_adapter_unit_bindings
+
+    adapter = getattr(solver, "adapter", None)
+    if adapter is None:
+        return
+    try:
+        validate_adapter_unit_bindings(adapter)
+    except (TypeError, ValueError) as exc:
+        add(diags, "error", "adapter-unit-binding-invalid", str(exc), build_file)
+        return
+    describe = getattr(adapter, "get_unit_contracts", None)
+    if callable(describe):
+        contracts = describe()
+        if contracts:
+            add(diags, "info", "adapter-unit-bindings-ok", f"Unit bindings: {contracts}", build_file)
 
 
 def _load_module_from_file(module_name: str, file_path: Path):
@@ -72,6 +91,9 @@ def check_build_solver(
                 root.name,
                 case_kind=case_kind,
             )
+            # The returned proxy is lazy. Inspect through its public surface so
+            # a successful import check means the actual module was loaded.
+            builder.accepts_parameter("resource_context")
             build_fn = builder
         else:
             module = _load_module_from_file("nsgablack_project_build_solver", build_file)
@@ -109,124 +131,137 @@ def check_build_solver(
         add(diags, "error", "build-entry-none", f"{target}() returned None", build_file)
         return
 
-    add(diags, "info", "build-entry-instantiated", f"{target}() returned: {solver.__class__.__name__}", build_file)
-    binding = getattr(solver, "resource_binding_audit", {})
-    if not isinstance(binding, dict) or not bool(binding.get("current", False)):
-        add(
-            diags,
-            "error",
-            "build-entry-resource-binding-stale",
-            "Built Case did not retain the Doctor-injected ResourceContext grant.",
-            build_file,
-        )
-    check_context_store_policy(
-        root=root,
-        solver=solver,
-        build_file=build_file,
-        diags=diags,
-        strict=bool(strict),
-    )
-    check_snapshot_store_policy(
-        root=root,
-        solver=solver,
-        build_file=build_file,
-        diags=diags,
-        strict=bool(strict),
-    )
-    check_snapshot_refs(
-        solver=solver,
-        build_file=build_file,
-        diags=diags,
-        strict=bool(strict),
-    )
-    check_component_catalog_registration(
-        root=root,
-        solver=solver,
-        build_file=build_file,
-        diags=diags,
-        strict=bool(strict),
-    )
-
     try:
-        from nsgablack.core.state.context_contracts import (
-            collect_solver_contracts,
-            detect_context_conflicts,
-            get_component_contract,
-        )
+        add(diags, "info", "build-entry-instantiated", f"{target}() returned: {solver.__class__.__name__}", build_file)
+        check_unit_bindings(solver=solver, build_file=build_file, diags=diags, add=add)
+        from nsgablack.core.blank_solver import SolverBase
+        if isinstance(solver, SolverBase):
+            from nsgablack.utils.runtime_contracts import inspect_runtime_contracts
+            for code, message in inspect_runtime_contracts(solver):
+                add(diags, "error", code, message, build_file)
 
-        contracts = collect_solver_contracts(solver)
-    except Exception as exc:
-        add(diags, "warn", "contracts-collect-failed", f"Cannot collect context contracts: {exc}", build_file)
-        return
-
-    if not contracts:
-        add(diags, "warn", "contracts-empty", "No context contracts were collected", build_file)
-        return
-
-    empty_contract_names: List[str] = []
-    for name, contract in contracts:
-        if not any([contract.requires, contract.provides, contract.mutates, contract.cache, contract.notes]):
-            empty_contract_names.append(name)
-
-    if empty_contract_names:
-        preview = ", ".join(empty_contract_names[:6])
-        suffix = "..." if len(empty_contract_names) > 6 else ""
-        add(
-            diags,
-            "error" if strict else "warn",
-            "contracts-not-explicit",
-            f"Components without explicit context fields: {preview}{suffix}",
-            build_file,
-        )
-    else:
-        add(diags, "info", "contracts-ok", "Collected explicit context contract fields", build_file)
-
-    try:
-        conflicts = detect_context_conflicts(contracts)
-    except Exception as exc:
-        add(diags, "warn", "contracts-conflict-check-failed", f"Conflict check failed: {exc}", build_file)
-        return
-    if conflicts:
-        preview = "; ".join(conflicts[:3])
-        suffix = " ..." if len(conflicts) > 3 else ""
-        add(
-            diags,
-            "warn",
-            "contracts-conflict-risk",
-            f"Potential multi-writer context keys: {preview}{suffix}",
-            build_file,
-        )
-
-    try:
-        check_metrics_provider_alignment(
-            solver=solver,
-            build_file=build_file,
-            diags=diags,
-            strict=bool(strict),
-            get_component_contract=get_component_contract,
-        )
-    except Exception as exc:
-        add(diags, "warn", "metrics-provider-check-failed", f"Metrics provider check failed: {exc}", build_file)
-
-    try:
-        check_process_like_bias_usage(
+        binding = getattr(solver, "resource_binding_audit", {})
+        if not isinstance(binding, dict) or not bool(binding.get("current", False)):
+            add(
+                diags,
+                "error",
+                "build-entry-resource-binding-stale",
+                "Built Case did not retain the Doctor-injected ResourceContext grant.",
+                build_file,
+            )
+        check_context_store_policy(
+            root=root,
             solver=solver,
             build_file=build_file,
             diags=diags,
             strict=bool(strict),
         )
-    except Exception as exc:
-        add(diags, "warn", "algorithm-as-bias-check-failed", f"Process-level bias check failed: {exc}", build_file)
-
-    try:
-        check_runtime_governance_runtime_state(
+        check_snapshot_store_policy(
+            root=root,
             solver=solver,
             build_file=build_file,
             diags=diags,
             strict=bool(strict),
         )
-    except Exception as exc:
-        add(diags, "warn", "runtime-governance-check-failed", f"Runtime governance check failed: {exc}", build_file)
+        check_snapshot_refs(
+            solver=solver,
+            build_file=build_file,
+            diags=diags,
+            strict=bool(strict),
+        )
+        check_component_catalog_registration(
+            root=root,
+            solver=solver,
+            build_file=build_file,
+            diags=diags,
+            strict=bool(strict),
+        )
+
+        try:
+            from nsgablack.core.state.context_contracts import (
+                collect_solver_contracts,
+                detect_context_conflicts,
+                get_component_contract,
+            )
+
+            contracts = collect_solver_contracts(solver)
+        except Exception as exc:
+            add(diags, "warn", "contracts-collect-failed", f"Cannot collect context contracts: {exc}", build_file)
+            return
+
+        if not contracts:
+            add(diags, "warn", "contracts-empty", "No context contracts were collected", build_file)
+            return
+
+        empty_contract_names: List[str] = []
+        for name, contract in contracts:
+            if not any([contract.requires, contract.provides, contract.mutates, contract.cache, contract.notes]):
+                empty_contract_names.append(name)
+
+        if empty_contract_names:
+            preview = ", ".join(empty_contract_names[:6])
+            suffix = "..." if len(empty_contract_names) > 6 else ""
+            add(
+                diags,
+                "error" if strict else "warn",
+                "contracts-not-explicit",
+                f"Components without explicit context fields: {preview}{suffix}",
+                build_file,
+            )
+        else:
+            add(diags, "info", "contracts-ok", "Collected explicit context contract fields", build_file)
+
+        try:
+            conflicts = detect_context_conflicts(contracts)
+        except Exception as exc:
+            add(diags, "warn", "contracts-conflict-check-failed", f"Conflict check failed: {exc}", build_file)
+            return
+        if conflicts:
+            preview = "; ".join(conflicts[:3])
+            suffix = " ..." if len(conflicts) > 3 else ""
+            add(
+                diags,
+                "warn",
+                "contracts-conflict-risk",
+                f"Potential multi-writer context keys: {preview}{suffix}",
+                build_file,
+            )
+
+        try:
+            check_metrics_provider_alignment(
+                solver=solver,
+                build_file=build_file,
+                diags=diags,
+                strict=bool(strict),
+                get_component_contract=get_component_contract,
+            )
+        except Exception as exc:
+            add(diags, "warn", "metrics-provider-check-failed", f"Metrics provider check failed: {exc}", build_file)
+
+        try:
+            check_process_like_bias_usage(
+                solver=solver,
+                build_file=build_file,
+                diags=diags,
+                strict=bool(strict),
+            )
+        except Exception as exc:
+            add(diags, "warn", "algorithm-as-bias-check-failed", f"Process-level bias check failed: {exc}", build_file)
+
+        try:
+            check_runtime_governance_runtime_state(
+                solver=solver,
+                build_file=build_file,
+                diags=diags,
+                strict=bool(strict),
+            )
+        except Exception as exc:
+            add(diags, "warn", "runtime-governance-check-failed", f"Runtime governance check failed: {exc}", build_file)
+    finally:
+        try:
+            close_case_after_build_check(solver)
+        except Exception as exc:
+            add(diags, "error", "build-entry-cleanup-failed", f"Build-check cleanup failed: {exc}", build_file)
 
 
 def _read_case_kind(marker_path: Path) -> str | None:

@@ -47,7 +47,7 @@ def _url_scheme(raw: str | None) -> str:
         return ""
     try:
         return str(urlparse(text).scheme or "").strip().lower()
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return ""
 
 
@@ -79,7 +79,7 @@ def _read_toml_file(path: Path) -> dict[str, Any]:
         return {}
     try:
         payload = _toml.loads(path.read_text(encoding="utf-8", errors="replace"))
-    except Exception:
+    except (OSError, UnicodeError, ValueError, SyntaxError):
         return {}
     return dict(payload) if isinstance(payload, dict) else {}
 
@@ -368,7 +368,7 @@ class ExperimentDbConnection:
                 if "connect_timeout" in query_bits:
                     try:
                         kwargs["connect_timeout"] = int(query_bits["connect_timeout"])
-                    except Exception:
+                    except (TypeError, ValueError, OverflowError):
                         pass
             self._conn = _pg_connect(**kwargs)
         else:

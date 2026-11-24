@@ -15,17 +15,17 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 from blackbase.contracts import BatchDisposition
 
+from ..unit_backed import UnitBackedAdapter, UnitField
+from ...representation.structure_builders import DifferentialPopulationBuilder
 from ..algorithm_adapter import AlgorithmAdapter
-from blackbase.context.context_keys import (
+from ..selection import SelectionRequest
+from ..population_pool_refs import (feedback_pool_bindings, align_pool_bindings, validate_pool_bindings,
+                                   publish_population_view, validate_numeric_population_replacement, install_population_state)
+from nsgablack.context_keys import (
     KEY_ADAPTER_BEST_OBJECTIVES,
     KEY_ADAPTER_BEST_SCORE,
     KEY_ADAPTER_BEST_X,
-    KEY_CONSTRAINT_VIOLATIONS,
     KEY_GENERATION,
-    KEY_OBJECTIVES,
-    KEY_POPULATION,
-    KEY_POPULATION_REF,
-    KEY_SNAPSHOT_KEY,
     KEY_STRATEGY_ID,
 )
 
@@ -40,8 +40,26 @@ class DEConfig:
     objective_aggregation: str = "sum"  # sum / first
 
 
-class DifferentialEvolutionAdapter(AlgorithmAdapter):
+class DifferentialEvolutionAdapter(UnitBackedAdapter):
     """Process-model DE adapter with propose/update contract."""
+    pool_input_modes = ("initialize",)
+    publishes_subpools = True
+    operation_methods = {"initializer": "initialize", "mutator": "mutate",
+                         "selector": "select", "repair": "repair"}
+    # Trial replacement keeps its target index and pre-proposal comparison
+    # score. No stored displacement or path cost depends on the trial vector.
+    accepts_proposal_replacement = True
+    unit_builder_type = DifferentialPopulationBuilder
+    unit_schema = DifferentialPopulationBuilder.unit_type.schema
+    population = UnitField("population")
+    objectives = UnitField("objectives")
+    violations = UnitField("violations")
+    _population_candidate_tokens = UnitField("candidate_tokens")
+    _last_target_indices = UnitField("target_indices")
+    _last_target_scores = UnitField("target_scores")
+    admission_unit_fields = ("target_indices", "target_scores")
+    proposal_column_fields = ("_last_target_baselines",)
+
 
     context_requires = (KEY_GENERATION,)
     context_provides = (
@@ -65,9 +83,14 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         config: Optional[DEConfig] = None,
         name: str = "de",
         priority: int = 0,
+        *,
+        initializer=None,
+        mutator=None,
+        selector=None,
+        repair=None,
         **config_kwargs,
     ) -> None:
-        super().__init__(name=name, priority=priority)
+        super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
         self.config = self.resolve_config(
             config=config,
             config_cls=DEConfig,
@@ -79,37 +102,80 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         self.objectives: Optional[np.ndarray] = None
         self.violations: Optional[np.ndarray] = None
         self._population_candidate_tokens: tuple[str | None, ...] = ()
+        self._population_pool_bindings = ()
+        self._initialization_target = None
+        self._initialization_proposed_count = None
         self._last_target_indices: List[int] = []
         self._last_target_scores: np.ndarray = np.zeros(0, dtype=float)
         self._runtime_projection: Dict[str, Any] = {}
         self._rng = np.random.default_rng()
+        self._last_target_baselines = None
+        self.set_initializer(initializer)
+        self.set_mutator(mutator)
+        self.set_selector(selector)
+        self.set_repair(repair)
 
     def setup(self, control: Any) -> None:
         self._rng = self.create_local_rng(control)
-        self.population = None
-        self.objectives = None
-        self.violations = None
-        self._population_candidate_tokens = ()
+        self.reset_unit()
+        self._population_pool_bindings = ()
+        self._initialization_target = None
+        self._initialization_proposed_count = None
         self._last_target_indices = []
         self._last_target_scores = np.zeros(0, dtype=float)
         self._runtime_projection = {KEY_STRATEGY_ID: str(self.cfg.strategy)}
+        self._last_target_baselines = None
+        self.seed_operator_bindings(self._rng)
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
-        self._ensure_population(control, context)
-        if self.population is None or self.population.shape[0] == 0:
-            return []
+        from nsgablack.context_keys import KEY_SOLUTION_INPUT_REF
+        input_ref = context.get(KEY_SOLUTION_INPUT_REF)
+        have = 0 if self.population is None else len(self.population)
+        if (input_ref is not None or not have or self.objectives is None or self.violations is None
+                or self._initialization_target is not None and have < self._initialization_target):
+            remaining = None if input_ref is None else control.solution_pool.input_remaining(input_ref)
+            if self._initialization_target is None:
+                capacity = max(2, int(self.cfg.population_size))
+                self._initialization_target = capacity if remaining is None else min(capacity, remaining)
+                if self._initialization_target < 2:
+                    raise ValueError("DE initialization requires at least two selected pool candidates")
+            count = remaining if remaining is not None else self._initialization_target - have
+            candidates = self.init_population(control, count, context)
+            self._last_target_indices, self._last_target_scores = [], np.zeros(0)
+            self._last_target_baselines = None
+            self._initialization_proposed_count = len(candidates)
+            return (tuple(self.semantic_proposal(control, candidate) for candidate in candidates)
+                    if self._operator_bindings() else candidates)
 
         n = int(self.population.shape[0])
         batch = max(1, int(self.cfg.batch_size))
         target_indices = self._rng.integers(0, n, size=batch).tolist()
         target_scores = self._population_scores()
+        self._last_target_baselines = None
+        if self.get_bound_selector() is not None:
+            # A target may occur repeatedly in a batch. Every comparison keeps
+            # the same proposal-time baseline, even after another trial wins.
+            self._last_target_baselines = dict(
+                population=np.array(self.population[target_indices], copy=True),
+                objectives=np.array(self.objectives[target_indices], copy=True),
+                violations=np.array(self.violations[target_indices], copy=True))
+        from ..population_pool_refs import has_semantic_population
+        semantic = self.get_bound_mutator() is not None or has_semantic_population(self)
+        refs = self.get_population_solution_refs(control) if semantic else None
         out: List[np.ndarray] = []
         for idx in target_indices:
             target = np.asarray(self.population[idx], dtype=float)
             mutant = self._mutant_vector(idx)
             trial = self._binomial_crossover(target, mutant)
-            repaired = control.repair_candidate(trial, context)
-            out.append(np.asarray(repaired, dtype=float))
+            if refs is not None:
+                parent = control.propose_solutions((refs[idx],)).semantic_states[0]
+                control.bind_candidate_provenance((trial,), (control.candidate_provenance_for(parent),), activate=False)
+            if self.get_bound_mutator() is not None:
+                trial = self.mutate_candidate(control, trial, context)
+            if semantic:
+                out.append(self.semantic_proposal(control, trial))
+            else:
+                out.append(np.asarray(trial, dtype=float))
 
         self._last_target_indices = target_indices
         if target_scores.shape[0] == n:
@@ -133,8 +199,34 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         cand = np.asarray(candidates, dtype=float)
         obj = np.asarray(objectives, dtype=float)
         vio = np.asarray(violations, dtype=float).reshape(-1)
+        if obj.ndim == 1:
+            obj = obj.reshape(-1, 1)
         cand_scores = self._scores(obj, vio)
         candidate_tokens = self.candidate_tokens_for(control, candidates)
+        member_inputs = self.member_inputs_for(control, candidates)
+        incoming_bindings = feedback_pool_bindings(control, candidates, feedback, candidate_tokens,
+            candidate_metadata=member_inputs["candidate_metadata"])
+
+        if self._initialization_proposed_count is not None:
+            if len(candidates) != self._initialization_proposed_count:
+                raise ValueError("DE initialization feedback does not align with admitted candidates")
+            capacity = int(self._initialization_target)
+            if self.population is None or not len(self.population) or self.objectives is None or self.violations is None:
+                keep = np.argsort(cand_scores, kind="stable")[:capacity] if len(cand) > capacity else np.arange(len(cand))
+                change = self.ensure_unit().initialize_population(cand[keep], obj[keep], vio[keep],
+                    candidate_tokens=tuple(candidate_tokens[i] for i in keep),
+                    **{name: tuple(rows[i] for i in keep) for name, rows in member_inputs.items()})
+                incoming_bindings = tuple(incoming_bindings[i] for i in keep)
+            else:
+                scores = np.concatenate((self._population_scores(), cand_scores))
+                keep = np.argsort(scores, kind="stable")[:capacity] if len(scores) > capacity else np.arange(len(scores))
+                change = self.ensure_unit().apply_selection(keep, cand, obj, vio,
+                    candidate_tokens=candidate_tokens, **member_inputs)
+            self._population_pool_bindings = align_pool_bindings(self._population_pool_bindings, incoming_bindings, change)
+            self._initialization_proposed_count = None
+            self._sync_runtime_projection(context)
+            publish_population_view(self, control)
+            return
 
         if self.population is None or self.population.shape[0] == 0:
             raise RuntimeError("DE.update requires population state created by propose()")
@@ -147,28 +239,53 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         if self.objectives is None or self.violations is None:
             n = int(self.population.shape[0])
             m = int(obj.shape[1]) if obj.ndim == 2 else 1
-            self.objectives = np.full((n, m), np.inf, dtype=float)
-            self.violations = np.full(n, np.inf, dtype=float)
+            self.ensure_unit().attach_feedback(np.full((n, m), np.inf, dtype=float),
+                                                np.full(n, np.inf, dtype=float))
 
         if len(self._last_target_indices) != candidate_count:
             raise ValueError("DE feedback must align with pending target indices")
         if len(self._last_target_scores) != candidate_count:
             raise ValueError("DE feedback must align with pending target scores")
 
+        self.ensure_unit().require_current_feedback()
+        accepted = []
         for j, target_idx in enumerate(self._last_target_indices):
-            if target_idx >= self.population.shape[0]:
+            if target_idx < 0 or target_idx >= self.population.shape[0]:
                 raise ValueError(f"DE target index {target_idx} is outside the population")
             target_score = float(self._last_target_scores[j])
-            if float(cand_scores[j]) <= target_score:
-                self.population[target_idx] = cand[j]
-                self.objectives[target_idx] = obj[j]
-                self.violations[target_idx] = vio[j]
-                tokens = list(self._population_candidate_tokens)
-                if len(tokens) != int(self.population.shape[0]):
-                    tokens = [None] * int(self.population.shape[0])
-                tokens[target_idx] = candidate_tokens[j]
-                self._population_candidate_tokens = tuple(tokens)
+            if self.get_bound_selector() is None:
+                selected = float(cand_scores[j]) <= target_score
+            else:
+                baseline = self._target_baselines(candidate_count)
+                request = SelectionRequest("replacement",
+                    np.vstack([baseline["population"][j], cand[j]]),
+                    np.vstack([baseline["objectives"][j], obj[j]]),
+                    [baseline["violations"][j], vio[j]], 1,
+                    scores=[target_score, cand_scores[j]],
+                    parameters={"algorithm": "differential_evolution", "target_index": int(target_idx),
+                                "comparison": str(self.cfg.objective_aggregation), "baseline": "proposal"},
+                    context=context)
+                selected = int(self.select_indices(request, rng=self._rng)[0]) == 1
+            if selected:
+                accepted.append(j)
+        if accepted:
+            change = self.ensure_unit().replace_evaluated_rows(
+                [self._last_target_indices[j] for j in accepted],
+                cand[accepted], obj[accepted], vio[accepted],
+                candidate_tokens=tuple(candidate_tokens[j] for j in accepted),
+                **{name: tuple(rows[j] for j in accepted) for name, rows in member_inputs.items()},
+            )
+            self._population_pool_bindings = align_pool_bindings(self._population_pool_bindings,
+                tuple(incoming_bindings[j] for j in accepted), change)
         self._sync_runtime_projection(context)
+        publish_population_view(self, control)
+
+    def default_pool_input_count(self):
+        return max(2, int(self.cfg.population_size))
+
+    def get_solution_pool_roots(self, control):
+        return validate_pool_bindings(self._population_pool_bindings, self.population,
+            self._population_candidate_tokens, control=control, require=True)
 
     def on_proposal_disposition(
         self,
@@ -177,6 +294,11 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         context: Dict[str, Any],
     ) -> None:
         del control, context
+        if self._initialization_proposed_count is not None:
+            if disposition.proposed_count != self._initialization_proposed_count:
+                raise ValueError("DE initialization disposition does not align with proposals")
+            self._initialization_proposed_count = len(disposition.accepted_indices)
+            return
         pending_count = len(self._last_target_indices)
         if disposition.proposed_count != pending_count:
             raise ValueError(
@@ -188,14 +310,32 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
             raise ValueError(
                 "DE pending target indices and scores must have the same length"
             )
-        accepted = disposition.accepted_indices
-        self._last_target_indices = [
-            self._last_target_indices[index] for index in accepted
-        ]
-        self._last_target_scores = np.asarray(
-            [self._last_target_scores[index] for index in accepted],
-            dtype=float,
-        )
+        if self.get_bound_selector() is not None:
+            self._target_baselines(pending_count)
+        from ..proposal_state import project_pending_proposals
+        project_pending_proposals(self, disposition)
+
+    def set_population_state(self, control, batch, feedback, *, solution_refs, provenance):
+        solution_refs = tuple(solution_refs)
+        same_population = (self.population is not None
+            and tuple(binding["ref"] for binding in self._population_pool_bindings if binding is not None)
+                == tuple(ref.as_dict() for ref in solution_refs)
+            and np.array_equal(self.objectives, feedback.objectives, equal_nan=True)
+            and np.array_equal(self.violations, feedback.violations, equal_nan=True))
+        install_population_state(self, control, batch, feedback, solution_refs=solution_refs, provenance=provenance)
+        if not same_population:
+            self._initialization_target = len(batch.semantic_states) or None
+            self._initialization_proposed_count = None
+            self._last_target_indices = []
+            self._last_target_scores = np.empty(0, dtype=float)
+            self._last_target_baselines = None
+        self._sync_runtime_projection({})
+        publish_population_view(self, control)
+        return True
+
+    def get_population_solution_refs(self, control):
+        return validate_pool_bindings(self._population_pool_bindings, self.population,
+            self._population_candidate_tokens, control=control, require=True)
 
     def set_population_snapshot(self, population: np.ndarray, objectives: np.ndarray, violations: np.ndarray) -> bool:
         pop, obj, vio = self.validate_population_snapshot(population, objectives, violations)
@@ -205,11 +345,12 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
             and np.array_equal(self.population, pop, equal_nan=True)
             and len(self._population_candidate_tokens) == int(pop.shape[0])
         )
-        self.population = pop.copy()
-        self.objectives = obj.copy()
-        self.violations = vio.copy()
-        if not preserve_tokens:
-            self._population_candidate_tokens = (None,) * int(pop.shape[0])
+        validate_numeric_population_replacement(self._population_pool_bindings, preserve_tokens=preserve_tokens)
+        if preserve_tokens:
+            self.ensure_unit().attach_feedback(obj, vio)
+        else:
+            self.ensure_unit().initialize_population(pop, obj, vio)
+            self._population_pool_bindings = (None,) * len(pop)
         self._sync_runtime_projection({})
         return True
 
@@ -249,28 +390,49 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         source = f"adapter.{self.__class__.__name__}"
         return {k: source for k in self._runtime_projection.keys()}
 
-    def get_state(self) -> Dict[str, Any]:
-        return {
+    def _get_algorithm_state(self) -> Dict[str, Any]:
+        state = {
             "population": None if self.population is None else self.population.tolist(),
             "objectives": None if self.objectives is None else self.objectives.tolist(),
             "violations": None if self.violations is None else self.violations.tolist(),
             "candidate_tokens": list(self._population_candidate_tokens),
+            "population_pool_bindings": copy.deepcopy(list(self._population_pool_bindings)),
+            "initialization_target": self._initialization_target,
+            "initialization_proposed_count": self._initialization_proposed_count,
             "strategy": str(self.cfg.strategy),
             "last_target_indices": list(self._last_target_indices),
             "last_target_scores": self._last_target_scores.tolist(),
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
         }
+        if self._last_target_baselines is not None:
+            state["target_baselines"] = {name: rows.tolist()
+                                         for name, rows in self._last_target_baselines.items()}
+        return state
 
-    def set_state(self, state: Dict[str, Any]) -> None:
+    def _set_algorithm_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
+        self._population_pool_bindings = tuple(copy.deepcopy(state.get("population_pool_bindings", ())))
+        self._initialization_target = state.get("initialization_target")
+        self._initialization_proposed_count = state.get("initialization_proposed_count")
+        if (self._initialization_target is not None
+                and (type(self._initialization_target) is not int or self._initialization_target < 2)):
+            raise ValueError("DE checkpoint initialization target must be at least two")
+        if (self._initialization_proposed_count is not None
+                and (type(self._initialization_proposed_count) is not int or self._initialization_proposed_count < 0)):
+            raise ValueError("DE checkpoint initialization proposal count must be nonnegative")
         pop = state.get("population")
         obj = state.get("objectives")
         vio = state.get("violations")
-        self.population = None if pop is None else np.asarray(pop, dtype=float)
-        self.objectives = None if obj is None else np.asarray(obj, dtype=float)
-        self.violations = None if vio is None else np.asarray(vio, dtype=float).reshape(-1)
-        self._population_candidate_tokens = tuple(state.get("candidate_tokens", ()) or ())
+        if state.get("algorithm_unit") is None:
+            self._last_target_indices = []
+            self._last_target_scores = np.zeros(0)
+            if pop is None:
+                if self.algorithm_unit is not None:
+                    self.algorithm_unit.clear_population()
+            else:
+                self.ensure_unit().initialize_population(pop, obj, vio,
+                    candidate_tokens=tuple(state.get("candidate_tokens", ()) or ()))
         if self.population is not None and len(self._population_candidate_tokens) not in {
             0,
             int(self.population.shape[0]),
@@ -287,76 +449,39 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         ).reshape(-1)
         if len(self._last_target_indices) != len(self._last_target_scores):
             raise ValueError("DE checkpoint proposal bookkeeping is misaligned")
+        saved_baselines = state.get("target_baselines")
+        self._last_target_baselines = (None if saved_baselines is None else
+            {name: np.asarray(rows, dtype=float) for name, rows in saved_baselines.items()})
+        if self.get_bound_selector() is not None and self._last_target_indices:
+            self._target_baselines(len(self._last_target_indices))
         rng_state = state.get("rng_state")
         if isinstance(rng_state, dict):
             self._rng.bit_generator.state = copy.deepcopy(rng_state)
+        if state.get("algorithm_unit") is None:
+            self._sync_runtime_projection({})
+
+    def _after_unit_restore(self):
+        validate_pool_bindings(self._population_pool_bindings, self.population, self._population_candidate_tokens)
         self._sync_runtime_projection({})
-
-    def _ensure_population(self, control: Any, context: Dict[str, Any]) -> None:
-        if self.population is not None and self.population.shape[0] > 0:
-            return
-
-        pop = None
-        obj = None
-        vio = None
-        reader = getattr(control, "read_snapshot", None)
-        if callable(reader):
-            try:
-                key = context.get(KEY_POPULATION_REF) or context.get(KEY_SNAPSHOT_KEY)
-            except Exception:
-                key = None
-            try:
-                payload = reader(key) if key else reader()
-            except Exception:
-                payload = None
-            data = payload.data if hasattr(payload, "data") else payload
-            if isinstance(data, dict):
-                pop = data.get(KEY_POPULATION)
-                obj = data.get(KEY_OBJECTIVES)
-                vio = data.get(KEY_CONSTRAINT_VIOLATIONS)
-
-        if pop is None:
-            pop = getattr(control, "population", None)
-            obj = getattr(control, "objectives", None)
-            vio = getattr(control, "constraint_violations", None)
-        if pop is not None:
-            pop_arr = np.asarray(pop, dtype=float)
-            if pop_arr.ndim == 2 and pop_arr.shape[0] > 0:
-                self.population = pop_arr.copy()
-                batch_getter = getattr(control, "get_candidate_population_batch", None)
-                batch = batch_getter() if callable(batch_getter) else None
-                if (
-                    batch is not None
-                    and batch.numeric_matrix.shape == self.population.shape
-                    and np.array_equal(
-                        batch.numeric_matrix,
-                        self.population,
-                        equal_nan=True,
-                    )
-                ):
-                    self._population_candidate_tokens = tuple(batch.candidate_tokens)
-                else:
-                    self._population_candidate_tokens = (None,) * int(pop_arr.shape[0])
-                if obj is not None and vio is not None:
-                    self.objectives = np.asarray(obj, dtype=float).copy()
-                    self.violations = np.asarray(vio, dtype=float).reshape(-1).copy()
-                self._sync_runtime_projection(context)
-                return
-
-        init_n = max(2, int(self.cfg.population_size))
-        created = [control.init_candidate(context) for _ in range(init_n)]
-        self._population_candidate_tokens = self.candidate_tokens_for(control, created)
-        self.population = np.asarray(created, dtype=float)
-        self.objectives = None
-        self.violations = None
-        self._sync_runtime_projection(context)
 
     def _population_scores(self) -> np.ndarray:
         if self.objectives is None or self.violations is None:
             if self.population is None:
                 return np.zeros(0, dtype=float)
             return np.full(self.population.shape[0], np.inf, dtype=float)
+        self.ensure_unit().require_current_feedback()
         return self._scores(self.objectives, self.violations)
+
+    def _target_baselines(self, count):
+        baseline = self._last_target_baselines
+        if (not isinstance(baseline, dict)
+                or set(baseline) != {"population", "objectives", "violations"}
+                or any(len(rows) != count for rows in baseline.values())
+                or np.ndim(baseline["population"]) != 2
+                or np.ndim(baseline["objectives"]) != 2
+                or np.ndim(baseline["violations"]) != 1):
+            raise ValueError("DE replacement selector requires aligned proposal-time target baselines")
+        return baseline
 
     def _mutant_vector(self, target_index: int) -> np.ndarray:
         assert self.population is not None
@@ -399,7 +524,7 @@ class DifferentialEvolutionAdapter(AlgorithmAdapter):
         _ = context
         projection: Dict[str, Any] = {KEY_STRATEGY_ID: str(self.cfg.strategy)}
         if self.population is not None and self.objectives is not None and self.violations is not None and self.population.shape[0] > 0:
-            scores = self._scores(self.objectives, self.violations)
+            scores = self._population_scores()
             best_idx = int(np.argmin(scores))
             projection[KEY_ADAPTER_BEST_SCORE] = float(scores[best_idx])
             projection[KEY_ADAPTER_BEST_X] = np.asarray(

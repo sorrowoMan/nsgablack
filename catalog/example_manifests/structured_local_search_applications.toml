@@ -1,0 +1,51 @@
+[[example]]
+id = "structured-local-application-weighted-region"
+title = "固定权衡的两目标信赖域 · 完整Case及换方向变体"
+component_keys = ["adapter.trust_region_mo_dfo", "repr.unit_region"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "把原单目标两步演示显式换成两目标Problem、固定权重TR工厂、RegionUnitBinding、正式结果观察和12步上限；保留Project/L0。"
+inputs = ["完整trust_region_mo Project副本；当前NumPy/nsgablack/blackbase；候选2维、raw双目标，固定权重(.8,.2)。"]
+steps = ["保存本节完整Problem与工厂，按共用节保存观察器、薄builder、Pipeline函数。", "原default组运行唯一Case；变体明确改为普通Dirichlet方向，任务冻结与外部投影语义另说明。"]
+dependencies = ["当前NumPy、nsgablack、blackbase；无模型API。"]
+expected_outputs = ["本次Case results/local_search.json中精确best refs、raw两列、center/radius/weights及本地current/best选择；区分本地加权与Solver incumbent聚合，未执行本教程。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/STRUCTURED_LOCAL_SEARCH_APPLICATIONS_CN.md", section = "adapter.trust_region_mo_dfo" }, { path = "nsgablack/docs/catalog_usage/STRUCTURED_LOCAL_SEARCH_APPLICATIONS_CN.md", section = "structured.local.host" }]
+
+[[example]]
+id = "structured-local-application-nonsmooth"
+title = "绝对残差Linf与L1 · 非光滑信赖域的完整Case"
+component_keys = ["adapter.trust_region_nonsmooth"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "明确非负双残差Problem和真实score_mode参数，完整接线NonSmooth Adapter、问题修复与结果观察，不把绝对聚合误当任意多目标最小化。"
+inputs = ["完整trust_region_nonsmooth Project副本；二维候选、非负双目标残差；当前NumPy/nsgablack/blackbase。"]
+steps = ["按本节保存Problem与工厂，使用共用正式薄builder/Pipeline/报告/default入口。", "变体将Linf改为L1，分别按其数学含义检查raw与本地分数。"]
+dependencies = ["当前NumPy、nsgablack、blackbase。"]
+expected_outputs = ["local_search.json中对齐的候选/raw双列/精确已评估选择，Linf最大绝对值与L1总绝对值的检查规则不同，不用Solver目标和验证Linf。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/STRUCTURED_LOCAL_SEARCH_APPLICATIONS_CN.md", section = "adapter.trust_region_nonsmooth" }, { path = "nsgablack/docs/catalog_usage/STRUCTURED_LOCAL_SEARCH_APPLICATIONS_CN.md", section = "structured.local.host" }]
+
+[[example]]
+id = "structured-local-application-subspace"
+title = "六维候选、二维区域与本算法参考样本 · 完整子空间Case"
+component_keys = ["adapter.trust_region_subspace"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "显式绑定RegionUnitBuilder和PCA/随机基调度，参考样本只来自本任务实际接纳版本；说明沿射线边界裁剪与子空间修复检查。"
+inputs = ["完整trust_region_subspace Project副本；六维各向异性平方Problem，子空间秩2、最少样本8、有界窗口32。"]
+steps = ["保存完整Problem/工厂和共用builder/Pipeline/观察器，保留原Project L0/default。", "变体每轮刷新随机基，区分配置方法与实际basis_method。"]
+dependencies = ["当前NumPy、nsgablack、blackbase；PCA模式无需额外外部服务。"]
+expected_outputs = ["本次local_search.json的6维候选/raw单目标、6×2 basis、实际basis_method、最多32条sample_refs、center/radius及精确已评估结果；没有执行数值几何或恢复验证。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/STRUCTURED_LOCAL_SEARCH_APPLICATIONS_CN.md", section = "adapter.trust_region_subspace" }, { path = "nsgablack/docs/catalog_usage/STRUCTURED_LOCAL_SEARCH_APPLICATIONS_CN.md", section = "structured.local.host" }]
+
+[[example]]
+id = "structured-local-application-mas"
+title = "近邻模型先筛候选，再真实送评 · MAS完整Case及无代理变体"
+component_keys = ["adapter.mas", "repr.unit_model_search"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "实际绑定ModelSearchUnitBuilder与五近邻模型，区分内部候选预测、真实求值、当前中心与历史最好；训练历史按精确引用有界保存。"
+inputs = ["完整mas_search Project副本；二维偏移平方Problem；batch6、探索比例.5、拟合阈值5、窗口32；CPU scikit-learn依赖。"]
+steps = ["保存本节完整Problem/Adapter工厂以及共用正式薄builder/Pipeline/报告，将原1步演示换成12步上限。", "变体只关闭代理；不把模型预测或关闭后的历史统计冒充真实求值。"]
+dependencies = ["当前NumPy、nsgablack、blackbase、框架已声明的scikit-learn；不下载模型、不调用付费API。"]
+expected_outputs = ["本次local_search.json的精确best引用/raw反馈、current与best、history_count/history_refs、surrogate_present/fitted与接纳来源阶段；未运行算法或训练，代理失败和回退不伪称成功。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/STRUCTURED_LOCAL_SEARCH_APPLICATIONS_CN.md", section = "adapter.mas" }, { path = "nsgablack/docs/catalog_usage/STRUCTURED_LOCAL_SEARCH_APPLICATIONS_CN.md", section = "structured.local.host" }]

@@ -1,0 +1,25 @@
+[[example]]
+id = "bias-reference-prior-cma"
+title = "CMA名称下的分布距离软先验 · 完整Case与代数日程"
+component_keys = ["bias.cmaes", "bias.cmaes_adaptive"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "明确固定二维mean/cov/sigma的Feedback来源，实际装配CMAESBias或AdaptiveCMAESBias；它们只形成距离成本，不执行CMA-ES算法。"
+inputs = ["完整bias_gallery Project副本；2维Sphere、NSGA2、逐候选静态先验metrics、Case局部context_keys声明。"]
+steps = ["保存完整Problem/Adapter/Pipeline/Report/薄builder与reference工厂；开启raw硬门并关闭Bias缓存。", "变体只改KIND以消费真实generation/max_generations，逐行验证最后评估批公式。"]
+dependencies = ["当前nsgablack、blackbase、NumPy；无外部模型。"]
+expected_outputs = ["本次results/reference_priors.json的精确成员、raw/selection、last_metrics与last_delta_matches；一次weight，不声称协方差适应、采样或运行证明。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_REFERENCE_PRIORS_APPLICATIONS_CN.md", section = "bias.cmaes" }, { path = "nsgablack/docs/catalog_usage/BIAS_REFERENCE_PRIORS_APPLICATIONS_CN.md", section = "priors.host" }, { path = "nsgablack/docs/catalog_usage/BIAS_REFERENCE_PRIORS_APPLICATIONS_CN.md", section = "priors.assembly" }]
+
+[[example]]
+id = "bias-reference-prior-pso"
+title = "PSO名称下的参考点距离成本 · 完整Case与权衡日程"
+component_keys = ["bias.pso", "bias.pso_adaptive"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "给两个明确固定参考位置的距离加软成本，使用ParticleSwarmBias/AdaptivePSOBias实际接口，不把Case先验当活算法全局最优或粒子记忆。"
+inputs = ["独立bias_gallery Project副本、当前框架栈/NumPy，二维候选与两个固定参考点，逐候选指标与局部键声明。"]
+steps = ["按共用节保存完整正式接线，reference工厂只挂一种PSO距离成本。", "变体在同一Problem改变social/cognitive日程，保留raw。"]
+dependencies = ["当前nsgablack、blackbase、NumPy。"]
+expected_outputs = ["reference_priors.json里last_delta_matches核对饱和距离公式，raw/selection分开；没有速度更新、pBest/gBest维护或完整PSO算法验证。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_REFERENCE_PRIORS_APPLICATIONS_CN.md", section = "bias.pso" }, { path = "nsgablack/docs/catalog_usage/BIAS_REFERENCE_PRIORS_APPLICATIONS_CN.md", section = "priors.host" }, { path = "nsgablack/docs/catalog_usage/BIAS_REFERENCE_PRIORS_APPLICATIONS_CN.md", section = "priors.assembly" }]

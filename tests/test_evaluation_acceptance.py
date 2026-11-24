@@ -17,6 +17,11 @@ from nsgablack.plugins.system.checkpoint_resume import (
     CheckpointResumePlugin,
 )
 from nsgablack.core.evaluation_feedback import OptimizationFeedbackBatch
+from nsgablack.core.solver_helpers import (
+    AUTHORITY_BEFORE_REF_KEY,
+    EVALUATION_EVENT_KEY,
+    EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1,
+)
 
 
 def test_feedback_subset_normalizes_tuple_and_empty_row_selectors() -> None:
@@ -186,9 +191,10 @@ def test_zero_acceptance_restores_authority_but_keeps_full_evaluation_event() ->
     ]
     event_snapshot = solver.read_snapshot(event_snapshot_key)
     assert event_snapshot is not None
-    assert event_snapshot["last_evaluation_event"]["population"].tolist() == [
-        [0.5],
-        [1.0],
+    event_envelope = solver.read_evaluation_event_snapshot(event_snapshot_key)
+    assert event_envelope is not None
+    assert np.asarray(event_envelope.candidate_payload["numeric_matrix"]).tolist() == [
+        [0.5], [1.0]
     ]
     # The policy sees post-evaluation counters and the staged event snapshot.
     assert policy.contexts[-1]["evaluation_count"] == 4
@@ -208,6 +214,74 @@ def test_zero_acceptance_restores_authority_but_keeps_full_evaluation_event() ->
         rejected["disposition_snapshot_key"]
     )
     assert disposition_record["last_evaluation_disposition"]["status"] == "rejected"
+
+
+def test_event_snapshot_has_narrow_schema_and_full_predecessor_identity() -> None:
+    adapter = _SequencedAdapter((([-1.0],), ([-0.5],)))
+    solver = ComposableSolver(_ConstraintProblem(), adapter=adapter)
+
+    first = solver.step()
+    first_event_key = first.metadata["evaluation_disposition"]["event_snapshot_key"]
+    first_event = solver.snapshot_store.read(first_event_key)
+    assert first_event is not None
+    assert first_event.schema == EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1
+    assert set(first_event.data) == {EVALUATION_EVENT_KEY, AUTHORITY_BEFORE_REF_KEY}
+    assert first_event.data[AUTHORITY_BEFORE_REF_KEY] is None
+    first_authority_identity = solver.snapshot_store.identity(
+        solver._latest_snapshot_handle
+    )
+
+    second = solver.step()
+    second_event_key = second.metadata["evaluation_disposition"]["event_snapshot_key"]
+    second_event = solver.snapshot_store.read(second_event_key)
+
+    assert second_event is not None
+    assert second_event.schema == EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1
+    assert set(second_event.data) == {EVALUATION_EVENT_KEY, AUTHORITY_BEFORE_REF_KEY}
+    assert second_event.data[AUTHORITY_BEFORE_REF_KEY] == (
+        first_authority_identity.as_dict()
+    )
+    for forbidden in (
+        "population",
+        "objectives",
+        "constraint_violations",
+        "history",
+        "pareto_solutions",
+        "population_authority",
+        "population_partitions",
+    ):
+        assert forbidden not in second_event.data
+
+
+def test_checkpoint_keeps_event_predecessor_identity_frozen() -> None:
+    adapter = _SequencedAdapter((([-1.0],), ([-0.5],)))
+    solver = ComposableSolver(_ConstraintProblem(), adapter=adapter)
+
+    solver.step()
+    predecessor = solver.snapshot_store.identity(
+        solver._latest_snapshot_handle
+    ).as_dict()
+    second = solver.step()
+    event_key = second.metadata["evaluation_disposition"]["event_snapshot_key"]
+    event_record = solver.snapshot_store.read(event_key)
+    assert event_record is not None
+    stored_identity = event_record.data[EVALUATION_EVENT_KEY]["identity"]
+
+    checkpoint = CheckpointResumePlugin(
+        config=CheckpointResumeConfig(save_on_finish=False)
+    )
+    state = checkpoint._build_payload(
+        solver=solver,
+        reason="event-identity",
+    )["solver_state"]
+    checkpoint_identity = state["evaluation_event"]["identity"]
+
+    assert checkpoint_identity == stored_identity
+    assert checkpoint_identity[AUTHORITY_BEFORE_REF_KEY] == predecessor
+    assert checkpoint_identity["authority_snapshot_key"] == predecessor["key"]
+    assert checkpoint_identity["authority_snapshot_key"] != (
+        solver._latest_snapshot_handle.key
+    )
 
 
 def test_partial_acceptance_snapshot_separates_event_from_committed_batch() -> None:
@@ -303,6 +377,10 @@ class _PartitionedRecordingAdapter(_RecordingAdapter):
 
     def get_population_partitions(self):
         return self.partitions
+
+    def set_population_partitions(self, partitions):
+        self.partitions = tuple(partitions)
+        return True
 
 
 class _FailingAuthorityAdapter(_RecordingAdapter):

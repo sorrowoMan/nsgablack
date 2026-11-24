@@ -1,10 +1,11 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import json
 import os
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 from pathlib import Path
 
 try:  # py>=3.11
@@ -28,8 +29,14 @@ from ..contracts import (
     ParamContract,
     UsageContract,
 )
-from ..contract_relations import build_contract_neighbor_sections, enrich_entry_relation_fields
-from ..registry import CatalogEntry, _expand_token_groups, _normalize_catalog_profile
+from ..contract_relations import build_contract_neighbor_sections
+from ..fingerprint import _json_value
+from ..guidance import GUIDANCE_FIELDS, guidance_payload
+from ..usage import build_usage_profile
+from ..registry import (
+    CatalogEntry, _expand_token_groups, _normalize_catalog_profile,
+    apply_catalog_profile_entry as _apply_profile_to_entry,
+)
 
 
 _MYSQL_CHARSET = "utf8mb4"
@@ -57,6 +64,9 @@ _USAGE_FIELD_NAMES = (
     "required_companions",
     "config_keys",
     "example_entry",
+    "wiring_status",
+    "wiring_notes",
+    *GUIDANCE_FIELDS,
 )
 _SEARCHABLE_FIELD_NAMES = (
     "tags",
@@ -71,17 +81,20 @@ _SEARCHABLE_FIELD_NAMES = (
 def _apply_connection_charset(conn) -> None:
     try:
         cur = conn.cursor()
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_apply_connection_charset.fallback_115', exc=_fallback_error)
         return
     try:
         cur.execute(f"SET NAMES {_MYSQL_CHARSET} COLLATE {_MYSQL_COLLATION}")
         cur.execute(f"SET collation_connection = '{_MYSQL_COLLATION}'")
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_apply_connection_charset.fallback_116', exc=_fallback_error)
         pass
     finally:
         try:
             cur.close()
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='_apply_connection_charset.fallback_118', exc=_fallback_error)
             pass
 
 
@@ -96,7 +109,7 @@ def _env_url_uses_mysql(url: str) -> bool:
         return False
     try:
         scheme = str(urlparse(raw).scheme or "").strip().lower()
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return False
     return scheme in {"mysql", "mysql+pymysql", "mysql+mysqlconnector"}
 
@@ -115,7 +128,7 @@ def _read_mysql_config_file() -> Dict[str, object]:
             continue
         try:
             data = _toml.loads(path.read_text(encoding="utf-8", errors="replace"))
-        except Exception:
+        except (OSError, UnicodeError, ValueError, SyntaxError):
             continue
         if isinstance(data, dict):
             return data
@@ -238,41 +251,24 @@ def _trim_field_value(value: object) -> str:
     return text[: _FIELD_VALUE_LIMIT]
 
 
-def _entry_uses_examples_path(text: object) -> bool:
-    raw = str(text or "").lower()
-    return "examples/" in raw or "examples\\" in raw
+def _load_contract(value: object) -> dict[str, object]:
+    """Accept old empty rows, but never silently discard malformed contracts."""
+    if value is None or value == "":
+        return {}
+    parsed = json.loads(value) if isinstance(value, str) else value
+    if not isinstance(parsed, Mapping):
+        raise ValueError("catalog component contract_json must contain a Mapping")
+    return _json_value(parsed)
 
 
-def _apply_profile_to_entry(entry: CatalogEntry, *, profile: str) -> CatalogEntry | None:
-    profile_key = _normalize_catalog_profile(profile)
-    if profile_key != "framework-core":
-        return entry
-    if entry.kind in _FRAMEWORK_CORE_EXCLUDED_KINDS:
-        return None
-    if _entry_uses_examples_path(entry.import_path):
-        return None
-    if _entry_uses_examples_path(entry.example_entry):
-        entry = CatalogEntry(
-            key=entry.key,
-            title=entry.title,
-            kind=entry.kind,
-            import_path=entry.import_path,
-            tags=entry.tags,
-            summary=entry.summary,
-            companions=entry.companions,
-            context_requires=entry.context_requires,
-            context_provides=entry.context_provides,
-            context_mutates=entry.context_mutates,
-            context_cache=entry.context_cache,
-            context_notes=entry.context_notes,
-            use_when=entry.use_when,
-            minimal_wiring=entry.minimal_wiring,
-            required_companions=entry.required_companions,
-            config_keys=entry.config_keys,
-            example_entry="",
-            detail_ref=entry.detail_ref,
-        )
-    return entry
+def _load_metadata(value: object) -> dict[str, object]:
+    """Old rows may be empty; malformed semantic metadata must fail visibly."""
+    if value is None or value == "":
+        return {}
+    parsed = json.loads(value) if isinstance(value, str) else value
+    if not isinstance(parsed, Mapping):
+        raise ValueError("catalog component metadata_json must contain a Mapping")
+    return _json_value(parsed)
 
 
 def _profile_sql_filters(profile: str) -> tuple[str, List[object]]:
@@ -330,9 +326,9 @@ def parse_mysql_url(url: str) -> MySQLCatalogConfig:
         raise ValueError(f"Unsupported MySQL URL scheme: {parsed.scheme}")
     host = parsed.hostname or "127.0.0.1"
     port = int(parsed.port or 3306)
-    user = parsed.username or "root"
-    password = parsed.password or ""
-    database = (parsed.path or "").lstrip("/") or "nsgablack"
+    user = unquote(parsed.username or "root")
+    password = unquote(parsed.password or "")
+    database = unquote((parsed.path or "").lstrip("/")) or "nsgablack"
     return MySQLCatalogConfig(
         host=host,
         port=port,
@@ -415,8 +411,41 @@ class MySQLCatalogStore:
         return self._readonly
 
     def _ensure_schema(self, conn) -> None:
+        if self._readonly:
+            self._validate_read_schema(conn)
+            return
         self._apply_migrations(conn)
         self._ensure_field_value_index(conn)
+
+    def _validate_read_schema(self, conn) -> None:
+        """A reader checks the published schema; only a writer may migrate it."""
+        probes = (
+            ("catalog_schema_migrations", "version"),
+            ("catalog_component", "id, key, kind, title, import_path, summary, tags, companions_json, source_scope, source_hash, contract_json, metadata_json"),
+            ("catalog_context_contract", "component_id, requires_json, provides_json, mutates_json, cache_json, notes_json, artifact_requires_json, artifact_provides_json, phase_in_json, phase_out_json"),
+            ("catalog_usage_contract", "component_id, use_when_json, minimal_wiring_json, required_companions_json, config_keys_json, example_entry"),
+            ("catalog_param_contract", "component_id, name, type, default_value, required, description, source, order_index"),
+            ("catalog_method_contract", "component_id, name, required, implemented, signature, origin"),
+            ("catalog_health", "component_id, import_ok, context_ok, methods_ok, params_ok, issues_json, last_checked_at"),
+            ("catalog_api_index", "profile, module_path, class_name, method_name, purpose, usage, lineno"),
+            ("catalog_api_index_meta", "profile, file_count, component_count, method_count, updated_at"),
+            ("catalog_api_doc", "profile, module_path, class_name, method_name, params_json, boundaries, side_effects, lifecycle, auto_fields_json, notes"),
+            ("catalog_field_value", "component_id, field_scope, field_name, field_value, field_value_norm"),
+        )
+        cur = conn.cursor()
+        try:
+            for table, columns in probes:
+                quoted = ", ".join(f"`{name.strip()}`" for name in columns.split(","))
+                try:
+                    cur.execute(f"SELECT {quoted} FROM `{table}` WHERE 1 = 0")
+                    cur.fetchall()  # Drain even an empty result for unbuffered drivers.
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Read-only Catalog schema unavailable or outdated at {table}; "
+                        "materialize the Catalog with a writable account before serving reads."
+                    ) from exc
+        finally:
+            cur.close()
 
     def _apply_migrations(self, conn) -> None:
         cur = conn.cursor()
@@ -629,6 +658,9 @@ CREATE TABLE IF NOT EXISTS catalog_field_value (
                     "ALTER TABLE catalog_context_contract ADD COLUMN phase_out_json TEXT",
                 ),
             ),
+            (9, ("ALTER TABLE catalog_component ADD COLUMN contract_json TEXT",)),
+            (10, ("ALTER TABLE catalog_component ADD COLUMN metadata_json LONGTEXT",)),
+            (11, ("ALTER TABLE catalog_component MODIFY COLUMN contract_json LONGTEXT",)),
         ]
 
         for version, statements in migrations:
@@ -662,7 +694,7 @@ CREATE TABLE IF NOT EXISTS catalog_field_value (
         cur = conn.cursor()
         cur.execute(
             """
-SELECT c.id, c.`key`, c.kind, c.title, c.import_path, c.summary, c.tags, c.companions_json,
+SELECT c.id, c.`key`, c.kind, c.title, c.import_path, c.summary, c.tags, c.companions_json, c.contract_json, c.metadata_json,
        ctx.requires_json AS context_requires, ctx.provides_json AS context_provides,
        ctx.mutates_json AS context_mutates, ctx.cache_json AS context_cache, ctx.notes_json AS context_notes,
        ctx.artifact_requires_json AS artifact_requires, ctx.artifact_provides_json AS artifact_provides,
@@ -705,6 +737,8 @@ LEFT JOIN catalog_usage_contract AS usage_tbl ON c.id = usage_tbl.component_id
                     summary,
                     tags_json,
                     companions_json,
+                    contract_json,
+                    metadata_json,
                     req_json,
                     prov_json,
                     mut_json,
@@ -729,6 +763,8 @@ LEFT JOIN catalog_usage_contract AS usage_tbl ON c.id = usage_tbl.component_id
                     "summary": summary,
                     "tags": tags_json,
                     "companions": companions_json,
+                    "contract_json": contract_json,
+                    "metadata_json": metadata_json,
                     "context_requires": req_json,
                     "context_provides": prov_json,
                     "context_mutates": mut_json,
@@ -756,6 +792,13 @@ LEFT JOIN catalog_usage_contract AS usage_tbl ON c.id = usage_tbl.component_id
             add_rows(component_id, "base", "summary", rec.get("summary"))
             add_rows(component_id, "base", "tags", self._load_json_tuple(rec.get("tags")))
             add_rows(component_id, "base", "companions", self._load_json_tuple(rec.get("companions")))
+            guidance_entry = self._catalog_entry_from_record(rec, profile="default")
+            if guidance_entry is not None:
+                for field, values in guidance_payload(guidance_entry).items():
+                    add_rows(component_id, "guidance", field, values)
+                usage = build_usage_profile(guidance_entry)
+                add_rows(component_id, "usage", "wiring_status", usage.wiring_status)
+                add_rows(component_id, "usage", "wiring_notes", usage.wiring_notes)
             add_rows(component_id, "context", "context_requires", self._load_json_tuple(rec.get("context_requires")))
             add_rows(component_id, "context", "context_provides", self._load_json_tuple(rec.get("context_provides")))
             add_rows(component_id, "context", "context_mutates", self._load_json_tuple(rec.get("context_mutates")))
@@ -807,7 +850,8 @@ VALUES (%s, %s, %s, %s, %s)
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.sync_bundle.fallback_120', exc=_fallback_error)
                 pass
 
     def update_health(
@@ -827,7 +871,8 @@ VALUES (%s, %s, %s, %s, %s)
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.update_health.fallback_121', exc=_fallback_error)
                 pass
 
     def _upsert_components(
@@ -840,8 +885,8 @@ VALUES (%s, %s, %s, %s, %s)
             cur.execute(
                 """
 INSERT INTO catalog_component
-(`key`, kind, title, import_path, summary, tags, companions_json, source_scope, source_hash)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+(`key`, kind, title, import_path, summary, tags, companions_json, source_scope, source_hash, contract_json, metadata_json)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON DUPLICATE KEY UPDATE
   kind=VALUES(kind),
   title=VALUES(title),
@@ -850,7 +895,9 @@ ON DUPLICATE KEY UPDATE
   tags=VALUES(tags),
   companions_json=VALUES(companions_json),
   source_scope=VALUES(source_scope),
-  source_hash=VALUES(source_hash)
+  source_hash=VALUES(source_hash),
+  contract_json=VALUES(contract_json),
+  metadata_json=VALUES(metadata_json)
 """,
                 (
                     comp.key,
@@ -862,6 +909,8 @@ ON DUPLICATE KEY UPDATE
                     json.dumps(list(comp.companions), ensure_ascii=False),
                     comp.source_scope,
                     comp.source_hash,
+                    json.dumps(_json_value(comp.contract), ensure_ascii=False),
+                    json.dumps(_json_value(comp.metadata), ensure_ascii=False),
                 ),
             )
         conn.commit()
@@ -1005,6 +1054,8 @@ ON DUPLICATE KEY UPDATE
             add_values(component_id, "base", "tags", component.tags)
             add_values(component_id, "base", "companions", component.companions)
             add_values(component_id, "base", "summary", component.summary)
+            for field, values in guidance_payload(component).items():
+                add_values(component_id, "guidance", field, values)
 
             context = context_by_key.get(component.key)
             if context is not None:
@@ -1025,6 +1076,8 @@ ON DUPLICATE KEY UPDATE
                 add_values(component_id, "usage", "required_companions", usage.required_companions)
                 add_values(component_id, "usage", "config_keys", usage.config_keys)
                 add_values(component_id, "usage", "example_entry", usage.example_entry)
+                add_values(component_id, "usage", "wiring_status", usage.wiring_status)
+                add_values(component_id, "usage", "wiring_notes", usage.wiring_notes)
 
         if rows:
             cur.executemany(
@@ -1128,10 +1181,10 @@ ON DUPLICATE KEY UPDATE
 """,
                 (
                     cid,
-                    int(bool(h.import_ok)),
+                    None if h.import_ok is None else int(h.import_ok),
                     int(bool(h.context_ok)),
                     int(bool(h.methods_ok)),
-                    int(bool(h.params_ok)),
+                    None if h.params_ok is None else int(h.params_ok),
                     json.dumps(list(h.issues), ensure_ascii=False),
                 ),
             )
@@ -1172,19 +1225,23 @@ ON DUPLICATE KEY UPDATE
         conn.commit()
         cur.close()
 
-    def _load_json_tuple(self, value: object) -> Tuple[str, ...]:
+    def _load_json_tuple(self, value: object, *, preserve_whitespace: bool = False) -> Tuple[str, ...]:
         if not value:
             return ()
         if isinstance(value, (list, tuple)):
+            if preserve_whitespace:
+                return tuple(str(item) for item in value)
             return tuple(str(item).strip() for item in value if str(item).strip())
         if isinstance(value, str):
             try:
                 parsed = json.loads(value)
                 if isinstance(parsed, list):
+                    if preserve_whitespace:
+                        return tuple(str(item) for item in parsed)
                     return tuple(str(item).strip() for item in parsed if str(item).strip())
-            except Exception:
+            except (ValueError, TypeError):
                 pass
-            text = value.strip()
+            text = value if preserve_whitespace else value.strip()
             return (text,) if text else ()
         return ()
 
@@ -1207,14 +1264,18 @@ ON DUPLICATE KEY UPDATE
             phase_in=self._load_json_tuple(rec.get("phase_in")),
             phase_out=self._load_json_tuple(rec.get("phase_out")),
             use_when=self._load_json_tuple(rec.get("use_when")),
-            minimal_wiring=self._load_json_tuple(rec.get("minimal_wiring")),
+            minimal_wiring=self._load_json_tuple(rec.get("minimal_wiring"), preserve_whitespace=True),
             required_companions=self._load_json_tuple(rec.get("required_companions")),
             config_keys=self._load_json_tuple(rec.get("config_keys")),
             example_entry=str(rec.get("example_entry", "") or "").strip(),
+            contract=_load_contract(rec.get("contract_json")),
+            metadata=_load_metadata(rec.get("metadata_json")),
         )
         if not entry.key or not entry.kind or not entry.import_path:
             return None
-        return _apply_profile_to_entry(enrich_entry_relation_fields(entry), profile=profile)
+        # Source enrichment happened before publication. Re-inferring relations
+        # here would change the declared order and the source fingerprint.
+        return _apply_profile_to_entry(entry, profile=profile)
 
     def _catalog_row_records(
         self,
@@ -1316,6 +1377,14 @@ ON DUPLICATE KEY UPDATE
                         "AND fv_search.field_value_norm LIKE %s)",
                     ]
                     params.extend([pattern] * 5)
+                    guidance_placeholders = ", ".join(["%s"] * len(GUIDANCE_FIELDS))
+                    all_clauses.append(
+                        "EXISTS (SELECT 1 FROM catalog_field_value fv_search "
+                        "WHERE fv_search.component_id = c.id "
+                        f"AND fv_search.field_name IN ({guidance_placeholders}) "
+                        "AND fv_search.field_value_norm LIKE %s)"
+                    )
+                    params.extend([*GUIDANCE_FIELDS, pattern])
                     if use_context_in_all:
                         placeholders = ", ".join(["%s"] * len(_CONTEXT_FIELD_NAMES))
                         all_clauses.append(
@@ -1341,7 +1410,7 @@ ON DUPLICATE KEY UPDATE
         cur = conn.cursor()
         cur.execute(
             """
-SELECT c.id, c.`key`, c.kind, c.title, c.import_path, c.summary, c.tags, c.companions_json,
+SELECT c.id, c.`key`, c.kind, c.title, c.import_path, c.summary, c.tags, c.companions_json, c.contract_json, c.metadata_json,
        ctx.requires_json AS context_requires, ctx.provides_json AS context_provides,
        ctx.mutates_json AS context_mutates, ctx.cache_json AS context_cache, ctx.notes_json AS context_notes,
        ctx.artifact_requires_json AS artifact_requires, ctx.artifact_provides_json AS artifact_provides,
@@ -1372,6 +1441,8 @@ WHERE """
                 summary,
                 tags_json,
                 companions_json,
+                contract_json,
+                metadata_json,
                 req_json,
                 prov_json,
                 mut_json,
@@ -1397,6 +1468,8 @@ WHERE """
                     "summary": summary,
                     "tags": tags_json,
                     "companions": companions_json,
+                    "contract_json": contract_json,
+                    "metadata_json": metadata_json,
                     "context_requires": req_json,
                     "context_provides": prov_json,
                     "context_mutates": mut_json,
@@ -1467,7 +1540,8 @@ WHERE """
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.list_catalog_entries.fallback_123', exc=_fallback_error)
                 pass
 
     def search_catalog_entries(
@@ -1506,7 +1580,8 @@ WHERE """
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.search_catalog_entries.fallback_124', exc=_fallback_error)
                 pass
 
     def get_catalog_entry(self, key: str, *, profile: str = "default") -> Optional[CatalogEntry]:
@@ -1529,7 +1604,8 @@ WHERE """
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.get_catalog_entry.fallback_125', exc=_fallback_error)
                 pass
 
     def field_values(
@@ -1575,6 +1651,10 @@ WHERE """
                     values = (symbol_name,) if symbol_name else ()
                 elif target_field == "summary":
                     values = (entry.summary,) if entry.summary else ()
+                elif target_field in GUIDANCE_FIELDS:
+                    values = _normalize_strings(guidance_payload(entry)[target_field])
+                elif target_field in {"wiring_status", "wiring_notes"}:
+                    values = _normalize_strings(getattr(build_usage_profile(entry), target_field))
                 else:
                     values = tuple(getattr(entry, target_field, ()) or ())
                 for value in values:
@@ -1587,7 +1667,8 @@ WHERE """
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.field_values.fallback_126', exc=_fallback_error)
                 pass
 
     def facet_rows(
@@ -1680,6 +1761,7 @@ WHERE """
                 "required_companions": tuple(entry.required_companions),
                 "config_keys": tuple(entry.config_keys),
                 "example_entry": str(entry.example_entry or ""),
+                "contract": _json_value(entry.contract),
             }
             for entry in entries
         ]
@@ -1749,7 +1831,8 @@ ON DUPLICATE KEY UPDATE
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.sync_api_index.fallback_127', exc=_fallback_error)
                 pass
 
     def load_api_index(self, *, profile: str) -> List[ApiIndexEntry]:
@@ -1800,7 +1883,8 @@ WHERE profile=%s
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.load_api_index.fallback_128', exc=_fallback_error)
                 pass
 
     def load_api_index_meta(self, *, profile: str) -> Optional[ApiIndexMeta]:
@@ -1839,7 +1923,8 @@ WHERE profile=%s
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.load_api_index_meta.fallback_129', exc=_fallback_error)
                 pass
 
     def search_api_index(
@@ -1925,7 +2010,8 @@ LIMIT %s
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.search_api_index.fallback_130', exc=_fallback_error)
                 pass
 
     def get_api_index_entry(
@@ -1983,7 +2069,8 @@ LIMIT 1
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.get_api_index_entry.fallback_131', exc=_fallback_error)
                 pass
 
     def upsert_api_docs(
@@ -2035,7 +2122,8 @@ ON DUPLICATE KEY UPDATE
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.upsert_api_docs.fallback_132', exc=_fallback_error)
                 pass
 
     def get_api_doc_entry(
@@ -2118,7 +2206,8 @@ LIMIT 1
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.get_api_doc_entry.fallback_133', exc=_fallback_error)
                 pass
 
     def load_api_doc_entries(self, *, profile: str) -> List[ApiDocEntry]:
@@ -2194,7 +2283,8 @@ WHERE profile=%s
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.load_api_doc_entries.fallback_134', exc=_fallback_error)
                 pass
 
     def list_api_doc_gaps(
@@ -2267,5 +2357,6 @@ LIMIT %s
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLCatalogStore.list_api_doc_gaps.fallback_135', exc=_fallback_error)
                 pass

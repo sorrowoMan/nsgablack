@@ -43,15 +43,20 @@ class TrustRegionNonSmoothAdapter(TrustRegionBaseAdapter):
         config: Optional[TrustRegionNonSmoothConfig] = None,
         name: str = "trust_region_nonsmooth",
         priority: int = 0,
+        *,
+        initializer=None,
+        repair=None,
         **config_kwargs,
     ) -> None:
+        unit_binding = config_kwargs.pop("unit_binding", None)
         cfg = self.resolve_config(
             config=config,
             config_cls=TrustRegionNonSmoothConfig,
             config_kwargs=config_kwargs,
             adapter_name="TrustRegionNonSmoothAdapter",
         )
-        super().__init__(cfg, name=name, priority=priority, random_seed=cfg.random_seed)
+        super().__init__(cfg, name=name, priority=priority, random_seed=cfg.random_seed,
+                         unit_binding=unit_binding, initializer=initializer, repair=repair)
         self.config = self.cfg
 
     def _sample_delta(self, control: Any, context: Dict[str, Any]) -> np.ndarray:

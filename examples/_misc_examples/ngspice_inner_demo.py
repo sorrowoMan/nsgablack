@@ -28,22 +28,8 @@ class NgspiceOuterProblem(BlackBoxProblem):
         return float(inner_result.get("objective", 1e6))
 
 
-class FixedAdapter(AlgorithmAdapter):
-    context_requires = ()
-    context_provides = ()
-    context_mutates = ()
-    context_cache = ()
-    context_notes = ("Proposes fixed candidate for ngspice inner demo.",)
-
-    def __init__(self) -> None:
-        super().__init__(name="fixed_adapter")
-
-    def propose(self, control, context):
-        _ = (control, context)
-        return [np.array([2.0], dtype=float)]
-
-    def update(self, control, candidates, feedback, context):
-        _ = (control, candidates, feedback, context)
+# Compatibility import: the implementation lives in the standard Unit Case.
+from nsgablack.examples.cases.algorithm_units.cases.candidate_search.adapter.ngspice_inner_demo import FixedAdapter
 
 
 def build_solver() -> ComposableSolver:

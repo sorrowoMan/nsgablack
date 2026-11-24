@@ -15,7 +15,7 @@ from nsgablack.core.nested_solver import InnerRuntimeConfig, TaskInnerRuntimeEva
 from nsgablack.plugins import TimeoutBudgetConfig, TimeoutBudgetPlugin
 
 from inner_solver import InnerProductionSolverConfig
-from problem.supply_event_shift_problem import SupplyEventShiftProblem
+from .supply_event_shift_problem import SupplyEventShiftProblem
 
 logger = logging.getLogger(__name__)
 

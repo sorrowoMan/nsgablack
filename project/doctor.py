@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Iterable, List, Sequence
 
 from blackbase.project.doctor import run_common_project_doctor as _run_common_project_doctor
+from blackbase.project.doctor import DoctorCheckCoverage
+from blackbase.project.doctor_scope import IGNORED_SOURCE_DIRS, discover_doctor_roots
 
 from .catalog import find_project_root, load_project_entries
 from .doctor_core import (
@@ -24,6 +26,7 @@ from .doctor_core.rules import (
     check_component_catalog_registration as _check_component_catalog_registration_rule,
     check_component_order_constraints as _check_component_order_constraints_rule,
     check_context_store_policy as _check_context_store_policy_rule,
+    check_large_objects_in_context,
     check_process_like_bias_usage as _check_process_like_bias_usage_rule,
     check_contract_source as _check_contract_source_rule,
     check_examples_suites_solver_control_writes as _check_examples_suites_solver_control_writes_rule,
@@ -42,7 +45,7 @@ from .doctor_core.rules import (
 )
 from ..catalog import get_catalog
 from ..catalog.audit import audit_catalog
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_CONSTRAINT_VIOLATIONS_REF,
     KEY_DECISION_TRACE,
@@ -151,7 +154,7 @@ _RUNTIME_PRIVATE_SURFACE_SKIP_DIRS = {
     "venv",
     "node_modules",
     "site-packages",
-}
+} | IGNORED_SOURCE_DIRS
 _ALLOWED_METRICS_FALLBACK_VALUES = {
     "none",
     "safe_zero",
@@ -175,8 +178,8 @@ _MIN_REDIS_TTL_SECONDS = 30.0
 _SAFE_SNAPSHOT_SERIALIZER = "safe"
 
 
-def _add(diags: List[DoctorDiagnostic], level: str, code: str, msg: str, path: Path | None = None) -> None:
-    add_diagnostic(diags, level, code, msg, path)
+def _add(diags: List[DoctorDiagnostic], level: str, code: str, msg: str, path: Path | None = None, *, line=None, column=None) -> None:
+    add_diagnostic(diags, level, code, msg, path, line=line, column=column)
 
 
 def _check_broad_exception_swallow(root: Path, diags: List[DoctorDiagnostic], *, strict: bool) -> None:
@@ -185,7 +188,6 @@ def _check_broad_exception_swallow(root: Path, diags: List[DoctorDiagnostic], *,
         diags=diags,
         strict=bool(strict),
         add=_add,
-        looks_like_scaffold_project=_looks_like_scaffold_project,
     )
 
 
@@ -548,13 +550,17 @@ def _check_component_order_constraints(root: Path, diags: List[DoctorDiagnostic]
     )
 
 
-def _check_catalog_audit(diags: List[DoctorDiagnostic]) -> None:
+def _check_catalog_audit(diags: List[DoctorDiagnostic], *, profile: str) -> None:
     try:
-        report = audit_catalog(profile="framework-core", runtime=False)
+        report = audit_catalog(profile=profile, runtime=False)
     except Exception as exc:
         _add(diags, "warn", "catalog-audit-failed", f"Catalog audit failed: {exc}")
         return
-    if report.import_failures or report.context_failures or report.method_failures:
+    _add(diags, "info", "catalog-audit-scope",
+         f"Catalog profile={profile}; static audit. "
+         f"Unchecked import={report.import_unchecked}, params={report.params_unchecked}; "
+         "recipe signature checks do not prove component execution.")
+    if report.import_failures or report.context_failures or report.method_failures or report.param_failures:
         msg = (
             "Catalog audit failures detected: "
             f"import={report.import_failures} context={report.context_failures} "
@@ -563,52 +569,77 @@ def _check_catalog_audit(diags: List[DoctorDiagnostic]) -> None:
         _add(diags, "warn", "catalog-audit-issues", msg)
 
 
+from blackbase.context.key_registry import with_project_context_keys, context_key_scope, load_context_keys
+
+
+@with_project_context_keys
 def run_project_doctor(
     path: Path | str | None = None,
     *,
     instantiate_solver: bool = False,
     strict: bool = False,
     catalog_audit: bool = False,
+    catalog_profile: str = "framework-core",
 ) -> DoctorReport:
     target = Path(path).resolve() if path else Path.cwd()
     root = find_project_root(target)
     if root is None:
         root = target
 
-    if str(root) not in sys.path:
-        sys.path.insert(0, str(root))
-
     diags: List[DoctorDiagnostic] = []
     common_report = _run_common_project_doctor(root, strict=bool(strict))
-    for item in common_report.diagnostics:
-        _add(
-            diags,
-            str(item.level),
-            str(item.code),
-            str(item.message),
-            Path(item.path) if item.path else None,
-        )
-    _check_standard_case_scaffolds(root, diags)
-    _check_nsg_scaffold_guides(root, diags)
-    _check_registry(root, diags)
-    _check_build_solver(root, diags, instantiate=instantiate_solver, strict=bool(strict))
-    _check_contract_source(root, diags, strict=bool(strict))
-    _check_solver_step_outcomes(root, diags, strict=bool(strict))
-    _check_component_order_constraints(root, diags, strict=bool(strict))
-    _check_runtime_private_surface(root, diags, strict=bool(strict))
-    _check_no_plugin_evaluation_short_circuit_rule(
-        root=root,
-        diags=diags,
-        strict=bool(strict),
-        add=_add,
-    )
-    _check_adapter_layer_purity(root, diags, strict=bool(strict))
-    _check_examples_suites_solver_control_writes(root, diags, strict=bool(strict))
-    _check_broad_exception_swallow(root, diags, strict=bool(strict))
+    diags.extend(common_report.diagnostics)
+    coverage = list(common_report.coverage)
+    _, cases = discover_doctor_roots(root)
+
+    def checked(name, scope, action):
+        start = len(diags)
+        paths = (scope.parent.parent, scope) if scope.parent.name == "cases" else (scope,)
+        try:
+            with context_key_scope(load_context_keys(*paths)):
+                action()
+        except (ValueError, TypeError) as exc:
+            if "context" not in str(exc).lower():
+                raise
+            _add(diags, "error", "context-registry-invalid", str(exc), scope)
+        rows = diags[start:]
+        skipped = rows and all(item.level == "info" and (item.code.endswith("-skip") or item.code == "framework-registry-scope") for item in rows)
+        coverage.append(DoctorCheckCoverage(name, str(scope), "skipped" if skipped else "completed",
+                                           "; ".join(item.message for item in rows) if skipped else ""))
+
+    checked("optimization-scaffold-guidance", root, lambda: _check_standard_case_scaffolds(root, diags))
+    for case in cases:
+        checked("case-guidance", case, lambda: _check_nsg_scaffold_guides(case, diags))
+        checked("case-registry", case, lambda: _check_registry(case, diags))
+        checked("case-build" if instantiate_solver else "case-import", case,
+                lambda: _check_build_solver(case, diags, instantiate=instantiate_solver, strict=bool(strict)))
+        if not instantiate_solver:
+            coverage.append(DoctorCheckCoverage("case-build", str(case), "skipped", "Enable --build to execute assembly and runtime checks"))
+    if not cases:
+        coverage.append(DoctorCheckCoverage("case-build", str(root), "skipped", "No Case discovered"))
+    if _looks_like_framework_repository(root):
+        checked("framework-registry", root, lambda: _check_registry(root, diags))
+    for scope in dict.fromkeys((root, *cases)):
+        checked("source-contracts", scope, lambda: _check_contract_source(scope, diags, strict=bool(strict)))
+        checked("component-order", scope, lambda: _check_component_order_constraints(scope, diags, strict=bool(strict)))
+        checked("evaluation-boundary", scope, lambda: _check_no_plugin_evaluation_short_circuit_rule(
+            root=scope, diags=diags, strict=bool(strict), add=_add))
+    for name, check in (
+        ("solver-step", _check_solver_step_outcomes),
+        ("private-runtime", _check_runtime_private_surface),
+        ("adapter-purity", _check_adapter_layer_purity),
+        ("example-control", _check_examples_suites_solver_control_writes),
+        ("broad-exception", _check_broad_exception_swallow),
+    ):
+        checked(name, root, lambda: check(root, diags, strict=bool(strict)))
+    checked("large-context-writes", root, lambda: check_large_objects_in_context(
+        root=root, diags=diags, strict=bool(strict), add=_add))
     if bool(catalog_audit):
-        _check_catalog_audit(diags)
+        checked("catalog-audit", root, lambda: _check_catalog_audit(diags, profile=catalog_profile))
+    else:
+        coverage.append(DoctorCheckCoverage("catalog-audit", str(root), "skipped", "Enable --catalog-audit; profile=" + catalog_profile))
     _add_common_misuse_hints(root, diags)
-    return DoctorReport(project_root=root, diagnostics=tuple(diags))
+    return DoctorReport(project_root=root, diagnostics=tuple(dict.fromkeys(diags)), coverage=tuple(coverage))
 
 
 def _add_common_misuse_hints(root: Path, diags: List[DoctorDiagnostic]) -> None:

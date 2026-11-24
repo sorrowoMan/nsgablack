@@ -15,7 +15,7 @@ from blackbase.kernel import OrchestrationPolicy
 from blackbase.kernel import PipelineOrchestrator as SharedPipelineOrchestrator
 
 from .base import RepresentationComponentContract
-from blackbase.context.context_keys import KEY_GENERATION, KEY_PHASE, KEY_STRATEGY_ID, KEY_VNS_K
+from nsgablack.context_keys import KEY_GENERATION, KEY_PHASE, KEY_STRATEGY_ID, KEY_VNS_K
 
 
 class PipelineOrchestrator(RepresentationComponentContract):

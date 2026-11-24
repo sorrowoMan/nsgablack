@@ -9,6 +9,12 @@ from pipeline.main import build_features, load_digits_data
 
 
 class SymbolicKernelDigitsTrainingCase:
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Case consumes constructor payload and ResourceContext; returns TrainerResult without a shared ContextStore.",)
+
     def __init__(self, *, config, bundle, label, resource_context=None):
         self.config = dict(config)
         self.bundle = dict(bundle)

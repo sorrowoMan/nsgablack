@@ -1,0 +1,31 @@
+[[entry]]
+key = "project.problem.bo_quadratic"
+title = "QuadraticProblem"
+kind = "tool"
+import_path = "problem:QuadraticProblem"
+tags = ["project", "example", "problem", "bayesian"]
+summary = "真实单目标二次函数；不把模型预测当作真实评估。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["Problem 只定义真实目标与约束。"]
+use_when = ["验证模型预测与真实观测严格分离时。"]
+minimal_wiring = ["from problem import QuadraticProblem", "problem = QuadraticProblem()"]
+example_entry = "cases.synchronous_bo.build_solver:build_solver"
+
+[[entry]]
+key = "project.plugin.bo_report"
+title = "BOReport"
+kind = "plugin"
+import_path = "plugins:BOReport"
+tags = ["project", "example", "report", "bayesian"]
+summary = "在正式结果发布事务内交付模型观测摘要。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["读取 Unit 和完整观测，不执行拟合或搜索。"]
+use_when = ["需要通过正式发布事务查看 BO 训练观测时。"]
+minimal_wiring = ["from plugins import BOReport", "solver.add_plugin(BOReport(output='results/synchronous_bo'))"]
+example_entry = "cases.synchronous_bo.build_solver:build_solver"

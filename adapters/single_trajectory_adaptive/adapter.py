@@ -14,8 +14,12 @@ from typing import Any, Deque, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
+from ..unit_backed import UnitBackedAdapter, UnitField, UnitFeedbackField
+from ..pool_results import PoolRefinementState
+from ..selection import SelectionRequest
+from ...representation.structure_builders import TrajectoryUnitBuilder
 from ..algorithm_adapter import AlgorithmAdapter
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_MUTATION_SIGMA,
     KEY_SINGLE_TRAJ_SIGMA,
     KEY_SINGLE_TRAJ_STATE,
@@ -44,7 +48,7 @@ class SingleTrajectoryAdaptiveConfig:
     violation_penalty: float = 1e6
 
 
-class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
+class SingleTrajectoryAdaptiveAdapter(UnitBackedAdapter):
     """
     Adaptive single-trajectory local/global search.
 
@@ -52,6 +56,20 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
     - propose(): sample neighbors around current_x
     - update(): accept best/improving candidate, adapt sigma, optional restart
     """
+    uses_pipeline_mutation = True
+    operation_methods = {"initializer": "initialize", "mutator": "mutate",
+                         "selector": "select", "repair": "repair"}
+    pool_input_modes = ("initialize",)
+    supports_pool_restart = True
+    supports_objective_projection = True
+    accepts_proposal_replacement = True
+    unit_builder_type = TrajectoryUnitBuilder
+    unit_schema = TrajectoryUnitBuilder.unit_type.schema
+    current_x = UnitField("current")
+    best_x = UnitField("best")
+    current_score = UnitFeedbackField("current")
+    best_score = UnitFeedbackField("best")
+
 
     context_requires = ("generation",)
     context_provides = (KEY_SINGLE_TRAJ_STATE, KEY_SINGLE_TRAJ_SIGMA)
@@ -68,9 +86,13 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
         config: Optional[SingleTrajectoryAdaptiveConfig] = None,
         name: str = "single_trajectory_adaptive",
         priority: int = 0,
+        initializer=None,
+        mutator=None,
+        selector=None,
+        repair=None,
         **config_kwargs,
     ) -> None:
-        super().__init__(name=name, priority=priority)
+        super().__init__(name=name, priority=priority, unit_binding=config_kwargs.pop("unit_binding", None))
         self.config = self.resolve_config(
             config=config,
             config_cls=SingleTrajectoryAdaptiveConfig,
@@ -88,16 +110,37 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
         self.success_history: Deque[int] = deque(maxlen=max(1, int(self.cfg.success_window)))
         self.step_count: int = 0
         self._rng = np.random.default_rng()
+        self._pool_results = PoolRefinementState()
+        for role, component in (("initializer", initializer), ("mutator", mutator),
+                                ("selector", selector), ("repair", repair)):
+            if component is not None:
+                self.set_operation(role, component)
 
-    def setup(self, control: Any) -> None:
-        self.current_x = None
-        self.current_score = None
-        self.best_x = None
-        self.best_score = None
+    def default_pool_input_count(self):
+        return 1
+
+    def restart_search(self, control, context):
+        """Reset one task's trajectory and best result without resetting its RNG."""
+        self.reset_unit()
+        self.current_x = self.best_x = None
+        self.current_score = self.best_score = None
         self.sigma = float(self.cfg.initial_sigma)
         self.no_improve_steps = 0
         self.success_history = deque(maxlen=max(1, int(self.cfg.success_window)))
         self.step_count = 0
+        self._pool_results = PoolRefinementState()
+
+    def get_solution_pool_roots(self, control):
+        return self._pool_results.roots(control)
+
+    def get_pool_refinement_results(self, control):
+        """Return task-best, including when the current trajectory moved away."""
+        return self._pool_results.results(control)
+
+    def setup(self, control: Any) -> None:
+        self._rng = self.create_local_rng(control)
+        self.seed_operator_bindings(self._rng)
+        self.restart_search(control, {})
 
     def _score(self, objectives_row: np.ndarray, violation: float) -> float:
         if self.cfg.objective_aggregation == "first":
@@ -119,16 +162,25 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self.current_x is None:
-            self.current_x = np.asarray(control.init_candidate(context), dtype=float)
+            seed = self.init_candidate(control, context)
+            self.current_x = np.asarray(seed, dtype=float)
+            self._pool_results.remember_seed(control, seed)
+        if self.current_score is None:
+            return [self._pool_results.project_current(control, self.current_x, semantic=True)]
 
         ctx = self._build_context(context)
         out = []
         k = int(max(1, int(self.cfg.batch_size)))
         for _ in range(k):
-            cand = control.mutate_candidate(self.current_x, ctx)
-            cand = control.repair_candidate(cand, ctx)
-            out.append(np.asarray(cand, dtype=float))
+            parent = self._pool_results.project_current(control, self.current_x)
+            cand = self.mutate_candidate(control, parent, ctx)
+            if self.get_bound_mutator() is not None:
+                cand = self.semantic_proposal(control, cand)
+            out.append(cand)
         return out
+
+    def _proposal_contexts(self, proposed_count, context):
+        return tuple(self._build_context(context) for _ in range(proposed_count))
 
     def update(
         self,
@@ -144,28 +196,44 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
         if objectives is None or len(objectives) == 0:
             return
 
-        scores = np.asarray(
-            [self._score(objectives[i], float(violations[i]) if violations is not None else 0.0) for i in range(len(candidates))],
-            dtype=float,
-        )
-        idx = int(np.argmin(scores))
+        scores, violations = self._pool_results.scores(feedback, lambda f, v:
+            [self._score(row, float(v[i])) for i, row in enumerate(f)])
+        idx = min(range(len(candidates)), key=lambda i: self._pool_results.key(scores[i], violations[i]))
+        if self._pool_results.observe_best(control, candidates, feedback, idx, scores[idx], violations[idx]):
+            self.best_x = np.array(candidates[idx], dtype=float, copy=True)
+            self.best_score = float(scores[idx])
+
+        if self.current_score is not None and self.get_bound_operator("selector") is not None:
+            request = SelectionRequest("candidate", candidates, objectives, violations, 1,
+                scores=scores, parameters={"sigma": float(self.sigma), "step": int(self.step_count)},
+                context=context)
+            idx, = self.select_indices(request, rng=self._rng)
         cand = np.asarray(candidates[idx], dtype=float)
         cand_score = float(scores[idx])
 
+        if self.current_score is None:
+            if len(candidates) != 1:
+                raise ValueError("Single-trajectory baseline feedback requires one candidate")
+            self.current_x = np.array(cand, copy=True)
+            self.current_score = cand_score
+            self._pool_results.current = self._pool_results.capture(
+                control, candidates, feedback, idx, cand_score, violations[idx])
+            return
+
         improved = False
-        if self.current_score is None or cand_score < float(self.current_score):
+        if self._pool_results.improves_current(cand_score, violations[idx], self.current_score):
             improved = True
             self.current_x = cand
             self.current_score = cand_score
+            self._pool_results.current = self._pool_results.capture(
+                control, candidates, feedback, idx, cand_score, violations[idx])
         else:
             accept_prob = float(max(0.0, min(1.0, self.cfg.accept_worse_prob)))
-            if self._rng.random() < accept_prob:
+            if self._pool_results.permits_exploration(violations[idx]) and self._rng.random() < accept_prob:
                 self.current_x = cand
                 self.current_score = cand_score
-
-        if self.best_score is None or cand_score < float(self.best_score):
-            self.best_x = cand
-            self.best_score = cand_score
+                self._pool_results.current = self._pool_results.capture(
+                    control, candidates, feedback, idx, cand_score, violations[idx])
 
         if improved:
             self.no_improve_steps = 0
@@ -181,11 +249,14 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
         self.sigma = float(np.clip(self.sigma * scale, float(self.cfg.min_sigma), float(self.cfg.max_sigma)))
 
         if self.no_improve_steps >= int(max(1, int(self.cfg.restart_patience))):
-            self.current_x = np.asarray(control.init_candidate(context), dtype=float)
+            seed = self.init_candidate(control, context)
+            self.current_x = np.asarray(seed, dtype=float)
             self.current_score = None
+            self._pool_results.current = None
+            self._pool_results.remember_seed(control, seed)
             self.no_improve_steps = 0
 
-    def get_state(self) -> Dict[str, Any]:
+    def _get_algorithm_state(self) -> Dict[str, Any]:
         return {
             "current_x": None if self.current_x is None else self.current_x.tolist(),
             "current_score": self.current_score,
@@ -196,15 +267,17 @@ class SingleTrajectoryAdaptiveAdapter(AlgorithmAdapter):
             "success_history": list(self.success_history),
             "step_count": int(self.step_count),
             "rng_state": copy.deepcopy(self._rng.bit_generator.state),
+            "pool_refinement": self._pool_results.as_dict(),
         }
 
-    def set_state(self, state: Dict[str, Any]) -> None:
+    def _set_algorithm_state(self, state: Dict[str, Any]) -> None:
         cx = state.get("current_x")
         bx = state.get("best_x")
         self.current_x = None if cx is None else np.asarray(cx, dtype=float)
         self.current_score = state.get("current_score")
         self.best_x = None if bx is None else np.asarray(bx, dtype=float)
         self.best_score = state.get("best_score")
+        self._pool_results = PoolRefinementState.from_dict(state.get("pool_refinement"))
         self.sigma = float(state.get("sigma", self.cfg.initial_sigma))
         self.no_improve_steps = int(state.get("no_improve_steps", 0))
         self.success_history = deque(

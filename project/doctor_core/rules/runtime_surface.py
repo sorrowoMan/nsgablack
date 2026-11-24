@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import os
 from pathlib import Path
 from typing import Callable, Iterable, List, Sequence, Set
 
@@ -43,29 +44,25 @@ def _iter_runtime_surface_files(
     skip_dir_names: Set[str],
     skip_tests: bool,
 ) -> Iterable[Path]:
-    seen: Set[Path] = set()
+    def skip_directory(path):
+        return (_has_path_part(path, skip_dir_names)
+                or skip_tests and _has_path_part(path, {"tests"}))
 
-    for pattern in file_patterns:
-        for candidate in root.rglob(pattern):
-            if not candidate.is_file():
-                continue
-            if _is_skip_path(candidate, skip_dir_names=skip_dir_names, skip_tests=skip_tests):
-                continue
-            resolved = candidate.resolve()
-            if resolved in seen:
-                continue
-            seen.add(resolved)
-            yield candidate
-
-    if not include_utils:
+    if skip_directory(root):
         return
-
-    for utils_dir in root.rglob("utils"):
-        if not utils_dir.is_dir():
-            continue
-        if _is_skip_path(utils_dir, skip_dir_names=skip_dir_names, skip_tests=skip_tests):
-            continue
-        for candidate in utils_dir.rglob("*.py"):
+    seen: Set[Path] = set()
+    # Prune excluded trees before traversal, rather than globbing through every
+    # virtualenv/cache once per pattern and discarding their files afterward.
+    for directory, dirs, files in os.walk(root, topdown=True, followlinks=False):
+        base = Path(directory)
+        dirs[:] = sorted(name for name in dirs if not (base / name).is_symlink()
+                         and not skip_directory(base / name))
+        in_utils = include_utils and any(part.lower() == "utils" for part in base.relative_to(root).parts)
+        for name in sorted(files):
+            candidate = base / name
+            relative = candidate.relative_to(root)
+            if not (any(relative.match(pattern) for pattern in file_patterns) or in_utils and name.endswith(".py")):
+                continue
             if not candidate.is_file():
                 continue
             if _is_skip_path(candidate, skip_dir_names=skip_dir_names, skip_tests=skip_tests):

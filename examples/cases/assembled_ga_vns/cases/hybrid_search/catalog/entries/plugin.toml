@@ -1,0 +1,17 @@
+[[entry]]
+key = "project.plugin.committed_trace"
+title = "CommittedTracePlugin"
+kind = "plugin"
+import_path = "plugins.trace:CommittedTracePlugin"
+tags = ["project", "example", "plugin", "observe", "committed", "lazy_unit"]
+summary = "只观察已提交步骤与现存 Unit，使用显式 JSON 状态 codec 导出本例轨迹。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["读取正式 Solver/Adapter/Pool 表面，不调用 ensure_unit，不直接写 context。导出文件仅为观察报告。"]
+use_when = ["核对 GA/VNS 按需建 Unit、阶段与计数的实际运行行为时。"]
+minimal_wiring = ["from cases.hybrid_search.plugins import CommittedTracePlugin", "solver.add_plugin(CommittedTracePlugin(max_records=settings.max_steps))"]
+required_companions = ["nsgablack.core:ComposableSolver"]
+config_keys = ["max_records", "output_dir"]
+example_entry = "cases.hybrid_search.build_solver:build_solver"

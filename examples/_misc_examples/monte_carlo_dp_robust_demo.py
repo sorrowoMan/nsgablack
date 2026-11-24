@@ -1,4 +1,4 @@
-﻿"""
+"""
 Monte Carlo + Dynamic Programming demo (robust path planning).
 
 This example shows a simple grid path problem with stochastic weather costs.
@@ -23,7 +23,7 @@ def _ensure_importable() -> None:
     try:
         import nsgablack  # noqa: F401
         return
-    except Exception:
+    except ImportError:
         pass
     here = Path(__file__).resolve()
     repo_parent = str(here.parent.parent.parent)
@@ -84,16 +84,8 @@ class StochasticGridPath(BlackBoxProblem):
         return float(total)
 
 
-class FixedPathAdapter(AlgorithmAdapter):
-    def __init__(self, path: np.ndarray, name: str) -> None:
-        super().__init__(name=name)
-        self.path = np.asarray(path, dtype=float)
-
-    def propose(self, control, context):
-        return [self.path]
-
-    def update(self, control, candidates, feedback, context):
-        _ = (control, candidates, feedback, context)
+# Compatibility import: the implementation lives in the standard Unit Case.
+from nsgablack.examples.cases.algorithm_units.cases.candidate_search.adapter.monte_carlo_dp_robust_demo import FixedPathAdapter
 
 
 def build_storm_grid(rows: int, cols: int) -> Tuple[np.ndarray, np.ndarray]:

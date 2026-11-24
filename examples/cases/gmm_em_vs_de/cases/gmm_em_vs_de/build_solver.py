@@ -1,5 +1,6 @@
 """GMM: nsgablack StrategyChain DE→VNS vs sklearn GaussianMixture (EM)."""
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 from typing import Any
 
 import numpy as np
@@ -16,13 +17,10 @@ from nsgablack.core.composable_solver import ComposableSolver
 from problem.gmm_problem import GMMProblem
 
 
-class WarmStartVNSAdapter(VNSAdapter):
-    def setup(self, control: Any) -> None:
-        super().setup(control)
-        best_x = getattr(control, "best_x", None)
-        if best_x is not None:
-            self.current_x = np.asarray(best_x, dtype=float).copy()
-            self.current_score = None
+if __package__:
+    from .adapter.warm_start import WarmStartVNSAdapter
+else:  # Compatibility with the Case's existing flat CLI imports.
+    from adapter.warm_start import WarmStartVNSAdapter
 
 
 class NelderMeadBiasBridge(NelderMeadBias):
@@ -36,7 +34,8 @@ class NelderMeadBiasBridge(NelderMeadBias):
             return 0.0
         try:
             return self.apply(np.asarray(x, dtype=float), eval_func, context)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='NelderMeadBiasBridge.compute.fallback_193', exc=_fallback_error)
             return 0.0
 
 

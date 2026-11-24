@@ -1,0 +1,168 @@
+[[example]]
+id = "algorithm-application-adapter.nsga3"
+title = "三个目标之间保留不同折中方向 · 实际装配与扩展"
+component_keys = ["adapter.nsga3"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "两个连续决策变量要同时靠近三个不同位置，希望保留一组折中解，而非只看三个距离的总和。这里用三个平方距离演示 NSGA3 的非支配前沿填充与末层参考方向生态位选择；不是精确求解或覆盖保证。"
+inputs = ["安装当前 nsgablack、blackbase 与 NumPy。在 nsgablack 仓库根目录创建新的标准 Project；这些命令使用当前 `new/add-case` 参数，`add-case` 会把唯一的 search Case 加入默认组并声明资源请求："]
+steps = ["先写完整问题工厂 `cases/search/problem/__init__.py`："]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["本次成功结束后看 `results/members.json`：refs、candidates、raw_objectives、raw_violations 行序对应，完整默认预算下应有 12 个二维成员、每行 3 个原始目标。每行目标应符合三个距离定义；文件是本地观察副本，要核对本轮 run_id，不用旧文件证明新运行。Project 的单个 `best_solution/best_objectives` 是 Solver incumbent，有自己的标量比较，不能代替参考方向选出的成员集合或证明前沿覆盖。观察器不调用 Problem，不重抽候选。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/EVOLUTIONARY_ALGORITHM_APPLICATIONS_CN.md", section = "adapter.nsga3" }]
+
+[[example]]
+id = "algorithm-application-adapter.spea2"
+title = "用强度与密度维持双目标折中成员 · 实际装配与扩展"
+component_keys = ["adapter.spea2"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "两个二维距离目标互相冲突，希望比较强度适应度与密度截断产生的成员分布。这里保留 SPEA2 的实际环境选择；不要把它等同于把目标相加后取最小。"
+inputs = ["当前 nsgablack、blackbase、NumPy。以下独立创建新 Project，不复用上一章目录："]
+steps = ["`cases/search/problem/__init__.py`："]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["本次 `results/members.json` 中默认完整预算应有 12 行二维候选、12 行双目标反馈；refs 逐行标识最终成员。`population_size` 是实际容量：当前 `SPEA2Config.archive_size` 虽有声明，源码环境选择没有用它控制另一份档案，不能据此声称已经建立独立 archive。Solver incumbent 是单独比较的已评估代表，不是 SPEA2 全部成员；根 accepted 还含被环境选择淘汰的提案。本地报告要核对本轮 run_id，不是权威 Artifact 收据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/EVOLUTIONARY_ALGORITHM_APPLICATIONS_CN.md", section = "adapter.spea2" }]
+
+[[example]]
+id = "algorithm-application-adapter.de"
+title = "对提案时目标槽位做差分 trial 替换 · 实际装配与扩展"
+component_keys = ["adapter.de"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "二维连续变量最小化 `(x0-1)^2+(x1+2)^2`，需要保持差分供体、二项交叉与目标槽位比较，而不是让全体候选做一次 GA survivor。"
+inputs = ["使用现有 `examples/cases/assembled_parallel_cases` Project 的 `cases/de_bowl`。已有二维 BowlProblem、`[-4,4]` ClipRepair 与唯一 builder；config.py 为 seed=17、population_size=12、batch_size=12、max_steps=16。保留这套配置，标准 Project 默认还会并行运行独立的 sa_valley，它不与 DE 交换解。"]
+steps = ["第一批是初始化候选，经正式修复、评估和接纳建立已有反馈的种群。后续每个 trial 冻结一个提案时目标槽位及其比较分数；差分供体与交叉先生成 trial，问题 repair 再修边界。Solver 统一送评/接纳，DE 才用反馈决定替换。batch 内目标索引允许重复，比较基准仍是提案时状态，不能用前一个 trial 的胜出结果偷换后一个基准；同槽多行更新按原批次顺序处理。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["原 `run_and_report.py` 使用正式 execute_project，写 `results/project_result.json`、`summary.json` 和 `results/cases/de_bowl.json`，其中 best_candidate/best_objectives 是 Solver incumbent 及解析重算核对，不是完整 DE 种群。默认无额外截断时可按“首次 12 个初始化 + 后续每步 12 个 trial”核对求值预算；不预填随机最优值。需要当前成员时，在本次运行仍保留的 solver 或既有观察回调内读 `solver.adapter.get_population_solution_refs(solver)`，再用 `solver.solution_pool.read_raw_feedback(refs)` 和 `solver.read_solutions(refs)`；CLI 退出后不能凭空取得那个 solver。根 accepted 是历史，包含未赢过目标槽位的已接纳 trial。检查同次 run_id，旧 RESULTS.md 不证明改动后运行。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/EVOLUTIONARY_ALGORITHM_APPLICATIONS_CN.md", section = "adapter.de" }]
+
+[[example]]
+id = "algorithm-application-adapter.cmaes"
+title = "整批观测后更新均值、协方差和步长 · 实际装配与扩展"
+component_keys = ["adapter.cmaes"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "连续、无约束的单个原始目标，需要根据整批采样的相对好坏自适应搜索分布。这里是二维平方距离 `(x0-.2)^2+(x1+.1)^2`；分布参数不是一组已评估种群成员。"
+inputs = ["使用现有 `examples/cases/algorithm_semantics/cases/cmaes_distribution`，Project 有独立组 cmaes_distribution。默认 CMASettings 为 seed=19、max_steps=3、fixture=None、evaluation_budget=None；Problem 为二维，pipeline 是 identity，不做 clip。原 builder 已装配 CheckpointResumePlugin 与 DistributionReport，资源来自 Project L0。这里不添加 Bias/约束或 PoolTask。"]
+steps = ["默认参数 lambda=4、重组父代数 mu=2，属于 CMAParameters；不要写成 CMAESAdapter(population_size=...)。sampler 先产生标准正态 cohort，Adapter 用当前均值/协方差/步长变换为候选；四个真实反馈齐全后，ranking 按 raw 单目标稳定排序，正权重更新分布。均值可能未被单独求值，不能作为 best_solution 交付。候选改变的 repair 会在送评前拒绝；预算裁成残批或接纳缺行也拒绝，不会把 lambda 静默缩小，已消耗求值成本仍保留。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["本次 `algorithm_semantics/results/cmaes_distribution/summary.json` 有 run_id、evaluations、logical_steps、mean、covariance、sigma、path_c、path_sigma、iteration、cohort_count、selected_indices、best_objective、best_candidate。cohort_count 表示最近整批观测；selected_indices 是重组父代位置；mean 是下一分布中心；best_candidate 是实际评估过的最佳点。这四者不可混成最终 population。正式 Case 还发布 summary Artifact，本地 JSON 只是观察副本；按同次运行身份及发布收据核对，不以旧文件证明已跑新配置。Solver incumbent 另属运行级结果，不用它替代协方差或 cohort 状态。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/EVOLUTIONARY_ALGORITHM_APPLICATIONS_CN.md", section = "adapter.cmaes" }]
+
+[[example]]
+id = "algorithm-application-adapter.map_elites"
+title = "每个行为格子保留一个质量冠军 · 实际装配与扩展"
+component_keys = ["adapter.map_elites"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "不只找一个总最优点，而想保留行为不同的候选。例如二维坐标作为行为描述，原始质量为到 `(.2,.8)` 的平方距离，每格保留可行性更好、质量更低的精确候选版本。"
+inputs = ["使用 `examples/cases/algorithm_semantics/cases/map_elites_archive`，独立 Project group 为 map_elites_archive。原 ArchiveConfig 为 seed=31、batch_size=5、max_steps=3；Problem 为二维 `[0,1]`，pipeline 做 ClipRepair。原 builder 已调用 build_adapter(settings) 并挂 ArchiveSummary；不改其报告为“最佳单点就是全部档案”。"]
+steps = ["emitter 提案后，Solver repair、评估和接纳；descriptor 使用实际送评后候选定位格子。competition 比较 raw 可行性、违反量和第 0 原始目标，同分保留旧冠军；只更新真正接纳的行。Unit.entries 是冠军权威，普通 `map_elites/archive` 视图与同次事务发布，不是额外复制候选。SequenceEmitter 发完有限五点后 exhausted=True，正常结束；max_steps=3 是上限，不保证提交三步。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["本次 `algorithm_semantics/results/map_elites_archive/summary.json` 的 cells、candidates、costs、refs 描述冠军，components 中 accepted_observations 是已接纳观测数，archive_size 是冠军格数。基线无额外筛行时，按五点/二维 2×2 网格与质量公式可预期三个冠军格；这是源码推导的检查，不是本轮实测数值。`get_population_solution_refs(control)`/`get_population_snapshot()` 返回档案冠军，不是最近整批提案；accepted 历史还可包含被同格更好者替换的版本。Solver 的单个 incumbent 不是整个地图。报告有本轮 run_id，正式 Case 另以 finalization 事务发布 summary Artifact，旧本地 JSON 不算新运行成功证据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/EVOLUTIONARY_ALGORITHM_APPLICATIONS_CN.md", section = "adapter.map_elites" }]
+
+[[example]]
+id = "algorithm-application-adapter.sa"
+title = "温度决定接受，邻域组件决定怎么移动 · 实际装配与扩展"
+component_keys = ["adapter.sa"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "希望搜索能够暂时接受较差的邻居，离开当前局部区域；同时希望温度降低时，连续变量的扰动也逐渐缩小。SA 保存一条轨迹，并不因为 `batch_size` 大于一就拥有一份可共享种群。"
+inputs = ["使用 [assembled_parallel_cases/cases/sa_valley](../../examples/cases/assembled_parallel_cases/cases/sa_valley/build_solver.py)。原 `ValleyProblem` 的候选是 `(2,)`，边界均为 `[-4,4]`，单目标是 `(x0+1.5)^2+4*(x1-0.75)^2`。保留 `pipeline/main.py` 的 `ClipRepair(-4,4)`、`config.py` 的 `MAX_STEPS=40/SEED=29`，以及原 builder。Project 还会运行独立的 `de_bowl`；两者没有候选交接。"]
+steps = ["首次提案只交出起点，经过问题管线 repair、正式求值和接纳后才建立当前分数。之后 SA 在本次局部 context 写入 `temperature` 和 `mutation_sigma`；上述 mutator 读取后者产生邻居。反馈回来后，SA 按当前温度执行接受判断，可能向较差点移动；每次邻域更新降温一次。`batch_size>1` 时邻居都从本次当前点提出，反馈按顺序处理并在首次接受后停止选择，不能称为“一步连续走了整个批次”。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["正式 Project 输出中找到 `request.case_name == \"sa_valley\"`，读取 `output.best_solution.values`（两维）、`output.best_objectives`（一项）及 `output.report.steps/evaluation_count`。当前轨迹可能比历史最佳差；在同一次 Solver 的提交后观察回调里，用下面函数区分两者。`control` 是回调实际收到的 Solver，代码不启动运行。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/LOCAL_SEARCH_APPLICATIONS_CN.md", section = "adapter.sa" }]
+
+[[example]]
+id = "algorithm-application-adapter.gaussian_search"
+title = "在模型参数空间做无梯度搜索 · 实际装配与扩展"
+component_keys = ["adapter.gaussian_search"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "评估能返回目标，但没有梯度；或者想在同一个模型 Case 中对比“围绕最好点采样”和“每步重新初始化”。这里的 `population_size` 是每批提案上限，GaussianSearch 仍保存自己的最好轨迹，不提供 NSGA 式完整 population。"
+inputs = ["使用 mlblack 的正式 [catalog_codec_demo/cases/linear_point](../../../mlblack/examples/cases/catalog_codec_demo/cases/linear_point/build_solver.py)。保留原 `build_solver.py`、数据/Problem/表示：24 行两特征，目标 `y=1+2*x0-0.5*x1`，模型候选为 `[intercept,w0,w1]` 共 3 维。Problem 原始目标为 `[train.mse,0]`，默认复杂度权重为零；即使它提供梯度，本节算法也不消费梯度。三仓和 NumPy 即可，不需模型 API 或 GPU。"]
+steps = ["首批用正式 initializer 生成 8 个模型参数候选；每个都走表示修复、模型解释和 Problem 求值。反馈接纳后，Adapter 按可行性和第一目标保存最好已评估版本；下一批包含中心以及围绕中心的高斯提案。变化由 GaussianSearch 自己生成，不能通过再挂一个 pipeline mutator 推断它会自动改变本算法的高斯采样。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["同一次正式 Case 的 `solver.run()/fit()` 返回 TrainerResult，读 `result.best_state.values`（3 维）、`result.best_model.predict(data.X_train)`（24 行）、`result.best_feedback.objectives/metrics`。`data` 是该 builder 调用数据工厂的返回值。它们属于 Solver 权威 incumbent；局部 `first` 不配置最终 scalarizer，本例默认最终 sum 为 `MSE+0`。Adapter 的 `get_current_candidates()` 是局部最好参数，不是另一个最终结果报告。提交后精确读取其已评估选择可用："]
+sources = [{ path = "nsgablack/docs/catalog_usage/LOCAL_SEARCH_APPLICATIONS_CN.md", section = "adapter.gaussian_search" }]
+
+[[example]]
+id = "algorithm-application-adapter.gradient_optimizer"
+title = "由反馈梯度推进 SGD、Adam 或 AdamW · 实际装配与扩展"
+component_keys = ["adapter.gradient_optimizer"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "Problem 或正式 Provider 能为当前候选返回对应梯度，希望用一阶更新，而不在 Adapter 中实现自动微分、训练数据访问或设备管理。没有梯度时应选择别的搜索器，不能把缺项填成零梯度。"
+inputs = ["使用 mlblack 的正式 [catalog_codec_demo/cases/linear_point](../../../mlblack/examples/cases/catalog_codec_demo/cases/linear_point/build_solver.py)。其数据是 24×2 连续回归，表示候选为 3 维；原 `SupervisedRegressionProblem(use_valid_objective=False)` 返回 `[train.mse,0]`、训练损失与长度 3 的解析梯度。保留该 Problem、表示、数据工厂和 `DEFAULTS`；默认无 L2 正则。不要把本节直接移到不提供梯度的分类或区间 Problem。"]
+steps = ["首步先提交并评估初始化参数。Adapter 对收到的这一行 Feedback 检查梯度非空、有限且与候选同形，再按 SGD 计算下一点；下一点的原始目标要等下一次 propose、repair、evaluate、admission 后才成立。每步只消费一个候选；`current_x` 在 update 后可能已是尚未评估的后继，而 `current_score` 被清成 None。候选编解码归表示，梯度产生归 Problem/Provider。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["对同一次 Case 读取 TrainerResult 的 `best_state.values`（3 维）、`best_feedback.gradients`（3 维）、`best_feedback.metrics` 中的 `train.mse` 和 `result.report`。权威 `result.best_*` 来自 Solver incumbent，不等于 Adapter 最后计算的参数。本例原始目标 `[MSE,0]` 默认最终求和为 MSE；局部 `objective_aggregation` 不设置 Solver scalarizer，更不自动变换梯度。观察 Adapter 的 `step_index/last_gradient_norm` 可解释更新次数和最后实际使用的梯度范数，不据此认定最后后继已有反馈。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/LOCAL_SEARCH_APPLICATIONS_CN.md", section = "adapter.gradient_optimizer" }]
+
+[[example]]
+id = "algorithm-application-adapter.pattern_search"
+title = "用坐标轮询替代随机邻域 · 实际装配与扩展"
+component_keys = ["adapter.pattern_search"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "没有梯度，希望每轮明确评估当前点两侧的坐标探针，而非先选择一种随机 mutator。成功时扩步，未改善时缩步；探针只是提案，经过原问题管线和反馈后才可能成为当前点。"
+inputs = ["使用 nsgablack 的正式 [assembled_parallel_cases/cases/sa_valley](../../examples/cases/assembled_parallel_cases/cases/sa_valley/build_solver.py) 作为同问题宿主。保留两维谷地 Problem、`ClipRepair(-4,4)` 和原 builder；本节把该 Case 的算法替换为 PatternSearch，Case 名仍叫 sa_valley，不再把它解释成 SA 结果。原 Project 会同时运行独立的 DE Case。"]
+steps = ["先评估一行起点；以后每轮在两维中选两个坐标，由自己的 PollUnit 生成正、负方向，共至多四个探针。预算裁剪和 repair 可能改变实际送评；Adapter 会对齐修复后的位移，再消费同批反馈，选改善点扩步或保持当前点并缩步。它不消费原 SA 的温度或管线 mutator，因此无需重复改 Pipeline。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["标准 Project 输出的 `sa_valley.output.best_solution.values` 仍为两维、原始目标仍一项。对持有的同次 Solver，`adapter.get_state()[\"step_size\"]` 是真实局部步长，`get_runtime_context_projection(solver)` 提供 `mutation_sigma/adapter_best_score`；`get_pool_refinement_results(solver)` 交付已评估的最好引用。以上字段读取不会构造新的 Unit。Solver 最佳是权威 incumbent，和本轮四个探针、当前点应分别解释。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/LOCAL_SEARCH_APPLICATIONS_CN.md", section = "adapter.pattern_search" }]
+
+[[example]]
+id = "algorithm-application-adapter.trust_region_dfo"
+title = "在受控区域内采样并适应半径 · 实际装配与扩展"
+component_keys = ["adapter.trust_region_dfo"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "连续变量没有梯度，希望围绕当前中心在一个有界盒区域内采样，并通过实际改善决定扩大或收缩半径。这里的 radius 是各坐标偏移的无穷范数界限，不是“所有候选距中心的欧氏距离都相同”。"
+inputs = ["使用正式 [trust_region_dfo/cases/trust_region_dfo](../../examples/cases/trust_region_dfo/cases/trust_region_dfo/build_solver.py)。保留原 `problem/example_problem.py::SphereProblem`：默认 8 维、各维 `[-5,5]`、原始单目标平方和。本节给出清楚的规范 builder，复用原 Project 的单 Case、CPU L0 及入口，不沿用模板中其它可选策略分支。"]
+steps = ["起点先单独送评；随后每轮至多八行，包括一个中心与七个盒内随机点。Adapter 先裁到 Problem 边界，正式问题管线仍处理送评版本；repair 若把邻居移出当前区域，Adapter 的修复核对会拒绝。反馈选出的改善超过本地 tolerance 才移动中心并扩半径，否则缩半径。`min_radius` 是半径下界，不是自动停机条件。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["同次 Solver 的 `adapter.get_state()` 有 `center/radius/best_score/selection_objectives`，中心为 8 维；`get_pool_refinement_results(solver)` 给精确已评估结果引用，池 raw feedback 为 `(n,1)/(n,)`。标准 Case 输出读 `best_solution.values`、`best_objectives` 和 `report.steps/evaluation_count`；这属于 Solver incumbent。DFO 本地默认目标和加违反量惩罚仍有自身半径容差，不能假定 Solver 最佳必定就是当前中心，也不把最后一批采样当作完整 population。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/LOCAL_SEARCH_APPLICATIONS_CN.md", section = "adapter.trust_region_dfo" }]
+
+[[example]]
+id = "algorithm-application-adapter.bayesian_optimization"
+title = "让模型、采集函数与真实观测各负其责 · 实际装配与扩展"
+component_keys = ["adapter.bayesian_optimization"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "每次真实求值较贵，希望先用已有观测拟合代理，再从有限允许集合中选择下一次求值的位置。这个实现支持单目标最小化；它不是给任意 Adapter 加上的一个软 Bias。"
+inputs = ["使用已有 Project `examples/cases/algorithm_semantics/` 的 `cases/synchronous_bo/`。保留其 `config.py`、`problem/`、`pipeline/`、`bias/`、`plugins/` 和 `build_solver.py`。Problem 定义一维 `[0,1]` 上的 `(x-0.25)2`；pipeline 只有 ClipRepair；默认初始点是 0 和 1。依赖当前 blackbase、nsgablack、NumPy，不调用外部模型 API，也不需要 GPU。"]
+steps = ["模型负责拟合和后验；采集函数把后验转换为值得尝试的程度；采集优化器在声明的网格上取最小值；Adapter 安排这几者并提出候选。第一次提案先送评两个初始点，以后每步从网格提一个点。提案仍经过原 repair、真实 Problem、接纳和提交。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["运行后打开本 Project 的 `results/synchronous_bo/summary.json`。检查本轮 `run_id`、`pool_id`、`evaluations`、`problem_calls`、`observations`、`model_revision`、`last_acquisition` 和 `resource_binding_current`。`observations[*].x/y` 是代理训练数据；`last_acquisition.grid/mean/std/acquisition/selected_index` 是最近一次选点的解释。`raw_best` 取真实观测最小值。默认网格包含 0.25，但这里不预写一次新运行的数值结果。报告由原 BOReport 同时发布正式 summary Artifact；本地 JSON 是方便查看的副本，应按运行身份区别旧结果。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BAYESIAN_AND_GRAPH_SEARCH_APPLICATIONS_CN.md", section = "adapter.bayesian_optimization" }]
+
+[[example]]
+id = "algorithm-application-adapter.astar"
+title = "邻接关系、边代价与目标结果要一起定义 · 实际装配与扩展"
+component_keys = ["adapter.astar"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "解是图上的状态，希望沿明确邻接边扩展，并用启发式安排搜索。节点的路径代价 g 不是 Problem 的某一个 raw 目标。"
+inputs = ["使用现有 `examples/cases/catalog_recipes/` 中 `cases/astar/` 的标准脚手架。下面把这个 Case 的三个文件完整替换为一个小网格示例，再在 Project 中明确启用它。状态是两个坐标，取值 0 至 4；每次只向右或向上走一格，目标是 `(4,4)`。不需要随机初始化或变异，默认节点 UnitBinding 已由 AStarAdapter 提供。"]
+steps = ["Problem 只声明候选和约束语义，raw 目标固定为 0；累计代价完全来自 edge_cost。管线虽有 ClipRepair，neighbors 只产生合法点，所以正常路径不会被裁剪。`pool_start_policy=\"new_root\"` 让起点先按正式求值/接纳流程进入池，再扩展新树。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["打开 `cases/astar/results/path.json`，检查当前 run_id、found、solution 和 evaluations。目标解读 `owner.solution`；`best_state/best_score` 按 Problem 原始目标加违反惩罚选择，本例目标全是 0，所以它们不能代表“走到了目标”或完整路径。也不要用 Solver 的 incumbent 代替图的目标结果。正常 neighbors 不越界，repair 不应改变子节点；默认 reject 会阻止候选被修复后沿用旧边。这个例子的启发式与单位边长度相配，但教程没有执行证明或有限预算下的最优保证。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BAYESIAN_AND_GRAPH_SEARCH_APPLICATIONS_CN.md", section = "adapter.astar" }]
+
+[[example]]
+id = "algorithm-application-adapter.moa_star"
+title = "多目标标签保留权衡，展开优先级只决定先看谁 · 实际装配与扩展"
+component_keys = ["adapter.moa_star"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "一个状态可能有多个互不支配的标签，需要保留权衡，同时按一个标量优先级安排展开。priority_weights 不会把所有标签改成单目标。"
+inputs = ["使用 `examples/cases/catalog_recipes/cases/moa_star/` 的标准脚手架。以下完整替换其三个文件，得到一个容易核对的状态权衡示例：状态 `x∈{0,1,2,3,4}`，两个 raw 目标为 `x²` 与 `(4-x)²`。这里采用 objective 模式，g 表示当前状态的目标，不是累积路径开销。起点 0，目标状态 4；不在找到第一个目标后停下。"]
+steps = ["邻居只在有界整数集合中移动；显式 new_root 先求值起点。每次真实反馈生成标签，同状态的支配规则负责保留标签，scalar priority 只排队。下面报告把全局 Pareto 标签与目标状态分别写出。"]
+dependencies = ["当前 blackbase 与 nsgablack；ML 宿主另需 mlblack。每章按实际正式 Case 声明依赖和资源。"]
+expected_outputs = ["查看 `cases/moa_star/results/labels.json` 的当前 run_id。pareto_states 与 pareto_costs 按行对齐，本例 objective 模式应能按公式检查每个已记录点的两个成本；不能把某个数组长度预写成这次的新运行结果。goal_states 单独表示命中目标的状态，没有与之自动对齐的公开 goal_costs 字段。全局 Pareto 标签也包括非目标状态，因此不要把 pareto_costs 当“所有终点的路径成本”。Solver incumbent 是另一种最终偏好结果，不替代标签集。这里未演示更换 component_overrides 后的自定义结果观察。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BAYESIAN_AND_GRAPH_SEARCH_APPLICATIONS_CN.md", section = "adapter.moa_star" }]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Mapping, Sequence
 
 from .registry import CatalogEntry
@@ -135,29 +136,12 @@ def enrich_entry_relation_fields(entry: CatalogEntry) -> CatalogEntry:
         and tuple(getattr(entry, "phase_out", ()) or ()) == phase_out
     ):
         return entry
-    return CatalogEntry(
-        key=entry.key,
-        title=entry.title,
-        kind=entry.kind,
-        import_path=entry.import_path,
-        tags=tuple(entry.tags),
-        summary=entry.summary,
-        companions=tuple(entry.companions),
-        context_requires=tuple(entry.context_requires),
-        context_provides=tuple(entry.context_provides),
-        context_mutates=tuple(entry.context_mutates),
-        context_cache=tuple(entry.context_cache),
-        context_notes=tuple(entry.context_notes),
+    return replace(
+        entry,
         artifact_requires=artifact_requires,
         artifact_provides=artifact_provides,
         phase_in=phase_in,
         phase_out=phase_out,
-        use_when=tuple(entry.use_when),
-        minimal_wiring=tuple(entry.minimal_wiring),
-        required_companions=tuple(entry.required_companions),
-        config_keys=tuple(entry.config_keys),
-        example_entry=str(entry.example_entry or ""),
-        detail_ref=str(entry.detail_ref or ""),
     )
 
 

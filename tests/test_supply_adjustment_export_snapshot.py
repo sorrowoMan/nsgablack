@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_OBJECTIVES,
     KEY_POPULATION,

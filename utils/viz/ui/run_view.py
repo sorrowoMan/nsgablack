@@ -1,3 +1,4 @@
+from blackbase.plugin import report_soft_error as _report_optional_failure
 import json
 import hashlib
 import threading
@@ -11,7 +12,7 @@ from tkinter import ttk
 import numpy as np
 
 from ...engineering.schema_version import stamp_schema
-from blackbase.context.context_keys import KEY_BEST_OBJECTIVE, KEY_BEST_X
+from nsgablack.context_keys import KEY_BEST_OBJECTIVE, KEY_BEST_X
 from ...runtime.repro_bundle import build_repro_bundle, write_repro_bundle
 
 
@@ -71,7 +72,8 @@ class RunView:
             return None
         try:
             return pm.get(name)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='RunView.get_plugin.fallback_356', exc=_fallback_error)
             return None
 
     def sync_run_id_plugins(self, run_id: str) -> None:
@@ -87,7 +89,8 @@ class RunView:
             if hasattr(cfg, "run_id"):
                 try:
                     cfg.run_id = str(run_id)
-                except Exception:
+                except Exception as _fallback_error:
+                    _report_optional_failure(component=__name__, event='RunView.sync_run_id_plugins.fallback_359', exc=_fallback_error)
                     pass
 
     def _read_best_from_context(self) -> tuple[Any, Any]:
@@ -249,7 +252,7 @@ class RunView:
             return None
         try:
             parts = urlsplit(raw)
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return raw
         if not parts.scheme:
             return raw
@@ -328,7 +331,7 @@ class RunView:
         for path in RUNS_DIR.glob("*.json"):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-            except Exception:
+            except (OSError, UnicodeError, ValueError, SyntaxError):
                 continue
             h = data.get("structure_hash")
             rid = data.get("run_id")
@@ -407,7 +410,8 @@ class RunView:
                 try:
                     self.app.solver._ui_snapshot = snap
                     self.app.solver._ui_snapshot_path = snapshot_path
-                except Exception:
+                except Exception as _fallback_error:
+                    _report_optional_failure(component=__name__, event='RunView.on_run._worker.fallback_360', exc=_fallback_error)
                     pass
                 if seed_override is not None:
                     set_seed = getattr(self.app.solver, "set_random_seed", None)
@@ -415,12 +419,12 @@ class RunView:
                         try:
                             set_seed(int(seed_override))
                         except Exception:
-                            pass
+                            raise
                     else:
                         try:
                             self.app.solver.random_seed = int(seed_override)
                         except Exception:
-                            pass
+                            raise
                 result = self.app.solver.run()
                 finished_at = time.time()
                 status = result.get("status") if isinstance(result, dict) else "done"

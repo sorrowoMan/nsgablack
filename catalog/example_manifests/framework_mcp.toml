@@ -1,0 +1,12 @@
+[[example]]
+id = "framework-mcp-native-host"
+title = "原生 MCP：框架基础、Project状态与受控验证"
+component_keys = ["tool.framework_mcp"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "宿主AI通过stdio原生工具继续标准Project，不重建模型会话、求解器或L0分配。"
+inputs = ["安装framework-mcp可选依赖；宿主配置可信标准Project根目录。"]
+steps = ["按使用指南注册stdio MCP，读取framework_context。", "list_projects/open_project取得版本绑定会话，查询真实API并交付check_project_edit。", "静态检查与可信验证器收据分开解释，按授权使用宿主编辑与正式运行入口。"]
+dependencies = ["mcp>=2.1,<3、jsonschema>=4；源码执行收据另需宿主显式配置的可信验证器。"]
+expected_outputs = ["返回框架基础版本、Project源码摘要、真实接口和具体检查结果；默认不写源文件或自动运行。", "该用法卡的source_checked不冒称全部配置已运行；原生RPC与固定源码闭环测试单列在tests/test_framework_mcp.py。"]
+sources = [{ path = "nsgablack/docs/user_guide/FRAMEWORK_MCP_CN.md", section = "从想法开始" }, { path = "nsgablack/catalog/mcp_server.py", symbol = "FrameworkWorkspace" }]

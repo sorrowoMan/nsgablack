@@ -52,7 +52,7 @@ services:
   # mlblack trainer —— 独立容器，运行内层训练
   trainer:
     build:
-      context: C:/Users/hp/Desktop/mlblack
+      context: ../mlblack
       dockerfile: Dockerfile
     command: >
       python -c "

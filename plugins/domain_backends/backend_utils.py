@@ -1,4 +1,5 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from typing import Any, Mapping, Optional
 
@@ -143,7 +144,8 @@ def apply_solution_pool_params(model: Any, cp: Any, spec: Optional[Any]) -> dict
             try:
                 model.setParam(str(key), value)
                 applied += 1
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='apply_solution_pool_params.fallback_219', exc=_fallback_error)
                 continue
     return {"applied": bool(applied), "reason": "params" if applied else "no_effect"}
 
@@ -176,7 +178,8 @@ def extract_solution_pool(model: Any, cp: Any, spec: Optional[Any]) -> Optional[
     if callable(spec.extract_fn):
         try:
             return dict(spec.extract_fn(model, cp, spec))
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='extract_solution_pool.fallback_216', exc=_fallback_error)
             return None
     return None
 
@@ -188,7 +191,8 @@ def run_diagnostics(model: Any, cp: Any, spec: Optional[Any]) -> Optional[Mappin
     if callable(spec.apply_fn):
         try:
             return dict(spec.apply_fn(model, cp, spec))
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='run_diagnostics.fallback_217', exc=_fallback_error)
             return None
     out: dict[str, Any] = {}
     if spec.iis:
@@ -209,7 +213,8 @@ def run_diagnostics(model: Any, cp: Any, spec: Optional[Any]) -> Optional[Mappin
             except Exception:
                 try:
                     model.setParam("FeasRelaxMode", mode)
-                except Exception:
+                except Exception as _fallback_error:
+                    _report_optional_failure(component=__name__, event='run_diagnostics.fallback_221', exc=_fallback_error)
                     pass
         fn = getattr(model, "feasRelaxS", None)
         if not callable(fn):

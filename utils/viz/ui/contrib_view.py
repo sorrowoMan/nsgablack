@@ -195,7 +195,7 @@ class ContributionView:
         if modules_path.exists():
             try:
                 return json.loads(modules_path.read_text(encoding="utf-8"))
-            except Exception:
+            except (OSError, UnicodeError, ValueError, SyntaxError):
                 return None
         return None
 
@@ -332,7 +332,7 @@ class ContributionView:
                 continue
             try:
                 data = json.loads(bias_path.read_text(encoding="utf-8"))
-            except Exception:
+            except (OSError, UnicodeError, ValueError, SyntaxError):
                 continue
             for b in data.get("biases", []):
                 name = str(b.get("name", ""))
@@ -439,7 +439,7 @@ class ContributionView:
             return None
         try:
             return self._normalize_snapshot(json.loads(path.read_text(encoding="utf-8")))
-        except Exception:
+        except (OSError, UnicodeError, ValueError, SyntaxError):
             return None
 
     def _refresh_hash_map(self) -> None:
@@ -450,7 +450,7 @@ class ContributionView:
         for path in RUNS_DIR.glob("*.json"):
             try:
                 data = self._normalize_snapshot(json.loads(path.read_text(encoding="utf-8")))
-            except Exception:
+            except (OSError, UnicodeError, ValueError, SyntaxError):
                 continue
             h = data.get("structure_hash_short") or ""
             if not h:
@@ -485,7 +485,7 @@ class ContributionView:
         }
         try:
             raw = json.dumps(data, sort_keys=True, separators=(",", ":"))
-        except Exception:
+        except (TypeError, ValueError, AttributeError):
             return ""
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
 
@@ -712,7 +712,7 @@ class ContributionView:
             for w in ev.get("strategy_weights", []) or []:
                 try:
                     all_vals.append(float(w.get("weight", 0.0)))
-                except Exception:
+                except (TypeError, ValueError, OverflowError):
                     pass
         lo = min(all_vals) if all_vals else 0.0
         hi = max(all_vals) if all_vals else 1.0

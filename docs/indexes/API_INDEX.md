@@ -74,7 +74,7 @@ Use this as the definitive map for import paths and stable entrypoints.
 
 - `plugins/__init__.py`
   - `Plugin`, `PluginManager`
-  - `BasicElitePlugin`, `HistoricalElitePlugin`
+  - `BasicElitePlugin`, `HistoricalElitePlugin`（弃用兼容桥；新代码使用 `EliteRetentionAdapter`，remove_in=1.0.0）
   - `DiversityInitPlugin`
   - `MemoryPlugin`
   - `SurrogateEvaluationProviderPlugin`, `SurrogateEvaluationConfig`

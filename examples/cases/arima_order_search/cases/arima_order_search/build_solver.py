@@ -10,6 +10,7 @@ Usage:
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import numpy as np
 
@@ -63,7 +64,8 @@ def _grid_search_aic(
                     if aic < best_aic:
                         best_aic = aic
                         best_order = (p, d, q)
-                except Exception:
+                except Exception as _fallback_error:
+                    _report_optional_failure(component=__name__, event='_grid_search_aic.fallback_192', exc=_fallback_error)
                     pass
     return best_order, best_aic
 
@@ -85,7 +87,8 @@ def _try_pmdarima(series: np.ndarray) -> tuple[tuple[int, int, int] | None, floa
         order = (int(auto.order[0]), int(auto.order[1]), int(auto.order[2]))
         aic = float(auto.aic())
         return order, aic
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_try_pmdarima.fallback_191', exc=_fallback_error)
         return None, None
 
 

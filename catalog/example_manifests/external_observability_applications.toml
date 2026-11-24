@@ -1,0 +1,25 @@
+[[example]]
+id = "external-observation-mysql-application"
+title = "MySQL 运行索引：真实生命周期、身份和查询方式"
+component_keys = ["plugin.mysql_run_logger"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "复用标准 bias_gallery Project，通过环境配置数据库、RunSession 对齐记录身份，明确 finishing 单次插入、报告路径、非幂等与最终成功收据的区别。"
+inputs = ["完整 bias_gallery Project 副本，框架栈与 NumPy，一个源码支持的 MySQL 驱动、预建数据库与明确权限的账户；本轮不连接。"]
+steps = ["保存共用薄 builder/Adapter/Pipeline 与完整 Case 观察器工厂。", "使用独立数据库会话核对真实表字段和本轮运行身份；变体关闭查询打印而保留写入。"]
+dependencies = ["当前 nsgablack/blackbase/NumPy；运行示例另需 mysql-connector-python 或 pymysql 和可达 MySQL。"]
+expected_outputs = ["experiment_runs 中本轮 id/run_id/status/steps/JSON摘要与报告路径；不是每代记录，不自动上传文件，不是最终发布权威收据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/EXTERNAL_OBSERVABILITY_APPLICATIONS_CN.md", section = "plugin.mysql_run_logger" }, { path = "nsgablack/docs/catalog_usage/EXTERNAL_OBSERVABILITY_APPLICATIONS_CN.md", section = "observation.shared_case" }]
+
+[[example]]
+id = "external-observation-otel-application"
+title = "OpenTelemetry 本地控制台：真实跨度与可验证边界"
+component_keys = ["plugin.otel_tracing"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整正式 Case 连接本地 console tracing 并输出摘要，区分 API 启用、包装计数、真实跨度和导出回执；少量追踪变体不改变搜索。"
+inputs = ["完整 bias_gallery Project 独立副本、框架栈/NumPy/opentelemetry API与SDK；独立进程且主例无OTLP endpoint。"]
+steps = ["保存共用Case文件和完整TraceReport工厂；RunSession身份与观察摘要在成功通知后写本地JSON。", "变体只跟踪评估入口，明确根Adapter包装、全局Provider、错误清理与异步导出限制。"]
+dependencies = ["当前 nsgablack/blackbase/NumPy；运行示例另需 opentelemetry-api 与 opentelemetry-sdk，无Collector/模型服务。"]
+expected_outputs = ["results/otel.json 的真实运行身份与观察摘要，控制台实际 solver/adapter spans；enabled或计数不能证明所有跨度已导出。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/EXTERNAL_OBSERVABILITY_APPLICATIONS_CN.md", section = "plugin.otel_tracing" }, { path = "nsgablack/docs/catalog_usage/EXTERNAL_OBSERVABILITY_APPLICATIONS_CN.md", section = "observation.shared_case" }]

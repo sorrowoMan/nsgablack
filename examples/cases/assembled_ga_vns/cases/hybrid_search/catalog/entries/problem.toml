@@ -1,0 +1,18 @@
+# Case-local entries: portable paths are normalized to cases.hybrid_search.*.
+[[entry]]
+key = "project.problem.quadratic"
+title = "QuadraticProblem"
+kind = "tool"
+import_path = "problem.quadratic:QuadraticProblem"
+tags = ["project", "example", "problem", "quadratic", "box"]
+summary = "二维盒约束二次目标；已知最优点为 [2, -1]，原始目标为 0。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["只定义目标和原始约束，不读取算法结构或改写共享 context。"]
+use_when = ["逐项核对装配、候选交接与原始反馈时。"]
+minimal_wiring = ["from cases.hybrid_search.problem import QuadraticProblem", "problem = QuadraticProblem()"]
+required_companions = []
+config_keys = []
+example_entry = "cases.hybrid_search.build_solver:build_solver"

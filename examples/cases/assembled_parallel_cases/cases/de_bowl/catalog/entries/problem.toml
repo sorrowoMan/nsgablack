@@ -1,0 +1,17 @@
+[[entry]]
+key = "project.problem.de_bowl"
+title = "BowlProblem"
+kind = "tool"
+import_path = "problem.bowl:BowlProblem"
+tags = ["project", "example", "problem", "de", "quadratic"]
+summary = "DE独立Case的二维球面目标，已知最优点[1,-2]，原始最优值0。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["定义目标和盒约束违反量，不读取算法状态，不写共享context。"]
+use_when = ["检查独立DE Case装配和解析目标时。"]
+minimal_wiring = ["from cases.de_bowl.problem.bowl import BowlProblem", "problem = BowlProblem()"]
+required_companions = []
+config_keys = []
+example_entry = "cases.de_bowl.build_solver:build_solver"

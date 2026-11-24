@@ -14,6 +14,9 @@ def add_diagnostic(
     code: str,
     message: str,
     path: Path | None = None,
+    *,
+    line: int | None = None,
+    column: int | None = None,
 ) -> None:
     diagnostics.append(
         DoctorDiagnostic(
@@ -21,6 +24,8 @@ def add_diagnostic(
             code=code,
             message=message,
             path=str(path) if path is not None else None,
+            line=line,
+            column=column,
         )
     )
 
@@ -35,6 +40,9 @@ def format_doctor_report_text(report: DoctorReport) -> str:
         prefix = {"error": "[ERROR]", "warn": "[WARN]", "info": "[INFO]"}.get(diag.level, "[INFO]")
         location = f" ({diag.path})" if diag.path else ""
         lines.append(f"{prefix} {diag.code}: {diag.message}{location}")
+    for check in report.coverage:
+        reason = f" ({check.reason})" if check.reason else ""
+        lines.append(f"coverage: {check.check} {check.status} {check.scope}{reason}")
     return "\n".join(lines)
 
 

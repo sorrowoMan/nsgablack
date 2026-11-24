@@ -1,6 +1,10 @@
+from pathlib import Path
+
 from nsgablack.catalog import get_catalog
 from tools.catalog_integrity_checker import CatalogIntegrityChecker
-from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_plugin_context_contracts_are_enriched_in_catalog():
@@ -23,13 +27,14 @@ def test_catalog_integrity_checker_strict_plugin_context_passes():
     assert not result.context_warnings
 
 
-def test_catalog_integrity_checker_context_conflict_waiver_passes():
+def test_catalog_integrity_checker_context_conflict_waiver_passes(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
     checker = CatalogIntegrityChecker(
         check_context=True,
         check_usage=False,
         context_kinds=("plugin",),
         check_context_conflicts=True,
-        context_conflicts_waiver=Path("tools/context_conflicts_waiver.txt"),
+        context_conflicts_waiver=REPO_ROOT / "tools" / "context_conflicts_waiver.txt",
     )
     result = checker.run()
     assert not result.import_failures

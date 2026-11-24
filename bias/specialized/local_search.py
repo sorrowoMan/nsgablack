@@ -545,7 +545,7 @@ class TrustRegionBias(AlgorithmicBias):
             # Newton步
             try:
                 newton_step = np.linalg.solve(hessian, -gradient)
-            except:
+            except np.linalg.LinAlgError:
                 return cauchy_step
 
             # 如果Newton步在信赖域内，使用Newton步
@@ -570,7 +570,7 @@ class TrustRegionBias(AlgorithmicBias):
 
             return cauchy_step + tau * diff
 
-        except:
+        except np.linalg.LinAlgError:
             # 降级到最速下降
             return -radius * gradient / (np.linalg.norm(gradient) + 1e-10)
 

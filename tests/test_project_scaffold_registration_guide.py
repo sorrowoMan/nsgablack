@@ -53,8 +53,8 @@ def test_project_doctor_skips_scaffold_checks_for_non_scaffold_folder(tmp_path):
     report = run_project_doctor(tmp_path, instantiate_solver=False)
     assert report.error_count == 0
     codes = {d.code for d in report.diagnostics}
-    assert "structure-skip" in codes
-    assert "registry-skip" in codes
+    assert any(c.check == "shared-scaffold" and c.status == "skipped" for c in report.coverage)
+    assert any(c.check == "case-build" and c.status == "skipped" for c in report.coverage)
     assert "doctor-common-misuse-hints" in codes
 
 
@@ -809,7 +809,7 @@ def test_project_doctor_accepts_declared_optional_context_reads(tmp_path):
     assert rows == []
 
 
-def test_project_doctor_warns_large_object_context_write(tmp_path):
+def test_project_doctor_rejects_large_object_context_write_in_strict_mode(tmp_path):
     adapter_dir = tmp_path / "adapter"
     adapter_dir.mkdir(parents=True)
     source = (
@@ -825,9 +825,9 @@ def test_project_doctor_warns_large_object_context_write(tmp_path):
     (adapter_dir / "demo_adapter.py").write_text(source, encoding="utf-8")
 
     report = run_project_doctor(tmp_path, instantiate_solver=False, strict=True)
-    rows = [d for d in report.diagnostics if d.code == "context-large-object-write"]
+    rows = [d for d in report.diagnostics if d.code == "large-object-in-context"]
     assert rows
-    assert all(d.level == "warn" for d in rows)
+    assert all(d.level == "error" and d.line == 8 for d in rows)
 
 
 def test_project_doctor_warns_snapshot_ref_unreadable(tmp_path):

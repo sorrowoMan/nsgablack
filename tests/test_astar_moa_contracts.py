@@ -103,7 +103,8 @@ def test_astar_adapter_contract_propose_update_and_checkpoint_roundtrip(sample_p
     assert clone_state["best_state"] == state["best_state"]
 
 
-def test_astar_adapter_tolerates_faulty_heuristic(sample_problem):
+def test_astar_adapter_rejects_faulty_heuristic_instead_of_silently_changing_search(sample_problem):
+    import pytest
     def _bad_heuristic(_state, _context):
         raise RuntimeError("boom")
 
@@ -115,9 +116,9 @@ def test_astar_adapter_tolerates_faulty_heuristic(sample_problem):
         config=AStarConfig(max_expand_per_step=1, max_candidates_per_step=4),
     )
     solver = ComposableSolver(problem=sample_problem, adapter=adapter)
-    adapter.setup(solver)
-    candidates = adapter.propose(solver, {"generation": 0})
-    assert isinstance(candidates, list)
+    with pytest.raises(RuntimeError, match="boom"):
+        adapter.setup(solver)
+    assert adapter._open == []
 
 
 def test_moa_star_adapter_smoke_and_checkpoint_roundtrip():

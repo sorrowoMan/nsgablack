@@ -1,6 +1,7 @@
 """Decision trace plugin: deterministic replay of runtime decision paths."""
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,7 +12,7 @@ import time
 
 from ..base import Plugin
 from blackbase.context import record_context_event
-from blackbase.context.context_keys import KEY_CONTEXT_EVENTS, KEY_DECISION_TRACE_REF
+from nsgablack.context_keys import KEY_CONTEXT_EVENTS, KEY_DECISION_TRACE_REF
 from ...utils.engineering.file_io import atomic_write_text
 from ...utils.runtime.decision_trace import append_decision_jsonl, build_decision_event
 
@@ -207,7 +208,8 @@ class DecisionTracePlugin(Plugin):
         for target, method_name, original in reversed(self._restore):
             try:
                 setattr(target, method_name, original)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='DecisionTracePlugin._restore_wrapped_methods.fallback_249', exc=_fallback_error)
                 continue
         self._restore = []
 

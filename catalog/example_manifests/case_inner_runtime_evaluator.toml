@@ -1,0 +1,12 @@
+[[example]]
+id = "case-inner-runtime-production-project"
+title = "完整内层 Case · 供应候选调用生产排程 Project"
+component_keys = ["tool.case_inner_runtime_evaluator"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "复用既有 supply_adjustment_nested 标准 Project：外层问题绑定真实 Evaluator factory，production_inner 接收版本化任务并交付经验证的生产 Artifact；并发需求仍由 Project L0 授权。"
+inputs = ["已安装当前 nsgablack、blackbase 和 NumPy；保留整个 supply_adjustment_nested Project、生产 Case 及其原始 BOM/SUPPLY 数据。", "外层 Solver 提供修复后的候选和正式 provenance；Project runtime 提供子 Case 身份、资源、预算与 Artifact 发布面。"]
+steps = ["从 Project 入口运行；由外层 canonical build_solver.py 连接 solver/assembly.py，后者构建 Problem 并绑定 evaluation/production_case.py 的 build_production_evaluator。", "Factory 用 ProductionCaseProjection.task_for 生成子任务，用 project 校验生产收据并解释三目标；production_inner 的 canonical builder 接收 task。", "先检查装配，再在准备好真实生产输入后运行 baseline；批次 max_workers 只是并发请求，不能替代 Project L0 授权。"]
+dependencies = ["完整标准 Project/Case runtime、原生产数据与生产 Case 代码；默认本机路径不要求 Redis、外部 Worker 或模型服务。", "跨机运行另需已有 portable Artifact 输入和 Project nested_execution 配置，不能直接传 Pool/Unit 活对象。"]
+expected_outputs = ["外层目标来自真实生产排程：负产量、移动事件数和累计提前天数；production_summary 与 joint_summary 带候选身份、发布收据和预算结算。", "本使用卡只完成源绑定与语法检查；没有为该生产算例声明本轮运行成功或新增执行收据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/CASE_INNER_RUNTIME_EVALUATOR_CN.md", section = "tool.case_inner_runtime_evaluator" }, { path = "nsgablack/examples/cases/supply_adjustment_nested/cases/supply_adjustment_nested/evaluation/production_case.py", symbol = "build_production_evaluator" }, { path = "nsgablack/examples/cases/supply_adjustment_nested/cases/supply_adjustment_nested/build_solver.py", symbol = "build_solver" }]

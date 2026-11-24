@@ -13,15 +13,17 @@ Design goals:
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 import math
 
 import numpy as np
 from blackbase.call_binding import CallCandidate, invoke_bound_once
 from blackbase.contracts import BatchDisposition
+from blackbase.types import UnknownState
 from blackbase.context import (
     RuntimeContextProjection,
     detach_context_value,
@@ -35,11 +37,21 @@ from ..algorithm_adapter import (
     subset_adapter_feedback,
 )
 from ..runtime_projection import aggregate_adapter_runtime_projections
+from ..strategy_task import StrategyTask, attach_strategy_origin, TASK_CONTEXT_KEYS
+from ..pool_tasks import PoolTaskSpec, PoolTaskAdapter
+from ..pool_scope import (
+    KEY_WORKING_POOL,
+    bind_working_pool,
+    restore_working_pool_context,
+    stage_working_pool_results,
+    validate_working_pool_name,
+    working_pool_descriptor,
+)
 from ..empty_outcome import (
     aggregate_named_empty_outcomes,
     child_empty_proposal_outcome,
 )
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_GENERATION,
     KEY_CANDIDATE_ROLES,
     KEY_CANDIDATE_UNITS,
@@ -56,6 +68,7 @@ from blackbase.context.context_keys import (
     KEY_REGION_ID,
     KEY_SEEDS,
     KEY_UNIT_TASKS,
+    KEY_STRATEGY_INSTANCES,
 )
 
 
@@ -67,6 +80,7 @@ class StrategySpec:
     name: str
     weight: float = 1.0
     enabled: bool = True
+    pool_task: PoolTaskSpec | None = None
 
 
 @dataclass
@@ -84,15 +98,19 @@ class RoleSpec:
     n_units: int = 1
     weight: float = 1.0
     enabled: bool = True
+    pool_task: PoolTaskSpec | None = None
 
 
 @dataclass
-class UnitSpec:
+class StrategyInstanceSpec:
     role: str
     unit_id: int
     adapter: AlgorithmAdapter
     enabled: bool = True
 
+
+# Compatibility name: this is an execution instance, not an algorithm Unit.
+UnitSpec = StrategyInstanceSpec
 
 @dataclass
 class MultiStrategyControlRule:
@@ -189,8 +207,10 @@ class StrategyRouterAdapter(AlgorithmAdapter):
     - Split feedback and call child.update().
     - Update shared state (best solution, per-strategy metrics) for communication.
     """
+    unit_contract_mode = "delegated"
     context_requires = ("generation",)
     context_provides = (
+        KEY_WORKING_POOL,
         KEY_SHARED,
         KEY_STRATEGY,
         KEY_STRATEGY_ID,
@@ -206,6 +226,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         KEY_CANDIDATE_ROLES,
         KEY_CANDIDATE_UNITS,
         KEY_UNIT_TASKS,
+        KEY_STRATEGY_INSTANCES,
     )
     context_mutates = (KEY_SHARED, KEY_ROLE_REPORTS, KEY_CANDIDATE_ROLES, KEY_CANDIDATE_UNITS, KEY_UNIT_TASKS)
     context_cache = ()
@@ -213,6 +234,8 @@ class StrategyRouterAdapter(AlgorithmAdapter):
     context_notes = (
         "Orchestrates multi-strategy/multi-role cooperation and injects strategy task context.",
         "Shared state is updated every step and exposed via runtime context projection.",
+        "StrategyTask owns invocation-local role/strategy/phase/region/seeds aliases; "
+        "runtime task summaries and strategy_instances are observation only.",
     )
     context_contract_encapsulates_children = True
     state_recovery_level = "L2"
@@ -221,6 +244,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         "population partitions, tokens, and child adapter states."
     )
     population_state_mode = "partitioned"
+    operation_methods = {"pool_maintenance": "maintain"}
 
     def __init__(
         self,
@@ -230,6 +254,8 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         config: Optional[MultiStrategyConfig] = None,
         name: str = "multi_strategy_controller",
         priority: int = 0,
+        working_pool: str | None = None,
+        pool_maintenance=None,
         **config_kwargs,
     ) -> None:
         super().__init__(name=name, priority=priority)
@@ -240,9 +266,13 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             adapter_name="StrategyRouterAdapter",
         )
         self.cfg = self.config
+        self.set_pool_maintenance(pool_maintenance)
+        self._working_pool = validate_working_pool_name(working_pool)
+        self._working_pool_used = False
+        self._proposal_pool_context = None
         self.strategies: List[StrategySpec] = list(strategies or [])
         self.roles: List[RoleSpec] = list(roles or [])
-        self.units: List[UnitSpec] = []
+        self.units: List[StrategyInstanceSpec] = []
         self._step = 0
 
         # Per-strategy bookkeeping
@@ -260,7 +290,6 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self._unit_tasks: Dict[Tuple[str, int], Dict[str, Any]] = {}
         self._unit_proposal_contexts: Dict[Tuple[str, int], Dict[str, Any]] = {}
         self._unit_base_dispositions: Dict[Tuple[str, int], BatchDisposition] = {}
-        self._last_task_projection: Dict[str, Any] = {}
         self._last_projection_writers: Dict[str, str] = {}
         self._runtime_shared_projection: Dict[str, Any] = {}
         self._runtime_meta_projection: Dict[str, Any] = {}
@@ -274,8 +303,47 @@ class StrategyRouterAdapter(AlgorithmAdapter):
 
         if self.roles and self.strategies:
             raise ValueError("StrategyRouterAdapter: provide either strategies=... or roles=..., not both.")
+        self._dispatch_stop_outcome = None
+        self._capture_policy_baseline()
+
+    @property
+    def working_pool(self):
+        return self._working_pool
+
+    @working_pool.setter
+    def working_pool(self, name):
+        self.set_working_pool(name)
+
+    def set_working_pool(self, name):
+        name = validate_working_pool_name(name)
+        if self._working_pool_used and name != self._working_pool:
+            raise RuntimeError("working_pool cannot change after strategy execution has started")
+        self._working_pool = name
+        return self
+
+    def _working_pool_state(self, state):
+        name = validate_working_pool_name(state.get("working_pool"))
+        if name != self.working_pool:
+            raise ValueError("StrategyRouterAdapter working_pool binding mismatch")
+        original = state.get("working_pool_context")
+        if original is not None:
+            if not isinstance(original, Mapping) or set(original).difference((KEY_WORKING_POOL,)):
+                raise ValueError("StrategyRouterAdapter working pool context is invalid")
+            descriptor = working_pool_descriptor(original)
+            if name is not None and descriptor is None:
+                raise ValueError("StrategyRouterAdapter proposal is missing its working_pool binding")
+            if descriptor is not None and name is not None and descriptor["name"] != name:
+                raise ValueError("StrategyRouterAdapter proposal working_pool disagrees with its binding")
+            original = copy.deepcopy(dict(original))
+        elif name is not None and state.get("step", 0):
+            raise ValueError("StrategyRouterAdapter running state is missing its working_pool binding")
+        return bool(state.get("step", 0)) or original is not None, original
 
     def setup(self, control: Any) -> None:
+        self._reset_policy_for_fresh_setup()
+        self._dispatch_stop_outcome = None
+        self._working_pool_used = False
+        self._proposal_pool_context = None
         self._rng = self.create_local_rng(control)
         self._step = 0
         self._best_score.clear()
@@ -286,7 +354,6 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self._unit_tasks.clear()
         self._unit_proposal_contexts.clear()
         self._unit_base_dispositions.clear()
-        self._last_task_projection = {}
         self._last_projection_writers = {}
         self._runtime_shared_projection = {}
         self._runtime_meta_projection = {}
@@ -308,18 +375,32 @@ class StrategyRouterAdapter(AlgorithmAdapter):
 
         for unit in self.units:
             unit.adapter.setup(control)
+        self.validate_composition_contract()
 
     def teardown(self, control: Any) -> None:
         for unit in self.units:
             unit.adapter.teardown(control)
 
-    def _build_units(self) -> List[UnitSpec]:
+    def on_schedule_activation(self, control, activation_id):
+        super().on_schedule_activation(control, activation_id)
+        for unit in self.units:
+            unit.adapter.on_schedule_activation(control,
+                f"{activation_id}/{self._unit_prefix(unit)}")
+
+    def _build_units(self) -> List[StrategyInstanceSpec]:
+        specs = self.strategies or self.roles
+        names = [str(spec.name) for spec in specs]
+        if any(not name.strip() or "/" in name or ":" in name for name in names):
+            raise ValueError("strategy role names must be nonempty and exclude '/' and ':'")
+        if len(names) != len(set(names)):
+            raise ValueError("strategy role names must be unique")
         # StrategySpec mode
         if self.strategies:
-            out: List[UnitSpec] = []
+            out: List[StrategyInstanceSpec] = []
             for idx, spec in enumerate(self.strategies):
-                out.append(UnitSpec(role=str(spec.name), unit_id=int(idx), adapter=spec.adapter, enabled=spec.enabled))
-            return out
+                adapter = spec.adapter if spec.pool_task is None else PoolTaskAdapter(spec.adapter, spec.pool_task, role=spec.name, namespace=self.name)
+                out.append(StrategyInstanceSpec(role=str(spec.name), unit_id=int(idx), adapter=adapter, enabled=spec.enabled))
+            return self._validate_instances(out)
 
         # RoleSpec mode
         out = []
@@ -327,8 +408,27 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             n = int(max(1, int(role.n_units)))
             for uid in range(n):
                 adapter = self._instantiate_role_adapter(role.adapter, uid)
-                out.append(UnitSpec(role=str(role.name), unit_id=int(uid), adapter=adapter, enabled=role.enabled))
-        return out
+                if role.pool_task is not None:
+                    adapter = PoolTaskAdapter(adapter, role.pool_task, role=role.name, worker=uid, workers=n, namespace=self.name)
+                out.append(StrategyInstanceSpec(role=str(role.name), unit_id=int(uid), adapter=adapter, enabled=role.enabled))
+        return self._validate_instances(out)
+
+    @staticmethod
+    def _validate_instances(units: List[StrategyInstanceSpec]) -> List[StrategyInstanceSpec]:
+        seen = set()
+        task_counts = {}
+        for unit in units:
+            if unit.adapter is None:
+                raise TypeError("strategy factory returned no Adapter")
+            if id(unit.adapter) in seen:
+                raise ValueError("strategy instances must own independent Adapter objects")
+            seen.add(id(unit.adapter))
+            if isinstance(unit.adapter, PoolTaskAdapter):
+                count = unit.adapter.input_count
+                if unit.role in task_counts and task_counts[unit.role] != count:
+                    raise ValueError("pool task role instances need equal intake counts; use explicit count or separate roles")
+                task_counts[unit.role] = count
+        return units
 
     def _instantiate_role_adapter(
         self,
@@ -408,19 +508,23 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         out = self._build_policy_context(control, context, phase=phase, phase_step=phase_step)
         try:
             out.setdefault("generation", int(getattr(control, "generation", context.get(KEY_GENERATION, 0))))
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='StrategyRouterAdapter._build_runtime_rule_context.fallback_15', exc=_fallback_error)
             pass
         try:
             out.setdefault("best_objective", getattr(control, "best_objective", None))
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='StrategyRouterAdapter._build_runtime_rule_context.fallback_16', exc=_fallback_error)
             pass
         try:
             out.setdefault("best_x", getattr(control, "best_x", None))
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='StrategyRouterAdapter._build_runtime_rule_context.fallback_17', exc=_fallback_error)
             pass
         try:
             out.setdefault("evaluation_count", getattr(control, "evaluation_count", None))
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='StrategyRouterAdapter._build_runtime_rule_context.fallback_18', exc=_fallback_error)
             pass
         return out
 
@@ -487,7 +591,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             right = self._dsl_resolve(pair[1], rule_ctx)
             try:
                 return bool(fn(left, right))
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 return False
 
         if "op" in expr:
@@ -499,7 +603,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             right = self._dsl_resolve(pair[1], rule_ctx)
             try:
                 return bool(op_map[op](left, right))
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 return False
 
         return bool(expr)
@@ -621,6 +725,8 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             "shared": self.shared_state,
             "solver": control,
             "context": context,
+            "pool_tasks": {f"{unit.role}:{unit.unit_id}": unit.adapter.task_status
+                           for unit in self.units if isinstance(unit.adapter, PoolTaskAdapter)},
         }
 
     def _apply_phase_policy(
@@ -635,7 +741,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         try:
             value = fn(dict(policy_ctx))
         except Exception:
-            return str(default_phase), int(default_phase_step)
+            raise
         if value is None:
             return str(default_phase), int(default_phase_step)
         if isinstance(value, tuple):
@@ -645,7 +751,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             if len(value) >= 2:
                 try:
                     return phase_name, int(value[1])
-                except Exception:
+                except (TypeError, ValueError, OverflowError):
                     return phase_name, int(default_phase_step)
             return phase_name, int(default_phase_step)
         return str(value), int(default_phase_step)
@@ -682,7 +788,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                     if not bool(enable_policy(str(name), dict(policy_ctx))):
                         continue
                 except Exception:
-                    pass
+                    raise
             w_eff = self._effective_weight(name, float(w), phase)
             if name in rule_weight_override:
                 w_eff = float(rule_weight_override[name])
@@ -692,7 +798,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 try:
                     w_eff = float(weight_policy(str(name), float(w_eff), dict(policy_ctx)))
                 except Exception:
-                    pass
+                    raise
             if w_eff <= 0:
                 continue
             enabled.append((name, w_eff))
@@ -703,8 +809,11 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         total = int(max(1, int(self.cfg.total_batch_size)))
         probs = weights / max(1e-12, float(np.sum(weights)))
 
-        raw = probs * float(total)
-        budgets = np.floor(raw).astype(int)
+        # Reserve required minima before weighting the remainder. Topping up
+        # zero allocations afterwards could exceed total (e.g. 100:1 with 2).
+        minimum = 1 if total >= len(enabled) else 0
+        raw = probs * float(total - minimum * len(enabled))
+        budgets = np.floor(raw).astype(int) + minimum
         remain = total - int(np.sum(budgets))
         if remain > 0:
             frac = raw - budgets
@@ -713,11 +822,6 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 budgets[idx] += 1
 
         out = {enabled[i][0]: int(max(0, budgets[i])) for i in range(len(enabled))}
-        # ensure at least 1 for each enabled role when total allows
-        if total >= len(enabled):
-            for name, _w in enabled:
-                if out.get(name, 0) == 0:
-                    out[name] = 1
         return out
 
     def _split_to_units(self, role_budgets: Dict[str, int]) -> Dict[Tuple[str, int], int]:
@@ -828,7 +932,20 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             KEY_PHASE: self.shared_state.get(KEY_PHASE),
         }
 
-    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
+    def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[UnknownState]:
+        self._dispatch_stop_outcome = None
+        context = bind_working_pool(control, context, self.working_pool,
+            previous=working_pool_descriptor(self._proposal_pool_context))
+        self._working_pool_used = True
+        self._proposal_pool_context = ({KEY_WORKING_POOL: copy.deepcopy(context[KEY_WORKING_POOL])}
+                                       if KEY_WORKING_POOL in context else {})
+        # No previous proposal projection may describe an empty/failed attempt.
+        self._last_allocations = []
+        self._unit_tasks = {}
+        self._unit_proposal_contexts = {}
+        self._unit_base_dispositions = {}
+        self._runtime_meta_projection = {}
+        parent_task = StrategyTask.from_context(context) if KEY_TASK in context else None
         # phase bookkeeping
         phase, phase_step = self._phase_for_step(int(self._step))
         pre_policy_ctx = self._build_policy_context(
@@ -879,7 +996,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             "control_rules": list(rule_effects.get("matched") or []),
         }
 
-        candidates: List[np.ndarray] = []
+        candidates: List[UnknownState] = []
         allocations: List[Tuple[str, int, int, int]] = []
         cursor = 0
 
@@ -897,58 +1014,45 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             if k <= 0:
                 continue
 
-            ctx = dict(context)
-            ctx[KEY_SHARED] = shared
-            # Strategy keys (strategy == role)
-            ctx[KEY_STRATEGY] = unit.role
-            ctx[KEY_STRATEGY_ID] = int(unit.unit_id)
-            # Role keys
-            ctx[KEY_ROLE] = unit.role
-            ctx[KEY_ROLE_INDEX] = int(role_index.get(unit.role, 0))
-            ctx[KEY_ROLE_ADAPTER] = getattr(unit.adapter, "name", f"{unit.role}:{unit.unit_id}")
             region_id = self._unit_region.get((unit.role, int(unit.unit_id)))
             region_bounds = None
             if region_id is not None and 0 <= int(region_id) < len(self._regions):
                 region_bounds = self._regions[int(region_id)].get("bounds")
 
             seeds = []
-            if self._current_phase_name != "explore":
+            if self._current_phase_name != "explore" and not isinstance(unit.adapter, PoolTaskAdapter):
                 seeds = self._select_seeds(control, int(self.cfg.seeds_per_task))
 
-            task = {
-                "budget": int(k),
-                "unit_id": int(unit.unit_id),
-                "role": unit.role,
-                "step": int(self._step),
-                "phase": self._current_phase_name,
-                "phase_step": int(self._phase_step),
-                "region_id": None if region_id is None else int(region_id),
-                "region_bounds": region_bounds,
-                "seeds": seeds,
-            }
-            ctx[KEY_PHASE] = self._current_phase_name
-            ctx[KEY_REGION_ID] = task["region_id"]
-            ctx[KEY_REGION_BOUNDS] = region_bounds
-            ctx[KEY_SEEDS] = seeds
-            ctx[KEY_TASK] = task
+            task = StrategyTask(
+                owner_path=(() if parent_task is None else parent_task.owner_path) + (self._unit_prefix(unit),),
+                parent_task_id=None if parent_task is None else parent_task.task_id,
+                budget=int(k), unit_id=int(unit.unit_id), role=unit.role,
+                role_index=int(role_index[unit.role]), adapter_name=unit.adapter.name,
+                step=int(self._step), phase=self._current_phase_name,
+                phase_step=int(self._phase_step),
+                region_id=None if region_id is None else int(region_id),
+                region_bounds=region_bounds, seeds=seeds,
+            )
+            task = self._prepare_strategy_task(unit, task)
+            ctx = task.bind(context)
+            ctx[KEY_SHARED] = copy.deepcopy(shared)
             unit_key = (unit.role, int(unit.unit_id))
-            self._unit_tasks[unit_key] = dict(task)
+            self._unit_tasks[unit_key] = task.as_dict()
             self._unit_proposal_contexts[unit_key] = dict(ctx)
-            self._last_task_projection = {
-                KEY_ROLE: unit.role,
-                KEY_ROLE_INDEX: int(role_index.get(unit.role, 0)),
-                KEY_ROLE_ADAPTER: getattr(unit.adapter, "name", f"{unit.role}:{unit.unit_id}"),
-                KEY_STRATEGY: unit.role,
-                KEY_STRATEGY_ID: int(unit.unit_id),
-                KEY_PHASE: self._current_phase_name,
-                KEY_REGION_ID: task["region_id"],
-                KEY_REGION_BOUNDS: region_bounds,
-                KEY_SEEDS: seeds,
-                KEY_TASK: dict(task),
-            }
 
             proposed = self.coerce_candidates(unit.adapter.propose(control, ctx))
             if not proposed:
+                outcome = child_empty_proposal_outcome(unit.adapter, control, ctx)
+                if outcome is not None and (outcome.status == "cancelled" or outcome.stop_requested):
+                    # Already proposed siblings must see zero admission through
+                    # their original ranges before control state is committed.
+                    self._last_allocations = allocations
+                    if cursor:
+                        self.on_proposal_disposition(control, BatchDisposition.prefix(
+                            proposed_count=cursor, accepted_count=0,
+                            reason="sibling_cancelled"), context)
+                    self._dispatch_stop_outcome = outcome
+                    return []
                 continue
 
             selected = proposed[:k]
@@ -966,8 +1070,8 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 },
             )
             start = cursor
-            for cand in selected:
-                candidates.append(cand)
+            for index, cand in enumerate(selected):
+                candidates.append(attach_strategy_origin(cand, task, index, control))
                 cursor += 1
             end = cursor
             allocations.append((unit.role, int(unit.unit_id), start, end))
@@ -976,16 +1080,22 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self._runtime_meta_projection = {
             KEY_CANDIDATE_ROLES: [r for (r, _uid, s, e) in allocations for _ in range(e - s)],
             KEY_CANDIDATE_UNITS: [int(uid) for (_r, uid, s, e) in allocations for _ in range(e - s)],
-            KEY_UNIT_TASKS: dict(self._unit_tasks),
+            KEY_UNIT_TASKS: self._task_summaries(),
         }
         self._broadcast_state(control)
         return candidates
+
+    def _prepare_strategy_task(self, unit, task):
+        """Bind a structured schedule's local phase before proposal ownership freezes."""
+        return task
 
     def get_empty_proposal_outcome(
         self,
         control: Any,
         context: Dict[str, Any],
     ) -> Any | None:
+        if self._dispatch_stop_outcome is not None:
+            return self._dispatch_stop_outcome
         by_key = {(unit.role, int(unit.unit_id)): unit for unit in self.units}
         rows = []
         for key, proposal_context in self._unit_proposal_contexts.items():
@@ -1003,6 +1113,30 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 )
             )
         return aggregate_named_empty_outcomes(rows, owner=self.name)
+
+    def on_proposal_repair(self, control, repair, context):
+        self._forward_proposal_repair(control, repair, context)
+
+    def proposal_repair_children(self, repair, context):
+        targets = []
+        by_key = {(unit.role, int(unit.unit_id)): unit for unit in self.units}
+        for role, unit_id, start, end in self._last_allocations:
+            key = (role, int(unit_id))
+            child = repair.for_range(start, end).through(self._unit_base_dispositions.get(key))
+            ctx = self._task_context(key, context)
+            targets.append((by_key[key].adapter, child, ctx))
+        return tuple(targets)
+
+    def _proposal_contexts(self, proposed_count, context):
+        by_key = {(unit.role, int(unit.unit_id)): unit for unit in self.units}
+        out = []
+        for role, unit_id, start, end in self._last_allocations:
+            key = (role, int(unit_id))
+            base = self._unit_base_dispositions.get(key)
+            values = by_key[key].adapter.get_proposal_contexts(
+                base.proposed_count if base else end - start, self._task_context(key, context))
+            out.extend((values[i] for i in base.accepted_indices) if base else values)
+        return out
 
     def on_proposal_disposition(
         self,
@@ -1028,8 +1162,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 raise RuntimeError(
                     f"proposal allocation has no context for strategy unit {role}:{unit_id}"
                 )
-            child_context = dict(context)
-            child_context.update(proposal_context)
+            child_context = self._task_context(task_key, context)
             base_disposition = self._unit_base_dispositions.get(task_key)
             if base_disposition is not None:
                 child_disposition = base_disposition.compose(
@@ -1046,11 +1179,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 continue
             new_end = cursor + child_disposition.accepted_count
             reconciled.append((role, int(unit_id), cursor, new_end))
-            task = dict(self._unit_tasks.get(task_key, {}))
-            task["budget"] = child_disposition.accepted_count
-            task["accepted_indices"] = list(child_disposition.accepted_indices)
-            task["disposition_reason"] = disposition.reason
-            retained_tasks[task_key] = task
+            retained_tasks[task_key] = self._unit_tasks[task_key]
             retained_contexts[task_key] = proposal_context
             cursor = new_end
 
@@ -1067,8 +1196,47 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 for _role, unit_id, start, end in reconciled
                 for _ in range(end - start)
             ],
-            KEY_UNIT_TASKS: dict(self._unit_tasks),
+            KEY_UNIT_TASKS: self._task_summaries(),
         }
+
+    def _task_context(self, key, current):
+        # Current lifecycle facts win; task-owned fields always come from the
+        # immutable original request, never from global observation projections.
+        context = restore_working_pool_context(self._unit_proposal_contexts[key], current)
+        return StrategyTask.from_dict(self._unit_tasks[key]).bind(context)
+
+    def _task_summaries(self):
+        return {
+            "/".join(task.owner_path): task.summary()
+            for task in (StrategyTask.from_dict(raw) for raw in self._unit_tasks.values())
+        }
+
+    def validate_composition_contract(self) -> None:
+        """Read-only owner/task checks shared by runtime snapshots and Doctor."""
+        units = {(unit.role, int(unit.unit_id)): unit for unit in self.units}
+        if len(units) != len(self.units):
+            raise ValueError("duplicate strategy instance identity")
+        self._validate_instances(self.units)
+        seen = {id(self)}
+        def visit(adapter):
+            if id(adapter) in seen:
+                raise ValueError("strategy instances must own independent Adapter objects across nested paths")
+            seen.add(id(adapter))
+            children = getattr(adapter, "step_transaction_children", None)
+            if callable(children):
+                for child in children():
+                    visit(child)
+        for unit in self.units:
+            visit(unit.adapter)
+        task_ids = set()
+        for key, raw in self._unit_tasks.items():
+            task = StrategyTask.from_dict(raw)
+            if (key not in units or key != (task.role, task.unit_id)
+                    or task.owner_path[-1] != self._unit_prefix(units[key])):
+                raise ValueError("strategy task owner does not match its instance")
+            if task.task_id in task_ids:
+                raise ValueError("duplicate strategy task identity")
+            task_ids.add(task.task_id)
 
     def update(
         self,
@@ -1108,6 +1276,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         if global_best_score is None or best_score < float(global_best_score):
             global_best_score = float(best_score)
             global_best_x = np.asarray(candidates[best_idx])
+            self.shared_state["best_candidate_token"] = self.candidate_tokens_for(control, candidates)[best_idx]
 
         # split feedback to each unit
         by_key = {(u.role, int(u.unit_id)): u for u in self.units}
@@ -1142,18 +1311,13 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 raise RuntimeError(
                     f"feedback allocation has no context for strategy unit {role}:{unit_id}"
                 )
-            ctx = dict(proposal_context)
-            ctx.update(context)
+            ctx = self._task_context(task_key, context)
             ctx[KEY_SHARED] = {
                 "best_x": global_best_x,
                 "best_score": global_best_score,
                 "strategy_stats": self.shared_state.get("strategies", {}),
                 "step": int(self._step),
             }
-            ctx[KEY_STRATEGY] = role
-            ctx[KEY_ROLE] = role
-            ctx[KEY_STRATEGY_ID] = int(unit_id)
-            ctx[KEY_TASK] = dict(self._unit_tasks[task_key])
 
             unit.adapter.update(
                 control,
@@ -1161,6 +1325,8 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 subset_adapter_feedback(feedback, slice(start, end)),
                 ctx,
             )
+            stage_working_pool_results(self, control, sub_cands,
+                subset_adapter_feedback(feedback, slice(start, end)), ctx)
             self._record_unit_report(role, int(unit_id), sub_cands, sub_obj, sub_vio, scores_arr[start:end])
 
         # decision: adapt strategy weights
@@ -1177,11 +1343,18 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self.shared_state["regions"] = self._build_region_stats()
         self._broadcast_state(control)
 
+        if self.get_bound_operator("pool_maintenance") is not None:
+            from ..pool_maintenance import run_pool_maintenance, population_member_owners
+            active = tuple(by_key[(role, int(unit_id))].adapter
+                           for role, unit_id, start, end in self._last_allocations if end > start)
+            run_pool_maintenance(self, control, candidates, feedback, context, rng=self._rng,
+                member_owners=population_member_owners(self, active))
+
         self._unit_proposal_contexts = {}
         self._unit_base_dispositions = {}
         self._step += 1
 
-    def _unit_prefix(self, unit: UnitSpec) -> str:
+    def _unit_prefix(self, unit: StrategyInstanceSpec) -> str:
         return f"unit:{unit.role}:{int(unit.unit_id)}"
 
     def get_population_partitions(self) -> tuple[PopulationPartition, ...]:
@@ -1255,9 +1428,269 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             out[key] = copy.deepcopy(dict(item.get("value", {}) or {}))
         return out
 
+    @staticmethod
+    def _policy_declaration(value):
+        """Detach declarations, without copying a callback's live object graph.
+
+        Python code, defaults and provably pure closure values participate in
+        identity. Live captures stay explicit opaque type boundaries. This is
+        not a side-effect, global-variable or arbitrary object-state proof.
+        """
+        import functools
+        import hashlib
+        import json
+        import types
+
+        active = set()
+        remaining = [4096]
+        function_types = (types.FunctionType, types.MethodType, types.BuiltinFunctionType)
+
+        def type_name(item):
+            return f"{type(item).__module__}.{type(item).__qualname__}"
+
+        def callable_name(item):
+            return (f"{getattr(item, '__module__', type(item).__module__)}."
+                    f"{getattr(item, '__qualname__', type(item).__qualname__)}")
+
+        def opaque(item, boundary="runtime_value"):
+            return {"opaque_type": type_name(item), "boundary": boundary}
+
+        def pure_capture(item, depth):
+            """Prove a complete value tree before treating it as configuration.
+
+            A container holding a live owner is opaque as a whole: inspecting
+            some of its fields must not turn that owner's mutable bookkeeping
+            into supposedly immutable callback parameters.
+            """
+            remaining[0] -= 1
+            if depth > 64 or remaining[0] < 0:
+                return False, opaque(item, "capture_limit")
+            if item is None or isinstance(item, (str, bool, int)):
+                return True, item
+            if isinstance(item, np.generic):
+                return pure_capture(item.item(), depth + 1)
+            if isinstance(item, float):
+                return ((True, item) if math.isfinite(item)
+                        else (False, opaque(item, "nonfinite")))
+            if isinstance(item, bytes):
+                return True, {"bytes": item.hex()}
+            if isinstance(item, function_types):
+                return True, declare(item, depth + 1)
+            if id(item) in active:
+                return False, opaque(item, "cycle")
+            if not (type(item) in (tuple, list, dict, set, frozenset)
+                    or is_dataclass(item) and not isinstance(item, type)):
+                return False, opaque(item)
+            active.add(id(item))
+            try:
+                if type(item) is dict:
+                    if any(type(key) is not str for key in item):
+                        return False, opaque(item, "non_string_keys")
+                    children = {key: pure_capture(part, depth + 1) for key, part in item.items()}
+                    kind = "dict"
+                elif is_dataclass(item) and not isinstance(item, type):
+                    children = {field.name: pure_capture(getattr(item, field.name), depth + 1)
+                                for field in fields(item)}
+                    kind = type_name(item)
+                else:
+                    children = {str(index): pure_capture(part, depth + 1)
+                                for index, part in enumerate(item)}
+                    kind = type(item).__name__
+                if any(not known for known, _ in children.values()):
+                    return False, opaque(item, "contains_runtime_value")
+                values = {key: part for key, (_, part) in children.items()}
+                if kind in {"tuple", "list", "set", "frozenset"}:
+                    values = list(values.values())
+                    if kind in {"set", "frozenset"}:
+                        values.sort(key=lambda part: json.dumps(part, sort_keys=True))
+                return True, {"type": kind, "value": values}
+            finally:
+                active.remove(id(item))
+
+        def capture(item, depth):
+            return pure_capture(item, depth)[1]
+
+        def code_value(code):
+            def constant(item):
+                if isinstance(item, types.CodeType):
+                    return code_value(item)
+                if isinstance(item, bytes):
+                    return {"bytes": item.hex()}
+                if isinstance(item, (tuple, frozenset)):
+                    items = [constant(part) for part in item]
+                    return {"kind": type(item).__name__, "items": sorted(items, key=repr)
+                            if isinstance(item, frozenset) else items}
+                if item is None or isinstance(item, (str, bool, int, float)):
+                    return item
+                return {"constant_type": type(item).__name__, "value": repr(item)}
+            return {"bytecode": code.co_code.hex(), "constants": [constant(v) for v in code.co_consts],
+                    "names": list(code.co_names), "locals": list(code.co_varnames),
+                    "freevars": list(code.co_freevars), "cellvars": list(code.co_cellvars),
+                    "argcount": code.co_argcount, "kwonly": code.co_kwonlyargcount,
+                    "posonly": code.co_posonlyargcount, "flags": code.co_flags,
+                    "exceptions": getattr(code, "co_exceptiontable", b"").hex()}
+
+        def declare(item, depth=0):
+            remaining[0] -= 1
+            if depth > 64 or remaining[0] < 0:
+                raise ValueError("router policy declaration exceeds its finite value limit")
+            if item is None or isinstance(item, (str, bool, int)):
+                return item
+            if isinstance(item, np.generic):
+                return declare(item.item(), depth + 1)
+            if isinstance(item, float):
+                if not math.isfinite(item):
+                    raise ValueError("router policy declarations require finite numbers")
+                return item
+            if id(item) in active:
+                if isinstance(item, function_types):
+                    return {"recursive_callable": callable_name(item)}
+                raise ValueError("router policy declaration contains a cycle")
+            active.add(id(item))
+            try:
+                if isinstance(item, Mapping):
+                    if any(not isinstance(key, str) for key in item):
+                        raise TypeError("router policy declaration keys must be strings")
+                    return {key: declare(part, depth + 1) for key, part in item.items()}
+                if isinstance(item, (tuple, list)):
+                    return [declare(part, depth + 1) for part in item]
+                if isinstance(item, (set, frozenset)):
+                    items = [declare(part, depth + 1) for part in item]
+                    return {"set": sorted(items, key=lambda part: json.dumps(part, sort_keys=True))}
+                if isinstance(item, functools.partial):
+                    return {"partial": declare(item.func, depth + 1),
+                            "args": capture(item.args, depth + 1),
+                            "keywords": capture(item.keywords or {}, depth + 1)}
+                if is_dataclass(item) and not isinstance(item, type):
+                    return {"type": type_name(item), "fields": {
+                        field.name: declare(getattr(item, field.name), depth + 1) for field in fields(item)}}
+                if callable(item):
+                    result = {"callable": callable_name(item)}
+                    code = getattr(item, "__code__", None)
+                    if code is not None:
+                        payload = json.dumps(code_value(code), sort_keys=True, separators=(",", ":"))
+                        result["code"] = hashlib.sha256(payload.encode()).hexdigest()
+                        result["defaults"] = capture(getattr(item, "__defaults__", None), depth + 1)
+                        result["kwdefaults"] = capture(getattr(item, "__kwdefaults__", None), depth + 1)
+                        captured = {}
+                        for name, cell in zip(code.co_freevars, getattr(item, "__closure__", None) or ()):
+                            try:
+                                part = cell.cell_contents
+                            except ValueError:
+                                captured[name] = {"boundary": "empty_cell"}
+                            else:
+                                captured[name] = capture(part, depth + 1)
+                        result["captures"] = captured
+                    owner = getattr(item, "__self__", None)
+                    if owner is not None:
+                        result["bound_owner"] = opaque(owner)
+                    return result
+                raise TypeError(f"router policy declaration is not a supported value: {type(item).__name__}")
+            finally:
+                active.remove(id(item))
+
+        return declare(value)
+
+    def _capture_policy_baseline(self):
+        """Capture assembly declarations, keeping actual Strategy/Role owners intact.
+
+        Construction may precede final assembly configuration. The baseline
+        becomes immutable at first setup or state capture/restore, not merely
+        when an Adapter configuration instance is created.
+        """
+        from blackbase.wire import freeze_wire_mapping
+        if getattr(self, "_policy_baseline_sealed", False):
+            return
+        specs = self.strategies or self.roles
+        rows = []
+        for spec in specs:
+            weight = float(spec.weight)
+            if not math.isfinite(weight):
+                raise ValueError("router policy weights must be finite")
+            rows.append({"name": str(spec.name), "weight": weight,
+                         "enabled": bool(spec.enabled),
+                         "n_units": int(getattr(spec, "n_units", 1))})
+        self._policy_baseline = freeze_wire_mapping({
+            "kind": "strategies" if self.strategies else "roles",
+            "config": self._policy_declaration(self.cfg), "owners": rows})
+
+    def _policy_identity(self):
+        from blackbase.wire import thaw_wire_mapping
+        self._capture_policy_baseline()
+        self._policy_baseline_sealed = True
+        identity = thaw_wire_mapping(self._policy_baseline)
+        specs = self.strategies or self.roles
+        current = [{"name": str(spec.name), "enabled": bool(spec.enabled),
+                    "n_units": int(getattr(spec, "n_units", 1))} for spec in specs]
+        if len({row["name"] for row in current}) != len(current):
+            raise ValueError("router policy owner names must be unique")
+        declared = [{key: row[key] for key in ("name", "enabled", "n_units")}
+                    for row in identity["owners"]]
+        if (current != declared or self._policy_declaration(self.cfg) != identity["config"]
+                or identity["kind"] != ("strategies" if self.strategies else "roles")):
+            raise ValueError("router policy configuration changed after assembly; rebuild or migrate explicitly")
+        return identity
+
+    def _reset_policy_for_fresh_setup(self):
+        identity = self._policy_identity()
+        initial = {row["name"]: row["weight"] for row in identity["owners"]}
+        for spec in self.strategies or self.roles:
+            spec.weight = initial[str(spec.name)]
+
+    def _policy_weights(self):
+        result = {str(spec.name): float(spec.weight) for spec in self.strategies or self.roles}
+        if any(not math.isfinite(weight) for weight in result.values()):
+            raise ValueError("router runtime policy weights must be finite")
+        return result
+
+    @staticmethod
+    def _stop_outcome_payload(outcome):
+        from ...core.state.step_outcome import StepOutcome
+        from blackbase.wire import thaw_wire_mapping
+        if outcome is None:
+            return None
+        if not isinstance(outcome, StepOutcome) or outcome.committed or not outcome.terminal:
+            raise ValueError("router dispatch stop outcome must be a noncommitted terminal StepOutcome")
+        return {field.name: (thaw_wire_mapping(outcome.metadata) if field.name == "metadata"
+                            else getattr(outcome, field.name)) for field in fields(StepOutcome)}
+
+    def _validated_policy_state(self, state):
+        from ...core.state.step_outcome import StepOutcome
+        if state.get("policy_identity") != self._policy_identity():
+            raise ValueError("router policy checkpoint configuration mismatch")
+        weights = state.get("policy_weights")
+        expected = {str(spec.name) for spec in self.strategies or self.roles}
+        if not isinstance(weights, Mapping) or set(weights) != expected:
+            raise ValueError("router policy weights do not match declared owners")
+        parsed = {}
+        for name, value in weights.items():
+            if type(value) not in (int, float) or not math.isfinite(float(value)):
+                raise ValueError("router policy checkpoint weights must be finite numbers")
+            parsed[name] = float(value)
+        raw = state.get("dispatch_stop_outcome")
+        outcome = None
+        if raw is not None:
+            if not isinstance(raw, Mapping) or set(raw) != {field.name for field in fields(StepOutcome)}:
+                raise ValueError("router dispatch stop outcome fields mismatch")
+            outcome = StepOutcome(**dict(raw))
+            self._stop_outcome_payload(outcome)
+        return parsed, outcome
+
+    def _apply_policy_state(self, parsed):
+        weights, outcome = parsed
+        for spec in self.strategies or self.roles:
+            spec.weight = weights[str(spec.name)]
+        self._dispatch_stop_outcome = outcome
+
     def get_state(self) -> Dict[str, Any]:
         return {
-            "schema": "nsgablack.strategy_router_state/v2",
+            **({"operator_bindings": self.operator_bindings_state()} if self._operator_bindings() else {}),
+            "schema": "nsgablack.strategy_router_state/v4",
+            "policy_identity": self._policy_identity(),
+            "policy_weights": self._policy_weights(),
+            "dispatch_stop_outcome": self._stop_outcome_payload(getattr(self, "_dispatch_stop_outcome", None)),
+            "working_pool": self.working_pool,
+            "working_pool_context": copy.deepcopy(self._proposal_pool_context),
             "step": int(self._step),
             "current_phase_name": str(self._current_phase_name),
             "phase_step": int(self._phase_step),
@@ -1304,15 +1737,24 @@ class StrategyRouterAdapter(AlgorithmAdapter):
     def set_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
-        schema = str(state.get("schema", "nsgablack.strategy_router_state/v2"))
-        if schema != "nsgablack.strategy_router_state/v2":
-            raise ValueError(f"unsupported StrategyRouterAdapter state schema: {schema}")
+        with self.restoring_operator_bindings(state.get("operator_bindings")):
+            self._set_router_state(state)
+
+    def _set_router_state(self, state):
+        schema = str(state.get("schema", ""))
+        if schema != "nsgablack.strategy_router_state/v4":
+            raise ValueError(f"unsupported StrategyRouterAdapter state schema: {schema}; legacy policy state requires explicit migration")
+        policy_state = self._validated_policy_state(state)
+        pool_used, pool_context = self._working_pool_state(state)
         if not self.units:
             self.units = self._build_units()
         raw_units = tuple(state.get("units", ()) or ())
         expected = {(unit.role, int(unit.unit_id)): unit for unit in self.units}
         if len(raw_units) != len(expected):
             raise ValueError("StrategyRouterAdapter unit state count mismatch")
+        keys = [(str(item.get("role", "")), int(item.get("unit_id", 0))) for item in raw_units]
+        if len(set(keys)) != len(keys) or set(keys) != set(expected):
+            raise ValueError("StrategyRouterAdapter checkpoint unit identities mismatch")
         for item in raw_units:
             key = (str(item.get("role", "")), int(item.get("unit_id", 0)))
             unit = expected.get(key)
@@ -1324,6 +1766,9 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 raise ValueError(
                     f"StrategyRouterAdapter adapter identity mismatch for {key[0]}:{key[1]}"
                 )
+            actual_class = f"{type(unit.adapter).__module__}.{type(unit.adapter).__qualname__}"
+            if item.get("adapter_class") != actual_class:
+                raise ValueError("StrategyRouterAdapter checkpoint adapter class mismatch")
             unit.enabled = bool(item.get("enabled", unit.enabled))
             unit.adapter.set_state(dict(item.get("state", {}) or {}))
 
@@ -1357,6 +1802,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self._unit_tasks = self._decode_keyed_mapping(
             tuple(state.get("unit_tasks", ()) or ())
         )
+        self.validate_composition_contract()
         self._regions = copy.deepcopy(list(state.get("regions", ()) or ()))
         self._unit_region = {}
         for item in tuple(state.get("unit_region", ()) or ()):
@@ -1374,23 +1820,38 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self._runtime_shared_projection = {}
         self._runtime_meta_projection = {}
         self._last_projection_writers = {}
+        self._working_pool_used = self._working_pool_used or pool_used
+        self._proposal_pool_context = pool_context
         self._broadcast_state(None)
         raw_partitions = tuple(state.get("population_partitions", ()) or ())
         if raw_partitions:
             self.set_population_partitions(
                 tuple(PopulationPartition.from_dict(item) for item in raw_partitions)
             )
+        self._apply_policy_state(policy_state)
 
     def step_transaction_children(self) -> Sequence[AlgorithmAdapter]:
         if not self.units:
             self.units = self._build_units()
         return tuple(unit.adapter for unit in self.units)
 
+    def get_solution_pool_roots(self, control):
+        if self.shared_state.get("best_x") is None:
+            return ()
+        return control.solution_pool.refs_for_tokens((self.shared_state.get("best_candidate_token"),))
+
     def snapshot_step_state(self) -> Mapping[str, Any]:
         if not self.units:
             self.units = self._build_units()
+        self.validate_composition_contract()
         return {
-            "schema": "nsgablack.strategy_router_step_transaction/v1",
+            **({"operator_bindings": self.operator_bindings_state()} if self._operator_bindings() else {}),
+            "schema": "nsgablack.strategy_router_step_transaction/v3",
+            "policy_identity": self._policy_identity(),
+            "policy_weights": self._policy_weights(),
+            "dispatch_stop_outcome": self._stop_outcome_payload(getattr(self, "_dispatch_stop_outcome", None)),
+            "working_pool": self.working_pool,
+            "working_pool_context": copy.deepcopy(self._proposal_pool_context),
             "step": int(self._step),
             "current_phase_name": str(self._current_phase_name),
             "phase_step": int(self._phase_step),
@@ -1426,7 +1887,6 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                     key=lambda item: (str(item[0][0]), int(item[0][1])),
                 )
             ],
-            "last_task_projection": copy.deepcopy(self._last_task_projection),
             "projection_writers": dict(self._last_projection_writers),
             "runtime_shared_projection": copy.deepcopy(
                 self._runtime_shared_projection
@@ -1456,14 +1916,23 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         }
 
     def restore_step_state(self, state: Mapping[str, Any]) -> None:
-        if str(state.get("schema", "")) != "nsgablack.strategy_router_step_transaction/v1":
-            raise ValueError("unsupported StrategyRouterAdapter step transaction schema")
+        with self.restoring_operator_bindings(state.get("operator_bindings")):
+            self._restore_router_step_state(state)
+
+    def _restore_router_step_state(self, state):
+        if str(state.get("schema", "")) != "nsgablack.strategy_router_step_transaction/v3":
+            raise ValueError("unsupported StrategyRouterAdapter step transaction schema; legacy policy state requires explicit migration")
+        policy_state = self._validated_policy_state(state)
+        pool_used, pool_context = self._working_pool_state(state)
         if not self.units:
             self.units = self._build_units()
         expected = {(unit.role, int(unit.unit_id)): unit for unit in self.units}
         enabled_rows = tuple(state.get("unit_enabled", ()) or ())
         if len(enabled_rows) != len(expected):
             raise ValueError("StrategyRouterAdapter transaction unit count mismatch")
+        keys = [(str(item.get("role", "")), int(item.get("unit_id", 0))) for item in enabled_rows]
+        if len(set(keys)) != len(keys) or set(keys) != set(expected):
+            raise ValueError("StrategyRouterAdapter transaction unit identities mismatch")
         for item in enabled_rows:
             key = (str(item.get("role", "")), int(item.get("unit_id", 0)))
             unit = expected.get(key)
@@ -1476,6 +1945,8 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self._step = max(0, int(state.get("step", 0) or 0))
         self._current_phase_name = str(state.get("current_phase_name", "explore"))
         self._phase_step = max(0, int(state.get("phase_step", 0) or 0))
+        self._working_pool_used = self._working_pool_used or pool_used
+        self._proposal_pool_context = pool_context
         self._best_score = {
             str(key): float(value)
             for key, value in dict(state.get("best_score", {}) or {}).items()
@@ -1501,6 +1972,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         self._unit_tasks = self._decode_keyed_mapping(
             tuple(state.get("unit_tasks", ()) or ())
         )
+        self.validate_composition_contract()
         self._unit_proposal_contexts = {}
         for item in tuple(state.get("unit_proposal_contexts", ()) or ()):
             key = (str(item.get("role", "")), int(item.get("unit_id", 0)))
@@ -1523,9 +1995,6 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 reservation_id=str(raw.get("reservation_id", "")),
                 metadata=dict(raw.get("metadata", {}) or {}),
             )
-        self._last_task_projection = copy.deepcopy(
-            dict(state.get("last_task_projection", {}) or {})
-        )
         self._last_projection_writers = {
             str(key): str(value)
             for key, value in dict(state.get("projection_writers", {}) or {}).items()
@@ -1547,6 +2016,7 @@ class StrategyRouterAdapter(AlgorithmAdapter):
         if not isinstance(rng_state, Mapping):
             raise TypeError("StrategyRouterAdapter transaction RNG state is invalid")
         self._rng.bit_generator.state = copy.deepcopy(dict(rng_state))
+        self._apply_policy_state(policy_state)
 
     def get_runtime_context_projection(self, solver: Any) -> RuntimeContextProjection:
         own_fields: Dict[str, Any] = {}
@@ -1555,10 +2025,6 @@ class StrategyRouterAdapter(AlgorithmAdapter):
                 continue
             own_fields[str(key)] = value
 
-        for key, value in self._last_task_projection.items():
-            if value is None:
-                continue
-            own_fields[str(key)] = value
         for key, value in self._runtime_meta_projection.items():
             if value is None:
                 continue
@@ -1568,6 +2034,10 @@ class StrategyRouterAdapter(AlgorithmAdapter):
             solver,
             owner_source=f"adapter.{self.__class__.__name__}",
             own_fields=own_fields,
+            scoped_keys=(*TASK_CONTEXT_KEYS, KEY_SHARED, KEY_ROLE_REPORTS,
+                         KEY_CANDIDATE_ROLES, KEY_CANDIDATE_UNITS, KEY_UNIT_TASKS,
+                         KEY_STRATEGY_INSTANCES),
+            namespace_key=KEY_STRATEGY_INSTANCES,
             children=tuple(
                 (
                     "adapter.unit."

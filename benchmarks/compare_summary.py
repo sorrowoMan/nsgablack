@@ -16,14 +16,14 @@ def _load_summary(path: Path) -> dict[str, Any]:
 def _as_float(value: Any) -> str:
     try:
         return f"{float(value):.6f}"
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return "-"
 
 
 def _as_int(value: Any) -> str:
     try:
         return str(int(value))
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return "-"
 
 

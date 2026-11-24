@@ -1,5 +1,32 @@
 ﻿# AGENTS.md
 
+最后按代码核对：2026-10-22（保留自然搜索编排、局部完成与当前轮结果交还；补齐 ML 语义初值、GA 默认变化的候选含义与池交接，复用原 Router 和提交事务）。实现契约见 `docs/architecture/RUNTIME_CONTRACTS_CN.md`；源码与文档冲突必须明确报告。
+
+## 术语与必须保护的语义
+
+- `Problem` 定义评估含义；问题管线处理候选；`UnitBinding` 提供算法结构构建规则；Adapter 按需创建、持有并操作 Unit 作搜索决策。
+- `SolutionPool` 在 Adapter 运行初始化与候选操作之前建立；Adapter 配置实例可以先构造。池通过共享 SnapshotStore 保存不可原位改写的候选版本。SolutionStamp 使用运行身份与逻辑时钟，SolutionRef 同时标识 token 和版本；读取保留身份，新提案派生身份并保留源引用，repair 保留提案 token。Unit 保留算法工作投影和关系，不共享可写排名。详见 `docs/architecture/SOLUTION_POOL_CN.md`。
+- 子池是 SolutionPool 内的具名引用集合，复用池索引事务/checkpoint/保留声明，不另复制候选值。RoleSpec/StrategySpec 的 `pool_task=PoolTaskSpec(...)` 通过现有 Router 分发；任务进度和子 Adapter 独立参与步骤事务。输出只在提交后可读，退出子池只解除成员关系。
+- Router/Chain 可绑定普通公共集合 working_pool；未绑定组合继承最近上层来源，无绑定时仍用根池。PoolTaskSpec(select=None) 使用该区域，显式select保持原规则；绑定不自动为裸Adapter添加池任务。新接纳候选归入最近区域，原提案绑定贯穿repair/disposition/update，不自动合并祖先池或改变Unit成员。
+- SearchPlanAdapter 用共享 ExecutionPlan/ExecutionCursor 表达有限 serial/multi/repeat；算法实例只装配一次，on_schedule_activation 只重开已完成局部游标，未完任务保留scope与冻结输入，不重放setup。孩子完成先由父级解释；取消须向已提案兄弟发送零接纳；等待/控制切换不制造generation。精修/竞争阶段等待PoolTask完成，running任务内层提前普通terminal明确拒绝。get_pool_task_results核对本请求最终视图身份/修订/解释/有序引用，output=None也可交付，显式output才保留累计接纳历史。Router实际运行权重与初始配置分开保存、回滚与恢复。独立无送评Pool编辑仍未开放，详见docs/architecture/NATURAL_SEARCH_PLANS_CN.md。
+- MOEA/D 按方向自动发布投影子池，created_by 是稳定的 Adapter 实例所有权路径，不是候选生产者或类型名。`subpools.all(adapter)` / `subpools.random(n, adapter)` 在请求开始时选择该实例的方向，任务冻结候选引用、权重和参考点；VNS 起点与新邻域都用同一投影。raw feedback 不改写，返回候选按 MOEA/D 当前比较规则竞争；禁止将标量写回母池原始目标。
+- NSGA-II／III、SPEA2、DE 每实例发布普通 population 视图，只引用准确成员版本；有精确成员后，数值 setter 只允许同成员反馈刷新。丢失成员引用时撤回自身旧视图并服从池事务，不能让下游误读过期种群。逐成员精修显式 count="all"；普通视图不隐含种群填满屏障。
+- 完整种群交付使用 set_population_state 与有序 get_population_solution_refs；保留根 get_solution_pool_roots 不能充当成员顺序。Evolution 初始化／环境选择完整保存候选、原始反馈、来源和收据；旧三数组外部导入须显式 external_evaluation=True，不猜身份或虚增求值次数。透明包装转发，池任务不允许绕过自己的输入声明。
+- Gaussian／MAS／信赖域／有限差分与已有单轨迹算法共用池精修；基准先送评。有限差分的下降点要单独评估，Provider 优化器结果不能交付未评估后继；仅变换目标不足以变换梯度。A*／MOA* 显式 new_root 只支持新根初始化，路径 g 与目标投影不可互换。
+- 投影池任务可递归发布派生视图，下一层用 `subpools.all(vns_instance)` 选择。视图保留稳定 view_id/revision 和冻结 parent/ancestors，不复制候选；get_pool_refinement_results 明确交付最终选择，聚合 output 仍保存接纳提案。继承投影只对本层新反馈应用一次。父级删除不级联删除后代；视图提交前不可枚举或读取。阶段屏障仍由 Router 指定，不由 all/random 隐含等待。
+- `Unit` 保留候选本体或候选集合，扩展算法特征、关系与必要状态；构建 Unit 不等于候选编码，取出候选不等于解码。`UnitBinding` 绑定 builder、持久状态 codec 和可选构建 runner；Unit 不拥有 Solver 生命周期或全局授权。
+- Unit 的运行实例归具体 Adapter 所有。装配 builder 不创建结构；`UnitBackedAdapter.algorithm_unit` 可为 `None`，实际使用时 `ensure_unit()` 创建一次并复用。setup/fresh reset 只使结构失效，首次使用再建；暂停继续不重建；checkpoint 与步骤快照保留未创建状态，恢复已有 Unit 走 codec，不调用 builder。Doctor、观察、字段读取与偏好绑定不得为了检查而构造 Unit。
+- 种群 Adapter 决定成员选择或槽位替换，PopulationUnit 统一维护 X/F/V/token 与扩展成员字段。新增行字段声明 member_fields，通过只读 on_members_changed(PopulationChange) 返回更新；change 携带对齐的只读 incoming 候选/反馈/token/metadata/provenance。禁止让 Adapter 猜未知字段的维护语义。详见 `docs/architecture/UNIT_MEMBER_OPERATIONS_CN.md`。
+- `CandidateBatch` 保留语义值、数值矩阵和 token；数值相等不能替代身份。`ProposalRepair` 表达评估前同一提案被修改；`BatchDisposition` 表达预算/接纳筛选。二者不可互相替代。
+- NSGA 家族遇到语义初值时，先通过正式 repair/evaluate/admission 再建立已评估成员；不把 UnknownState 列表当种群矩阵。默认数值变化保留模型 metadata 和精确父成员来源，数值算子仍接收数值草稿。ML Codec 的模型布局和 Adapter Unit 的搜索状态分别维护，具体交接验收见 mlblack 的 `docs/architecture/ML_POOL_UNIT_INTEGRATION_CN.md`。
+- `UnknownState` 是可传输候选；`StateRef` 是 Provider 管理的活状态引用，可寻址范围由 Provider 声明；`DataRef` 是 Artifact 引用，权威交付还须发布收据；Snapshot key 须结合 store scope、版本/摘要和 AuthorityIdentity 验证。
+- `PopulationAuthority` 拥有内存种群投影与发布游标；`AuthorityStore` 拥有持久围栏边。Solver 的旧字段是同一对象的视图，不得建立第二份可写副本。
+- `RunSession` 拥有运行身份、进度、恢复门闸与结果引用；`RunProgressState` 是可传输的进度值。
+- context 参数是一次调用的轻量上下文；ContextStore 是共享存储；context contract 是键与读写声明。进入共享命名空间的键必须注册，局部变量名不自动构成契约。
+- `individual_id/individual` 只属于当前调用；build_context 不从旧共享值继承，也不自动回写这两个键，避免新提案绑定到上一代语义身份。
+- ML Capability 使用共享 Plugin 生命周期；观察、建议、决定、否决按 ParticipationContract 的作用域区分。
+- Doctor 检查声明和受支持的结构/运行面，不能证明任意 Python 副作用、算法正确性或数学性质，必须结合行为测试。
+
 ## 0) 这份文档怎么用（给协作 Agent）
 
 这是一份“面向改动执行”的协作说明，不是概念介绍。
@@ -7,7 +34,7 @@
 
 1. 先看 `1/2/4`（定位 + 架构 + 生命周期）
 2. 再看 `5/6/7`（数据协议 + API 契约 + catalog 口径）
-3. 最后按 `9/12` 跑命令与提交检查
+3. 最后按 `10/13` 跑命令与提交检查
 
 新增协作硬规则：
 
@@ -15,6 +42,7 @@
 - 在未获允许前，只允许做：代码阅读、结果分析、机制讨论、方案草案、文档整理
 - 不得因为“已经判断出根因”或“只差最后一步”而直接落代码
 - 若用户只是在讨论机制、诊断病因、比较路线，默认仍视为**未授权改代码**
+- 同一任务中用户已明确授权完善或修复的工作，许可持续有效；无需对必要的小步修改和验证重复索取许可。
 
 文档语言规则（新增）：
 
@@ -27,12 +55,16 @@
 ## 1) 项目定位（第一原则）
 
 `nsgablack` 是**多目标优化工程框架**，不是单一算法库。
-核心是四层正交架构：
+理解与装配的主线是 **Problem → Pipeline → Unit → Adapter → Bias → Plugin**。这是职责关系，不是六个组件依次执行的线性流程：
 
-- `Solver`：控制平面（生命周期、评估入口、状态管理）
-- `Adapter`：算法策略平面（`propose/update`）
-- `Representation`：表示平面（init/mutate/repair/encode/decode）
-- `Plugin`：能力平面（checkpoint/trace/eval/backend/log）
+- `Problem`：定义求值含义、原始目标和约束。
+- `Pipeline`：问题管线处理候选及编解码；独立 `UnitBinding` 提供算法结构构建能力，由所属 Adapter 按需调用。
+- `Unit`：保存节点、标签、种群、区域等算法结构及其操作；不持有全局资源授权或运行循环。
+- `Adapter`：拥有搜索决策与 Unit，提出候选、对账修复、消费反馈；组合须路由到原提案所有者。
+- `Bias`：产生可审计的选择偏好，保留原始求值；软化选择视图不能修改硬可行性接纳。
+- `Plugin`：按声明角色参与评估、检查点、观察和发布等生命周期能力。
+
+`Solver` 是上述组件的控制与装配门面。状态由 PopulationAuthority / RunSession 等所属对象管理；共享事务、证据状态机、Plugin 生命周期、Project 编排和 L0 授权由 BlackBase 提供。旧“四层”称呼仅概括扩展面，不能作为遗漏 Problem、Unit、Bias 或共享底座的理由。
 
 协作规则：
 
@@ -40,9 +72,9 @@
 - 不把运行时能力（日志、恢复、审计）硬塞进 `Adapter`
 - 不把业务策略硬塞进 `repair`
 
-### 1.1 统一框架栈规则（nsgablack + mlblack）
+### 1.1 统一框架栈规则（blackbase + nsgablack + mlblack）
 
-`nsgablack` 和 `mlblack` 应被视为一个统一框架栈的不同层，而不是两个孤立项目。新增组件、模型族、provider、runtime、示例或跨框架能力前，必须同时判断两边职责边界。
+`blackbase`、`nsgablack` 和 `mlblack` 构成统一框架栈。新增组件、模型族、provider、runtime、示例或跨框架能力前，必须判断三者职责边界。
 
 统一分工：
 
@@ -56,7 +88,7 @@
 
 新增能力前必须先分类：
 
-- 属于 `nsgablack orchestration`：阶段、并行、outer search、多 solver、Pareto、嵌套评估、资源授权。
+- 属于共享 `blackbase orchestration`：阶段、并行、多 Case、嵌套调用与资源授权；outer search、Pareto 和优化接纳属于 `nsgablack`。
 - 属于 `mlblack semantic component`：数据视图、模型语义、head、训练/评估、artifact、capability contract。
 - 属于外部 domain backend：数值求解器、仿真器、索引、数据库、对象存储。
 - 属于 cross-framework scaffold：通过两边正式脚手架 surface 组合，而不是在 example 里私接胶水。
@@ -114,7 +146,7 @@ Hard rules:
 
 ### 1.2.3 Unified Plugin / Capability lifecycle
 
-mlblack `Capability` maps into the unified nsgablack `Plugin` lifecycle. `nsgablack.plugins.base.Plugin` is the shared superset and includes:
+共享生命周期由 `blackbase.plugin.PluginBase/PluginManager` 拥有。`nsgablack.plugins.base.Plugin` 添加优化辅助接口，mlblack Capability 参与同一生命周期；不要在任一语义仓重造调度器。正式 hooks 包括：
 
 | Hook | Source | Timing |
 |---|---|---|
@@ -180,7 +212,7 @@ Collaboration rules:
 
 - `Solver` 通过 `PluginManager` 扩展，不直接依赖具体插件实现
 - `Adapter` 支持 `get_state/set_state` 与 checkpoint 对接
-- `RepresentationPipeline` 是候选解流转唯一入口/出口
+- `RepresentationPipeline` 是问题候选处理门面；算法结构构建通过独立 `UnitBinding`。不能在 Unit builder 内偷偷 repair 候选。
 - 大对象统一进 `SnapshotStore`，`ContextStore` 保持轻量引用
 
 ### 2.3 目录职责（高频入口）
@@ -190,11 +222,13 @@ Collaboration rules:
 - `plugins/`：能力层（runtime/evaluation/system/ops/storage/domain_backends）
 - `representation/`：表示组件与 pipeline
 - `bias/`：偏置系统（algorithmic/domain/surrogate + facade/manager）
-- `core/state/`：context key/schema/contracts/store/snapshot/events（公共 API 入口；实现在 utils/context/）
-- `core/resources/`：L0 资源层
-  - `compute/` — 执行加速（PoolScheduler, ParallelEvaluator 重导出）
-  - `storage/` — 状态持久化（ContextStore, SnapshotStore, ArtifactBackend, lease）
-  - `transport/` — 消息/队列/传输（TaskQueue, MessageQueue, L0RuntimeBackend）
+- `core/state/`：优化状态、PopulationAuthority、RunSession、incumbent 与共享协议入口；通用存储实现在 `blackbase.context`。
+- `core/state/solution_pool.py`：运行内候选区域、逻辑时间、输入游标与 manifest；`adapters/pool_search.py`：优化准备/停滞恢复/返回竞争策略，不重造 Project 并行执行或 L0 授权。
+- `blackbase.resources`：共享 L0、Artifact、lease、transport；`blackbase.runtime`：参与者、事务、权威登记与结果发布契约。
+- `core/evidence_semantics.py`：优化证据只读检查；通用状态机由 BlackBase EvaluationEvidenceCoordinator 拥有。
+- `core/semantic_extension.py`：显式步骤扩展；提交后投影失败必须保留提交结果与计数。
+- `units/`：算法结构、构建请求、绑定与显式恢复 codec。
+- `adapters/proposal_repair.py`：评估前修复证据与复合提案索引映射；`core/evaluation_acceptance.py`：评估后的准入策略。
 - `catalog/`：可发现性索引与 profile/filter 规则
 - `project/doctor*`：项目规则检查与健康诊断
 
@@ -202,17 +236,24 @@ Collaboration rules:
 
 ## 3) 运行数据流（改逻辑前必读）
 
-标准一代流程：
+标准步骤尝试：
 
-1. `adapter.propose(...)` 产出候选
-2. 候选经 `representation` 处理（必要时 encode/decode/repair）
-3. `evaluate_population()` 或 `evaluate_individual()` 执行评估
-4. `adapter.update(...)` 接收目标/约束反馈
-5. `plugin` 在代级钩子做观测、持久化、调控
-6. 状态按协议写入 snapshot/context
+初始化、变异、修复和控制面候选绑定接入 Solver 自带 SolutionPool。池按引用交换候选，Adapter 按自己的 Unit 建立结构；不把其他 Adapter 的 Unit 当候选解码。
+
+1. Adapter 操作 Unit，通过 `propose(...)` 投影候选；控制面建立 CandidateBatch/token/provenance。
+2. 预算限制评估行数。问题管线 repair 后，控制面生成 `ProposalRepair`，调用 `adapter.on_proposal_repair(...)`，成功后才能开始评估。
+3. Problem 或声明的 Evaluation Provider 求值；Bias 生成选择视图，同时保留 raw feedback。
+4. 持久化 Evaluation Event；接纳策略输出 BatchDisposition，与预算截断组合为一次最终处置，通知 Adapter 对齐待更新结构。
+5. `adapter.update(...)` 只接收被接纳的候选和对应反馈；按权威模式暂存 population/partitions。
+6. 只有 committed 才发布新 Authority Snapshot、推进逻辑步数并通知提交钩子；失败路径恢复事务参与者，已发生的评估和预算消耗保留。
+
+池 accepted 记录与同一 Authority Snapshot 的 manifest 引用一起提交；失败/零接纳不发布新解。部分接纳按原提案索引结算池输入游标，未接纳的初始化种子保留。池内 raw feedback 不自动替代接收算法的重新评估与 Bias 投影。私有草稿在尝试结束后退出池索引，物理 Snapshot 回收由共享存储负责。
 
 关键点：
 
+- 同步 propose、批量初始化和 ProblemRepair 调用可在原步骤事务内按阶段合批登记私有候选；调用内使用 CandidateBatch 已脱离的只读值，完成数量/形状验收后、评估前写入。单个 token、来源与 repair 版本保持；池外显式读取仍验证完整 SnapshotIdentity。批次队列不得跨线程共享或跨调用留存，异常丢弃本作用域队列，写失败进入原步骤回滚。步骤外初始化保留即时发布语义，不能将草稿当作持久读取收据。
+- mutate/mutate_batch 只生成提案，不隐含 repair；默认提案阶段的问题 repair 在预算裁剪后执行一次。显式 JointRepairPolicy 可按 max_rounds 协调多轮 ProblemRepair/UnitRepair，每轮验证最终版本。propose 不重复手工 repair；初始化与 update 内新状态是独立阶段。repair 错误必须传播。
+- get_proposal_contexts 按原始提案行返回局部上下文，复合层须沿 ranges/局部处置/StrategyTask 路由，不得把所有子提案改用顶层 context。
 - 插件可短路评估链，但返回 shape 必须合法
 - 运行态大对象通过 snapshot 引用传递，不直塞 context
 
@@ -250,11 +291,11 @@ Collaboration rules:
 
 - **禁止**长期把 `population/objectives/violations/history/trace` 直接塞进 context
 - 大对象使用 `SnapshotStore.write()`，context 只保留 `_ref/snapshot_key`
-- context key 必须来自 `core/state/context_keys.py`
+- 通用 context key 由 `blackbase.context` 定义，优化 key 由 `nsgablack.context_keys` 定义（`core/state/context_keys.py` 为语义入口），ML key 由 `mlblack.context_keys` 定义。Project/Case 自定义键在本地 `context_keys.json` 注册；`metrics.*` 也须声明。Doctor 与标准运行入口使用同一作用域注册表，禁止让 Case 私有声明泄漏到其他 Case。
 
 ### 5.2 推荐读写优先级
 
-- 读取优先：snapshot -> adapter 内部状态 -> solver 字段
+- 读取服从声明的 authority mode；权威读取失败时禁止静默改读其他副本。持久数据验证 Snapshot identity，内存投影访问所属 Authority。
 - 写回优先：adapter `set_population*` -> solver `write_population_snapshot()`
 - 契约声明：通过 `context_contracts` 标注 `requires/provides/mutates/cache`
 
@@ -266,6 +307,12 @@ Collaboration rules:
 
 - `propose(self, solver, context) -> Sequence[np.ndarray | UnknownState]`
 - `update(self, solver, candidates, feedback: OptimizationFeedbackBatch, context) -> None`
+- `on_proposal_repair(self, solver, repair: ProposalRepair, context) -> None`：评估前验证/重建；证据包含 before/after CandidateBatch、稳定 token、原提案索引及完整 proposed_count。无改变也可能收到通知，预算未评估行不在证据内。
+- `on_proposal_disposition(self, solver, disposition: BatchDisposition, context) -> None`：评估与接纳后按最终索引筛选 pending 状态；不能拿这一步代替 repair 对账。
+
+repair 不改变行数、维度或 token。Adapter 必须处理数值变化和语义 metadata 变化；复合 Adapter 根据原 proposal ranges 及本地选择映射转发，不能广播，也不能提前压缩 pending。hook 返回即表示允许评估；不能恢复不变量时抛错，整个步骤回滚，不调用 Problem/Provider。默认允许无结构约束的普通提案替换；结构所有者不允许替换而又未实现对账时直接拒绝。
+
+A*/MOA* 默认 `repair_policy="reject"`，显式 `recompute` 重算父边代价，update 对修复后候选重建 h 和支配关系；领域仍须保证边可重新解释。CandidateProposerAdapter 保留 Unit ID 重建候选 Unit。TrustRegion 的 repair 须留在当前采样区域：DFO/MO/nonsmooth 使用 box 的无穷范数，subspace 同时检查子空间与坐标半径。不得把候选变化当作只需要重新绑定 token。
 
 候选进入控制面后使用 `CandidateBatch` 同时保留 `semantic_states`、`numeric_matrix`
 和 candidate token/provenance：数值算法消费矩阵，Representation / Problem / 结果对齐消费
@@ -276,7 +323,7 @@ Collaboration rules:
 建议实现：
 
 - `get_state()/set_state()`：checkpoint 恢复
-- `snapshot_step_state()/restore_step_state()`：步骤事务回滚；默认可复用脱离后的
+- `snapshot_step_state()/restore_step_state()`：步骤事务回滚；快照必须返回 `Mapping[str, Any]`，捕获过程只读。默认可复用脱离后的
   `get_state()/set_state()`，禁止通过 `deepcopy(adapter.__dict__)` 复制锁、executor、
   Provider/session 或任意第三方对象图
 - `step_transaction_children()`：复合 Adapter 显式声明拥有独立事务状态的子 Adapter；
@@ -289,6 +336,10 @@ Collaboration rules:
 - `get_population_partitions()/set_population_partitions()`：`partitioned` 复合 Adapter 按稳定 unit/role/phase ID 保存多个 `PopulationPartition`，不得把不同子群体无语义拼接
 - `get_current_candidates()/set_current_candidates()`：L1/trajectory Adapter 的当前候选访问；不得冒充 population snapshot
 - `get_runtime_context_projection()`：可视化/日志运行切片
+
+多策略组合的正式调用输入是 `StrategyTask.from_context(context)`。角色、实例路径、阶段、区域、种子和原始提案预算由该任务统一生成；repair/disposition/update 必须绑定原任务，不得用全局观测覆盖。接纳结果由 BatchDisposition 表达，不能改写 task.budget。`StrategyOrigin.from_candidate(state)` 读取随 CandidateBatch/token 保存的嵌套来源路径。`unit_tasks` 是按路径组织的轻量摘要，`strategy_instances` 是各子实例观测；二者不得反向成为调度依据。重复角色名和同一可变 Adapter 对象占用多个实例必须在装配时拒绝。
+
+`AuthorityRegistry.register()` 登记每个事实时，所有者必须实现 `RuntimeParticipant`，或显式提供非空 `rollback_exempt_reason`。RunSession 的尝试次数、耗时和已消耗预算不随步骤回滚，结果走独立发布事务，因此显式豁免且禁止注册为步骤参与者。Mapping 校验只保证快照外层结构；内部可变值的脱离与 codec 安全由组件负责。
 
 恢复顺序是 `prepare -> setup -> Plugin.prepare_restore -> apply restore envelope -> ordinary init hooks -> initialize if fresh -> run`。`set_state()`、外部 Case 预加载与 checkpoint 插件必须先排队恢复信封，不能在 `setup()` 之前直接污染 Adapter 运行态，也不能由各 Adapter 私自维护 `_state_loaded` 分支。普通 `on_solver_init` 钩子必须只观察恢复后的状态。
 
@@ -311,6 +362,8 @@ evidence 补结算或归档 abandoned，不得隐式重跑 Problem、AcceptanceP
 
 ### 6.2 Plugin API（生命周期增强）
 
+评估决定须声明 `ParticipationContract(decides=("evaluation",))`；严格发布校验须声明 `vetoes=("finalization",)`。Controller 的决定须属于其 `owns_domains`。角色检查不是任意 Python 代码的沙箱。
+
 常见入口：
 
 - `prepare_restore/on_solver_init/on_population_init/on_step_attempt_start/on_generation_start/on_step/on_generation_committed/on_generation_end/on_step_attempt_end/on_solver_finish/on_solver_finalization_prepare/on_solver_finalized`
@@ -319,15 +372,80 @@ evidence 补结算或归档 abandoned，不得隐式重跑 Problem、AcceptanceP
 
 - 插件增强“能力”，不重写算法语义
 - 接管评估时必须保证返回 shape 与类型合法
-- 外部资源失败默认 soft-error，必要时给 strict 模式
+- 可选观察/日志后端可按声明记录 soft-error；求值、原始约束、权威快照和严格发布失败必须传播，不能以“外部资源”为由降级成成功。
 
 ### 6.3 Representation API（候选解管线）
 
-- `init`
-- `mutate`
-- `repair`
-- `encode`
-- `decode`
+组件必须通过 `blackbase.representation.RepresentationCapabilities` **只声明实际支持的操作**；不存在全部组件必须实现的统一五方法接口。角色与方法族对应如下：
+
+- 编码角色 `CandidateCodec`：`encode` / `decode`。
+- 搜索角色 `SearchOperator`：`init` / `mutate`。
+- 约束修复角色 `ConstraintRepair`：`repair`；可声明批量扩展 `repair_batch`，但同时必须支持 `repair`。
+
+上述 Protocol 描述完整角色接口；仅提供角色中的部分操作时，按实际操作声明能力，不得声称满足整个 Protocol。`RepresentationPipeline` 是装配门面。框架不再根据 initializer/_initializer/decoder 标记猜测能力，ML bridge 也无需伪装未支持的方法。确定性、幂等性须显式声明并验证，不统一强加。
+
+需要 Unit 数据的叶变异组件声明 `unit_inputs=UnitInputSpec(...)` 并实现 `mutate(candidate, context, *, unit)`。Adapter 经自身 `mutate_candidate(control, candidate, context)` 提供候选副本与只读 UnitInputs，不从共享 context 猜所有者。消费者声明 uses_pipeline_mutation；Doctor 用 unit-operator-contract-invalid 检查签名和可检查的字段依赖，不执行特征计算。普通算子仍只接收候选/context；通用 kernel wrapper 不会自动转发 Unit 输入。完整执行与迁移约定见 `docs/architecture/UNIT_OPERATOR_INPUTS_CN.md`。
+
+多个 Adapter 可以共享一份问题 Pipeline。不同搜索需求使用 `RepresentationPipeline(mutation_operators={...})` 注册具名算子，实际消费者通过 `set_mutation_operator(name)` 选择；未指定使用默认 mutator。选择不修改共享默认项，不按 Adapter 类型猜测，不自动广播到子 Adapter。UnitBinding 仍独立负责结构构建；禁止为了算子差异复制完整问题管线。共享算子对象也共享其状态，需隔离时显式创建不同实例。
+
+初始化、变化、选择、修复是 Adapter 拥有的行为类别，不是固定的四阶段循环。每个叶 Adapter 只用 `operation_methods` 声明实际消费的角色，通过 `set_initializer/set_mutator/set_parent_selector/set_selector/set_repair` 装配；未支持的非空绑定拒绝，包装层不自动广播。父代选择返回精确 SolutionRef；生存、替换、候选提名与考察次序用不同 purpose 的只读 SelectionRequest，返回本次请求局部索引，不能把它们混成一个无语义的 choose。需要参考 Unit 的 mutator/selector 声明 UnitInputSpec，由实际所有者捕获，只读参考 Unit 与请求内待选候选是两组输入。直接 mutator 与具名 Pipeline 绑定互斥。
+
+VNS/MOEA-D 与 NSGA-II/III、SPEA2 的 `set_change(function)` 装配完整变化，普通函数签名为 `(request, *, rng)`。
+GA 可返回 `ChangeBatchResult((ChangeResult(...), ...))`；request.max_outputs 是本次剩余后代许可，
+一次调用可共享计算与 RNG，逐孩子派生身份、来源与输出；超量拒绝，空批次不自动重试。
+VNS/MOEA-D 的标量位置只接受恰好一个结果，不把二维候选猜成批量。完整 change 不叠加旧交叉/变异。
+GA 的普通 `set_selector(choose)` 接收 Pool 并返回 Pool，复用原生 survivor 位置；
+已有 selector 对象仍返回局部索引。Pool 是调用内 ChangeSelection 的公开别名，all/concat/filter/sample/sort 等保留接口；
+选择必须来自同一请求根与原始位置，精确引用重数不能代替位置，旧数组模式不得猜身份。
+选择反馈与 raw_feedback 明确分开。任务中的 parent_selector 也服从实际成员与额外 donor 声明。
+GA survivor 还允许 `choose` 返回 `(members, {"name": selected_pool})`，一次计算交付主成员与命名副结果。
+主结果仍满足本次 count 与位置唯一性；副结果必须同一 offered root/scope，可保留普通集合的顺序和重数。
+副结果表示普通集合的精确成员：不存在则冻结 pool_id/name/absent 并创建，存在则冻结 descriptor 并替换；空结果可创建空池。
+所有结果先校验，副结果脱离成既有 PoolEdit，与 Unit 更新及逐提案输出在同一事务提交；目标漂移、同目标不同计划或 append/replace 冲突拒绝。
+不改算法结果/投影视图，不增加求值或独立维护提交；其他选择 purpose 不接受该副结果形式，普通单 Pool 与原索引组件接口继续有效。
+`partition(pool, by=choose, rng=...)` 在非空输入上调用规则一次，按本次输入位置返回选中/未选中 Pool；
+空输入不调用规则。临时局部坐标只用于校验，输出立即映回原输入，不能洗白外层重复生存位置。
+选中顺序服从规则，其余保持输入顺序；不以 difference 的引用差集代替位置补集，不自动写成员或求值。
+`source.chosen(rule, rng=...)` 只执行纯 Pool→Pool 规则，允许显式有放回选择，映回原位置；最终 survivor 仍拒绝重复原位置。
+`Pool(parent=source_or_scope, name=None)` 创建空调用期草稿；有 name 时，同 scope 同名共用一份草稿。
+`target.inject(source, replace=False)` 追加精确引用，新加入者去重；replace=True 精确保留源顺序和重数，包括空替换。
+构造不自动读取旧池或创建持久集合；首次追加到已有具名目标须有旧成员读取授权，精确替换不扩读权限。
+具名 inject 仅开放实际 survivor 与 pool_maintenance 回调，自动脱离为 PoolEdit；普通 change 仍显式返回 ChangeResult.edits。
+同草稿多次注入合为最终一个计划，不合并独立回调写者的冲突；all 返回冻结视图，chosen 规则内禁止 inject。
+parent 仅给出调用作用域与局部来源，不改持久 parent/ancestors、任务比较框架、返回地址或调度次序。
+仅同反馈 root 能保留调用期选择分数；普通集合提交只保存引用。该语法不支持装配期 Pool handle 或直接执行 Adapter。
+`request.pool` 是调用内只读候选访问，可按 main/subpool/read 取得精确引用，局部 take/random/merge 后读取值；
+操作顺序由函数编排，不限于 VNS 当前点或 MOEA/D 的 DE 后处理。PoolTask 内额外 donor 必须通过
+`change_sources`（精确公开子池名）/`change_allow_main` 声明，嵌套取交集，不绕过原输入。
+可返回 `ChangeResult(candidate, outputs=(PoolOutput(name, create=True),))`：只把已评估且接纳的精确版本
+加入普通集合，提交后可读；不直接改算法结果/投影视图，不代表最终成员选择。输出指令绑定本提案 token，
+派生交接不得重放。来源、输入范围配置、池与 RNG 复用现有事务/checkpoint；旧缺声明字段状态须显式迁移。
+完整边界见 `docs/architecture/POOL_CHANGE_ORCHESTRATION_CN.md`。
+
+只读选择支持 where/order_by/top/intersection/difference/groups；排序必须由调用者提供有限数值或词典序键，
+不猜多目标比较、不隐含求值。普通函数可用 request.pool.replace_members/update_members/remove_members/trim_members
+生成 PoolEdit，并通过 ChangeResult.edits 返回。replace_members(..., create=True) 可显式冻结缺失目标并创建普通集合，仍须声明目标权限；默认不创建。只对携带计划的接纳提案执行；同批相同计划去重，不同计划争用同目标拒绝，
+append/replace 同目标也拒绝。计划基于调用前已发布反馈，冻结目标 descriptor，和输出一起参与同一池事务。
+精确替换/裁剪保留引用顺序与重数，空更新不能折叠方向任务坐标；新增去重只针对新增引用，不按数值判断身份。
+数据层直接维护使用 replace_subpool_members/update_subpool_members/remove_from_subpool/trim_subpool；
+解除成员不删除候选，原有 Root/GC 规则继续有效。见 `docs/architecture/POOL_COLLECTION_OPERATIONS_CN.md`。
+
+NSGA-II/III、SPEA2、VNS、MOEA-D 支持 `set_pool_maintenance(function)`，
+普通 `(request, *, rng)` 返回有序 PoolEdit 计划。每个实际叶 update 在算法决策后调用一次，
+也可使用具名 Pool.inject 声明计划后返回 None；既无自动计划又返回 None 仍按错误处理。
+包括首次基准，不按候选/槽位次数重复；普通函数绑定沿用身份与 checkpoint 契约。
+request.accepted 是本消费者本批硬接纳 Pool，不等于最终成员；request.members 是所属种群按真实槽位顺序交付的最终成员，NSGA-II/III、SPEA2、MOEA/D 支持，VNS 为 None。二者保留各自选择反馈；历史档案与 members 在同一作用域归并，跨 root 合并须显式给 raw 或统一比较规则，不自动拼投影分数。MOEA/D members 是多目标槽位集合，不是一种统一方向评分。精确 accepted 和自有成员能力只贯穿该调用的读取与计划，
+main 仍只枚举旧公开记录，任务的 change_sources/change_allow_main 限制在 update 中继续生效。
+计划与既有 change 输出统一校验并进入原 Authority/Pool manifest 事务；冲突拒绝，失败回滚但求值成本保留。
+无提案/零接纳不单独提交维护，不添加新的维护循环或全局调度器。
+
+直接组件须提供 checkpoint_identity，显式声明 stateless 或实现数据 Mapping 状态 codec，随所属 Adapter 回滚/恢复；同一有状态对象不能被多个绑定重复拥有。UnitBackedAdapter 统一保存正式和专用步骤快照的绑定状态，图搜索/VNS/Fixed 的独立 codec 显式保存；恢复后续算法校验失败须补偿组件状态。Pool 输入与暖启动先于直属 initializer，初始化不等于 Unit 构建；依赖反馈的直属变异须在已有合法基准后调用。`set_repair` 对应 UnitRepair 并继续要求 JointRepairPolicy/ProblemRepair validator，不得在 propose 另跑问题修复。图搜索、多 Unit、Provider 及几何配对限制以实际声明为准。当前逐族支持、默认行为与验证见 `docs/architecture/ADAPTER_OPERATION_BOUNDARIES_CN.md`；首轮装配示例见 `docs/architecture/ADAPTER_OPERATOR_BINDINGS_CN.md`。旧 Pipeline 入口继续有效。
+
+ProblemRepair 修问题约束；UnitRepair 修算法结构，也可改候选。JointRepairPolicy 显式开启严格共同验收，要求问题组件提供只读 validate；UnitRepair 绑定有 algorithm_unit/UnitBinding 的实际叶所有者，只改 codec 草稿。最终版本须共同通过，对账后再次验证 Unit；不能由最后执行的 repair 宣布成功。循环/次数耗尽回滚后由根 Adapter.on_joint_repair_rejected 决策。组合通过 proposal_repair_children 共享索引/任务映射，不可广播或静默丢行。详见 `docs/architecture/JOINT_REPAIR_CN.md`。
+
+共同验收仅允许送评。默认 ProblemRepair 与共同修复均在修复前捕获活跃所有者及组合祖先的局部参与者快照；零接纳恢复该子树，再通知普通 disposition。部分接纳先由 Adapter disposition 整理坐标，再调用 UnitRepair.project_admission 并重验；baseline 保留原始 Unit，draft 已整理，evidence/disposition 仍是原始索引，不得重复裁剪。投影必须保留 admission_unit_fields 声明的字段。评估成本不回滚，不重跑 repair，也不猜测任意结构的裁剪。
+
+失败证据包含稳定 owner 路径、局部/根索引和 token。on_rejection 默认 stop，retry/advance 必须显式选择。advance 先规划所有失败路径，再在独立决策事务中整组推进；异常/取消整组恢复，不能计为逻辑提交。串行退出阶段的 teardown 延后到决定生效后，失败进入可恢复清理队列，成功后不得在最终 teardown 重复清理。多轮修复与拒绝决策复用 Case cancellation/deadline，不新增资源授权者。
 
 约束：
 
@@ -337,10 +455,43 @@ evidence 补结算或归档 abandoned，不得隐式重跑 Problem、AcceptanceP
 
 ### 6.4 Bias API（软引导）
 
+- Bias 通常在求值反馈边界形成选择偏好；可只依赖候选，也可显式读取参考 Unit。candidate/unit/transition 等比较范围是可选工具，不要求每个 Bias 都实现。正式说明见 `docs/architecture/UNIT_PREFERENCE_CONTRACT_CN.md`。
+- UnitFeature 明确声明数据字段依赖及 none/raw/selection 反馈视图；派生缓存按 Unit 实例隔离，不进入 checkpoint，读取时按依赖内容校验。历史/路径/动量等算法状态仍须显式保存，不能当缓存丢弃。特征函数只消费声明数据，不递归调用特征，也不能隐藏决策或求值。
+- 轨迹/区域候选关联分数通过 Unit.candidate_feedback 保存值、依赖和内容版本；候选改变后旧分数不再参与比较。历史度量不能冒充当前候选反馈。trajectory/poll/parameters/local_region 的 Unit schema 为 v2，旧 v1 不自动恢复或重新求值；详见 UNIT_FEATURES_CN.md。
+- 候选改动后须先完成问题管线处理，再消费相关特征；NSGA-II 与 MOEA/D 的 pipeline 变异给搜索算子传独立父代副本。PopulationUnit 分别追踪 objectives/violations 的候选版本，只更新一个字段不能使另一个旧字段生效，部分更新状态须保留到 codec。完整求值使用 attach_feedback；成员替换使用 replace_evaluated_rows 同步候选、反馈和 token。DE/MOEA/D 已接入；选择与比较入口拒绝过期反馈。这不是对任意 Python 写入或反馈真实性的证明。
+- UnitView/PopulationView 是带 owner_path、unit_id、schema、revision 的脱离只读依赖；同类型多实例按路径绑定。准备态成员可无 token，只按已知相同 token 排除自身，不能按数值相等猜身份。
+- PopulationView 允许同一候选 token 占据多个槽位，不能为区分槽位编造候选身份。UnitPreferenceBias 的 owner_path 指定参考 Unit，apply_to_paths 可按正式 StrategyOrigin 路径限定候选范围；默认全局，限定时无来源不适用、损坏来源传播。整体/变化偏好由 Adapter 显式消费。Unit、Bias 均不能自行获得全局调度或搜索决定权。
+- TabuSearchBias 评分只读，记忆定义为已提交步骤中接纳的提案；BiasModule 在 Adapter.update 后暂存更新，并参与步骤回滚和 checkpoint。单独 evaluate 不更新该记忆。其他历史语义必须显式声明。
+- stateful_preference 组件必须提供显式状态 codec 并禁用旧标量缓存；Unit 偏好依赖错误必须传播。不要假定新契约已经迁移所有旧 Bias 的隐式状态。
+
 - 偏置负责“软引导”而非“硬约束替代”
-- 若启用 `ignore_constraint_violation_when_bias`，必须在文档写明风险
+- 新 Bias 可实现 PreferenceProvider，返回声明键的 PreferenceDelta(key, delta, reason)。硬约束键不能通过偏好接口改写。
+- 必须保留原始评估。OptimizationFeedbackBatch.raw_objectives/raw_violations 是原始视图；objectives/violations 是选择视图。
+- ignore_constraint_violation_when_bias 只改变选择视图，禁止擦除 raw_evaluation；Case 文档必须说明这种约束软化。
+- `FeasibleEvaluationAcceptance` 只读取 `raw_violations`：有限且不超过容差才接纳，处置声明 `constraint_view="raw_evaluation"`。需要按选择偏好准入时另写显式命名策略，不得偷换“可行”的含义。
 
 ### 6.5 Solver/Control Plane 关键 API 速查
+
+- `store_solutions / read_solutions / propose_solutions`：登记版本、按引用读取、显式生成带源身份的新提案；`solution_pool.select(at=stamp, region=..., stage=...)` 锁定候选来源时点。context 仅传 pool manifest/time/input ID/mode。
+- `pool_input_modes` / `supports_pool_restart` / `restart_search`：Adapter 显式声明池初始化、竞争、搜索重启。不得因实现 Unit 就推断已支持任意交接；PoolSearchAdapter 的接收方须支持 initialize/compete，producer 的重启不重放生命周期。
+- `PoolTaskSpec(select=None, ...)` 默认读取最近组合 working_pool 的已发布引用（包括初始化种子），没有绑定时读取根池 main。Router/Chain 的 working_pool 必须在首次提案前存在、已提交且为普通集合；None继承，不创建池、不复制根池。首次提案后禁止切换绑定。普通change/maintenance的main使用同一区域，仍要求任务main授权。命名输入子池必须在实际取解时存在；不存在报错，不按空池等待。count 为每实例数量或 "all"；initialize 默认数量由 Adapter.default_pool_input_count 声明，NSGA-II/III 默认自身容量；refine 默认每实例一个起点，整批精修须显式 count="all"；compete 默认全部。
+- PoolTaskSpec 的 distribution 默认 initialize=independent、refine/compete=partition，可显式选 shared。每实例内部按精确 SolutionRef 无放回，群间可共享；不按数值去重，不自动生成补足。shuffle 默认 True；on_insufficient 默认 error，可选 wait/available。随机分配在请求开始时确定，队列和独立 RNG 随事务/checkpoint 保存。initialize 完成后继续原算法，默认不因阶段变化重新初始化；再次取解需显式新 request_key。SA/VNS 支持普通 refine，NSGA-II/III 支持 initialize/compete，MOEA/D 支持返回 compete。
+- 母池与 manifest 使用 solution_pool/v2、solution_pool_manifest/v2；全部子池具有 view_id/revision/parent/created_by/published。candidate_collection 是普通引用集合，candidate_view 是算法最终选择，objective_projection 另带比较参数。父子表示派生来源，不要求集合包含。旧缺失视图身份或任务解释的 checkpoint 要显式迁移。
+- 投影任务由 VNS、SA、PatternSearch、SingleTrajectoryAdaptive、GaussianSearch、MAS、有限差分 GradientDescent 及四种信赖域消费，沿用 PoolTaskSpec。GradientOptimizer 仅支持普通精修，目标投影不能替代梯度变换；A*/MOA* 仅显式 new_root 初始化。按名称和按创建者选择同一投影视图必须应用相同投影与能力检查；不允许按名字绕过。subpools.all/random 也能选择已发布的普通最终结果视图，聚合 output 不等于最终选择。pool_result_owner 解析透明包装后的真实算法实例路径。
+- 选择器数量是整个角色的视图数，count 是每视图起点数（默认 1）；普通具名集合保留每实例配额。partition 分发任务，shared 显式重复，independent 不适用于视图任务。相同 SolutionRef 出现在不同方向不能去重；解释、来源、抽样和进度共同恢复，坏配置不得静默退回默认评分。
+- VNS 先通过正常 repair/评估/接纳建立起点基准，再比较邻域。子池输出收集被接纳的提案，不保证每一项都是局部改进；接收方重评并自己选择。请求 key 在同次任务中稳定，重复触发使用新 key；phase_policy 的局部 pool_tasks 摘要用于阶段决策，不是共享 context 大对象。
+- 投影任务的派生结果视图与聚合 output 分开：VNS 的 get_pool_refinement_results 返回最终 incumbent 当时选中的精确版本，不能按 token 追读未来版本或以保留根推断选择策略。控制面将接纳池引用写入每项 Feedback.info.accepted_solution_ref，随反馈路由。subpool_descriptor/children_subpools 按冻结身份查询直接子级或后代；名字前缀不定义父子关系。旧投影 checkpoint 缺失身份/源 descriptor 时拒绝猜测恢复。完整嵌套契约见 SOLUTION_POOL_CN.md §10.6。
+- SA/VNS 的 Unit 投影与变异草稿复制保留 provenance；变异才派生新 token。多实例反馈优先按实际候选绑定读取，不能把局部行号直接当全局行号。PoolTaskAdapter 启用时根 Adapter 与池均为必须恢复的 checkpoint 组件；禁止跳过坏子状态后继续使用已恢复的池游标。
+- MOEA/D setup 仅准备运行结构，起始候选在首次派发后通过正常 repair/评估/接纳建立；完整 bootstrap 后 pool_views_ready 才允许下游选择方向。NSGA 系列与 MOEA/D 成员引用随 PopulationChange 对齐，发布和回收不得按 token 寻找未来版本。SA/Single 可以探索较差当前点，但精修结果交付任务内最好已评估解，current/best 均声明保留根。
+- Role 的池 intake 不受普通 max_candidates 裁剪，避免消费输入却丢弃其处置坐标。无本地候选的组合器明确声明空根，档案拥有者保护真实引用；CandidateProposer 等外部组件不猜测存活状态。Chain/Async 通过嵌套已装配 Router 使用池任务。全体覆盖与明确未支持项见 SOLUTION_POOL_ADAPTER_READINESS_CN.md；Unit 支持不自动意味着池精修支持。
+- 解池历史数量、编排初始取解配额、各算法 Unit 容量和后代批次大小分别配置。不得要求 `build_solver(config={"population_size": ...})` 统一它们；`PoolSearchSpec.initial_count` 不是池容量，也不须等于接收算法的 `population_size`。
+- `set_solution_pool_retention(PoolRetentionPolicy(...))` 在首次发布前显式启用闲置回收；Adapter 必须声明 `get_solution_pool_roots`，未知组件不得猜测。显式 retain/未消费输入保护值；年龄与引用回滚，物理删除在提交后，失败可重试。压缩不能改存活引用的原始 row/token。旧 manifest 仅在保留窗口或显式 pin 下保证值可读；可传输 checkpoint 自带值，未决 Authority 的 prepared 值闭包须固定到恢复确认。详见解池契约第 9 节。
+- Checkpoint envelope.v2 对实际保存的 payload_bytes 验签后解析；不对语义值重复 pickle 来近似签名，不用重复 payload 建立两个事实源。
+
+- `register_state_participant(...)`：接入共享 RuntimeParticipant 事务，不遍历任意对象图。
+- `register_semantic_extension(...)`：提交前扩展和提交后投影；后者失败不得伪装成未提交。
+- `finalization_hooks = FinalizationHooks(...)`：注册结果准备、暂存、冻结、中止；事务型三钩子必须完整。
+- `run_session.submit_restore(...)`：统一恢复入口；扩展层不得私自维护恢复顺序标志。
 
 - `set_adapter(...)`：挂载/替换算法策略
 - `evaluate_individual(...)`：单点评估入口
@@ -410,12 +561,14 @@ evidence 补结算或归档 abandoned，不得隐式重跑 Problem、AcceptanceP
 
 - `problem/`：问题定义、目标、约束、数据/场景契约
 - `pipeline/`：候选流转、representation、evaluation chain、数据处理链
-- `config/`：可声明、可复现的装配配置
+- `config.py` 与各组件的 `config.py`：可声明、可复现的装配配置；不强制额外 config/ 目录
 - `build_solver.py` / `run_solver.py`：正式组装入口与运行入口
 - `plugins/` / `bias/` / `reporting/`：按能力边界落位
 - `registry` / `catalog`：需要被发现的正式组件必须可索引
 
 示例文件本身只能是薄入口、兼容层或教学调用层。真实装配逻辑必须进入上述标准项目结构，而不是堆在 `examples/.../*.py` 里。
+
+公共装配实现由 `nsgablack.project.case_support` 提供；通用图导出由 `blackbase.project.graph_export` 提供。Case 保留显式薄导出、本地工厂与参数。可变 builder 注册表必须每 Case 独立，不能用共享模块级字典替代本地注册。生成模板默认可运行；`add-component` 生成自定义骨架，不按名称自动选择内置组件。
 
 允许：
 
@@ -430,7 +583,7 @@ evidence 补结算或归档 abandoned，不得隐式重跑 Problem、AcceptanceP
 - 在 example 中直接拼隐式状态，导致主干能力无法复用/审计
 - 让示例和正式框架表面长期分叉
 - 把新的完整标准脚手架长期种在 `my_project/`，导致 `my_project` 被案例代码污染
-- 在 `examples/cases/<case>/build_solver.py` 里长期堆放 problem、pipeline、adapter、bias、plugin、reporting 的全部装配细节
+- 在 `examples/cases/<project>/cases/<case>/build_solver.py` 里长期堆放 problem、pipeline、adapter、bias、plugin、reporting 的全部实现
 - **挂羊头卖狗肉：** 示例声称演示组件 X，但 `build_solver.py` 实际未装配 X。`--check` 输出中的 adapter/providers/plugins 必须与 README.md 的组件组合表一致
 
 跨框架规则：
@@ -463,8 +616,26 @@ pytest -q
 # 核心测试子集（建议先跑）
 pytest tests\test_solver.py tests\test_parallel_integration.py tests\test_snapshot_store.py -q
 
-# 项目体检（严格）
-python -m nsgablack project doctor --path . --strict --format problem
+# Unit/repair/Bias/接纳边界改动
+pytest tests\test_proposal_repair.py tests\test_bias_acceptance_boundary.py tests\test_evaluation_acceptance.py tests\test_adapter_step_transactions.py -q
+
+# Unit 成员、联合修复、部分接纳、Provider 清理与恢复组合
+pytest tests\test_unit_member_composition.py tests\test_population_member_operations.py tests\test_checkpoint_resume_plugin.py -q
+
+# Unit 成员只读输入、Bias 候选范围、MOEA/D 重复槽位与 SA 基准
+pytest tests\test_unit_scope_and_member_inputs.py tests\test_unit_preferences.py tests\test_sa_adapter.py -q
+
+# 解池时间、候选身份、200→100×2、部分接纳与正式 checkpoint
+pytest tests\test_solution_pool.py tests\test_pool_search_adapter.py -q
+
+# 解池闲置、共享持有、批次压缩、历史闭包与提交失败恢复
+pytest tests\test_solution_pool_retention.py tests\test_evaluation_evidence_recovery.py tests\test_checkpoint_resume_plugin.py -q
+
+# 仓库体检（严格，包含所发现 Case；显式开启主干 Catalog 审计）
+python -m nsgablack project doctor --path . --strict --catalog-audit --profile framework-core --format json
+
+# 对实际改动的 Project/Case 单独执行装配检查（会执行 builder，不执行 run/fit）
+python -m nsgablack project doctor --path examples/cases/algorithm_units --strict --build --format json
 
 # Catalog（主干口径）
 python -m nsgablack catalog list --profile framework-core --kind adapter
@@ -477,20 +648,24 @@ python -m nsgablack catalog list --profile framework-core --kind example
 
 ---
 
+Doctor 的 `--format problem` 仅改变呈现，不筛选级别；未知位置不填 `1:1`。
+提交检查必须审阅 coverage 中的 scope/skipped；根目录检查未开启 `--build` 不代表装配检查通过。
+非 strict 默认仅 error 阻断，`--fail-on warn` 可单独提高失败阈值。详见 `docs/project/DOCTOR_CN.md`。
+
 ## 11) 快速接入模板（新增项目）
 
-优先参考：
+优先参考实际产品面：
 
-- `my_project/build_solver.py`
-- `my_project/problem/example_problem.py`
-- `my_project/pipeline/example_pipeline.py`
-- `my_project/plugins/example_plugin.py`
-- `examples/cases/*/build_solver.py`
-- `examples/cases/*/run_solver.py`
+- `docs/standard_scaffold_tutorial/01_create_and_run.md`：生成并运行 Project/Case。
+- `project/scaffold/case_template_solver/`、`project/starter.py`：可运行起步模板；ML 起步由 mlblack.project.starter 提供。
+- `project/case_support/`：公共装配实现；Case 绑定自己的工厂与参数，不复制完整框架工具。
+- `examples/cases/algorithm_units/cases/`：Unit 构建与搜索示例。
+- `examples/cases/catalog_recipes/cases/`：正式 Adapter 装配示例。
+- 示例入口形状为 `examples/cases/<project>/cases/<case>/build_solver.py` 和同目录 run_solver.py。
 
 建议路径：
 
-- 若做正式 example/case：先在 `examples/cases/<case>/` 下跑通 `problem + pipeline + solver + observability suite`
+- 若做正式 example/case：先在 `examples/cases/<project>/cases/<case>/` 下跑通问题定义、管线、Unit/Adapter、控制面与必要能力
 - 若做框架模板或用户私有工程孵化：再考虑 `my_project/`
 - 完整示例不要反向回灌到 `my_project/`
 
@@ -506,10 +681,24 @@ python -m nsgablack catalog list --profile framework-core --kind example
 
 ## 13) 提交前最小检查清单（建议复制到 PR）
 
-- [ ] 是否保持四层边界（Solver / Adapter / Representation / Plugin）
+- [ ] 是否保持 Problem / Pipeline / Unit / Adapter / Bias / Plugin 职责与共享底座边界
+- [ ] 若改候选管线，是否验证 repair 通知、原提案索引/metadata、Unit 重建或拒绝、复合路由及失败回滚
+- [ ] 若改解池/交接，是否验证时点截止、私有可见性、源 token/版本、部分接纳游标、manifest 与 Authority 同步发布，以及正式 checkpoint 恢复
+- [ ] 若改 Bias/接纳，是否验证选择软化不能绕过 raw 可行性门，以及证据 Snapshot 与准入结果一致
 - [ ] 是否避免大对象直写 context（改为 snapshot + ref）
 - [ ] 若改评估链，是否验证单点/批量/插件短路三路径
 - [ ] 若改 catalog，是否验证 `default` 与 `framework-core` 双口径
 - [ ] 若新增/修改 example 或 demo，是否确认仍走标准脚手架/正式组装路径
 - [ ] 若示例声称演示组件 X，`--check` 输出是否确实包含 X（禁止挂羊头卖狗肉）
-- [ ] 是否运行 `project doctor --strict --format problem` 并确认无新增错误
+- [ ] 是否运行 Doctor 严格检查，记录 scope/coverage/skipped，并区分既有发现与新增回归
+- [ ] 是否对受影响的 Project/Case 执行必要的 `--build`，以及显式选择 Catalog 审计口径
+
+Pool.member_field(name, default=...) 在 NSGA-II/III、SPEA2 的正式生存选择中读取已声明 member_fields。按 offered 位置绑定旧 Unit 槽位，新提案用显式 default；不按引用字典合并重复槽位，不捕获活 Solver，不新增 checkpoint 状态。take/chosen/partition 保留坐标；跨根集合不猜所有者。最终成员维护的 request.members 复用同一字段冻结/槽位映射；accepted、历史池和任意 change 入口不猜成员属性。
+
+普通 Pool 生存选择允许 choose(pool, *, count[, rng])，实际 count 由 SelectionRequest 注入；旧无 count 函数及显式 partial 固定 count 保留原调用，自动 count 绑定身份为 pool_selection/v2。member_field 对已有成员可省略 default，对新提案必须明确补值；封闭结构数据复用 Unit codec，整数精度不能被默认值静默改变。
+
+NSGA-II/III、SPEA2 的 ParentSelectionRequest.members 是按真实槽位排列的调用期 Pool；父代选择可返回其派生 Pool（允许重复抽同一槽位）。旧引用返回只在成员引用唯一时绑定槽位，重复成员歧义须拒绝；外部父代下标为 None。完整 ChangeRequest.parent_pool 只读交付相应成员属性，parent_member_indices 是提案时点位置，不能反向寻址后续 Unit。普通 mutator 不新增参数，来源权限、repair、接纳与事务沿用原路径。
+
+StrategyRouterAdapter可通过既有set_pool_maintenance或pool_maintenance参数拥有一次统一档案归并。子更新完成后以members_by_owner交付各自最终成员，members为无统一选择评分的引用聚合；仅收集本次非空接纳直属子树，不把异质种群拼成权威矩阵。计划复用原池事务和冲突检查，绑定状态进入Router原checkpoint/步骤快照。零接纳、等待、取消无独立维护提交；独立Case或多机异步汇合不在此语义内。
+
+2026-11-24 补充：一次步骤的 Solver/Adapter 联合参与者图统一捕获，RuntimeTransaction.partition 只转交已捕获范围，防止跨图重复捕获/清理。阶段拒绝的 Authority 恢复由公共 body 出口执行，异常仍完整回滚，持久证据和预算保留。DE/MOEA-D/有限差分的提案字段按 admission_unit_fields 共用 project_pending_proposals；它不替代正式成员的 PopulationChange。普通池可显式 created_by，survivor/maintenance/change 创建时保留实际实例路径，更新不篡改创建者。all/random 默认仍选结果/投影视图，普通集合须显式 kind="candidate_collection"。步骤外非 initial/accepted 写入默认私有，明确发布须 publish=True，attempt 内禁止强行发布；初始种子的即时公开语义保留。

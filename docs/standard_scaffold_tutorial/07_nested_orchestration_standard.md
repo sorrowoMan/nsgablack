@@ -131,12 +131,15 @@ depth           父 depth + 1
 self.case_runtime.checkpoint()
 ```
 
+这里的 checkpoint 是取消与截止时间检查，不是保存求解检查点；
+Solver/Trainer 的可恢复状态仍由各自的正式 checkpoint 组件保存。
+
 Project 超时、父 Case 取消或并行 `fail_fast` 都会写入可跨进程重建的 cancellation
 authority。它是协作式取消；不可中断的第三方调用仍需由对应 Provider 提供取消能力。
 
 ## 4. 资源与预算不能复制
 
-父 Case 的 L0 grant 是硬上界。`CaseInvoker` 在父 grant 内维护共享子资源池：
+默认本机调用时，父 Case 的 L0 grant 是硬上界。`CaseInvoker` 在父 grant 内维护共享子资源池：
 
 - 子请求超过父线程、GPU 或 device token 授权时立即失败；
 - 多个并行子调用对父资源做原子竞争，不能各自复制完整父额度；
@@ -146,6 +149,19 @@ authority。它是协作式取消；不可中断的第三方调用仍需由对�
 预算也不传普通 `remaining_budget` 数字。父调用先在共享 Budget Authority 中预留，
 再给子 Case 一个 `BudgetHandle`。子 Case仍在真实 charging point 使用
 `BudgetAccount.from_resource_context(...)`；完成后实际消耗计入父预算，未使用部分返还。
+
+Project 显式配置 `L0.nested_execution.case_names` 后，被选中的完整内层 Case 可复用外部 Worker 执行。
+此时目标物理容量来自 Project 对该 target 的共享持久 L0 授权，不把父本机的线程数复制成远端授权；
+逻辑 lineage、取消、deadline、父级预算委托和 Artifact 收据继续贯穿。
+`CaseInnerRuntimeEvaluator(max_workers=...)` 请求批次并发，Project 控制生效上限和放置。
+
+内层需要父级已注入的数据时，增加 `artifact_bindings={"dataset": "dataset"}`：
+左边是内层输入名，右边是父 Case 的 `input_artifacts` 名。
+框架转交原发布收据；内层从自己的 `runtime.request.input_artifact_bindings` 取 binding，
+再用 `runtime.artifact_publisher.read_verified(binding)` 读取。
+只传源文件路径不能代替这份声明；引用注入本身不执行下载或初始化 Unit。
+未命中的下层调用继续 local。完整装配和当前限制见
+[状态减负与内层 Case 批量执行](../architecture/STATE_COST_AND_NESTED_EXECUTION_CN.md)。
 
 ## 5. 统一结果信封
 
@@ -192,3 +208,49 @@ Solver 与 Trainer 的目录形状一致：
 - 调用方检查 `CaseRunResult.ok` 并保留失败信封；
 - Artifact 通过命名引用返回；
 - Project Manifest 保存完整版本化结果信封。
+
+## 8. Pool 与三级 Case 的边界
+
+每个 Solver/Trainer 运行维护自己的 SolutionPool、候选身份、逻辑时钟和 Unit。
+Project 的父子调用关系不自动把两个池接成一个可写的母池/子池。
+同一 Case 内 Router/Chain 的 working_pool 继承也止于该 Case 的调用作用域，
+不会成为新 Case 的默认工作区域。
+
+正式示例 `examples/cases/super_topology_orchestration` 的三级语义是：
+
+```text
+外层 Solver：x = (capacity, regularization)，二维配置
+    → Trainer：以 x 创建训练问题和模型规格
+        → 内层 Solver：target = clip(0.5 × (capacity - regularization))
+                         搜索一维 calibration = y
+        ← 返回已评估、由内层选中的 y
+    ← 用 x 和 y 计算 loss、complexity
+外层：把这两个目标作为 x 的原始求值
+```
+
+这里的 y 属于另一候选空间。它进入 Trainer 的模型与评分计算，不直接作为二维配置加入外层池。
+父池也不自动接收内层全部尝试、继承内层排名或修改原 x 的身份。
+子调用资源、预算、deadline 和结果收据继续经 BlackBase 管理。
+
+### 8.1 什么时候才需要把父池候选交给内层
+
+业务明确需要暖启动、参考解集合或历史候选时，才增加这项输入：
+
+1. 父层先选择并冻结候选版本，明确交付用途。
+2. 少量可传输值通过 inputs 或 builder 的 component_overrides 交付；大集合和持久对象通过
+   ArtifactBinding 交付，不能仅给子 Case 一个父池的 SolutionRef。
+3. 接收方显式消费输入。需要暖启动时，已有 `set_warm_start(candidate, source_run_id=..., metadata=...)`
+   会排队种子，进入本层正常初始化和求值；inputs 注入本身不等于自动播种。
+4. 同空间仍需验证维度与问题含义；异空间必须提供明确映射。本例的 x→target 是问题参数映射，
+   不意味着把二维 x 当成一维 y 的初始点。
+5. 源引用可以作为来源证据保留，接收方建立本地地址。父反馈、Bias 分数和 Unit 不自动成为子层权威。
+
+当前没有新增自动跨 Case 池导入 API。若未来出现多个相同需求，可以把候选 payload、来源、映射和
+接受方用途收敛成可复用交接约定；这不要求共享可写 Pool 或自动回写祖先池。
+
+### 8.2 提交与恢复仍分别归属各层
+
+内层 Case 已成功发布的结果和真实预算消耗，不随外层后续步骤失败而撤销。
+再次调用默认创建新的子运行；父 checkpoint 不自动表示动态子任务已经去重或已经续跑。
+若业务需要复用已完成子求解，应显式保存逻辑请求与成功结果收据，按相同问题、输入版本、
+配置和随机性约定决定是否可以复用，不能只按候选数值相等猜测。

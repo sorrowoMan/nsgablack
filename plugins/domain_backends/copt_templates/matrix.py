@@ -1,6 +1,7 @@
 """Matrix-mode template for linear models (LP/MIP) using addMVar/addMConstr."""
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from typing import Any, Mapping
 
@@ -66,7 +67,8 @@ def solve_matrix_template(
     if matrix_mode:
         try:
             model.matrixmodelmode = matrix_mode
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='solve_matrix_template.fallback_224', exc=_fallback_error)
             pass
 
     builder = spec.get("matrix_builder") or spec.get("builder")
@@ -125,7 +127,8 @@ def solve_matrix_template(
         for var in vars_list:
             try:
                 name_map[str(var.name)] = var
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='solve_matrix_template.fallback_225', exc=_fallback_error)
                 continue
     except Exception:
         vars_list = []

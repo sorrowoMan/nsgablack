@@ -1,3 +1,3 @@
-from .fit_method import NestedFitMethod
+from nsgablack.adapters import FixedCandidateAdapter
 
-__all__ = ["NestedFitMethod"]
+__all__ = ["FixedCandidateAdapter"]

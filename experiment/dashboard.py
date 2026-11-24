@@ -1,4 +1,5 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import argparse
 from html import escape
@@ -184,7 +185,8 @@ def build_streamlit_command(
 def _set_page_config() -> None:
     try:
         st.set_page_config(page_title="nsgablack experiment", page_icon="NS", layout="wide")
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_set_page_config.fallback_198', exc=_fallback_error)
         return
 
 
@@ -280,7 +282,7 @@ def _json_text(value: Any) -> str:
 def _metric_text(value: Any) -> str:
     try:
         return f"{float(value):.6g}"
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return str(value or "-")
 
 
@@ -290,7 +292,7 @@ def _optional_float(value: Any) -> float | None:
         return None
     try:
         return float(text)
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -316,7 +318,7 @@ def _normalize_column_mode(value: Any) -> str:
 def _normalize_page_size(value: Any) -> int:
     try:
         page_size = int(str(value or "").strip())
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return _shared.DEFAULT_PAGE_SIZE
     return page_size if page_size > 0 else _shared.DEFAULT_PAGE_SIZE
 
@@ -486,7 +488,7 @@ def _selected_table_row_indices(event: Any) -> tuple[int, ...]:
     for raw in rows:
         try:
             out.append(int(raw))
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             continue
     return tuple(out)
 

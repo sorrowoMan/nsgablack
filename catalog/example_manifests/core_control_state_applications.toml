@@ -1,0 +1,12 @@
+[[example]]
+id = "core-control-state-application"
+title = "控制面状态、步骤参与者、结果准备与严格发布 · 完整Case"
+component_keys = ["solver.blank", "solver.composable", "solver.nsga2", "tool.runtime_participant", "tool.semantic_extension", "tool.population_authority", "tool.run_session", "tool.finalization_hooks", "tool.participation_contract", "tool.logging"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "真实Evolution/Composable接线，自定义局部状态沿显式步骤与checkpoint接缝维护，读取现有权威和运行进度，用正式生命周期生成报告并说明发布边界。"
+inputs = ["独立完整bias_gallery副本，原Project/L0/规范入口；三仓和NumPy。"]
+steps = ["保存状态/语义扩展/观察器与完整builder；主例使用Evolution，变体使用显式NSGA2。", "按正式入口检查与求解；计数、进度、权威边和最终通知分别读取，不复制活对象。"]
+dependencies = ["当前框架栈和NumPy，无外部服务。"]
+expected_outputs = ["真实运行后control.json中的身份、可传输进度、提交计数、权威边及封存信息；本书只经源码核对，未声明算法、回滚或恢复验证。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/CONTROL_STATE_APPLICATIONS_CN.md", section = "control.state.owner" }, { path = "nsgablack/docs/catalog_usage/CONTROL_STATE_APPLICATIONS_CN.md", section = "control.state.wiring" }]

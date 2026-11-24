@@ -1,0 +1,134 @@
+{
+  "authority": {
+    "schema_version": 1,
+    "backend": "filesystem",
+    "root": "/data/framework-supply-event-search-20261029/project/.blackbase/artifacts",
+    "namespace": "supplyevent:20261029-744969430e",
+    "allow_unsafe_serializers": false
+  },
+  "binding": {
+    "ref": {
+      "backend": "filesystem",
+      "checksum": "sha256:727901d60a18dd3089060ba3d31c8a9968b1efb1d674f5cba1f70f3c0bbee220",
+      "kind": "joint-supply-production",
+      "media_type": "application/json",
+      "metadata": {
+        "artifact_name": "joint_summary",
+        "case_run_id": "case:supply-event-search-cloud-20261029-b1:search_events:supply_adjustment_nested:attempt:1",
+        "fencing_token": 2,
+        "lease_id": "lease-supply_adjustment_nested-search_events-2dc9e342e897",
+        "project_run_id": "supply-event-search-cloud-20261029-b1",
+        "publication_transaction_id": "76641ccd8c8c48d7bc7c17acfab58920",
+        "publication_transaction_label": "case_finalization",
+        "scenario_digest": "sha256:1c7dabac0461d7167e4de1db9729e9080ee7ccd7aefd199ae352d3ee5fa1dff6",
+        "schema": "supply_adjustment_nested.joint_summary/v1",
+        "serializer": "json",
+        "serializer_unsafe": false
+      },
+      "size_bytes": 43170,
+      "uri": "/data/framework-supply-event-search-20261029/project/.blackbase/artifacts/supplyevent_20261029-744969430e--8746780b35/supply-event-search-cloud-20261029-b1/case_supply-event-search-cloud-20261029-b1_search_events_supply_adjustme--17bce6eaf4/joint_summary--727901d60a18dd30--44ed8d2e1185.json"
+    },
+    "publication": {
+      "artifact_name": "joint_summary",
+      "authority_namespace": "supplyevent:20261029-744969430e",
+      "case_run_id": "case:supply-event-search-cloud-20261029-b1:search_events:supply_adjustment_nested:attempt:1",
+      "committed_at": 1793240323.5795121,
+      "fencing_token": 2,
+      "lease_id": "lease-supply_adjustment_nested-search_events-2dc9e342e897",
+      "metadata": {
+        "case_finalization_sealed": true,
+        "case_run_schema_version": 3,
+        "transaction_label": "case_finalization"
+      },
+      "project_run_id": "supply-event-search-cloud-20261029-b1",
+      "publication_id": "publication-c657e687d9b29f0989ccc3e0a4a143de",
+      "receipt_digest": "sha256:9615fd66767a396221648dc1780a6a7c2a962890b68dc2ab692383ef019d5f02",
+      "ref": {
+        "backend": "filesystem",
+        "checksum": "sha256:727901d60a18dd3089060ba3d31c8a9968b1efb1d674f5cba1f70f3c0bbee220",
+        "kind": "joint-supply-production",
+        "media_type": "application/json",
+        "metadata": {
+          "artifact_name": "joint_summary",
+          "case_run_id": "case:supply-event-search-cloud-20261029-b1:search_events:supply_adjustment_nested:attempt:1",
+          "fencing_token": 2,
+          "lease_id": "lease-supply_adjustment_nested-search_events-2dc9e342e897",
+          "project_run_id": "supply-event-search-cloud-20261029-b1",
+          "publication_transaction_id": "76641ccd8c8c48d7bc7c17acfab58920",
+          "publication_transaction_label": "case_finalization",
+          "scenario_digest": "sha256:1c7dabac0461d7167e4de1db9729e9080ee7ccd7aefd199ae352d3ee5fa1dff6",
+          "schema": "supply_adjustment_nested.joint_summary/v1",
+          "serializer": "json",
+          "serializer_unsafe": false
+        },
+        "size_bytes": 43170,
+        "uri": "/data/framework-supply-event-search-20261029/project/.blackbase/artifacts/supplyevent_20261029-744969430e--8746780b35/supply-event-search-cloud-20261029-b1/case_supply-event-search-cloud-20261029-b1_search_events_supply_adjustme--17bce6eaf4/joint_summary--727901d60a18dd30--44ed8d2e1185.json"
+      },
+      "schema_version": 1,
+      "transaction_id": "76641ccd8c8c48d7bc7c17acfab58920"
+    }
+  },
+  "search_audit_binding": {
+    "ref": {
+      "backend": "filesystem",
+      "checksum": "sha256:2cd2e87fe94c8a30c2290106c58100a4261560fc5a455dd2b1ce650ad6118cff",
+      "kind": "supply-candidate-search-audit",
+      "media_type": "application/json",
+      "metadata": {
+        "accepted_candidate_count": 72,
+        "artifact_name": "candidate_search_audit",
+        "case_run_id": "case:supply-event-search-cloud-20261029-b1:search_events:supply_adjustment_nested:attempt:1",
+        "fencing_token": 2,
+        "lease_id": "lease-supply_adjustment_nested-search_events-2dc9e342e897",
+        "project_run_id": "supply-event-search-cloud-20261029-b1",
+        "publication_transaction_id": "76641ccd8c8c48d7bc7c17acfab58920",
+        "publication_transaction_label": "case_finalization",
+        "schema": "supply_adjustment_nested.candidate_search_audit/v1",
+        "serializer": "json",
+        "serializer_unsafe": false
+      },
+      "size_bytes": 343901,
+      "uri": "/data/framework-supply-event-search-20261029/project/.blackbase/artifacts/supplyevent_20261029-744969430e--8746780b35/supply-event-search-cloud-20261029-b1/case_supply-event-search-cloud-20261029-b1_search_events_supply_adjustme--17bce6eaf4/candidate_search_audit--2cd2e87fe94c8a30--d163c5f7210a.json"
+    },
+    "publication": {
+      "artifact_name": "candidate_search_audit",
+      "authority_namespace": "supplyevent:20261029-744969430e",
+      "case_run_id": "case:supply-event-search-cloud-20261029-b1:search_events:supply_adjustment_nested:attempt:1",
+      "committed_at": 1793240323.5795121,
+      "fencing_token": 2,
+      "lease_id": "lease-supply_adjustment_nested-search_events-2dc9e342e897",
+      "metadata": {
+        "case_finalization_sealed": true,
+        "case_run_schema_version": 3,
+        "transaction_label": "case_finalization"
+      },
+      "project_run_id": "supply-event-search-cloud-20261029-b1",
+      "publication_id": "publication-5534a09a8682ce9d0de91d41d7b6763c",
+      "receipt_digest": "sha256:ec1a9f33bc383e96d50bbae7b76406d525c2a6f4e0c52a4fe100d74c4b3a7efd",
+      "ref": {
+        "backend": "filesystem",
+        "checksum": "sha256:2cd2e87fe94c8a30c2290106c58100a4261560fc5a455dd2b1ce650ad6118cff",
+        "kind": "supply-candidate-search-audit",
+        "media_type": "application/json",
+        "metadata": {
+          "accepted_candidate_count": 72,
+          "artifact_name": "candidate_search_audit",
+          "case_run_id": "case:supply-event-search-cloud-20261029-b1:search_events:supply_adjustment_nested:attempt:1",
+          "fencing_token": 2,
+          "lease_id": "lease-supply_adjustment_nested-search_events-2dc9e342e897",
+          "project_run_id": "supply-event-search-cloud-20261029-b1",
+          "publication_transaction_id": "76641ccd8c8c48d7bc7c17acfab58920",
+          "publication_transaction_label": "case_finalization",
+          "schema": "supply_adjustment_nested.candidate_search_audit/v1",
+          "serializer": "json",
+          "serializer_unsafe": false
+        },
+        "size_bytes": 343901,
+        "uri": "/data/framework-supply-event-search-20261029/project/.blackbase/artifacts/supplyevent_20261029-744969430e--8746780b35/supply-event-search-cloud-20261029-b1/case_supply-event-search-cloud-20261029-b1_search_events_supply_adjustme--17bce6eaf4/candidate_search_audit--2cd2e87fe94c8a30--d163c5f7210a.json"
+      },
+      "schema_version": 1,
+      "transaction_id": "76641ccd8c8c48d7bc7c17acfab58920"
+    }
+  },
+  "source_status": "transport_failed_after_case_artifacts_sealed"
+}

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from ..base import Plugin
 from blackbase.context import ContextEvent, detach_context_value, replay_context
-from blackbase.context.context_keys import KEY_CONTEXT_EVENTS
+from nsgablack.context_keys import KEY_CONTEXT_EVENTS
 
 
 @dataclass

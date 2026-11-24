@@ -6,13 +6,14 @@ This is a lightweight bridge for external experiment tracking.
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 import json
 
 from ..base import Plugin
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_BEST_OBJECTIVE,
     KEY_BEST_X,
     KEY_CHECKPOINT_LAST_LOADED_PATH,
@@ -185,7 +186,8 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLRunLoggerPlugin.on_solver_finish.fallback_266', exc=_fallback_error)
                 pass
         return None
 
@@ -253,7 +255,8 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         finally:
             try:
                 cur.close()
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLRunLoggerPlugin._print_latest_summary.fallback_267', exc=_fallback_error)
                 pass
 
     def _to_jsonable(self, value: Any) -> Any:
@@ -267,12 +270,12 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         if hasattr(value, "item") and callable(getattr(value, "item", None)):
             try:
                 return self._to_jsonable(value.item())
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 pass
         if hasattr(value, "tolist") and callable(getattr(value, "tolist", None)):
             try:
                 return self._to_jsonable(value.tolist())
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 pass
         return str(value)
 
@@ -287,7 +290,8 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 return ctx.get(key)
         try:
             return getattr(solver, attr_fallback, None)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='MySQLRunLoggerPlugin._get_context_value.fallback_265', exc=_fallback_error)
             return None
 
     def _get_run_id(self, solver: Any, result: Dict[str, Any], artifacts: Dict[str, Any] | None) -> Optional[str]:
@@ -321,7 +325,8 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     rid = getattr(cfg, "run_id", None) if cfg is not None else None
                     if rid:
                         return str(rid)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='MySQLRunLoggerPlugin._get_run_id.fallback_270', exc=_fallback_error)
                 pass
         return None
 

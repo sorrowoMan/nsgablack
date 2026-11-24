@@ -75,7 +75,7 @@ def _clone_evaluator(evaluator: Any) -> Any:
                 cloned.stats = dict(getattr(evaluator, "stats", {}) or {})
             return cloned
         except Exception:
-            return evaluator
+            raise
 
 
 def _solver_resource_context(solver: Any):

@@ -1,0 +1,17 @@
+[[entry]]
+key = "project.problem.sa_valley"
+title = "ValleyProblem"
+kind = "tool"
+import_path = "problem.valley:ValleyProblem"
+tags = ["project", "example", "problem", "sa", "quadratic"]
+summary = "SA独立Case的各向异性二次谷地，已知最优点[-1.5,0.75]，原始最优值0。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["仅定义当前Case的目标和原始约束，不与DE共享Problem或解池。"]
+use_when = ["检查独立SA Case装配和小预算结果时。"]
+minimal_wiring = ["from cases.sa_valley.problem.valley import ValleyProblem", "problem = ValleyProblem()"]
+required_companions = []
+config_keys = []
+example_entry = "cases.sa_valley.build_solver:build_solver"

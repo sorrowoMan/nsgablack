@@ -1,11 +1,12 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
 import numpy as np
 
-from blackbase.context.context_keys import KEY_METRICS
+from nsgablack.context_keys import KEY_METRICS
 from blackbase.context import build_minimal_context
 from ...utils.extension_contracts import normalize_objectives, normalize_violation
 from ..domain_backends.backend_contract import BackendSolveRequest, normalize_backend_output
@@ -94,7 +95,8 @@ class EvaluationModelProviderPlugin(EvaluationProviderPluginBase):
             metrics["eval_model_calls"] = float(self.stats["calls"])
             metrics["eval_model_failures"] = float(self.stats["failures"])
             setter(ctx)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='EvaluationModelProviderPlugin._update_metrics.fallback_230', exc=_fallback_error)
             return
 
     def evaluate_individual_runtime(self, solver, x: np.ndarray, individual_id: Optional[int] = None):

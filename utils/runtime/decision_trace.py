@@ -1,6 +1,7 @@
 """Decision trace schema and replay helpers."""
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,7 +18,7 @@ def _json_safe(value: Any) -> Any:
             return value.tolist()
         if isinstance(value, (np.integer, np.floating)):
             return value.item()
-    except Exception:
+    except ImportError:
         pass
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
@@ -77,7 +78,7 @@ def load_decision_jsonl(path: Path) -> List[Dict[str, Any]]:
             continue
         try:
             obj = json.loads(text)
-        except Exception:
+        except (ValueError, TypeError):
             continue
         if isinstance(obj, dict):
             rows.append(obj)
@@ -153,6 +154,7 @@ def record_decision_event(
                 evidence=evidence,
                 outcome=outcome,
             )
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='record_decision_event.fallback_318', exc=_fallback_error)
             return None
     return None

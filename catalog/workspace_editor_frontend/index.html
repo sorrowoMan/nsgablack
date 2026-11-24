@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>工程代码编辑器</title>
+  <link rel="stylesheet" href="editor.css">
+</head>
+<body>
+  <main id="editor-shell" aria-label="工程文件编辑器">
+    <div class="toolbar" role="toolbar" aria-label="代码编辑工具">
+      <span id="language" class="language">PYTHON</span>
+      <button id="undo" type="button" title="撤销 · Ctrl/Cmd+Z">撤销</button>
+      <button id="redo" type="button" title="重做 · Ctrl/Cmd+Shift+Z">重做</button>
+      <span class="divider"></span>
+      <button id="search" type="button" title="查找 · Ctrl/Cmd+F">查找</button>
+      <span class="spacer"></span>
+      <span id="buffer-status" role="status" aria-live="polite">载入编辑器…</span>
+      <button id="save" class="save" type="button" title="保存工作副本 · Ctrl/Cmd+S">保存</button>
+    </div>
+    <div id="editor"></div>
+    <footer><span id="position">行 1，列 1</span><span id="hint">Tab 缩进 · Ctrl/Cmd+F 查找 · Ctrl/Cmd+S 保存</span></footer>
+  </main>
+  <script src="editor.bundle.js"></script>
+</body>
+</html>

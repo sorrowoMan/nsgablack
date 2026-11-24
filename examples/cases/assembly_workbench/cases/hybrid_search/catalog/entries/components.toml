@@ -1,0 +1,144 @@
+# Case-local paths are resolved under cases.hybrid_search by the Project registry.
+[[entry]]
+key = "project.problem.workbench_recipe"
+title = "RecipeProblem"
+kind = "tool"
+import_path = "problem.recipe:RecipeProblem"
+tags = ["project", "example", "problem", "constraints", "recipe"]
+summary = "两维配方成本与盒约束、总量约束；独立定义原始求值。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["不读取 Unit 或算法状态，不使用选择偏好修改原始求值。"]
+use_when = ["核对问题语义与搜索、偏好、硬接纳的边界时。"]
+minimal_wiring = ["from cases.hybrid_search.problem import RecipeProblem", "problem = RecipeProblem()"]
+required_companions = []
+config_keys = []
+example_entry = "cases.hybrid_search.build_solver:build_solver"
+
+[[entry]]
+key = "project.pipeline.workbench_recipe"
+title = "RecipePipeline"
+kind = "representation"
+import_path = "pipeline.main:RecipePipeline"
+tags = ["project", "example", "pipeline", "checkpoint", "codec"]
+summary = "共享问题管线，显式保存初始化器、变异器 RNG 与修复观察计数。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["各叶组件状态由本例显式 codec 保存；不假设框架递归复制任意组件图。"]
+use_when = ["需要完整复现本例管线的随机状态与观察状态时。"]
+minimal_wiring = ["from cases.hybrid_search.pipeline import build_pipeline", "pipeline, repair = build_pipeline(0.06)"]
+required_companions = ["nsgablack.representation:RepresentationPipeline"]
+config_keys = ["initializer", "mutator", "repair"]
+example_entry = "cases.hybrid_search.build_solver:build_solver"
+
+[[entry]]
+key = "project.pipeline.workbench_recipe_repair"
+title = "RecipeRepair"
+kind = "representation"
+import_path = "pipeline.repair:RecipeRepair"
+tags = ["project", "example", "pipeline", "repair", "constraints"]
+summary = "将候选修复到坐标 [0,1] 与总量不超过 1.2；只处理候选值。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["calls/changed 仅为观察计数；不拥有成员选择、求值或池发布。"]
+use_when = ["两个算法共享同一问题可行性处理时。"]
+minimal_wiring = ["from cases.hybrid_search.pipeline import RecipeRepair", "repair = RecipeRepair()"]
+required_companions = ["project.pipeline.workbench_recipe"]
+config_keys = []
+example_entry = "cases.hybrid_search.build_solver:build_solver"
+
+[[entry]]
+key = "project.unit.workbench_recipe_population"
+title = "RecipePopulation"
+kind = "tool"
+import_path = "pipeline.population:RecipePopulation"
+tags = ["project", "example", "unit", "population", "members"]
+summary = "在标准种群上增加逐成员年龄，按 PopulationChange 精确传播。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["新增成员年龄为零，既存成员在环境选择中加一；不放进共享 context。"]
+use_when = ["演示新增成员字段、来源索引与恢复 codec 时。"]
+minimal_wiring = ["from cases.hybrid_search.pipeline.population import RecipePopulationBuilder", "binding = UnitBinding(RecipePopulationBuilder())"]
+required_companions = ["project.unit.workbench_recipe_population_builder"]
+config_keys = ["unit_id", "member_age"]
+example_entry = "cases.hybrid_search.build_solver:build_solver"
+
+[[entry]]
+key = "project.unit.workbench_recipe_population_builder"
+title = "RecipePopulationBuilder"
+kind = "representation"
+import_path = "pipeline.population:RecipePopulationBuilder"
+tags = ["project", "example", "unit", "builder", "codec"]
+summary = "按所属 GA 的需要构建年龄种群，复用标准 Unit 数据 codec。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["配置 builder 不创建运行 Unit；不在构建时修复候选。"]
+use_when = ["在不修改 NSGA-II 源码的情况下扩展种群结构时。"]
+minimal_wiring = ["from cases.hybrid_search.pipeline.population import RecipePopulationBuilder", "binding = UnitBinding(RecipePopulationBuilder())"]
+required_companions = ["nsgablack.units:UnitBinding", "nsgablack.adapters:NSGA2Adapter"]
+config_keys = []
+example_entry = "cases.hybrid_search.build_solver:build_solver"
+
+[[entry]]
+key = "project.bias.workbench_balanced_mix"
+title = "BalancedMixBias"
+kind = "bias"
+import_path = "bias:BalancedMixBias"
+tags = ["project", "example", "bias", "soft_preference"]
+summary = "对两原料不均衡程度添加软偏好，只作用于选择评分。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["原始成本与约束仍由 Problem 定义；硬可行性接纳不使用软化结果。"]
+use_when = ["演示 raw 与 selection 反馈分离时。"]
+minimal_wiring = ["from cases.hybrid_search.bias import build_bias", "bias = build_bias(0.15)"]
+required_companions = ["nsgablack.bias:BiasModule"]
+config_keys = ["weight"]
+example_entry = "cases.hybrid_search.build_solver:build_solver"
+
+[[entry]]
+key = "project.provider.workbench_recipe"
+title = "RecipeProvider"
+kind = "tool"
+import_path = "evaluation.provider:RecipeProvider"
+tags = ["project", "example", "evaluation", "provider", "equivalent"]
+summary = "显式注册的等价向量化求值 Provider，使用同一配方公式与原始约束。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["can_handle 是交付承诺；命中后不调用 Problem.evaluate，求值仍计入运行预算。"]
+use_when = ["通过 evaluation_mode=provider 观察正式求值短路时。"]
+minimal_wiring = ["from cases.hybrid_search.evaluation import RecipeProvider", "solver.register_evaluation_provider(RecipeProvider())"]
+required_companions = ["project.problem.workbench_recipe"]
+config_keys = []
+example_entry = "cases.hybrid_search.build_solver:build_solver"
+
+[[entry]]
+key = "project.plugin.workbench_hybrid_trace"
+title = "WorkbenchTrace"
+kind = "plugin"
+import_path = "plugins.trace:WorkbenchTrace"
+tags = ["project", "example", "plugin", "observe", "finalization", "artifact"]
+summary = "观察已提交池与 Unit，在严格 finalization 检查后事务发布 summary。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["不为了观察而创建 Unit；trace.json 是报告，summary Artifact 通过正式收据交付。"]
+use_when = ["核对搜索阶段、精确引用、年龄、raw/selection 与最终发布一致性时。"]
+minimal_wiring = ["from cases.hybrid_search.plugins import WorkbenchTrace", "solver.add_plugin(WorkbenchTrace(output_dir=path, max_records=settings.max_steps))"]
+required_companions = ["nsgablack.core:ComposableSolver"]
+config_keys = ["output_dir", "max_records"]
+example_entry = "cases.hybrid_search.build_solver:build_solver"

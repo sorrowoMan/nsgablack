@@ -1,6 +1,7 @@
 """Sequence graph plugin: record unique component interaction orders."""
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,7 +10,7 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 import time
 
 from ..base import Plugin
-from blackbase.context.context_keys import KEY_SEQUENCE_GRAPH_REF
+from nsgablack.context_keys import KEY_SEQUENCE_GRAPH_REF
 from ...utils.engineering.file_io import atomic_write_json
 from ...utils.engineering.schema_version import stamp_schema
 from ...utils.runtime.sequence_graph import SequenceGraphRecorder, build_sequence_token
@@ -92,7 +93,8 @@ class SequenceGraphPlugin(Plugin):
                     if callable(self._prev_event_hook):
                         try:
                             self._prev_event_hook(payload)
-                        except Exception:
+                        except Exception as _fallback_error:
+                            _report_optional_failure(component=__name__, event='SequenceGraphPlugin.on_solver_init._hook.fallback_261', exc=_fallback_error)
                             pass
                     self._handle_plugin_event(payload)
 
@@ -178,7 +180,8 @@ class SequenceGraphPlugin(Plugin):
                 capture_trace=bool(capture_trace),
                 trace_meta=trace_meta if isinstance(trace_meta, dict) else None,
             )
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='SequenceGraphPlugin.record_event.fallback_256', exc=_fallback_error)
             return None
         return str(token)
 
@@ -204,7 +207,8 @@ class SequenceGraphPlugin(Plugin):
                 generation=gen,
                 step=step_val,
             )
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='SequenceGraphPlugin._trace_start.fallback_257', exc=_fallback_error)
             return None
 
     def _trace_end(
@@ -224,7 +228,8 @@ class SequenceGraphPlugin(Plugin):
                 error_type=error_type,
                 meta=trace_meta if isinstance(trace_meta, dict) else None,
             )
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='SequenceGraphPlugin._trace_end.fallback_258', exc=_fallback_error)
             return
 
     def _handle_plugin_event(self, payload: Dict[str, Any]) -> None:
@@ -276,7 +281,8 @@ class SequenceGraphPlugin(Plugin):
         for target, method_name, original in reversed(self._restore):
             try:
                 setattr(target, method_name, original)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='SequenceGraphPlugin._restore_wrapped_methods.fallback_259', exc=_fallback_error)
                 continue
         self._restore = []
 
@@ -284,7 +290,8 @@ class SequenceGraphPlugin(Plugin):
         if self._hooked_pm is not None:
             try:
                 self._hooked_pm.set_event_hook(self._prev_event_hook)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='SequenceGraphPlugin._restore_event_hook.fallback_260', exc=_fallback_error)
                 pass
         self._hooked_pm = None
         self._prev_event_hook = None

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import argparse
 import json
@@ -208,7 +209,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def _set_page_config() -> None:
     try:
         st.set_page_config(page_title="nsgablack ui", page_icon="NS", layout="wide")
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_set_page_config.fallback_295', exc=_fallback_error)
         return
 
 
@@ -503,7 +505,8 @@ def _raw_query_params() -> dict[str, str]:
     except Exception:
         try:
             raw = st.experimental_get_query_params()
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='_raw_query_params.fallback_298', exc=_fallback_error)
             return {}
         return {str(key): _coerce_query_value(value) for key, value in dict(raw).items()}
 
@@ -605,7 +608,8 @@ def _assistant_service_is_ready(service_base_url: str) -> bool:
         with urlopen(request, timeout=2) as response:
             payload = json.loads(response.read().decode("utf-8"))
             return isinstance(payload, dict) and payload.get("status") == "ok"
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_assistant_service_is_ready.fallback_296', exc=_fallback_error)
         return False
 
 
@@ -631,7 +635,8 @@ def _assistant_try_autostart(service_base_url: str) -> bool:
             stderr=subprocess.DEVNULL,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_assistant_try_autostart.fallback_297', exc=_fallback_error)
         return False
 
     for _ in range(20):

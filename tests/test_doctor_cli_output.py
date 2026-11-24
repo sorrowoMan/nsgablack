@@ -19,7 +19,7 @@ def test_project_doctor_json_output_is_machine_readable(tmp_path: Path, capsys) 
     assert isinstance(payload["diagnostics"], list)
 
 
-def test_problem_lines_extract_line_number_patterns(tmp_path: Path) -> None:
+def test_problem_lines_use_structured_positions_and_preserve_unknown(tmp_path: Path) -> None:
     report = DoctorReport(
         project_root=tmp_path,
         diagnostics=(
@@ -28,12 +28,15 @@ def test_problem_lines_extract_line_number_patterns(tmp_path: Path) -> None:
                 code="x-rule",
                 message="bad call detected at foo@L37",
                 path=str(tmp_path / "x.py"),
+                line=8,
+                column=4,
             ),
             DoctorDiagnostic(
                 level="warn",
                 code="y-rule",
                 message="something happened at line 9.",
                 path=str(tmp_path / "y.py"),
+                line=9,
             ),
             DoctorDiagnostic(
                 level="info",
@@ -48,9 +51,10 @@ def test_problem_lines_extract_line_number_patterns(tmp_path: Path) -> None:
     assert rows[0].endswith(": error x-rule: bad call detected at foo@L37")
     assert rows[1].endswith(": warning y-rule: something happened at line 9.")
     assert rows[2].endswith(": info z-rule: no explicit line hint")
-    assert re.search(r":37:1: error x-rule:", rows[0])
-    assert re.search(r":9:1: warning y-rule:", rows[1])
-    assert re.search(r":1:1: info z-rule:", rows[2])
+    assert ":8:4: error x-rule:" in rows[0]
+    assert ":9: warning y-rule:" in rows[1]
+    assert rows[2].startswith(f"{tmp_path / 'z.py'}: info z-rule:")
+    assert ":1:1:" not in text
 
 
 def test_project_doctor_parser_accepts_watch_and_format_flags() -> None:

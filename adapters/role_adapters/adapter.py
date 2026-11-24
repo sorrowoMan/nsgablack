@@ -27,22 +27,26 @@ from ..algorithm_adapter import (
 )
 from ..runtime_projection import aggregate_adapter_runtime_projections
 from ..empty_outcome import (
+    _decode_dispatch_stop_outcome,
+    _encode_dispatch_stop_outcome,
     aggregate_named_empty_outcomes,
     child_empty_proposal_outcome,
 )
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_CANDIDATE_ROLES,
     KEY_ROLE,
     KEY_ROLE_ADAPTER,
     KEY_ROLE_INDEX,
     KEY_ROLE_REPORTS,
     KEY_STEP,
+    KEY_SOLUTION_INPUT_REF,
 )
 
 
 @dataclass
 class RoleAdapter(AlgorithmAdapter):
     """Wrap an adapter with role metadata and optional candidate limiting."""
+    unit_contract_mode = "delegated"
 
     role: str = "role"
     inner: Optional[AlgorithmAdapter] = None
@@ -88,6 +92,41 @@ class RoleAdapter(AlgorithmAdapter):
         self._last_projection_writers: Dict[str, str] = {}
         self._inner_proposal_disposition: BatchDisposition | None = None
 
+    @property
+    def pool_input_modes(self):
+        return () if self.inner is None else self.inner.pool_input_modes
+
+    @property
+    def supports_pool_restart(self):
+        return self.inner is not None and self.inner.supports_pool_restart
+
+    @property
+    def supports_objective_projection(self):
+        return bool(self.inner is not None and getattr(self.inner, "supports_objective_projection", False))
+
+    @property
+    def get_pool_refinement_results(self):
+        return None if self.inner is None else getattr(self.inner, "get_pool_refinement_results", None)
+
+    def pool_result_owner(self):
+        return self if self.inner is None else self.inner.pool_result_owner()
+
+    def default_pool_input_count(self):
+        return None if self.inner is None else self.inner.default_pool_input_count()
+
+    def restart_search(self, control, context):
+        if not self.supports_pool_restart:
+            return super().restart_search(control, context)
+        self._inner_proposal_disposition = None
+        ctx = dict(context)
+        ctx[KEY_ROLE], ctx[KEY_ROLE_ADAPTER] = self.role, self.name
+        return self.inner.restart_search(control, ctx)
+
+    def get_solution_pool_roots(self, control):
+        # Reports contain observation values, never owned candidate references.
+        # The transaction tree visits the inner owner separately.
+        return ()
+
     def _warn_once(self, key: str, message: str) -> None:
         if key in self._warned:
             return
@@ -119,6 +158,11 @@ class RoleAdapter(AlgorithmAdapter):
         if self.inner is not None:
             self.inner.setup(control)
 
+    def on_schedule_activation(self, control, activation_id):
+        super().on_schedule_activation(control, activation_id)
+        if self.inner is not None:
+            self.inner.on_schedule_activation(control, activation_id)
+
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         if self.inner is None:
             return []
@@ -126,9 +170,13 @@ class RoleAdapter(AlgorithmAdapter):
         ctx = dict(context)
         ctx[KEY_ROLE] = self.role
         ctx[KEY_ROLE_ADAPTER] = self.name
+        input_ref = ctx.get(KEY_SOLUTION_INPUT_REF)
+        intake = input_ref is not None and control.solution_pool.input_remaining(input_ref) > 0
         proposed = self.coerce_candidates(self.inner.propose(control, ctx))
         proposed_count = len(proposed)
-        if self.max_candidates is not None:
+        # Intake must reach the canonical budget/disposition path intact. A
+        # local cap cannot consume 100 pool refs and present only 30 of them.
+        if self.max_candidates is not None and not intake:
             proposed = proposed[: int(self.max_candidates)]
         self._inner_proposal_disposition = BatchDisposition.prefix(
             proposed_count=proposed_count,
@@ -153,6 +201,24 @@ class RoleAdapter(AlgorithmAdapter):
         ctx[KEY_ROLE] = self.role
         ctx[KEY_ROLE_ADAPTER] = self.name
         return child_empty_proposal_outcome(self.inner, control, ctx)
+
+    def on_proposal_repair(self, control, repair, context):
+        self._forward_proposal_repair(control, repair, context)
+
+    def proposal_repair_children(self, repair, context):
+        if self.inner is None:
+            raise RuntimeError(f"RoleAdapter '{self.name}' has no inner adapter")
+        ctx = dict(context)
+        ctx[KEY_ROLE] = self.role
+        ctx[KEY_ROLE_ADAPTER] = self.name
+        return ((self.inner, repair.through(self._inner_proposal_disposition), ctx),)
+
+    def _proposal_contexts(self, proposed_count, context):
+        ctx = dict(context)
+        ctx[KEY_ROLE], ctx[KEY_ROLE_ADAPTER] = self.role, self.name
+        base = self._inner_proposal_disposition
+        values = self.inner.get_proposal_contexts(base.proposed_count if base else proposed_count, ctx)
+        return tuple(values[i] for i in base.accepted_indices) if base else values
 
     def on_proposal_disposition(
         self,
@@ -418,6 +484,16 @@ class RoleAdapter(AlgorithmAdapter):
             else False
         )
 
+    def supports_population_state_delivery(self):
+        return self.inner is not None and self.inner.supports_population_state_delivery()
+
+    def set_population_state(self, control, batch, feedback, *, solution_refs, provenance):
+        return (self.inner is not None and self.inner.set_population_state(control, batch, feedback,
+            solution_refs=solution_refs, provenance=provenance))
+
+    def get_population_solution_refs(self, control):
+        return None if self.inner is None else self.inner.get_population_solution_refs(control)
+
     def get_population_candidate_tokens(self) -> tuple[str | None, ...] | None:
         getter = getattr(self.inner, "get_population_candidate_tokens", None)
         return getter() if callable(getter) else None
@@ -485,6 +561,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
     - Records candidate -> role mapping for later analysis/plugins
     - Dispatches evaluation feedback back to each role adapter
     """
+    unit_contract_mode = "delegated"
 
     context_contract_encapsulates_children = True
 
@@ -504,6 +581,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
         self.last_candidate_roles: List[str] = []
         self._runtime_projection: Dict[str, Any] = {}
         self._last_projection_writers: Dict[str, str] = {}
+        self._dispatch_stop_outcome = None
 
     context_requires = ("generation",)
     context_provides = (KEY_ROLE, KEY_ROLE_INDEX, KEY_ROLE_REPORTS, KEY_CANDIDATE_ROLES)
@@ -514,16 +592,27 @@ class RoleRouterAdapter(AlgorithmAdapter):
     state_recovery_notes = "Restores stable role population partitions, tokens, and role adapter states."
     population_state_mode = "partitioned"
 
+    def get_solution_pool_roots(self, control):
+        return ()  # Each role owns and declares its own candidates.
+
     def setup(self, control: Any) -> None:
         self._runtime_projection = {}
         self._last_projection_writers = {}
+        self._dispatch_stop_outcome = None
         for role in self.roles:
             role.setup(control)
+
+    def on_schedule_activation(self, control, activation_id):
+        super().on_schedule_activation(control, activation_id)
+        for index, role in enumerate(self.roles):
+            role.on_schedule_activation(control,
+                f"{activation_id}/{self._role_prefix(index, role)}")
 
     def propose(self, control: Any, context: Dict[str, Any]) -> Sequence[np.ndarray]:
         candidates: List[np.ndarray] = []
         self._last_ranges = []
         self.last_candidate_roles = []
+        self._dispatch_stop_outcome = None
 
         for idx, role in enumerate(self.roles):
             start = len(candidates)
@@ -531,6 +620,18 @@ class RoleRouterAdapter(AlgorithmAdapter):
             ctx[KEY_ROLE] = role.role
             ctx[KEY_ROLE_INDEX] = idx
             proposed = self.coerce_candidates(role.propose(control, ctx))
+            if not proposed:
+                outcome = child_empty_proposal_outcome(role, control, ctx)
+                if outcome is not None and (outcome.status == "cancelled" or outcome.stop_requested):
+                    if candidates:
+                        self.on_proposal_disposition(control, BatchDisposition.prefix(
+                            proposed_count=len(candidates), accepted_count=0,
+                            reason="sibling_cancelled"), context)
+                    self._dispatch_stop_outcome = outcome
+                    self._last_ranges = []
+                    self.last_candidate_roles = []
+                    self._runtime_projection[KEY_CANDIDATE_ROLES] = []
+                    return []
             candidates.extend(proposed)
             end = len(candidates)
             self._last_ranges.append((role, start, end))
@@ -545,6 +646,8 @@ class RoleRouterAdapter(AlgorithmAdapter):
         control: Any,
         context: Mapping[str, Any],
     ) -> Any | None:
+        if self._dispatch_stop_outcome is not None:
+            return self._dispatch_stop_outcome
         rows = []
         for index, role in enumerate(self.roles):
             ctx = dict(context)
@@ -557,6 +660,26 @@ class RoleRouterAdapter(AlgorithmAdapter):
                 )
             )
         return aggregate_named_empty_outcomes(rows, owner=self.name)
+
+    def on_proposal_repair(self, control, repair, context):
+        self._forward_proposal_repair(control, repair, context)
+
+    def proposal_repair_children(self, repair, context):
+        targets = []
+        for index, (role, start, end) in enumerate(self._last_ranges):
+            ctx = dict(context)
+            ctx[KEY_ROLE] = role.role
+            ctx[KEY_ROLE_INDEX] = index
+            targets.append((role, repair.for_range(start, end), ctx))
+        return tuple(targets)
+
+    def _proposal_contexts(self, proposed_count, context):
+        out = []
+        for index, (role, start, end) in enumerate(self._last_ranges):
+            ctx = dict(context)
+            ctx[KEY_ROLE], ctx[KEY_ROLE_INDEX] = role.role, index
+            out.extend(role.get_proposal_contexts(end - start, ctx))
+        return out
 
     def on_proposal_disposition(
         self,
@@ -626,6 +749,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
     def get_state(self) -> Dict[str, Any]:
         return {
             "schema": "nsgablack.role_router_state/v2",
+            "dispatch_stop_outcome": _encode_dispatch_stop_outcome(self._dispatch_stop_outcome),
             "role_order": [r.name for r in self.roles],
             "roles": {r.name: r.get_state() for r in self.roles},
             "population_partitions": [
@@ -637,6 +761,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
     def set_state(self, state: Dict[str, Any]) -> None:
         if not state:
             return
+        stop_outcome = _decode_dispatch_stop_outcome(state.get("dispatch_stop_outcome"))
         schema = str(state.get("schema", "nsgablack.role_router_state/v1"))
         if schema not in {
             "nsgablack.role_router_state/v1",
@@ -660,6 +785,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
             self.set_population_partitions(
                 tuple(PopulationPartition.from_dict(item) for item in raw_partitions)
             )
+        self._dispatch_stop_outcome = stop_outcome
 
     def step_transaction_children(self) -> Sequence[AlgorithmAdapter]:
         return tuple(self.roles)
@@ -668,6 +794,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
         role_index = {id(role): index for index, role in enumerate(self.roles)}
         return {
             "schema": "nsgablack.role_router_step_transaction/v1",
+            "dispatch_stop_outcome": _encode_dispatch_stop_outcome(self._dispatch_stop_outcome),
             "last_ranges": [
                 {
                     "role_index": int(role_index[id(role)]),
@@ -684,6 +811,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
     def restore_step_state(self, state: Mapping[str, Any]) -> None:
         if str(state.get("schema", "")) != "nsgablack.role_router_step_transaction/v1":
             raise ValueError("unsupported RoleRouterAdapter step transaction schema")
+        stop_outcome = _decode_dispatch_stop_outcome(state.get("dispatch_stop_outcome"))
         restored_ranges: list[tuple[RoleAdapter, int, int]] = []
         for item in tuple(state.get("last_ranges", ()) or ()):
             index = int(item.get("role_index", -1))
@@ -697,6 +825,7 @@ class RoleRouterAdapter(AlgorithmAdapter):
                 )
             )
         self._last_ranges = restored_ranges
+        self._dispatch_stop_outcome = stop_outcome
         self.last_candidate_roles = [
             str(item) for item in tuple(state.get("last_candidate_roles", ()) or ())
         ]

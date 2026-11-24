@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from .registry import CatalogEntry
+from .registry import CatalogEntry, _toml
 from .usage import build_usage_profile
 
 
@@ -38,6 +40,7 @@ def build_entry_payload(
     context_mutates: Sequence[str] | None = None,
     context_cache: Sequence[str] | None = None,
     context_notes: Sequence[str] | None = None,
+    contract: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     base = CatalogEntry(
         key=str(key).strip(),
@@ -59,7 +62,7 @@ def build_entry_payload(
         context_notes=_split_values(context_notes),
     )
     usage = build_usage_profile(base)
-    return {
+    payload = {
         "key": base.key,
         "title": base.title,
         "kind": base.kind,
@@ -78,6 +81,9 @@ def build_entry_payload(
         "context_cache": tuple(base.context_cache),
         "context_notes": tuple(base.context_notes),
     }
+    if contract is not None:
+        payload["contract"] = dict(contract)
+    return payload
 
 
 def _format_list(values: Iterable[str]) -> str:
@@ -85,8 +91,21 @@ def _format_list(values: Iterable[str]) -> str:
     return "[" + ", ".join(repr(v) for v in vals) + "]"
 
 
+def _inline_toml(value: object) -> str:
+    if isinstance(value, Mapping):
+        return "{ " + ", ".join(
+            f"{json.dumps(str(key), ensure_ascii=False)} = {_inline_toml(item)}"
+            for key, item in value.items()
+        ) + " }"
+    if isinstance(value, (tuple, list)):
+        return "[" + ", ".join(_inline_toml(item) for item in value) + "]"
+    if isinstance(value, (str, bool, int, float)):
+        return json.dumps(value, ensure_ascii=False, allow_nan=False)
+    raise TypeError(f"unsupported Catalog TOML extension value: {type(value).__name__}")
+
+
 def render_entry_block(payload: dict[str, object]) -> str:
-    return (
+    block = (
         "[[entry]]\n"
         f"key = {payload['key']!r}\n"
         f"title = {payload['title']!r}\n"
@@ -106,9 +125,15 @@ def render_entry_block(payload: dict[str, object]) -> str:
         f"config_keys = {_format_list(payload.get('config_keys', ())) }\n"
         f"example_entry = {str(payload.get('example_entry', '') or '').strip()!r}\n"
     )
+    for name in ("artifact_requires", "artifact_provides", "phase_in", "phase_out",
+                 "detail_ref", "contract", "metadata"):
+        if name in payload:
+            block += f"{name} = {_inline_toml(payload[name])}\n"
+    return block
 
 
 def upsert_catalog_entry(path: Path, payload: dict[str, object], *, replace: bool = True) -> None:
+    payload = dict(payload)
     file_path = Path(path)
     text = file_path.read_text(encoding="utf-8") if file_path.exists() else ""
     lines = text.splitlines(keepends=True)
@@ -131,6 +156,13 @@ def upsert_catalog_entry(path: Path, payload: dict[str, object], *, replace: boo
         if not key:
             continue
         if replace and key == str(payload.get("key", "")).strip():
+            if _toml is None:
+                raise RuntimeError("TOML reader is required to preserve existing Catalog contracts")
+            previous = _toml.loads(block)["entry"][0]
+            for name in ("artifact_requires", "artifact_provides", "phase_in", "phase_out",
+                         "detail_ref", "contract", "metadata"):
+                if name not in payload and name in previous:
+                    payload[name] = previous[name]
             continue
         blocks.append((key, block))
 

@@ -1,6 +1,9 @@
 """Evaluation helper utilities for SolverBase."""
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
+
+from .bias_helpers import project_bias_feedback
 
 from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
 
@@ -156,7 +159,8 @@ def _annotate_evaluation_error(
     if not getattr(exc, "_nsgablack_error_phase", None):
         try:
             setattr(exc, "_nsgablack_error_phase", str(phase))
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='_annotate_evaluation_error.fallback_179', exc=_fallback_error)
             pass
     details = dict(getattr(exc, "_nsgablack_error_context", {}) or {})
     for key in ("individual_id", "population_size", "evaluation_path"):
@@ -164,7 +168,8 @@ def _annotate_evaluation_error(
             details[key] = context[key]
     try:
         setattr(exc, "_nsgablack_error_context", details)
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_annotate_evaluation_error.fallback_177', exc=_fallback_error)
         pass
     try:
         attach_failure_evidence(
@@ -172,7 +177,8 @@ def _annotate_evaluation_error(
             "nsgablack_evaluation",
             {"phase": str(phase), **details},
         )
-    except Exception:
+    except Exception as _fallback_error:
+        _report_optional_failure(component=__name__, event='_annotate_evaluation_error.fallback_178', exc=_fallback_error)
         pass
 
 
@@ -292,9 +298,9 @@ def _evaluate_individual(
             context="evaluate_individual.result",
         )
         if bool(getattr(solver, "enable_bias", False)):
-            objectives = solver._apply_bias(objectives, arr, individual_id, ctx)
-            if bool(getattr(solver, "ignore_constraint_violation_when_bias", False)):
-                violation = 0.0
+            feedback, objectives, violation = project_bias_feedback(
+                solver, feedback, violation, arr, individual_id, ctx
+            )
             objectives, violation = _validate_individual_result(
                 solver,
                 objectives,
@@ -362,6 +368,12 @@ def _persist_evaluation_snapshot(
     *,
     complete: bool,
 ) -> None:
+    # A completed evaluation is not the selected population authority. Inside
+    # a Snapshot transaction the Event writer records evaluated evidence and
+    # the final authority writer captures admission/selection results. Do not
+    # build an intermediate pending authority that will be overwritten.
+    if getattr(solver, "_snapshot_step_transaction", None) is not None:
+        return
     persist = getattr(solver, "_persist_snapshot", None)
     if not callable(persist):
         return
@@ -385,6 +397,24 @@ def _evaluate_population_via_individuals(
     budget_claim: BudgetClaim,
     budget_already_consumed: bool = False,
 ) -> OptimizationFeedbackBatch:
+    from ..evaluation_runtime import EvaluationMediator
+    from ..nested_solver import CaseInnerRuntimeEvaluator
+
+    inner = getattr(getattr(solver, "problem", None), "inner_runtime_evaluator", None)
+    mediator = getattr(solver, "evaluation_mediator", None)
+    # Batch only the ordinary Problem fallback. Individual providers must retain
+    # their normal arbitration opportunity; a custom mediator may also own
+    # behavior beyond the standard provider registry.
+    ordinary_fallback = mediator is None or (
+        type(mediator) is EvaluationMediator and not mediator.list_providers()
+    )
+    if isinstance(inner, CaseInnerRuntimeEvaluator) and inner.max_workers > 1 and ordinary_fallback:
+        return _evaluate_population_via_inner_cases(
+            solver, inner, population, hook_contexts=hook_contexts,
+            emit_hooks=emit_hooks, budget_claim=budget_claim,
+            budget_already_consumed=budget_already_consumed,
+        )
+
     objectives = []
     violations = []
     feedback_items: list[Feedback] = []
@@ -421,6 +451,71 @@ def _evaluate_population_via_individuals(
         np.asarray(violations, dtype=float).reshape(-1),
         items=feedback_items,
         metadata={"evaluation_path": "individual_fallback"},
+    )
+
+
+def _evaluate_population_via_inner_cases(
+    solver: Any,
+    inner: Any,
+    population: np.ndarray,
+    *,
+    hook_contexts: Optional[Sequence[Mapping[str, Any]]],
+    emit_hooks: bool,
+    budget_claim: BudgetClaim,
+    budget_already_consumed: bool,
+) -> OptimizationFeedbackBatch:
+    """Keep Solver mutations on one thread around a complete child-Case batch."""
+    plugin_manager = getattr(solver, "plugin_manager", None)
+    contexts = [
+        dict(solver.build_context(individual_id=index, individual=row))
+        if hook_contexts is None else dict(hook_contexts[index])
+        for index, row in enumerate(population)
+    ]
+    for row, context in zip(population, contexts):
+        _checkpoint_case_runtime(solver)
+        if emit_hooks and plugin_manager is not None:
+            plugin_manager.on_evaluate_start(row, context)
+    if not budget_already_consumed and len(population):
+        # As with an L4 batch dispatch, handing the full batch to its executor
+        # consumes the outer evaluations once. Child budgets are separately
+        # reserved and settled by the standard Case substrate.
+        _consume_evaluations(solver, budget_claim, len(population))
+    raw_items = inner.evaluate_batch(solver=solver, population=population, contexts=contexts)
+    if len(raw_items) != len(population):
+        raise ContractError("inner Case feedback count does not match dispatched population")
+    feedback_items = []
+    violations = []
+    for index, (row, context, raw) in enumerate(zip(population, contexts, raw_items)):
+        _checkpoint_case_runtime(solver)
+        feedback, objectives, violation = _normalize_individual_feedback_result(
+            solver, raw, context=f"problem.inner_runtime.evaluate_batch[{index}]",
+        )
+        constraints, constraint_violation = _constraint_violation(solver.problem, row)
+        context["constraints"] = constraints
+        context["constraint_violation"] = constraint_violation
+        violation = _merge_constraint_violation(violation, constraint_violation)
+        feedback = copy_feedback_with_result(feedback, objectives=objectives, violation=violation)
+        if bool(getattr(solver, "enable_bias", False)):
+            feedback, objectives, violation = project_bias_feedback(
+                solver, feedback, violation, row, index, context,
+            )
+            objectives, violation = _validate_individual_result(
+                solver, objectives, violation, context=f"evaluate_population.inner_case_bias[{index}]",
+            )
+        feedback = copy_feedback_with_result(feedback, objectives=objectives, violation=violation)
+        feedback_items.append(feedback)
+        violations.append(violation)
+        solver._last_individual_feedback = feedback
+        if emit_hooks and plugin_manager is not None:
+            plugin_manager.on_evaluate_end(row, (objectives, float(violation)), context)
+    if not feedback_items:
+        return OptimizationFeedbackBatch.from_arrays(
+            np.empty((0, int(getattr(solver, "num_objectives", 1) or 1))), np.empty((0,)),
+            metadata={"evaluation_path": "inner_case_batch"},
+        )
+    return OptimizationFeedbackBatch.from_feedback(
+        feedback_items, violations=np.asarray(violations),
+        metadata={"evaluation_path": "inner_case_batch"},
     )
 
 
@@ -502,26 +597,36 @@ def evaluate_population_with_plugins_and_bias(
         if not used_fallback:
             if bool(getattr(solver, "enable_bias", False)):
                 adjusted = []
+                adjusted_feedback = []
                 for idx, individual in enumerate(pop):
                     item_context = hook_contexts[idx] if batch_hook_scope else dict(
                         solver.build_context(individual_id=idx, individual=individual)
                     )
-                    biased = solver._apply_bias(objectives[idx], individual, idx, item_context)
+                    item_feedback, biased, selected_violation = project_bias_feedback(
+                        solver, feedback_batch.items[idx], violations[idx], individual, idx, item_context
+                    )
+                    adjusted_feedback.append(item_feedback)
                     row, vio = _validate_individual_result(
                         solver,
                         biased,
-                        0.0 if bool(getattr(solver, "ignore_constraint_violation_when_bias", False)) else violations[idx],
+                        selected_violation,
                         context=f"evaluate_population.bias[{idx}]",
                     )
                     adjusted.append(row)
                     violations[idx] = vio
                 objectives = np.vstack(adjusted) if adjusted else objectives
+                feedback_batch = OptimizationFeedbackBatch.from_feedback(
+                    adjusted_feedback, violations=violations, metadata=dict(feedback_batch.metadata)
+                )
 
         feedback_batch = feedback_batch.with_arrays(
             objectives,
             violations,
             metadata={
-                "evaluation_path": "individual_fallback" if used_fallback else "provider",
+                "evaluation_path": (
+                    str(feedback_batch.metadata.get("evaluation_path", "individual_fallback"))
+                    if used_fallback else "provider"
+                ),
             },
         )
         solver._last_feedback_batch = feedback_batch
@@ -565,12 +670,15 @@ def evaluate_external_population_with_contract(
     *,
     context_name: str,
     bias_already_applied: bool = False,
+    pass_contexts: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Close the Solver evaluation contract around an external batch executor.
 
     Parallel and distributed executors own scheduling only. Candidate and result
     validation, lifecycle hooks, the global evaluation counter, final bias
     semantics, and snapshot persistence remain Solver responsibilities.
+    With pass_contexts=True, a callback receives the same call-local contexts
+    after start hooks and may return raw constraint evidence to those contexts.
     """
     pop = _normalize_population(solver, population)
     _checkpoint_case_runtime(solver)
@@ -613,12 +721,21 @@ def evaluate_external_population_with_contract(
         for idx, individual in enumerate(pop):
             item_context = dict(solver.build_context(individual_id=idx, individual=individual))
             item_context["evaluation_path"] = str(context_name)
+            if pass_contexts:
+                # Only an actual candidate binding can supply identity. An
+                # ordinal or a stale shared token must not name this proposal.
+                item_context.pop("candidate_token", None)
+                item_context.pop("_candidate_provenance", None)
+                provenance = solver.candidate_provenance_for(individual)
+                if provenance is not None:
+                    item_context["candidate_token"] = provenance.candidate_token
+                    item_context["_candidate_provenance"] = provenance.as_dict()
             hook_contexts.append(item_context)
             if plugin_manager is not None:
                 plugin_manager.on_evaluate_start(individual, item_context)
 
         _consume_evaluations(solver, claim, pop_size)
-        raw_result = evaluator(pop)
+        raw_result = evaluator(pop, contexts=hook_contexts) if pass_contexts else evaluator(pop)
         feedback_batch = _normalize_population_feedback_result(
             solver,
             raw_result,
@@ -634,24 +751,31 @@ def evaluate_external_population_with_contract(
         )
         if enable_bias and not bool(bias_already_applied):
             adjusted = []
+            adjusted_feedback = []
             for idx, individual in enumerate(pop):
-                biased = solver._apply_bias(
-                    objectives[idx],
-                    individual,
-                    idx,
-                    hook_contexts[idx],
+                item_feedback, biased, selected_violation = project_bias_feedback(
+                    solver, feedback_batch.items[idx], violations[idx], individual, idx, hook_contexts[idx]
                 )
                 row, vio = _validate_individual_result(
-                    solver,
-                    biased,
-                    0.0 if ignore_bias_violation else violations[idx],
-                    context=f"{context_name}.bias[{idx}]",
+                    solver, biased, selected_violation, context=f"{context_name}.bias[{idx}]",
                 )
                 adjusted.append(row)
+                adjusted_feedback.append(item_feedback)
                 violations[idx] = vio
             objectives = np.vstack(adjusted) if adjusted else objectives
+            feedback_batch = OptimizationFeedbackBatch.from_feedback(
+                adjusted_feedback, violations=violations, metadata=dict(feedback_batch.metadata)
+            )
         elif enable_bias and ignore_bias_violation:
+            from blackbase.preferences import preserve_feedback_evidence
+            adjusted_feedback = []
+            for index, item in enumerate(feedback_batch.items):
+                projected = copy_feedback_with_result(item, objectives=item.objectives, violation=0.0)
+                adjusted_feedback.append(preserve_feedback_evidence(
+                    item, projected, raw_violation=violations[index], projected_violation=0.0,
+                ))
             violations = np.zeros((pop_size,), dtype=float)
+            feedback_batch = OptimizationFeedbackBatch.from_feedback(adjusted_feedback, violations=violations)
 
         feedback_batch = feedback_batch.with_arrays(
             objectives,

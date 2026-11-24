@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Iterable, List
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
 @dataclass(frozen=True)
 class GuardIssue:
     location: str
@@ -56,7 +59,7 @@ def check_context_field_rules_doc(path: Path | None = None) -> List[GuardIssue]:
         CONTEXT_FIELD_SCHEMA_VERSION,
     )
 
-    doc = path or Path("docs/user_guide/CONTEXT_FIELD_RULES.md")
+    doc = path or _REPO_ROOT / "docs" / "user_guide" / "CONTEXT_FIELD_RULES.md"
     issues: List[GuardIssue] = []
     if not doc.is_file():
         return [GuardIssue(location=str(doc), message="missing governance doc")]

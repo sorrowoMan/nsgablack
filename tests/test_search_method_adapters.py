@@ -86,7 +86,7 @@ def test_gaussian_search_checkpoint_restores_exact_rng_sequence() -> None:
     original.update(
         control,
         first,
-        (np.asarray([[3.0], [2.0], [1.0]]), np.zeros(3)),
+        (np.asarray([[3.0]]), np.zeros(1)),
         {},
     )
 

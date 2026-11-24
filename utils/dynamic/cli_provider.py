@@ -40,7 +40,7 @@ class CLISignalProvider(SignalProviderBase):
         while True:
             try:
                 line = input().strip()
-            except Exception:
+            except EOFError:
                 break
             if not line:
                 continue
@@ -56,7 +56,7 @@ class CLISignalProvider(SignalProviderBase):
                 obj = json.loads(line)
                 if isinstance(obj, dict):
                     return obj
-            except Exception:
+            except (ValueError, TypeError):
                 return {}
             return {}
         out: Dict[str, Any] = {}

@@ -1,4 +1,4 @@
-﻿"""并行批量运行工具：headless 与可选 VNS。"""
+"""并行批量运行工具：headless 与可选 VNS。"""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ def run_headless_in_parallel(
             from tqdm import tqdm  # type: ignore
 
             iterator = tqdm(iterator, total=len(futures), desc="Parallel headless runs")
-        except Exception:
+        except ImportError:
             pass
         for future in iterator:
             results.append(future.result())
@@ -103,7 +103,7 @@ def run_vns_in_parallel(
             from tqdm import tqdm  # type: ignore
 
             iterator = tqdm(iterator, total=len(futures), desc="Parallel VNS runs")
-        except Exception:
+        except ImportError:
             pass
         for future in iterator:
             results.append(future.result())

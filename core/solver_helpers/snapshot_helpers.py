@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, Sequence
 
 import numpy as np
+from blackbase.evaluation import EvaluationEventEnvelope
 from blackbase.types import CandidateBatch
 
-from blackbase.context import SnapshotHandle, SnapshotRecord, SnapshotStore, create_snapshot_store, make_snapshot_key
+from blackbase.context import (
+    SnapshotHandle,
+    SnapshotIdentity,
+    SnapshotRecord,
+    SnapshotStore,
+    create_snapshot_store,
+    make_snapshot_key,
+)
 
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_BEST_X,
     KEY_CONSTRAINT_VIOLATIONS,
     KEY_CONSTRAINT_VIOLATIONS_REF,
@@ -34,6 +42,7 @@ from blackbase.context.context_keys import (
 
 
 POPULATION_SNAPSHOT_SCHEMA_V2 = "nsgablack.population_snapshot/v2"
+EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1 = "nsgablack.evaluation_event_snapshot/v1"
 POPULATION_AUTHORITY_KEY = "population_authority"
 POPULATION_PARTITIONS_KEY = "population_partitions"
 LAST_EVALUATED_BATCH_KEY = "last_evaluated_batch"
@@ -42,10 +51,157 @@ LAST_EVALUATION_DISPOSITION_KEY = "last_evaluation_disposition"
 CANDIDATE_BATCH_KEY = "candidate_batch"
 CANDIDATE_PROVENANCE_KEY = "candidate_provenance"
 CANDIDATE_PARTITIONS_SCHEMA_V1 = "nsgablack.candidate_population_partitions/v1"
+EVALUATION_EVENT_KEY = "evaluation_event"
+AUTHORITY_BEFORE_REF_KEY = "authority_before_ref"
 
 
 class PartitionedPopulationSnapshotError(RuntimeError):
     """Raised when a single-population consumer sees partitioned authority."""
+
+
+def build_evaluation_event_snapshot_payload(
+    envelope: EvaluationEventEnvelope | Mapping[str, Any],
+    *,
+    authority_before_ref: Mapping[str, Any] | None,
+) -> Dict[str, Any]:
+    """Build the narrow Event record without copying population authority."""
+
+    event = (
+        envelope
+        if isinstance(envelope, EvaluationEventEnvelope)
+        else EvaluationEventEnvelope.from_dict(envelope)
+    )
+    before = None
+    if authority_before_ref is not None:
+        from blackbase.context import SnapshotIdentity
+
+        before = SnapshotIdentity.from_dict(authority_before_ref).as_dict()
+    return {
+        EVALUATION_EVENT_KEY: event.as_dict(),
+        AUTHORITY_BEFORE_REF_KEY: before,
+    }
+
+
+def evaluation_event_envelope_from_snapshot(
+    payload: Mapping[str, Any],
+    *,
+    snapshot_schema: str,
+) -> EvaluationEventEnvelope | None:
+    """Decode Event evidence using the Snapshot record schema as authority."""
+
+    schema = str(snapshot_schema or "").strip()
+    if schema == EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1:
+        direct = payload.get(EVALUATION_EVENT_KEY)
+        if not isinstance(direct, Mapping):
+            raise ValueError("Event Snapshot v1 is missing evaluation_event")
+        if any(
+            isinstance(payload.get(key), Mapping)
+            for key in (LAST_EVALUATION_EVENT_KEY, LAST_EVALUATED_BATCH_KEY)
+        ):
+            raise ValueError("Event Snapshot v1 contains a legacy Event slot")
+        return EvaluationEventEnvelope.from_dict(direct)
+    if schema == POPULATION_SNAPSHOT_SCHEMA_V2:
+        if EVALUATION_EVENT_KEY in payload:
+            raise ValueError(
+                "legacy population Snapshot must not contain the Event v1 slot"
+            )
+        for key in (LAST_EVALUATION_EVENT_KEY, LAST_EVALUATED_BATCH_KEY):
+            event_slot = payload.get(key)
+            if not isinstance(event_slot, Mapping):
+                continue
+            legacy = event_slot.get("evaluation_event_envelope")
+            if isinstance(legacy, Mapping):
+                return EvaluationEventEnvelope.from_dict(legacy)
+        return None
+    raise ValueError(f"unsupported evaluation Event Snapshot schema: {schema!r}")
+
+
+def validate_evaluation_event_snapshot(
+    payload: Mapping[str, Any],
+    *,
+    snapshot_schema: str,
+    expected_event_id: str | None = None,
+    expected_run_id: str | None = None,
+    expected_snapshot_key: str | None = None,
+) -> tuple[EvaluationEventEnvelope, SnapshotIdentity | None]:
+    """Validate Event structure, identity, and known nsgablack codecs."""
+
+    envelope = evaluation_event_envelope_from_snapshot(
+        payload,
+        snapshot_schema=snapshot_schema,
+    )
+    if envelope is None:
+        raise ValueError("Snapshot does not contain an Evaluation Event envelope")
+    event_id = str(expected_event_id or "").strip()
+    if event_id and envelope.event_id != event_id:
+        raise ValueError("Evaluation Event event_id does not match its journal record")
+    identity = dict(envelope.identity)
+    run_id = str(expected_run_id or "").strip()
+    if run_id and str(identity.get("run_id", "") or "") != run_id:
+        raise ValueError("Evaluation Event run_id does not match its journal record")
+    snapshot_key = str(expected_snapshot_key or "").strip()
+    if snapshot_key and str(identity.get("event_snapshot_key", "") or "") != snapshot_key:
+        raise ValueError("Evaluation Event identity does not name its Snapshot key")
+
+    authority_before: SnapshotIdentity | None = None
+    if snapshot_schema == EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1:
+        if AUTHORITY_BEFORE_REF_KEY not in payload:
+            raise ValueError("Event Snapshot v1 is missing authority_before_ref")
+        raw_before = payload.get(AUTHORITY_BEFORE_REF_KEY)
+        identity_before_present = AUTHORITY_BEFORE_REF_KEY in identity
+        raw_identity_before = identity.get(AUTHORITY_BEFORE_REF_KEY)
+        if raw_before is None:
+            if not identity_before_present or raw_identity_before is not None:
+                raise ValueError(
+                    "Evaluation Event identity disagrees with empty predecessor"
+                )
+            if str(identity.get("authority_snapshot_key", "") or ""):
+                raise ValueError(
+                    "Evaluation Event names authority_snapshot_key without a predecessor"
+                )
+        else:
+            if not isinstance(raw_before, Mapping):
+                raise TypeError("authority_before_ref must be a SnapshotIdentity mapping")
+            authority_before = SnapshotIdentity.from_dict(raw_before)
+            if not isinstance(raw_identity_before, Mapping):
+                raise ValueError(
+                    "Evaluation Event identity is missing its predecessor identity"
+                )
+            identity_before = SnapshotIdentity.from_dict(raw_identity_before)
+            if identity_before != authority_before:
+                raise ValueError(
+                    "Evaluation Event predecessor identities do not match"
+                )
+            if str(identity.get("authority_snapshot_key", "") or "") != authority_before.key:
+                raise ValueError(
+                    "Evaluation Event predecessor key does not match its identity"
+                )
+
+    if (
+        envelope.semantic_complete
+        and envelope.candidate_codec == "blackbase.candidate_batch/v1"
+        and envelope.feedback_codec
+        == "nsgablack.optimization_feedback_batch/v1"
+    ):
+        from ..evaluation_feedback import OptimizationFeedbackBatch
+        from ..state.incumbent import CandidateProvenance
+
+        batch = CandidateBatch.from_dict(envelope.candidate_payload)
+        feedback = OptimizationFeedbackBatch.from_dict(envelope.feedback_payload)
+        provenance = tuple(
+            CandidateProvenance.from_dict(item) for item in envelope.provenance
+        )
+        candidate_count = len(batch.semantic_states)
+        if candidate_count != feedback.candidate_count:
+            raise ValueError("Evaluation Event candidate and feedback counts differ")
+        if len(provenance) != candidate_count:
+            raise ValueError("Evaluation Event provenance count is misaligned")
+        for token, record in zip(batch.candidate_tokens, provenance):
+            if token != record.candidate_token:
+                raise ValueError(
+                    "Evaluation Event candidate token disagrees with provenance"
+                )
+    return envelope, authority_before
 
 
 def _validate_candidate_identity(
@@ -54,7 +210,7 @@ def _validate_candidate_identity(
     provenance_payload: Any,
     numeric_population: np.ndarray,
     expected_tokens: tuple[str | None, ...] | None,
-    seen_tokens: set[str],
+    seen_tokens: dict[str, Any],
 ) -> None:
     if not isinstance(batch_payload, Mapping):
         raise ValueError("authoritative population snapshot requires CandidateBatch")
@@ -76,16 +232,17 @@ def _validate_candidate_identity(
     if any(token is None for token in tokens):
         raise ValueError("authoritative candidate tokens must not be missing")
     normalized = tuple(str(token) for token in tokens)
-    if len(set(normalized)) != len(normalized):
-        raise ValueError("authoritative candidate tokens must be unique")
-    duplicate = seen_tokens.intersection(normalized)
-    if duplicate:
-        raise ValueError(
-            "candidate tokens are duplicated across population partitions: "
-            f"{sorted(duplicate)!r}"
-        )
-    seen_tokens.update(normalized)
-    if not isinstance(provenance_payload, (list, tuple)):
+    for token, state in zip(normalized, batch.semantic_states):
+        previous = seen_tokens.get(token)
+        if previous is not None and (
+            not np.array_equal(previous.as_array(), state.as_array(), equal_nan=True)
+            or previous.as_dict()["metadata"] != state.as_dict()["metadata"]
+        ):
+            raise ValueError("one candidate token identifies different population states")
+        seen_tokens[token] = state
+    if not isinstance(provenance_payload, Sequence) or isinstance(
+        provenance_payload, (str, bytes)
+    ):
         raise ValueError("authoritative population snapshot requires provenance")
     from ..state.incumbent import CandidateProvenance
 
@@ -134,7 +291,7 @@ def validate_population_snapshot_v2(
             f"Snapshot: expected={expected!r}, observed={mode!r}"
         )
 
-    seen_tokens: set[str] = set()
+    seen_tokens: dict[str, Any] = {}
     if mode == "partitioned":
         partition_envelope = data.get(POPULATION_PARTITIONS_KEY)
         if not isinstance(partition_envelope, Mapping):
@@ -212,10 +369,10 @@ def validate_population_snapshot_v2(
 
 
 def population_snapshot_authority_mode(payload: Any) -> str:
-    if not isinstance(payload, dict):
+    if not isinstance(payload, Mapping):
         return "single"
     authority = payload.get(POPULATION_AUTHORITY_KEY)
-    if not isinstance(authority, dict):
+    if not isinstance(authority, Mapping):
         if POPULATION_PARTITIONS_KEY in payload or LAST_EVALUATED_BATCH_KEY in payload:
             return "partitioned"
         return "single"
@@ -240,11 +397,11 @@ def population_snapshot_authority_mode(payload: Any) -> str:
     return mode
 
 
-def require_single_population_payload(payload: Any) -> Dict[str, Any]:
+def require_single_population_payload(payload: Any) -> Mapping[str, Any]:
     """Return the numeric payload unless its authority is partitioned."""
 
-    if not isinstance(payload, dict):
-        raise TypeError("population snapshot payload must be a dict")
+    if not isinstance(payload, Mapping):
+        raise TypeError("population snapshot payload must be a Mapping")
     mode = population_snapshot_authority_mode(payload)
     if mode == "partitioned":
         raise PartitionedPopulationSnapshotError(
@@ -273,7 +430,7 @@ def build_snapshot_payload(
     if violations is not None:
         out[KEY_CONSTRAINT_VIOLATIONS] = violations
     if pareto_solutions is not None:
-        if isinstance(pareto_solutions, dict) and "individuals" in pareto_solutions:
+        if isinstance(pareto_solutions, Mapping) and "individuals" in pareto_solutions:
             out[KEY_PARETO_SOLUTIONS] = pareto_solutions.get("individuals")
         else:
             out[KEY_PARETO_SOLUTIONS] = pareto_solutions
@@ -375,6 +532,9 @@ __all__ = [
     "snapshot_meta",
     "strip_large_context_fields",
     "POPULATION_SNAPSHOT_SCHEMA_V2",
+    "EVALUATION_EVENT_SNAPSHOT_SCHEMA_V1",
+    "EVALUATION_EVENT_KEY",
+    "AUTHORITY_BEFORE_REF_KEY",
     "POPULATION_AUTHORITY_KEY",
     "POPULATION_PARTITIONS_KEY",
     "LAST_EVALUATED_BATCH_KEY",
@@ -386,4 +546,7 @@ __all__ = [
     "PartitionedPopulationSnapshotError",
     "population_snapshot_authority_mode",
     "require_single_population_payload",
+    "build_evaluation_event_snapshot_payload",
+    "evaluation_event_envelope_from_snapshot",
+    "validate_evaluation_event_snapshot",
 ]

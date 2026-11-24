@@ -328,6 +328,20 @@ class OptimizationFeedbackBatch:
             "sequence of Feedback, or (objectives, violations)"
         )
 
+    @property
+    def raw_objectives(self) -> np.ndarray:
+        return _readonly_array([
+            item.info.get("raw_evaluation", {}).get("objectives", item.objectives)
+            for item in self.items
+        ], ndim=2) if self.items else self.objectives
+
+    @property
+    def raw_violations(self) -> np.ndarray:
+        return _readonly_array([
+            item.info.get("raw_evaluation", {}).get("constraint_violation", self.violations[index])
+            for index, item in enumerate(self.items)
+        ], ndim=1)
+
     def with_arrays(
         self,
         objectives: Any,

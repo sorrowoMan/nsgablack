@@ -6,6 +6,8 @@ from typing import Iterable, Sequence, Tuple
 
 from .contract_relations import _entry_field_values
 from blackbase.context import get_component_contract
+from .recipes import ADAPTER_RECIPES, constructor_check, required_arguments
+from .guidance import guidance_for
 
 
 @dataclass(frozen=True)
@@ -15,11 +17,18 @@ class CatalogUsage:
     required_companions: Tuple[str, ...] = ()
     config_keys: Tuple[str, ...] = ()
     example_entry: str = ""
+    wiring_status: str = "unverified"
+    wiring_notes: Tuple[str, ...] = ()
 
 
-def _normalize_values(values: object) -> Tuple[str, ...]:
+def _normalize_values(values: object, *, preserve_whitespace: bool = False) -> Tuple[str, ...]:
     if values is None:
         return ()
+    if preserve_whitespace:
+        if isinstance(values, str):
+            return (values,) if values else ()
+        if isinstance(values, (list, tuple)):
+            return tuple(str(item) for item in values)
     if isinstance(values, str):
         text = values.strip()
         return (text,) if text else ()
@@ -66,40 +75,49 @@ def _infer_use_when(kind: str) -> Tuple[str, ...]:
     return mapping.get(str(kind).strip().lower(), ())
 
 
-def _infer_minimal_wiring(kind: str, import_path: str) -> Tuple[str, ...]:
+def _infer_minimal_wiring(kind: str, import_path: str, entry=None) -> Tuple[str, ...]:
     symbol = _symbol_from_import(import_path)
+    required = required_arguments(entry) if entry is not None else ()
+    arguments = ", ".join(p.name if p.kind is inspect.Parameter.POSITIONAL_ONLY else f"{p.name}={p.name}" for p in required)
+    constructor = f"{symbol}({arguments})"
+    header = ("# template: 请先定义必填依赖 " + ", ".join(p.name for p in required),) if required else ()
     k = str(kind).strip().lower()
     if k == "plugin":
-        return (
+        return header + (
             f"from {import_path.split(':', 1)[0]} import {symbol}",
-            "solver.add_plugin(" + symbol + "())",
+            f"solver.add_plugin({constructor})",
         )
     if k == "suite":
-        return (
+        return header + (
             f"from {import_path.split(':', 1)[0]} import {symbol}",
             f"{symbol}(solver)",
         )
     if k == "adapter":
-        return (
+        return header + (
             f"from {import_path.split(':', 1)[0]} import {symbol}",
-            f"solver.set_adapter({symbol}())",
+            f"solver.set_adapter({constructor})",
         )
     if k == "bias":
-        return (
+        return header + (
             f"from {import_path.split(':', 1)[0]} import {symbol}",
-            f"bias_module.add({symbol}())",
+            f"bias_module.add({constructor})",
         )
     if k == "representation":
-        return (
-            f"from {import_path.split(':', 1)[0]} import {symbol}",
-            "solver.set_representation_pipeline(" + symbol + "())",
-        )
+        prefix = header + (f"from {import_path.split(':', 1)[0]} import {symbol}",)
+        component = entry.load() if entry is not None else None
+        if component is not None and hasattr(component, "schema") and hasattr(component, "restore"):
+            return prefix + ("from nsgablack.units import UnitBinding", f"binding = UnitBinding({constructor})", "# 将 binding 传给支持该 Unit schema 的 Adapter")
+        for method, slot in (("init", "initializer"), ("mutate", "mutator"), ("repair", "repair"), ("encode", "encoder"), ("decode", "decoder")):
+            if callable(getattr(component, method, None)):
+                return prefix + ("from nsgablack.representation import RepresentationPipeline", f"solver.set_representation_pipeline(RepresentationPipeline({slot}={constructor}))")
+        return prefix + (f"component = {constructor}", "# 按组件角色接入 Case pipeline，不把原始组件当作完整管线")
     return (f"from {import_path.split(':', 1)[0]} import {symbol}",)
 
 
 def _infer_required_companions(companions: Iterable[str]) -> Tuple[str, ...]:
-    vals = tuple(str(c).strip() for c in companions if str(c).strip())
-    return vals if vals else ("(none)",)
+    # Navigation links can include alternatives and examples. Only explicit
+    # declarations establish mandatory assembly dependencies.
+    return ("(none)",)
 
 
 def _infer_config_keys(entry) -> Tuple[str, ...]:
@@ -123,35 +141,57 @@ def _infer_config_keys(entry) -> Tuple[str, ...]:
                 if p.kind in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}:
                     continue
                 params.append(name)
-        except Exception:
+        except (ValueError, TypeError):
             pass
     return tuple(params) if params else ("(none)",)
 
 
 def _infer_example_entry(entry) -> str:
     explicit = str(getattr(entry, "example_entry", "") or "").strip()
-    if explicit:
+    if explicit and "catalog search" not in explicit:
         return explicit
-
-    key = str(getattr(entry, "key", "") or "")
-    token = key.split(".")[-1] if "." in key else key
-    token = token.strip()
-    if token:
-        return f"python -m nsgablack catalog search {token} --kind example"
-    return "python -m nsgablack catalog search <keyword> --kind example"
+    if entry.key in ADAPTER_RECIPES:
+        case = entry.key.split(".")[-1]
+        return f"examples/cases/catalog_recipes/cases/{case}/build_solver.py"
+    # This field is an address, not a sentence ending in a Markdown suffix.
+    # A general scaffold guide stays a reference; only a focused usage recipe
+    # establishes component-specific coverage.
+    return "docs/standard_scaffold_tutorial/01_create_and_run.md"
 
 
 def build_usage_profile(entry) -> CatalogUsage:
+    if getattr(entry, "metadata", {}).get("catalog_framework", "nsgablack") != "nsgablack":
+        # The source framework owns its assembly vocabulary. Empty ML usage
+        # declarations must not become guessed NSGA Bias/Pipeline recipes.
+        return CatalogUsage(
+            use_when=_normalize_values(getattr(entry, "use_when", ())),
+            minimal_wiring=_normalize_values(getattr(entry, "minimal_wiring", ()), preserve_whitespace=True),
+            required_companions=_normalize_values(getattr(entry, "required_companions", ())),
+            config_keys=_normalize_values(getattr(entry, "config_keys", ())),
+            example_entry=str(getattr(entry, "example_entry", "") or ""),
+        )
+    guidance_for(entry)  # Validate descriptive extensions before publishing usage.
     use_when = _normalize_values(getattr(entry, "use_when", ()))
-    minimal_wiring = _normalize_values(getattr(entry, "minimal_wiring", ()))
+    minimal_wiring = _normalize_values(getattr(entry, "minimal_wiring", ()), preserve_whitespace=True)
     required_companions = _normalize_values(getattr(entry, "required_companions", ()))
     config_keys = _infer_config_keys(entry)
     example_entry = _infer_example_entry(entry)
 
     if not use_when:
         use_when = _infer_use_when(getattr(entry, "kind", ""))
+    if not minimal_wiring and entry.key in ADAPTER_RECIPES:
+        minimal_wiring = ADAPTER_RECIPES[entry.key]
     if not minimal_wiring:
-        minimal_wiring = _infer_minimal_wiring(getattr(entry, "kind", ""), getattr(entry, "import_path", ""))
+        minimal_wiring = _infer_minimal_wiring(getattr(entry, "kind", ""), getattr(entry, "import_path", ""), entry)
+    status, notes = constructor_check(entry, minimal_wiring)
+    if status == "invalid":
+        minimal_wiring = _infer_minimal_wiring(entry.kind, entry.import_path, entry)
+        status, notes = constructor_check(entry, minimal_wiring)
+    if any("# template:" in line for line in minimal_wiring):
+        status = "template"
+        notes = ("必填依赖须由 Case 定义；片段尚未执行验收",)
+    minimal_wiring = tuple(line for line in minimal_wiring if not line.startswith("# recipe-status:"))
+    minimal_wiring = (f"# recipe-status: {status}; {'; '.join(notes)}", *minimal_wiring)
     if not required_companions:
         required_companions = _infer_required_companions(getattr(entry, "companions", ()))
 
@@ -161,13 +201,15 @@ def build_usage_profile(entry) -> CatalogUsage:
         required_companions=required_companions,
         config_keys=config_keys,
         example_entry=example_entry,
+        wiring_status=status,
+        wiring_notes=notes,
     )
 
 
 def _callable_has_no_required_args(obj: object) -> bool:
     try:
         sig = inspect.signature(obj)
-    except Exception:
+    except (ValueError, TypeError):
         return False
     for param in sig.parameters.values():
         if param.kind in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}:

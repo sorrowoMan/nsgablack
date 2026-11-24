@@ -1,3 +1,0 @@
-name = learnable_conv_coefficient_refinement
-kind = solver
-framework = nsgablack

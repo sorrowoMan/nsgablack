@@ -9,6 +9,12 @@ from pipeline.main import evaluate_bundle
 
 
 class PhiBundleEvaluationCase:
+    context_requires = ()
+    context_provides = ()
+    context_mutates = ()
+    context_cache = ()
+    context_notes = ("Case consumes constructor payload and ResourceContext; returns TrainerResult without a shared ContextStore.",)
+
     def __init__(self, *, config, bundle, label, resource_context=None):
         self.config = dict(config)
         self.bundle = dict(bundle)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .adapter import ClosedFormFitMethod
+from .adapter import FixedCandidateAdapter
 from .pipeline import ClosedFormDataPipeline
 from .problem import ClosedFormRegressionProblem
 from .solver import BaselineTrainerCase
@@ -13,7 +13,7 @@ def build_solver(config=None, *, resource_context=None, component_overrides=None
     return BaselineTrainerCase(
         ClosedFormRegressionProblem(),
         ClosedFormDataPipeline(),
-        ClosedFormFitMethod(),
+        FixedCandidateAdapter(),
         resource_context=resource_context,
         component_overrides=component_overrides,
     )

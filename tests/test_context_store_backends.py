@@ -64,6 +64,7 @@ def test_evolution_solver_projects_shared_context_codec_config() -> None:
         context_store_serializer="pickle_signed",
         context_store_hmac_env_var="TEST_CONTEXT_HMAC",
         context_store_max_payload_bytes=8192,
+        snapshot_store_scope="test:solver-snapshots",
     )
 
     solver = EvolutionSolver(_Sphere(), storage_config=config)
@@ -71,6 +72,8 @@ def test_evolution_solver_projects_shared_context_codec_config() -> None:
     assert solver.context_store_serializer == "pickle_signed"
     assert solver.context_store_hmac_env_var == "TEST_CONTEXT_HMAC"
     assert solver.context_store_max_payload_bytes == 8192
+    assert solver.snapshot_store_scope == "test:solver-snapshots"
+    assert solver.snapshot_store.store_scope == "test:solver-snapshots"
 
 
 def test_solver_context_build_does_not_hide_corrupt_store_state() -> None:

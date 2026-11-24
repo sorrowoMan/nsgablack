@@ -12,6 +12,7 @@ event semantics explicit in context/state.
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import copy
 from dataclasses import dataclass
@@ -29,11 +30,12 @@ from ..algorithm_adapter import (
     subset_adapter_feedback,
 )
 from ..runtime_projection import aggregate_adapter_runtime_projections
+from ...core.state.solution_pool import SolutionRef
 from ..empty_outcome import (
     aggregate_named_empty_outcomes,
     child_empty_proposal_outcome,
 )
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_EVENT_ARCHIVE,
     KEY_EVENT_HISTORY,
     KEY_EVENT_INFLIGHT,
@@ -107,6 +109,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
     - "Async" means event-level scheduling, compatible with sync or async
       evaluation backends.
     """
+    unit_contract_mode = "delegated"
 
     context_requires = ("generation",)
     context_provides = (
@@ -183,6 +186,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
 
     def setup(self, control: Any) -> None:
         self._solver_ref = control
+        self._rng = self.create_local_rng(control)
         self._step = 0
         self._event_id = 0
         self._queue = []
@@ -346,6 +350,28 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             owner=self.name,
         )
 
+    def on_proposal_repair(self, control, repair, context):
+        self._forward_proposal_repair(control, repair, context)
+
+    def proposal_repair_children(self, repair, context):
+        targets = []
+        for adapter, start, end, proposal_context in self._last_allocations:
+            ctx = dict(context)
+            ctx.update(proposal_context)
+            base = self._base_dispositions.get(str(proposal_context.get("strategy", "")))
+            targets.append((adapter, repair.for_range(start, end).through(base), ctx))
+        return tuple(targets)
+
+    def _proposal_contexts(self, proposed_count, context):
+        out = []
+        for adapter, start, end, proposal_context in self._last_allocations:
+            ctx = dict(context)
+            ctx.update(proposal_context)
+            base = self._base_dispositions.get(str(proposal_context.get("strategy", "")))
+            values = adapter.get_proposal_contexts(base.proposed_count if base else end - start, ctx)
+            out.extend((values[i] for i in base.accepted_indices) if base else values)
+        return out
+
     def on_proposal_disposition(
         self,
         control: Any,
@@ -422,11 +448,15 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
                 "violation": float(vio),
             }
             completion_events.append(record)
+            items = getattr(feedback, "items", ())
+            value = items[idx].info.get("accepted_solution_ref") if items else None
+            ref = None if value is None else SolutionRef.from_dict(dict(value))
             self._push_archive(
                 {
                     **record,
                     "objective": np.asarray(objectives[idx], dtype=float),
                     "x": np.asarray(candidates[idx], dtype=float),
+                    "solution_ref": None if ref is None else ref.as_dict(),
                 }
             )
             if strategy_name in self._stats:
@@ -476,6 +506,17 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         if not self._uses_event_cases():
             self._topup_queue()
         self._publish_state(control)
+
+    def get_solution_pool_roots(self, control):
+        refs = []
+        for item in self.archive:
+            value = item.get("solution_ref")
+            if value is None:
+                # Direct/legacy feedback did not identify a pool version. Do
+                # not silently declare those live archive entries unreferenced.
+                return None
+            refs.append(SolutionRef.from_dict(dict(value)))
+        return tuple(refs)
 
     def _score(self, objectives_row: np.ndarray, violation: float) -> float:
         if self.cfg.objective_aggregation == "first":
@@ -551,7 +592,8 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
             right = self._resolve_condition_token(pair[1], context)
             try:
                 return bool(fn(left, right))
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='AsyncEventDrivenAdapter._eval_condition_dsl.fallback_6', exc=_fallback_error)
                 return False
         return bool(expr)
 
@@ -563,12 +605,14 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         if callable(spec.when):
             try:
                 return bool(spec.when(dict(context)))
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='AsyncEventDrivenAdapter._case_matches.fallback_7', exc=_fallback_error)
                 return False
         if isinstance(spec.when_dsl, dict):
             try:
                 return bool(self._eval_condition_dsl(spec.when_dsl, dict(context)))
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='AsyncEventDrivenAdapter._case_matches.fallback_8', exc=_fallback_error)
                 return False
         return True
 
@@ -576,7 +620,7 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
         raw = context.get(KEY_GENERATION, self._step)
         try:
             return int(raw)
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return int(self._step)
 
     def _event_case_priority(self, spec: EventStrategySpec) -> int:
@@ -747,7 +791,8 @@ class AsyncEventDrivenAdapter(AlgorithmAdapter):
                 generation=getattr(solver, "generation", None),
                 step=int(self._step),
             )
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='AsyncEventDrivenAdapter._log_event.fallback_5', exc=_fallback_error)
             return
 
     def _publish_state(self, control: Any) -> None:

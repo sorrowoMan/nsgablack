@@ -23,7 +23,7 @@ _VIO = np.array([0.0, 0.0, 0.0], dtype=float)
 def _iter_adapter_classes() -> list[tuple[Path, ast.ClassDef]]:
     out: list[tuple[Path, ast.ClassDef]] = []
     root = Path(__file__).resolve().parents[1] / "adapters"
-    for py_file in sorted(root.glob("*.py")):
+    for py_file in sorted(root.rglob("*.py")):
         if py_file.name == "__init__.py":
             continue
         tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
@@ -102,7 +102,21 @@ def test_l2_adapters_define_population_snapshot_methods():
     methods from a parent (e.g. NSGA3Adapter from NSGA2Adapter), it is still valid.
     The runtime test below covers the full MRO.
     """
-    for path, class_node in _iter_adapter_classes():
+    classes = list(_iter_adapter_classes())
+    by_name = {node.name: node for _, node in classes}
+    def implemented_methods(node, seen=None):
+        seen = set() if seen is None else seen
+        if node.name in seen:
+            return set()
+        seen.add(node.name)
+        # The base extension stubs do not establish population ownership.
+        methods = set() if node.name == "AlgorithmAdapter" else _class_methods(node)
+        for base in node.bases:
+            name = base.id if isinstance(base, ast.Name) else base.attr if isinstance(base, ast.Attribute) else None
+            if name in by_name:
+                methods |= implemented_methods(by_name[name], seen)
+        return methods
+    for path, class_node in classes:
         attrs = _class_attrs(class_node)
         level_expr = attrs.get("state_recovery_level")
         if level_expr is None:
@@ -110,7 +124,7 @@ def test_l2_adapters_define_population_snapshot_methods():
         level = _literal_str(level_expr)
         if level != "L2":
             continue
-        methods = _class_methods(class_node)
+        methods = implemented_methods(class_node)
         # Classes that inherit population methods from L2 parent are fine.
         # We flag only if the class re-declares state_recovery_level="L2" without
         # providing any population-management methods AND has no L2 parent.
@@ -129,7 +143,7 @@ def test_l2_adapters_define_population_snapshot_methods():
             }.issubset(methods)
         # If the class declares its own get_state (i.e. is a root L2), it MUST also
         # declare population methods in-tree. Subclasses that inherit are checked at runtime.
-        has_own_state = "get_state" in methods
+        has_own_state = "get_state" in _class_methods(class_node)
         if has_own_state and not has_own_pop:
             assert False, (
                 f"{path}:{class_node.name} declares state_recovery_level='L2' and owns "

@@ -10,7 +10,7 @@ from typing import Optional, Any, Tuple
 import numpy as np
 
 from .base import RepresentationComponentContract
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_BLOCK_MAX,
     KEY_BLOCK_MIN,
     KEY_COL_SUMS,

@@ -3,12 +3,14 @@
 """
 Bias package public API.
 
-Only scalar preference biases are exported from this package.
+Candidate, candidate-in-Unit, Unit and Unit-transition preferences live here.
 Process-level algorithm mechanisms should be integrated as adapters
 under ``nsgablack.adapters``.
 """
 
 from .core.base import BiasBase, AlgorithmicBias, DomainBias, OptimizationContext, create_bias
+from .preferences import (PreferenceScope, PreferenceQuery, PreferenceScore,
+                          PreferenceContractError, PopulationDiversityPreference, UnitPreferenceBias)
 from .core.manager import UniversalBiasManager, AlgorithmicBiasManager, DomainBiasManager
 from .core.registry import (
     BiasRegistry,
@@ -68,6 +70,8 @@ except Exception:  # pragma: no cover
     improvement_reward = None
 
 __all__ = [
+    "PreferenceScope", "PreferenceQuery", "PreferenceScore", "PreferenceContractError",
+    "PopulationDiversityPreference", "UnitPreferenceBias",
     "BiasBase",
     "AlgorithmicBias",
     "DomainBias",

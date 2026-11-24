@@ -6,6 +6,7 @@ from typing import Iterable, List
 
 from .contracts import CatalogBundle
 from .registry import CatalogEntry, get_catalog
+from .guidance import guidance_for
 from .sync import build_catalog_bundle
 
 
@@ -33,6 +34,14 @@ def _render_markdown(entries: Iterable[CatalogEntry], bundle: CatalogBundle, *, 
         lines.append(f"Kind: {e.kind}")
         lines.append(f"Title: {e.title}")
         lines.append(f"Import: `{e.import_path}`")
+        guidance = guidance_for(e)
+        lines.append(f"Role: {guidance.role}")
+        if guidance.concepts:
+            lines.append("Concepts: " + " | ".join(guidance.concepts))
+        if guidance.operations:
+            lines.append("Runtime operations: " + ", ".join(guidance.operations))
+        if guidance.boundaries:
+            lines.append("Boundaries: " + " | ".join(guidance.boundaries))
         if e.summary:
             lines.append(f"Summary: {e.summary}")
         if e.tags:
@@ -54,6 +63,9 @@ def _render_markdown(entries: Iterable[CatalogEntry], bundle: CatalogBundle, *, 
 
         usage = usage_map.get(e.key)
         if usage:
+            if usage.wiring_status:
+                lines.append("Wiring status: " + usage.wiring_status)
+                lines.append("Wiring notes: " + " | ".join(usage.wiring_notes))
             if usage.config_keys:
                 lines.append("Config keys: " + ", ".join(usage.config_keys))
             if usage.use_when:

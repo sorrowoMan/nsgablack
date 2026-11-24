@@ -53,6 +53,9 @@ from .solver_result import DEFAULT_CASE_RESULT_INLINE_MAX_BYTES, build_solver_re
 from .state.incumbent import CandidateProvenance, IncumbentState, ScalarizationError
 from .state.run_progress import RunProgressState
 from .state.step_outcome import STEP_OUTCOME_STATUSES, StepOutcome
+from .state.pool_views import ObjectiveProjection
+from .state.solution_pool import SolutionPool, SolutionRef, SolutionStamp
+from .state.pool_retention import PoolRetentionPolicy
 from blackbase.types import SolveQuality, SolverResult
 from ..adapters import AlgorithmAdapter, CompositeAdapter, RoleAdapter, RoleRouterAdapter
 from .interfaces import (
@@ -71,6 +74,7 @@ from .interfaces import (
 )
 
 __all__ = [
+    "SolutionPool", "SolutionRef", "SolutionStamp", "PoolRetentionPolicy", "ObjectiveProjection",
     "BlackBoxProblem",
     "EvolutionSolver",
     "SolverBase",

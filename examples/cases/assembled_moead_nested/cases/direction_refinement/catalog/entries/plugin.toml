@@ -1,0 +1,17 @@
+[[entry]]
+key = "project.plugin.nested_trace"
+title = "NestedTrace"
+kind = "plugin"
+import_path = "plugins.trace:NestedTrace"
+tags = ["project", "example", "plugin", "observe", "subpool", "lineage"]
+summary = "只读已提交状态，导出各层精确引用、视图来源和原始反馈供教学对账。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["从不构建 Unit、不修改候选或共享 context；输出为观察报告而非权威 Artifact。"]
+use_when = ["核对方向视图、递归精修、实际求值与最终返回时。"]
+minimal_wiring = ["from cases.direction_refinement.plugins.trace import NestedTrace", "solver.add_plugin(NestedTrace(output_dir=results, max_records=settings.max_steps))"]
+required_companions = ["nsgablack.core:ComposableSolver"]
+config_keys = ["output_dir", "max_records"]
+example_entry = "cases.direction_refinement.build_solver:build_solver"

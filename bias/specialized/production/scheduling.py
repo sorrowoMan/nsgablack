@@ -7,6 +7,7 @@ dependencies.
 """
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -77,14 +78,16 @@ class ProductionSchedulingBiasManager:
             try:
                 bayesian_guidance = BayesianGuidanceBias(weight=0.4)
                 self.bias_manager.algorithmic_manager.add_bias(bayesian_guidance)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='ProductionSchedulingBiasManager._setup_algorithmic_bias.fallback_76', exc=_fallback_error)
                 pass
 
         if BayesianExplorationBias is not None:
             try:
                 bayesian_exploration = BayesianExplorationBias(weight=0.2)
                 self.bias_manager.algorithmic_manager.add_bias(bayesian_exploration)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='ProductionSchedulingBiasManager._setup_algorithmic_bias.fallback_77', exc=_fallback_error)
                 pass
 
     def compute_bias(self, x: np.ndarray, context: OptimizationContext) -> float:

@@ -121,20 +121,8 @@ class ExplicitGreedySolver(SolverBase):
         )
 
 
-class GreedyAdapter(AlgorithmAdapter):
-    """同一策略通过 Adapter 复用 ComposableSolver 的完整提交逻辑。"""
-
-    def __init__(self) -> None:
-        super().__init__(name="greedy_adapter")
-
-    def propose(self, control: Any, context: dict[str, Any]):
-        if control.best_x is None:
-            return [control.init_candidate(context)]
-        return [control.mutate_candidate(control.best_x, context)]
-
-    def update(self, control: Any, candidates: Any, feedback: Any, context: Any) -> None:
-        # ComposableSolver 在调用 update() 前已经原子提交权威 incumbent。
-        _ = (control, candidates, feedback, context)
+# Compatibility import: the implementation lives in the standard Unit Case.
+from nsgablack.examples.cases.algorithm_units.cases.candidate_search.adapter.blank_vs_composable_demo import GreedyAdapter
 
 
 def build_pipeline(problem: SimpleSphereProblem) -> RepresentationPipeline:

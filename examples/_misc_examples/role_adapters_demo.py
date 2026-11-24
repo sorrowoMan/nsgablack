@@ -1,4 +1,4 @@
-﻿"""Role-based adapters demo: RoleAdapter + RoleRouterAdapter."""
+"""Role-based adapters demo: RoleAdapter + RoleRouterAdapter."""
 
 import numpy as np
 
@@ -33,28 +33,12 @@ class Sphere(BlackBoxProblem):
         return float(np.sum(candidate * candidate))
 
 
-class Explorer(AlgorithmAdapter):
-    def __init__(self):
-        super().__init__(name="explorer")
-
-    def propose(self, control, context):
-        return [control.mutate_candidate(control.init_candidate(context), context) for _ in range(12)]
-
-    def update(self, control, candidates, feedback, context):
-        _ = (control, candidates, feedback, context)
+# Compatibility import: the implementation lives in the standard Unit Case.
+from nsgablack.examples.cases.algorithm_units.cases.candidate_search.adapter.role_adapters_demo import Explorer
 
 
-class Exploiter(AlgorithmAdapter):
-    def __init__(self):
-        super().__init__(name="exploiter")
-
-    def propose(self, control, context):
-        if control.best_x is None:
-            return [control.init_candidate(context) for _ in range(8)]
-        return [control.mutate_candidate(control.best_x, context) for _ in range(8)]
-
-    def update(self, control, candidates, feedback, context):
-        _ = (control, candidates, feedback, context)
+# Compatibility import: the implementation lives in the standard Unit Case.
+from nsgablack.examples.cases.algorithm_units.cases.candidate_search.adapter.role_adapters_demo import Exploiter
 
 
 def build_solver():

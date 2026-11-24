@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 from blackbase.call_binding import CallCandidate, invoke_bound_once
 
-from blackbase.context.context_keys import (
+from nsgablack.context_keys import (
     KEY_COMPANION_NEXT_ELIGIBLE_GENERATION,
     KEY_COMPANION_PHASE_COUNT_USED,
     KEY_COMPANION_PHASE_INDEX,
@@ -948,7 +948,7 @@ class CompanionOrchestrator:
             for item in value:
                 out.append(np.asarray(item, dtype=float).reshape(-1))
         except Exception:
-            return []
+            raise
         return out
 
     @staticmethod
@@ -979,7 +979,7 @@ class CompanionOrchestrator:
             task.budget_used = int(task.budget_max)
             request_stop = getattr(solver, "request_stop", None)
             if callable(request_stop):
-                request_stop()
+                request_stop("evaluation_budget_exhausted")
             return None
 
         ctx = solver.build_context()

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable, List
 
 from ..model import DoctorDiagnostic
+from blackbase.project.doctor_scope import discover_doctor_roots, source_files
 
 
 def _base_name(node: ast.expr) -> str:
@@ -56,28 +57,65 @@ def _returns_none(step: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return bool(visitor.found)
 
 
+def _can_fall_through(body: list[ast.stmt]) -> bool:
+    """Conservative structured control flow, without executing user code."""
+    for stmt in body:
+        if isinstance(stmt, (ast.Return, ast.Raise)):
+            return False
+        if isinstance(stmt, ast.If):
+            if isinstance(stmt.test, ast.Constant):
+                branch = stmt.body if stmt.test.value else stmt.orelse
+                if not _can_fall_through(branch):
+                    return False
+                continue
+            if not _can_fall_through(stmt.body) and not _can_fall_through(stmt.orelse):
+                return False
+        elif isinstance(stmt, (ast.With, ast.AsyncWith)):
+            if not _can_fall_through(stmt.body):
+                return False
+        elif isinstance(stmt, (ast.Try, getattr(ast, "TryStar", ast.Try))):
+            if stmt.finalbody and not _can_fall_through(stmt.finalbody):
+                return False
+            normal = _can_fall_through(stmt.body) and _can_fall_through(stmt.orelse)
+            if not normal and all(not _can_fall_through(h.body) for h in stmt.handlers):
+                return False
+        elif isinstance(stmt, ast.Match):
+            exhaustive = any(isinstance(c.pattern, ast.MatchAs) and c.pattern.pattern is None and c.guard is None for c in stmt.cases)
+            if exhaustive and all(not _can_fall_through(c.body) for c in stmt.cases):
+                return False
+        elif isinstance(stmt, ast.While) and isinstance(stmt.test, ast.Constant) and stmt.test.value is True:
+            if not any(isinstance(n, ast.Break) for part in stmt.body for n in ast.walk(part)):
+                return False
+    return True
+
+
+def _outcome_annotation(node, aliases) -> bool:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        try:
+            node = ast.parse(node.value, mode="eval").body
+        except SyntaxError:
+            return False
+    if isinstance(node, ast.Name):
+        return node.id in aliases
+    return isinstance(node, ast.Attribute) and node.attr == "StepOutcome"
+
+
 def _candidate_files(root: Path) -> tuple[Path, ...]:
     files: set[Path] = set()
     if (root / "core" / "blank_solver.py").is_file():
-        files.update((root / "core").rglob("*.py"))
+        files.update(source_files(root / "core"))
     # A custom Solver is allowed directly in a canonical build_solver.py or
     # in any package below that Case root.  Discover the scaffold boundary
     # instead of guessing from a directory literally named ``solver``.
-    for build_file in root.rglob("build_solver.py"):
-        relative_parts = build_file.relative_to(root).parts
-        if any(
-            part in {".git", ".venv", "venv", "site-packages"}
-            for part in relative_parts
-        ):
-            continue
-        case_root = build_file.parent
-        files.update(case_root.rglob("*.py"))
+    _, cases = discover_doctor_roots(root)
+    for case_root in cases:
+        files.update(source_files(case_root))
     root_builder = root / "build_solver.py"
     if root_builder.is_file():
         files.add(root_builder)
     solver_dir = root / "solver"
     if solver_dir.is_dir():
-        files.update(solver_dir.rglob("*.py"))
+        files.update(source_files(solver_dir))
     return tuple(sorted(files))
 
 
@@ -110,25 +148,32 @@ def check_solver_step_outcomes(
             )
             if step is None:
                 continue
-            annotation = "" if step.returns is None else ast.unparse(step.returns)
-            if "StepOutcome" not in annotation:
+            aliases = {"StepOutcome"}
+            for imp in tree.body:
+                if isinstance(imp, ast.ImportFrom):
+                    aliases.update(a.asname or a.name for a in imp.names if a.name == "StepOutcome")
+            if not _outcome_annotation(step.returns, aliases):
                 add(
                     diags,
                     level,
                     "solver-step-outcome-annotation",
                     f"{class_node.name}.step() must declare -> StepOutcome.",
                     path,
+                    line=step.lineno,
+                    column=step.col_offset + 1,
                 )
-            if _returns_none(step):
+            if _returns_none(step) or _can_fall_through(step.body):
                 add(
                     diags,
                     level,
                     "solver-step-none-return",
                     (
-                        f"{class_node.name}.step() has a bare/None return; "
+                        f"{class_node.name}.step() has an explicit None return or a path that falls through; "
                         "return an explicit idle/rejected/cancelled StepOutcome."
                     ),
                     path,
+                    line=step.lineno,
+                    column=step.col_offset + 1,
                 )
 
 

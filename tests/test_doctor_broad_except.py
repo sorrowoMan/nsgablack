@@ -1,6 +1,26 @@
 from __future__ import annotations
 
 from nsgablack.project import run_project_doctor
+import ast
+import pytest
+from nsgablack.project.doctor_core.rules.broad_except import _handler_body_is_swallow
+
+
+@pytest.mark.parametrize("statement,swallowed", [
+    ("return None", True),
+    ("return {'ok': True}", True),
+    ("return {'ok': False}", True),
+    ("return {'ok': False, 'error': ''}", True),
+    ("return {'ok': False, 'error': 'failed to read'}", False),
+    ("return {'ok': False, 'error': str(exc)}", False),
+    ("return Result(is_valid=False, error_message=str(exc))", False),
+    ("raise", False),
+    ("report_soft_error(exc=exc)", False),
+])
+def test_failure_evidence_is_distinct_from_a_silent_fallback(statement, swallowed):
+    tree = ast.parse("try:\n    execute()\nexcept Exception as exc:\n    " + statement)
+    handler = tree.body[0].handlers[0]
+    assert _handler_body_is_swallow(handler.body, handler.name) is swallowed
 
 
 def test_doctor_flags_broad_except_swallow_in_core_as_error(tmp_path):

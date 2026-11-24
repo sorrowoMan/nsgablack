@@ -1,0 +1,12 @@
+[[example]]
+id = "artifact-bundle-application-mlblack.core.artifact_bundle"
+title = "从正式 ML Case 的已提交结果整理交付摘要 · 完整装配与报告变体"
+component_keys = ["mlblack.core.artifact_bundle"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "在现有 linear_point Case 的完成通知中读取同一次正式 TrainerResult，把模型描述和运行指标收拢成 ArtifactBundle，输出本地 JSON/HTML；权威 Artifact 引用继续由原发布事务管理。"
+inputs = ["使用 mlblack/examples/cases/catalog_codec_demo/cases/linear_point/，保留原数据、表示、回归 Problem、梯度 Adapter、DEFAULTS、运行入口和 Project L0。", "按正文新增 plugins/bundle.py 并替换规范 build_solver.py；主用法给出全部必要代码，不依赖其它章节的局部变量。"]
+steps = ["在 plugins/bundle.py 定义 build_bundle 与 BundleObserver；观察器仅在 on_solver_finalized 中读取正式结果并生成本地描述。", "按正文 builder 挂载 BundleObserver，保持资源与 component_overrides 的正式入口；使用原 Project 的检查和运行命令。"]
+dependencies = ["当前 blackbase、nsgablack、mlblack 与 NumPy；沿用原 CPU 小型线性回归 Case，不需要 GPU 或外部模型 API。"]
+expected_outputs = ["查看 cases/linear_point/results/bundle/summary.json 与 bundle.html，并核对本轮 run_id。", "检查 Bundle 的五个顶层字段；模型描述、指标与正式结果的 Artifact 名称来自同一次 TrainerResult。", "该本地摘要不替代正式 Artifact 引用或检查点，不是新增训练或算法变体的运行收据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ARTIFACT_BUNDLE_APPLICATION_CN.md", section = "mlblack.core.artifact_bundle" }]

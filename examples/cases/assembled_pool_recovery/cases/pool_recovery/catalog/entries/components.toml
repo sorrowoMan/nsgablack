@@ -1,0 +1,71 @@
+[[entry]]
+key = "project.problem.plateau"
+title = "PlateauProblem"
+kind = "tool"
+import_path = "problem.plateau:PlateauProblem"
+tags = ["example", "problem", "plateau"]
+summary = "二维真实平坦最优区域，演示按原始求值度量停滞触发。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["只定义原始目标与盒约束。"]
+use_when = ["以很小预算检查停滞恢复调度。"]
+minimal_wiring = ["from cases.pool_recovery.problem import build_problem", "problem = build_problem()"]
+required_companions = []
+config_keys = []
+example_entry = "cases.pool_recovery.build_solver:build_solver"
+
+[[entry]]
+key = "project.adapter.pool_recovery"
+title = "Pool recovery composition"
+kind = "tool"
+import_path = "adapter.composition:build_adapter"
+tags = ["example", "assembly", "sa", "nsga2", "spea2", "pool"]
+summary = "使用正式 PoolSearchAdapter 装配准备、双种群、停滞恢复与返回竞争。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["这是装配工厂，运行契约由实际 Adapter 声明。"]
+use_when = ["检查初始配额、种群容量和恢复批量的独立配置。"]
+minimal_wiring = ["from cases.pool_recovery.config import DemoConfig", "from cases.pool_recovery.adapter import build_adapter", "adapter = build_adapter(DemoConfig())"]
+required_companions = ["nsgablack.adapters:PoolSearchAdapter"]
+config_keys = ["initial_count_per_population", "population_size", "offspring_size", "stagnation_steps", "recovery_steps"]
+example_entry = "cases.pool_recovery.build_solver:build_solver"
+
+[[entry]]
+key = "project.pipeline.pool_recovery"
+title = "Shared problem repair pipeline"
+kind = "tool"
+import_path = "pipeline.main:build_pipeline"
+tags = ["example", "pipeline", "repair"]
+summary = "共享问题修复管线，叶 Adapter 自己绑定初始化与变化组件。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["只装配 ClipRepair，不构建 Unit 或决定算法成员。"]
+use_when = ["多个算法共享问题可行性处理。"]
+minimal_wiring = ["from cases.pool_recovery.pipeline import build_pipeline", "pipeline = build_pipeline()"]
+required_companions = ["nsgablack.representation:RepresentationPipeline"]
+config_keys = []
+example_entry = "cases.pool_recovery.build_solver:build_solver"
+
+[[entry]]
+key = "project.plugin.pool_trace"
+title = "PoolTracePlugin"
+kind = "plugin"
+import_path = "plugins.trace:PoolTracePlugin"
+tags = ["example", "observe", "plugin", "pool", "lazy_unit"]
+summary = "观察真实执行阶段、已提交阶段、精确成员引用与来源。"
+context_requires = []
+context_provides = []
+context_mutates = []
+context_cache = []
+context_notes = ["不创建 Unit，不切换阶段，输出只是观察报告。"]
+use_when = ["核对 preparing/search/recovery/return 是否真实执行。"]
+minimal_wiring = ["from cases.pool_recovery.plugins import PoolTracePlugin", "solver.add_plugin(PoolTracePlugin(output_dir=results, max_records=settings.max_steps))"]
+required_companions = ["nsgablack.core:ComposableSolver"]
+config_keys = ["max_records", "output_dir"]
+example_entry = "cases.pool_recovery.build_solver:build_solver"

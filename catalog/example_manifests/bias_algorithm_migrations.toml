@@ -1,0 +1,69 @@
+[[example]]
+id = "bias-migration-diversity-family"
+title = "五个旧多样性类未装配 · 显式Unit参考的具体迁移"
+component_keys = ["bias.diversity", "bias.diversity_adaptive", "bias.diversity_crowding", "bias.diversity_niche", "bias.diversity_sharing"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "nsgablack"
+summary = "逐类说明旧population依赖、符号、双加权、有限性及生态位更新缺口；实际替代为正式UnitPreferenceBias+PopulationDiversityPreference，不声称旧算法已修复。"
+inputs = ["完整bias_gallery Project副本、当前框架栈/NumPy；配套主例明确实际search实例和OWNER。"]
+steps = ["先阅读旧类边界，再按配套完整主例保存正式builder和Report，旧类不挂载。", "变体只观察Unit新颖性，不改选择。"]
+dependencies = ["当前nsgablack、blackbase、NumPy；无外部模型。"]
+expected_outputs = ["正式population_preference.json中的明确实例/版本/raw与selection；缺失生态位、自适应、sharing等语义不被替代方案冒充。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md", section = "migration.bias.diversity" }, { path = "nsgablack/docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md", section = "bias.unit_preference" }]
+
+[[example]]
+id = "bias-migration-convergence-family"
+title = "六个旧收敛或Levy类未装配 · 明确Unit成本与真实变化"
+component_keys = ["bias.convergence", "bias.convergence_adaptive", "bias.convergence_precision", "bias.convergence_late_stage", "bias.convergence_multi_stage", "bias.levy"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "nsgablack"
+summary = "逐类说明阶段常量、缺少实例/指标来源、符号与未生成Levy随机步的边界；用有明确PopulationView的中心距离偏好说明可装配替代，实际变化仍由算子负责。"
+inputs = ["完整bias_gallery/Unit偏好主例、二维Sphere和正式Project L0；不提供全局population数组。"]
+steps = ["定义完整CenterDistancePreference，只替换真实Unit桥接中的叶评分器，保留Report的独立新颖性观察。", "变体改变实际GaussianMutation尺度，明确不是Levy分布。"]
+dependencies = ["当前nsgablack、blackbase、NumPy。"]
+expected_outputs = ["中心距离形成正最小化成本，raw不变；旧六类未启用，阶段调度/自适应/Levy采样未宣称实现。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md", section = "migration.bias.convergence" }, { path = "nsgablack/docs/catalog_usage/POPULATION_PREFERENCE_APPLICATIONS_CN.md", section = "bias.unit_preference" }]
+
+[[example]]
+id = "bias-migration-local-search-family"
+title = "六个旧局部搜索Bias未装配 · 正式有限差分任务替代"
+component_keys = ["bias.local_gd", "bias.local_newton", "bias.local_line_search", "bias.local_trust_region", "bias.local_nelder_mead", "bias.local_quasi_newton"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "nsgablack"
+summary = "指出旧compute/apply不对接与评分内隐藏再评估；用已有标准Case有限差分精修保留预算、候选身份和结果交还，明确不等价于Newton/Armijo/单纯形/BFGS。"
+inputs = ["完整solution_pool Project的moead_refinement Case及配套配置/报告/薄builder；当前框架栈和NumPy。"]
+steps = ["按配套完整教程启用finite_difference分支；起点、探针、下降点各自送评。", "变体从4方向改为该实例全部方向，仍不启用旧类。"]
+dependencies = ["当前nsgablack、blackbase、NumPy；无需解析梯度。"]
+expected_outputs = ["本次finite_difference.json的请求最终选择、raw双目标、方向成员与接纳历史分别解释；不是旧局部类的执行证明。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md", section = "migration.bias.local_search" }, { path = "nsgablack/docs/catalog_usage/FINITE_DIFFERENCE_APPLICATION_CN.md", section = "adapter.gradient_descent" }]
+
+[[example]]
+id = "bias-migration-bayesian-family"
+title = "三个旧贝叶斯Bias未装配 · 真实观测驱动BO的迁移"
+component_keys = ["bias.bayesian_guidance", "bias.bayesian_exploration", "bias.bayesian_convergence"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "nsgablack"
+summary = "旧占位GP、种群顺序伪标签、compute/apply与隐式再评估边界明确；正式单目标BO用已归属Evaluation Event训练并产生下一候选。"
+inputs = ["完整algorithm_semantics/synchronous_bo正式Case、原Problem/Pipeline/BOReport/Project L0；当前框架栈/NumPy。"]
+steps = ["替换完整BO工厂并连接真实模型/采集/网格优化器，旧Bias不装配。", "有限档位变体同时约束初值和采集域。"]
+dependencies = ["当前nsgablack、blackbase、NumPy；不调用远程模型。"]
+expected_outputs = ["本轮summary.json真实observations与采集解释；不把单目标BO说成旧多目标Bias的完整等价替代。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md", section = "migration.bias.bayesian" }, { path = "nsgablack/docs/catalog_usage/BAYESIAN_AND_GRAPH_SEARCH_APPLICATIONS_CN.md", section = "adapter.bayesian_optimization" }]
+
+[[example]]
+id = "bias-migration-surrogate-control-family"
+title = "三个代理控制建议类未装配 · 固定Provider的明确替代"
+component_keys = ["bias.surrogate_control", "bias.surrogate_phase_schedule", "bias.surrogate_uncertainty_budget"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "nsgablack"
+summary = "控制mapping无自动运行消费者，BiasModule明确拒绝；提供真正SurrogateEvaluationProvider完整Case，固定真评估配额不冒充动态控制。"
+inputs = ["完整assembled_parallel_cases/de_bowl Case、现有DE/Bowl/Pipeline、配套ProviderReport与薄builder；scikit-learn。"]
+steps = ["保存配套完整Provider与builder并显式允许approximate，旧控制类不add。", "变体把12行最低真评估配额覆盖整批，仍声明模型开销存在。"]
+dependencies = ["当前nsgablack、blackbase、NumPy、scikit-learn；无外部模型API。"]
+expected_outputs = ["surrogate.json真实Problem调用、Provider训练计数、逐行fidelity；没有声称auto ratio、恢复或动态Controller已实现。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/BIAS_ALGORITHM_MIGRATIONS_CN.md", section = "migration.bias.surrogate_control" }, { path = "nsgablack/docs/catalog_usage/EVALUATION_PROVIDER_APPLICATIONS_CN.md", section = "plugin.surrogate_eval" }]

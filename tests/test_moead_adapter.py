@@ -72,3 +72,32 @@ def test_moead_adapter_rejects_legacy_nsga_loop_solver():
     with pytest.raises(TypeError):
         adapter.setup(solver)
 
+
+def test_moead_partition_writeback_copies_immutable_arrays_for_runtime_updates():
+    from nsgablack.adapters import MOEADAdapter, PopulationPartition
+
+    partition = PopulationPartition(
+        partition_id="population",
+        population=np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=float),
+        objectives=np.asarray([[5.0, 6.0], [7.0, 8.0]], dtype=float),
+        violations=np.asarray([0.0, 0.0], dtype=float),
+        candidate_tokens=("candidate-a", "candidate-b"),
+    )
+    assert partition.population.flags.writeable is False
+    assert partition.objectives.flags.writeable is False
+    assert partition.violations.flags.writeable is False
+
+    adapter = MOEADAdapter()
+    assert adapter.set_population_partitions((partition,)) is True
+    population, objectives, violations = adapter.get_population_snapshot()
+
+    assert population.flags.writeable is True
+    assert objectives.flags.writeable is True
+    assert violations.flags.writeable is True
+    population[0, 0] = 99.0
+    objectives[0, 0] = 88.0
+    violations[0] = 1.0
+    assert partition.population[0, 0] == 1.0
+    assert partition.objectives[0, 0] == 5.0
+    assert partition.violations[0] == 0.0
+

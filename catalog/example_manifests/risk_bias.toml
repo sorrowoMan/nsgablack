@@ -1,0 +1,14 @@
+[[example]]
+id = "risk-bias"
+title = "RiskBias：场景求值与风险偏好的职责分离"
+component_keys = ["bias.risk", "bias.module", "adapter.trust_region_dfo"]
+kind = "project"
+working_directory = "nsgablack"
+summary = "现有risk_bias标准Project：Problem定义带随机扰动的成本，MonteCarloEvaluationProviderPlugin执行场景采样，RiskBias生成风险偏好，TrustRegionDFO拥有搜索决策。它不是把评估Provider和Bias合并成同一个组件。"
+inputs = ["二维连续候选，边界[-2,2]；一个带随机扰动的场景成本目标。", "每次场景评估采样8次并取均值；风险偏好另读取场景统计。"]
+steps = ["查看build_risk_bias：把CVaR风险偏好加入BiasModule。", "查看attach_scenario_evaluation：安装正式场景评估Provider。", "运行标准Project并读取risk_bias结果；实际数值以执行收据为准。"]
+run_command = "python examples/cases/risk_bias/run_project.py"
+dependencies = ["nsgablack与blackbase正式Project/L0运行环境", "NumPy；CPU运行"]
+parameters = [{ name = "weight", value = "0.2", meaning = "风险偏好权重，区别于原始问题成本。" }, { name = "alpha", value = "0.2", meaning = "RiskBias的CVaR参数。" }, { name = "mc_samples", value = "8", meaning = "场景Provider每次求值采样次数。" }, { name = "max_steps", value = "2", meaning = "短小装配示例步数，不作为优化性能结论。" }]
+expected_outputs = ["risk_bias Case完成场景求值与风险偏好的联合装配，返回已评估结果。", "原始问题反馈与偏好视图保持分离；不以Bias覆盖Problem的原始目标含义。", "随机问题的数值不保证逐次相同；执行收据只报告对应次运行。"]
+sources = [{ path = "nsgablack/examples/cases/risk_bias/cases/risk_bias/bias/risk.py", symbol = "build_risk_bias" }, { path = "nsgablack/examples/cases/risk_bias/cases/risk_bias/evaluation/risk_evaluation.py", symbol = "attach_scenario_evaluation" }, { path = "nsgablack/examples/cases/risk_bias/cases/risk_bias/build_solver.py", symbol = "build_solver" }]

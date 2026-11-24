@@ -1,6 +1,7 @@
 """L0 acceleration infrastructure (cross-cutting execution backends)."""
 
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 from concurrent.futures import (
     Future,
@@ -269,7 +270,8 @@ def _resolve_callable(payload: Mapping[str, Any]) -> Optional[Callable[..., Any]
             target = getattr(module, name, None)
             if callable(target):
                 return target
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='_resolve_callable.fallback_140', exc=_fallback_error)
             return None
     return None
 
@@ -380,7 +382,8 @@ class _FutureHandle:
             try:
                 if self._future.exception() is not None:
                     return "failed"
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='_FutureHandle.status.fallback_147', exc=_fallback_error)
                 return "failed"
             return "done"
         return "running"
@@ -535,7 +538,8 @@ def _select_gpu_backend(preferred: str) -> Optional[str]:
                 import cupy  # type: ignore  # noqa: F401
 
                 return "cupy"
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='_select_gpu_backend.fallback_142', exc=_fallback_error)
             continue
     return None
 
@@ -598,7 +602,8 @@ def _submit_pool_task(
     def _cleanup(_fut: Future) -> None:
         try:
             launcher.shutdown(wait=False)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='_submit_pool_task._cleanup.fallback_143', exc=_fallback_error)
             return
 
     fut.add_done_callback(_cleanup)
@@ -612,7 +617,8 @@ def _submit_via_thread(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Fut
     def _cleanup(_fut: Future) -> None:
         try:
             executor.shutdown(wait=False)
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='_submit_via_thread._cleanup.fallback_144', exc=_fallback_error)
             return
 
     fut.add_done_callback(_cleanup)

@@ -55,7 +55,7 @@ class UncertaintyExplorationBias(AlgorithmicBias):
         except Exception:
             try:
                 score = float(val)
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 return 0.0
         score = max(0.0, score)
         if self.power != 1.0:

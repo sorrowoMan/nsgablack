@@ -57,7 +57,7 @@ class StructurePriorBias(DomainBias):
             try:
                 return float(self.custom_penalty(arr, context))
             except Exception:
-                return 0.0
+                raise
 
         if self.mode == "group" and self.groups:
             return float(self._group_variance(arr, self.groups))

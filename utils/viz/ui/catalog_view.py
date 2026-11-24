@@ -1,3 +1,4 @@
+from blackbase.plugin import report_soft_error as _report_optional_failure
 from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional
@@ -180,7 +181,8 @@ class CatalogView:
             from nsgablack.catalog import build_usage_profile, get_catalog
             from nsgablack.catalog.registry import Catalog
             from nsgablack.project.catalog import load_project_catalog
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='CatalogView.load_catalog.fallback_339', exc=_fallback_error)
             return {}
 
         cat = None
@@ -216,7 +218,8 @@ class CatalogView:
                         for case_root in sorted(cases_dir.iterdir()):
                             if self._is_scaffold_project_root(case_root) and case_root not in project_roots:
                                 project_roots.append(case_root)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='CatalogView.load_catalog.fallback_341', exc=_fallback_error)
                 pass
 
         for root in project_roots:
@@ -228,7 +231,8 @@ class CatalogView:
                 for pe in project_entries:
                     default_file = self._catalog_file_for_kind(pe.kind, root / "catalog" / "entries")
                     project_catalog_by_key[pe.key] = project_key_map.get(pe.key, default_file)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='CatalogView.load_catalog.fallback_342', exc=_fallback_error)
                 continue
 
         if merged_entries:
@@ -400,7 +404,8 @@ class CatalogView:
         out: Dict[str, Path] = {}
         try:
             from nsgablack.catalog.registry import _parse_entries_from_toml
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='CatalogView._collect_project_catalog_key_map.fallback_340', exc=_fallback_error)
             return out
         files: list[Path] = []
         split_dir = root / "catalog" / "entries"
@@ -409,7 +414,8 @@ class CatalogView:
         for fp in files:
             try:
                 rows = _parse_entries_from_toml(fp)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='CatalogView._collect_project_catalog_key_map.fallback_343', exc=_fallback_error)
                 continue
             for row in rows:
                 key = str(getattr(row, "key", "") or "").strip()
@@ -613,7 +619,7 @@ class CatalogView:
             try:
                 src = Path(source_file).resolve()
                 src.relative_to(project_root.resolve())
-            except Exception:
+            except (OSError, ValueError):
                 return base
             if not base.startswith("project."):
                 return f"project.{base}"

@@ -1,0 +1,38 @@
+[[example]]
+id = "ml-tabular-point-application"
+title = "线性点预测与 NumPy MLP · 同一正式表格 Case"
+component_keys = ["mlblack.problem.supervised_regression", "mlblack.model.linear_point", "mlblack.model.numpy_mlp_point", "mlblack.representation.neural_graph"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "完整保存连续数据、模型、Problem、搜索 Adapter、薄 builder 与正式 Project 结果入口；从三参数线性模型切换为真正 NumPy backend 的17参数 MLP，保留同一任务。"
+inputs = ["当前 blackbase/nsgablack/mlblack 和 NumPy；catalog_codec_demo 的独立完整副本及其原 L0/规范入口。", "32行训练、12行独立验证、两特征；训练 MSE 作目标，验证仅观察。"]
+steps = ["按完整文件接线并指定 NumPy backend，梯度无关 Gaussian 搜索同一候选含义；Artifact hook 给 MLP 实际权重蓝图。", "变体只改 MODEL 配置，同时切换模型布局和 Artifact 分支，不调用 Torch 或下载模型。"]
+dependencies = ["当前三仓与 NumPy；无需 Torch、sklearn、DeepSeek 或外部网络。"]
+expected_outputs = ["本次 results/tabular.json 的 run_id、原始[train.mse,0]、train/valid指标、signals与正式模型引用。", "静态源码核对，无本轮训练收据；MLP无解析梯度，17参数布局与线性三参数不同，不承诺小预算效果。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_TABULAR_APPLICATIONS_CN.md", section = "mlblack.problem.supervised_regression" }]
+
+[[example]]
+id = "ml-tabular-classification-application"
+title = "二分类概率与三分类 · 真实类别块与 log-loss"
+component_keys = ["mlblack.problem.supervised_classification", "mlblack.model.binary_logistic_probability", "mlblack.model.softmax_probability"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "在完整正式 Case 中将线性 Codec、Binary/Softmax Head、概率模型和分类 Problem 接到同一控制面，给出参数蓝图发布和一次 Project 结果读取。"
+inputs = ["catalog_codec_demo 独立副本，保留正式 Project/Case/L0；当前三仓和 NumPy。", "36行训练、18行验证、两特征，固定类别列顺序；二分类3参数，三分类9参数。"]
+steps = ["完整替换五个Case文件并新增正式execute_project薄报告入口；明确主目标是训练log_loss、验证只观察。", "变体同时切换数据、SoftmaxHead/词表、9参数和Artifact；说明Problem直接argmax概率，不消费模型threshold。"]
+dependencies = ["blackbase/nsgablack/mlblack/NumPy，无GPU、模型API或预训练权重。"]
+expected_outputs = ["本次 results/classification.json 有单项目标、train/valid分类指标、primary_prefix与模型Artifact引用。", "使用已评估incumbent反馈；不把准确率或阈值参数当已证明行为，无本轮运行收据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_TABULAR_APPLICATIONS_CN.md", section = "mlblack.problem.supervised_classification" }]
+
+[[example]]
+id = "ml-tabular-interval-application"
+title = "中心半径与双边界区间 · 覆盖约束和真实三目标"
+component_keys = ["mlblack.problem.supervised_interval_regression", "mlblack.model.center_radius_interval", "mlblack.model.interval_prediction"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "完整Case接线CenterRadius/TwoModel Head、线性块与区间Problem；给出3目标、signed覆盖约束、sum比较的实际含义及正式Artifact蓝图发布。"
+inputs = ["catalog_codec_demo 独立完整副本及原Project L0；当前三仓、NumPy。", "训练32、验证12、两特征连续标签和一次固定噪声；两种模式均6参数但含义不同。"]
+steps = ["完整替换五个Case文件，Gaussian与最终默认sum一致；解释width/miss/coverage/loss而不偷换成单目标。", "变体从center/radius切换到lower/upper并显式enforce_order=True；Artifact模式同步改变。"]
+dependencies = ["三仓与NumPy，不需Torch、在线模型、外部服务。"]
+expected_outputs = ["本次results/interval.json有三项目标、一项覆盖约束、train/valid指标与best_model_ref；明确不保证90%样本外覆盖。", "报告与正式收据分开；源码检查不是已运行证明，旧六参数checkpoint不可跨语义恢复。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_TABULAR_APPLICATIONS_CN.md", section = "mlblack.problem.supervised_interval_regression" }]

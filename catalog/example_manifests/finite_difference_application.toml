@@ -1,0 +1,12 @@
+[[example]]
+id = "finite-difference-application-adapter.gradient_descent"
+title = "没有解析梯度时，精修已有方向候选 · 完整装配与结果读取"
+component_keys = ["adapter.gradient_descent"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "在现有 solution_pool/moead_refinement 正式 Case 启用 finite_difference 分支，沿 MOEA/D 方向精修；分别读取局部最终选择、接纳历史和当前方向成员。"
+inputs = ["当前 blackbase、nsgablack、NumPy，以及现有 solution_pool Project 副本；保留 TwoCenters、共享 Pipeline、原 refinement 工厂、运行入口和 Project L0。", "按正文添加配置与报告插件、包导出，替换薄 builder，并在原 Project 追加 finite_difference 单 Case 组；nested_refinement 两层 VNS 分支不用于本例。"]
+steps = ["原 build_refinement_adapter 显式使用 local_algorithm='finite_difference'，基线 directions=8、view_count=4、workers=1、local_steps=3。", "起点、探针、下降提案各自正式送评；方向只改变任务比较，双目标 raw feedback 保留；完成后返回 MOEA/D 自行竞争。", "观察器在完成通知复制已提交结果，最终发布后写本地 JSON；变体 view_count=None 覆盖该实例全部方向。"]
+dependencies = ["当前 blackbase、nsgablack 与 NumPy；原本地 CPU Project，不需要 GPU、解析梯度或外部模型 API。"]
+expected_outputs = ["本次 cases/moead_refinement/results/finite_difference.json 含 run_id、tasks 与 moead_members。", "基线正常完成时一个 GradientDescentAdapter worker 完成四个方向任务；selected 保存请求最终选择，accepted_history_count 是接纳历史计数，两者不混同。", "候选为两维、raw_objectives 保持两个中心的原始双目标；moead_members 是八个真实方向槽位，不是独立 GA 的种群，也不是 Solver 的全程 incumbent。", "本地 JSON 只是观察副本；以本次正式 Project 收据核对运行身份，不把静态源码核对或旧文件称作本轮运行成功。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/FINITE_DIFFERENCE_APPLICATION_CN.md", section = "adapter.gradient_descent" }]

@@ -81,3 +81,21 @@ import_path = "examples.cases.tsp_vrp.cases.tsp_vrp.build_solver:build_solver"
 tags = ["example", "permutation", "sa", "tsp", "vrp"]
 summary = "标准 Case：排列表示下的 TSP/VRP 搜索。"
 example_entry = "python examples\\cases\\tsp_vrp\\run_project.py"
+
+[[entry]]
+key = "example.algorithm_units_candidate_search"
+title = "Candidate Unit Pipeline"
+kind = "example"
+import_path = "examples.cases.algorithm_units.cases.candidate_search.build_solver:build_solver"
+tags = ["example", "unit", "algorithm-pipeline", "scaffold"]
+summary = "正式 Unit Case：问题管线保障候选可行性，算法管线构建结构，Adapter 执行搜索。"
+example_entry = "python examples/cases/algorithm_units/cases/candidate_search/run_solver.py"
+
+[[entry]]
+key = "example.algorithm_units_symbolic_beam"
+title = "Symbolic Beam Unit Pipeline"
+kind = "example"
+import_path = "examples.cases.algorithm_units.cases.symbolic_beam.build_solver:build_solver"
+tags = ["example", "unit", "algorithm-pipeline", "scaffold"]
+summary = "正式 Unit Case：问题管线保障候选可行性，算法管线构建结构，Adapter 执行搜索。"
+example_entry = "python examples/cases/algorithm_units/cases/symbolic_beam/run_solver.py"

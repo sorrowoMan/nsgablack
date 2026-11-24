@@ -121,7 +121,8 @@ def test_evaluation_mediator_disallow_approximate():
         EvaluationMediatorConfig(allow_approximate=False, strict_conflict=True)
     )
     solver.register_evaluation_provider(_ApproxProvider())
-    obj, vio = solver.evaluate_individual(np.array([0.1, 0.1], dtype=float), individual_id=0)
+    with pytest.warns(RuntimeWarning, match="allow_approximate=False"):
+        obj, vio = solver.evaluate_individual(np.array([0.1, 0.1], dtype=float), individual_id=0)
     assert float(obj[0]) != 999.0
     assert float(vio) == 0.0
 

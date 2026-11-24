@@ -34,10 +34,6 @@ _KIND_LABELS = {
     "doc": "Doc",
 }
 
-_DOCTOR_LINE_PATTERNS = (
-    re.compile(r"@L(?P<line>\d+)"),
-    re.compile(r"\bline\s+(?P<line>\d+)\b", re.IGNORECASE),
-)
 _DOCTOR_WATCH_EXTENSIONS = {".py", ".toml", ".md", ".json", ".yaml", ".yml", ".ini", ".cfg"}
 _DOCTOR_WATCH_IGNORED_DIRS = {
     ".git",
@@ -177,8 +173,10 @@ def _print_contract_fields(e) -> None:
 
 def _print_usage_fields(e) -> None:
     from nsgablack.catalog import build_usage_profile
+    from nsgablack.catalog.guidance import WIRING_STATUS_NOTE, guidance_for, wiring_status_label
 
     usage = build_usage_profile(e)
+    guidance = guidance_for(e)
 
     def _print_list(label: str, items: tuple[str, ...]) -> None:
         if not items:
@@ -188,11 +186,18 @@ def _print_usage_fields(e) -> None:
         for item in items:
             print(f"  - {item}")
 
-    _print_list("use_when", usage.use_when)
-    _print_list("minimal_wiring", usage.minimal_wiring)
-    _print_list("required_companions", usage.required_companions)
-    _print_list("config_keys", usage.config_keys)
-    print(f"example_entry: {usage.example_entry or '(none)'}")
+    print(f"职责 (role): {guidance.role}")
+    _print_list("相关概念 (concepts)", guidance.concepts)
+    _print_list("支持边界 (boundaries)", guidance.boundaries)
+    _print_list("适用场景 (use_when)", usage.use_when)
+    _print_list("运行方法 (operations)", guidance.operations)
+    _print_list("装配配置 (config_keys)", usage.config_keys)
+    print(f"配方结构状态 (wiring_status): {wiring_status_label(usage.wiring_status)} [{usage.wiring_status}]")
+    _print_list("结构检查说明 (wiring_notes)", usage.wiring_notes)
+    print(WIRING_STATUS_NOTE)
+    _print_list("最小接线 (minimal_wiring)", usage.minimal_wiring)
+    _print_list("必备搭档 (required_companions)", usage.required_companions)
+    print(f"示例入口 (example_entry): {usage.example_entry or '(none)'}")
 
 
 def _cmd_catalog_search(args: argparse.Namespace) -> int:
@@ -586,19 +591,6 @@ def _cmd_project_run(args: argparse.Namespace) -> int:
     )
 
 
-def _doctor_extract_line_column(message: str) -> tuple[int | None, int | None]:
-    text = str(message or "")
-    for pattern in _DOCTOR_LINE_PATTERNS:
-        match = pattern.search(text)
-        if match is None:
-            continue
-        try:
-            return int(match.group("line")), 1
-        except Exception:
-            continue
-    return None, None
-
-
 def _doctor_severity(level: str) -> str:
     return {"error": "error", "warn": "warning", "info": "info"}.get(str(level).strip().lower(), "info")
 
@@ -607,7 +599,7 @@ def _doctor_report_payload(report) -> dict:
     diagnostics: list[dict] = []
     default_path = str(report.project_root)
     for diag in report.diagnostics:
-        line, column = _doctor_extract_line_column(str(getattr(diag, "message", "")))
+        line, column = diag.line, diag.column
         diagnostics.append(
             {
                 "level": str(getattr(diag, "level", "")),
@@ -627,6 +619,7 @@ def _doctor_report_payload(report) -> dict:
             "infos": int(report.info_count),
         },
         "diagnostics": diagnostics,
+        "coverage": [check.as_dict() for check in report.coverage],
     }
 
 
@@ -635,9 +628,14 @@ def _format_doctor_problem_lines(report) -> str:
     default_path = str(report.project_root)
     for diag in report.diagnostics:
         path = str(getattr(diag, "path", "") or default_path)
-        line, column = _doctor_extract_line_column(str(getattr(diag, "message", "")))
+        line, column = diag.line, diag.column
+        location = path
+        if line is not None:
+            location += f":{line}"
+            if column is not None:
+                location += f":{column}"
         row = (
-            f"{path}:{int(line) if line is not None else 1}:{int(column) if column is not None else 1}: "
+            f"{location}: "
             f"{_doctor_severity(str(getattr(diag, 'level', '')))} "
             f"{str(getattr(diag, 'code', ''))}: "
             f"{str(getattr(diag, 'message', '')).replace(chr(10), ' ').strip()}"
@@ -646,23 +644,28 @@ def _format_doctor_problem_lines(report) -> str:
     return "\n".join(rows)
 
 
-def _doctor_exit_code(report, *, strict: bool) -> int:
+def _doctor_exit_code(report, *, strict: bool, fail_on: str = "error") -> int:
     if int(report.error_count) > 0:
         return 2
-    if bool(strict) and int(report.warn_count) > 0:
+    if (bool(strict) or fail_on == "warn") and int(report.warn_count) > 0:
         return 1
     return 0
 
 
-def _doctor_print_report(*, report, output_format: str, format_doctor_report) -> None:
+def _doctor_print_report(*, report, output_format: str, format_doctor_report, fail_on: str = "error") -> None:
     fmt = str(output_format).strip().lower()
     if fmt == "json":
-        print(json.dumps(_doctor_report_payload(report), ensure_ascii=False, indent=2))
+        payload = _doctor_report_payload(report)
+        payload["failure_threshold"] = fail_on
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
     if fmt == "problem":
         print(_format_doctor_problem_lines(report))
+        for check in report.coverage:
+            print(f"[doctor-coverage] {check.check} {check.status} {check.scope} {check.reason}".rstrip())
         return
     print(format_doctor_report(report))
+    print(f"failure threshold: {fail_on}; completed checks do not imply skipped checks passed")
 
 
 def _doctor_watch_signature(root: Path) -> tuple[tuple[str, int, int], ...]:
@@ -696,13 +699,20 @@ def _cmd_project_doctor(args: argparse.Namespace) -> int:
         output_format = "text"
 
     def _run_once() -> tuple[object, int]:
-        report = run_project_doctor(
-            path=Path(args.path) if args.path else Path.cwd(),
-            instantiate_solver=bool(args.build),
-            strict=bool(args.strict),
-        )
-        _doctor_print_report(report=report, output_format=output_format, format_doctor_report=format_doctor_report)
-        return report, _doctor_exit_code(report, strict=bool(args.strict))
+        from contextlib import redirect_stdout
+
+        # Imports/builders may print. Keep the machine-readable report stream clean.
+        with redirect_stdout(sys.stderr):
+            report = run_project_doctor(
+                path=Path(args.path) if args.path else Path.cwd(),
+                instantiate_solver=bool(args.build),
+                strict=bool(args.strict),
+                catalog_audit=bool(args.catalog_audit),
+                catalog_profile=args.profile,
+            )
+        threshold = "warn" if args.strict else args.fail_on
+        _doctor_print_report(report=report, output_format=output_format, format_doctor_report=format_doctor_report, fail_on=threshold)
+        return report, _doctor_exit_code(report, strict=bool(args.strict), fail_on=threshold)
 
     if not bool(getattr(args, "watch", False)):
         _, exit_code = _run_once()
@@ -1248,13 +1258,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor.add_argument(
         "--strict",
         action="store_true",
-        help="Return non-zero when warnings exist",
+        help="Enable strict rules and fail on any warning (0=pass, 1=warnings, 2=errors)",
     )
+    p_doctor.add_argument("--fail-on", choices=("error", "warn"), default="error",
+                         help="Failure threshold without changing rule strictness (default: error)")
+    p_doctor.add_argument("--catalog-audit", action="store_true", help="Also audit the selected Catalog profile")
+    p_doctor.add_argument("--profile", choices=("default", "framework-core"), default="framework-core",
+                         help="Catalog audit scope (default: framework-core)")
     p_doctor.add_argument(
         "--format",
         choices=("text", "json", "problem"),
         default="text",
-        help="Output format for doctor report (default: text)",
+        help="Presentation only, never a severity filter; unknown source positions stay absent (default: text)",
     )
     p_doctor.add_argument(
         "--json",

@@ -127,7 +127,7 @@ def _utc_iso_from_timestamp(timestamp: float | int | None) -> str | None:
         return None
     try:
         return datetime.fromtimestamp(float(timestamp), tz=timezone.utc).isoformat()
-    except Exception:
+    except (ValueError, TypeError, OverflowError, OSError):
         return None
 
 
@@ -140,7 +140,7 @@ def _to_float(value: Any) -> float | None:
         if value in (None, ""):
             return None
         return float(value)
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -189,7 +189,7 @@ def _json_load(path: str | None) -> Any:
         return None
     try:
         return json.loads(file_path.read_text(encoding="utf-8", errors="replace"))
-    except Exception:
+    except (OSError, UnicodeError, ValueError, SyntaxError):
         return None
 
 
@@ -207,7 +207,7 @@ def _progress_tail(path: str | None) -> dict[str, Any]:
                 payload = dict(row)
                 if any(_text(value) for value in payload.values()):
                     last_row = payload
-    except Exception:
+    except (OSError, UnicodeError, csv.Error):
         return {}
     return last_row or {}
 

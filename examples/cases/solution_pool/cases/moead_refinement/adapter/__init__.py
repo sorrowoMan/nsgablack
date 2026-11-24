@@ -1,0 +1,1 @@
+"""Case search assembly."""

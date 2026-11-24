@@ -1,0 +1,39 @@
+[[example]]
+id = "ml-core-estimator-artifact-application"
+title = "EstimatorStateArtifact · 已拟合系数与状态摘要分工"
+component_keys = ["mlblack.core.estimator_state_artifact"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "完整可只读恢复的NumPy岭Case，实际Problem hook把有限系数蓝图和真实fitted_state_summary交付typed Artifact，再由正式Case发布。"
+inputs = ["完整classical.estimator.ridge配方及原Project/L0；16训练/8验证，一维ridge候选。"]
+steps = ["保存完整原配方，将原Problem移至ridge_base模块，再安装完整子类hook；原builder真实导入新build_problem。", "变体收窄摘要内容，保持系数/原始反馈/只读恢复不变，不启用unsafe pickle。"]
+dependencies = ["当前三仓、NumPy，无sklearn/XGBoost/API依赖。"]
+expected_outputs = ["正式classical.json及模型引用，typed元数据有estimator_state，实际载荷仍为可解释三系数蓝图。", "摘要不替代模型参数或恢复证据；未执行拟合/Project。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_CLASSICAL_ESTIMATOR_APPLICATIONS_CN.md",section="classical.estimator.ridge"}, {path="nsgablack/docs/catalog_usage/ML_CLASSICAL_ESTIMATOR_APPLICATIONS_CN.md",section="classical.estimator.run"}, {path="nsgablack/docs/catalog_usage/ML_CORE_ARTIFACT_APPLICATIONS_CN.md",section="core.artifact.estimator"}]
+
+[[example]]
+id = "ml-core-integrated-artifact-application"
+title = "IntegratedModelArtifact · 权重/I-O/组件蓝图的正式交付"
+component_keys = ["mlblack.core.integrated_model_artifact"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "完整具名输入组合模型Case保留实际评估，替换明确Problem hook以交付typed组件和I/O蓝图，mean变体同时改变真实预测规则。"
+inputs = ["完整组合模型第三份Project；两项权重、40训练/16验证，原Gaussian与正式L0。"]
+steps = ["保存完整原配方，将原Problem移至integration_base，再安装完整typed子类；原builder不改即可实际消费。", "变体additive改mean，载荷/元数据同步，不能只改Artifact标签。"]
+dependencies = ["当前三仓、NumPy，无外部模型、网络或数据库。"]
+expected_outputs = ["本次composition.json与best_model_ref，semantic_artifact类型为integrated_model，载荷保存组件/权重/I-O。", "没有通用自动加载器、重新训练或运行收据承诺。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_MODEL_COMPOSITION_APPLICATIONS_CN.md",section="mlblack.model.integrated_prediction"}, {path="nsgablack/docs/catalog_usage/ML_MODEL_COMPOSITION_APPLICATIONS_CN.md",section="composition.shared_case"}, {path="nsgablack/docs/catalog_usage/ML_CORE_ARTIFACT_APPLICATIONS_CN.md",section="core.artifact.integrated"}]
+
+[[example]]
+id = "ml-core-estimator-artifact-tag-boundary"
+title = "迁移说明 · 三种Artifact标签不自动补齐模型训练/加载/恢复"
+component_keys = ["mlblack.core.tree_ensemble_artifact", "mlblack.core.sklearn_mlp_artifact", "mlblack.core.xg_boost_artifact"]
+kind = "documentation"
+usage_status = "migration_reference"
+working_directory = "mlblack"
+summary = "准确区分仍有效的值类、旧Bundle分类器与正式Problem-owned发布；说明默认EstimatorStateArtifact、pickle授权与只读恢复缺口，并给现有可闭合替代。"
+inputs = ["只读核对core/artifacts.py、artifact_provider.py、拟合Problem及tree/neural presets。"]
+steps = ["核对实际消费者返回类/载荷/序列化器/恢复路径，不按类名猜已完整装配。", "按真实ridge或Torch配方使用可闭合路径，不伪造通用树/MLP/XGBoost完整Case。"]
+dependencies = ["无运行要求，不安装模型依赖、不启用unsafe pickle。"]
+expected_outputs = ["准确源码边界与可用替代；本项不计为已补齐完整算法用法，不声称三类被弃用。"]
+sources = [{path="nsgablack/docs/catalog_usage/ML_CORE_ARTIFACT_APPLICATIONS_CN.md",section="core.artifact.legacy_tags"}]

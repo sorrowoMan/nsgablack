@@ -1,3 +1,3 @@
-from .closed_form import ClosedFormFitMethod
+from nsgablack.adapters import FixedCandidateAdapter
 
-__all__ = ["ClosedFormFitMethod"]
+__all__ = ["FixedCandidateAdapter"]

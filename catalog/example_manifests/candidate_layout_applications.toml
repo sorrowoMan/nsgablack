@@ -1,0 +1,51 @@
+[[example]]
+id = "candidate-layout-application-simplex"
+title = "连续来源与单纯形修复：三个分配比例的完整 Case"
+component_keys = ["repr.continuous", "repr.projection_repair"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "复用正式 catalog_recipes Case，完整接线 UniformInitializer、读取局部 sigma 的变化、ProjectionRepair 与单纯形 Problem，区分等式总量与上限。"
+inputs = ["完整 catalog_recipes Project 独立副本；当前 NumPy/nsgablack/blackbase；三维非负且和为一的候选。"]
+steps = ["保存共用薄 builder 和结果观察器，替换完整 Problem 文件与 Pipeline 工厂，通过正式 Project L0 运行；变体同时改问题总量和修复总量。"]
+dependencies = ["当前 NumPy、nsgablack、blackbase；不使用外部服务。"]
+expected_outputs = ["本次 results/layout.json 的精确 refs、三维 candidates、raw_objectives/raw_violations 与 Project 终态；不是运行收据或算法最优证明。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/CANDIDATE_LAYOUT_APPLICATIONS_CN.md", section = "repr.continuous" }, { path = "nsgablack/docs/catalog_usage/CANDIDATE_LAYOUT_APPLICATIONS_CN.md", section = "layout.shared_case" }]
+
+[[example]]
+id = "candidate-layout-application-integer"
+title = "整数向量与矩阵来源：六个数量的完整 Case"
+component_keys = ["repr.integer", "repr.matrix"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "完整整数问题、初值、变异和修复接线；二维矩阵来源仍返回扁平六维候选，Problem 明确 reshape，不把矩阵当种群 Unit 或自动产能约束。"
+inputs = ["完整 catalog_recipes Project 独立副本；六维 0..5 整数；Problem 中布局固定两行三列。"]
+steps = ["保存共用入口和观察器，替换整数 Problem 与 Pipeline；矩阵变体实际装配 IntegerMatrixInitializer 和 IntegerMatrixMutation。"]
+dependencies = ["当前 NumPy、nsgablack、blackbase。"]
+expected_outputs = ["本次 layout.json 的六维整数候选、平方差目标和零违反量；矩阵工厂不附带行列配额，未执行本教程。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/CANDIDATE_LAYOUT_APPLICATIONS_CN.md", section = "repr.integer" }, { path = "nsgablack/docs/catalog_usage/CANDIDATE_LAYOUT_APPLICATIONS_CN.md", section = "layout.shared_case" }]
+
+[[example]]
+id = "candidate-layout-application-binary-graph"
+title = "六个位的两种含义：容量选择与四节点网络"
+component_keys = ["repr.binary", "repr.graph"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "主例接通位来源、翻位和容量修复；变体完整替换为四节点边向量、边初始化与连通性 Problem，明确软罚比较和硬准入的区别。"
+inputs = ["完整 catalog_recipes Project 独立副本；主例六个位最多选三，图变体按 i<j 编排六条无向边。"]
+steps = ["完整 Problem/Pipeline 接入共用 VNS builder 和结果观察器；图变体实际使用 GraphEdgeInitializer/GraphEdgeMutation，BinaryRepair 不冒充连通修复。"]
+dependencies = ["当前 NumPy、nsgablack、blackbase；不依赖图网络包或外部数据。"]
+expected_outputs = ["本次 layout.json 对齐的位候选、raw 目标与违反量；图起点为完整连通图，罚值论证只适用本例量级，不是硬可行性接纳。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/CANDIDATE_LAYOUT_APPLICATIONS_CN.md", section = "repr.binary" }, { path = "nsgablack/docs/catalog_usage/CANDIDATE_LAYOUT_APPLICATIONS_CN.md", section = "layout.shared_case" }]
+
+[[example]]
+id = "candidate-layout-application-permutation"
+title = "城市顺序的交换、反转与 VNS 邻域分派"
+component_keys = ["repr.permutation", "repr.context_switch"]
+kind = "documentation"
+working_directory = "nsgablack"
+summary = "六城市正式 Case 使用直接排列和保序修复；变体实际绑定 ContextSelectMutator 消费 vns_k，区别排列、随机键和 argsort 修复。"
+inputs = ["完整 catalog_recipes Project 独立副本；六城市排列和本地坐标；同一 VNS 的已评估当前点。"]
+steps = ["保存共用正式入口和观察器，替换完整 TourProblem 与 Pipeline；多邻域变体在 swap/inversion 间按本次 k 分派。"]
+dependencies = ["当前 NumPy、nsgablack、blackbase；无地图服务。"]
+expected_outputs = ["本次 layout.json 的 0..5 排列、闭合路线长度和零违反量；包装器内部 RNG/恢复未验证，不声称复现或全局最短证明。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/CANDIDATE_LAYOUT_APPLICATIONS_CN.md", section = "repr.permutation" }, { path = "nsgablack/docs/catalog_usage/CANDIDATE_LAYOUT_APPLICATIONS_CN.md", section = "layout.shared_case" }]

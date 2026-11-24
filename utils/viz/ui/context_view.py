@@ -1,4 +1,5 @@
 from __future__ import annotations
+from blackbase.plugin import report_soft_error as _report_optional_failure
 
 import re
 import time
@@ -219,7 +220,8 @@ class ContextView:
             return
         try:
             ctx = solver.get_context()
-        except Exception:
+        except Exception as _fallback_error:
+            _report_optional_failure(component=__name__, event='ContextView.show_replay_keys.fallback_345', exc=_fallback_error)
             return
         keys = ", ".join(sorted(strip_context_for_replay(ctx).keys(), key=str))
         self._set_text(self._detail, f"Replayable keys:\n{keys}")
@@ -636,7 +638,8 @@ class ContextView:
         if self._refresh_pending_id is not None:
             try:
                 self.tab.after_cancel(self._refresh_pending_id)
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='ContextView._cancel_scheduled_refresh.fallback_346', exc=_fallback_error)
                 pass
             self._refresh_pending_id = None
 
@@ -654,7 +657,8 @@ class ContextView:
         if text and hasattr(self.app, "_set_status"):
             try:
                 self.app._set_status(f"Context: {text}")
-            except Exception:
+            except Exception as _fallback_error:
+                _report_optional_failure(component=__name__, event='ContextView._set_error.fallback_347', exc=_fallback_error)
                 pass
 
     def _set_text(self, widget: Optional[tk.Text], text: str) -> None:

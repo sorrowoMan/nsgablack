@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import numpy as np
 
@@ -53,23 +53,8 @@ class _L3Problem(BlackBoxProblem):
         return np.array([float(arr[0])], dtype=float)
 
 
-class _L3Adapter(AlgorithmAdapter):
-    context_requires = ()
-    context_provides = ()
-    context_mutates = ()
-    context_cache = ()
-    context_notes = ("Proposes target and stress-test candidate for L3.",)
-
-    def __init__(self, target: float):
-        super().__init__(name="l3_adapter")
-        self.target = float(target)
-
-    def propose(self, control, context):
-        _ = (control, context)
-        return [np.array([self.target], dtype=float), np.array([9.0], dtype=float)]
-
-    def update(self, control, candidates, feedback, context):
-        _ = (control, candidates, feedback, context)
+# Compatibility import: the implementation lives in the standard Unit Case.
+from nsgablack.examples.cases.algorithm_units.cases.candidate_search.adapter.inner_three_layer_multi_strategy_ui_demo import _L3Adapter
 
 
 def _build_l3_solver(target: float) -> ComposableSolver:
@@ -102,40 +87,12 @@ class _L2Problem(BlackBoxProblem):
         return float(inner_result["objective"])
 
 
-class _L2Explorer(AlgorithmAdapter):
-    context_requires = ()
-    context_provides = ()
-    context_mutates = ()
-    context_cache = ()
-    context_notes = ("Explorer role in L2 multi-strategy.",)
-
-    def __init__(self):
-        super().__init__(name="l2_explorer")
-
-    def propose(self, control, context):
-        _ = (control, context)
-        return [np.array([2.0], dtype=float)]
-
-    def update(self, control, candidates, feedback, context):
-        _ = (control, candidates, feedback, context)
+# Compatibility import: the implementation lives in the standard Unit Case.
+from nsgablack.examples.cases.algorithm_units.cases.candidate_search.adapter.inner_three_layer_multi_strategy_ui_demo import _L2Explorer
 
 
-class _L2Exploiter(AlgorithmAdapter):
-    context_requires = ()
-    context_provides = ()
-    context_mutates = ()
-    context_cache = ()
-    context_notes = ("Exploiter role in L2 multi-strategy.",)
-
-    def __init__(self):
-        super().__init__(name="l2_exploiter")
-
-    def propose(self, control, context):
-        _ = (control, context)
-        return [np.array([-2.0], dtype=float)]
-
-    def update(self, control, candidates, feedback, context):
-        _ = (control, candidates, feedback, context)
+# Compatibility import: the implementation lives in the standard Unit Case.
+from nsgablack.examples.cases.algorithm_units.cases.candidate_search.adapter.inner_three_layer_multi_strategy_ui_demo import _L2Exploiter
 
 
 def _build_l2_solver() -> ComposableSolver:
@@ -178,22 +135,8 @@ class _L1Problem(BlackBoxProblem):
         return float(inner_result["objective"])
 
 
-class _L1Adapter(AlgorithmAdapter):
-    context_requires = ()
-    context_provides = ()
-    context_mutates = ()
-    context_cache = ()
-    context_notes = ("Top-level adapter for L1.",)
-
-    def __init__(self):
-        super().__init__(name="l1_adapter")
-
-    def propose(self, control, context):
-        _ = (control, context)
-        return [np.array([0.0], dtype=float)]
-
-    def update(self, control, candidates, feedback, context):
-        _ = (control, candidates, feedback, context)
+# Compatibility import: the implementation lives in the standard Unit Case.
+from nsgablack.examples.cases.algorithm_units.cases.candidate_search.adapter.inner_three_layer_multi_strategy_ui_demo import _L1Adapter
 
 
 def build_solver() -> ComposableSolver:

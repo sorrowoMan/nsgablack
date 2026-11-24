@@ -10,6 +10,7 @@ from .base import (
     PermutationRepresentation,
     MixedRepresentation,
 )
+from .repair_contracts import ProblemRepair, UnitRepair, JointRepairPolicy, JointRepairRejected
 from .continuous import (
     ClipRepair,
     ProjectionRepair,
@@ -52,8 +53,20 @@ from .pipeline_kernel import (
     RepresentationPipelineKernelBuild,
     build_pipeline_kernel,
 )
+from .structure_builders import (
+    TrajectoryUnitBuilder, PollUnitBuilder, ParameterUnitBuilder, PopulationUnitBuilder, ReferencePopulationBuilder, DifferentialPopulationBuilder, DecompositionUnitBuilder, RegionUnitBuilder, ModelSearchUnitBuilder, ArchiveUnitBuilder, NeighborhoodUnitBuilder
+)
+from .unit_builders import CandidateUnitBuilder, SearchNodeBuilder, ParetoLabelBuilder
+from .bayesian_builder import BayesianUnitBuilder
+from .cmaes_builder import CMAUnitBuilder
+from .map_elites_builder import MapElitesUnitBuilder
 
 __all__ = [
+    "BayesianUnitBuilder", "CMAUnitBuilder", "MapElitesUnitBuilder",
+    "ProblemRepair", "UnitRepair", "JointRepairPolicy", "JointRepairRejected",
+    'TrajectoryUnitBuilder', 'PollUnitBuilder', 'ParameterUnitBuilder', 'PopulationUnitBuilder', 'ReferencePopulationBuilder', 'DifferentialPopulationBuilder', 'DecompositionUnitBuilder', 'RegionUnitBuilder', 'ModelSearchUnitBuilder', 'ArchiveUnitBuilder', 'NeighborhoodUnitBuilder', 'ParetoLabelBuilder',
+    "CandidateUnitBuilder",
+    "SearchNodeBuilder",
     "RepresentationPipeline",
     "ParallelRepair",
     "ContinuousRepresentation",

@@ -66,7 +66,12 @@ def run_case(args=None, *, resource_context=None) -> None:
     random.seed(args.seed)
     np.random.seed(args.seed)
     solver = _build_solver_from_args(args, resource_context=resource_context)
-    solver.run()
+    result = solver.run()
+    print(f"[result] steps={solver.run_progress_steps} evaluations={solver.evaluation_count} "
+          f"termination_reason={result.get('termination_reason', 'unknown')}")
+    checkpoint_path = result.get("checkpoint_local_path", result.get("checkpoint_latest"))
+    if checkpoint_path:
+        print(f"[checkpoint] saved={checkpoint_path}")
     if args.solver == "multi-agent":
         individuals, objectives = extract_pareto(solver)
         print(f"Pareto size: {0 if individuals is None else len(individuals)}")

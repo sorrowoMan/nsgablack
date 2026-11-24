@@ -1,0 +1,38 @@
+[[example]]
+id = "ml-model-composition-piecewise"
+title = "固定路由、两条线性分支和正式模型交付"
+component_keys = ["mlblack.model.router", "mlblack.model.threshold_router", "mlblack.model.piecewise", "mlblack.head.piecewise", "mlblack.representation.piecewise", "mlblack.problem.piecewise_regression"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "复用完整 ML Project，显式装配阈值或自定义 Router、两分支表示或 PiecewiseHead、分段 Problem 与 JSON Artifact，区分模型路由和 Adapter 编排。"
+inputs = ["catalog_codec_demo Project 独立副本；两特征48训练/20验证；固定路由与六参数分支候选。"]
+steps = ["替换完整配置、Pipeline 和 Problem，保存共用 Adapter/薄 builder/正式 Project 结果入口；两个实质变体替换路由或Head装配。"]
+dependencies = ["当前 blackbase、nsgablack、mlblack、NumPy；不需要外部模型服务。"]
+expected_outputs = ["正式 TrainerResult 的 train/valid 预测误差和路由比例，以及 best_model_ref；本地 composition.json 是观察副本，没有新执行收据。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_MODEL_COMPOSITION_APPLICATIONS_CN.md", section = "mlblack.model.piecewise" }, { path = "nsgablack/docs/catalog_usage/ML_MODEL_COMPOSITION_APPLICATIONS_CN.md", section = "composition.shared_case" }]
+
+[[example]]
+id = "ml-model-composition-temperature"
+title = "冻结基础 logit 的温度校准，与四参数 Head 搜索的区别"
+component_keys = ["mlblack.model.temperature_calibrated_probability", "mlblack.model.probability_calibration", "mlblack.head.probability_calibration"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "完整一参数模型表示、校准/验证划分、未加温度基础损失记录和 Problem-owned Artifact；实际换用两种包装器，并给出联合Head搜索变体。"
+inputs = ["catalog_codec_demo Project 独立副本；固定二分类基础logit，40校准/21验证样本；0/1类别。"]
+steps = ["保存完整配置、ModelRepresentation、Problem 与共用正式入口；比较冻结模型包装器和改变基础参数的 ProbabilityCalibrationHead。"]
+dependencies = ["当前 blackbase、nsgablack、mlblack、NumPy；无模型账号和训练下载。"]
+expected_outputs = ["正式 raw train.log_loss、独立 valid.log_loss、base.train/valid.log_loss、真实温度和模型 Artifact 引用；不把校准当 Bias 或样本外保证。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_MODEL_COMPOSITION_APPLICATIONS_CN.md", section = "mlblack.model.temperature_calibrated_probability" }, { path = "nsgablack/docs/catalog_usage/ML_MODEL_COMPOSITION_APPLICATIONS_CN.md", section = "composition.shared_case" }]
+
+[[example]]
+id = "ml-model-composition-integration"
+title = "具名输入、预测 I/O 与两模型权重搜索"
+component_keys = ["mlblack.model.integrated_prediction", "mlblack.model.prediction_input", "mlblack.model.prediction_output", "mlblack.model.prediction_io", "mlblack.model.prediction_integration", "mlblack.model.prediction_integration_component"]
+kind = "documentation"
+working_directory = "mlblack"
+summary = "两个固定点预测模型分别读取一列和两列，通过实际 Input/Output/IO 契约组合；只搜索权重，完整 Problem/Artifact/正式结果链，并对比 additive 与 mean。"
+inputs = ["catalog_codec_demo Project 独立副本；三列表格40训练/16验证，两个可预测固定参数模型，二维权重候选。"]
+steps = ["保存完整配置、权重表示和分列评估 Problem，通过 PredictionIntegrationComponent 实际 compose；共用 Project入口交付模型与反馈。"]
+dependencies = ["当前 blackbase、nsgablack、mlblack、NumPy；不训练基础模型或访问外部服务。"]
+expected_outputs = ["组合 train/valid MSE、各未加权组件的诊断误差、精确组合/IO蓝图与 best_model_ref；不把长度检查当业务行身份验证。"]
+sources = [{ path = "nsgablack/docs/catalog_usage/ML_MODEL_COMPOSITION_APPLICATIONS_CN.md", section = "mlblack.model.integrated_prediction" }, { path = "nsgablack/docs/catalog_usage/ML_MODEL_COMPOSITION_APPLICATIONS_CN.md", section = "composition.shared_case" }]
